@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import Path
 
 import pytest
 
 from conftest import FakeCompletedProcess, fake_uv_subprocess_run
+from officina.common import atomic_files
 from officina.install.managed_runtime import (
     ManagedRuntimeError,
+    _venv_python_bin,
     build_candidate_release,
     declared_python_packages,
 )
@@ -56,6 +59,50 @@ def test_declared_python_packages_rejects_unsupported_schema_version(tmp_path):
     manifest.write_text(json.dumps({"version": 2, "skills": {}}))
     with pytest.raises(ManagedRuntimeError):
         declared_python_packages(manifest, platform="linux")
+
+
+def test_venv_python_bin_posix_is_bin_python():
+    venv_dir = Path("/fake/release/venv")
+    for platform_name in ("linux", "macos"):
+        assert _venv_python_bin(venv_dir, platform=platform_name) == venv_dir / "bin" / "python"
+
+
+def test_venv_python_bin_windows_is_scripts_python_exe():
+    venv_dir = Path("/fake/release/venv")
+    assert _venv_python_bin(venv_dir, platform="windows") == venv_dir / "Scripts" / "python.exe"
+
+
+def test_build_candidate_release_on_windows_uses_scripts_python_exe(monkeypatch, tmp_path):
+    """Regression test for a real bug: build_candidate_release used to
+    hardcode `venv_dir / "bin" / "python"` with no platform branch, so on
+    Windows (where `uv venv` creates `Scripts\\python.exe`) python_bin never
+    existed. That made runtime_pointer.activate_release raise
+    RuntimePointerError -- not a ManagedRuntimeError -- which
+    _phase_entry.py's `except ManagedRuntimeError` didn't catch, crashing
+    the installer. This exercises build_candidate_release with
+    platform="windows" against a fake uv that lays out the venv the real
+    Windows uv would, and asserts the batch pip-install call and the
+    activated pointer both use the Windows interpreter path.
+    """
+    calls: list = []
+    monkeypatch.setattr(
+        "subprocess.run",
+        fake_uv_subprocess_run(calls, trusted_python_dir=tmp_path / "uv-python-store", windows=True),
+    )
+
+    pointer = build_candidate_release(
+        runtime_root=tmp_path / "runtime",
+        manifest_path=REAL_MANIFEST,
+        platform="windows",
+        uv_bin=Path("/fake/uv"),
+        python_version="3.11",
+    )
+
+    assert pointer.python_bin == pointer.runtime_source / "venv" / "Scripts" / "python.exe"
+    assert pointer.python_bin.exists()
+    pip_call = calls[1]
+    assert pip_call[:4] == ["/fake/uv", "pip", "install", "--python"]
+    assert pip_call[4] == str(pointer.python_bin)
 
 
 def test_build_candidate_release_creates_venv_then_one_batch_pip_install(monkeypatch, tmp_path):
@@ -155,7 +202,7 @@ def test_build_candidate_release_resolver_deploy_failure_writes_no_pointer(monke
         "subprocess.run", fake_uv_subprocess_run(calls, trusted_python_dir=tmp_path / "uv-python-store")
     )
     monkeypatch.setattr(
-        "officina.install.managed_runtime.shutil.copy2",
+        "officina.install.managed_runtime.atomic_files.atomic_replace_bytes",
         lambda *a, **k: (_ for _ in ()).throw(OSError("simulated disk full")),
     )
     runtime_root = tmp_path / "runtime"
@@ -174,6 +221,57 @@ def test_build_candidate_release_resolver_deploy_failure_writes_no_pointer(monke
     # promoted, so no bootstrap/resolvers path exists beyond what
     # _deploy_resolver itself half-created before failing.
     assert not (runtime_root / "bootstrap" / "resolvers" / "v1" / "launch.py").exists()
+
+
+def test_deploy_resolver_writes_through_atomic_replace_bytes_not_plain_copy(monkeypatch, tmp_path):
+    """Regression test for a real bug: _deploy_resolver used to write the
+    resolver with plain `shutil.copy2`, which is not atomic. The resolver
+    at `<runtime_root>/bootstrap/resolvers/v1/launch.py` is a fixed path
+    every generated launcher shim and every scheduled recurring-tasks job
+    execs into, and build_candidate_release genuinely runs a second time
+    against the same runtime_root during a normal install-then-update flow
+    -- a non-atomic overwrite risks a torn read by a job executing the file
+    at that exact moment. This asserts the real deployment goes through
+    officina.common.atomic_files.atomic_replace_bytes (like its sibling
+    uv_bootstrap.py/runtime_pointer.py writes) instead of shutil.copy2, and
+    that the deployed file is both correct and executable.
+    """
+    calls: list = []
+    monkeypatch.setattr(
+        "subprocess.run", fake_uv_subprocess_run(calls, trusted_python_dir=tmp_path / "uv-python-store")
+    )
+    atomic_calls: list = []
+    real_atomic_replace_bytes = atomic_files.atomic_replace_bytes
+
+    def spying_atomic_replace_bytes(*args, **kwargs):
+        atomic_calls.append((args, kwargs))
+        return real_atomic_replace_bytes(*args, **kwargs)
+
+    monkeypatch.setattr(
+        "officina.install.managed_runtime.atomic_files.atomic_replace_bytes",
+        spying_atomic_replace_bytes,
+    )
+    runtime_root = tmp_path / "runtime"
+
+    build_candidate_release(
+        runtime_root=runtime_root,
+        manifest_path=REAL_MANIFEST,
+        platform="linux",
+        uv_bin=Path("/fake/uv"),
+        python_version="3.11",
+    )
+
+    assert len(atomic_calls) == 1
+    resolver_path = runtime_root / "bootstrap" / "resolvers" / "v1" / "launch.py"
+    args, kwargs = atomic_calls[0]
+    assert args[0] == resolver_path
+    assert kwargs["mode"] == 0o755
+    assert resolver_path.exists()
+    assert resolver_path.read_bytes() == (
+        Path(__file__).resolve().parents[1]
+        / "src" / "officina" / "install" / "resolvers" / "launch.py"
+    ).read_bytes()
+    assert os.access(resolver_path, os.X_OK)
 
 
 # famulus-skip: category=capability-unavailable; reason=requires a real uv binary on PATH; alternate=mocked tests above cover call shapes and ordering without uv installed

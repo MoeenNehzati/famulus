@@ -76,6 +76,14 @@ class OnboardingCapabilityResult:
     # concrete per-skill config (currently: gmail with no account nickname
     # available yet).
     deferred_services: tuple[str, ...] = ()
+    # Services that were granted and attempted, and successfully bound to
+    # their owning skill.
+    bound_services: tuple[str, ...] = ()
+    # Services that were granted but whose per-skill binding dispatch call
+    # raised unexpectedly. Each entry is (service, error message) -- never a
+    # raw exception object, so this stays JSON/log friendly and can't smuggle
+    # secrets any more than the rest of this result can.
+    failed_services: tuple[tuple[str, str], ...] = ()
     detail: str | None = None
 
 
@@ -148,37 +156,47 @@ def run_google_onboarding(
 
     bound: list[str] = []
     deferred: list[str] = []
+    failed: list[tuple[str, str]] = []
     for service in granted:
-        if service == "gmail":
-            if not gmail_nickname:
-                # See module docstring: no account to bind to yet. The
-                # credential itself is still granted and usable later.
-                deferred.append(service)
-                continue
-            _dispatch(
-                dispatcher_path,
-                "email-client.interface.accounts-use-google-credential",
-                "--nickname", gmail_nickname,
-                "--credential-id", credential_id,
-                home=home,
-            )
-        else:
-            module = _SERVICE_MODULES[service]
-            _dispatch(
-                dispatcher_path,
-                f"{module}.interface.use-google-credential",
-                "--credential-id", credential_id,
-                home=home,
-            )
+        try:
+            if service == "gmail":
+                if not gmail_nickname:
+                    # See module docstring: no account to bind to yet. The
+                    # credential itself is still granted and usable later.
+                    deferred.append(service)
+                    continue
+                _dispatch(
+                    dispatcher_path,
+                    "email-client.interface.accounts-use-google-credential",
+                    "--nickname", gmail_nickname,
+                    "--credential-id", credential_id,
+                    home=home,
+                )
+            else:
+                module = _SERVICE_MODULES[service]
+                _dispatch(
+                    dispatcher_path,
+                    f"{module}.interface.use-google-credential",
+                    "--credential-id", credential_id,
+                    home=home,
+                )
+        except Exception as exc:  # noqa: BLE001 - a per-service binding
+            # failure must not abort binding of the remaining granted
+            # services, nor lose the partial-success info already gathered
+            # in `bound` for services processed earlier in this loop.
+            failed.append((service, str(exc)))
+            continue
         bound.append(service)
 
-    status_value = "completed" if not denied and not deferred else "partial"
+    status_value = "completed" if not denied and not deferred and not failed else "partial"
     return OnboardingCapabilityResult(
         status=status_value,
         credential_id=credential_id,
         granted_services=granted,
         denied_services=denied,
         deferred_services=tuple(deferred),
+        bound_services=tuple(bound),
+        failed_services=tuple(failed),
     )
 
 

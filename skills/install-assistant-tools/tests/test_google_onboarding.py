@@ -242,3 +242,30 @@ def test_run_google_onboarding_rejects_unknown_service(fake_dispatcher, tmp_path
             ["not-a-real-service"], dispatcher_path=fake_dispatcher.path,
             home=tmp_path, stdin_isatty=False,
         )
+
+
+def test_run_google_onboarding_survives_a_later_service_binding_failure(tmp_path):
+    # drive binds fine; calendar's use-google-credential dispatch fails
+    # unexpectedly (e.g. a downstream skill bug). The partial success on
+    # drive must not be lost -- the function must not raise, and the
+    # returned result must show drive bound and calendar's failure captured.
+    responses = dict(_DEFAULT_RESPONSES)
+    responses["connect-google.interface.authorize-services"] = {
+        "schema_version": 1,
+        "account": "user@example.com",
+        "credential_id": "cred-123",
+        "requested_services": ["drive", "calendar"],
+        "granted_services": ["drive", "calendar"],
+        "denied_services": [],
+    }
+    responses["g-calendar.interface.use-google-credential"] = {"__exit_nonzero__": True}
+    dispatcher = _write_fake_dispatcher(tmp_path, responses)
+
+    result = run_google_onboarding(
+        ["drive", "calendar"], dispatcher_path=dispatcher.path, home=tmp_path, stdin_isatty=False,
+    )
+
+    assert "drive" in result.bound_services
+    assert "calendar" not in result.bound_services
+    assert any(service == "calendar" for service, _msg in result.failed_services)
+    assert result.status == "partial"

@@ -35,6 +35,7 @@ from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 from officina.common.famulus_paths import resolve_famulus_paths
 from officina.install.install_info import load_install_info
 import officina.install.managed_runtime as managed_runtime
+import officina.install.runtime_pointer as runtime_pointer
 import officina.install.uv_bootstrap as uv_bootstrap
 
 import _config_bridge as dev_link
@@ -86,19 +87,27 @@ def _prompt_default_llm() -> str:
 
 
 def _ensure_managed_uv(*, info, paths, platform_name: str) -> int:
-    """Bootstrap a machine-local managed uv binary at paths.uv_bin if one
-    isn't already present, before build_candidate_release ever needs it.
+    """Bootstrap a machine-local managed uv binary at paths.uv_bin, before
+    build_candidate_release ever needs it.
 
-    Returns 0 on success (including the common case where paths.uv_bin
-    already exists and needs no bootstrap). On an unsupported platform/arch
-    (_install_scaffold.UvReleaseTargetError) or a UvBootstrapError (network
-    failure, checksum mismatch, archive-extraction failure), logs the
-    failure and returns nonzero without raising -- bootstrap_uv itself
-    guarantees no partial/bad binary is left at paths.uv_bin in that case.
+    Always calls uv_bootstrap.bootstrap_uv rather than short-circuiting
+    when paths.uv_bin already exists: bootstrap_uv already no-ops cheaply
+    (no network call) when the existing binary's own `--version` output
+    matches the pinned info.uv_version (see its `_current_version_matches`),
+    and only re-downloads when it's missing or stale. Short-circuiting here
+    on mere existence would permanently strand any machine with an
+    already-present uv binary on whatever version it happened to have,
+    silently ignoring a later bump to the pinned uv_version.
+
+    Returns 0 on success (including the common no-op case where the
+    existing binary already matches the pinned version). On an unsupported
+    platform/arch (_install_scaffold.UvReleaseTargetError) or a
+    UvBootstrapError (network failure, checksum mismatch,
+    archive-extraction failure), logs the failure and returns nonzero
+    without raising -- bootstrap_uv itself guarantees no partial/bad binary
+    is left at paths.uv_bin in that case.
     """
-    if paths.uv_bin.exists():
-        return 0
-    log(f"No managed uv binary found at {paths.uv_bin} -- bootstrapping uv {info.uv_version}...")
+    log(f"Ensuring managed uv {info.uv_version} is available at {paths.uv_bin}...")
     try:
         triple, archive_extension = scaffold.uv_release_target(
             platform_name=platform_name, machine=platform.machine()
@@ -112,7 +121,7 @@ def _ensure_managed_uv(*, info, paths, platform_name: str) -> int:
     except (scaffold.UvReleaseTargetError, uv_bootstrap.UvBootstrapError) as exc:
         log(f"uv bootstrap failed: {exc}")
         return 1
-    log(f"Bootstrapped uv {info.uv_version} at {paths.uv_bin}.")
+    log(f"Managed uv {info.uv_version} is ready at {paths.uv_bin}.")
     return 0
 
 
@@ -121,11 +130,19 @@ def _build_managed_runtime_candidate(*, repo_root: Path, home: Path) -> int:
     runs, so the dispatcher/invoke-skill launchers scaffold.run installs have
     a real release to exec into as soon as they exist on disk.
 
-    Returns 0 on success. On a UvBootstrapError or ManagedRuntimeError (bad
-    manifest, failed venv creation, failed batch install), logs the failure
-    and returns nonzero without raising -- both bootstrap_uv and
-    build_candidate_release guarantee no partial state is left in that case,
-    so any prior current.json is left untouched.
+    Returns 0 on success. On a UvBootstrapError, ManagedRuntimeError (bad
+    manifest, failed venv creation, failed batch install), or
+    RuntimePointerError (e.g. a computed python_bin that doesn't exist for
+    this platform), logs the failure and returns nonzero without raising --
+    bootstrap_uv, build_candidate_release, and activate_release all
+    guarantee no partial state is left in that case, so any prior
+    current.json is left untouched. RuntimePointerError is caught
+    alongside ManagedRuntimeError deliberately: it is raised by
+    runtime_pointer.activate_release (called from inside
+    build_candidate_release) and is NOT a subclass of ManagedRuntimeError,
+    so without this second except clause it would propagate as an
+    unhandled crash instead of the same clean, typed failure as every other
+    managed-runtime error.
     """
     platform_name = scaffold._platform_name()
     if platform_name is None:
@@ -149,7 +166,7 @@ def _build_managed_runtime_candidate(*, repo_root: Path, home: Path) -> int:
             uv_bin=paths.uv_bin,
             python_version=info.managed_python,
         )
-    except managed_runtime.ManagedRuntimeError as exc:
+    except (managed_runtime.ManagedRuntimeError, runtime_pointer.RuntimePointerError) as exc:
         log(f"Managed-runtime candidate build failed: {exc}")
         return 1
     return 0
@@ -190,10 +207,15 @@ def _run_google_onboarding_step(
         log(f"Google onboarding: connected {', '.join(result.granted_services)}.")
     elif result.status == "partial":
         parts = []
+        if result.bound_services:
+            parts.append(f"bound={list(result.bound_services)}")
         if result.denied_services:
             parts.append(f"denied={list(result.denied_services)}")
         if result.deferred_services:
             parts.append(f"deferred={list(result.deferred_services)} (no email account nickname yet)")
+        if result.failed_services:
+            failed_desc = [f"{service} ({message})" for service, message in result.failed_services]
+            parts.append(f"failed={failed_desc}")
         log(f"Google onboarding: partially connected ({', '.join(parts)}).")
     elif result.status == "failed":
         log("Google onboarding: failed; you can retry later via connect-google.")

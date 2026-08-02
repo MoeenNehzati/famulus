@@ -16,11 +16,11 @@ import json
 import os
 import re
 import secrets
-import shutil
 import subprocess
 import time
 from pathlib import Path
 
+from officina.common import atomic_files
 from officina.install.runtime_pointer import RuntimePointer, activate_release
 
 _VERSION_OPERATOR_RE = re.compile(r"^(==|>=|<=|!=|~=|>|<)")
@@ -164,6 +164,26 @@ def _run_dependency_install(*, uv_bin: Path, python_bin: Path, packages: tuple[s
         )
 
 
+def _venv_python_bin(venv_dir: Path, *, platform: str) -> Path:
+    """Return the interpreter path a real ``uv venv --python ... venv_dir``
+    creates for ``platform``.
+
+    ``uv venv``'s interpreter layout is not uniform across every host this
+    installer targets. This must branch on the ``platform`` value passed
+    through from ``build_candidate_release`` -- not the platform this
+    installer process happens to be running on -- because a single
+    hardcoded layout here silently produces a python_bin that never exists
+    on one of the targets, which later surfaces as an unrelated (and,
+    before this fix, uncaught) ``RuntimePointerError`` out of
+    ``activate_release`` instead of a clear failure at the actual point of
+    the mistake. See ``_install_scaffold.py``'s ``_platform_name()`` for
+    the canonical set of values this parameter takes.
+    """
+    if platform == "windows":
+        return venv_dir / "Scripts" / "python.exe"
+    return venv_dir / "bin" / "python"
+
+
 def _new_release_id() -> str:
     timestamp = time.strftime("%Y-%m-%dT%H-%M-%SZ", time.gmtime())
     return f"{timestamp}-{secrets.token_hex(3)}"
@@ -214,14 +234,28 @@ def _deploy_resolver(*, runtime_root: Path, trusted_interpreter_roots: tuple[Pat
         resolver_dir = runtime_root / "bootstrap" / "resolvers" / "v1"
         resolver_dir.mkdir(parents=True, exist_ok=True)
         resolver_path = resolver_dir / "launch.py"
-        shutil.copy2(_RESOLVER_SOURCE, resolver_path)
-        resolver_path.chmod(0o755)
+        resolver_bytes = _RESOLVER_SOURCE.read_bytes()
+        # atomic_replace_bytes (not shutil.copy2): resolver_path is the
+        # fixed path every generated launcher shim and every scheduled
+        # recurring-tasks job execs into, and build_candidate_release runs
+        # again on every install-then-update flow against the same
+        # runtime_root -- a plain copy2 here could race a job that is
+        # mid-exec into this exact file, handing it a torn read. mode=0o755
+        # makes the file executable as part of the same atomic write, so no
+        # separate chmod is needed afterward.
+        atomic_files.atomic_replace_bytes(
+            resolver_path, resolver_bytes, allowed_root=resolver_dir, mode=0o755
+        )
         trust_file = resolver_dir / "trusted-roots.json"
         trust_file.write_text(
             json.dumps([str(root) for root in trusted_interpreter_roots]),
             encoding="utf-8",
         )
     except OSError as exc:
+        # atomic_files.AtomicWriteError is itself an OSError subclass, so
+        # this also covers a confined-write rejection (symlink resolver
+        # directory, non-regular destination, etc.), not just plain I/O
+        # failures.
         raise ManagedRuntimeError(f"could not deploy the launcher resolver: {exc}") from exc
 
 
@@ -253,7 +287,7 @@ def build_candidate_release(
     release_dir = runtime_root / "releases" / release_id
     release_dir.mkdir(parents=True, exist_ok=True)
     venv_dir = release_dir / "venv"
-    python_bin = venv_dir / "bin" / "python"
+    python_bin = _venv_python_bin(venv_dir, platform=platform)
 
     _create_release_venv(uv_bin=uv_bin, venv_dir=venv_dir, python_version=python_version)
     _run_dependency_install(uv_bin=uv_bin, python_bin=python_bin, packages=packages)

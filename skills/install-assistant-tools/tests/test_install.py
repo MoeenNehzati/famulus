@@ -151,6 +151,12 @@ def test_phase_entry_resolver_deploy_failure_returns_nonzero_not_a_crash(tmp_pat
     calls = []
     monkeypatch.setattr(install.scaffold, "run", lambda **kw: calls.append(("scaffold", kw)))
     monkeypatch.setattr(install.launchers, "run", lambda **kw: calls.append(("launchers", kw)))
+    # Real bootstrap_uv is not under test here and would otherwise also
+    # observe the atomic_files.atomic_replace_bytes patch below (it's the
+    # same shared module object) and make a real network call -- stub it
+    # out as a plain no-op success so only _deploy_resolver's failure is
+    # exercised.
+    monkeypatch.setattr(install.uv_bootstrap, "bootstrap_uv", lambda **kw: None)
     monkeypatch.setattr(install.managed_runtime, "_create_release_venv", lambda **kw: None)
     monkeypatch.setattr(install.managed_runtime, "_run_dependency_install", lambda **kw: None)
     monkeypatch.setattr(
@@ -158,7 +164,7 @@ def test_phase_entry_resolver_deploy_failure_returns_nonzero_not_a_crash(tmp_pat
         lambda uv_bin: tmp_path / "uv-python-store",
     )
     monkeypatch.setattr(
-        install.managed_runtime.shutil, "copy2",
+        install.managed_runtime.atomic_files, "atomic_replace_bytes",
         lambda *a, **k: (_ for _ in ()).throw(OSError("simulated disk full")),
     )
 
@@ -171,6 +177,82 @@ def test_phase_entry_resolver_deploy_failure_returns_nonzero_not_a_crash(tmp_pat
     assert "scaffold" not in [name for name, _ in calls]
     paths = resolve_famulus_paths(platform=sys.platform, home=tmp_path)
     assert not paths.current_pointer.exists()
+
+
+def test_phase_entry_catches_runtime_pointer_error_not_just_managed_runtime_error(tmp_path, monkeypatch):
+    """Regression test for a real bug: build_candidate_release used to
+    hardcode a POSIX-only venv interpreter path, so on Windows the computed
+    python_bin never existed and runtime_pointer.activate_release raised
+    RuntimePointerError -- which is NOT a subclass of
+    managed_runtime.ManagedRuntimeError. _build_managed_runtime_candidate's
+    `except managed_runtime.ManagedRuntimeError` alone did not catch it, so
+    it propagated as an unhandled crash instead of a clean nonzero exit.
+    Simulates that exact situation (a python_bin that is never created on
+    disk) without needing a real Windows host, and asserts install.run
+    returns nonzero instead of raising.
+    """
+    calls = []
+    monkeypatch.setattr(install.scaffold, "run", lambda **kw: calls.append(("scaffold", kw)))
+    monkeypatch.setattr(install.launchers, "run", lambda **kw: calls.append(("launchers", kw)))
+    monkeypatch.setattr(install.managed_runtime, "_create_release_venv", lambda **kw: None)
+    monkeypatch.setattr(install.managed_runtime, "_run_dependency_install", lambda **kw: None)
+    monkeypatch.setattr(
+        install.managed_runtime, "_uv_python_install_dir",
+        lambda uv_bin: tmp_path / "uv-python-store",
+    )
+    # python_bin is never actually created on disk (venv creation is
+    # mocked away above), so activate_release's `python_bin.exists()`
+    # check fails and it raises RuntimePointerError -- the real failure
+    # mode this test is guarding against.
+
+    status = install.run(
+        home=tmp_path, dry_run=False, non_interactive=True,
+        dev_mode=False, agents=[], default_llm="claude",
+    )
+
+    assert status != 0
+    assert "scaffold" not in [name for name, _ in calls]
+    paths = resolve_famulus_paths(platform=sys.platform, home=tmp_path)
+    assert not paths.current_pointer.exists()
+
+
+def test_ensure_managed_uv_calls_bootstrap_even_when_binary_already_exists(tmp_path, monkeypatch):
+    """Regression test for a real bug: _ensure_managed_uv used to return
+    early with `if paths.uv_bin.exists(): return 0`, before ever calling
+    uv_bootstrap.bootstrap_uv -- the only production call site of
+    bootstrap_uv. bootstrap_uv already has correct no-op-if-matching /
+    re-bootstrap-if-stale version logic internally, but the premature
+    short-circuit here prevented that logic from ever running once any
+    binary already existed, so a future bump to the pinned uv_version would
+    never reach an already-provisioned machine. This asserts bootstrap_uv
+    is called even when paths.uv_bin already exists on disk.
+    """
+    from officina.common.famulus_paths import resolve_famulus_paths as _resolve
+
+    home = tmp_path
+    paths = _resolve(platform=sys.platform, home=home)
+    paths.uv_bin.parent.mkdir(parents=True, exist_ok=True)
+    paths.uv_bin.write_text("#!/bin/sh\necho 'uv 0.0.0 (stale stub)'\n")
+    paths.uv_bin.chmod(0o755)
+
+    bootstrap_calls = []
+    monkeypatch.setattr(
+        install.uv_bootstrap, "bootstrap_uv",
+        lambda **kwargs: bootstrap_calls.append(kwargs),
+    )
+
+    class _Info:
+        uv_version = "9.9.9"
+        managed_python = "3.11"
+
+    status = install._ensure_managed_uv(
+        info=_Info(), paths=paths, platform_name="linux",
+    )
+
+    assert status == 0
+    assert len(bootstrap_calls) == 1
+    assert bootstrap_calls[0]["uv_bin"] == paths.uv_bin
+    assert bootstrap_calls[0]["version"] == "9.9.9"
 
 
 def test_phase_entry_dry_run_skips_candidate_build(tmp_path, monkeypatch):

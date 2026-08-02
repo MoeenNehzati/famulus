@@ -21,7 +21,7 @@ class FakeCompletedProcess:
         self.stderr = stderr
 
 
-def fake_uv_subprocess_run(calls: list, *, trusted_python_dir: Path):
+def fake_uv_subprocess_run(calls: list, *, trusted_python_dir: Path, windows: bool = False):
     """Build a fake `subprocess.run` standing in for `uv`.
 
     Mimics real `uv` behavior: `uv venv` creates the interpreter on disk as
@@ -35,14 +35,24 @@ def fake_uv_subprocess_run(calls: list, *, trusted_python_dir: Path):
     an earlier fake only created `python_bin` during the (mocked)
     pip-install call -- real `uv pip install` never does that, so the real
     happy path always failed.
+
+    ``windows=True`` makes the simulated `uv venv` create the interpreter
+    at ``Scripts/python.exe`` instead of ``bin/python``, matching real
+    `uv`'s Windows venv layout -- used to test the Windows branch of
+    `managed_runtime._venv_python_bin` end-to-end through
+    `build_candidate_release` without a real Windows host.
     """
 
     def fake_run(cmd, **kwargs):
         calls.append(list(cmd))
         if cmd[1] == "venv":
             venv_dir = Path(cmd[-1])
-            (venv_dir / "bin").mkdir(parents=True, exist_ok=True)
-            (venv_dir / "bin" / "python").write_text("#!/bin/sh\n")
+            if windows:
+                (venv_dir / "Scripts").mkdir(parents=True, exist_ok=True)
+                (venv_dir / "Scripts" / "python.exe").write_text("")
+            else:
+                (venv_dir / "bin").mkdir(parents=True, exist_ok=True)
+                (venv_dir / "bin" / "python").write_text("#!/bin/sh\n")
         elif cmd[1:3] == ["python", "dir"]:
             return FakeCompletedProcess(stdout=str(trusted_python_dir) + "\n")
         return FakeCompletedProcess()
