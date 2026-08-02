@@ -1,0 +1,12 @@
+[Unit]
+Description=Check for due LLM session wakeups
+
+[Timer]
+# Wakeups have minute-level precision; the worker filters the persistent queue.
+OnCalendar=*-*-* *:*:00
+AccuracySec=1s
+# Run once after a missed deadline when the machine resumes or reboots.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,28 @@
+authority:
+  owns_filesystem: []
+children: {}
+content:
+- CLAUDE-CODEX-README\.md
+- __init__\.py
+- claude_codex_cli\.py
+- claude_codex_service\.py
+- claude_codex_sessions\.py
+- cli\.py
+- deadlines\.py
+- store\.py
+- resources/llm-wakeup\.service\.in
+- resources/llm-wakeup\.timer
+description: Dependency-free Python infrastructure for scheduling guarded Claude
+  and Codex continuation messages after usage limits reset, with persistent JSON
+  jobs, transcript-progress suppression, provider-log inference, retry handling,
+  and journald-oriented worker events.
+exports: {}
+gateway:
+  language: Python>=3.11
+  path: __init__.py
+id: wakeup
+namespace_exports: {}
+node_type: module
+schema_version: 5
+sources: {}
+version: 1
