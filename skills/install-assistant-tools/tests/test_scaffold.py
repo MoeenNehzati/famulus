@@ -85,6 +85,15 @@ def test_run_writes_windows_dispatcher_and_invoke_skill_launchers(tmp_path, monk
     # A real Windows host always has LOCALAPPDATA set; resolving the
     # resolver's fixed path needs it now that this monkeypatches sys.platform.
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
+    # Dispatcher.bat generation resolves a concrete interpreter path via
+    # shutil.which; mock it (as test_schedule_backend.py's Windows tests
+    # do) rather than let the real shutil.which run its win32-specific
+    # branch on this non-Windows test host, where it would fail since
+    # _winapi isn't importable.
+    monkeypatch.setattr(
+        "_install_launcher._windows_launcher.shutil.which",
+        lambda name: r"C:\Python312\python.exe" if name == "python" else None,
+    )
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
     bin_dir = tmp_path / "bin"
@@ -388,6 +397,33 @@ def test_certificate_signing_material_capability_fails_closed(
 
     assert result.blocks_install()
     assert result.reason == "verification failed"
+
+
+def test_certificate_signing_material_capability_fails_clearly_when_cryptography_missing(
+    tmp_path,
+    monkeypatch,
+):
+    """On a fresh machine whose ambient interpreter never had `cryptography`
+    installed, certificate_records.py's module-level `import cryptography`
+    raises ModuleNotFoundError. This must surface as a clear, actionable
+    capability-failure reason -- not a raw traceback, and without the
+    installer silently pip-installing anything into the ambient
+    interpreter (that anti-pattern was deliberately removed elsewhere)."""
+
+    def fail_import():
+        raise ModuleNotFoundError("No module named 'cryptography'", name="cryptography")
+
+    monkeypatch.setattr(scaffold, "_import_certificate_records", fail_import)
+
+    result = scaffold.install_certificate_signing_material(
+        tmp_path / "repo",
+        dry_run=False,
+    )
+
+    assert result.blocks_install()
+    assert result.status == "failed"
+    assert "cryptography" in result.reason
+    assert "pip install cryptography" in result.reason
 
 
 def test_certificate_signing_material_dry_run_does_not_write(

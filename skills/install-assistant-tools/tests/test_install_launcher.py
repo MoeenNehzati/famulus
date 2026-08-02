@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
@@ -15,6 +16,10 @@ from _install_launcher._base_launcher import (
     LauncherInstallerBase,
 )
 from _install_launcher._linux_launcher import _unix_dispatcher_content
+from _install_launcher._windows_launcher import (
+    WindowsPythonNotFoundError,
+    _windows_dispatcher_content,
+)
 
 
 @pytest.fixture
@@ -162,6 +167,48 @@ def test_windows_dispatcher_and_invoke_skill_are_batch_launchers(tmp_path):
     assert "assistant --local --claude" in invoke_content
     assert "assistant --local --codex exec" in invoke_content
     assert not (bin_dir / "invoke-skill").exists()
+
+
+def test_windows_dispatcher_bakes_in_resolved_python_path(tmp_path):
+    """The generated dispatcher.bat must invoke a concrete, resolved
+    interpreter path (mirroring recurring-tasks' _resolve_python_interpreter
+    fix) instead of a bare, unqualified 'python' token that has no PATH
+    validation and no 'py'-launcher fallback."""
+    repo_root = Path(r"C:\Users\tester\AI")
+    with mock.patch(
+        "_install_launcher._windows_launcher.shutil.which"
+    ) as which:
+        which.side_effect = lambda name: r"C:\Python312\python.exe" if name == "python" else None
+        content = _windows_dispatcher_content(repo_root, home=tmp_path / "home")
+
+    assert r'"C:\Python312\python.exe"' in content
+    assert '"python" "' not in content
+    assert not content.split("\n")[2].startswith("python ")
+
+
+def test_windows_dispatcher_falls_back_to_py_launcher(tmp_path):
+    """When 'python' isn't on PATH but the 'py' launcher is, that resolved
+    absolute path is used instead."""
+    repo_root = Path(r"C:\Users\tester\AI")
+    with mock.patch(
+        "_install_launcher._windows_launcher.shutil.which"
+    ) as which:
+        which.side_effect = lambda name: r"C:\Windows\py.exe" if name == "py" else None
+        content = _windows_dispatcher_content(repo_root, home=tmp_path / "home")
+
+    assert r'"C:\Windows\py.exe"' in content
+
+
+def test_windows_dispatcher_raises_clear_error_when_no_interpreter_found(tmp_path):
+    """If neither 'python' nor 'py' resolves on PATH, fail loudly at
+    generation time instead of silently baking a broken bare token."""
+    repo_root = Path(r"C:\Users\tester\AI")
+    with mock.patch(
+        "_install_launcher._windows_launcher.shutil.which",
+        return_value=None,
+    ):
+        with pytest.raises(WindowsPythonNotFoundError):
+            _windows_dispatcher_content(repo_root, home=tmp_path / "home")
 
 
 def test_windows_agent_launcher_files_are_copied(tmp_path):

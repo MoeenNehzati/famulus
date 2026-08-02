@@ -162,6 +162,20 @@ def warn_if_managed_release_missing(*, home: Path) -> None:
         )
 
 
+def _import_certificate_records():
+    """Import point for ``officina.common.certificate_records``, isolated so
+    ``install_certificate_signing_material`` can be tested against a missing
+    ``cryptography`` dependency without actually uninstalling it (see that
+    function's ``ModuleNotFoundError`` handling below).
+    """
+    from officina.common.certificate_records import (
+        certificate_public_key_root,
+        provision_certificate_signing_material,
+    )
+
+    return certificate_public_key_root, provision_certificate_signing_material
+
+
 def install_certificate_signing_material(
     repo_root: Path,
     dry_run: bool,
@@ -178,11 +192,32 @@ def install_certificate_signing_material(
             workflows=workflows,
         )
     try:
-        from officina.common.certificate_records import (
-            certificate_public_key_root,
-            provision_certificate_signing_material,
+        certificate_public_key_root, provision_certificate_signing_material = (
+            _import_certificate_records()
         )
-
+    except ModuleNotFoundError as exc:
+        # certificate_records.py imports `cryptography` at module level, and
+        # this runs in-process against the installer's own ambient
+        # interpreter (not the managed-runtime venv that build_candidate_
+        # release provisions packages into -- see the module docstring).
+        # On a fresh machine whose ambient Python never had `cryptography`
+        # installed, fail with a clear, actionable message instead of a
+        # confusing raw traceback. Deliberately does NOT pip-install into
+        # the ambient interpreter: that ambient-mutation anti-pattern was
+        # removed elsewhere in this same effort (see module docstring).
+        return LauncherInstallResult(
+            name="certificate-signing-material",
+            required=True,
+            status="failed",
+            workflows=workflows,
+            reason=(
+                f"missing module {exc.name!r}: cryptography is not installed in the "
+                "interpreter running this installer -- install it with "
+                "`pip install cryptography`, or run the installer with a Python "
+                "environment that already has it"
+            ),
+        )
+    try:
         provision_certificate_signing_material(repo_root)
         path = certificate_public_key_root(repo_root)
     except Exception as exc:

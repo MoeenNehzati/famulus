@@ -1,6 +1,7 @@
 """Windows launcher bundle installer."""
 from __future__ import annotations
 
+import shutil
 import sys
 from pathlib import Path
 
@@ -27,6 +28,32 @@ from ._base_launcher import (
 _RESOLVER_RELATIVE_PATH = ("bootstrap", "resolvers", "v1", "launch.py")
 
 
+class WindowsPythonNotFoundError(RuntimeError):
+    """Raised when no ``python``/``py`` interpreter can be resolved on PATH."""
+
+
+def _resolve_python_interpreter() -> str:
+    """Resolve a concrete, absolute path to a python interpreter on PATH.
+
+    Tries ``python`` then falls back to the ``py`` launcher, raising a clear
+    error if neither is found rather than silently baking a bare,
+    unqualified name into the generated dispatcher.bat that Windows can't
+    validate without relying on ambient PATH resolution at run time.
+
+    Mirrors ``_schedule_backend._windows_backend._resolve_python_interpreter``
+    (recurring-tasks' equivalent fix for the same underlying problem); not
+    imported directly since install-assistant-tools and recurring-tasks keep
+    their ``_rtx`` internals independent of one another.
+    """
+    resolved = shutil.which("python") or shutil.which("py")
+    if not resolved:
+        raise WindowsPythonNotFoundError(
+            "could not resolve a python interpreter on PATH (tried 'python' and 'py'); "
+            "the generated dispatcher.bat requires a concrete, validatable interpreter path"
+        )
+    return resolved
+
+
 def _resolver_path(*, home: Path | None = None) -> Path:
     """Return the fixed resolver path beneath this host's runtime_root."""
     home = home or Path.home()
@@ -36,10 +63,11 @@ def _resolver_path(*, home: Path | None = None) -> Path:
 
 def _windows_dispatcher_content(repo_root: Path, *, home: Path | None = None) -> str:
     resolver = LauncherInstallerBase._batch_path(_resolver_path(home=home))
+    interpreter = LauncherInstallerBase._batch_path(Path(_resolve_python_interpreter()))
     return (
         "@echo off\n"
         "setlocal\n"
-        f"python \"{resolver}\" -m officina.dispatcher.cli %*\n"
+        f"\"{interpreter}\" \"{resolver}\" -m officina.dispatcher.cli %*\n"
     )
 
 
