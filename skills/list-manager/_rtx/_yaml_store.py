@@ -141,13 +141,16 @@ def die(msg: str) -> None:
 # the rejection only matters where two writers can race, and those callers
 # opt in by passing it.
 #
-# Note on scope: this local file lock only protects the *local* file path
+# Note on scope: this local file_lock() only protects the *local* file path
 # each command operates on. In --cloud mode, that path is a fresh per-
-# invocation temp file (see main()), so the lock serializes nothing across
-# processes there -- the cloud download/mutate/upload sequence has its own,
-# separate (and still open) race at the transport level. This fix closes the
-# local-file race, which is what email-triage's local list files and the
-# tests below exercise.
+# invocation tempfile.mkdtemp() path (see main()), so file_lock() ALONE
+# serializes nothing across two independent --cloud processes -- each gets
+# its own unique lock sidecar that no other process will ever contend for.
+# Two overlapping --cloud invocations would both download the same cloud
+# revision, both pass check_revision, and the second upload would silently
+# clobber the first's write -- the exact race this module exists to close,
+# still open for cloud mode's real usage (see cloud_lock_path() and its use
+# in main(), below, which closes it).
 class StaleRevisionError(RuntimeError):
     """Raised when --expected-revision no longer matches the file's current
     revision: someone else saved this list since the caller last read it."""
@@ -285,6 +288,60 @@ def file_lock(path: Path):
                 fcntl.flock(fd, fcntl.LOCK_UN)
     finally:
         os.close(fd)
+
+
+def _cloud_lock_dir(*, home: Path | None = None) -> Path:
+    """Stable, well-known directory for cloud-mode lock sidecars -- as
+    opposed to file_lock()'s per-command sidecar next to the file it locks,
+    which for --cloud mode is a fresh tempfile.mkdtemp() path every
+    invocation and therefore useless as a lock (see cloud_lock_path()).
+
+    LIST_MANAGER_CLOUD_LOCK_DIR overrides it for tests, mirroring the
+    EMAIL_TRIAGE_STATE_DIR override pattern used by
+    email-triage/_rtx/_failure_sentinel.py for the same reason: tests need a
+    tmp_path, not the real shared state root.
+    """
+    override = os.environ.get("LIST_MANAGER_CLOUD_LOCK_DIR")
+    if override:
+        return Path(override)
+    from officina.common.famulus_paths import resolve_famulus_paths
+
+    return resolve_famulus_paths(platform=sys.platform, home=home or Path.home()).state_root / "list-manager" / "locks"
+
+
+_SAFE_LOCK_NAME_RE = re.compile(r"[^A-Za-z0-9_.-]")
+
+
+def cloud_lock_path(list_name: str) -> Path:
+    """Resolve a STABLE lock target for a cloud list name, keyed by the name
+    itself rather than by any per-invocation local path.
+
+    This is what actually closes the cloud-mode race: unlike file_lock()
+    applied to lists.py's per-invocation temp file (unique every time, so it
+    serializes nothing), every --cloud invocation for the same list name
+    resolves to the same lock sidecar here, in the same well-known directory
+    -- so file_lock(cloud_lock_path(name)), held for the whole
+    download -> mutate -> upload sequence in main(), genuinely serializes two
+    concurrent --cloud processes on the same machine the same way the
+    existing per-command lock serializes two local-file processes.
+
+    This only coordinates writers that share a local filesystem (i.e. the
+    same machine) -- it cannot serialize truly independent machines writing
+    to the same Drive-backed list with no shared local state, since there is
+    no cloud-native conditional-write primitive plumbed through
+    _cloud_transport.py's upload_list() to use instead (Drive's v3 files.update
+    has no documented If-Match/etag-conditional semantics that this codebase
+    exposes). Same-machine concurrent invocations (e.g. two triage runs, or a
+    triage run racing a manual edit) are the realistic common case this
+    closes.
+    """
+    safe_name = _SAFE_LOCK_NAME_RE.sub("_", list_name) or "_"
+    lock_dir = _cloud_lock_dir()
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    # ".yaml" suffix purely so file_lock()'s "<file>.lock" sidecar naming
+    # reads the same way it does for local-file locks; no such file is ever
+    # created or read here, only its ".lock" sidecar.
+    return lock_dir / f"{safe_name}.yaml"
 
 
 def _test_race_delay() -> None:
@@ -1060,26 +1117,39 @@ def main(argv: list[str] | None = None) -> int:
     # Cloud mode: the source positional is a list NAME. For reads we download →
     # operate; for mutations we download → operate → upload; for init we create
     # → upload (nothing to download). Local mode operates on the file in place.
+    #
+    # Mutating cloud commands are wrapped in file_lock(cloud_lock_path(name)),
+    # held for the ENTIRE download -> dispatch -> upload sequence -- the cloud
+    # analogue of cmd_create_entry/cmd_update/cmd_delete's own file_lock(file)
+    # around their load -> check -> mutate -> save. Without this, each
+    # invocation's per-command lock is keyed on a fresh tempfile.mkdtemp()
+    # path unique to that process, so it serializes nothing across two
+    # concurrent --cloud processes; cloud_lock_path() is keyed on the list
+    # NAME instead, so two processes targeting the same cloud list genuinely
+    # contend for the same sidecar (see cloud_lock_path()'s docstring for the
+    # single-machine-only scope of this).
     try:
         if getattr(args, "cloud", False):
             list_name = args.file
             mutating = args.command in ("init", "create-entry", "update", "delete")
-            tmp_dir = Path(tempfile.mkdtemp())
-            temp_path = tmp_dir / f"{list_name}.yaml"
-            try:
-                if args.command == "init":
-                    # New list: nothing to download; default display name to the
-                    # cloud list name unless the caller set one explicitly.
-                    if not getattr(args, "name", None):
-                        args.name = list_name
-                else:
-                    download_list(list_name, temp_path)
-                args.file = str(temp_path)
-                dispatch[args.command](args)
-                if mutating:
-                    upload_list(list_name, temp_path)
-            finally:
-                shutil.rmtree(tmp_dir, ignore_errors=True)
+            lock_cm = file_lock(cloud_lock_path(list_name)) if mutating else contextlib.nullcontext()
+            with lock_cm:
+                tmp_dir = Path(tempfile.mkdtemp())
+                temp_path = tmp_dir / f"{list_name}.yaml"
+                try:
+                    if args.command == "init":
+                        # New list: nothing to download; default display name to
+                        # the cloud list name unless the caller set one explicitly.
+                        if not getattr(args, "name", None):
+                            args.name = list_name
+                    else:
+                        download_list(list_name, temp_path)
+                    args.file = str(temp_path)
+                    dispatch[args.command](args)
+                    if mutating:
+                        upload_list(list_name, temp_path)
+                finally:
+                    shutil.rmtree(tmp_dir, ignore_errors=True)
         else:
             dispatch[args.command](args)
     except StaleRevisionError as exc:

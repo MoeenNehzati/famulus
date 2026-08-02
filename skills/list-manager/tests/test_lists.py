@@ -945,3 +945,81 @@ def test_delete_rejects_stale_expected_revision_no_write(todo_file):
     assert result.returncode != 0
     assert "revision" in result.stderr.lower()
     assert todo_file.read_text() == before
+
+
+# ── cloud-mode concurrency (the fresh-tempdir race) ─────────────────────────
+#
+# --cloud mode downloads the cloud list to a FRESH tempfile.mkdtemp() path on
+# every invocation (see main()). The per-command file_lock() is keyed on that
+# unique local temp path, so it serializes nothing across two independent
+# --cloud processes -- each gets its own lock sidecar that no other process
+# will ever contend for. Before the fix: two overlapping --cloud writers can
+# both download the same cloud revision, both pass check_revision, and the
+# second upload silently clobbers the first's change.
+
+def test_cloud_concurrent_writers_are_serialized_across_processes(tmp_path):
+    """Genuinely concurrent race (not a sequential simulation): two real
+    subprocess invocations of lists.py --cloud race against a shared fake
+    "cloud" backend (LIST_MANAGER_TEST_CLOUD_DIR, see _cloud_transport.py's
+    _test_cloud_dir()), each still going through its own private
+    tempfile.mkdtemp() download path exactly as production does. writer1 is
+    held inside its critical section (past check_revision, before its save --
+    via LIST_MANAGER_TEST_RACE_DELAY) while writer2, with no delay, is
+    started and races to download+mutate+upload the same cloud list before
+    writer1 finishes.
+
+    Proves the fix serializes the two: writer2 cannot even begin its download
+    until writer1's whole download-mutate-upload sequence has completed, so
+    it always observes the post-writer1 revision and is correctly rejected --
+    it never gets a window to race through and clobber writer1's write.
+    """
+    cloud_dir = tmp_path / "cloud"
+    cloud_dir.mkdir()
+    (cloud_dir / "todo.yaml").write_text(TODO_YAML)
+
+    env_base = os.environ.copy()
+    env_base["PYTHONPATH"] = os.pathsep.join([str(REPO_SRC), str(SCRIPTS_DIR)])
+    env_base["LIST_MANAGER_TEST_CLOUD_DIR"] = str(cloud_dir)
+    env_base["LIST_MANAGER_CLOUD_LOCK_DIR"] = str(tmp_path / "locks")
+
+    env1 = env_base.copy()
+    env1["LIST_MANAGER_TEST_RACE_DELAY"] = "1.0"
+    writer1 = subprocess.Popen(
+        [sys.executable, str(LISTS_PY), "update", "todo", "--cloud", "--expected-revision", "0"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env1,
+    )
+    # Give writer1 time to acquire the cloud lock, download, and pass
+    # check_revision before writer2 starts -- so their windows genuinely
+    # overlap rather than merely running one after the other.
+    time.sleep(0.3)
+
+    env2 = env_base.copy()
+    writer2 = subprocess.Popen(
+        [sys.executable, str(LISTS_PY), "update", "todo", "--cloud", "--expected-revision", "0"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env2,
+    )
+
+    out1, err1 = writer1.communicate(input="- id: a3f2b9\n  state: complete\n", timeout=15)
+    out2, err2 = writer2.communicate(input="- id: b7c1e2\n  state: complete\n", timeout=15)
+
+    assert writer1.returncode == 0, err1
+    assert writer2.returncode != 0, (
+        f"writer2 unexpectedly succeeded (cloud writes were not serialized -- "
+        f"lost-update race is open): stdout={out2!r} stderr={err2!r}"
+    )
+    assert "revision" in err2.lower()
+
+    data = yaml.safe_load((cloud_dir / "todo.yaml").read_text())
+    entry_a = data["categories"][0]["categories"][3]["entries"][0]
+    entry_b = data["categories"][0]["categories"][3]["entries"][1]
+    assert entry_a["state"] == "complete"     # writer1's change applied
+    assert entry_b["state"] == "inprogress"   # writer2's change never applied
+    assert data["revision"] == 1              # exactly one successful write occurred
