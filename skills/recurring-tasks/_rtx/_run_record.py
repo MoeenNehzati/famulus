@@ -110,17 +110,56 @@ def evaluate_success_contract(
     return SuccessEvaluation(success=True)
 
 
-def read_inner_status(*, skills_root: Path, job_name: str) -> str | None:
-    """Read a job's self-reported status from state/status.json, if present.
+# Jobs whose inner status.json has moved off the SKILLS_ROOT/<job>/state/
+# convention below, plus the env var (if any) that overrides *that* job's
+# resolved directory for tests/CI. email-triage moved its state to the
+# shared Famulus state root (see officina.common.famulus_paths) because its
+# installed skill tree may be read-only -- see
+# email-triage/_rtx/_watermark_writer.py's default_state_dir(), which this
+# mirrors (including its EMAIL_TRIAGE_STATE_DIR override) so both sides of
+# that convention agree on where status.json actually lives.
+_JOB_STATE_DIR_ENV_OVERRIDE = {
+    "email-triage": "EMAIL_TRIAGE_STATE_DIR",
+}
 
-    This is the exact path/shape convention already used by
-    email-triage's _watermark_floor.py / _watermark_writer.py /
-    _failure_clearer.py: SKILLS_ROOT/<job>/state/status.json containing
-    {"result": "ok" | "error" | "warning", ...}. Jobs that don't write this
-    file (e.g. daily-plan, as of this writing) simply have no inner status,
-    and callers should treat that as None rather than a failure by itself.
+
+def _resolve_job_state_dir(*, skills_root: Path, job_name: str) -> Path:
+    """Resolve the directory containing a job's status.json.
+
+    Most jobs -- if they have any inner-status mechanism at all -- still use
+    the original convention: SKILLS_ROOT/<job>/state/. Jobs listed in
+    _JOB_STATE_DIR_ENV_OVERRIDE have moved elsewhere; see that dict's
+    comment.
     """
-    status_file = skills_root / job_name / "state" / "status.json"
+    override_env = _JOB_STATE_DIR_ENV_OVERRIDE.get(job_name)
+    if override_env:
+        override = os.environ.get(override_env)
+        if override:
+            return Path(override)
+        if job_name == "email-triage":
+            from officina.common.famulus_paths import resolve_famulus_paths
+
+            return resolve_famulus_paths(
+                platform=sys.platform, home=Path.home()
+            ).email_triage_state_root
+
+    return skills_root / job_name / "state"
+
+
+def read_inner_status(*, skills_root: Path, job_name: str) -> str | None:
+    """Read a job's self-reported status from its state/status.json, if
+    present.
+
+    The file shape is the convention already used by email-triage's
+    _watermark_floor.py / _watermark_writer.py / _failure_clearer.py:
+    status.json containing {"result": "ok" | "error" | "warning", ...}. The
+    directory it lives in is resolved per-job by _resolve_job_state_dir()
+    since not every job keeps state under SKILLS_ROOT/<job>/state/ (see
+    that function). Jobs that don't write this file at all (e.g. daily-plan,
+    as of this writing) simply have no inner status, and callers should
+    treat that as None rather than a failure by itself.
+    """
+    status_file = _resolve_job_state_dir(skills_root=skills_root, job_name=job_name) / "status.json"
     if not status_file.exists():
         return None
     try:

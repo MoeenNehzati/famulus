@@ -11,7 +11,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "_rtx"))
 
 import _job_executor as job_executor
-from _run_record import JobRunRecord, evaluate_success_contract, write_run_record
+from _run_record import (
+    JobRunRecord,
+    evaluate_success_contract,
+    read_inner_status,
+    write_run_record,
+)
 
 
 def test_direct_executor_entrypoint_finds_repo_package_without_pythonpath():
@@ -255,3 +260,44 @@ def test_run_job_writes_run_end_and_run_record_when_subprocess_fails_to_spawn(tm
     assert record["success"] is False
     assert record["inner_status"] is None
     assert "spawn" in record["reason"].lower()
+
+
+# ── read_inner_status: email-triage's relocated state root ─────────────────────
+#
+# email-triage's actual status.json moved off the SKILLS_ROOT/<job>/state/
+# convention onto officina.common.famulus_paths' shared state root (see
+# email-triage/_rtx/_watermark_writer.py's default_state_dir()). If
+# read_inner_status() still only ever looks under SKILLS_ROOT/<job>/state/,
+# it can never find email-triage's real status.json, so evaluate_success_
+# contract() (which jobs.yaml wires up via `require_inner_status: ok` for
+# email-triage) would mark every real run as failed regardless of outcome.
+
+def test_read_inner_status_reads_email_triage_from_its_relocated_state_root(tmp_path, monkeypatch):
+    relocated_state_dir = tmp_path / "relocated-famulus-state" / "email-triage"
+    relocated_state_dir.mkdir(parents=True)
+    (relocated_state_dir / "status.json").write_text(json.dumps({"result": "ok"}))
+
+    monkeypatch.setenv("EMAIL_TRIAGE_STATE_DIR", str(relocated_state_dir))
+
+    # The stale/legacy SKILLS_ROOT/<job>/state/status.json location, if it
+    # existed, must NOT be what's read for email-triage anymore.
+    skills_root = tmp_path / "skills"
+    legacy_state_dir = skills_root / "email-triage" / "state"
+    legacy_state_dir.mkdir(parents=True)
+    (legacy_state_dir / "status.json").write_text(json.dumps({"result": "error"}))
+
+    status = read_inner_status(skills_root=skills_root, job_name="email-triage")
+
+    assert status == "ok"
+
+
+def test_read_inner_status_still_uses_legacy_convention_for_other_jobs(tmp_path, monkeypatch):
+    monkeypatch.delenv("EMAIL_TRIAGE_STATE_DIR", raising=False)
+    skills_root = tmp_path / "skills"
+    state_dir = skills_root / "some-other-job" / "state"
+    state_dir.mkdir(parents=True)
+    (state_dir / "status.json").write_text(json.dumps({"result": "ok"}))
+
+    status = read_inner_status(skills_root=skills_root, job_name="some-other-job")
+
+    assert status == "ok"

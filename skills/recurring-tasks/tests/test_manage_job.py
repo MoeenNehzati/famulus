@@ -349,6 +349,22 @@ def test_cli_test_subcommand_dispatches_to_test_job():
     print("PASS: CLI 'test' subcommand dispatches to test_job() with the job name")
 
 
+def test_cli_test_subcommand_exits_zero_when_test_job_succeeds():
+    mod = _load()
+    with mock.patch.object(mod.sys, "argv", ["manage_job.py", "test", "my-job"]), \
+         mock.patch.object(mod, "test_job", return_value=True):
+        assert mod.main() == 0
+    print("PASS: CLI 'test' subcommand exits 0 when test_job() reports success")
+
+
+def test_cli_test_subcommand_exits_nonzero_when_test_job_fails():
+    mod = _load()
+    with mock.patch.object(mod.sys, "argv", ["manage_job.py", "test", "my-job"]), \
+         mock.patch.object(mod, "test_job", return_value=False):
+        assert mod.main() != 0
+    print("PASS: CLI 'test' subcommand exits nonzero when test_job() reports failure")
+
+
 def test_cli_view_logs_subcommand_passes_lines_flag():
     mod = _load()
     with mock.patch.object(mod.sys, "argv", ["manage_job.py", "view-logs", "my-job", "--lines", "10"]), \
@@ -421,6 +437,8 @@ if __name__ == "__main__":
     test_status_lists_ai_timers()
     test_cli_sync_subcommand_dispatches_to_sync_units()
     test_cli_test_subcommand_dispatches_to_test_job()
+    test_cli_test_subcommand_exits_zero_when_test_job_succeeds()
+    test_cli_test_subcommand_exits_nonzero_when_test_job_fails()
     test_cli_view_logs_subcommand_passes_lines_flag()
     test_cli_status_subcommand_dispatches_to_status()
     test_cli_enable_subcommand_passes_jobs_file_and_no_sync()

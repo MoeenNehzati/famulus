@@ -211,7 +211,8 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "disable":
             disable_job(args.name, jobs_file=args.jobs_file, sync=not args.no_sync)
         elif args.command == "test":
-            test_job(args.name)
+            if not test_job(args.name):
+                return 1
         elif args.command == "view-logs":
             view_logs(args.name, args.lines)
         elif args.command == "status":
