@@ -216,16 +216,16 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
         self.assertIn('reloadUrl.searchParams.set("graph_v", nextBuildId);', html)
         self.assertIn("window.location.replace(reloadUrl.toString());", html)
 
-    def test_delete_paths_do_not_call_deselect_and_reset_view(self) -> None:
+    def test_hide_paths_remove_selection_without_resetting_view(self) -> None:
         doc = json.loads((FIXTURE_DIR / "graph.json").read_text(encoding="utf-8"))
 
         html = build_html_with_elk(doc)
 
-        toolbar_handler = html.split('deleteNodeBtn.addEventListener("click", () => {', 1)[1].split("});", 1)[0]
-        double_click_handler = html.split('nodeEl.addEventListener("dblclick", event => {', 1)[1].split("});", 1)[0]
-        self.assertIn("clearSelectionDetails();", toolbar_handler)
+        toolbar_handler = html.split('hideSelectedBtn.addEventListener("click", () => {', 1)[1].split('dimSelectedBtn.addEventListener', 1)[0]
+        double_click_handler = html.split('nodeEl.addEventListener("dblclick", event => {', 1)[1].split("// Node drag", 1)[0]
+        self.assertIn("removeNodesFromSelection(nodeIds);", toolbar_handler)
         self.assertNotIn("deselect();", toolbar_handler)
-        self.assertIn("clearSelectionDetails();", double_click_handler)
+        self.assertIn("removeNodesFromSelection([entity.id]);", double_click_handler)
         self.assertNotIn("deselect();", double_click_handler)
 
     def test_restore_hidden_node_reroutes_incident_edges(self) -> None:
@@ -248,8 +248,8 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
         html = build_html_with_elk(doc)
 
         self.assertIn(".toolbar-tip::after", html)
-        self.assertIn('data-tooltip="Hide the selected node from the visible graph.', html)
-        self.assertIn('<button id="delete-node-btn" class="toolbar-btn" type="button" disabled aria-label="Hide selected node">', html)
+        self.assertIn('data-tooltip="Hide every selected node from the visible graph.', html)
+        self.assertIn('<button id="hide-selected-btn" class="toolbar-btn" type="button" disabled aria-label="Hide selected nodes">', html)
 
     def test_reset_click_preserves_categories_double_click_clears_legend(self) -> None:
         doc = json.loads((FIXTURE_DIR / "graph.json").read_text(encoding="utf-8"))
@@ -414,14 +414,14 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
                     if (stray.style.display !== "none") throw new Error("focus mode did not hide non-ancestor");
                     root.dispatchEvent(new MouseEvent("click", {bubbles: true, clientX: 60, clientY: 100}));
                     await new Promise(resolve => setTimeout(resolve, 220));
-                    document.getElementById("delete-node-btn").click();
+                    document.getElementById("hide-selected-btn").click();
                     await new Promise(resolve => setTimeout(resolve, 60));
-                    if (stray.style.display !== "none") throw new Error("delete reset ancestor focus");
+                    if (stray.style.display !== "none") throw new Error("hide reset ancestor focus");
 
                     document.getElementById("reset-btn").dispatchEvent(new MouseEvent("dblclick", {bubbles: true}));
                     await new Promise(resolve => setTimeout(resolve, 80));
-                    const unaffected = document.querySelector('[data-source-node-id="child"][data-target-node-id="other"]');
-                    const affected = document.querySelector('[data-source-node-id="child"][data-target-node-id="root"]');
+                    const unaffected = document.querySelector('.edge-path[data-source-node-id="child"][data-target-node-id="other"]');
+                    const affected = document.querySelector('.edge-path[data-source-node-id="child"][data-target-node-id="root"]');
                     const unaffectedBefore = unaffected.getAttribute("d");
                     const affectedBefore = affected.getAttribute("d");
                     root.dispatchEvent(new MouseEvent("mousedown", {bubbles: true, button: 0, clientX: 60, clientY: 100}));
@@ -434,7 +434,7 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
                     document.getElementById("reset-btn").dispatchEvent(new MouseEvent("dblclick", {bubbles: true}));
                     await new Promise(resolve => setTimeout(resolve, 80));
                     const childAfterReset = document.querySelector('[data-node-id="child"]');
-                    const rootChildAfterReset = document.querySelector('[data-source-node-id="child"][data-target-node-id="root"]');
+                    const rootChildAfterReset = document.querySelector('.edge-path[data-source-node-id="child"][data-target-node-id="root"]');
                     const staleRootChildPath = rootChildAfterReset.getAttribute("d");
                     childAfterReset.dispatchEvent(new MouseEvent("dblclick", {bubbles: true, clientX: 360, clientY: 160}));
                     await new Promise(resolve => setTimeout(resolve, 80));
@@ -442,10 +442,10 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
                     document.dispatchEvent(new MouseEvent("mousemove", {bubbles: true, clientX: 140, clientY: 150}));
                     document.dispatchEvent(new MouseEvent("mouseup", {bubbles: true, clientX: 140, clientY: 150}));
                     await new Promise(resolve => setTimeout(resolve, 80));
-                    const removedChild = Array.from(document.querySelectorAll(".removed-item"))
+                    const hiddenChild = Array.from(document.querySelectorAll(".hidden-node-item"))
                       .find(item => item.textContent.includes("Child"));
-                    if (!removedChild) throw new Error("removed child not listed");
-                    removedChild.dispatchEvent(new MouseEvent("dblclick", {bubbles: true}));
+                    if (!hiddenChild) throw new Error("hidden child not listed");
+                    hiddenChild.dispatchEvent(new MouseEvent("dblclick", {bubbles: true}));
                     await new Promise(resolve => setTimeout(resolve, 80));
                     if (rootChildAfterReset.style.display === "none") throw new Error("restored edge stayed hidden");
                     if (rootChildAfterReset.getAttribute("d") === staleRootChildPath) throw new Error("restored edge used stale path");

@@ -5,7 +5,20 @@ from __future__ import annotations
 import html
 import json
 from collections.abc import Mapping
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
+
+
+_VENDOR_DIRECTORY = Path(__file__).parent / "vendor"
+
+
+@lru_cache(maxsize=1)
+def _mathjax_runtime() -> str:
+    """Load the pinned offline MathJax runtime and make it script-safe."""
+    return (_VENDOR_DIRECTORY / "mathjax-3.2.2-tex-svg.js").read_text(
+        encoding="utf-8"
+    ).replace("</", "<\\/")
 
 
 def _script_json(value: object) -> str:
@@ -36,8 +49,7 @@ def _mathjax_head(dependency: Mapping[str, Any]) -> str:
         "  <script>\n"
         f"    window.MathJax = {_script_json(mathjax_configuration)};\n"
         "  </script>\n"
-        "  <script defer "
-        'src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>'
+        f"  <script>{_mathjax_runtime()}</script>"
     )
 
 

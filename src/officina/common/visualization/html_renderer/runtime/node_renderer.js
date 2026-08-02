@@ -74,6 +74,37 @@
     function renderNode(entity, position) {
       const presentation = entity.presentation || {};
       const isContainer = presentation.form === "container" || isContainerNode(entity.id);
+      const directChildren = docData.entities.filter(
+        candidate => parentByNode.get(candidate.id) === entity.id
+      );
+      const hasVisibleChildren = directChildren.some(candidate => !isHiddenNode(candidate.id));
+      const descendants = [...directChildren];
+      const seenDescendants = new Set();
+      let hasDetailHiddenDescendant = false;
+      while (descendants.length && !hasDetailHiddenDescendant) {
+        const descendant = descendants.pop();
+        if (!descendant || seenDescendants.has(descendant.id)) continue;
+        seenDescendants.add(descendant.id);
+        if (nodeHiddenByDetailLevel(descendant.id)) {
+          hasDetailHiddenDescendant = true;
+          break;
+        }
+        docData.entities.forEach(candidate => {
+          if (parentByNode.get(candidate.id) === descendant.id) descendants.push(candidate);
+        });
+      }
+      let containmentDepth = 0;
+      let ancestorId = parentByNode.get(entity.id);
+      const seenAncestors = new Set();
+      while (ancestorId && !seenAncestors.has(ancestorId)) {
+        seenAncestors.add(ancestorId);
+        containmentDepth += 1;
+        ancestorId = parentByNode.get(ancestorId);
+      }
+      const detailPromoted = isContainer && hasDetailHiddenDescendant;
+      const detailPromotionClasses = detailPromoted
+        ? ` detail-promoted detail-depth-${Math.min(containmentDepth, 2)}${hasVisibleChildren ? " detail-promoted-branch" : " detail-promoted-leaf"}`
+        : "";
       const containerTone = presentation.tone || "subtle";
       const baseStyle = nodeStyle(entity);
       const style = {...baseStyle, shape: isContainer ? "rect" : baseStyle.shape};
@@ -89,6 +120,7 @@
       const group = createSvgElement("g");
       group.setAttribute("class", isContainer ? "graph-node container-node" : "graph-node");
       group.dataset.nodeId = entity.id;
+      if (isContainer) group.dataset.containmentDepth = String(containmentDepth);
 
       let shapeEl = null;
       let selectionRing = null;
@@ -186,7 +218,10 @@
       foreignObject.setAttribute("x", x); foreignObject.setAttribute("y", y);
       foreignObject.setAttribute("width", w); foreignObject.setAttribute("height", h);
       const body = document.createElementNS("http://www.w3.org/1999/xhtml", "div");
-      body.setAttribute("class", isContainer ? "node-fo-body container-node" : "node-fo-body");
+      body.setAttribute(
+        "class",
+        `${isContainer ? "node-fo-body container-node" : "node-fo-body"}${detailPromotionClasses}`
+      );
       body.innerHTML = `<div class="node-label">${escapeHtml(entity.label || entity.short_title)}</div><div class="node-subtitle">${escapeHtml(entity.type + (entity.ref ? " " + entity.ref : ""))}</div>`;
       foreignObject.appendChild(body);
       group.appendChild(foreignObject);
@@ -217,4 +252,3 @@
       }
       return group;
     }
-

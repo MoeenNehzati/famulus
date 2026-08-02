@@ -20,7 +20,7 @@
     }
 
     function setIncomingEdgeHighlight(nodeId, active) {
-      document.querySelectorAll(`.edge-path[data-target-node-id="${nodeId}"]`).forEach(pathEl => {
+      edgeElementsForNode("data-target-node-id", nodeId).forEach(pathEl => {
         if (active) emphasizeEdge(pathEl);
         else clearEdgeEmphasis(pathEl);
       });
@@ -32,12 +32,23 @@
     let hoveredEdgePath = null;
 
     function positionTooltip(event) {
-      tooltip.style.left = `${event.clientX + 16}px`;
-      tooltip.style.top = `${event.clientY + 16}px`;
+      const margin = 10;
+      const width = tooltip.offsetWidth || 320;
+      const height = tooltip.offsetHeight || 120;
+      tooltip.style.left = `${Math.max(margin, Math.min(event.clientX + 16, window.innerWidth - width - margin))}px`;
+      tooltip.style.top = `${Math.max(margin, Math.min(event.clientY + 16, window.innerHeight - height - margin))}px`;
     }
 
     function bindEdgeHover(pathEl, edge) {
-      const baseColor = edgeColorForTarget(edge.target);
+      pathEl.setAttribute("tabindex", "0");
+      pathEl.setAttribute("role", "button");
+      pathEl.setAttribute("aria-label", edgeTooltipText(edge));
+      pathEl.addEventListener("keydown", event => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        pathEl.dispatchEvent(new MouseEvent("click", {bubbles: true}));
+      });
+      const baseColor = pathEl.getAttribute("stroke") || edgeColorForTarget(edge.target);
       pathEl.addEventListener("mouseenter", event => {
         if (hoveredEdgePath && hoveredEdgePath !== pathEl) {
           clearEdgeEmphasis(hoveredEdgePath);
@@ -69,6 +80,14 @@
     }
 
     function bindNodeInteractions(nodeEl, entity) {
+      nodeEl.setAttribute("tabindex", "0");
+      nodeEl.setAttribute("role", "button");
+      nodeEl.setAttribute("aria-label", tooltipText(entity));
+      nodeEl.addEventListener("keydown", event => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        nodeEl.dispatchEvent(new MouseEvent("click", {bubbles: true}));
+      });
       nodeEl.addEventListener("mouseenter", event => {
         if (draggingNodeId) return;
         if (hoveredEdgePath) {
@@ -92,17 +111,14 @@
         nodeEl.classList.remove("hovered");
         setIncomingEdgeHighlight(entity.id, false);
       });
-      nodeEl.addEventListener("click", () => {
+      nodeEl.addEventListener("click", event => {
         if (nodeDragMoved) return; // suppress click after drag
+        const additiveSelection = event.ctrlKey || event.metaKey;
         if (nodeClickTimer) clearTimeout(nodeClickTimer);
         nodeClickTimer = setTimeout(() => {
           nodeClickTimer = null;
-          if (selectedNodeId === entity.id) { deselect(); return; } // click again to deselect
-          selectedNodeId = entity.id;
-          markSelectedNode(entity.id);
-          showEntityDetails(entity);
-          saveViewerState();
-          applyAncestorFocus();
+          if (additiveSelection) toggleNodeSelection(entity.id);
+          else setNodeSelection([entity.id], entity.id, "explicit");
         }, 180);
       });
       nodeEl.addEventListener("dblclick", event => {
@@ -121,9 +137,8 @@
           return;
         }
         hiddenNodes.add(entity.id);
-        if (selectedNodeId === entity.id) {
-          clearSelectionDetails();
-        }
+        dimmedNodes.delete(entity.id);
+        if (selectedNodeIds.has(entity.id)) removeNodesFromSelection([entity.id]);
         if (focusNodeId === entity.id) {
           focusNodeId = null;
           if (ancestorFocusMode > 0) ancestorFocusMode = 0;
@@ -147,10 +162,9 @@
             offsetX: cur ? cur.x - orig.x : 0,
             offsetY: cur ? cur.y - orig.y : 0
           });
-          const childNodeEl = svgEl.querySelector(`[data-node-id="${nodeId}"]`);
+          const childNodeEl = nodeElement(nodeId);
           if (childNodeEl) childNodeEl.classList.add("dragging-node");
         });
         event.stopPropagation();
       });
     }
-

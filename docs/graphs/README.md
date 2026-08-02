@@ -2,9 +2,10 @@
 
 The repo diagrams are rendered with ELK from local structured specs.
 
-- Source of truth: `graph_specs.py`
-- Renderer: `render-graphs.py` calling `render_graph_with_elk.cjs`
-- Vendored layout engine: `vendor/elk.bundled.js`
+- Source of truth: `../../docs_tooling/graphs/graph_specs.py`
+- Renderer: `../../docs_tooling/graphs/render-graphs.py` calling
+  `../../docs_tooling/graphs/render_graph_with_elk.cjs`
+- Vendored layout engine: `../../docs_tooling/graphs/vendor/elk.bundled.js`
 - Rendered output committed to the repo: `*.svg`
 - Docs embed the SVG files directly
 - Layout comes from ELK layered layout instead of hand-tuned Graphviz rank and invisible-edge tricks. The Python entrypoint validates the specs and asks the local Node renderer to build SVG with ELK.
@@ -13,13 +14,13 @@ The repo diagrams are rendered with ELK from local structured specs.
 Render after editing a graph source:
 
 ```bash
-python3 graphs/render-graphs.py
+docs_tooling/graphs/render-graphs.py
 ```
 
 Check that rendered images are current and graph style guards pass:
 
 ```bash
-python3 graphs/render-graphs.py --check
+docs_tooling/graphs/render-graphs.py --check
 ```
 
 Files:

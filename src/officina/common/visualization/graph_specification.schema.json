@@ -68,6 +68,14 @@
         "$ref": "#/definitions/category"
       }
     },
+    "detail_levels": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Ordered cumulative visibility levels from coarsest to finest.",
+      "items": {
+        "$ref": "#/definitions/detailLevel"
+      }
+    },
     "entities": {
       "type": "array",
       "description": "Nodes in the graph.",
@@ -78,6 +86,16 @@
     }
   },
   "definitions": {
+    "detailLevel": {
+      "type": "object",
+      "required": ["id", "label"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "label": {"type": "string", "minLength": 1},
+        "description": {"type": "string", "minLength": 1}
+      }
+    },
     "rendererDependency": {
       "oneOf": [
         {
@@ -112,7 +130,31 @@
             "macros": {
               "type": "object",
               "additionalProperties": {
-                "type": ["string", "array"]
+                "oneOf": [
+                  {"type": "string"},
+                  {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 3,
+                    "items": [
+                      {"type": "string"},
+                      {"type": "integer", "minimum": 0, "maximum": 9},
+                      {"type": "string"}
+                    ],
+                    "additionalItems": false
+                  },
+                  {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 3,
+                    "items": [
+                      {"type": "integer", "minimum": 0, "maximum": 9},
+                      {"type": "string"},
+                      {"type": "string"}
+                    ],
+                    "additionalItems": false
+                  }
+                ]
               }
             }
           }
@@ -226,12 +268,10 @@
               },
               "description": "Container ids initially shown without their descendants."
             },
-            "pinned_nodes": {
-              "type": "array",
-              "items": {
-                "type": "string",
-                "minLength": 1
-              }
+            "detail_level": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Initially selected id from the ordered top-level detail_levels catalog."
             }
           }
         },
@@ -299,6 +339,16 @@
               "enum": ["none", "node", "path", "subgraph"]
             }
           }
+        },
+        "filtering": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "search_placeholder": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
         }
       }
     },
@@ -324,9 +374,18 @@
           "type": "string",
           "minLength": 1
         },
+        "parent": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional display parent for a true category taxonomy."
+        },
         "color": {
           "type": "string",
           "minLength": 1
+        },
+        "bridge_hidden_nodes": {
+          "type": "boolean",
+          "description": "Whether same-type paths may be represented by a derived edge when intermediate nodes are hidden. Disabled by default."
         }
       }
     },
@@ -429,6 +488,11 @@
         "category": {
           "type": "string",
           "minLength": 1
+        },
+        "detail_level": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Id from the ordered top-level detail_levels catalog. The entity is visible when this level or any finer level is selected."
         },
         "short_title": {
           "type": "string",

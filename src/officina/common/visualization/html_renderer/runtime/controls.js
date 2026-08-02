@@ -24,7 +24,7 @@
       const impacted = new Set();
       draggingNodeIds.forEach((nodeId) => {
         const offsets = draggingNodeOffsets.get(nodeId) || { offsetX: 0, offsetY: 0 };
-        const nodeEl = svgEl.querySelector(`[data-node-id="${nodeId}"]`);
+        const nodeEl = nodeElement(nodeId);
         const origPos = lastNodePositions.get(nodeId);
         if (!origPos) return;
         const offsetX = offsets.offsetX + svgDx;
@@ -58,7 +58,7 @@
       if (draggingNodeId !== null) {
         const droppedNodeId = draggingNodeId;
         draggingNodeIds.forEach((nodeId) => {
-          const nodeEl = svgEl.querySelector(`[data-node-id="${nodeId}"]`);
+          const nodeEl = nodeElement(nodeId);
           if (nodeEl) nodeEl.classList.remove("dragging-node");
         });
         if (nodeDragMoved) {
@@ -77,17 +77,32 @@
 
     // ── Toolbar button handlers ───────────────────────────────────────────────
 
-    deleteNodeBtn.addEventListener("click", () => {
-      if (!selectedNodeId || isHiddenNode(selectedNodeId)) return;
-      const nodeId = selectedNodeId;
-      hiddenNodes.add(nodeId);
-      clearSelectionDetails();
-      if (focusNodeId === nodeId) {
+    hideSelectedBtn.addEventListener("click", () => {
+      const nodeIds = visibleSelectedNodeIds();
+      if (!nodeIds.length) return;
+      nodeIds.forEach(nodeId => {
+        hiddenNodes.add(nodeId);
+        dimmedNodes.delete(nodeId);
+      });
+      if (focusNodeId && nodeIds.includes(focusNodeId)) {
         focusNodeId = null;
         if (ancestorFocusMode > 0) ancestorFocusMode = 0;
       }
+      removeNodesFromSelection(nodeIds);
       saveViewerState();
       updateVisibilityFast();
+    });
+
+    dimSelectedBtn.addEventListener("click", () => {
+      const nodeIds = visibleSelectedNodeIds();
+      if (!nodeIds.length) return;
+      const shouldUndim = nodeIds.every(nodeId => dimmedNodes.has(nodeId));
+      nodeIds.forEach(nodeId => {
+        if (shouldUndim) dimmedNodes.delete(nodeId);
+        else dimmedNodes.add(nodeId);
+      });
+      syncSelectionPresentation();
+      saveViewerState();
     });
 
     document.getElementById("redraw-btn").addEventListener("click", () => {
@@ -105,18 +120,27 @@
         } else {
           row.classList.toggle("inactive", hiddenTypes.has(row.dataset.type));
         }
+        const active = row.dataset.legendKind === "edge"
+          ? !edgeCategorySetContains(row.dataset.type, hiddenEdgeTypes)
+          : !hiddenTypes.has(row.dataset.type);
+        row.setAttribute("aria-pressed", active ? "true" : "false");
       });
     }
 
     function resetViewState({includeCategories = false} = {}) {
+      if (includeCategories) resetFilteringState();
       hiddenNodes.clear();
+      dimmedNodes.clear();
       collapsedContainers.clear();
+      selectedNodeIds.clear();
       selectedNodeId = null;
+      selectionSource = "explicit";
       focusNodeId = null;
       ancestorFocusMode = 0;
       ancestorHiddenByFocus.clear();
       manualPositions.clear();
       hasFittedOnce = false;
+      showSelectionDetails();
       if (includeCategories) {
         hiddenTypes.clear();
         hiddenEdgeTypes.clear();
@@ -169,7 +193,7 @@
       const handle = event.target.closest(".drag-handle");
       if (!handle) { event.preventDefault(); return; }
       const section = handle.closest(".sidebar-section");
-      if (!section) { event.preventDefault(); return; }
+      if (!section || section.parentElement !== panelContent) { event.preventDefault(); return; }
       dragSrcSection = section;
       event.dataTransfer.effectAllowed = "move";
       event.dataTransfer.setData("text/plain", section.dataset.sectionId);
@@ -184,7 +208,7 @@
     panelContent.addEventListener("dragover", event => {
       event.preventDefault();
       const target = event.target.closest(".sidebar-section");
-      if (!target || target === dragSrcSection) return;
+      if (!target || target.parentElement !== panelContent || target === dragSrcSection) return;
       panelContent.querySelectorAll(".sidebar-section.drag-over").forEach(el => el.classList.remove("drag-over"));
       target.classList.add("drag-over");
       event.dataTransfer.dropEffect = "move";
@@ -192,7 +216,7 @@
     panelContent.addEventListener("drop", event => {
       event.preventDefault();
       const target = event.target.closest(".sidebar-section");
-      if (!target || target === dragSrcSection || !dragSrcSection) return;
+      if (!target || target.parentElement !== panelContent || target === dragSrcSection || !dragSrcSection) return;
       panelContent.insertBefore(dragSrcSection, target);
       panelContent.querySelectorAll(".sidebar-section.drag-over").forEach(el => el.classList.remove("drag-over"));
     });
@@ -257,7 +281,7 @@
 
     document.addEventListener("keydown", event => {
       const tag = document.activeElement?.tagName?.toLowerCase();
-      if (tag === "input" || tag === "textarea") return;
+      if (["input", "textarea", "select", "button"].includes(tag) || document.activeElement?.isContentEditable) return;
       if (event.key === "Escape") {
         event.preventDefault();
         deselect();
@@ -324,7 +348,7 @@
     startBuildRefreshWatcher();
     restoreViewerState();
     syncRoutingControls();
-    syncPanelToggle();
+    syncSidebarLayout();
     restoreSidebarOrder();
 
     window.addEventListener("load", () => {

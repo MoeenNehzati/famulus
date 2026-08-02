@@ -28,6 +28,34 @@ class Graph:
         if "entities" not in graph_json or not isinstance(graph_json["entities"], list):
             raise ValueError("JSON must contain an 'entities' list.")
 
+        category_ids = self._validate_category_catalog(
+            graph_json.get("categories", []), "categories", "category"
+        )
+        edge_category_ids = self._validate_category_catalog(
+            graph_json.get("edge_categories", []), "edge_categories", "edge category"
+        )
+        detail_levels = graph_json.get("detail_levels", [])
+        if not isinstance(detail_levels, list):
+            raise ValueError("'detail_levels' must be a list when present.")
+        detail_level_ids: set[str] = set()
+        for level in detail_levels:
+            if not isinstance(level, dict) or not isinstance(level.get("id"), str):
+                raise ValueError("Each detail level must have a string 'id'.")
+            level_id = level["id"]
+            if level_id in detail_level_ids:
+                raise ValueError(f"Duplicate detail level id: {level_id}")
+            detail_level_ids.add(level_id)
+
+        if category_ids:
+            for entity in graph_json["entities"]:
+                if not isinstance(entity, dict):
+                    continue
+                category_id = entity.get("category")
+                if category_id is not None and category_id not in category_ids:
+                    raise ValueError(
+                        f"Entity {entity.get('id')!r} references unknown category {category_id!r}."
+                    )
+
         document_meta = graph_json.get("document", {})
         if document_meta and not isinstance(document_meta, dict):
             raise ValueError("'document' must be an object when present.")
@@ -71,6 +99,11 @@ class Graph:
                 raise ValueError(f"Entity '{entity_id}' has invalid 'position'.")
             if entity.get("ref") is not None and not isinstance(entity.get("ref"), str):
                 raise ValueError(f"Entity '{entity_id}' has invalid 'ref'.")
+            entity_level = entity.get("detail_level")
+            if detail_level_ids and entity_level not in detail_level_ids:
+                raise ValueError(
+                    f"Entity '{entity_id}' references unknown detail level {entity_level!r}."
+                )
 
         for entity_id, container_id in containers.items():
             if container_id not in seen_ids:
@@ -102,6 +135,120 @@ class Graph:
                     raise ValueError(
                         f"Dependency '{dep['to']}' referenced by '{source_id}' is not defined."
                     )
+                edge_type = str(dep["type"])
+                if edge_category_ids and edge_type not in edge_category_ids:
+                    raise ValueError(
+                        f"Dependency type {edge_type!r} referenced by {source_id!r} "
+                        "is absent from 'edge_categories'."
+                    )
+
+        self._validate_ui_references(
+            graph_json,
+            entity_ids=seen_ids,
+            container_ids=set(containers.values()),
+            category_ids=category_ids or {
+                str(entity.get("category") or entity.get("type") or "unknown")
+                for entity in graph_json["entities"]
+            },
+            edge_type_ids=edge_category_ids or {
+                str(dep["type"])
+                for entity in graph_json["entities"]
+                for dep in entity.get("connects_to", [])
+                if isinstance(dep, dict) and "type" in dep
+            },
+        )
+        self._validate_detail_references(graph_json["entities"], seen_ids)
+        selected_level = (
+            (graph_json.get("ui", {}) or {}).get("visibility", {}) or {}
+        ).get("detail_level")
+        if selected_level is not None and selected_level not in detail_level_ids:
+            raise ValueError(
+                f"ui.visibility.detail_level references unknown level {selected_level!r}."
+            )
+
+    def _validate_category_catalog(
+        self, raw: object, field: str, label: str
+    ) -> set[str]:
+        """Validate one category hierarchy and return its identifiers."""
+        if not isinstance(raw, list):
+            raise ValueError(f"'{field}' must be a list when present.")
+        parents: dict[str, str] = {}
+        identifiers: set[str] = set()
+        for category in raw:
+            if not isinstance(category, dict) or not isinstance(category.get("id"), str):
+                raise ValueError(f"Each {label} must be an object with a string 'id'.")
+            identifier = category["id"]
+            if identifier in identifiers:
+                raise ValueError(f"Duplicate {label} id: {identifier}")
+            identifiers.add(identifier)
+            parent = category.get("parent")
+            if parent is not None:
+                if not isinstance(parent, str) or not parent:
+                    raise ValueError(f"{label.title()} {identifier!r} has an invalid parent.")
+                parents[identifier] = parent
+        for identifier, parent in parents.items():
+            if parent not in identifiers:
+                raise ValueError(
+                    f"{label.title()} {identifier!r} references unknown parent {parent!r}."
+                )
+            seen = {identifier}
+            current = parent
+            while current in parents:
+                if current in seen:
+                    raise ValueError(f"{label.title()} hierarchy contains a cycle.")
+                seen.add(current)
+                current = parents[current]
+        return identifiers
+
+    def _validate_ui_references(
+        self,
+        graph_json: GraphPayload,
+        *,
+        entity_ids: set[str],
+        container_ids: set[str],
+        category_ids: set[str],
+        edge_type_ids: set[str],
+    ) -> None:
+        """Reject initial UI state that cannot be represented by this graph."""
+        ui = graph_json.get("ui", {}) or {}
+        visibility = ui.get("visibility", {}) or {}
+        for field, allowed in (
+            ("hidden_nodes", entity_ids),
+            ("collapsed_containers", container_ids),
+            ("hidden_types", category_ids),
+            ("hidden_edge_types", edge_type_ids),
+        ):
+            for value in visibility.get(field, []) or []:
+                if str(value) not in allowed:
+                    raise ValueError(f"ui.visibility.{field} references unknown id {value!r}.")
+        selected = (ui.get("focus", {}) or {}).get("selected_node_id")
+        if selected is not None and str(selected) not in entity_ids:
+            raise ValueError(f"ui.focus.selected_node_id references unknown id {selected!r}.")
+
+    def _validate_detail_references(
+        self, entities: list[GraphPayload], entity_ids: set[str]
+    ) -> None:
+        """Validate structured inspector references as internal graph references."""
+        for entity in entities:
+            details = entity.get("details") or {}
+            for section in details.get("sections", []) if isinstance(details, dict) else []:
+                for field in section.get("fields", []) if isinstance(section, dict) else []:
+                    if not isinstance(field, dict):
+                        continue
+                    value_format = field.get("format")
+                    if value_format == "reference":
+                        targets = [field.get("target", field.get("value"))]
+                    elif value_format == "reference-list":
+                        value = field.get("value", [])
+                        targets = value if isinstance(value, list) else [value]
+                    else:
+                        continue
+                    for target in targets:
+                        if str(target) not in entity_ids:
+                            raise ValueError(
+                                f"Entity {entity.get('id')!r} has inspector reference "
+                                f"to unknown entity {target!r}."
+                            )
 
     def iter_entities(self, graph_json: GraphPayload) -> list[GraphPayload]:
         """Return payload entities as a list."""

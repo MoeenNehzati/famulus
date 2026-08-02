@@ -6,6 +6,7 @@ JavaScript files after they are written.
 """
 from __future__ import annotations
 
+import json
 from functools import lru_cache
 from pathlib import Path
 
@@ -14,8 +15,11 @@ _ASSET_DIRECTORY = Path(__file__).parent
 _PLACEHOLDER_PREFIX = "@@OFFICINA_"
 _RUNTIME_ASSETS = (
     "runtime/bootstrap.js",
+    "runtime/sidebar_layout.js",
     "runtime/viewer_state.js",
     "runtime/core.js",
+    "runtime/selection.js",
+    "runtime/filtering.js",
     "runtime/math_typesetter.js",
     "runtime/geometry.js",
     "runtime/legend.js",
@@ -46,6 +50,11 @@ def render_document(**values: str) -> str:
     runtime = "\n".join(_read_asset(name) for name in _RUNTIME_ASSETS)
     document = _read_asset("page.html").replace(
         "@@OFFICINA_VIEWER_STYLES@@", _read_asset("viewer.css")
+    ).replace(
+        "@@OFFICINA_ELK_RUNTIME@@", _read_asset("vendor/elk.bundled.js")
+    ).replace(
+        "@@OFFICINA_ELK_WORKER_SOURCE@@",
+        json.dumps(_read_asset("vendor/elk-worker.min.js")).replace("</", "<\\/"),
     ).replace("@@OFFICINA_VIEWER_RUNTIME@@", runtime)
     for name, value in values.items():
         document = document.replace(f"@@OFFICINA_{name.upper()}@@", value)

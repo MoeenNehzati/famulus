@@ -76,6 +76,7 @@
     const edgePalette = @@OFFICINA_EDGE_PALETTE@@;
     const fallbackEdgeDashes = [null, "9 5", "2 4", "12 4 2 4", "5 3", "1 5"];
     const edgeData = @@OFFICINA_EDGE_DATA@@;
+    const edgeById = new Map(edgeData.map(edge => [String(edge.edge_id), edge]));
     const presentEdgeTypes = Array.from(
       new Set(edgeData.map(edge => String(edge.type || "unknown")).filter(value => value && value !== "undefined"))
     ).sort();
@@ -95,6 +96,11 @@
     // DOM refs
     const layoutEl = document.getElementById("layout");
     const panelToggle = document.getElementById("panel-toggle");
+    const leftPanelToggle = document.getElementById("left-panel-toggle");
+    const leftPanelEl = document.getElementById("left-panel");
+    const rightPanelEl = document.getElementById("right-panel");
+    const leftPanelResize = document.getElementById("left-panel-resize");
+    const rightPanelResize = document.getElementById("right-panel-resize");
     const svgEl = document.getElementById("graph-svg");
     const canvasWrapEl = document.getElementById("canvas-wrap");
     const containerLayer = document.getElementById("container-layer");
@@ -103,9 +109,10 @@
     const tooltip = document.getElementById("tooltip");
     const details = document.getElementById("details");
     const legend = document.getElementById("legend");
-    const removedNodesEl = document.getElementById("removed-nodes");
+    const hiddenNodesEl = document.getElementById("hidden-nodes");
     const focusToggle = document.getElementById("focus-toggle");
-    const deleteNodeBtn = document.getElementById("delete-node-btn");
+    const hideSelectedBtn = document.getElementById("hide-selected-btn");
+    const dimSelectedBtn = document.getElementById("dim-selected-btn");
     const elkStatus = document.getElementById("elk-status");
     const rawJsonCodeEl = document.getElementById("raw-json-code");
     const panelContent = document.getElementById("panel-content");
@@ -132,12 +139,19 @@
 
     // Core state
     const entityMap = new Map(docData.entities.map(e => [e.id, e]));
+    const detailLevels = Array.isArray(docData.detail_levels) ? docData.detail_levels : [];
+    const detailLevelRank = new Map(detailLevels.map((level, index) => [String(level.id), index]));
+    const defaultDetailLevel = detailLevels.length
+      ? String(detailLevels[detailLevels.length - 1].id)
+      : null;
     const outgoing = new Map();
     const incoming = new Map();
     const initialVisibility = docData.ui?.visibility || {};
     const hiddenTypes = new Set((initialVisibility.hidden_types || []).map(String));
     const hiddenEdgeTypes = new Set((initialVisibility.hidden_edge_types || []).map(String));
-    const hiddenNodes = new Set();
+    const hiddenNodes = new Set(
+      (initialVisibility.hidden_nodes || []).filter(id => entityMap.has(String(id))).map(String)
+    );
     const collapsedContainers = new Set(
       (initialVisibility.collapsed_containers || []).map(String)
     );
@@ -164,10 +178,46 @@
         .filter(category => category && category.id)
         .map(category => [String(category.id), category])
     );
-    let selectedNodeId = null;
+    const edgeCategoryParent = new Map();
+    const edgeCategoryChildren = new Map();
+    edgeCategoryCatalog.forEach((category, categoryId) => {
+      const parent = String(category.parent || "");
+      if (!parent || !edgeCategoryCatalog.has(parent)) return;
+      edgeCategoryParent.set(categoryId, parent);
+      if (!edgeCategoryChildren.has(parent)) edgeCategoryChildren.set(parent, []);
+      edgeCategoryChildren.get(parent).push(categoryId);
+    });
+    function edgeCategorySetContains(type, values) {
+      let current = String(type || "unknown");
+      const seen = new Set();
+      while (current && !seen.has(current)) {
+        if (values.has(current)) return true;
+        seen.add(current);
+        current = edgeCategoryParent.get(current) || "";
+      }
+      return false;
+    }
+    function relevantEdgeCategoryIds() {
+      const relevant = new Set(presentEdgeTypes);
+      presentEdgeTypes.forEach(type => {
+        let parent = edgeCategoryParent.get(type);
+        while (parent && !relevant.has(parent)) {
+          relevant.add(parent);
+          parent = edgeCategoryParent.get(parent);
+        }
+      });
+      return relevant;
+    }
+    let selectedNodeId = entityMap.has(docData.ui?.focus?.selected_node_id)
+      ? docData.ui.focus.selected_node_id
+      : null;
+    const selectedNodeIds = new Set(selectedNodeId ? [selectedNodeId] : []);
+    let selectionSource = "explicit";
+    const dimmedNodes = new Set();
     let focusNodeId = null;
     let ancestorFocusMode = 0; // 0=off, 1=dim non-ancestors, 2=hide non-ancestors
     const ancestorHiddenByFocus = new Set(); // nodes temporarily hidden in mode 2
+    let lastRenderedEdges = [];
     const nodeColorIndex = new Map(
       docData.entities
         .slice()
@@ -179,4 +229,3 @@
         })
         .map((e, idx) => [e.id, idx])
     );
-

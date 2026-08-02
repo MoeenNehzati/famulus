@@ -1,7 +1,7 @@
     // ── Full ELK-based layout/render ─────────────────────────────────────────
 
     async function updateVisibilityFull() {
-      renderRemovedNodes();
+      renderHiddenNodes();
       clearMathBeforeMutation(containerLayer);
       clearMathBeforeMutation(nodeLayer);
       containerLayer.innerHTML = "";
@@ -93,7 +93,7 @@
             height: 68,
           });
         });
-        enforceContainmentLayout(allEntities);
+        enforceContainmentLayout(renderedEntities);
         renderedEntities.forEach((entity) => {
           const isChildNode = typeof entity.container === "string" && entity.container.trim().length > 0;
           if (isChildNode || isContainerNode(entity.id)) {
@@ -131,8 +131,11 @@
           const path = createSvgElement("path");
           path.setAttribute("class", "edge-path");
           path.setAttribute("d", roundedPathForPoints(points));
-          const edgeStyle = edgeStyleForType(meta.type);
-          const edgeStroke = (edgeStyle && (edgeStyle.stroke || edgeStyle.color)) || edgeColorForTarget(meta.target);
+          const mixedBundle = meta.bundle && (meta.bundle_types || []).length > 1;
+          const edgeStyle = mixedBundle ? null : edgeStyleForType(meta.type);
+          const edgeStroke = mixedBundle
+            ? "#334155"
+            : (edgeStyle && (edgeStyle.stroke || edgeStyle.color)) || edgeColorForTarget(meta.target);
           path.setAttribute("stroke", edgeStroke);
           if (edgeStyle && edgeStyle.dash) path.setAttribute("stroke-dasharray", edgeStyle.dash);
           else if (meta.confidence === "Likely") path.setAttribute("stroke-dasharray", "8 5");
@@ -144,6 +147,9 @@
           path.dataset.bridge = meta.bridge ? "true" : "false";
           path.dataset.edgeType = String(meta.type || "unknown");
           path.dataset.aggregate = meta.aggregate ? "true" : "false";
+          path.dataset.bundle = meta.bundle ? "true" : "false";
+          path.__edgeMeta = meta;
+          if (meta.bundle) path.style.strokeWidth = "3.5";
           if (meta.aggregate) {
             path.style.strokeWidth = "4";
             path.style.strokeDasharray = "10 4 2 4";
@@ -182,9 +188,9 @@
         typesetElement(nodeLayer);
 
         // Restore selection highlight and details
-        if (selectedNodeId && entityMap.has(selectedNodeId)) {
-          markSelectedNode(selectedNodeId);
-          showEntityDetails(entityMap.get(selectedNodeId));
+        if (selectedNodeIds.size) {
+          syncSelectionPresentation();
+          showSelectionDetails();
         } else {
           syncToolbar();
           rawJsonCodeEl.textContent = JSON.stringify(docData, null, 2);

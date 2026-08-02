@@ -14,7 +14,7 @@ SKILLS_DIR = REPO_ROOT / "skills"
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from graphs.graph_specs import build_specs
+from docs_tooling.graphs.graph_specs import build_specs
 
 
 def _live_skills() -> set[str]:
@@ -47,10 +47,10 @@ def test_skill_taxonomy_graph_covers_all_live_skills() -> None:
     missing = sorted(live_skills - graph_labels)
 
     assert not missing, (
-        "graphs graph spec for skill-taxonomy is missing live skills: "
+        "docs graph spec for skill-taxonomy is missing live skills: "
         + ", ".join(missing)
-        + ". Add them to graphs/graph_specs.py and rerender with "
-        + "`python3 graphs/render-graphs.py`."
+        + ". Add them to docs_tooling/graphs/graph_specs.py and rerender with "
+        + "`docs_tooling/graphs/render-graphs.py`."
     )
 
 

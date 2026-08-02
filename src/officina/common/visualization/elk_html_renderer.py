@@ -60,14 +60,19 @@ EDGE_PALETTE = [
 ]
 
 
-def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
-    """Build the active standalone HTML viewer using browser-side ELK layout.
+def _script_json(value: object) -> str:
+    """Serialize data for an inline script without allowing script termination."""
+    return json.dumps(value, indent=2).replace("</", "<\\/")
+
+
+def _build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
+    """Build HTML from an already normalized and validated graph payload.
 
     Responsibilities of this renderer:
     - validate and serialize the canonical JSON graph
     - hand node/edge structure to ``elkjs`` for layered layout
     - render the interactive viewer shell
-    - preserve viewer state such as hidden categories, removed nodes, selected
+    - preserve viewer state such as hidden categories, hidden nodes, selected
       node, ancestor-focus mode, and panel collapse state in ``localStorage``
 
     Non-responsibilities:
@@ -141,13 +146,21 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
             if reduction_note
             else ""
         ),
-        graph_document=json.dumps(doc, indent=2),
-        category_shapes=json.dumps(CATEGORY_SHAPES, indent=2),
-        category_palette=json.dumps(CATEGORY_PALETTE, indent=2),
-        edge_palette=json.dumps(EDGE_PALETTE, indent=2),
-        edge_data=json.dumps(edge_payload, indent=2),
-        render_type_overrides=json.dumps(render_type_overrides, indent=2),
+        graph_document=_script_json(doc),
+        category_shapes=_script_json(CATEGORY_SHAPES),
+        category_palette=_script_json(CATEGORY_PALETTE),
+        edge_palette=_script_json(EDGE_PALETTE),
+        edge_data=_script_json(edge_payload),
+        render_type_overrides=_script_json(render_type_overrides),
     )
+
+
+def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
+    """Validate and render one graph payload as a standalone ELK document."""
+    renderer = BaseRenderer()
+    prepared = renderer.normalize(doc)
+    renderer.validate(prepared)
+    return _build_html_with_elk(prepared, reduction_note=reduction_note)
 
 
 class ElkHtmlRenderer(BaseRenderer):
@@ -155,7 +168,7 @@ class ElkHtmlRenderer(BaseRenderer):
 
     def _render_graph(self, graph_json: Payload, reduction_note: str = "") -> str:
         """Render one normalized payload as an interactive ELK HTML document."""
-        return build_html_with_elk(graph_json, reduction_note=reduction_note)
+        return _build_html_with_elk(graph_json, reduction_note=reduction_note)
 
 
 __all__ = [

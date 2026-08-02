@@ -12,10 +12,11 @@ from pathlib import Path
 
 from graph_specs import build_specs
 
-ROOT = Path(__file__).resolve().parents[1]
-GRAPH_DIR = ROOT / "graphs"
-RENDERER = GRAPH_DIR / "render_graph_with_elk.cjs"
-VENDORED_ELK = GRAPH_DIR / "vendor" / "elk.bundled.js"
+ROOT = Path(__file__).resolve().parents[2]
+GRAPH_SOURCE_DIR = Path(__file__).resolve().parent
+GRAPH_OUTPUT_DIR = ROOT / "docs" / "graphs"
+RENDERER = GRAPH_SOURCE_DIR / "render_graph_with_elk.cjs"
+VENDORED_ELK = GRAPH_SOURCE_DIR / "vendor" / "elk.bundled.js"
 GRAPH_SPECS = build_specs()
 FORMATS = ("svg",)
 
@@ -23,17 +24,17 @@ FORMATS = ("svg",)
 def validate_graph_spec(name: str, spec: dict) -> list[str]:
     problems: list[str] = []
     if spec.get("direction") not in {"RIGHT", "DOWN"}:
-        problems.append(f"graphs/{name}: direction must be RIGHT or DOWN")
+        problems.append(f"docs/graphs/{name}: direction must be RIGHT or DOWN")
     seen_ids: set[str] = set()
 
     def walk(children: list[dict]) -> None:
         for child in children:
             child_id = child.get("id")
             if not child_id:
-                problems.append(f"graphs/{name}: every graph item needs an id")
+                problems.append(f"docs/graphs/{name}: every graph item needs an id")
                 continue
             if child_id in seen_ids:
-                problems.append(f"graphs/{name}: duplicate id {child_id!r}")
+                problems.append(f"docs/graphs/{name}: duplicate id {child_id!r}")
             seen_ids.add(child_id)
             if child.get("kind") == "group":
                 walk(child.get("children", []))
@@ -43,9 +44,9 @@ def validate_graph_spec(name: str, spec: dict) -> list[str]:
         source = edge.get("source")
         target = edge.get("target")
         if source not in seen_ids:
-            problems.append(f"graphs/{name}: edge source {source!r} is missing")
+            problems.append(f"docs/graphs/{name}: edge source {source!r} is missing")
         if target not in seen_ids:
-            problems.append(f"graphs/{name}: edge target {target!r} is missing")
+            problems.append(f"docs/graphs/{name}: edge target {target!r} is missing")
     return problems
 
 
@@ -96,19 +97,19 @@ def main() -> int:
             tmp = Path(tmpdir)
             stale = []
             for name in GRAPH_SPECS:
-                for real_out, tmp_out in zip(expected_outputs(name, GRAPH_DIR), expected_outputs(name, tmp)):
+                for real_out, tmp_out in zip(expected_outputs(name, GRAPH_OUTPUT_DIR), expected_outputs(name, tmp)):
                     render_one(name, tmp_out)
                     if not real_out.exists() or not filecmp.cmp(tmp_out, real_out, shallow=False):
                         stale.append(real_out.relative_to(ROOT))
             if stale:
                 for path in stale:
                     print(f"out of date: {path}", file=sys.stderr)
-                print("Run `python3 graphs/render-graphs.py`.", file=sys.stderr)
+                print("Run `docs_tooling/graphs/render-graphs.py`.", file=sys.stderr)
                 return 1
         return 0
 
     for name in GRAPH_SPECS:
-        for out_path in expected_outputs(name, GRAPH_DIR):
+        for out_path in expected_outputs(name, GRAPH_OUTPUT_DIR):
             render_one(name, out_path)
     return 0
 

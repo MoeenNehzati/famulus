@@ -17,6 +17,54 @@ from .details import (
 Entity = dict[str, Any]
 EdgeRecord = tuple[str, str, str, str, dict[str, Any]]
 
+
+def _scope_detail_references(details: object, visible_ids: set[str]) -> None:
+    """Keep inspector navigation honest after scope projection.
+
+    References to rendered entities remain navigable. Logical ids represented
+    only by an out-of-scope boundary stay visible as copyable code or list data
+    rather than becoming dead inspector buttons.
+    """
+    if not isinstance(details, dict):
+        return
+    for section in details.get("sections", []):
+        if not isinstance(section, dict):
+            continue
+        scoped_fields: list[dict[str, Any]] = []
+        for field in section.get("fields", []):
+            if not isinstance(field, dict):
+                continue
+            scoped = dict(field)
+            field_format = scoped.get("format")
+            if field_format == "reference":
+                target = str(scoped.get("target", scoped.get("value", "")))
+                if target not in visible_ids:
+                    scoped["format"] = "code"
+                    scoped["copyable"] = True
+                    scoped.pop("target", None)
+            elif field_format == "reference-list":
+                raw_values = scoped.get("value", [])
+                values = raw_values if isinstance(raw_values, list) else [raw_values]
+                visible = [value for value in values if str(value) in visible_ids]
+                outside = [value for value in values if str(value) not in visible_ids]
+                if visible:
+                    scoped["value"] = visible
+                    scoped_fields.append(scoped)
+                if outside:
+                    outside_field = dict(scoped)
+                    outside_field["label"] = (
+                        f"{scoped.get('label', 'References')} (out of scope)"
+                        if visible
+                        else scoped.get("label", "References")
+                    )
+                    outside_field["value"] = outside
+                    outside_field["format"] = "list"
+                    outside_field.pop("target", None)
+                    scoped_fields.append(outside_field)
+                continue
+            scoped_fields.append(scoped)
+        section["fields"] = scoped_fields
+
 _NODE_ROLE_LABELS = {
     "module": "Module",
     "behavioral_source": "Behavioral Source",
@@ -204,15 +252,9 @@ def _relationship_records(graph: RepositoryBlueprintGraph) -> list[EdgeRecord]:
             (edge.source_node_id, edge.target_node_id, edge.relation)
         )
         if resolved_uses:
-            records.append(
-                (
-                    edge.source_node_id,
-                    edge.target_node_id,
-                    "certificate-indirectly-depends",
-                    "certification_edges",
-                    {"target_version": edge.target_version},
-                )
-            )
+            for metadata in resolved_uses:
+                metadata["certification_dependency"] = "Direct"
+                metadata["certification_target_version"] = edge.target_version
             continue
         architectural = architectural_records.get(
             (edge.source_node_id, edge.target_node_id, edge.relation)
@@ -530,6 +572,20 @@ def build_payload_from_repository_graph(
             )
         else:
             entity["details"] = build_blueprint_details(graph, root, entity_id)
+        entity["detail_level"] = {
+            "module": "module",
+            "out-of-scope": "module",
+            "behavioral_source": "source",
+            "interface-export": "interface",
+            "private-interface": "interface",
+        }.get(str(entity.get("type")), "interface")
+
+    visible_ids = set(entities)
+    for entity in entities.values():
+        _scope_detail_references(entity.get("details"), visible_ids)
+        for edge in entity.get("connects_to", []):
+            if isinstance(edge, dict):
+                _scope_detail_references(edge.get("details"), visible_ids)
 
     ordered = sorted(entities.values(), key=lambda item: (int(item["position"]), str(item["id"])))
     for position, entity in enumerate(ordered):
@@ -573,6 +629,23 @@ def build_payload_from_repository_graph(
         },
         "metadata": {"scope": "repository" if not requested else "skills", "skills": list(requested)},
         "renderer_dependencies": [],
+        "detail_levels": [
+            {
+                "id": "module",
+                "label": "Modules",
+                "description": "Show repository modules and out-of-scope boundaries.",
+            },
+            {
+                "id": "source",
+                "label": "Sources",
+                "description": "Also show behavioral sources owned by modules.",
+            },
+            {
+                "id": "interface",
+                "label": "Interfaces",
+                "description": "Show the complete module, source, and interface structure.",
+            },
+        ],
         "categories": categories,
         "edge_categories": edge_categories,
         "render_modes": ["architecture"],
@@ -580,6 +653,7 @@ def build_payload_from_repository_graph(
         "ui": {
             "layout": {"rankdir": "LR"},
             "visibility": {
+                "detail_level": "interface",
                 "collapsed_containers": collapsed,
                 "hidden_edge_types": certification_types,
             },

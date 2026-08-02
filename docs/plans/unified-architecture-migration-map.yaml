@@ -1313,8 +1313,8 @@ generated_artifacts:
     current_owner: [src/officina/common/blueprint_template.py, regenerate-blueprints]
     disposition: move
     target: regenerated v4 authoring views
-  - paths: [graphs/graph_specs.py, graphs/skill-taxonomy.svg]
-    current_owner: graphs/render-graphs.py
+  - paths: [docs_tooling/graphs/graph_specs.py, docs/graphs/skill-taxonomy.svg]
+    current_owner: docs_tooling/graphs/render-graphs.py
     disposition: move
     target: rename the skill-audit taxonomy node and edges to skill-certifier and rerender the existing SVG
   - paths:

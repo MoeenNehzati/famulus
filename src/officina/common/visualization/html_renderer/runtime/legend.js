@@ -127,6 +127,14 @@
       if (!presentCategories.has(type)) return;
       const row = document.createElement("div");
       row.className = "legend-row";
+      row.tabIndex = 0;
+      row.setAttribute("role", "button");
+      row.setAttribute("aria-pressed", hiddenTypes.has(type) ? "false" : "true");
+      row.addEventListener("keydown", event => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        row.click();
+      });
       row.dataset.legendKind = "node";
       row.dataset.type = type;
       row.appendChild(createLegendIcon(type, style));
@@ -143,6 +151,7 @@
           hiddenTypes.add(type);
           row.classList.add("inactive");
         }
+        row.setAttribute("aria-pressed", hiddenTypes.has(type) ? "false" : "true");
         saveViewerState();
         updateVisibilityFast();
       });
@@ -150,13 +159,47 @@
       legend.appendChild(row);
     });
 
-    if (presentEdgeTypes.length > 0) legend.appendChild(createLegendGroupTitle("Edges"));
-    presentEdgeTypes.forEach(edgeType => {
+    const relevantLegendEdgeTypes = relevantEdgeCategoryIds();
+    const legendEdgeTypes = [];
+    const visitEdgeCategory = (edgeType, depth) => {
+      if (!relevantLegendEdgeTypes.has(edgeType)) return;
+      legendEdgeTypes.push({edgeType, depth: Math.min(depth, 2)});
+      (edgeCategoryChildren.get(edgeType) || []).sort().forEach(child => visitEdgeCategory(child, depth + 1));
+    };
+    Array.from(relevantLegendEdgeTypes)
+      .filter(edgeType => !edgeCategoryParent.has(edgeType))
+      .sort()
+      .forEach(edgeType => visitEdgeCategory(edgeType, 0));
+
+    function syncEdgeLegendRows() {
+      legend.querySelectorAll(".legend-row[data-legend-kind='edge']").forEach(row => {
+        const edgeType = row.dataset.type;
+        const inactive = edgeCategorySetContains(edgeType, hiddenEdgeTypes);
+        const blockedByParent = edgeCategorySetContains(edgeCategoryParent.get(edgeType), hiddenEdgeTypes);
+        row.classList.toggle("inactive", inactive);
+        row.setAttribute("aria-pressed", inactive ? "false" : "true");
+        row.setAttribute("aria-disabled", blockedByParent ? "true" : "false");
+        row.tabIndex = blockedByParent ? -1 : 0;
+      });
+    }
+
+    if (legendEdgeTypes.length > 0) legend.appendChild(createLegendGroupTitle("Edges"));
+    legendEdgeTypes.forEach(({edgeType, depth}) => {
       const style = edgeStyleForType(edgeType);
       const row = document.createElement("div");
       row.className = "legend-row";
+      row.tabIndex = 0;
+      row.setAttribute("role", "button");
+      row.setAttribute("aria-pressed", edgeCategorySetContains(edgeType, hiddenEdgeTypes) ? "false" : "true");
+      row.addEventListener("keydown", event => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        row.click();
+      });
       row.dataset.legendKind = "edge";
       row.dataset.type = edgeType;
+      row.dataset.depth = String(depth);
+      row.style.paddingLeft = `${8 + depth * 16}px`;
       row.appendChild(createEdgeLegendIcon(edgeType, style));
       const label = document.createElement("div");
       const category = edgeCategoryCatalog.get(edgeType) || {};
@@ -165,17 +208,16 @@
       row.appendChild(label);
       bindLegendTooltip(row, labelText, category.description || "");
       row.addEventListener("click", () => {
+        if (edgeCategorySetContains(edgeCategoryParent.get(edgeType), hiddenEdgeTypes)) return;
         if (hiddenEdgeTypes.has(edgeType)) {
           hiddenEdgeTypes.delete(edgeType);
-          row.classList.remove("inactive");
         } else {
           hiddenEdgeTypes.add(edgeType);
-          row.classList.add("inactive");
         }
+        syncEdgeLegendRows();
         saveViewerState();
         updateVisibilityFast();
       });
-      if (hiddenEdgeTypes.has(edgeType)) row.classList.add("inactive");
       legend.appendChild(row);
     });
-
+    syncEdgeLegendRows();

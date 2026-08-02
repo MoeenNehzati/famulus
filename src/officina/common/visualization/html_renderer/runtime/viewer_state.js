@@ -3,16 +3,24 @@
     function saveViewerState() {
       try {
         const payload = {
+          version: 5,
           hiddenTypes: Array.from(hiddenTypes),
           hiddenEdgeTypes: Array.from(hiddenEdgeTypes),
           hiddenNodes: Array.from(hiddenNodes),
+          dimmedNodes: Array.from(dimmedNodes),
           collapsedContainers: Array.from(collapsedContainers),
           selectedNodeId,
+          selectedNodeIds: Array.from(selectedNodeIds),
+          selectionSource,
           focusNodeId,
           ancestorFocusMode,
-          panelCollapsed: layoutEl.classList.contains("panel-collapsed"),
+          leftPanelCollapsed,
+          rightPanelCollapsed,
+          leftPanelWidth,
+          rightPanelWidth,
           manualPositions: Array.from(manualPositions.entries()),
           routingConfig,
+          filterState: serializeFilterState(),
           panX, panY, zoomLevel
         };
         window.localStorage.setItem(viewerStateKey, JSON.stringify(payload));
@@ -24,22 +32,48 @@
         const raw = window.localStorage.getItem(viewerStateKey);
         if (!raw) return;
         const payload = JSON.parse(raw);
-        (payload.hiddenTypes || []).forEach(t => { if (typeStyles[t]) hiddenTypes.add(t); });
-        (payload.hiddenEdgeTypes || []).forEach(t => { if (presentEdgeTypes.includes(String(t))) hiddenEdgeTypes.add(String(t)); });
-        (payload.hiddenNodes || []).forEach(id => { if (entityMap.has(id)) hiddenNodes.add(id); });
-        (payload.collapsedContainers || []).forEach(id => { if (entityMap.has(id)) collapsedContainers.add(id); });
-        if (payload.routingConfig) applyRoutingPatch(payload.routingConfig);
-        if (payload.selectedNodeId && entityMap.has(payload.selectedNodeId)) {
-          selectedNodeId = payload.selectedNodeId;
+        if (!payload || ![3, 4, 5].includes(payload.version)) throw new Error("unsupported viewer state");
+        const arrays = ["hiddenTypes", "hiddenEdgeTypes", "hiddenNodes", "dimmedNodes", "selectedNodeIds", "collapsedContainers", "manualPositions"];
+        if (arrays.some(key => payload[key] !== undefined && !Array.isArray(payload[key]))) {
+          throw new Error("invalid viewer state collection");
         }
+        const containerIds = new Set(parentByNode.values());
+        const nextHiddenTypes = new Set((payload.hiddenTypes || []).filter(t => typeStyles[String(t)]).map(String));
+        const nextHiddenEdgeTypes = new Set((payload.hiddenEdgeTypes || []).filter(t =>
+          presentEdgeTypes.includes(String(t)) || edgeCategoryCatalog.has(String(t))
+        ).map(String));
+        const nextHiddenNodes = new Set((payload.hiddenNodes || []).filter(id => entityMap.has(String(id))).map(String));
+        const nextCollapsed = new Set((payload.collapsedContainers || []).filter(id => containerIds.has(String(id))).map(String));
+        hiddenTypes.clear(); nextHiddenTypes.forEach(value => hiddenTypes.add(value));
+        hiddenEdgeTypes.clear(); nextHiddenEdgeTypes.forEach(value => hiddenEdgeTypes.add(value));
+        hiddenNodes.clear(); nextHiddenNodes.forEach(value => hiddenNodes.add(value));
+        dimmedNodes.clear();
+        (payload.dimmedNodes || []).filter(id => entityMap.has(String(id))).forEach(id => dimmedNodes.add(String(id)));
+        collapsedContainers.clear(); nextCollapsed.forEach(value => collapsedContainers.add(value));
+        if (payload.routingConfig) applyRoutingPatch(payload.routingConfig);
+        selectedNodeIds.clear();
+        const restoredSelection = payload.version === 5
+          ? payload.selectedNodeIds || []
+          : payload.selectedNodeId ? [payload.selectedNodeId] : [];
+        restoredSelection.filter(id => entityMap.has(String(id)) && !hiddenNodes.has(String(id))).forEach(id => selectedNodeIds.add(String(id)));
+        selectedNodeId = payload.selectedNodeId && selectedNodeIds.has(String(payload.selectedNodeId))
+          ? String(payload.selectedNodeId)
+          : Array.from(selectedNodeIds).at(-1) || null;
+        selectionSource = payload.selectionSource === "search" ? "search" : "explicit";
         if (payload.focusNodeId && entityMap.has(payload.focusNodeId)) {
           focusNodeId = payload.focusNodeId;
         }
+        if (payload.filterState) restoreFilterState(payload.filterState);
         // Support both old boolean and new numeric format
         ancestorFocusMode = typeof payload.ancestorFocusMode === "number"
           ? payload.ancestorFocusMode
           : (payload.ancestorFocusEnabled ? 1 : 0);
-        if (payload.panelCollapsed) layoutEl.classList.add("panel-collapsed");
+        leftPanelCollapsed = payload.version === 4 ? Boolean(payload.leftPanelCollapsed) : false;
+        rightPanelCollapsed = payload.version === 4
+          ? Boolean(payload.rightPanelCollapsed)
+          : Boolean(payload.panelCollapsed);
+        if (Number.isFinite(payload.leftPanelWidth)) leftPanelWidth = clampSidebarWidth(payload.leftPanelWidth);
+        if (Number.isFinite(payload.rightPanelWidth)) rightPanelWidth = clampSidebarWidth(payload.rightPanelWidth);
         (payload.manualPositions || []).forEach(([id, pos]) => {
           if (entityMap.has(id)) manualPositions.set(id, pos);
         });
@@ -48,12 +82,14 @@
           applyTransform();
           hasFittedOnce = true;
         }
-      } catch (e) {}
+      } catch (e) {
+        window.localStorage.removeItem(viewerStateKey);
+      }
     }
 
     function saveSidebarOrder() {
       try {
-        const order = Array.from(panelContent.querySelectorAll(".sidebar-section")).map(el => el.dataset.sectionId);
+        const order = Array.from(panelContent.querySelectorAll(":scope > .sidebar-section")).map(el => el.dataset.sectionId);
         window.localStorage.setItem(viewerStateKey + "::sidebar", JSON.stringify(order));
       } catch (e) {}
     }
@@ -64,25 +100,11 @@
         if (!raw) return;
         const order = JSON.parse(raw);
         order.forEach(sectionId => {
-          const el = panelContent.querySelector(`[data-section-id="${sectionId}"]`);
+          const el = Array.from(panelContent.children).find(child => child.dataset.sectionId === sectionId);
           if (el) panelContent.appendChild(el);
         });
       } catch (e) {}
     }
-
-    // ── Panel toggle ─────────────────────────────────────────────────────────
-
-    function syncPanelToggle() {
-      const collapsed = layoutEl.classList.contains("panel-collapsed");
-      panelToggle.textContent = collapsed ? "⟨" : "⟩";
-      panelToggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
-      panelToggle.setAttribute("title", collapsed ? "Expand side panel" : "Collapse side panel");
-    }
-    panelToggle.addEventListener("click", () => {
-      layoutEl.classList.toggle("panel-collapsed");
-      syncPanelToggle();
-      saveViewerState();
-    });
 
     // ── Pan / zoom ────────────────────────────────────────────────────────────
 
@@ -141,4 +163,3 @@
       canvasWrapEl.classList.add("panning");
       event.preventDefault();
     });
-

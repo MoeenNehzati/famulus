@@ -13,18 +13,75 @@
         edge_id: `bridge_${sourceId}_${targetId}_${hiddenPath.join("_") || "direct"}`,
         source: sourceId,
         target: targetId,
-        type: "hidden-bridge",
-        description: `Preserves causal reachability across hidden nodes: ${hiddenLabels.join(" → ")}.`,
+        type: seedEdge.type,
+        description: `Derived ${seedEdge.type} path across hidden nodes: ${hiddenLabels.join(" → ")}.`,
         confidence: seedEdge?.confidence || "Likely",
         evidence: `Bridge path: ${hiddenLabels.join(" → ")}`,
         bridge: true
       };
     }
 
+    function edgeConstituents(edge) {
+      return edge?.bundle && Array.isArray(edge.constituent_edges)
+        ? edge.constituent_edges
+        : edge ? [edge] : [];
+    }
+
+    function edgeSuppressedByCategorySet(edge, excludedTypes) {
+      const constituents = edgeConstituents(edge);
+      return constituents.length > 0 && constituents.every(constituent =>
+        edgeCategorySetContains(String(constituent.type || "unknown"), excludedTypes)
+      );
+    }
+
+    function bundleRenderedEdges(edges) {
+      const groups = new Map();
+      edges.forEach(edge => {
+        const key = JSON.stringify([edge.source, edge.target]);
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(edge);
+      });
+      return Array.from(groups.values()).map(group => {
+        if (group.length === 1) return group[0];
+        const types = Array.from(new Set(group.map(edge => String(edge.type || "unknown"))));
+        const representedEdges = group.flatMap(edge => {
+          const represented = edge.metadata?.represented_edges;
+          return Array.isArray(represented) && represented.length
+            ? represented
+            : [{
+                edge_id: edge.edge_id,
+                source: edge.source,
+                target: edge.target,
+                type: edge.type,
+              }];
+        });
+        const first = group[0];
+        return {
+          ...first,
+          edge_id: `bundle_${first.edge_id}`,
+          type: types.length === 1 ? types[0] : "relationship-bundle",
+          label: `${group.length} relationships`,
+          description: `${group.length} visible relationships share these endpoints.`,
+          details: undefined,
+          confidence: undefined,
+          aggregate: false,
+          bundle: true,
+          bundle_types: types,
+          constituent_edges: group,
+          metadata: {
+            represented_count: representedEdges.length,
+            represented_edges: representedEdges,
+          },
+        };
+      });
+    }
+
     function computeVisibleEdges() {
       const rendered = new Map();
       function addRendered(edge) {
-        const key = `${edge.source}->${edge.target}::${edge.type || "unknown"}`;
+        const key = edge.aggregate
+          ? `aggregate::${edge.source}->${edge.target}::${edge.type || "unknown"}`
+          : String(edge.edge_id);
         const existing = rendered.get(key);
         if (!existing) { rendered.set(key, edge); return; }
         if (existing.aggregate && edge.aggregate) {
@@ -47,6 +104,18 @@
         let current = nodeId;
         let representative = nodeId;
         const seen = new Set();
+        if (nodeHiddenByDetailLevel(nodeId)) {
+          while (parentByNode.has(current) && !seen.has(current)) {
+            seen.add(current);
+            current = parentByNode.get(current);
+            if (!nodeHiddenByDetailLevel(current)) {
+              representative = current;
+              break;
+            }
+          }
+          seen.clear();
+          current = nodeId;
+        }
         while (parentByNode.has(current) && !seen.has(current)) {
           seen.add(current);
           const parent = parentByNode.get(current);
@@ -69,7 +138,7 @@
           aggregate: true,
           bridge: false,
           implicit: true,
-          description: "Aggregated relationship between collapsed containers.",
+          description: "Aggregated relationship between visible structural representatives.",
           metadata: {
             ...(edge.metadata || {}),
             represented_count: 1,
@@ -93,18 +162,15 @@
           }
           return;
         }
+        if (nodeHiddenByDetailLevel(currentId)) return;
+        if (edgeCategoryCatalog.get(String(seedEdge?.type || ""))?.bridge_hidden_nodes !== true) return;
         if (seenHidden.has(currentId)) return;
         const nextSeen = new Set(seenHidden);
         nextSeen.add(currentId);
-        const nextEdges = (outgoing.get(currentId) || []).filter(edge => !isHiddenEdgeType(edge));
-        if (nextEdges.length === 0 && seedEdge) {
-          if (hiddenPath.length === 0 && currentId === seedEdge.target) {
-            addRendered({...seedEdge, bridge: true});
-          } else {
-            addRendered(bridgeEdge(sourceId, currentId, hiddenPath, seedEdge));
-          }
-          return;
-        }
+        const nextEdges = (outgoing.get(currentId) || []).filter(edge =>
+          !isHiddenEdgeType(edge) && String(edge.type) === String(seedEdge.type)
+        );
+        if (nextEdges.length === 0) return;
         for (const outEdge of nextEdges) {
           traverse(sourceId, outEdge.target, seedEdge || outEdge, hiddenPath.concat(currentId), nextSeen);
         }
@@ -120,7 +186,7 @@
           traverse(entity.id, outEdge.target, outEdge, [], new Set());
         }
       });
-      return Array.from(rendered.values());
+      return bundleRenderedEdges(Array.from(rendered.values()));
     }
 
     function edgeColorForTarget(targetId) {
@@ -356,4 +422,3 @@
 
       return graphNodes;
     }
-

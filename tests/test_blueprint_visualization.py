@@ -103,6 +103,10 @@ def test_selected_skill_scope_summarizes_crossing_relationships() -> None:
     assert entities[skill.node_id]["category"] == "module:markdown"
     assert entities[source.node_id]["type"] == "behavioral_source"
     assert entities[source.node_id]["kind"] == "markdown"
+    assert payload["detail_levels"][0]["id"] == "module"
+    assert payload["detail_levels"][-1]["id"] == "interface"
+    assert entities[skill.node_id]["detail_level"] == "module"
+    assert entities[source.node_id]["detail_level"] == "source"
     assert outside_source.node_id not in entities
     assert "boundary:skills.beta" in entities
     boundary_edges = entities[source.node_id]["connects_to"]

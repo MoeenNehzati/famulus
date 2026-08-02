@@ -1,8 +1,10 @@
     // ── Visibility helpers ───────────────────────────────────────────────────
 
     function isHiddenNode(nodeId) {
+      if (nodeHiddenByDetailLevel(nodeId)) return true;
+      if (isNodeFilteredOut(nodeId)) return true;
       const category = nodeCategories.get(nodeId);
-      if (hiddenTypes.has(category) || hiddenNodes.has(nodeId)) return true;
+      if ((!nodeIsRetainedContext(nodeId) && hiddenTypes.has(category)) || hiddenNodes.has(nodeId)) return true;
       let current = parentByNode.get(nodeId);
       const seen = new Set();
       while (current && !seen.has(current)) {
@@ -13,19 +15,19 @@
       return false;
     }
 
-    // ── Removed nodes list ───────────────────────────────────────────────────
+    // ── Hidden nodes list ────────────────────────────────────────────────────
 
-    function renderRemovedNodes() {
-      const removedEntities = docData.entities
+    function renderHiddenNodes() {
+      const hiddenEntities = docData.entities
         .filter(e => hiddenNodes.has(e.id))
         .sort((a, b) => (a.position || 0) - (b.position || 0) || a.short_title.localeCompare(b.short_title));
-      clearMathBeforeMutation(removedNodesEl);
-      removedNodesEl.innerHTML = "";
+      clearMathBeforeMutation(hiddenNodesEl);
+      hiddenNodesEl.innerHTML = "";
 
       const hasFocusHidden = ancestorHiddenByFocus.size > 0;
-      const hasRemoved = removedEntities.length > 0;
+      const hasHidden = hiddenEntities.length > 0;
 
-      if (!hasFocusHidden && !hasRemoved) { removedNodesEl.textContent = "None"; return; }
+      if (!hasFocusHidden && !hasHidden) { hiddenNodesEl.textContent = "None"; return; }
 
       // Ancestor-focus group (mode 2): one collapsed item for all focus-hidden nodes
       if (hasFocusHidden) {
@@ -33,10 +35,12 @@
         const focusEntity = focusNodeId ? entityMap.get(focusNodeId) : null;
         const focusLabel = focusEntity ? focusEntity.short_title : "selection";
         const groupItem = document.createElement("div");
-        groupItem.className = "removed-item";
+        groupItem.className = "hidden-node-item";
+        groupItem.tabIndex = 0;
+        groupItem.setAttribute("role", "button");
         groupItem.innerHTML = `
           <div><strong>Non-ancestors of ${escapeHtml(focusLabel)}</strong></div>
-          <div class="removed-item-number">${count} node${count !== 1 ? "s" : ""} hidden — click to restore all</div>
+          <div class="hidden-node-item-meta">${count} node${count !== 1 ? "s" : ""} hidden — click to restore all</div>
         `;
         groupItem.addEventListener("click", () => {
           ancestorFocusMode = 0;
@@ -44,16 +48,23 @@
           saveViewerState();
           applyAncestorFocus();
         });
-        removedNodesEl.appendChild(groupItem);
+        groupItem.addEventListener("keydown", event => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          groupItem.click();
+        });
+        hiddenNodesEl.appendChild(groupItem);
       }
 
       // Individually double-click-hidden nodes
-      removedEntities.forEach(entity => {
+      hiddenEntities.forEach(entity => {
         const item = document.createElement("div");
-        item.className = "removed-item";
+        item.className = "hidden-node-item";
+        item.tabIndex = 0;
+        item.setAttribute("role", "button");
         item.innerHTML = `
           <div><strong>${escapeHtml(entity.short_title)}</strong></div>
-          <div class="removed-item-number">${escapeHtml(entity.ref || "")}</div>
+          <div class="hidden-node-item-meta">${escapeHtml(entity.ref || "")}</div>
         `;
         item.addEventListener("dblclick", () => {
           hiddenNodes.delete(entity.id);
@@ -64,9 +75,17 @@
         item.addEventListener("click", () => {
           showEntityDetails(entity);
         });
-        removedNodesEl.appendChild(item);
+        item.addEventListener("keydown", event => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          hiddenNodes.delete(entity.id);
+          saveViewerState();
+          updateVisibilityFast();
+          rerouteIncidentEdgesFromCurrentPositions(entity.id);
+        });
+        hiddenNodesEl.appendChild(item);
       });
-      typesetElement(removedNodesEl);
+      typesetElement(hiddenNodesEl);
     }
 
     // ── Ancestor focus ───────────────────────────────────────────────────────
@@ -78,13 +97,26 @@
         const current = stack.pop();
         if (!current || keep.has(current)) continue;
         keep.add(current);
-        for (const edge of incoming.get(current) || []) stack.push(edge.source);
+        for (const edge of incoming.get(current) || []) {
+          const edgeType = String(edge.type || "unknown");
+          const relationEligible = !edgeCategorySetContains(edgeType, hiddenEdgeTypes) &&
+            !edgeCategorySetContains(edgeType, filterState.excludedEdgeTypes);
+          if (relationEligible) stack.push(edge.source);
+        }
       }
+      Array.from(keep).forEach(id => {
+        let parent = parentByNode.get(id);
+        while (parent && !keep.has(parent)) {
+          keep.add(parent);
+          parent = parentByNode.get(parent);
+        }
+      });
       return keep;
     }
 
     function syncToolbar() {
-      const hasSelection = !!selectedNodeId && !isHiddenNode(selectedNodeId);
+      const selectedVisible = visibleSelectedNodeIds();
+      const hasSelection = selectedVisible.length > 0;
       const hasFocus = !!focusNodeId && !isHiddenNode(focusNodeId);
       // Focus toggle
       focusToggle.disabled = !hasSelection && !hasFocus;
@@ -98,8 +130,11 @@
         focusToggle.textContent = "Show full graph";
         focusToggle.classList.add("active");
       }
-      // Delete node
-      deleteNodeBtn.disabled = !hasSelection;
+      hideSelectedBtn.disabled = !hasSelection;
+      hideSelectedBtn.textContent = hasSelection ? `Hide selected (${selectedVisible.length})` : "Hide selected";
+      dimSelectedBtn.disabled = !hasSelection;
+      const allDimmed = hasSelection && selectedVisible.every(nodeId => dimmedNodes.has(nodeId));
+      dimSelectedBtn.textContent = allDimmed ? `Undim selected (${selectedVisible.length})` : `Dim selected${hasSelection ? ` (${selectedVisible.length})` : ""}`;
     }
 
     // Keep syncFocusToggle as an alias so existing callsites still work
@@ -130,7 +165,12 @@
       document.querySelectorAll(".edge-path").forEach(pathEl => {
         const src = pathEl.dataset.sourceNodeId;
         const dst = pathEl.dataset.targetNodeId;
-        const edgeTypeHidden = hiddenEdgeTypes.has(String(pathEl.dataset.edgeType || "unknown"));
+        const edge = pathEl.__edgeMeta || {
+          source: src,
+          target: dst,
+          type: pathEl.dataset.edgeType,
+        };
+        const edgeTypeHidden = edgeSuppressedByCategorySet(edge, hiddenEdgeTypes);
         const endpointHidden = isHiddenNode(src) || isHiddenNode(dst);
         if (edgeTypeHidden || endpointHidden) {
           pathEl.style.display = "none";
@@ -148,6 +188,6 @@
         syncArrowheadForPath(pathEl);
       });
 
-      renderRemovedNodes();
+      renderHiddenNodes();
+      applyFilterPresentation();
     }
-

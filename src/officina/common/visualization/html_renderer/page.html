@@ -2,9 +2,16 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>@@OFFICINA_PAGE_TITLE@@</title>
   <script>const GRAPH_BUILD_ID = "@@OFFICINA_GRAPH_BUILD_ID@@";</script>
-  <script src="https://cdn.jsdelivr.net/npm/elkjs/lib/elk.bundled.js"></script>
+  <script>@@OFFICINA_ELK_RUNTIME@@</script>
+  <script>
+    const ELK_WORKER_SOURCE = @@OFFICINA_ELK_WORKER_SOURCE@@;
+    const ELK_WORKER_URL = URL.createObjectURL(
+      new Blob([ELK_WORKER_SOURCE], {type: "text/javascript"})
+    );
+  </script>
 @@OFFICINA_RENDERER_DEPENDENCY_HEAD@@
   <style>
 @@OFFICINA_VIEWER_STYLES@@  </style>
@@ -12,13 +19,29 @@
 <body>
   <div id="tooltip"></div>
   <div class="layout" id="layout">
+    <aside class="side-panel left-panel" id="left-panel" aria-label="Selection inspector">
+      <button class="panel-toggle" id="left-panel-toggle" type="button" aria-expanded="true" aria-controls="left-panel-content" title="Collapse selection inspector">⟨</button>
+      <div class="collapsed-label">Inspector</div>
+      <div class="panel-content" id="left-panel-content">
+        <h1>Selected item</h1>
+        <div id="details" class="small" role="status" aria-live="polite" aria-atomic="true">Select a node or edge to inspect its metadata.</div>
+        <div class="sidebar-section hidden-nodes-section" data-section-id="hidden-nodes">
+          <h2 class="section-heading">Hidden nodes</h2>
+          <div id="hidden-nodes" class="hidden-nodes-list small">None</div>
+        </div>
+      </div>
+      <div class="panel-resize-handle" id="left-panel-resize" data-side="left" role="separator" aria-label="Resize selection inspector" aria-orientation="vertical" tabindex="0"></div>
+    </aside>
     <div class="canvas-area">
       <div class="canvas-toolbar" id="canvas-toolbar">
         <span class="toolbar-tip" data-tooltip="Cycle ancestor focus for the selected node: highlight, hide, then show the full graph.">
           <button id="focus-toggle" class="toolbar-btn" type="button" aria-label="Cycle ancestor focus">Highlight ancestors</button>
         </span>
-        <span class="toolbar-tip" data-tooltip="Hide the selected node from the visible graph. Double-click a node to hide it directly.">
-          <button id="delete-node-btn" class="toolbar-btn" type="button" disabled aria-label="Hide selected node">Delete node</button>
+        <span class="toolbar-tip" data-tooltip="Hide every selected node from the visible graph. Double-click a node to hide it directly.">
+          <button id="hide-selected-btn" class="toolbar-btn" type="button" disabled aria-label="Hide selected nodes">Hide selected</button>
+        </span>
+        <span class="toolbar-tip" data-tooltip="Dim or undim every selected node without changing graph layout.">
+          <button id="dim-selected-btn" class="toolbar-btn" type="button" disabled aria-label="Dim selected nodes">Dim selected</button>
         </span>
         <div class="toolbar-sep"></div>
         <span class="toolbar-tip" data-tooltip="Reset manual node positions and rerun the automatic layout. Shortcut: r.">
@@ -106,22 +129,23 @@
         </svg>
       </div>
     </div>
-    <aside class="panel">
-      <button class="panel-toggle" id="panel-toggle" type="button" aria-expanded="true" aria-controls="panel-content" title="Collapse side panel">⟩</button>
-      <div class="collapsed-label">Panel</div>
+    <aside class="side-panel right-panel" id="right-panel" aria-label="Graph controls">
+      <div class="panel-resize-handle" id="right-panel-resize" data-side="right" role="separator" aria-label="Resize graph controls" aria-orientation="vertical" tabindex="0"></div>
+      <button class="panel-toggle" id="panel-toggle" type="button" aria-expanded="true" aria-controls="panel-content" title="Collapse graph controls">⟩</button>
+      <div class="collapsed-label">Controls</div>
       <div class="panel-content" id="panel-content">
-    <h1 id="panel-title">Dependency graph</h1>
+    <h1 id="panel-title">Graph controls</h1>
 
         <div class="sidebar-section" data-section-id="cheatsheet">
           <div class="drag-handle" draggable="true" title="Drag to reorder">⠿</div>
           <details id="cheatsheet-details">
             <summary>How to use</summary>
-            <div class="small" style="margin-top:0.4rem;"><strong>Double-click</strong> a node to hide it; double-click again in the <em>Removed nodes</em> list to restore it.</div>
-            <div class="small" style="margin-top:0.25rem;"><strong>Toolbar</strong> (top-left, always visible): <em>Highlight ancestors</em> cycles focus (off → dim → hide); <em>Delete node</em> removes the selected node; <em>Redraw all</em> resets layout.</div>
-            <div class="small" style="margin-top:0.25rem;">Hover a node or edge to preview metadata. Click to pin details here.</div>
-            <div class="small" style="margin-top:0.25rem;">Click a node or edge type in the legend to hide or show that type. Causality is preserved across hidden nodes via bridge edges.</div>
-            <div class="small" style="margin-top:0.25rem;"><kbd>h</kbd> cycles ancestor focus (off → dim → hide). <kbd>Esc</kbd> or ✕ deselects. <kbd>r</kbd> redraws. <kbd>c</kbd> clears everything. <kbd>f</kbd> fits the graph.</div>
-            <div class="small" style="margin-top:0.25rem;">Drag a node to reposition it. Drag the ⠿ handle on each section to reorder this panel.</div>
+            <div class="small" style="margin-top:0.4rem;"><strong>Double-click</strong> a node to hide it; use the <em>Hidden nodes</em> list in the left inspector to restore it.</div>
+            <div class="small" style="margin-top:0.25rem;"><strong>Toolbar</strong> (top-left, always visible): <em>Highlight ancestors</em> cycles focus for the primary node; <em>Hide selected</em> and <em>Dim selected</em> act on the complete selection; <em>Redraw all</em> resets layout.</div>
+            <div class="small" style="margin-top:0.25rem;">Hover a node or edge to preview metadata. Click to pin details in the left inspector.</div>
+            <div class="small" style="margin-top:0.25rem;">Click a node to select it; hold <kbd>Ctrl</kbd>/<kbd>Cmd</kbd> to toggle multiple nodes. Find selects matching nodes and both endpoints of matching relations. Click a node or edge type in the legend to hide or show that type.</div>
+            <div class="small" style="margin-top:0.25rem;"><kbd>h</kbd> cycles ancestor focus (off → dim → hide). <kbd>Esc</kbd> or ✕ deselects. <kbd>r</kbd> redraws. <kbd>c</kbd> restores nodes and focus; <kbd>Shift+C</kbd> also clears filters and legend exclusions. <kbd>f</kbd> fits the graph.</div>
+            <div class="small" style="margin-top:0.25rem;">Drag a node to reposition it. Drag a sidebar edge or focus its resize handle and use arrow keys to adjust width.</div>
             <div class="small" style="margin-top:0.25rem;"><strong>Scroll</strong> to zoom in/out (centered at cursor). <strong>Drag empty space</strong> to pan. Use the toolbar +/−/Fit buttons or keyboard <kbd>+</kbd> <kbd>−</kbd> <kbd>f</kbd>.</div>
             <div class="small" style="margin-top:0.25rem;"><strong>Edge styles:</strong> solid = Verified; long-dashed = Likely; short-dashed = Speculative. <strong>Node borders:</strong> solid = explicit; dashed = model-introduced.</div>
             @@OFFICINA_REDUCTION_NOTE@@
@@ -134,15 +158,12 @@
           <div class="legend" id="legend"></div>
         </div>
 
-        <div class="sidebar-section" data-section-id="details">
-          <div class="drag-handle" draggable="true" title="Drag to reorder">⠿</div>
-          <div id="details" class="small">Select a node or edge to inspect its metadata.</div>
-        </div>
+        <details class="sidebar-section advanced-section" data-section-id="advanced">
+          <summary>Advanced</summary>
+          <div class="advanced-controls-slot" id="advanced-controls-slot"></div>
+        </details>
 
-        <div class="sidebar-section" data-section-id="removed-nodes">
-          <div class="drag-handle" draggable="true" title="Drag to reorder">⠿</div>
-          <h2 class="section-heading">Removed nodes</h2>
-          <div id="removed-nodes" class="removed-list small">None</div>
+        <div class="sidebar-section" data-section-id="details-placeholder" hidden>
         </div>
 
         <div class="sidebar-section" data-section-id="raw-json">

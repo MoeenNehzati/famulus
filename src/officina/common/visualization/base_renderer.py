@@ -62,18 +62,10 @@ class BaseRenderer:
             if not isinstance(raw_connects, list):
                 raise TypeError("Entity property 'connects_to' must be a list when present.")
 
-            canonical_seen: set[tuple[str, str]] = set()
             for raw_edge in raw_connects:
                 if not isinstance(raw_edge, dict):
                     continue
                 canonical_edge = self._edge_from_edge_payload(raw_edge)
-                key = (
-                    str(canonical_edge.get("to", "")),
-                    str(canonical_edge.get("type", "")),
-                )
-                if key in canonical_seen:
-                    continue
-                canonical_seen.add(key)
                 canonical_edges.append(canonical_edge)
 
             entity_payload["connects_to"] = canonical_edges
@@ -107,6 +99,7 @@ class BaseRenderer:
     def render_graph(self, graph_json: Payload, *, reduction_note: str = "") -> str:
         """Render graph JSON as a presentation-specific document string."""
         prepared_graph = self.normalize(graph_json)
+        self.validate(prepared_graph)
         return self._render_graph(prepared_graph, reduction_note=reduction_note)
 
     def render_graph_html(

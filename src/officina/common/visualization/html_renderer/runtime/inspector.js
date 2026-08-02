@@ -62,8 +62,8 @@
 
     function formatRelationshipSection(entity, direction) {
       const relationships = direction === "outgoing"
-        ? edgeData.filter(edge => edge.source === entity.id && !hiddenEdgeTypes.has(String(edge.type || "unknown"))).map(edge => ({edge, other: edge.target}))
-        : edgeData.filter(edge => edge.target === entity.id && !hiddenEdgeTypes.has(String(edge.type || "unknown"))).map(edge => ({edge, other: edge.source}));
+        ? edgeData.filter(edge => edge.source === entity.id && !edgeSuppressedByCategorySet(edge, hiddenEdgeTypes)).map(edge => ({edge, other: edge.target}))
+        : edgeData.filter(edge => edge.target === entity.id && !edgeSuppressedByCategorySet(edge, hiddenEdgeTypes)).map(edge => ({edge, other: edge.source}));
       if (!relationships.length) return "";
       const rows = relationships.map(({edge, other}) => {
         const arrow = direction === "outgoing" ? "→" : "←";
@@ -115,25 +115,14 @@
       textarea.remove();
     }
 
-    function markSelectedNode(nodeId) {
-      svgEl.querySelectorAll(".graph-node.selected").forEach(el => el.classList.remove("selected"));
-      if (nodeId) {
-        const nodeEl = svgEl.querySelector(`[data-node-id="${nodeId}"]`);
-        if (nodeEl) nodeEl.classList.add("selected");
-      }
-      syncToolbar();
-    }
-
     function bindDetailPanelControls() {
       details.querySelector(".deselect-btn")?.addEventListener("click", deselect);
       details.querySelectorAll(".detail-reference").forEach(button => {
         button.addEventListener("click", () => {
           const target = entityMap.get(button.dataset.detailNodeId);
           if (!target) return;
-          selectedNodeId = target.id;
-          markSelectedNode(target.id);
-          showEntityDetails(target);
-          saveViewerState();
+          updateVisibilityFast();
+          setNodeSelection([target.id], target.id, "explicit");
         });
       });
       details.querySelectorAll(".detail-copy").forEach(button => {
@@ -155,33 +144,24 @@
     }
 
     function showEdgeDetails(edge) {
-      selectedNodeId = null;
-      markSelectedNode(null);
+      setNodeSelection([], null, "explicit", {persist: false});
       clearMathBeforeMutation(details);
-      details.innerHTML = edge.details ? formatStructuredEdge(edge) : edgeTooltipText(edge);
+      details.innerHTML = edge.bundle
+        ? formatBundledEdge(edge)
+        : edge.details ? formatStructuredEdge(edge) : edgeTooltipText(edge);
       bindDetailPanelControls();
       typesetElement(details);
       rawJsonCodeEl.textContent = JSON.stringify(edge, null, 2);
     }
 
     function deselect() {
-      selectedNodeId = null;
       focusNodeId = null;
       ancestorFocusMode = 0;
-      markSelectedNode(null);
-      clearMathBeforeMutation(details);
-      details.innerHTML = "Select a node or edge to inspect its metadata.";
-      rawJsonCodeEl.textContent = JSON.stringify(docData, null, 2);
-      saveViewerState();
-      applyAncestorFocus();
+      setNodeSelection([], null, "explicit");
     }
 
     function clearSelectionDetails() {
-      selectedNodeId = null;
-      markSelectedNode(null);
-      clearMathBeforeMutation(details);
-      details.innerHTML = "Select a node or edge to inspect its metadata.";
-      rawJsonCodeEl.textContent = JSON.stringify(docData, null, 2);
+      setNodeSelection([], null, "explicit", {persist: false});
     }
 
     function tooltipText(entity) {
@@ -204,11 +184,40 @@
       const aggregateCount = edge.aggregate
         ? `<br><strong>Aggregated summary:</strong> ${Number(edge.metadata?.represented_count || 1)} underlying relationship(s)`
         : "";
+      const visibleConstituents = edgeConstituents(edge).filter(constituent =>
+        !edgeSuppressedByCategorySet(constituent, hiddenEdgeTypes) && !edgeFailsFilter(constituent)
+      );
+      const bundleSummary = edge.bundle
+        ? `<br><strong>Relationships:</strong> ${visibleConstituents.map(constituent => escapeHtml(constituent.label || constituent.type || "relationship")).join(", ")}`
+        : "";
       return `
         <strong>${escapeHtml(sourceLabel)} → ${escapeHtml(targetLabel)}</strong><br>
         <code>${escapeHtml(edgeLabel)}</code><br>
         ${escapeHtml(summary)}<br>
-        <span class="small">${escapeHtml(edge.evidence || "")}${confidence}</span>${aggregateCount}
+        <span class="small">${escapeHtml(edge.evidence || "")}${confidence}</span>${aggregateCount}${bundleSummary}
+      `;
+    }
+
+    function formatBundledEdge(edge) {
+      const source = entityMap.get(edge.source);
+      const target = entityMap.get(edge.target);
+      const visibleConstituents = edgeConstituents(edge).filter(constituent =>
+        !edgeSuppressedByCategorySet(constituent, hiddenEdgeTypes) && !edgeFailsFilter(constituent)
+      );
+      const rows = visibleConstituents.map(constituent => {
+        const logicalTarget = constituent.metadata?.outside_id || constituent.target;
+        const summary = constituent.details?.summary || constituent.description || "";
+        return `<li><code>${escapeHtml(constituent.label || constituent.type || "relationship")}</code>` +
+          `${logicalTarget !== edge.target ? ` → ${escapeHtml(logicalTarget)}` : ""}` +
+          `${summary ? `<div class="small">${escapeHtml(summary)}</div>` : ""}</li>`;
+      }).join("");
+      return `
+        <div class="details-header">
+          <div><h2>Bundled relationships</h2><div class="small">${visibleConstituents.length} visible relationship${visibleConstituents.length === 1 ? "" : "s"}</div></div>
+          <button class="deselect-btn" type="button" title="Deselect (Esc)">✕</button>
+        </div>
+        <p class="detail-summary">${escapeHtml(source?.label || source?.short_title || edge.source)} → ${escapeHtml(target?.label || target?.short_title || edge.target)}</p>
+        <section class="detail-section"><h3>Underlying relationships</h3><ul class="detail-relationships">${rows || "<li>None visible</li>"}</ul></section>
       `;
     }
 
@@ -229,4 +238,3 @@
         ${sections}
       `;
     }
-

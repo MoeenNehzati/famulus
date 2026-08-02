@@ -147,8 +147,67 @@
       ]);
     }
 
+    function isContainmentAncestor(ancestorId, descendantId) {
+      const seen = new Set();
+      let current = parentByNode.get(descendantId);
+      while (current && !seen.has(current)) {
+        if (current === ancestorId) return true;
+        seen.add(current);
+        current = parentByNode.get(current);
+      }
+      return false;
+    }
+
+    function pointOutsideRectToward(rect, point) {
+      const cx = rect.x + rect.width / 2;
+      const cy = rect.y + rect.height / 2;
+      const dx = point.x - cx;
+      const dy = point.y - cy;
+      const distance = Math.hypot(dx, dy);
+      if (distance < 1) return {x: cx, y: cy};
+      const ndx = dx / distance;
+      const ndy = dy / distance;
+      let boundaryDistance = Infinity;
+      if (Math.abs(ndx) > 1e-6) boundaryDistance = Math.min(boundaryDistance, (rect.width / 2) / Math.abs(ndx));
+      if (Math.abs(ndy) > 1e-6) boundaryDistance = Math.min(boundaryDistance, (rect.height / 2) / Math.abs(ndy));
+      return {
+        x: cx + ndx * (boundaryDistance + edgeNodeGap()),
+        y: cy + ndy * (boundaryDistance + edgeNodeGap()),
+      };
+    }
+
+    function containmentInternalPath(containerPos, descendantPos, containerIsSource) {
+      const targetCenterX = descendantPos.x + descendantPos.width / 2;
+      const horizontalPadding = Math.min(24, containerPos.width / 4);
+      const anchor = {
+        x: Math.max(
+          containerPos.x + horizontalPadding,
+          Math.min(targetCenterX, containerPos.x + containerPos.width - horizontalPadding)
+        ),
+        y: containerPos.y + Math.min(44, Math.max(20, containerPos.height / 5)),
+      };
+      const descendantAnchor = pointOutsideRectToward(descendantPos, anchor);
+      const points = containerIsSource
+        ? [anchor, descendantAnchor]
+        : [descendantAnchor, anchor];
+      return roundedPathForPoints(points);
+    }
+
+    function routedPathForEndpoints(srcId, dstId, srcPos, dstPos, routeIndex = 0, routeCount = 1) {
+      if (isContainmentAncestor(srcId, dstId)) {
+        return containmentInternalPath(srcPos, dstPos, true);
+      }
+      if (isContainmentAncestor(dstId, srcId)) {
+        return containmentInternalPath(dstPos, srcPos, false);
+      }
+      return manualDoglegPath(srcPos, dstPos, routeIndex, routeCount);
+    }
+
     function incidentEdgePaths(nodeId) {
-      return Array.from(document.querySelectorAll(`.edge-path[data-source-node-id="${nodeId}"], .edge-path[data-target-node-id="${nodeId}"]`))
+      return Array.from(new Set([
+        ...edgeElementsForNode("data-source-node-id", nodeId),
+        ...edgeElementsForNode("data-target-node-id", nodeId),
+      ]))
         .filter(pathEl => pathEl.style.display !== "none");
     }
 
@@ -179,7 +238,7 @@
         const key = routeGroupKey(pathEl);
         const routeIndex = routeSeen.get(key) || 0;
         routeSeen.set(key, routeIndex + 1);
-        pathEl.setAttribute("d", manualDoglegPath(srcPos, dstPos, routeIndex, routeCounts.get(key) || 1));
+        pathEl.setAttribute("d", routedPathForEndpoints(srcId, dstId, srcPos, dstPos, routeIndex, routeCounts.get(key) || 1));
         syncArrowheadForPath(pathEl);
       });
     }
@@ -200,9 +259,8 @@
         const srcPos = getEffectivePos(srcId);
         const dstPos = getEffectivePos(dstId);
         if (srcPos && dstPos) {
-          pathEl.setAttribute("d", simpleEdgePath(srcPos, dstPos));
+          pathEl.setAttribute("d", routedPathForEndpoints(srcId, dstId, srcPos, dstPos));
           syncArrowheadForPath(pathEl);
         }
       });
     }
-

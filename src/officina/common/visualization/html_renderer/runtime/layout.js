@@ -25,10 +25,9 @@
     const MIN_ZOOM = 0.08, MAX_ZOOM = 5;
 
     let renderVersion = 0;
-    let lastRenderedEdges = [];
     let elk = null;
     const viewerStateIdentity = docData.graph_id || docData.document?.source_file || docData.document?.title || "document";
-    const viewerStateKey = `visualization-v2::${docData.graph_kind || "graph"}::${viewerStateIdentity}::${GRAPH_BUILD_ID}`;
+    const viewerStateKey = `visualization-v3::${docData.graph_kind || "graph"}::${viewerStateIdentity}`;
 
     function startBuildRefreshWatcher() {
       if (!/^https?:$/.test(window.location.protocol)) return;
@@ -96,7 +95,7 @@
     function ensureElk() {
       if (elk) return elk;
       if (typeof ELK === "undefined") return null;
-      elk = new ELK();
+      elk = new ELK({workerUrl: ELK_WORKER_URL});
       return elk;
     }
 
@@ -216,11 +215,11 @@
 
     function arrowForPath(pathEl) {
       if (!pathEl || !pathEl.dataset.edgeId) return null;
-      return edgeLayer.querySelector(`.edge-arrow[data-edge-id="${pathEl.dataset.edgeId}"]`);
+      return edgeLayer.querySelector(`.edge-arrow[data-edge-id="${selectorValue(pathEl.dataset.edgeId)}"]`);
     }
 
     function isHiddenEdgeType(edge) {
-      return hiddenEdgeTypes.has(String(edge.type || "unknown"));
+      return edgeCategorySetContains(edge.type, hiddenEdgeTypes) || isEdgeFilteredOut(edge);
     }
 
     function syncArrowheadForPath(pathEl) {
@@ -284,7 +283,7 @@
 
     function updateVisibilityFast() {
       if (!hasFullLayout) { updateVisibilityFull(); return; }
-      renderRemovedNodes();
+      renderHiddenNodes();
 
       // Toggle node elements
       svgEl.querySelectorAll(".graph-node").forEach(nodeEl => {
@@ -299,7 +298,7 @@
         const sourceHidden = isHiddenNode(src);
         const targetHidden = isHiddenNode(dst);
         const edgeTypeHidden = hiddenEdgeTypes.has(String(pathEl.dataset.edgeType || "unknown"));
-        const edgeVisible = (!edgeTypeHidden && (!sourceHidden || !targetHidden));
+        const edgeVisible = (!edgeTypeHidden && !sourceHidden && !targetHidden);
         pathEl.style.display = edgeVisible ? "" : "none";
         syncArrowheadForPath(pathEl);
       });
