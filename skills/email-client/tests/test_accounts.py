@@ -361,6 +361,32 @@ def test_use_google_credential_rejects_unknown_nickname(config_dir, tmp_path, fa
     assert "unknown account" in result.stderr
 
 
+def test_use_google_credential_sets_gmail_oauth_auth_mode(config_dir, tmp_path, fake_registry_with_gmail_scope):
+    """Regression test: binding a Google credential must also flip the
+    account's `auth` field to gmail-oauth, since is_gmail_oauth()/
+    account_auth_mode() (the sole gate every real XOAUTH2 call site checks)
+    look at `auth` only -- `credential_id`'s mere presence is never
+    consulted at authentication time. Without this, binding a credential is
+    a silent no-op: the account keeps using its prior auth mode (here, the
+    app-password default) with no error.
+    """
+    credential_id = fake_registry_with_gmail_scope
+    run(config_dir, "add", "--nickname", "work", "--email", "me@example.com")
+
+    record = json.loads(run(config_dir, "resolve", "--nickname", "work").stdout)
+    assert record["auth"] == "app-password"
+
+    result = run(
+        config_dir, "use-google-credential",
+        "--nickname", "work", "--credential-id", credential_id, "--home", str(tmp_path / "credential-home"),
+    )
+    assert result.returncode == 0
+
+    record = json.loads(run(config_dir, "resolve", "--nickname", "work").stdout)
+    assert record["auth"] == "gmail-oauth"
+    assert record["credential_id"] == credential_id
+
+
 def test_use_google_credential_preserves_other_fields(config_dir, tmp_path, fake_registry_with_gmail_scope):
     # Regression test for the merge-not-replace bug class found and fixed in
     # cloud-files: use-google-credential must mutate the loaded record in

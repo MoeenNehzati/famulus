@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import urllib.error
 
 import pytest
 
@@ -135,6 +136,37 @@ def test_install_client_rejected_reinstall_stores_no_new_secret(tmp_path):
     assert backend.stored == stored_after_first_install
 
 
+def test_install_client_rotates_secret_when_client_id_unchanged(tmp_path):
+    """Regression test (confirmed failing via direct execution): reinstalling
+    the SAME client_id with a DIFFERENT (rotated) client_secret must
+    genuinely store the new secret, even though the redacted on-disk JSON
+    (client_secret replaced by a client_secret_ref derived solely from
+    client_id) looks identical to what's already there. Before the fix,
+    `current == payload` was True in this scenario and install_client
+    returned status="unchanged" without ever calling backend.store(), so the
+    old, possibly-revoked secret stayed in the secret store.
+
+    Uses the SAME backend instance across both calls, matching real
+    production usage (secret_backend defaults to the shared secret_store
+    module, not a fresh instance per call).
+    """
+    from officina.common.google_credentials import install_client
+
+    backend = FakeSecretBackend()
+    client_id = "abc.apps.googleusercontent.com"
+    install_client(
+        _desktop_client_payload(client_id), home=tmp_path, platform="linux", replace=False, secret_backend=backend
+    )
+    assert backend.lookup("connect-google", f"oauth-client:{client_id}:client-secret") == "sekret-value"
+
+    rotated_payload = _desktop_client_payload(client_id)
+    rotated_payload["installed"]["client_secret"] = "rotated-sekret-value"
+
+    install_client(rotated_payload, home=tmp_path, platform="linux", replace=True, secret_backend=backend)
+
+    assert backend.lookup("connect-google", f"oauth-client:{client_id}:client-secret") == "rotated-sekret-value"
+
+
 def test_install_client_rejects_missing_client_secret(tmp_path):
     from officina.common.google_credentials import install_client
 
@@ -165,6 +197,80 @@ def test_refresh_access_token_checks_scopes_before_network_call(tmp_path):
             "google:sub1", required_scopes={"https://mail.google.com/"},
             home=tmp_path, platform="linux", urlopen=fail_if_called, secret_backend=FakeSecretBackend(),
         )
+
+
+def test_store_google_credential_concurrent_writes_dont_lose_entries(tmp_path, monkeypatch):
+    """Genuinely concurrent race (two real threads alive at the same time,
+    not a sequential simulation): writer1 is started and, while genuinely
+    INSIDE store_google_credential's locked critical section -- past its own
+    read of the registry, before its write -- writer2 is started and
+    attempts to enter. Without a lock serializing them, writer2's
+    read-modify-write would interleave with writer1's and its os.replace()
+    would silently overwrite the registry with a copy missing writer1's
+    newly-stored credential entry (even though writer1's refresh token was
+    already durably written to the secret store) -- an orphaned secret and
+    an unresolvable credential_id for the lost account.
+
+    Proves the file lock closes it: writer2 cannot even read the registry
+    until writer1 releases the lock (i.e. has already written), so both
+    credential entries survive.
+    """
+    import threading
+
+    from officina.common import google_credentials as gc_module
+
+    home = tmp_path
+    platform = "linux"
+
+    writer1_in_critical_section = threading.Event()
+    release_writer1 = threading.Event()
+
+    def delayed_hook(subject: str) -> None:
+        if subject == "sub1":
+            writer1_in_critical_section.set()
+            release_writer1.wait(timeout=10)
+
+    monkeypatch.setattr(gc_module, "_test_race_delay", delayed_hook)
+
+    def run_writer1():
+        gc_module.store_google_credential(
+            subject="sub1", account="a1@example.com", client_id="c1",
+            token_uri="https://oauth2.googleapis.com/token",
+            granted_scopes=frozenset({"openid"}), refresh_token="rt1",
+            home=home, platform=platform, secret_backend=FakeSecretBackend(),
+        )
+
+    writer2_attempting = threading.Event()
+
+    def run_writer2():
+        writer2_attempting.set()
+        gc_module.store_google_credential(
+            subject="sub2", account="a2@example.com", client_id="c2",
+            token_uri="https://oauth2.googleapis.com/token",
+            granted_scopes=frozenset({"openid"}), refresh_token="rt2",
+            home=home, platform=platform, secret_backend=FakeSecretBackend(),
+        )
+
+    t1 = threading.Thread(target=run_writer1)
+    t1.start()
+    assert writer1_in_critical_section.wait(timeout=10), "writer1 never entered its critical section"
+
+    t2 = threading.Thread(target=run_writer2)
+    t2.start()
+    assert writer2_attempting.wait(timeout=10)
+    # Give writer2 a moment to genuinely attempt (and, pre-fix, succeed at)
+    # acquiring/racing past the registry before writer1 finishes.
+    import time as _time
+    _time.sleep(0.2)
+
+    release_writer1.set()
+    t1.join(timeout=10)
+    t2.join(timeout=10)
+
+    registry_path = gc_module._credentials_registry_path(home=home, platform=platform)
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    assert "google:sub1" in registry["credentials"], "writer1's entry was lost to the race"
+    assert "google:sub2" in registry["credentials"], "writer2's entry was lost to the race"
 
 
 def test_store_and_load_credential_round_trip(tmp_path):
@@ -213,3 +319,56 @@ def test_refresh_access_token_exchanges_refresh_token(tmp_path):
     )
     assert token == "new-access-token"
     assert len(calls) == 1
+
+
+def test_refresh_access_token_wraps_http_error_as_google_credential_error(tmp_path):
+    """Regression test: a revoked/expired refresh token is a routine
+    occurrence -- Google's token endpoint returns HTTP 400 for it, and
+    urlopen() raises urllib.error.HTTPError. Every sibling OAuth path in
+    this repo (e.g. _oauth_tokens.py's _post_form) converts that into a
+    clean domain error instead of letting the raw urllib exception escape;
+    _exchange_refresh_token must do the same.
+    """
+    from officina.common.google_credentials import refresh_access_token, store_google_credential
+
+    backend = FakeSecretBackend()
+    store_google_credential(
+        subject="sub1", account="user@example.com", client_id="abc", token_uri="https://oauth2.googleapis.com/token",
+        granted_scopes=frozenset({"openid", "email", "https://www.googleapis.com/auth/drive"}),
+        refresh_token="rt", home=tmp_path, platform="linux", secret_backend=backend,
+    )
+    backend.store("connect-google", "oauth-client:abc:client-secret", "client-secret-value")
+
+    def fake_urlopen(request):
+        raise urllib.error.HTTPError(
+            request.full_url, 400, "Bad Request", {}, None
+        )
+
+    with pytest.raises(GoogleCredentialError):
+        refresh_access_token(
+            "google:sub1", required_scopes={"https://www.googleapis.com/auth/drive"},
+            home=tmp_path, platform="linux", urlopen=fake_urlopen, secret_backend=backend,
+        )
+
+
+def test_exchange_authorization_code_wraps_http_error_as_google_credential_error(tmp_path):
+    from officina.common.google_credentials import exchange_authorization_code
+
+    backend = FakeSecretBackend()
+    backend.store("connect-google", "oauth-client:abc:client-secret", "client-secret-value")
+
+    def fake_urlopen(request):
+        raise urllib.error.HTTPError(
+            request.full_url, 400, "Bad Request", {}, None
+        )
+
+    with pytest.raises(GoogleCredentialError):
+        exchange_authorization_code(
+            client_id="abc",
+            code="auth-code",
+            code_verifier="verifier",
+            redirect_uri="http://localhost:1234/callback",
+            token_uri="https://oauth2.googleapis.com/token",
+            urlopen=fake_urlopen,
+            secret_backend=backend,
+        )

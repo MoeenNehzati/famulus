@@ -10,8 +10,11 @@ a ``client_secret_ref`` pointing at the stored secret.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
+import time
+import urllib.error
 from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -110,6 +113,21 @@ def install_client(payload: dict, *, home: Path, platform: str, replace: bool, s
             except (OSError, json.JSONDecodeError):
                 current = None
         if current == payload:
+            # The redacted on-disk JSON matching `payload` is not proof
+            # nothing changed: `client_secret_ref` is derived solely from
+            # `client_id`, so reinstalling the same client_id with a
+            # rotated client_secret produces byte-identical redacted JSON.
+            # Consult the secret store itself (not just the disk file) to
+            # decide whether the *live* secret actually changed.
+            stored_secret = backend.lookup("connect-google", secret_ref)
+            if stored_secret != client_secret:
+                # Either a genuine rotation (stored_secret is a different,
+                # non-None value) or the secret store has no record of it
+                # despite the file existing (stored_secret is None -- e.g. a
+                # fresh backend/state reset). Either way, store now so the
+                # invariant "an installed client file implies its secret is
+                # in the secret store" always holds.
+                backend.store("connect-google", secret_ref, client_secret)
             return {"status": "unchanged", "path": str(dest), "payload": payload}
         if not replace:
             raise GoogleCredentialError(
@@ -142,6 +160,106 @@ def client_status(*, home: Path, platform: str) -> dict:
     return {"installed": True, "path": str(path), "client_id": client_id}
 
 
+_LOCK_TIMEOUT_S = 30.0
+_LOCK_POLL_INTERVAL_S = 0.05
+
+
+def _lock_timeout_s() -> float:
+    """Bounded-wait deadline for _registry_file_lock() acquisition, mirroring
+    list-manager's _yaml_store.py::_lock_timeout_s(). A HUNG-but-alive writer
+    must not make every later call stall forever; 30s is meant to catch a
+    genuinely stuck process, not add friction to normal fast operations.
+
+    OFFICINA_GOOGLE_CREDENTIALS_TEST_LOCK_TIMEOUT_S overrides it for tests.
+    """
+    override = os.environ.get("OFFICINA_GOOGLE_CREDENTIALS_TEST_LOCK_TIMEOUT_S")
+    return float(override) if override else _LOCK_TIMEOUT_S
+
+
+@contextlib.contextmanager
+def _registry_file_lock(path: Path):
+    """Cross-platform exclusive advisory lock over `path`'s read-modify-write
+    sequence, mirroring skills/list-manager/_rtx/_yaml_store.py's file_lock()
+    (see that module for the full cross-platform design rationale).
+
+    Two concurrent store_google_credential() calls (e.g. onboarding two
+    Google accounts back-to-back via connect-google's authorize-services)
+    must not both read the registry before either writes: the second's
+    os.replace() would silently overwrite the registry with a copy missing
+    the first's newly-stored credential entry -- even though that
+    credential's refresh token was already durably written to the secret
+    store, leaving an orphaned secret and an unresolvable credential_id for
+    the lost account. This lock, held for the full load -> mutate -> save
+    sequence, closes that race by genuinely serializing racing callers
+    rather than merely narrowing the window.
+
+    A `<path>.lock` sidecar (rather than locking `path` itself) is used
+    because `path` is replaced, not written in place, by
+    store_google_credential -- locking a path across a replace is
+    unreliable. Advisory only: it serializes cooperating callers that go
+    through this same function; it does not prevent a process that ignores
+    locking entirely from writing the file.
+    """
+    lock_path = path.with_name(path.name + ".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR)
+    try:
+        deadline = time.monotonic() + _lock_timeout_s()
+        if os.name == "nt":
+            import msvcrt
+
+            while True:
+                try:
+                    msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError:
+                    if time.monotonic() >= deadline:
+                        raise GoogleCredentialError(
+                            f"could not acquire lock on {lock_path} after {_lock_timeout_s():.0f}s -- "
+                            "another process may be stuck; if none is actually running, delete the "
+                            "stale lock file and retry."
+                        )
+                    time.sleep(_LOCK_POLL_INTERVAL_S)
+        else:
+            import fcntl
+
+            while True:
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except OSError:
+                    if time.monotonic() >= deadline:
+                        raise GoogleCredentialError(
+                            f"could not acquire lock on {lock_path} after {_lock_timeout_s():.0f}s -- "
+                            "another process may be stuck; if none is actually running, delete the "
+                            "stale lock file and retry."
+                        )
+                    time.sleep(_LOCK_POLL_INTERVAL_S)
+        try:
+            yield
+        finally:
+            if os.name == "nt":
+                import msvcrt
+
+                os.lseek(fd, 0, os.SEEK_SET)
+                msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
+
+
+def _test_race_delay(subject: str) -> None:
+    """Test-only hook (no-op by default): tests monkeypatch this to
+    deterministically hold one writer inside the locked critical section
+    (after its read, before its write) while a second writer attempts to
+    enter, proving the lock -- not timing luck -- is what serializes them.
+    See test_store_google_credential_concurrent_writes_dont_lose_entries."""
+    return None
+
+
 def store_google_credential(
     *,
     subject: str,
@@ -161,22 +279,24 @@ def store_google_credential(
     backend.store("connect-google", f"{credential_id}:refresh-token", refresh_token)
 
     registry_path = _credentials_registry_path(home=home, platform=platform)
-    registry = (
-        json.loads(registry_path.read_text(encoding="utf-8"))
-        if registry_path.exists()
-        else {"schema_version": 1, "credentials": {}}
-    )
-    registry["credentials"][credential_id] = {
-        "subject": subject,
-        "account": account,
-        "client_id": client_id,
-        "token_uri": token_uri,
-        "granted_scopes": sorted(granted_scopes),
-    }
-    registry_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = registry_path.with_suffix(".json.tmp")
-    tmp_path.write_text(json.dumps(registry, indent=2), encoding="utf-8")
-    os.replace(tmp_path, registry_path)
+    with _registry_file_lock(registry_path):
+        registry = (
+            json.loads(registry_path.read_text(encoding="utf-8"))
+            if registry_path.exists()
+            else {"schema_version": 1, "credentials": {}}
+        )
+        _test_race_delay(subject)
+        registry["credentials"][credential_id] = {
+            "subject": subject,
+            "account": account,
+            "client_id": client_id,
+            "token_uri": token_uri,
+            "granted_scopes": sorted(granted_scopes),
+        }
+        registry_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = registry_path.with_suffix(".json.tmp")
+        tmp_path.write_text(json.dumps(registry, indent=2), encoding="utf-8")
+        os.replace(tmp_path, registry_path)
     return GoogleCredentialRef(
         credential_id=credential_id,
         subject=subject,
@@ -275,8 +395,14 @@ def exchange_authorization_code(
         }
     ).encode()
     request = urllib.request.Request(token_uri, data=data, method="POST")
-    with urlopen(request) as response:
-        payload = json.loads(response.read())
+    try:
+        with urlopen(request) as response:
+            payload = json.loads(response.read())
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise GoogleCredentialError(f"OAuth token endpoint returned HTTP {exc.code}: {detail}") from exc
+    except urllib.error.URLError as exc:
+        raise GoogleCredentialError(f"OAuth token endpoint failed: {exc}") from exc
     if not isinstance(payload, dict):
         raise GoogleCredentialError("token endpoint returned a non-object response")
     return payload
@@ -295,8 +421,14 @@ def _exchange_refresh_token(*, ref: GoogleCredentialRef, client_secret: str, ref
         }
     ).encode()
     request = urllib.request.Request(ref.token_uri, data=data, method="POST")
-    with urlopen(request) as response:
-        payload = json.loads(response.read())
+    try:
+        with urlopen(request) as response:
+            payload = json.loads(response.read())
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise GoogleCredentialError(f"OAuth token endpoint returned HTTP {exc.code}: {detail}") from exc
+    except urllib.error.URLError as exc:
+        raise GoogleCredentialError(f"OAuth token endpoint failed: {exc}") from exc
     return payload["access_token"]
 
 

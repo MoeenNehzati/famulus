@@ -227,6 +227,14 @@ def accounts_use_google_credential(*, nickname: str, credential_id: str, home: P
         raise SystemExit(str(exc)) from exc
 
     data[nickname]["credential_id"] = credential_id
+    # Binding a credential must also flip the account into OAuth mode: every
+    # real XOAUTH2 call site (_imap_gateway.py, _smtp_transport.py) gates
+    # exclusively on is_gmail_oauth(account)/account_auth_mode(account),
+    # which look only at the "auth" field -- credential_id's mere presence
+    # is never consulted at authentication time. Without this, binding a
+    # credential is a silent no-op that leaves the account on its prior auth
+    # mode (e.g. app-password) with no error.
+    data[nickname]["auth"] = _oauth_tokens.AUTH_GMAIL_OAUTH
     save(data)
 
 
