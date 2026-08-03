@@ -6,6 +6,7 @@ the orchestrator that ties extraction, validation, rendering, and serving togeth
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -39,10 +40,11 @@ class GraphRenderError(GraphBuildError):
 
 
 class GraphSourceKind(str, Enum):
-    """Kinds of source spec accepted by graph extraction."""
+    """Kinds of source accepted by extraction or payload loading."""
 
     FILE = "file"
     MODULE = "module"
+    PAYLOAD = "payload"
 
 
 @dataclass(frozen=True)
@@ -108,19 +110,26 @@ def resolve_graph_source(
 
 
 class BaseVisualizer:
-    """Orchestrate extraction, validation, rendering, and serving for one source."""
+    """Orchestrate payload acquisition, validation, rendering, and serving.
+
+    An extractor is optional. Source adapters use an extractor when Python can
+    deterministically derive graph semantics. LLM-owned workflows instead
+    produce canonical JSON before entering this class and configure
+    ``extractor=None``; the visualizer then loads and validates that payload
+    without pretending the core can invoke an instruction interface.
+    """
 
     def __init__(
         self,
         *,
-        extractor: BaseJsonExtractor,
+        extractor: BaseJsonExtractor | None,
         renderer: BaseRenderer,
         schema: Mapping[str, Any] | str | Path | None = None,
         validator: GraphValidator | None = None,
         strict: bool = True,
         repo_roots: tuple[Path, ...] | None = None,
     ) -> None:
-        """Create an orchestrator for one extractor-renderer pair."""
+        """Create an orchestrator for extracted or precomputed payloads."""
         self.extractor = extractor
         self.renderer = renderer
         self.artifacts = GraphArtifactWriter(renderer)
@@ -171,8 +180,41 @@ class BaseVisualizer:
         *,
         repo_roots: tuple[Path, ...] | None = None,
     ) -> GraphSource:
-        """Normalize a source using standard path/module resolution."""
+        """Normalize a source according to the configured acquisition mode."""
+        if self.extractor is None:
+            if isinstance(source, GraphSource):
+                return source
+            raw = str(source).strip()
+            if not raw:
+                raise GraphSourceResolutionError("payload source is required")
+            payload_path = Path(raw).expanduser().resolve()
+            if not payload_path.is_file():
+                raise GraphSourceResolutionError(
+                    f"precomputed graph payload is not a readable file: {raw}"
+                )
+            return GraphSource(
+                kind=GraphSourceKind.PAYLOAD,
+                value=raw,
+                resolved_path=payload_path,
+            )
         return resolve_graph_source(source, repo_roots=repo_roots or self.repo_roots)
+
+    def prepare_payload(self, payload: Payload, *, source_value: str) -> Payload:
+        """Normalize and validate one acquired payload through the renderer contract."""
+        try:
+            prepared = self.renderer.normalize(payload)
+            if self.strict:
+                if self.validator is not None:
+                    self.validator(prepared)
+                else:
+                    self.renderer.validate(prepared)
+        except GraphBuildError:
+            raise
+        except Exception as exc:
+            raise GraphBuildValidationError(
+                f"graph payload invalid for source {source_value}"
+            ) from exc
+        return prepared
 
     def build_payload(
         self,
@@ -181,7 +223,7 @@ class BaseVisualizer:
         repo_roots: tuple[Path, ...] | None = None,
         options: dict[str, object] | None = None,
     ) -> Payload:
-        """Run extraction, then validate and return payload."""
+        """Extract or load, normalize, validate, and return one payload."""
         resolved_source = self.resolve_source(source, repo_roots=repo_roots)
         if options:
             resolved_source = GraphSource(
@@ -190,26 +232,29 @@ class BaseVisualizer:
                 resolved_path=resolved_source.resolved_path,
                 options=options,
             )
-        try:
-            payload = self.extractor.extract(resolved_source)
-        except GraphBuildError:
-            raise
-        except Exception as exc:  # pragma: no cover - preserves extractor-specific semantics
-            raise GraphBuildError(
-                f"failed to extract graph payload from {resolved_source.value}"
-            ) from exc
+        if self.extractor is None:
+            try:
+                loaded = json.loads(resolved_source.resolved_path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+                raise GraphBuildError(
+                    f"failed to load graph payload from {resolved_source.value}"
+                ) from exc
+            if not isinstance(loaded, dict):
+                raise GraphBuildValidationError(
+                    f"graph payload must be an object for source {resolved_source.value}"
+                )
+            payload = loaded
+        else:
+            try:
+                payload = self.extractor.extract(resolved_source)
+            except GraphBuildError:
+                raise
+            except Exception as exc:  # pragma: no cover - preserves extractor-specific semantics
+                raise GraphBuildError(
+                    f"failed to extract graph payload from {resolved_source.value}"
+                ) from exc
 
-        if self.strict:
-            if self.validator is not None:
-                try:
-                    self.validator(payload)
-                except Exception as exc:
-                    raise GraphBuildValidationError(
-                        f"graph payload invalid for source {resolved_source.value}"
-                    ) from exc
-            else:
-                self.renderer.validate(payload)
-        return payload
+        return self.prepare_payload(payload, source_value=resolved_source.value)
 
     def render_payload(
         self,
@@ -268,7 +313,7 @@ class BaseVisualizer:
         serve_port: int = 8765,
         repo_roots: tuple[Path, ...] | None = None,
     ) -> GraphBuildResult:
-        """End-to-end extract-validate-render for one source."""
+        """Acquire, validate, and render one extracted or precomputed source."""
         resolved_source = self.resolve_source(source, repo_roots=repo_roots)
         payload = self.build_payload(resolved_source, repo_roots=repo_roots)
         result = self.render_payload(
