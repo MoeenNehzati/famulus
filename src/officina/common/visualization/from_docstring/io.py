@@ -3,14 +3,7 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
-
-
-def write_dependency_json(document: dict[str, object], target_path: Path) -> Path:
-    """Write dependency JSON in canonical form."""
-    target_path.write_text(json.dumps(document, indent=2), encoding="utf-8")
-    return target_path
 
 
 def default_out_dir(target: Path) -> Path:
@@ -47,5 +40,4 @@ __all__ = [
     "default_out_dir",
     "gather_modules",
     "gather_modules_in_directory",
-    "write_dependency_json",
 ]

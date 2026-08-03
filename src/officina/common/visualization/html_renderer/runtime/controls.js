@@ -65,6 +65,7 @@
           draggingNodeIds.forEach((nodeId) => {
             rerouteIncidentEdgesFromCurrentPositions(nodeId);
           });
+          refreshEdgeOcclusionMasks();
           saveViewerState();
         }
         draggingNodeIds = [];
@@ -80,29 +81,25 @@
     hideSelectedBtn.addEventListener("click", () => {
       const nodeIds = visibleSelectedNodeIds();
       if (!nodeIds.length) return;
-      nodeIds.forEach(nodeId => {
-        hiddenNodes.add(nodeId);
-        dimmedNodes.delete(nodeId);
-      });
-      if (focusNodeId && nodeIds.includes(focusNodeId)) {
-        focusNodeId = null;
-        if (ancestorFocusMode > 0) ancestorFocusMode = 0;
-      }
-      removeNodesFromSelection(nodeIds);
-      saveViewerState();
-      updateVisibilityFast();
+      hideNodes(nodeIds);
     });
 
     dimSelectedBtn.addEventListener("click", () => {
       const nodeIds = visibleSelectedNodeIds();
       if (!nodeIds.length) return;
-      const shouldUndim = nodeIds.every(nodeId => dimmedNodes.has(nodeId));
-      nodeIds.forEach(nodeId => {
-        if (shouldUndim) dimmedNodes.delete(nodeId);
-        else dimmedNodes.add(nodeId);
-      });
-      syncSelectionPresentation();
-      saveViewerState();
+      toggleDimNodes(nodeIds);
+    });
+
+    hideUnselectedBtn.addEventListener("click", () => {
+      const nodeIds = visibleUnselectedNodeIds({preserveSelectionAncestors: true});
+      if (!visibleSelectedNodeIds().length || !nodeIds.length) return;
+      hideNodes(nodeIds);
+    });
+
+    dimUnselectedBtn.addEventListener("click", () => {
+      const nodeIds = visibleUnselectedNodeIds();
+      if (!visibleSelectedNodeIds().length || !nodeIds.length) return;
+      toggleDimNodes(nodeIds);
     });
 
     document.getElementById("redraw-btn").addEventListener("click", () => {
@@ -114,17 +111,8 @@
     });
 
     function syncLegendRows() {
-      document.querySelectorAll(".legend-row").forEach(row => {
-        if (row.dataset.legendKind === "edge") {
-          row.classList.toggle("inactive", hiddenEdgeTypes.has(row.dataset.type));
-        } else {
-          row.classList.toggle("inactive", hiddenTypes.has(row.dataset.type));
-        }
-        const active = row.dataset.legendKind === "edge"
-          ? !edgeCategorySetContains(row.dataset.type, hiddenEdgeTypes)
-          : !hiddenTypes.has(row.dataset.type);
-        row.setAttribute("aria-pressed", active ? "true" : "false");
-      });
+      syncNodeLegendRows();
+      syncEdgeLegendRows();
     }
 
     function resetViewState({includeCategories = false} = {}) {
@@ -135,15 +123,10 @@
       selectedNodeIds.clear();
       selectedNodeId = null;
       selectionSource = "explicit";
-      focusNodeId = null;
-      ancestorFocusMode = 0;
-      ancestorHiddenByFocus.clear();
       manualPositions.clear();
       hasFittedOnce = false;
       showSelectionDetails();
       if (includeCategories) {
-        hiddenTypes.clear();
-        hiddenEdgeTypes.clear();
         syncLegendRows();
       }
       if (includeCategories) localStorage.removeItem(viewerStateKey);
@@ -170,14 +153,12 @@
     });
 
     document.getElementById("zoom-in-btn").addEventListener("click", () => {
-      const r = canvasWrapEl.getBoundingClientRect();
-      zoomAt(zoomLevel * 1.3, r.left + r.width / 2, r.top + r.height / 2);
+      zoomTowardContent(zoomLevel * 1.3);
       saveViewerState();
     });
 
     document.getElementById("zoom-out-btn").addEventListener("click", () => {
-      const r = canvasWrapEl.getBoundingClientRect();
-      zoomAt(zoomLevel / 1.3, r.left + r.width / 2, r.top + r.height / 2);
+      zoomTowardContent(zoomLevel / 1.3);
       saveViewerState();
     });
 
@@ -227,6 +208,7 @@
       applyRoutingPatch(patch);
       saveViewerState();
       rerouteAllVisibleEdgesFromCurrentPositions();
+      refreshEdgeOcclusionMasks();
     }
 
     function applyLayoutRoutingChange(patch) {
@@ -243,15 +225,19 @@
       });
     });
 
-    routingShapeSelect.addEventListener("change", () => {
-      const presetName = routingShapeSelect.value;
-      applyEdgeRoutingChange({
-        shapePreset: presetName,
-        ...shapePresets[presetName]
-      });
+    routingGeometrySelect.addEventListener("change", () => {
+      applyEdgeRoutingChange({geometry: routingGeometrySelect.value});
     });
 
-    ["extraClearance", "cornerRadius", "parallelSpacing", "mergeLaneDistance"].forEach(key => {
+    [
+      "extraClearance",
+      "cornerRadius",
+      "parallelSpacing",
+      "mergeLaneDistance",
+      "polylineBend",
+      "splineTension",
+      "bezierCurvature",
+    ].forEach(key => {
       routingInputs[key].addEventListener("input", () => {
         applyEdgeRoutingChange({ [key]: Number(routingInputs[key].value) });
       });
@@ -265,41 +251,12 @@
 
     // ── Other event listeners ────────────────────────────────────────────────
 
-    focusToggle.addEventListener("click", () => {
-      if (ancestorFocusMode === 0) {
-        if (!selectedNodeId || isHiddenNode(selectedNodeId)) return;
-        focusNodeId = selectedNodeId;
-      } else if (!focusNodeId || isHiddenNode(focusNodeId)) {
-        if (!selectedNodeId || isHiddenNode(selectedNodeId)) return;
-        focusNodeId = selectedNodeId;
-      }
-      ancestorFocusMode = (ancestorFocusMode + 1) % 3;
-      if (ancestorFocusMode === 0) focusNodeId = null;
-      saveViewerState();
-      applyAncestorFocus();
-    });
-
     document.addEventListener("keydown", event => {
       const tag = document.activeElement?.tagName?.toLowerCase();
-      if (["input", "textarea", "select", "button"].includes(tag) || document.activeElement?.isContentEditable) return;
+      if (["input", "textarea", "select"].includes(tag) || document.activeElement?.isContentEditable) return;
       if (event.key === "Escape") {
         event.preventDefault();
         deselect();
-        return;
-      }
-      if (event.key.toLowerCase() === "h") {
-        if (ancestorFocusMode === 0) {
-          if (!selectedNodeId || isHiddenNode(selectedNodeId)) return;
-          focusNodeId = selectedNodeId;
-        } else if (!focusNodeId || isHiddenNode(focusNodeId)) {
-          if (!selectedNodeId || isHiddenNode(selectedNodeId)) return;
-          focusNodeId = selectedNodeId;
-        }
-        event.preventDefault();
-        ancestorFocusMode = (ancestorFocusMode + 1) % 3;
-        if (ancestorFocusMode === 0) focusNodeId = null;
-        saveViewerState();
-        applyAncestorFocus();
         return;
       }
       if (event.key.toLowerCase() === "r") {

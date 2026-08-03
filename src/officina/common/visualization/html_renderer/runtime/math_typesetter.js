@@ -27,8 +27,9 @@
     }
 
     function clearMathBeforeMutation(element) {
+      const hasMath = containsMath(element) || Boolean(element.querySelector("mjx-container"));
       nextMathGeneration(element);
-      if (window.MathJax && window.MathJax.typesetClear) {
+      if (hasMath && window.MathJax && window.MathJax.typesetClear) {
         window.MathJax.typesetClear([element]);
       }
     }
@@ -44,4 +45,3 @@
           return window.MathJax.typesetPromise([element]);
         });
     }
-

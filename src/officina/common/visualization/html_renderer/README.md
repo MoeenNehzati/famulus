@@ -44,9 +44,18 @@ fields:
   generic legend displays those descriptions on hover.
 - Category parents define operational filter and legend hierarchies. Parent
   exclusions apply transitively and temporarily disable descendant controls.
-- An edge category may set `bridge_hidden_nodes: true` only when same-type paths
-  have valid composition semantics. Derived paths are disabled by default.
+- `relation_semantics.transformations.node_omission.rules` declares a finite
+  relation transducer. Every outcome is independently asserted by the adapter,
+  and fidelity records whether the transformation retained exact information.
+- `relation_semantics.subsumptions` is an acyclic endpoint information order.
+  At a visible endpoint, stronger eligible results suppress weaker equivalents;
+  incomparable results remain bundled. Legend/category parents remain purely
+  operational filter hierarchy and never imply semantic substitutability.
 - `edge.type` selects edge color/dash styling and provides an edge filter.
+- `ui.edge_styles` optionally overrides semantic relation colors and dashes.
+- `ui.edge_metadata_styles` optionally labels and tunes the bounded generic
+  presentations for hidden-detail summaries, same-type multiplicity, and
+  mixed-type edges. It cannot define arbitrary metadata predicates.
 - Additional entity and edge fields are retained for the details panel.
 
 Adapters are responsible for translating domain concepts into these fields.
@@ -84,6 +93,9 @@ The renderer must not branch on adapter-specific names.
 - `runtime/visibility.js` owns node visibility, hidden-node restoration, and ancestor focus.
 - `runtime/inspector.js` formats and binds generic node and edge details.
 - `runtime/projection.js` projects collapsed or hidden structure into visible edges.
+- `runtime/edge_presentation.js` resolves metadata presentation, owns edge-local
+  gradients and filters, synchronizes them after rerouting, restores base styles
+  after interaction, and constructs matching explanatory legend samples.
 - `runtime/layout.js` builds hierarchical ELK input and converts layout geometry.
 - `runtime/node_renderer.js` paints generic nodes, containers, and decorations.
 - `runtime/interactions.js` owns node/edge hover, selection, and edge emphasis.
@@ -100,11 +112,65 @@ The browser runtime follows a fixed pipeline:
 1. Index entities, containment, and edges.
 2. Apply node and edge filters plus collapsed-container state.
 3. Roll collapsed descendants up to visible representatives, derive hidden-node
-   paths only for edge categories that explicitly permit same-type composition,
-   and bundle parallel visible relationships by directed endpoint pair.
+   paths only through adapter-declared typed composition rules, and bundle parallel
+   visible relationships by directed endpoint pair.
 4. Recursively size contained graphs and obtain geometry from ELK.
-5. Paint container backgrounds, then edges, then ordinary nodes.
+5. Paint container and ordinary node shapes, then masked edges. Each edge remains
+   above its source and target shapes, including containment endpoints, but its
+   mask occludes it beneath every unrelated ordinary node, attenuates it behind
+   unrelated translucent containers, and fully occludes it beneath every measured
+   label and subtitle. Text therefore remains visually above graph lines without
+   sacrificing endpoint-over-edge semantics or erasing contained relationships.
 6. Apply interaction-only updates without relaying out the graph when possible.
+
+### Edge meaning and presentation
+
+An edge has three deliberately separate layers:
+
+1. Its semantic relation type states what the dependency means. The relation
+   catalog and `ui.edge_styles` determine the ordinary color and dash.
+2. Renderer-computed metadata states explain why one visible path represents
+   additional edges or hidden structure.
+3. A resolved style turns those two inputs into SVG paint without changing the
+   underlying relation records.
+
+The generic metadata states are mutually interpretable rather than mutually
+exclusive. `aggregate` adds a halo around the semantic foreground,
+`same_type_bundle` increases foreground width, and `mixed_type_bundle` replaces
+the foreground with a solid constituent-color gradient plus a neutral outline.
+When states coincide, width takes the maximum and every applicable outer effect
+is retained. Mixed-type presentation alone replaces semantic dash because
+different dash patterns cannot truthfully occupy one path.
+
+`edge_presentation.js` creates deterministic graph-local SVG resources. A full
+render replaces resources with the same edge identity; transient derived-edge
+removal explicitly deletes its resources. User-space gradients are synchronized
+after every route change, and hover emphasis stores/restores the resolved base
+width and filter. The Edge presentation legend calls the same resolver and icon
+builder, so it documents actual paint behavior rather than a parallel convention.
+
+Example override:
+
+```json
+{
+  "ui": {
+    "edge_metadata_styles": {
+      "aggregate": {
+        "label": "Hidden detail summary",
+        "style": {"halo_width": 10, "halo_opacity": 0.22}
+      },
+      "same_type_bundle": {
+        "label": "Multiple of same type",
+        "style": {"stroke_width": 5}
+      },
+      "mixed_type_bundle": {
+        "label": "Mixed types",
+        "style": {"outline_width": 8, "transition_color": "#f8fafc"}
+      }
+    }
+  }
+}
+```
 
 Find and direct interaction share one node-selection model. A normal click
 replaces the selection, Ctrl/Cmd-click toggles membership, and a search selects
@@ -125,6 +191,24 @@ This order is part of the renderer contract. In particular, edges attached to a
 contained node remain visible above its container background but below ordinary
 nodes.
 
+### Node-omission projection contract
+
+The renderer owns the projection algorithm; adapters own its domain semantics.
+An adapter may declare finite
+`relation_semantics.transformations.node_omission.rules`. Each rule identifies
+allowed causes, left and right relation types, and one or more truthful outcomes
+with fidelity. No matching rule means no derived dependency. Container collapse
+instead rolls endpoints up to visible owners and does not invoke node-omission
+composition.
+
+Canonical edges may provide `projection_target` to identify the exact node through
+which a hidden logical endpoint continues. The renderer must not infer that target
+from a sibling, container, label, or naming convention. Projection traverses only
+canonical edges, applies declared transitions finitely, rejects self-links, deduplicates
+equivalent witnesses, and never composes a derived edge again. If a matching direct
+edge exists, it takes precedence over the indirect result. Derived edges retain their
+omitted-node and canonical-edge provenance for inspection and restoration.
+
 ## Extension rules
 
 - Add a new domain by producing the canonical payload in a `from_*` adapter.
@@ -134,6 +218,8 @@ nodes.
   remain visible at low zoom but is not itself a traversable graph relation.
 - Add generic visual behavior here only when every adapter can use it.
 - Keep semantic inference, repository traversal, and validation outside this package.
+- Declare domain-specific omission compositions and `projection_target` values in the
+  adapter payload; do not add domain edge names or inference rules to the renderer.
 - Preserve standalone output. Do not introduce runtime references to these local assets.
 - Preserve edge identity. Parallel source relationships may share endpoints and type
   while carrying distinct annotations. The browser bundles them only as a lossless
@@ -146,7 +232,8 @@ nodes.
 ## Debugging map
 
 Start in the runtime fragment matching the symptom: `projection.js` for incorrect
-visibility or rolled-up edges, `layout.js` for geometry, `node_renderer.js` for SVG
-appearance, `interactions.js` for hover/selection, and `controls.js` for dragging or
-toolbar behavior. Start in `page.html` or `viewer.css` only for document structure
-and presentation problems.
+visible-edge meaning, `edge_presentation.js` for metadata states, gradients,
+halos, or presentation legend samples, `layout.js` and `geometry.js` for routes,
+`node_renderer.js` for node SVG appearance, `interactions.js` for hover/selection,
+and `controls.js` for dragging or toolbar behavior. Start in `page.html` or
+`viewer.css` only for document structure and CSS layout problems.

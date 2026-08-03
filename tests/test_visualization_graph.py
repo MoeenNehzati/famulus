@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+from officina.common.visualization import render_module_artifacts
 from officina.common.visualization.graph import Graph
+
+
+def test_public_package_exports_docstring_artifact_facade() -> None:
+    """Repository tooling can import the documented orchestration function."""
+    assert callable(render_module_artifacts)
 
 
 def test_transitive_reduction_removes_same_type_redundant_edge() -> None:
     """A direct edge is redundant when another path of the same type reaches it."""
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "entities": [
             {
                 "id": "a",
@@ -49,7 +55,7 @@ def test_transitive_reduction_removes_same_type_redundant_edge() -> None:
 def test_transitive_reduction_keeps_edges_when_type_differs() -> None:
     """Reduction does not collapse semantically different edge types."""
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "entities": [
             {
                 "id": "a",

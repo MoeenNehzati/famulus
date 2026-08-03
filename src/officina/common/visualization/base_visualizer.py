@@ -13,7 +13,7 @@ from typing import Any, Callable, Mapping
 
 from ..repository_paths import resolve_logical_module_path, resolve_python_source_path
 from .base_extractor import BaseJsonExtractor
-
+from .artifacts import GraphArtifactWriter
 from .base_renderer import BaseRenderer
 from .server import GraphServer, start_graph_server
 
@@ -123,6 +123,7 @@ class BaseVisualizer:
         """Create an orchestrator for one extractor-renderer pair."""
         self.extractor = extractor
         self.renderer = renderer
+        self.artifacts = GraphArtifactWriter(renderer)
         self.repo_roots = tuple(repo_roots) if repo_roots is not None else None
         if schema is not None and validator is not None:
             raise ValueError("only one of schema or validator may be provided")
@@ -224,39 +225,25 @@ class BaseVisualizer:
         apply_transitive_reduction: bool = False,
     ) -> GraphBuildResult:
         """Render one validated payload and return artifact paths."""
-        out_dir = Path(output_dir).resolve()
-        out_dir.mkdir(parents=True, exist_ok=True)
-
-        payload_path = None
-        html_path = None
-        if write_payload:
-            payload_output = Path(write_payload_path or out_dir / f"{output_name}.json")
-            payload_output.write_text(
-                self._json_dumps(payload),
-                encoding="utf-8",
+        try:
+            artifacts = self.artifacts.write(
+                payload,
+                output_dir=output_dir,
+                stem=output_name,
+                write_payload=write_payload,
+                write_presentation=render_html,
+                payload_target=write_payload_path,
+                reduction_note=reduction_note,
+                apply_transitive_reduction=apply_transitive_reduction,
             )
-            payload_path = payload_output
-
-        if render_html:
-            html_output = out_dir / f"{output_name}.html"
-            try:
-                html_path = self.renderer.write_graph_html(
-                    payload,
-                    html_output,
-                    validate=False,
-                    reduction_note=reduction_note,
-                    apply_transitive_reduction=apply_transitive_reduction,
-                )
-            except Exception as exc:
-                raise GraphRenderError(
-                    f"failed to render html output for {output_name}"
-                ) from exc
+        except Exception as exc:
+            raise GraphRenderError(f"failed to write graph artifacts for {output_name}") from exc
 
         return GraphBuildResult(
             source=source,
             payload=payload,
-            payload_path=payload_path,
-            html_path=html_path,
+            payload_path=artifacts.payload,
+            html_path=artifacts.presentation,
             served_url=None,
             server=None,
         )
@@ -264,13 +251,6 @@ class BaseVisualizer:
     def serve(self, directory: Path | str, host: str, port: int) -> GraphServer:
         """Start and return a server for a rendered directory."""
         return start_graph_server(directory, host=host, port=port)
-
-    @staticmethod
-    def _json_dumps(payload: Payload) -> str:
-        """Serialize payload into compact JSON output."""
-        from json import dumps
-
-        return dumps(payload, indent=2)
 
     def build(
         self,

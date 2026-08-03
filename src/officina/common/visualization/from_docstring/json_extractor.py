@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, Iterable
 from ..base_visualizer import GraphBuildError, GraphBuildValidationError
 from ..base_extractor import BaseJsonExtractor
 from ...docstring import PipelineSpec, FunctionSpec
-from .io import default_out_dir, gather_modules, gather_modules_in_directory, write_dependency_json
+from .io import default_out_dir, gather_modules, gather_modules_in_directory
 from .payload_builder import to_dependency_json
 from .parser import (
     collect_defined_callables,
@@ -75,16 +75,6 @@ def extract_docstring_dependency_json(
     )
 
 
-def to_docstring_dependency_json(
-    module_path: str | Path,
-    *,
-    mode: str = "flowchart",
-) -> dict[str, Any]:
-    """Compatibility wrapper preserved for legacy import sites."""
-    del mode
-    return extract_docstring_dependency_json(module_path)
-
-
 class DocstringJsonExtractor(BaseJsonExtractor):
     """Extractor that maps a source to docstring-derived dependency payloads."""
 
@@ -127,9 +117,7 @@ __all__ = [
     "parse_module",
     "infer_call_edges",
     "to_dependency_json",
-    "to_docstring_dependency_json",
     "extract_docstring_dependency_json",
     "gather_modules",
     "gather_modules_in_directory",
-    "write_dependency_json",
 ]

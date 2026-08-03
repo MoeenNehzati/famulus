@@ -34,21 +34,31 @@
     </aside>
     <div class="canvas-area">
       <div class="canvas-toolbar" id="canvas-toolbar">
-        <span class="toolbar-tip" data-tooltip="Cycle ancestor focus for the selected node: highlight, hide, then show the full graph.">
-          <button id="focus-toggle" class="toolbar-btn" type="button" aria-label="Cycle ancestor focus">Highlight ancestors</button>
+        <span class="toolbar-tip" data-tooltip="Undo the most recent selection, visibility, hiding, restoration, dimming, or containment action. Shortcut: Ctrl/Cmd+Z.">
+          <button id="visibility-undo-btn" class="toolbar-btn" type="button" disabled aria-label="Undo graph action">Undo</button>
         </span>
+        <span class="toolbar-tip" data-tooltip="Redo the most recently undone visibility action. Shortcuts: Ctrl+Y or Ctrl/Cmd+Shift+Z.">
+          <button id="visibility-redo-btn" class="toolbar-btn" type="button" disabled aria-label="Redo graph action">Redo</button>
+        </span>
+        <div class="toolbar-sep"></div>
         <span class="toolbar-tip" data-tooltip="Hide every selected node from the visible graph. Double-click a node to hide it directly.">
           <button id="hide-selected-btn" class="toolbar-btn" type="button" disabled aria-label="Hide selected nodes">Hide selected</button>
         </span>
         <span class="toolbar-tip" data-tooltip="Dim or undim every selected node without changing graph layout.">
           <button id="dim-selected-btn" class="toolbar-btn" type="button" disabled aria-label="Dim selected nodes">Dim selected</button>
         </span>
+        <span class="toolbar-tip" data-tooltip="Hide every currently visible node except the selection and the containment ancestors needed to keep selected nodes visible.">
+          <button id="hide-unselected-btn" class="toolbar-btn" type="button" disabled aria-label="Hide unselected nodes">Hide unselected</button>
+        </span>
+        <span class="toolbar-tip" data-tooltip="Dim or undim every currently visible node outside the selection without changing graph layout.">
+          <button id="dim-unselected-btn" class="toolbar-btn" type="button" disabled aria-label="Dim unselected nodes">Dim unselected</button>
+        </span>
         <div class="toolbar-sep"></div>
         <span class="toolbar-tip" data-tooltip="Reset manual node positions and rerun the automatic layout. Shortcut: r.">
           <button id="redraw-btn" class="toolbar-btn" type="button" aria-label="Redraw graph layout">Redraw all</button>
         </span>
         <div class="toolbar-sep"></div>
-        <span class="toolbar-tip" data-tooltip="Click: restore individually hidden and focus-hidden nodes while keeping hidden legend categories. Double-click: reset everything, including legend categories. Shortcut: c.">
+        <span class="toolbar-tip" data-tooltip="Click: restore individually hidden nodes while keeping hidden legend categories. Double-click: reset everything, including legend categories. Shortcut: c.">
           <button id="reset-btn" class="toolbar-btn" type="button" aria-label="Reset graph state">Reset</button>
         </span>
         <div class="toolbar-sep"></div>
@@ -63,8 +73,8 @@
         </span>
       </div>
       <div class="routing-controls" id="routing-controls">
-        <details open>
-          <summary>Presets</summary>
+        <section class="routing-group" aria-labelledby="routing-presets-title">
+          <h3 class="routing-group-title" id="routing-presets-title">Presets</h3>
           <div class="routing-controls-body">
             <div class="routing-row">
               <label for="routing-compactness">Graph spread</label>
@@ -74,35 +84,54 @@
                 <option value="spacious">Spacious</option>
               </select>
             </div>
-            <div class="routing-row">
-              <label for="routing-shape">Shape</label>
-              <select id="routing-shape" aria-label="Edge shape preset">
-                <option value="sharp">Sharp</option>
-                <option value="soft" selected>Soft</option>
-                <option value="curvy">Curvy</option>
-              </select>
-            </div>
           </div>
-        </details>
-        <details>
-          <summary>Advanced</summary>
+        </section>
+        <section class="routing-group" aria-labelledby="routing-geometry-title">
+          <h3 class="routing-group-title" id="routing-geometry-title">Edge geometry</h3>
           <div class="routing-controls-body">
             <div class="routing-row">
-              <label for="routing-clearance">Node gap <span id="routing-clearance-value" class="routing-value"></span></label>
-              <input id="routing-clearance" type="range" min="0" max="30" step="1" aria-label="Extra edge clearance">
+              <label for="routing-geometry">Edge geometry</label>
+              <select id="routing-geometry" aria-label="Edge geometry">
+                <option value="orthogonal">Orthogonal</option>
+                <option value="polyline">Polyline</option>
+                <option value="spline">Spline</option>
+                <option value="bezier" selected>Bézier</option>
+                <option value="straight">Straight</option>
+              </select>
             </div>
             <div class="routing-row">
+              <label for="routing-clearance">Endpoint clearance <span id="routing-clearance-value" class="routing-value"></span></label>
+              <input id="routing-clearance" type="range" min="0" max="30" step="1" aria-label="Extra edge clearance">
+            </div>
+            <div class="routing-row" data-routing-geometry="orthogonal" hidden>
               <label for="routing-radius">Curve <span id="routing-radius-value" class="routing-value"></span></label>
               <input id="routing-radius" type="range" min="0" max="80" step="1" aria-label="Edge corner radius">
             </div>
-            <div class="routing-row">
-              <label for="routing-parallel">Parallel gap <span id="routing-parallel-value" class="routing-value"></span></label>
+            <div class="routing-row" id="routing-parallel-row" hidden>
+              <label for="routing-parallel">Parallel separation <span id="routing-parallel-value" class="routing-value"></span></label>
               <input id="routing-parallel" type="range" min="0" max="60" step="1" aria-label="Parallel edge spacing">
             </div>
-            <div class="routing-row">
+            <div class="routing-row" data-routing-geometry="orthogonal" hidden>
               <label for="routing-merge">Merge lane <span id="routing-merge-value" class="routing-value"></span></label>
               <input id="routing-merge" type="range" min="0" max="140" step="1" aria-label="Merged target lane distance">
             </div>
+            <div class="routing-row" data-routing-geometry="polyline" hidden>
+              <label for="routing-polyline-bend">Bend position <span id="routing-polyline-bend-value" class="routing-value"></span></label>
+              <input id="routing-polyline-bend" type="range" min="10" max="90" step="1" aria-label="Polyline bend position">
+            </div>
+            <div class="routing-row" data-routing-geometry="spline" hidden>
+              <label for="routing-spline-tension">Tension <span id="routing-spline-tension-value" class="routing-value"></span></label>
+              <input id="routing-spline-tension" type="range" min="5" max="50" step="1" aria-label="Spline tension">
+            </div>
+            <div class="routing-row" data-routing-geometry="bezier">
+              <label for="routing-bezier-curvature">Curvature <span id="routing-bezier-curvature-value" class="routing-value"></span></label>
+              <input id="routing-bezier-curvature" type="range" min="5" max="80" step="1" aria-label="Bezier curvature">
+            </div>
+          </div>
+        </section>
+        <section class="routing-group" aria-labelledby="routing-layout-title">
+          <h3 class="routing-group-title" id="routing-layout-title">Layout spacing</h3>
+          <div class="routing-controls-body">
             <div class="routing-row">
               <label for="routing-node-spacing">Vertical spacing <span id="routing-node-spacing-value" class="routing-value"></span></label>
               <input id="routing-node-spacing" type="range" min="8" max="220" step="1" aria-label="Vertical cell spacing">
@@ -116,7 +145,7 @@
               <input id="routing-edge-node-spacing" type="range" min="0" max="160" step="1" aria-label="ELK edge-node spacing">
             </div>
           </div>
-        </details>
+        </section>
       </div>
       <div class="canvas-wrap" id="canvas-wrap">
         <div id="elk-status" class="elk-status">Rendering graph layout...</div>
@@ -124,8 +153,8 @@
           <defs>
           </defs>
           <g id="container-layer"></g>
-          <g id="edge-layer"></g>
           <g id="node-layer"></g>
+          <g id="edge-layer"></g>
         </svg>
       </div>
     </div>
@@ -134,20 +163,20 @@
       <button class="panel-toggle" id="panel-toggle" type="button" aria-expanded="true" aria-controls="panel-content" title="Collapse graph controls">⟩</button>
       <div class="collapsed-label">Controls</div>
       <div class="panel-content" id="panel-content">
-    <h1 id="panel-title">Graph controls</h1>
+        <h1 id="panel-title">Graph controls</h1>
 
-        <div class="sidebar-section" data-section-id="cheatsheet">
-          <div class="drag-handle" draggable="true" title="Drag to reorder">⠿</div>
+        <div class="sidebar-section fixed-top-sidebar-section" data-section-id="cheatsheet">
           <details id="cheatsheet-details">
             <summary>How to use</summary>
-            <div class="small" style="margin-top:0.4rem;"><strong>Double-click</strong> a node to hide it; use the <em>Hidden nodes</em> list in the left inspector to restore it.</div>
-            <div class="small" style="margin-top:0.25rem;"><strong>Toolbar</strong> (top-left, always visible): <em>Highlight ancestors</em> cycles focus for the primary node; <em>Hide selected</em> and <em>Dim selected</em> act on the complete selection; <em>Redraw all</em> resets layout.</div>
+            <div class="small" style="margin-top:0.4rem;"><strong>Double-click</strong> a node to hide it; use the <em>Hidden nodes</em> list in the left inspector to restore it. <strong>Alt+double-click</strong> a container to collapse or expand its contents instead.</div>
+            <div class="small" style="margin-top:0.25rem;"><strong>Toolbar</strong> (top-left, always visible): <em>Hide selected</em> and <em>Dim selected</em> act on the complete selection; <em>Redraw all</em> resets layout.</div>
             <div class="small" style="margin-top:0.25rem;">Hover a node or edge to preview metadata. Click to pin details in the left inspector.</div>
-            <div class="small" style="margin-top:0.25rem;">Click a node to select it; hold <kbd>Ctrl</kbd>/<kbd>Cmd</kbd> to toggle multiple nodes. Find selects matching nodes and both endpoints of matching relations. Click a node or edge type in the legend to hide or show that type.</div>
-            <div class="small" style="margin-top:0.25rem;"><kbd>h</kbd> cycles ancestor focus (off → dim → hide). <kbd>Esc</kbd> or ✕ deselects. <kbd>r</kbd> redraws. <kbd>c</kbd> restores nodes and focus; <kbd>Shift+C</kbd> also clears filters and legend exclusions. <kbd>f</kbd> fits the graph.</div>
+            <div class="small" style="margin-top:0.25rem;">Click a node to select it; hold <kbd>Ctrl</kbd>/<kbd>Cmd</kbd> to toggle multiple nodes. In a multi-selection, click a selected-node name to inspect it or double-click it to remove it from the selection.</div>
+            <div class="small" style="margin-top:0.25rem;">The node and color legends select matching nodes. Relation-row arrows add the union of ancestors or successors of all selected nodes through that relation type. Existing hide and dim buttons act on the resulting selection. Click the rest of a relation row to hide or show that relation.</div>
+            <div class="small" style="margin-top:0.25rem;"><kbd>Esc</kbd> or ✕ deselects. <kbd>r</kbd> redraws. <kbd>c</kbd> restores hidden nodes; <kbd>Shift+C</kbd> also clears filters and legend exclusions. <kbd>f</kbd> fits the graph.</div>
             <div class="small" style="margin-top:0.25rem;">Drag a node to reposition it. Drag a sidebar edge or focus its resize handle and use arrow keys to adjust width.</div>
             <div class="small" style="margin-top:0.25rem;"><strong>Scroll</strong> to zoom in/out (centered at cursor). <strong>Drag empty space</strong> to pan. Use the toolbar +/−/Fit buttons or keyboard <kbd>+</kbd> <kbd>−</kbd> <kbd>f</kbd>.</div>
-            <div class="small" style="margin-top:0.25rem;"><strong>Edge styles:</strong> solid = Verified; long-dashed = Likely; short-dashed = Speculative. <strong>Node borders:</strong> solid = explicit; dashed = model-introduced.</div>
+            <div class="small" style="margin-top:0.25rem;"><strong>Edge styles:</strong> a single-relation edge uses the color and dash pattern shown under Relations. Metadata-driven changes are explained under Edge presentation. <strong>Node borders:</strong> solid = explicit; dashed = model-introduced.</div>
             @@OFFICINA_REDUCTION_NOTE@@
           </details>
         </div>

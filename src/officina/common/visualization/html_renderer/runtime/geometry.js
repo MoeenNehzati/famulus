@@ -147,6 +147,91 @@
       ]);
     }
 
+    function cubicPathBetween(start, end) {
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const curvature = routingConfig.bezierCurvature / 100;
+      if (Math.abs(dx) >= Math.abs(dy)) {
+        const direction = dx >= 0 ? 1 : -1;
+        const handle = Math.max(12, Math.min(320, Math.abs(dx) * curvature));
+        return `M ${start.x} ${start.y} C ${start.x + direction * handle} ${start.y}, ${end.x - direction * handle} ${end.y}, ${end.x} ${end.y}`;
+      }
+      const direction = dy >= 0 ? 1 : -1;
+      const handle = Math.max(12, Math.min(320, Math.abs(dy) * curvature));
+      return `M ${start.x} ${start.y} C ${start.x} ${start.y + direction * handle}, ${end.x} ${end.y - direction * handle}, ${end.x} ${end.y}`;
+    }
+
+    function polylinePathBetween(start, end) {
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const bend = routingConfig.polylineBend / 100;
+      const midpoint = Math.abs(dx) >= Math.abs(dy)
+        ? {x: start.x + dx * bend, y: start.y}
+        : {x: start.x, y: start.y + dy * bend};
+      return `M ${start.x} ${start.y} L ${midpoint.x} ${midpoint.y} L ${end.x} ${end.y}`;
+    }
+
+    function splinePathBetween(start, end) {
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const tension = routingConfig.splineTension / 100;
+      const midpoint = {x: (start.x + end.x) / 2, y: (start.y + end.y) / 2};
+      if (Math.abs(dx) >= Math.abs(dy)) {
+        const handle = Math.max(10, Math.min(180, Math.abs(dx) * tension));
+        const direction = dx >= 0 ? 1 : -1;
+        return `M ${start.x} ${start.y} C ${start.x + direction * handle} ${start.y}, ${midpoint.x - direction * handle} ${midpoint.y}, ${midpoint.x} ${midpoint.y} C ${midpoint.x + direction * handle} ${midpoint.y}, ${end.x - direction * handle} ${end.y}, ${end.x} ${end.y}`;
+      }
+      const handle = Math.max(10, Math.min(180, Math.abs(dy) * tension));
+      const direction = dy >= 0 ? 1 : -1;
+      return `M ${start.x} ${start.y} C ${start.x} ${start.y + direction * handle}, ${midpoint.x} ${midpoint.y - direction * handle}, ${midpoint.x} ${midpoint.y} C ${midpoint.x} ${midpoint.y + direction * handle}, ${end.x} ${end.y - direction * handle}, ${end.x} ${end.y}`;
+    }
+
+    function straightPathBetween(start, end) {
+      return `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
+    }
+
+    function routedEndpointPair(srcPos, dstPos, routeIndex = 0, routeCount = 1) {
+      const sx = srcPos.x + srcPos.width / 2;
+      const sy = srcPos.y + srcPos.height / 2;
+      const tx = dstPos.x + dstPos.width / 2;
+      const ty = dstPos.y + dstPos.height / 2;
+      const dx = tx - sx;
+      const dy = ty - sy;
+      const routeOffset = (routeIndex - (routeCount - 1) / 2) * routingConfig.parallelSpacing;
+      if (Math.abs(dx) >= Math.abs(dy)) {
+        const sourceOnRight = dx >= 0;
+        return {
+          start: {
+            x: sourceOnRight ? srcPos.x + srcPos.width : srcPos.x,
+            y: sy + routeOffset,
+          },
+          end: {
+            x: sourceOnRight ? dstPos.x : dstPos.x + dstPos.width,
+            y: ty + routeOffset,
+          },
+        };
+      }
+      const sourceBelow = dy >= 0;
+      return {
+        start: {
+          x: sx + routeOffset,
+          y: sourceBelow ? srcPos.y + srcPos.height : srcPos.y,
+        },
+        end: {
+          x: tx + routeOffset,
+          y: sourceBelow ? dstPos.y : dstPos.y + dstPos.height,
+        },
+      };
+    }
+
+    function pathBetweenForGeometry(start, end) {
+      if (routingConfig.geometry === "polyline") return polylinePathBetween(start, end);
+      if (routingConfig.geometry === "spline") return splinePathBetween(start, end);
+      if (routingConfig.geometry === "bezier") return cubicPathBetween(start, end);
+      if (routingConfig.geometry === "straight") return straightPathBetween(start, end);
+      return roundedPathForPoints([start, end]);
+    }
+
     function isContainmentAncestor(ancestorId, descendantId) {
       const seen = new Set();
       let current = parentByNode.get(descendantId);
@@ -158,7 +243,7 @@
       return false;
     }
 
-    function pointOutsideRectToward(rect, point) {
+    function pointOutsideRectToward(rect, point, gap = edgeNodeGap()) {
       const cx = rect.x + rect.width / 2;
       const cy = rect.y + rect.height / 2;
       const dx = point.x - cx;
@@ -171,26 +256,49 @@
       if (Math.abs(ndx) > 1e-6) boundaryDistance = Math.min(boundaryDistance, (rect.width / 2) / Math.abs(ndx));
       if (Math.abs(ndy) > 1e-6) boundaryDistance = Math.min(boundaryDistance, (rect.height / 2) / Math.abs(ndy));
       return {
-        x: cx + ndx * (boundaryDistance + edgeNodeGap()),
-        y: cy + ndy * (boundaryDistance + edgeNodeGap()),
+        x: cx + ndx * (boundaryDistance + gap),
+        y: cy + ndy * (boundaryDistance + gap),
       };
     }
 
     function containmentInternalPath(containerPos, descendantPos, containerIsSource) {
-      const targetCenterX = descendantPos.x + descendantPos.width / 2;
-      const horizontalPadding = Math.min(24, containerPos.width / 4);
-      const anchor = {
-        x: Math.max(
-          containerPos.x + horizontalPadding,
-          Math.min(targetCenterX, containerPos.x + containerPos.width - horizontalPadding)
-        ),
-        y: containerPos.y + Math.min(44, Math.max(20, containerPos.height / 5)),
-      };
-      const descendantAnchor = pointOutsideRectToward(descendantPos, anchor);
+      const descendantCenterX = descendantPos.x + descendantPos.width / 2;
+      const descendantCenterY = descendantPos.y + descendantPos.height / 2;
+      const containerRight = containerPos.x + containerPos.width;
+      const containerBottom = containerPos.y + containerPos.height;
+      const descendantRight = descendantPos.x + descendantPos.width;
+      const descendantBottom = descendantPos.y + descendantPos.height;
+      const candidates = [
+        {
+          clearance: descendantPos.x - containerPos.x,
+          containerAnchor: {x: containerPos.x, y: descendantCenterY},
+          descendantAnchor: {x: descendantPos.x, y: descendantCenterY},
+        },
+        {
+          clearance: containerRight - descendantRight,
+          containerAnchor: {x: containerRight, y: descendantCenterY},
+          descendantAnchor: {x: descendantRight, y: descendantCenterY},
+        },
+        {
+          clearance: containerBottom - descendantBottom,
+          containerAnchor: {x: descendantCenterX, y: containerBottom},
+          descendantAnchor: {x: descendantCenterX, y: descendantBottom},
+        },
+        {
+          clearance: descendantPos.y - containerPos.y,
+          headerPenalty: 80,
+          containerAnchor: {x: descendantCenterX, y: containerPos.y},
+          descendantAnchor: {x: descendantCenterX, y: descendantPos.y},
+        },
+      ].filter(candidate => candidate.clearance >= 0);
+      candidates.sort((left, right) =>
+        left.clearance + (left.headerPenalty || 0) - right.clearance - (right.headerPenalty || 0)
+      );
+      const {containerAnchor, descendantAnchor} = candidates[0];
       const points = containerIsSource
-        ? [anchor, descendantAnchor]
-        : [descendantAnchor, anchor];
-      return roundedPathForPoints(points);
+        ? [containerAnchor, descendantAnchor]
+        : [descendantAnchor, containerAnchor];
+      return pathBetweenForGeometry(points[0], points[1]);
     }
 
     function routedPathForEndpoints(srcId, dstId, srcPos, dstPos, routeIndex = 0, routeCount = 1) {
@@ -200,7 +308,11 @@
       if (isContainmentAncestor(dstId, srcId)) {
         return containmentInternalPath(dstPos, srcPos, false);
       }
-      return manualDoglegPath(srcPos, dstPos, routeIndex, routeCount);
+      if (routingConfig.geometry === "orthogonal") {
+        return manualDoglegPath(srcPos, dstPos, routeIndex, routeCount);
+      }
+      const {start, end} = routedEndpointPair(srcPos, dstPos, routeIndex, routeCount);
+      return pathBetweenForGeometry(start, end);
     }
 
     function incidentEdgePaths(nodeId) {
@@ -239,6 +351,7 @@
         const routeIndex = routeSeen.get(key) || 0;
         routeSeen.set(key, routeIndex + 1);
         pathEl.setAttribute("d", routedPathForEndpoints(srcId, dstId, srcPos, dstPos, routeIndex, routeCounts.get(key) || 1));
+        syncEdgeMetadataPresentationGeometry(pathEl);
         syncArrowheadForPath(pathEl);
       });
     }
@@ -251,7 +364,7 @@
       rerouteEdgePathsFromCurrentPositions(document.querySelectorAll(".edge-path"));
     }
 
-    // Redraw all edges incident to a node (including bridges) to follow drag.
+    // Redraw all edges incident to a node, including derived projections, after drag.
     function updateEdgesForNode(nodeId) {
       incidentEdgePaths(nodeId).forEach(pathEl => {
         const srcId = pathEl.dataset.sourceNodeId;
@@ -260,7 +373,129 @@
         const dstPos = getEffectivePos(dstId);
         if (srcPos && dstPos) {
           pathEl.setAttribute("d", routedPathForEndpoints(srcId, dstId, srcPos, dstPos));
+          syncEdgeMetadataPresentationGeometry(pathEl);
           syncArrowheadForPath(pathEl);
         }
+      });
+    }
+
+    function svgBoundsForElement(element) {
+      const screenMatrix = svgEl.getScreenCTM();
+      if (!screenMatrix) return null;
+      const inverse = screenMatrix.inverse();
+      const rect = element.getBoundingClientRect();
+      const corners = [
+        [rect.left, rect.top], [rect.right, rect.top],
+        [rect.right, rect.bottom], [rect.left, rect.bottom],
+      ].map(([x, y]) => {
+        const point = svgEl.createSVGPoint();
+        point.x = x;
+        point.y = y;
+        return point.matrixTransform(inverse);
+      });
+      const xs = corners.map(point => point.x);
+      const ys = corners.map(point => point.y);
+      return {
+        x: Math.min(...xs),
+        y: Math.min(...ys),
+        width: Math.max(...xs) - Math.min(...xs),
+        height: Math.max(...ys) - Math.min(...ys),
+      };
+    }
+
+    function appendEdgeMaskBlocker(mask, bounds, padding = 0, radius = 2, fill = "black") {
+      if (!bounds || bounds.width <= 0 || bounds.height <= 0) return;
+      const blocker = createSvgElement("rect");
+      blocker.setAttribute("x", String(bounds.x - padding));
+      blocker.setAttribute("y", String(bounds.y - padding));
+      blocker.setAttribute("width", String(bounds.width + 2 * padding));
+      blocker.setAttribute("height", String(bounds.height + 2 * padding));
+      blocker.setAttribute("rx", String(radius));
+      blocker.setAttribute("fill", fill);
+      mask.appendChild(blocker);
+    }
+
+    function boundsIntersect(left, right, padding = 0) {
+      if (!left || !right) return false;
+      return left.x <= right.x + right.width + padding
+        && left.x + left.width >= right.x - padding
+        && left.y <= right.y + right.height + padding
+        && left.y + left.height >= right.y - padding;
+    }
+
+    function refreshEdgeOcclusionMasks() {
+      const defs = svgEl.querySelector("defs");
+      if (!defs) return;
+      defs.querySelectorAll("[data-edge-occlusion-mask]").forEach(mask => mask.remove());
+      const visibleNodeOccluders = docData.entities
+        .map(entity => entity.id)
+        .filter(nodeId => !isHiddenNode(nodeId) && getEffectivePos(nodeId))
+        .map(nodeId => {
+          const nodeEl = nodeElement(nodeId);
+          return {
+            id: nodeId,
+            position: getEffectivePos(nodeId),
+            isContainer: isContainerNode(nodeId),
+            textBounds: nodeEl
+              ? Array.from(nodeEl.querySelectorAll(".node-label, .node-subtitle"))
+                .map(svgBoundsForElement)
+                .filter(Boolean)
+              : [],
+          };
+        });
+
+      edgeLayer.querySelectorAll(".edge-path").forEach((pathEl, index) => {
+        if (pathEl.style.display === "none") return;
+        const pathBounds = pathEl.getBBox();
+        const maskPadding = 16;
+        const maskBounds = {
+          x: pathBounds.x - maskPadding,
+          y: pathBounds.y - maskPadding,
+          width: Math.max(1, pathBounds.width + 2 * maskPadding),
+          height: Math.max(1, pathBounds.height + 2 * maskPadding),
+        };
+        const sourceId = String(pathEl.dataset.sourceNodeId || "");
+        const targetId = String(pathEl.dataset.targetNodeId || "");
+        const mask = createSvgElement("mask");
+        const maskId = `edge-occlusion-${renderVersion}-${index}`;
+        mask.setAttribute("id", maskId);
+        mask.setAttribute("maskUnits", "userSpaceOnUse");
+        mask.setAttribute("x", String(maskBounds.x));
+        mask.setAttribute("y", String(maskBounds.y));
+        mask.setAttribute("width", String(maskBounds.width));
+        mask.setAttribute("height", String(maskBounds.height));
+        mask.dataset.edgeOcclusionMask = "true";
+        const background = createSvgElement("rect");
+        background.setAttribute("x", String(maskBounds.x));
+        background.setAttribute("y", String(maskBounds.y));
+        background.setAttribute("width", String(maskBounds.width));
+        background.setAttribute("height", String(maskBounds.height));
+        background.setAttribute("fill", "white");
+        mask.appendChild(background);
+
+        visibleNodeOccluders.forEach(occluder => {
+          const isEndpoint = occluder.id === sourceId || occluder.id === targetId;
+          if (!isEndpoint) {
+            if (boundsIntersect(pathBounds, occluder.position, 8)) {
+              appendEdgeMaskBlocker(
+                mask,
+                occluder.position,
+                0,
+                2,
+                occluder.isContainer ? "#141414" : "black"
+              );
+            }
+          }
+          occluder.textBounds.forEach(textBounds => {
+            if (boundsIntersect(pathBounds, textBounds, 8)) {
+              appendEdgeMaskBlocker(mask, textBounds, 3, 3);
+            }
+          });
+        });
+        defs.appendChild(mask);
+        const maskReference = `url(#${maskId})`;
+        pathEl.setAttribute("mask", maskReference);
+        const arrow = arrowForPath(pathEl);
+        if (arrow) arrow.setAttribute("mask", maskReference);
       });
     }

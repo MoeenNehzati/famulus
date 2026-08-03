@@ -135,12 +135,22 @@ class Graph:
                     raise ValueError(
                         f"Dependency '{dep['to']}' referenced by '{source_id}' is not defined."
                     )
+                projection_target = dep.get("projection_target")
+                if projection_target is not None and str(projection_target) not in seen_ids:
+                    raise ValueError(
+                        f"Dependency on '{source_id}' references unknown projection target "
+                        f"{projection_target!r}."
+                    )
                 edge_type = str(dep["type"])
                 if edge_category_ids and edge_type not in edge_category_ids:
                     raise ValueError(
                         f"Dependency type {edge_type!r} referenced by {source_id!r} "
                         "is absent from 'edge_categories'."
                     )
+
+        self._validate_relation_semantics(
+            graph_json.get("relation_semantics", {}), edge_category_ids
+        )
 
         self._validate_ui_references(
             graph_json,
@@ -165,6 +175,111 @@ class Graph:
             raise ValueError(
                 f"ui.visibility.detail_level references unknown level {selected_level!r}."
             )
+
+    def _validate_relation_semantics(self, raw: object, edge_types: set[str]) -> None:
+        """Validate the finite relation transducer declared by an adapter."""
+        if raw is None:
+            return
+        if not isinstance(raw, dict):
+            raise ValueError("'relation_semantics' must be an object when present.")
+        transformations = raw.get("transformations", {}) or {}
+        if not isinstance(transformations, dict):
+            raise ValueError("'relation_semantics.transformations' must be an object.")
+        node_omission = transformations.get("node_omission", {}) or {}
+        if not isinstance(node_omission, dict):
+            raise ValueError("'relation_semantics.transformations.node_omission' must be an object.")
+        allowed_causes = {"user-hidden", "filter-hidden", "detail-hidden"}
+        rule_ids: set[str] = set()
+        cells: set[tuple[str, str, str]] = set()
+        rules = node_omission.get("rules", []) or []
+        if not isinstance(rules, list):
+            raise ValueError("'relation_semantics.transformations.node_omission.rules' must be a list.")
+        for rule in rules:
+            if not isinstance(rule, dict) or not isinstance(rule.get("id"), str):
+                raise ValueError("Each relation-transformation rule requires a string 'id'.")
+            rule_id = rule["id"]
+            if not rule_id or rule_id in rule_ids:
+                raise ValueError(f"Duplicate or empty relation-transformation id: {rule_id!r}")
+            rule_ids.add(rule_id)
+            causes = rule.get("causes")
+            left_types = rule.get("left_types")
+            right_types = rule.get("right_types")
+            outcomes = rule.get("outcomes")
+            arrays = (causes, left_types, right_types)
+            if not all(isinstance(values, list) and values for values in arrays):
+                raise ValueError(f"Relation transformation {rule_id!r} requires non-empty matcher lists.")
+            if any(len(values) != len(set(map(str, values))) for values in arrays):
+                raise ValueError(f"Relation transformation {rule_id!r} contains duplicate matchers.")
+            if not isinstance(outcomes, list) or not outcomes:
+                raise ValueError(f"Relation transformation {rule_id!r} requires outcomes.")
+            outcome_types: set[str] = set()
+            for outcome in outcomes:
+                if not isinstance(outcome, dict) or not isinstance(outcome.get("type"), str):
+                    raise ValueError(f"Relation transformation {rule_id!r} has an invalid outcome.")
+                outcome_type = outcome["type"]
+                if outcome_type in outcome_types:
+                    raise ValueError(f"Relation transformation {rule_id!r} repeats outcome {outcome_type!r}.")
+                outcome_types.add(outcome_type)
+                if outcome.get("fidelity") not in {"exact", "degraded"}:
+                    raise ValueError(f"Relation transformation {rule_id!r} has invalid fidelity.")
+            unknown_causes = set(map(str, causes)) - allowed_causes
+            referenced_types = {
+                *map(str, left_types), *map(str, right_types), *outcome_types
+            }
+            if unknown_causes:
+                raise ValueError(f"Relation transformation {rule_id!r} has unknown causes: {sorted(unknown_causes)}")
+            if edge_types and not referenced_types <= edge_types:
+                raise ValueError(
+                    f"Relation transformation {rule_id!r} references unknown edge types: "
+                    f"{sorted(referenced_types - edge_types)}"
+                )
+            for cause in map(str, causes):
+                for left_type in map(str, left_types):
+                    for right_type in map(str, right_types):
+                        cell = (cause, left_type, right_type)
+                        if cell in cells:
+                            raise ValueError(f"Duplicate relation-transformation cell {cell!r}.")
+                        cells.add(cell)
+
+        subsumptions = raw.get("subsumptions", []) or []
+        if not isinstance(subsumptions, list):
+            raise ValueError("'relation_semantics.subsumptions' must be a list.")
+        weaker_by_type: dict[str, set[str]] = {}
+        direct_pairs: set[tuple[str, str]] = set()
+        for rule in subsumptions:
+            if not isinstance(rule, dict) or not isinstance(rule.get("stronger_type"), str):
+                raise ValueError("Each relation subsumption requires 'stronger_type'.")
+            weaker = rule.get("weaker_types")
+            if not isinstance(weaker, list) or not weaker:
+                raise ValueError("Each relation subsumption requires 'weaker_types'.")
+            stronger = rule["stronger_type"]
+            referenced = {stronger, *(str(value) for value in weaker)}
+            if edge_types and not referenced <= edge_types:
+                raise ValueError(
+                    "Relation subsumption references unknown edge types: "
+                    f"{sorted(referenced - edge_types)}"
+                )
+            for weaker_type in map(str, weaker):
+                pair = (stronger, weaker_type)
+                if stronger == weaker_type or pair in direct_pairs:
+                    raise ValueError(f"Duplicate or reflexive relation subsumption {pair!r}.")
+                direct_pairs.add(pair)
+                weaker_by_type.setdefault(stronger, set()).add(weaker_type)
+
+        def reaches(start: str, target: str) -> bool:
+            pending = list(weaker_by_type.get(start, ()))
+            seen: set[str] = set()
+            while pending:
+                current = pending.pop()
+                if current == target:
+                    return True
+                if current not in seen:
+                    seen.add(current)
+                    pending.extend(weaker_by_type.get(current, ()))
+            return False
+
+        if any(reaches(edge_type, edge_type) for edge_type in weaker_by_type):
+            raise ValueError("'relation_semantics.subsumptions' must be acyclic.")
 
     def _validate_category_catalog(
         self, raw: object, field: str, label: str

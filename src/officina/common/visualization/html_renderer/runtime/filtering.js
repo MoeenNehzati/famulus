@@ -20,6 +20,10 @@
       excludedCategories: new Set(),
       excludedEdgeTypes: new Set(),
     };
+    hiddenTypes.forEach(value => filterState.excludedCategories.add(value));
+    hiddenEdgeTypes.forEach(value => filterState.excludedEdgeTypes.add(value));
+    hiddenTypes.clear();
+    hiddenEdgeTypes.clear();
     const filterUndoStack = [];
     const filterRedoStack = [];
     let retainedOwnerIds = new Set();
@@ -74,8 +78,6 @@
 
     function nodeFailsFilter(entity) {
       if (!entity) return true;
-      if (filterState.excludedTypes.has(String(entity.type || "unknown"))) return true;
-      if (filterState.excludedKinds.has(String(entity.kind || "unspecified"))) return true;
       if (categoryIsExcluded(entity.category || entity.type || "unknown")) return true;
       return false;
     }
@@ -96,7 +98,9 @@
       retainedOwnerIds = new Set();
       retainedEndpointIds = new Set();
       docData.entities.forEach(entity => {
-        if (nodeFailsFilter(entity) && !selectedNodeIds.has(entity.id) && !retainedEndpointIds.has(entity.id)) return;
+        const retainedByInteraction = selectedNodeIds.has(entity.id) || retainedEndpointIds.has(entity.id);
+        if (nodeHiddenByDetailLevel(entity.id) && !retainedByInteraction) return;
+        if (nodeFailsFilter(entity) && !retainedByInteraction) return;
         let current = parentByNode.get(entity.id);
         const seen = new Set();
         while (current && !seen.has(current)) {
@@ -136,7 +140,9 @@
       filterState.detailLevel = detailLevelRank.has(String(payload.detailLevel))
         ? String(payload.detailLevel)
         : defaultDetailLevel;
-      ["excludedTypes", "excludedKinds", "excludedCategories", "excludedEdgeTypes"].forEach(key => {
+      filterState.excludedTypes.clear();
+      filterState.excludedKinds.clear();
+      ["excludedCategories", "excludedEdgeTypes"].forEach(key => {
         filterState[key] = new Set(Array.isArray(payload[key]) ? payload[key].map(String) : []);
       });
       rebuildRetainedOwners();
@@ -168,14 +174,18 @@
 
     function mutateFilter(mutator) {
       commitSearchEdit();
+      const graphBefore = graphStateSnapshot();
       const before = filterSnapshot();
       const previousDetailLevel = filterState.detailLevel;
       mutator();
       syncSearchSelection({persist: false});
       const after = filterSnapshot();
-      if (before === after) return;
-      filterUndoStack.push(before);
-      filterRedoStack.length = 0;
+      const graphChanged = JSON.stringify(graphBefore) !== JSON.stringify(graphStateSnapshot());
+      if (before === after && !graphChanged) return;
+      if (before !== after) {
+        filterUndoStack.push(before);
+        filterRedoStack.length = 0;
+      }
       rebuildRetainedOwners();
       refreshFilterControls();
       if (hasFullLayout && previousDetailLevel !== filterState.detailLevel) {
@@ -185,7 +195,10 @@
       } else {
         applyFilterProjection();
       }
+      syncSelectionPresentation();
+      showSelectionDetails();
       saveViewerState();
+      recordGraphHistory(graphBefore, graphStateSnapshot());
     }
 
     function applyFilterPresentation() {
@@ -234,7 +247,6 @@
     filterSection.dataset.sectionId = "filters";
     filterSection.innerHTML = `
       <div class="drag-handle" draggable="true" title="Drag to reorder">⋮⋮</div>
-      <h2 class="section-heading">Find and refine</h2>
       <div class="filter-search-row">
         <input id="graph-filter-search" class="filter-search" type="search" aria-label="Search nodes and relations"
           placeholder="Find nodes or relations" />
@@ -242,24 +254,20 @@
       <div class="filter-search-row detail-level-row" style="margin-top:6px">
         <label for="graph-detail-level">Visible detail</label>
         <select id="graph-detail-level" class="filter-mode" aria-label="Visible graph detail level"></select>
+        <button id="filter-clear" class="filter-action" type="button" style="margin-left:auto">Clear</button>
       </div>
-      <div class="filter-action-row" style="margin-top:6px">
-        <button id="filter-undo" class="filter-action" type="button">Undo</button>
-        <button id="filter-redo" class="filter-action" type="button">Redo</button>
-        <button id="filter-clear" class="filter-action" type="button">Clear</button>
-      </div>
-      <div id="filter-facets" class="filter-facets"></div>
+      <div id="filter-legend-slot"></div>
       <div id="filter-chips" class="filter-chips"></div>
       <div id="filter-summary" class="filter-summary" role="status" aria-live="polite"></div>`;
     const legendSection = panelContent.querySelector('[data-section-id="legend"]');
     panelContent.insertBefore(filterSection, legendSection || panelContent.firstChild);
+    const filterLegendSlot = filterSection.querySelector("#filter-legend-slot");
+    filterLegendSlot.appendChild(legend);
+    if (legendSection) legendSection.remove();
 
     const filterSearchInput = filterSection.querySelector("#graph-filter-search");
     const detailLevelSelect = filterSection.querySelector("#graph-detail-level");
-    const filterUndoButton = filterSection.querySelector("#filter-undo");
-    const filterRedoButton = filterSection.querySelector("#filter-redo");
     const filterClearButton = filterSection.querySelector("#filter-clear");
-    const filterFacetsEl = filterSection.querySelector("#filter-facets");
     const filterChipsEl = filterSection.querySelector("#filter-chips");
     const filterSummaryEl = filterSection.querySelector("#filter-summary");
     filterSearchInput.placeholder = docData.ui?.filtering?.search_placeholder || "Find nodes or relations";
@@ -386,39 +394,8 @@
     function refreshFilterControls() {
       filterSearchInput.value = filterState.query;
       detailLevelSelect.value = filterState.detailLevel || "";
-      filterUndoButton.disabled = filterUndoStack.length === 0;
-      filterRedoButton.disabled = filterRedoStack.length === 0;
-      filterFacetsEl.innerHTML = "";
-      const types = Array.from(new Set(docData.entities.map(entity => String(entity.type || "unknown")))).sort();
-      const kinds = Array.from(new Set(docData.entities.map(entity => String(entity.kind || "unspecified")))).sort();
-      appendFacet("Node type", types, "excludedTypes");
-      appendFacet("Kind", kinds, "excludedKinds");
-      if (categoryCatalog.size) {
-        const tree = categoryTreeOrder();
-        appendFacet("Category", tree.order, "excludedCategories", {
-          hierarchical: true,
-          depth: tree.depth,
-          labels: new Map(Array.from(categoryCatalog, ([id, category]) => [id, category.label || id])),
-        });
-      }
-      if (edgeCategoryCatalog.size) {
-        const tree = edgeCategoryTreeOrder();
-        appendFacet("Relation", tree.order, "excludedEdgeTypes", {
-          hierarchical: true,
-          children: edgeCategoryChildren,
-          depth: tree.depth,
-          labels: new Map(Array.from(edgeCategoryCatalog, ([id, category]) => [id, category.label || id])),
-          hasExcludedAncestor: value => edgeCategorySetContains(
-            edgeCategoryParent.get(value), filterState.excludedEdgeTypes
-          ),
-        });
-      } else {
-        appendFacet("Relation", [...presentEdgeTypes].sort(), "excludedEdgeTypes");
-      }
-
       filterChipsEl.innerHTML = "";
       [
-        ["excludedTypes", "Type"], ["excludedKinds", "Kind"],
         ["excludedCategories", "Category"], ["excludedEdgeTypes", "Relation"],
       ].forEach(([key, label]) => {
         Array.from(filterState[key]).sort().forEach(value => {
@@ -426,13 +403,15 @@
         });
       });
       updateFilterSummary();
+      if (typeof syncNodeLegendRows === "function") syncNodeLegendRows();
+      if (typeof syncEdgeLegendRows === "function") syncEdgeLegendRows();
     }
 
     function updateFilterSummary() {
       if (!filterSummaryEl) return;
       const renderedNodes = docData.entities.map(entity => nodeElement(entity.id)).filter(Boolean);
       const visibleNodeIds = new Set(renderedNodes
-        .filter(node => node.style.display !== "none" && !ancestorHiddenByFocus.has(node.dataset.nodeId))
+        .filter(node => node.style.display !== "none")
         .map(node => node.dataset.nodeId));
       const visibleNodeCount = renderedNodes.length
         ? visibleNodeIds.size
@@ -441,7 +420,7 @@
         !isHiddenEdgeType(edge) && !isHiddenNode(edge.source) && !isHiddenNode(edge.target)
       ).length;
       const derivedEdgeCount = lastRenderedEdges.filter(edge =>
-        edge.bridge && !isHiddenEdgeType(edge) && !isHiddenNode(edge.source) && !isHiddenNode(edge.target)
+        edge.derived && !isHiddenEdgeType(edge) && !isHiddenNode(edge.source) && !isHiddenNode(edge.target)
       ).length;
       const matchedNodes = normalizedFilterText(filterState.query)
         ? docData.entities.filter(nodeMatchesSearch).length
@@ -485,19 +464,8 @@
       filterState.excludedKinds.clear();
       filterState.excludedCategories.clear();
       filterState.excludedEdgeTypes.clear();
+      replaceNodeSelectionState([], null, "explicit");
     }));
-    filterUndoButton.addEventListener("click", () => {
-      commitSearchEdit();
-      if (!filterUndoStack.length) return;
-      filterRedoStack.push(filterSnapshot());
-      restoreFilterSnapshot(filterUndoStack.pop());
-    });
-    filterRedoButton.addEventListener("click", () => {
-      searchEditStartSnapshot = null;
-      if (!filterRedoStack.length) return;
-      filterUndoStack.push(filterSnapshot());
-      restoreFilterSnapshot(filterRedoStack.pop());
-    });
     function resetFilteringState() {
       filterState.query = "";
       filterState.detailLevel = detailLevelRank.has(String(initialVisibility.detail_level))
@@ -518,10 +486,6 @@
       if ((event.key === "/" || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k")) && !typing) {
         event.preventDefault();
         filterSearchInput.focus();
-      }
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z" && !typing) {
-        event.preventDefault();
-        (event.shiftKey ? filterRedoButton : filterUndoButton).click();
       }
     });
 

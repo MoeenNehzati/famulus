@@ -11,7 +11,7 @@ from officina.common.visualization.graph import Graph
 
 def _payload() -> dict[str, object]:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "categories": [
             {"id": "interface", "label": "Interface"},
             {"id": "exported", "label": "Exported Interface", "parent": "interface"},
@@ -33,7 +33,8 @@ def _payload() -> dict[str, object]:
 def test_renderer_exposes_generic_filtering_controls() -> None:
     html = build_html_with_elk(_payload())
 
-    assert "Find and refine" in html
+    assert "Find nodes or relations" in html
+    assert 'id="graph-detail-level"' in html
     assert "Hide selected" in html
     assert "Dim selected" in html
     assert "excludedKinds" in html
@@ -131,7 +132,8 @@ def test_runtime_exposes_safe_filter_projection_contract() -> None:
 
     assert "const edgeById = new Map" in rendered
     assert "searchEditStartSnapshot = null" in rendered
-    assert "bridge_hidden_nodes !== true" in rendered
+    assert "const relationTransitions" in rendered
+    assert "const subsumedTypesByType = new Map" in rendered
     assert 'role="status" aria-live="polite"' in rendered
     assert "cdn.jsdelivr.net/npm/elkjs" not in rendered
     assert "graph-detail-level" in rendered

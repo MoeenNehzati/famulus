@@ -31,7 +31,7 @@ def _entity(entity_id: str, *, container: str | None = None) -> dict[str, object
 
 
 def test_graph_validation_accepts_single_parent_containment() -> None:
-    payload = {"schema_version": 1, "entities": [_entity("root"), _entity("child", container="root")]}
+    payload = {"schema_version": 2, "entities": [_entity("root"), _entity("child", container="root")]}
 
     Graph().validate_graph(payload)
 
@@ -47,7 +47,7 @@ def test_graph_validation_rejects_invalid_containment(
     entities: list[dict[str, object]], message: str
 ) -> None:
     with pytest.raises(ValueError, match=message):
-        Graph().validate_graph({"schema_version": 1, "entities": entities})
+        Graph().validate_graph({"schema_version": 2, "entities": entities})
 
 
 def test_graph_validation_rejects_noncanonical_children() -> None:
@@ -56,7 +56,7 @@ def test_graph_validation_rejects_noncanonical_children() -> None:
 
     with pytest.raises(ValueError, match="canonical 'container'"):
         Graph().validate_graph(
-            {"schema_version": 1, "entities": [root, _entity("child", container="root")]}
+            {"schema_version": 2, "entities": [root, _entity("child", container="root")]}
         )
 
 
@@ -105,6 +105,11 @@ def test_selected_skill_scope_summarizes_crossing_relationships() -> None:
     assert entities[source.node_id]["kind"] == "markdown"
     assert payload["detail_levels"][0]["id"] == "module"
     assert payload["detail_levels"][-1]["id"] == "interface"
+    assert payload["ui"]["edge_styles"]["depends-on-source"] == {"color": "#d97706"}
+    assert payload["ui"]["edge_styles"]["uses-interface"] == {
+        "color": "#2563eb",
+        "dash": "10 5",
+    }
     assert entities[skill.node_id]["detail_level"] == "module"
     assert entities[source.node_id]["detail_level"] == "source"
     assert outside_source.node_id not in entities

@@ -2,12 +2,6 @@
 
     async function updateVisibilityFull() {
       renderHiddenNodes();
-      clearMathBeforeMutation(containerLayer);
-      clearMathBeforeMutation(nodeLayer);
-      containerLayer.innerHTML = "";
-      edgeLayer.innerHTML = "";
-      nodeLayer.innerHTML = "";
-      lastRenderedEdges = [];
       const renderedEntities = docData.entities.filter(e => !isHiddenNode(e.id));
       const allEntities = docData.entities;
       const visibleEdges = computeVisibleEdges();
@@ -15,6 +9,12 @@
       containerIndex = rebuildContainerIndex(allEntities);
 
       if (renderedEntities.length === 0) {
+        clearMathBeforeMutation(containerLayer);
+        clearMathBeforeMutation(nodeLayer);
+        containerLayer.innerHTML = "";
+        edgeLayer.innerHTML = "";
+        nodeLayer.innerHTML = "";
+        lastRenderedEdges = [];
         elkStatus.textContent = "No visible nodes.";
         svgEl.setAttribute("width", "800"); svgEl.setAttribute("height", "200");
         svgEl.setAttribute("viewBox", "0 0 800 200");
@@ -25,9 +25,13 @@
         elkStatus.textContent = "Rendering graph layout...";
         const graph = await computeLayout(renderedEntities, visibleEdges);
         if (currentVersion !== renderVersion) return;
+        clearMathBeforeMutation(containerLayer);
+        clearMathBeforeMutation(nodeLayer);
+        containerLayer.innerHTML = "";
+        edgeLayer.innerHTML = "";
+        nodeLayer.innerHTML = "";
+        lastRenderedEdges = [];
         elkStatus.textContent = "";
-        enforceVerticalNodeSpacing(graph.children || []);
-
         const layoutNodes = [];
         flattenLayoutNodes(graph.children || [], 0, 0, layoutNodes);
         const layoutById = new Map(layoutNodes.map((node) => [node.id, node]));
@@ -44,8 +48,8 @@
             lastNodePositions.set(entity.id, {
               x: positioned.x || 0,
               y: positioned.y || 0,
-              width: positioned.width || 210,
-              height: positioned.height || 68
+              width: positioned.width || defaultNodeDimensions(entity.id).width,
+              height: positioned.height || defaultNodeDimensions(entity.id).height
             });
             if (!renderedOrderSet.has(entity.id)) {
               renderedOrder.push(entity.id);
@@ -67,11 +71,12 @@
             const index = siblings.findIndex(candidate => candidate.id === entity.id);
             const fallbackX = containerPos.x + 14;
             const fallbackY = containerPos.y + 76 + Math.max(index, 0) * 78;
+            const fallbackDimensions = defaultNodeDimensions(entity.id);
             lastNodePositions.set(entity.id, {
               x: fallbackX,
               y: fallbackY,
-              width: 210,
-              height: 68,
+              width: fallbackDimensions.width,
+              height: fallbackDimensions.height,
             });
             if (!renderedOrderSet.has(entity.id)) {
               renderedOrder.push(entity.id);
@@ -86,14 +91,14 @@
           }
           const fallbackX = 80 + ((entity.position || 0) % 6) * 240;
           const fallbackY = 80 + Math.floor((entity.position || 0) / 6) * 108;
+          const fallbackDimensions = defaultNodeDimensions(entity.id);
           lastNodePositions.set(entity.id, {
             x: fallbackX,
             y: fallbackY,
-            width: 210,
-            height: 68,
+            width: fallbackDimensions.width,
+            height: fallbackDimensions.height,
           });
         });
-        enforceContainmentLayout(renderedEntities);
         renderedEntities.forEach((entity) => {
           const isChildNode = typeof entity.container === "string" && entity.container.trim().length > 0;
           if (isChildNode || isContainerNode(entity.id)) {
@@ -113,7 +118,8 @@
         svgEl.setAttribute("width", String(graphWidth));
         svgEl.setAttribute("height", String(graphHeight));
         svgEl.setAttribute("viewBox", `0 0 ${graphWidth} ${graphHeight}`);
-        if (!hasFittedOnce) { fitGraph(); hasFittedOnce = true; }
+        fitGraph();
+        hasFittedOnce = true;
 
         const targetCounts = new Map();
         visibleEdges.forEach(edge => targetCounts.set(edge.target, (targetCounts.get(edge.target) || 0) + 1));
@@ -131,34 +137,23 @@
           const path = createSvgElement("path");
           path.setAttribute("class", "edge-path");
           path.setAttribute("d", roundedPathForPoints(points));
-          const mixedBundle = meta.bundle && (meta.bundle_types || []).length > 1;
-          const edgeStyle = mixedBundle ? null : edgeStyleForType(meta.type);
-          const edgeStroke = mixedBundle
-            ? "#334155"
-            : (edgeStyle && (edgeStyle.stroke || edgeStyle.color)) || edgeColorForTarget(meta.target);
-          path.setAttribute("stroke", edgeStroke);
-          if (edgeStyle && edgeStyle.dash) path.setAttribute("stroke-dasharray", edgeStyle.dash);
-          else if (meta.confidence === "Likely") path.setAttribute("stroke-dasharray", "8 5");
-          else if (meta.confidence === "Speculative") path.setAttribute("stroke-dasharray", "3 5");
-          else if (meta.bridge) path.setAttribute("stroke-dasharray", "6 4");
+          const edgeStyle = edgeStyleForType(meta.type);
+          applyEdgeMetadataPresentation(path, meta, edgeStyle, edgeColorForTarget(meta.target));
           path.dataset.edgeId = meta.edge_id || elkEdge.id;
           path.dataset.targetNodeId = meta.target;
           path.dataset.sourceNodeId = meta.source;
-          path.dataset.bridge = meta.bridge ? "true" : "false";
+          path.dataset.derived = meta.derived ? "true" : "false";
           path.dataset.edgeType = String(meta.type || "unknown");
           path.dataset.aggregate = meta.aggregate ? "true" : "false";
           path.dataset.bundle = meta.bundle ? "true" : "false";
           path.__edgeMeta = meta;
-          if (meta.bundle) path.style.strokeWidth = "3.5";
-          if (meta.aggregate) {
-            path.style.strokeWidth = "4";
-            path.style.strokeDasharray = "10 4 2 4";
-          }
           edgeLayer.appendChild(path);
+          syncEdgeMetadataPresentationGeometry(path);
           attachArrowhead(path);
           bindEdgeHover(path, meta);
           lastRenderedEdges.push(meta);
         });
+        syncEdgePresentationLegend();
 
         renderedOrder.forEach(entityId => {
           const entity = entityMap.get(entityId);
@@ -182,8 +177,9 @@
           if (!isHiddenNode(nodeId)) rerouteIncidentEdgesFromCurrentPositions(nodeId);
         });
         rerouteAllVisibleEdgesFromCurrentPositions();
+        refreshEdgeOcclusionMasks();
 
-        applyAncestorFocus();
+        applyVisibilityPresentation();
         typesetElement(containerLayer);
         typesetElement(nodeLayer);
 

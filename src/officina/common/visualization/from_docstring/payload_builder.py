@@ -730,7 +730,7 @@ def _build_graph_payload(
         categories.append(category_payload)
 
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "graph_kind": "docstring_dependency",
         "graph_id": str(module_path),
         "document": {

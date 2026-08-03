@@ -155,9 +155,9 @@
     }
 
     function deselect() {
-      focusNodeId = null;
-      ancestorFocusMode = 0;
       setNodeSelection([], null, "explicit");
+      const activeElement = document.activeElement;
+      if (activeElement?.matches?.(".graph-node, .edge-path")) activeElement.blur();
     }
 
     function clearSelectionDetails() {

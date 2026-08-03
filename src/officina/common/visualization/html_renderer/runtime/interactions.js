@@ -4,18 +4,17 @@
       if (!pathEl) return;
       const arrowEl = arrowForPath(pathEl);
       if (strokeColor) pathEl.style.stroke = strokeColor;
-      pathEl.style.strokeWidth = "3";
+      pathEl.style.strokeWidth = String(Math.max(3, Number(pathEl.__edgeBaseStrokeWidth || 0) + 1));
       pathEl.style.opacity = "0.98";
-      pathEl.style.filter = "drop-shadow(0 0 1px rgba(17, 24, 39, 0.18))";
       syncArrowheadForPath(pathEl);
     }
 
     function clearEdgeEmphasis(pathEl) {
       if (!pathEl) return;
       pathEl.style.stroke = "";
-      pathEl.style.strokeWidth = "";
+      pathEl.style.strokeWidth = pathEl.__edgeBaseStrokeWidth || "";
       pathEl.style.opacity = "";
-      pathEl.style.filter = "";
+      pathEl.style.filter = pathEl.__edgeBaseFilter || "";
       syncArrowheadForPath(pathEl);
     }
 
@@ -24,19 +23,47 @@
         if (active) emphasizeEdge(pathEl);
         else clearEdgeEmphasis(pathEl);
       });
-      if (!active) applyAncestorFocus();
     }
 
     // ── Event binding for edges/nodes ────────────────────────────────────────
 
     let hoveredEdgePath = null;
+    let tooltipPositionFrame = null;
+    let tooltipClientX = 0;
+    let tooltipClientY = 0;
+    let tooltipWidth = 320;
+    let tooltipHeight = 120;
 
     function positionTooltip(event) {
-      const margin = 10;
-      const width = tooltip.offsetWidth || 320;
-      const height = tooltip.offsetHeight || 120;
-      tooltip.style.left = `${Math.max(margin, Math.min(event.clientX + 16, window.innerWidth - width - margin))}px`;
-      tooltip.style.top = `${Math.max(margin, Math.min(event.clientY + 16, window.innerHeight - height - margin))}px`;
+      tooltipClientX = event.clientX;
+      tooltipClientY = event.clientY;
+      if (tooltipPositionFrame !== null) return;
+      tooltipPositionFrame = requestAnimationFrame(() => {
+        tooltipPositionFrame = null;
+        const margin = 10;
+        tooltip.style.left = `${Math.max(margin, Math.min(tooltipClientX + 16, window.innerWidth - tooltipWidth - margin))}px`;
+        tooltip.style.top = `${Math.max(margin, Math.min(tooltipClientY + 16, window.innerHeight - tooltipHeight - margin))}px`;
+      });
+    }
+
+    function showTooltip(event, content) {
+      clearMathBeforeMutation(tooltip);
+      tooltip.innerHTML = content;
+      tooltip.style.display = "block";
+      const bounds = tooltip.getBoundingClientRect();
+      tooltipWidth = bounds.width || 320;
+      tooltipHeight = bounds.height || 120;
+      positionTooltip(event);
+      typesetElement(tooltip);
+    }
+
+    function hideTooltip() {
+      if (tooltipPositionFrame !== null) {
+        cancelAnimationFrame(tooltipPositionFrame);
+        tooltipPositionFrame = null;
+      }
+      nextMathGeneration(tooltip);
+      tooltip.style.display = "none";
     }
 
     function bindEdgeHover(pathEl, edge) {
@@ -54,12 +81,8 @@
           clearEdgeEmphasis(hoveredEdgePath);
         }
         hoveredEdgePath = pathEl;
-        clearMathBeforeMutation(tooltip);
-        tooltip.innerHTML = edgeTooltipText(edge);
-        positionTooltip(event);
-        tooltip.style.display = "block";
+        showTooltip(event, edgeTooltipText(edge));
         emphasizeEdge(pathEl, "#1f2933");
-        typesetElement(tooltip);
       });
       pathEl.addEventListener("mousemove", event => {
         positionTooltip(event);
@@ -67,11 +90,9 @@
       pathEl.addEventListener("mouseleave", () => {
         if (hoveredEdgePath !== pathEl) return;
         hoveredEdgePath = null;
-        nextMathGeneration(tooltip);
-        tooltip.style.display = "none";
+        hideTooltip();
         clearEdgeEmphasis(pathEl);
         pathEl.style.stroke = baseColor;
-        applyAncestorFocus();
       });
       pathEl.addEventListener("click", event => {
         event.stopPropagation();
@@ -94,11 +115,7 @@
           clearEdgeEmphasis(hoveredEdgePath);
           hoveredEdgePath = null;
         }
-        clearMathBeforeMutation(tooltip);
-        tooltip.innerHTML = tooltipText(entity);
-        positionTooltip(event);
-        tooltip.style.display = "block";
-        typesetElement(tooltip);
+        showTooltip(event, tooltipText(entity));
         nodeEl.classList.add("hovered");
         setIncomingEdgeHighlight(entity.id, true);
       });
@@ -106,8 +123,7 @@
         positionTooltip(event);
       });
       nodeEl.addEventListener("mouseleave", () => {
-        nextMathGeneration(tooltip);
-        tooltip.style.display = "none";
+        hideTooltip();
         nodeEl.classList.remove("hovered");
         setIncomingEdgeHighlight(entity.id, false);
       });
@@ -127,24 +143,11 @@
           clearTimeout(nodeClickTimer);
           nodeClickTimer = null;
         }
-        if (isContainerNode(entity.id)) {
-          if (collapsedContainers.has(entity.id)) collapsedContainers.delete(entity.id);
-          else collapsedContainers.add(entity.id);
-          manualPositions.clear();
-          hasFittedOnce = false;
-          saveViewerState();
-          updateVisibilityFull();
+        if (isContainerNode(entity.id) && event.altKey) {
+          toggleContainerCollapsed(entity.id);
           return;
         }
-        hiddenNodes.add(entity.id);
-        dimmedNodes.delete(entity.id);
-        if (selectedNodeIds.has(entity.id)) removeNodesFromSelection([entity.id]);
-        if (focusNodeId === entity.id) {
-          focusNodeId = null;
-          if (ancestorFocusMode > 0) ancestorFocusMode = 0;
-        }
-        saveViewerState();
-        updateVisibilityFast();
+        hideNodes([entity.id]);
       });
       // Node drag (mousedown)
       nodeEl.addEventListener("mousedown", event => {

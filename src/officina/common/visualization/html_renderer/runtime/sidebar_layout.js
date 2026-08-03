@@ -111,7 +111,7 @@
     const advancedControlsSlot = document.getElementById("advanced-controls-slot");
     const routingControlsEl = document.getElementById("routing-controls");
     if (routingControlsEl) advancedControlsSlot.appendChild(routingControlsEl);
-    ["cheatsheet", "raw-json"].forEach(sectionId => {
+    ["raw-json"].forEach(sectionId => {
       const section = panelContent.querySelector(`[data-section-id="${sectionId}"]`);
       if (section) advancedControlsSlot.appendChild(section);
     });

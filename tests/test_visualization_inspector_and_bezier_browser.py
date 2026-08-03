@@ -1,0 +1,318 @@
+"""Browser coverage for inspector navigation and advanced edge geometry."""
+
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+
+import pytest
+
+from officina.common.visualization.elk_html_renderer import build_html_with_elk
+
+
+def _run_browser_case(name: str, payload: dict, script: str) -> None:
+    chrome = shutil.which("google-chrome")
+    if chrome is None:
+        # famulus-skip: category=capability-unavailable; reason=Google Chrome is not installed; alternate=renderer contract tests cover generated controls and graph payloads
+        pytest.skip("google-chrome unavailable")
+    html = build_html_with_elk(payload).replace(
+        "</body>",
+        f"""<script>
+        const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+        window.addEventListener("load", () => setTimeout(async () => {{
+          try {{
+            {script}
+            document.body.dataset.testStatus = "PASS";
+          }} catch (error) {{
+            document.body.dataset.testStatus = "FAIL:" + (error.message || String(error));
+          }}
+        }}, 150));
+        </script></body>""",
+    )
+    path = Path(f"/tmp/officina-{name}-browser.html")
+    path.write_text(html, encoding="utf-8")
+    with tempfile.TemporaryDirectory() as profile:
+        result = subprocess.run(
+            [
+                chrome,
+                "--headless",
+                "--no-sandbox",
+                "--disable-gpu",
+                "--disable-dev-shm-usage",
+                "--disable-crash-reporter",
+                f"--user-data-dir={profile}",
+                "--virtual-time-budget=4000",
+                "--dump-dom",
+                path.as_uri(),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    assert 'data-test-status="PASS"' in result.stdout, result.stdout[-1200:]
+
+
+def _payload(edge_type: str = "link") -> dict:
+    return {
+        "schema_version": 2,
+        "graph_id": "inspector-and-bezier",
+        "categories": [{"id": "node", "label": "Node"}],
+        "edge_categories": [{"id": edge_type, "label": edge_type.replace("-", " ").title()}],
+        "entities": [
+            {
+                "id": "alpha",
+                "type": "source",
+                "category": "node",
+                "short_title": "Alpha",
+                "description": "Alpha description",
+                "position": 0,
+                "connects_to": [{"to": "beta", "type": edge_type}],
+            },
+            {
+                "id": "beta",
+                "type": "source",
+                "category": "node",
+                "short_title": "Beta",
+                "description": "Beta description",
+                "position": 1,
+                "connects_to": [],
+            },
+        ],
+    }
+
+
+def test_selected_node_buttons_switch_primary_inspector_without_losing_selection() -> None:
+    _run_browser_case(
+        "selection-inspector-navigation",
+        _payload(),
+        """
+        const alpha = nodeElement("alpha");
+        const beta = nodeElement("beta");
+        alpha.dispatchEvent(new MouseEvent("click", {bubbles: true}));
+        await delay(220);
+        beta.dispatchEvent(new MouseEvent("click", {bubbles: true, ctrlKey: true}));
+        await delay(220);
+        if (selectedNodeIds.size !== 2 || selectedNodeId !== "beta") {
+          throw new Error("multi-selection setup failed");
+        }
+        const buttons = Array.from(document.querySelectorAll("[data-selection-node-id]"));
+        if (buttons.length !== 2) throw new Error("selected-node navigator is incomplete");
+        const alphaButton = buttons.find(button => button.dataset.selectionNodeId === "alpha");
+        if (!alphaButton || alphaButton.tagName !== "BUTTON") {
+          throw new Error("selected node is not a native button");
+        }
+        alphaButton.click();
+        await delay(220);
+        if (selectedNodeIds.size !== 2 || selectedNodeId !== "alpha") {
+          throw new Error("inspector navigation changed the selection set");
+        }
+        if (!document.getElementById("details").textContent.includes("Alpha description")) {
+          throw new Error("inspector did not switch descriptions");
+        }
+        if (!alpha.classList.contains("primary-selected") || beta.classList.contains("primary-selected")) {
+          throw new Error("primary graph highlight did not move");
+        }
+        document.getElementById("visibility-undo-btn").click();
+        await delay(20);
+        if (selectedNodeIds.size !== 2 || selectedNodeId !== "beta") {
+          throw new Error("undo did not restore the previous primary node");
+        }
+        const refreshedAlphaButton = Array.from(document.querySelectorAll("[data-selection-node-id]"))
+          .find(button => button.dataset.selectionNodeId === "alpha");
+        refreshedAlphaButton.dispatchEvent(new MouseEvent("dblclick", {bubbles: true}));
+        await delay(220);
+        if (selectedNodeIds.has("alpha") || selectedNodeIds.size !== 1 || selectedNodeId !== "beta") {
+          throw new Error("double-click did not remove only the chosen selected node");
+        }
+        setNodeSelection(["alpha", "beta"], "beta", "explicit");
+        const focusedSelectionButton = Array.from(document.querySelectorAll("[data-selection-node-id]"))
+          .find(button => button.dataset.selectionNodeId === "alpha");
+        focusedSelectionButton.focus();
+        focusedSelectionButton.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true}));
+        await delay(20);
+        if (selectedNodeIds.size !== 0 || selectedNodeId !== null) {
+          throw new Error("Escape did not clear selection while a selection button was focused");
+        }
+        setNodeSelection(["alpha", "beta"], "beta", "explicit");
+        document.getElementById("filter-clear").click();
+        await delay(20);
+        if (selectedNodeIds.size !== 0 || selectedNodeId !== null) {
+          throw new Error("Clear did not clear the complete selection");
+        }
+        """,
+    )
+
+
+def test_relation_direction_controls_select_union_and_color_legend_selects_kind() -> None:
+    payload = {
+        "schema_version": 2,
+        "graph_id": "relation-selection-controls",
+        "categories": [
+            {"id": "source", "label": "Source"},
+            {"id": "source:python", "label": "Python", "parent": "source", "color": "#00a67d"},
+            {"id": "source:markdown", "label": "Markdown", "parent": "source", "color": "#d35400"},
+            {"id": "source:python+markdown", "label": "Python + Markdown", "parent": "source"},
+        ],
+        "edge_categories": [{"id": "link", "label": "Link"}],
+        "entities": [
+            {"id": "a", "type": "source", "kind": "python", "category": "source:python", "short_title": "A", "position": 0, "connects_to": [{"to": "b", "type": "link"}]},
+            {"id": "c", "type": "source", "kind": "python", "category": "source:python", "short_title": "C", "position": 1, "connects_to": [{"to": "b", "type": "link"}]},
+            {"id": "b", "type": "source", "kind": "markdown", "category": "source:markdown", "short_title": "B", "position": 2, "connects_to": [{"to": "d", "type": "link"}]},
+            {"id": "d", "type": "source", "kind": "markdown", "category": "source:markdown", "short_title": "D", "position": 3, "connects_to": []},
+            {"id": "mixed", "type": "source", "kind": "python+markdown", "category": "source:python+markdown", "short_title": "Mixed", "position": 4, "connects_to": []},
+        ],
+    }
+    _run_browser_case(
+        "relation-selection-controls",
+        payload,
+        """
+        if (document.querySelector(".filter-advanced")) throw new Error("advanced node filters remain");
+        const pythonColor = document.querySelector('.legend-row[data-legend-kind="node"][data-legend-facet="kind"][data-type="python"]');
+        if (!pythonColor) throw new Error("generic color legend is missing");
+        if (document.querySelector('.legend-row[data-legend-kind="node"][data-legend-facet="kind"][data-type="python+markdown"]')) {
+          throw new Error("mixed kind received a redundant color legend entry");
+        }
+        const mixedFill = nodeElement("mixed").querySelector(".node-shape").getAttribute("fill") || "";
+        if (!mixedFill.startsWith("url(#node-kind-gradient-")) throw new Error("mixed kind did not receive a component gradient");
+        pythonColor.click();
+        await delay(20);
+        if (selectedNodeIds.size !== 3 || !selectedNodeIds.has("a") || !selectedNodeIds.has("c") || !selectedNodeIds.has("mixed")) {
+          throw new Error("color legend did not select matching nodes");
+        }
+        const successor = document.querySelector('.legend-row[data-legend-kind="edge"][data-type="link"] .relation-traverse-button[data-direction="successors"]');
+        const ancestor = document.querySelector('.legend-row[data-legend-kind="edge"][data-type="link"] .relation-traverse-button[data-direction="ancestors"]');
+        if (!successor || !ancestor || successor.disabled || ancestor.disabled) throw new Error("relation traversal controls unavailable");
+        const primaryBefore = selectedNodeId;
+        successor.click();
+        await delay(20);
+        if (selectedNodeIds.size !== 5 || !selectedNodeIds.has("b") || !selectedNodeIds.has("d")) {
+          throw new Error("successor traversal did not add the transitive union");
+        }
+        if (selectedNodeId !== primaryBefore) throw new Error("relation traversal changed the primary node");
+        setNodeSelection(["b"], "b", "explicit");
+        ancestor.click();
+        await delay(20);
+        if (selectedNodeIds.size !== 3 || !selectedNodeIds.has("a") || !selectedNodeIds.has("b") || !selectedNodeIds.has("c")) {
+          throw new Error("ancestor traversal did not add the incoming union");
+        }
+        document.getElementById("visibility-undo-btn").click();
+        await delay(20);
+        if (selectedNodeIds.size !== 1 || selectedNodeId !== "b") throw new Error("traversal selection is not undoable");
+        """,
+    )
+
+
+def test_advanced_edge_geometries_are_distinct_and_reversible() -> None:
+    _run_browser_case(
+        "advanced-bezier-geometry",
+        _payload("binds-interface"),
+        """
+        const geometry = document.getElementById("routing-geometry");
+        const routingControls = document.getElementById("routing-controls");
+        if (!geometry || !routingControls || routingControls.querySelector("details")) {
+          throw new Error("routing controls retain a nested disclosure");
+        }
+        const groupTitles = Array.from(routingControls.querySelectorAll(".routing-group-title"))
+          .map(title => title.textContent.trim());
+        for (const title of ["Presets", "Edge geometry", "Layout spacing"]) {
+          if (!groupTitles.includes(title)) throw new Error(`${title} group missing`);
+        }
+        const path = document.querySelector(
+          '.edge-path[data-source-node-id="alpha"][data-target-node-id="beta"]'
+        );
+        const optionValues = Array.from(geometry.options).map(option => option.value);
+        for (const required of ["orthogonal", "polyline", "spline", "bezier", "straight"]) {
+          if (!optionValues.includes(required)) throw new Error(`${required} geometry option missing`);
+        }
+        const setGeometry = value => {
+          geometry.value = value;
+          geometry.dispatchEvent(new Event("change", {bubbles: true}));
+          return path.getAttribute("d") || "";
+        };
+        const row = id => document.getElementById(id).closest(".routing-row");
+        const expectRows = (visible, hidden) => {
+          for (const id of visible) {
+            if (row(id).hidden) throw new Error(`${id} should be visible`);
+          }
+          for (const id of hidden) {
+            if (!row(id).hidden) throw new Error(`${id} should be hidden`);
+          }
+        };
+        const orthogonal = setGeometry("orthogonal");
+        expectRows(
+          ["routing-radius", "routing-merge"],
+          ["routing-polyline-bend", "routing-spline-tension", "routing-bezier-curvature"]
+        );
+        const polyline = setGeometry("polyline");
+        expectRows(
+          ["routing-polyline-bend"],
+          ["routing-radius", "routing-merge", "routing-spline-tension", "routing-bezier-curvature"]
+        );
+        const polylineBend = document.getElementById("routing-polyline-bend");
+        polylineBend.value = "75";
+        polylineBend.dispatchEvent(new Event("input", {bubbles: true}));
+        if (path.getAttribute("d") === polyline) throw new Error("polyline bend has no effect");
+        const spline = setGeometry("spline");
+        expectRows(
+          ["routing-spline-tension"],
+          ["routing-radius", "routing-merge", "routing-polyline-bend", "routing-bezier-curvature"]
+        );
+        const splineTension = document.getElementById("routing-spline-tension");
+        const splineBeforeTension = path.getAttribute("d");
+        splineTension.value = "40";
+        splineTension.dispatchEvent(new Event("input", {bubbles: true}));
+        if (path.getAttribute("d") === splineBeforeTension) throw new Error("spline tension has no effect");
+        const bezier = setGeometry("bezier");
+        expectRows(
+          ["routing-bezier-curvature"],
+          ["routing-radius", "routing-merge", "routing-polyline-bend", "routing-spline-tension"]
+        );
+        const bezierCurvature = document.getElementById("routing-bezier-curvature");
+        const bezierBeforeCurvature = path.getAttribute("d");
+        bezierCurvature.value = "70";
+        bezierCurvature.dispatchEvent(new Event("input", {bubbles: true}));
+        if (path.getAttribute("d") === bezierBeforeCurvature) throw new Error("Bezier curvature has no effect");
+        const straight = setGeometry("straight");
+        expectRows(
+          [],
+          ["routing-radius", "routing-merge", "routing-polyline-bend", "routing-spline-tension", "routing-bezier-curvature"]
+        );
+        for (const id of ["routing-clearance", "routing-parallel", "routing-node-spacing", "routing-layer-spacing", "routing-edge-node-spacing"]) {
+          const shouldHide = id === "routing-parallel";
+          if (row(id).hidden !== shouldHide) throw new Error(`${id} has incorrect relevance visibility`);
+        }
+        if (document.getElementById("routing-shape")) throw new Error("redundant shape preset remains");
+        if (orthogonal.includes("C")) throw new Error("orthogonal path became cubic");
+        if ((polyline.match(/ L /g) || []).length < 2 || polyline.includes("C")) {
+          throw new Error("polyline option did not produce segmented lines");
+        }
+        if ((spline.match(/ C /g) || []).length < 2) {
+          throw new Error("spline option did not produce a multi-segment curve");
+        }
+        if ((bezier.match(/ C /g) || []).length !== 1) {
+          throw new Error("Bezier option did not produce one cubic curve");
+        }
+        if ((straight.match(/ L /g) || []).length !== 1 || /[CQ]/.test(straight)) {
+          throw new Error("straight option did not produce one line");
+        }
+        const target = getEffectivePos("beta");
+        const source = getEffectivePos("alpha");
+        manualPositions.set("beta", {...target, x: target.x + 120, y: target.y + 60});
+        setGeometry("spline");
+        rerouteIncidentEdgesFromCurrentPositions("beta");
+        if (((path.getAttribute("d") || "").match(/ C /g) || []).length < 2) {
+          throw new Error("drag rerouting lost spline geometry");
+        }
+        const coordinatesAfterMove = (path.getAttribute("d") || "").match(/-?\\d+(?:\\.\\d+)?/g).map(Number);
+        const startX = coordinatesAfterMove[0];
+        const startY = coordinatesAfterMove[1];
+        const sourceBoundaryAttached =
+          ((Math.abs(startX - source.x) < 0.01 || Math.abs(startX - source.x - source.width) < 0.01) && startY >= source.y && startY <= source.y + source.height) ||
+          ((Math.abs(startY - source.y) < 0.01 || Math.abs(startY - source.y - source.height) < 0.01) && startX >= source.x && startX <= source.x + source.width);
+        if (!sourceBoundaryAttached) throw new Error("moving an edge destination detached the source endpoint");
+        const restored = setGeometry("orthogonal");
+        if (routingConfig.geometry !== "orthogonal" || restored.includes("C")) {
+          throw new Error("orthogonal geometry was not restored");
+        }
+        """,
+    )

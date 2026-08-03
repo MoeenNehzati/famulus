@@ -86,15 +86,21 @@ class DocstringVisualizer(BaseVisualizer):
             produced.append(file_path)
 
         if emit_dependency_json:
-            from .json_extractor import write_dependency_json
-
             json_path = (
                 dependency_json_path
                 if dependency_json_path is not None
                 else out_dir / f"{out_name}.dependency.json"
             )
-            write_dependency_json(dependency_payload, json_path)
-            produced.append(json_path)
+            artifact = self.artifacts.write(
+                dependency_payload,
+                output_dir=out_dir,
+                stem=out_name,
+                write_payload=True,
+                write_presentation=False,
+                payload_target=json_path,
+            )
+            if artifact.payload is not None:
+                produced.append(artifact.payload)
 
         return produced
 
@@ -212,6 +218,40 @@ class DocstringVisualizer(BaseVisualizer):
         )
 
 
+def render_module_artifacts(
+    target: str | Path,
+    out_dir: Path | None = None,
+    include_tests: bool = False,
+    name: str | None = None,
+    formats: Iterable[str] = DEFAULT_FORMATS,
+    emit_dependency_json: bool = False,
+    dependency_json_out: str | Path | None = None,
+    infer_local_edges: bool = False,
+    serve: bool = True,
+    serve_host: str = "127.0.0.1",
+    serve_port: int = 8765,
+) -> list[Path]:
+    """Render docstring graph artifacts through the public orchestration facade.
+
+    The module-level function preserves the stable API used by repository tools;
+    ``DocstringVisualizer`` remains the owner of source resolution, extraction,
+    artifact emission, and optional serving behavior.
+    """
+    return DocstringVisualizer().render_module_artifacts(
+        target=target,
+        out_dir=out_dir,
+        include_tests=include_tests,
+        name=name,
+        formats=formats,
+        emit_dependency_json=emit_dependency_json,
+        dependency_json_out=dependency_json_out,
+        infer_local_edges=infer_local_edges,
+        serve=serve,
+        serve_host=serve_host,
+        serve_port=serve_port,
+    )
+
+
 def build_docstring_graph(
     target: str | Path,
     *,
@@ -242,57 +282,6 @@ def build_docstring_graph(
     )
 
 
-def render_module_artifacts(
-    target: str | Path,
-    out_dir: Path | None = None,
-    include_tests: bool = False,
-    name: str | None = None,
-    formats: Iterable[str] = DEFAULT_FORMATS,
-    emit_dependency_json: bool = False,
-    dependency_json_out: str | Path | None = None,
-    infer_local_edges: bool = False,
-    serve: bool = True,
-    serve_host: str = "127.0.0.1",
-    serve_port: int = 8765,
-) -> list[Path]:
-    """Render module visuals from docstring graph metadata."""
-    return DocstringVisualizer().render_module_artifacts(
-        target=target,
-        out_dir=out_dir,
-        include_tests=include_tests,
-        name=name,
-        formats=formats,
-        emit_dependency_json=emit_dependency_json,
-        dependency_json_out=dependency_json_out,
-        infer_local_edges=infer_local_edges,
-        serve=serve,
-        serve_host=serve_host,
-        serve_port=serve_port,
-    )
-
-
-def generate_graph_for_module(
-    module_path: Path,
-    out_dir: Path,
-    out_name: str,
-    formats: Iterable[str],
-    emit_dependency_json: bool = False,
-    dependency_json_path: Path | None = None,
-    *,
-    infer_local_edges: bool = False,
-) -> list[Path]:
-    """Compatibility helper for direct module artifact generation."""
-    return DocstringVisualizer().generate_graph_for_module(
-        module_path=module_path,
-        out_dir=out_dir,
-        out_name=out_name,
-        formats=formats,
-        emit_dependency_json=emit_dependency_json,
-        dependency_json_path=dependency_json_path,
-        infer_local_edges=infer_local_edges,
-    )
-
-
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -300,11 +289,6 @@ def main(argv: list[str] | None = None) -> int:
         "target",
         nargs="?",
         help="Python module file or directory to render.",
-    )
-    parser.add_argument(
-        "--module",
-        dest="legacy_module",
-        help="Backward-compatible alias for target.",
     )
     parser.add_argument(
         "--out-dir",
@@ -375,9 +359,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--serve-port", type=int, default=8765, help="Server port for local artifact serving.")
     args = parser.parse_args(argv)
 
-    target = args.target or args.legacy_module
+    target = args.target
     if not target:
-        parser.error("Either target or --module must be provided")
+        parser.error("target is required")
 
     if args.html and "html" not in args.formats:
         args.formats.append("html")
@@ -405,8 +389,6 @@ __all__ = [
     "DocstringVisualizer",
     "build_docstring_graph",
     "main",
-    "render_module_artifacts",
-    "generate_graph_for_module",
 ]
 
 

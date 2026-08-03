@@ -4,6 +4,22 @@
       return Array.from(selectedNodeIds).filter(id => entityMap.has(id) && !isHiddenNode(id));
     }
 
+    function visibleUnselectedNodeIds({preserveSelectionAncestors = false} = {}) {
+      const preserved = new Set(visibleSelectedNodeIds());
+      if (preserveSelectionAncestors) {
+        Array.from(preserved).forEach(nodeId => {
+          let parentId = parentByNode.get(nodeId);
+          while (parentId && !preserved.has(parentId)) {
+            preserved.add(parentId);
+            parentId = parentByNode.get(parentId);
+          }
+        });
+      }
+      return docData.entities
+        .map(entity => entity.id)
+        .filter(nodeId => !preserved.has(nodeId) && !isHiddenNode(nodeId));
+    }
+
     function syncSelectionPresentation() {
       svgEl.querySelectorAll(".graph-node").forEach(nodeEl => {
         const nodeId = nodeEl.dataset.nodeId;
@@ -13,6 +29,8 @@
         nodeEl.setAttribute("aria-selected", selectedNodeIds.has(nodeId) ? "true" : "false");
       });
       syncToolbar();
+      if (typeof syncNodeLegendRows === "function") syncNodeLegendRows();
+      if (typeof syncEdgeLegendRows === "function") syncEdgeLegendRows();
     }
 
     function showSelectionDetails() {
@@ -27,19 +45,46 @@
       const selected = Array.from(selectedNodeIds)
         .map(id => entityMap.get(id))
         .filter(Boolean);
-      const visibleLabels = selected.slice(0, 12)
-        .map(entity => `<code>${escapeHtml(entity.short_title || entity.id)}</code>`)
+      const visibleLabels = selected
+        .map(entity => `
+          <button
+            type="button"
+            class="selection-summary-item"
+            data-selection-node-id="${escapeHtml(entity.id)}"
+            ${entity.id === selectedNodeId ? 'aria-current="true"' : ""}
+          >${escapeHtml(entity.short_title || entity.id)}</button>`)
         .join("");
-      const remainder = selected.length > 12 ? `<span>+${selected.length - 12} more</span>` : "";
       details.insertAdjacentHTML("afterbegin", `
         <section class="selection-summary" aria-label="Selected nodes">
           <strong>${selected.length} nodes selected</strong>
-          <div class="selection-summary-items">${visibleLabels}${remainder}</div>
+          <div class="selection-summary-items">${visibleLabels}</div>
           <div class="small">Details below are for the primary node.</div>
         </section>`);
+      details.querySelectorAll("[data-selection-node-id]").forEach(button => {
+        let inspectorClickTimer = null;
+        button.addEventListener("click", () => {
+          if (inspectorClickTimer) clearTimeout(inspectorClickTimer);
+          inspectorClickTimer = setTimeout(() => {
+            inspectorClickTimer = null;
+            setNodeSelection(
+              Array.from(selectedNodeIds),
+              button.dataset.selectionNodeId,
+              selectionSource
+            );
+          }, 180);
+        });
+        button.addEventListener("dblclick", event => {
+          event.preventDefault();
+          if (inspectorClickTimer) {
+            clearTimeout(inspectorClickTimer);
+            inspectorClickTimer = null;
+          }
+          removeNodesFromSelection([button.dataset.selectionNodeId], {persist: true});
+        });
+      });
     }
 
-    function setNodeSelection(ids, primaryId = null, source = "explicit", {persist = true} = {}) {
+    function replaceNodeSelectionState(ids, primaryId = null, source = "explicit") {
       const normalized = Array.from(new Set(ids))
         .map(String)
         .filter(id => entityMap.has(id) && !hiddenNodes.has(id));
@@ -49,11 +94,18 @@
         ? String(primaryId)
         : normalized[normalized.length - 1] || null;
       selectionSource = source === "search" ? "search" : "explicit";
-      rebuildRetainedOwners();
-      syncSelectionPresentation();
-      showSelectionDetails();
-      applyAncestorFocus();
-      if (persist) saveViewerState();
+    }
+
+    function setNodeSelection(
+      ids,
+      primaryId = null,
+      source = "explicit",
+      {persist = true, history = persist} = {}
+    ) {
+      runGraphAction(
+        () => replaceNodeSelectionState(ids, primaryId, source),
+        {renderMode: "selection", persist, history}
+      );
     }
 
     function toggleNodeSelection(nodeId) {

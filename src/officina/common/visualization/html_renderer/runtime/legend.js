@@ -122,18 +122,121 @@
 
     // Only build legend rows for categories and edge types actually present in the document.
     const presentCategories = new Set(presentCategoryIds);
-    if (presentCategories.size > 0) legend.appendChild(createLegendGroupTitle("Nodes"));
-    Object.entries(typeStyles).forEach(([type, style]) => {
+    const nodeLegendColumn = document.createElement("div");
+    nodeLegendColumn.className = "legend-column";
+    function visibleNodesInCategory(categoryId) {
+      const includedCategories = new Set([categoryId, ...descendantsOf(categoryId)]);
+      return docData.entities
+        .filter(entity => includedCategories.has(String(entity.category || entity.type || "unknown")))
+        .map(entity => entity.id)
+        .filter(nodeId => !isHiddenNode(nodeId));
+    }
+
+    function visibleNodesWithKind(kind) {
+      return docData.entities
+        .filter(entity => kindComponents(entity.kind || entity.category || entity.type || "unknown").includes(kind))
+        .map(entity => entity.id)
+        .filter(nodeId => !isHiddenNode(nodeId));
+    }
+
+    function syncNodeLegendRows() {
+      legend.querySelectorAll(".legend-row[data-legend-kind='node']").forEach(row => {
+        const value = row.dataset.type;
+        const nodeIds = row.dataset.legendFacet === "kind"
+          ? visibleNodesWithKind(value)
+          : visibleNodesInCategory(value);
+        const selected = nodeIds.length > 0 && nodeIds.every(nodeId => selectedNodeIds.has(nodeId));
+        row.classList.toggle("legend-selected", selected);
+        row.setAttribute("aria-pressed", selected ? "true" : "false");
+        row.setAttribute("aria-disabled", nodeIds.length ? "false" : "true");
+        row.tabIndex = nodeIds.length ? 0 : -1;
+      });
+    }
+
+    function selectNodeLegendCategory(categoryId, additive) {
+      const categoryNodeIds = visibleNodesInCategory(categoryId);
+      if (!categoryNodeIds.length) return;
+      const categoryNodeSet = new Set(categoryNodeIds);
+      const categorySelected = categoryNodeIds.every(nodeId => selectedNodeIds.has(nodeId));
+      if (!additive) {
+        if (categorySelected) {
+          const remaining = Array.from(selectedNodeIds).filter(nodeId => !categoryNodeSet.has(nodeId));
+          setNodeSelection(remaining, remaining.at(-1) || null, "explicit");
+          return;
+        }
+        setNodeSelection(categoryNodeIds, categoryNodeIds.at(-1), "explicit");
+        return;
+      }
+      const next = new Set(selectedNodeIds);
+      categoryNodeIds.forEach(nodeId => {
+        if (categorySelected) next.delete(nodeId);
+        else next.add(nodeId);
+      });
+      setNodeSelection(next, next.has(selectedNodeId) ? selectedNodeId : Array.from(next).at(-1), "explicit");
+    }
+
+    function selectNodeLegendKind(kind, additive) {
+      const nodeIds = visibleNodesWithKind(kind);
+      if (!nodeIds.length) return;
+      const nodeSet = new Set(nodeIds);
+      const allSelected = nodeIds.every(nodeId => selectedNodeIds.has(nodeId));
+      if (!additive) {
+        if (allSelected) {
+          const remaining = Array.from(selectedNodeIds).filter(nodeId => !nodeSet.has(nodeId));
+          setNodeSelection(remaining, remaining.at(-1) || null, "explicit");
+        } else {
+          setNodeSelection(nodeIds, nodeIds.at(-1), "explicit");
+        }
+        return;
+      }
+      const next = new Set(selectedNodeIds);
+      nodeIds.forEach(nodeId => allSelected ? next.delete(nodeId) : next.add(nodeId));
+      setNodeSelection(next, next.has(selectedNodeId) ? selectedNodeId : Array.from(next).at(-1), "explicit");
+    }
+
+    if (presentCategories.size > 0) nodeLegendColumn.appendChild(createLegendGroupTitle("Nodes"));
+    let activeNodeParent = null;
+    Object.entries(typeStyles)
+      .filter(([type]) => presentCategories.has(type))
+      .sort(([left], [right]) => {
+        const leftParent = String(categoryCatalog.get(left)?.parent || "");
+        const rightParent = String(categoryCatalog.get(right)?.parent || "");
+        return leftParent.localeCompare(rightParent) || left.localeCompare(right);
+      })
+      .forEach(([type, style]) => {
       if (!presentCategories.has(type)) return;
+      const parentId = String(categoryCatalog.get(type)?.parent || "");
+      if (parentId && parentId !== activeNodeParent) {
+        const parent = categoryCatalog.get(parentId) || {};
+        const heading = document.createElement("div");
+        heading.className = "legend-row legend-subgroup-title legend-parent-row";
+        heading.textContent = `${parent.label || parentId}:`;
+        heading.tabIndex = 0;
+        heading.setAttribute("role", "button");
+        heading.setAttribute("aria-pressed", "false");
+        heading.dataset.legendKind = "node";
+        heading.dataset.type = parentId;
+        heading.addEventListener("click", event => {
+          selectNodeLegendCategory(parentId, event.ctrlKey || event.metaKey);
+        });
+        heading.addEventListener("keydown", event => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          selectNodeLegendCategory(parentId, event.ctrlKey || event.metaKey);
+        });
+        bindLegendTooltip(heading, parent.label || parentId, parent.description || "");
+        nodeLegendColumn.appendChild(heading);
+        activeNodeParent = parentId;
+      }
       const row = document.createElement("div");
       row.className = "legend-row";
       row.tabIndex = 0;
       row.setAttribute("role", "button");
-      row.setAttribute("aria-pressed", hiddenTypes.has(type) ? "false" : "true");
+      row.setAttribute("aria-pressed", "false");
       row.addEventListener("keydown", event => {
         if (event.key !== "Enter" && event.key !== " ") return;
         event.preventDefault();
-        row.click();
+        selectNodeLegendCategory(type, event.ctrlKey || event.metaKey);
       });
       row.dataset.legendKind = "node";
       row.dataset.type = type;
@@ -143,21 +246,46 @@
       label.textContent = labelText;
       row.appendChild(label);
       bindLegendTooltip(row, labelText, categoryDescriptions.get(type) || "");
-      row.addEventListener("click", () => {
-        if (hiddenTypes.has(type)) {
-          hiddenTypes.delete(type);
-          row.classList.remove("inactive");
-        } else {
-          hiddenTypes.add(type);
-          row.classList.add("inactive");
-        }
-        row.setAttribute("aria-pressed", hiddenTypes.has(type) ? "false" : "true");
-        saveViewerState();
-        updateVisibilityFast();
+      row.addEventListener("click", event => {
+        selectNodeLegendCategory(type, event.ctrlKey || event.metaKey);
       });
-      if (hiddenTypes.has(type)) row.classList.add("inactive");
-      legend.appendChild(row);
+      if (parentId) row.classList.add("legend-child-row");
+      nodeLegendColumn.appendChild(row);
     });
+    if (presentCategories.size > 0) legend.appendChild(nodeLegendColumn);
+
+    const presentKinds = Array.from(new Set(docData.entities.flatMap(entity =>
+      kindComponents(entity.kind || entity.category || entity.type || "unknown")
+    ))).sort();
+    if (presentKinds.length) {
+      const colorLegendColumn = document.createElement("div");
+      colorLegendColumn.className = "legend-column legend-color-column";
+      colorLegendColumn.appendChild(createLegendGroupTitle("Colors"));
+      presentKinds.forEach(kind => {
+        const style = {color: colorByKind.get(kind) || "#566573", shape: "rect"};
+        const row = document.createElement("div");
+        row.className = "legend-row";
+        row.tabIndex = 0;
+        row.setAttribute("role", "button");
+        row.setAttribute("aria-pressed", "false");
+        row.dataset.legendKind = "node";
+        row.dataset.legendFacet = "kind";
+        row.dataset.type = kind;
+        row.appendChild(createLegendIcon(kind, {...style, shape: "rect", form: "node"}));
+        const label = document.createElement("div");
+        label.textContent = kind.replace(/[-_]+/g, " ").replace(/\b\w/g, letter => letter.toUpperCase());
+        row.appendChild(label);
+        row.addEventListener("click", event => selectNodeLegendKind(kind, event.ctrlKey || event.metaKey));
+        row.addEventListener("keydown", event => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          selectNodeLegendKind(kind, event.ctrlKey || event.metaKey);
+        });
+        colorLegendColumn.appendChild(row);
+      });
+      legend.appendChild(colorLegendColumn);
+    }
+    syncNodeLegendRows();
 
     const relevantLegendEdgeTypes = relevantEdgeCategoryIds();
     const legendEdgeTypes = [];
@@ -174,23 +302,67 @@
     function syncEdgeLegendRows() {
       legend.querySelectorAll(".legend-row[data-legend-kind='edge']").forEach(row => {
         const edgeType = row.dataset.type;
-        const inactive = edgeCategorySetContains(edgeType, hiddenEdgeTypes);
-        const blockedByParent = edgeCategorySetContains(edgeCategoryParent.get(edgeType), hiddenEdgeTypes);
+        const inactive = edgeCategorySetContains(edgeType, filterState.excludedEdgeTypes);
+        const blockedByParent = edgeCategorySetContains(
+          edgeCategoryParent.get(edgeType), filterState.excludedEdgeTypes
+        );
         row.classList.toggle("inactive", inactive);
         row.setAttribute("aria-pressed", inactive ? "false" : "true");
         row.setAttribute("aria-disabled", blockedByParent ? "true" : "false");
         row.tabIndex = blockedByParent ? -1 : 0;
+        row.querySelectorAll(".relation-traverse-button").forEach(button => {
+          button.disabled = blockedByParent || inactive || selectedNodeIds.size === 0;
+        });
       });
     }
 
-    if (legendEdgeTypes.length > 0) legend.appendChild(createLegendGroupTitle("Edges"));
+    function relationConstituentsForCategory(edge, edgeType) {
+      return edgeConstituents(edge).filter(constituent =>
+        edgeCategorySetContains(String(constituent.type || edge.type || "unknown"), new Set([edgeType]))
+      );
+    }
+
+    function selectRelationTraversal(edgeType, direction) {
+      const seeds = Array.from(selectedNodeIds).filter(nodeId => !isHiddenNode(nodeId));
+      if (!seeds.length) return;
+      const adjacency = new Map();
+      edgeLayer.querySelectorAll(".edge-path").forEach(path => {
+        if (path.style.display === "none") return;
+        const edge = path.__edgeMeta;
+        if (!edge) return;
+        relationConstituentsForCategory(edge, edgeType).forEach(constituent => {
+          const source = String(constituent.source || edge.source);
+          const target = String(constituent.target || edge.target);
+          const from = direction === "ancestors" ? target : source;
+          const to = direction === "ancestors" ? source : target;
+          if (isHiddenNode(from) || isHiddenNode(to)) return;
+          if (!adjacency.has(from)) adjacency.set(from, new Set());
+          adjacency.get(from).add(to);
+        });
+      });
+      const reached = new Set(seeds);
+      const queue = [...seeds];
+      while (queue.length) {
+        const current = queue.shift();
+        for (const next of adjacency.get(current) || []) {
+          if (reached.has(next)) continue;
+          reached.add(next);
+          queue.push(next);
+        }
+      }
+      setNodeSelection(reached, selectedNodeId, "explicit");
+    }
+
+    const edgeLegendColumn = document.createElement("div");
+    edgeLegendColumn.className = "legend-column";
+    if (legendEdgeTypes.length > 0) edgeLegendColumn.appendChild(createLegendGroupTitle("Relations"));
     legendEdgeTypes.forEach(({edgeType, depth}) => {
       const style = edgeStyleForType(edgeType);
       const row = document.createElement("div");
       row.className = "legend-row";
       row.tabIndex = 0;
       row.setAttribute("role", "button");
-      row.setAttribute("aria-pressed", edgeCategorySetContains(edgeType, hiddenEdgeTypes) ? "false" : "true");
+      row.setAttribute("aria-pressed", edgeCategorySetContains(edgeType, filterState.excludedEdgeTypes) ? "false" : "true");
       row.addEventListener("keydown", event => {
         if (event.key !== "Enter" && event.key !== " ") return;
         event.preventDefault();
@@ -206,18 +378,78 @@
       const labelText = category.label || edgeType;
       label.textContent = labelText;
       row.appendChild(label);
+      const actions = document.createElement("div");
+      actions.className = "legend-relation-actions";
+      [["ancestors", "←", "Select ancestors"], ["successors", "→", "Select successors"]]
+        .forEach(([direction, symbol, actionLabel]) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "relation-traverse-button";
+          button.dataset.direction = direction;
+          button.textContent = symbol;
+          button.title = `${actionLabel} through ${labelText}`;
+          button.setAttribute("aria-label", `${actionLabel} through ${labelText}`);
+          button.addEventListener("click", event => {
+            event.stopPropagation();
+            selectRelationTraversal(edgeType, direction);
+          });
+          actions.appendChild(button);
+        });
+      row.appendChild(actions);
       bindLegendTooltip(row, labelText, category.description || "");
       row.addEventListener("click", () => {
-        if (edgeCategorySetContains(edgeCategoryParent.get(edgeType), hiddenEdgeTypes)) return;
-        if (hiddenEdgeTypes.has(edgeType)) {
-          hiddenEdgeTypes.delete(edgeType);
-        } else {
-          hiddenEdgeTypes.add(edgeType);
-        }
-        syncEdgeLegendRows();
-        saveViewerState();
-        updateVisibilityFast();
+        if (edgeCategorySetContains(
+          edgeCategoryParent.get(edgeType), filterState.excludedEdgeTypes
+        )) return;
+        mutateFilter(() => {
+          if (filterState.excludedEdgeTypes.has(edgeType)) {
+            filterState.excludedEdgeTypes.delete(edgeType);
+          } else {
+            filterState.excludedEdgeTypes.add(edgeType);
+            descendantsOf(edgeType, edgeCategoryChildren).forEach(
+              child => filterState.excludedEdgeTypes.delete(child)
+            );
+          }
+        });
       });
-      legend.appendChild(row);
+      edgeLegendColumn.appendChild(row);
     });
+    if (legendEdgeTypes.length > 0) legend.appendChild(edgeLegendColumn);
     syncEdgeLegendRows();
+
+    const edgePresentationLegendColumn = document.createElement("div");
+    edgePresentationLegendColumn.className = "legend-column legend-edge-presentation-column";
+    legend.appendChild(edgePresentationLegendColumn);
+
+    function syncEdgePresentationLegend() {
+      const presentStateIds = new Set();
+      const representativeEdges = new Map();
+      edgeLayer.querySelectorAll(".edge-path").forEach(path => {
+        if (path.style.display === "none" || !path.__edgeMeta) return;
+        edgeMetadataPresentationIds(path.__edgeMeta).forEach(stateId => {
+          presentStateIds.add(stateId);
+          if (!representativeEdges.has(stateId)) representativeEdges.set(stateId, path.__edgeMeta);
+        });
+      });
+      edgePresentationLegendColumn.replaceChildren();
+      edgePresentationLegendColumn.hidden = false;
+      edgePresentationLegendColumn.appendChild(createLegendGroupTitle("Edge presentation"));
+      Array.from(edgeMetadataStyleCatalog)
+        .forEach(([stateId, rule]) => {
+          const present = presentStateIds.has(stateId);
+          const row = document.createElement("div");
+          row.className = `legend-row legend-explanation-row${present ? "" : " unavailable"}`;
+          row.tabIndex = 0;
+          row.setAttribute("role", "note");
+          row.setAttribute("aria-label", `${rule.label}: ${rule.description}${present ? "" : " Not present in the current graph."}`);
+          row.dataset.legendKind = "edge-presentation";
+          row.dataset.type = stateId;
+          row.dataset.present = present ? "true" : "false";
+          row.appendChild(createEdgePresentationLegendIcon(stateId, rule, representativeEdges.get(stateId)));
+          const label = document.createElement("div");
+          label.textContent = rule.label;
+          row.appendChild(label);
+          bindLegendTooltip(row, rule.label, rule.description);
+          edgePresentationLegendColumn.appendChild(row);
+        });
+    }

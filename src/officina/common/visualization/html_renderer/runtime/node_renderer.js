@@ -1,5 +1,31 @@
     // ── Node rendering ───────────────────────────────────────────────────────
 
+    const nodeGradientIds = new Map();
+
+    function nodeFill(style) {
+      const colors = Array.isArray(style.colors) ? style.colors.filter(Boolean) : [];
+      if (colors.length < 2) return style.color;
+      const key = colors.join("|");
+      if (!nodeGradientIds.has(key)) {
+        const id = `node-kind-gradient-${nodeGradientIds.size}`;
+        const gradient = createSvgElement("linearGradient");
+        gradient.setAttribute("id", id);
+        gradient.setAttribute("x1", "0%");
+        gradient.setAttribute("y1", "0%");
+        gradient.setAttribute("x2", "100%");
+        gradient.setAttribute("y2", "100%");
+        colors.forEach((color, index) => {
+          const stop = createSvgElement("stop");
+          stop.setAttribute("offset", `${colors.length === 1 ? 0 : index * 100 / (colors.length - 1)}%`);
+          stop.setAttribute("stop-color", color);
+          gradient.appendChild(stop);
+        });
+        svgEl.querySelector("defs").appendChild(gradient);
+        nodeGradientIds.set(key, id);
+      }
+      return `url(#${nodeGradientIds.get(key)})`;
+    }
+
     function expandSelectionRing(ring, x, y, w, h, shape) {
       const gap = SELECTION_RING_GAP;
       const tag = ring.tagName.toLowerCase();
@@ -71,9 +97,9 @@
       }
     }
 
-    function renderNode(entity, position) {
+    function nodePresentationState(entity, {forceContainer = false} = {}) {
       const presentation = entity.presentation || {};
-      const isContainer = presentation.form === "container" || isContainerNode(entity.id);
+      const isContainer = forceContainer || presentation.form === "container" || isContainerNode(entity.id);
       const directChildren = docData.entities.filter(
         candidate => parentByNode.get(candidate.id) === entity.id
       );
@@ -105,6 +131,19 @@
       const detailPromotionClasses = detailPromoted
         ? ` detail-promoted detail-depth-${Math.min(containmentDepth, 2)}${hasVisibleChildren ? " detail-promoted-branch" : " detail-promoted-leaf"}`
         : "";
+      return {
+        isContainer,
+        containmentDepth,
+        detailPromoted,
+        hasVisibleChildren,
+        className: `${isContainer ? "node-fo-body container-node" : "node-fo-body"}${detailPromotionClasses}`,
+      };
+    }
+
+    function renderNode(entity, position) {
+      const presentation = entity.presentation || {};
+      const presentationState = nodePresentationState(entity);
+      const isContainer = presentationState.isContainer;
       const containerTone = presentation.tone || "subtle";
       const baseStyle = nodeStyle(entity);
       const style = {...baseStyle, shape: isContainer ? "rect" : baseStyle.shape};
@@ -113,14 +152,17 @@
         decoration => decoration.type === "outline" && decoration.style === "offset"
       );
       const x = position.x, y = position.y;
-      const w = position.width || 210;
-      const h = position.height || 68;
+      const fallbackDimensions = defaultNodeDimensions(entity.id);
+      const w = position.width || fallbackDimensions.width;
+      const h = position.height || fallbackDimensions.height;
       const stroke = "#1f2933";
       const isInferred = entity.source === "inferred";
       const group = createSvgElement("g");
       group.setAttribute("class", isContainer ? "graph-node container-node" : "graph-node");
       group.dataset.nodeId = entity.id;
-      if (isContainer) group.dataset.containmentDepth = String(containmentDepth);
+      if (isContainer) {
+        group.dataset.containmentDepth = String(presentationState.containmentDepth);
+      }
 
       let shapeEl = null;
       let selectionRing = null;
@@ -159,7 +201,7 @@
         outer.setAttribute("x", x); outer.setAttribute("y", y);
         outer.setAttribute("width", w); outer.setAttribute("height", h);
         outer.setAttribute("class", "node-shape");
-        outer.setAttribute("fill", style.color); outer.setAttribute("stroke", stroke);
+        outer.setAttribute("fill", nodeFill(style)); outer.setAttribute("stroke", stroke);
         outer.setAttribute("stroke-width", "2");
         if (isInferred) outer.setAttribute("stroke-dasharray", "6 3");
         group.appendChild(outer);
@@ -185,7 +227,7 @@
 
       if (shapeEl) {
         shapeEl.setAttribute("class", "node-shape");
-        shapeEl.setAttribute("fill", style.color);
+        shapeEl.setAttribute("fill", nodeFill(style));
         if (isContainer) {
           shapeEl.setAttribute("fill-opacity", containerTone === "strong" ? "0.16" : "0.055");
         }
@@ -218,10 +260,7 @@
       foreignObject.setAttribute("x", x); foreignObject.setAttribute("y", y);
       foreignObject.setAttribute("width", w); foreignObject.setAttribute("height", h);
       const body = document.createElementNS("http://www.w3.org/1999/xhtml", "div");
-      body.setAttribute(
-        "class",
-        `${isContainer ? "node-fo-body container-node" : "node-fo-body"}${detailPromotionClasses}`
-      );
+      body.setAttribute("class", presentationState.className);
       body.innerHTML = `<div class="node-label">${escapeHtml(entity.label || entity.short_title)}</div><div class="node-subtitle">${escapeHtml(entity.type + (entity.ref ? " " + entity.ref : ""))}</div>`;
       foreignObject.appendChild(body);
       group.appendChild(foreignObject);
@@ -242,7 +281,7 @@
         badgeText.setAttribute("y", y + 21);
         badgeText.setAttribute("text-anchor", "middle");
         badgeText.setAttribute("fill", "#ffffff");
-        badgeText.setAttribute("font-size", "10");
+        badgeText.setAttribute("font-size", "12");
         badgeText.setAttribute("font-weight", "700");
         badgeText.setAttribute("letter-spacing", "0.45");
         badgeText.setAttribute("pointer-events", "none");

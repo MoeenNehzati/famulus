@@ -15,10 +15,12 @@ The module is split by responsibility:
 |---|---|---|
 | Graph payload model | `graph.py`, `graph_specification.schema.json` | Validate graph shape and references, build adjacency indexes, and run graph-level transforms such as same-type transitive reduction. |
 | Extractor contract | `base_extractor.py` | Define `BaseJsonExtractor.extract(GraphSource) -> dict` for any domain that can produce graph JSON. |
-| Renderer contract | `base_renderer.py` | Normalize payloads, validate against the schema, write HTML artifacts, and call graph transforms. |
+| Payload contract | `payload.py`, `graph.py` | Normalize and validate canonical payloads, then provide domain-neutral graph algorithms. |
+| Renderer contract | `base_renderer.py` | Render prepared canonical payloads through a presentation-specific implementation. |
+| Artifact output | `artifacts.py` | Write canonical JSON and renderer output without knowing adapter semantics. |
 | HTML renderer | `elk_html_renderer.py` | Render canonical graph JSON as the interactive ELK-backed browser UI. |
 | Orchestration | `base_visualizer.py`, `server.py` | Resolve file/module sources, run extractor -> validator -> renderer, and optionally serve output artifacts. |
-| Docstring adapter | `from_docstring/` | Convert validated docstring metadata into graph entities and typed edges. |
+| Docstring adapter | `from_docstring/` | Convert validated docstring metadata into graph entities and typed edges; delegate canonical preparation and artifacts to the parent module. |
 | Blueprint adapter | `from_blueprint/` | Project the canonical repository blueprint graph into scoped hierarchical entities and typed edges. |
 
 ## Payload contract
@@ -66,6 +68,18 @@ validated renderer pipeline.
   only matching constituents and preserve layout.
 - Internal routing for relationships between a container and its descendants,
   avoiding paths that leave a supernode and turn back into it.
+- Metadata-driven edge presentation that remains separate from relation meaning:
+  hidden-detail summaries retain semantic paint inside a subtle halo, multiple
+  same-type edges retain semantic paint with extra width, and mixed types use a
+  constituent-color gradient with a neutral outline.
+
+Edge `type` is semantic: it says what the relationship means and selects the
+relation legend color/dash. Renderer metadata such as `aggregate` and `bundle`
+describes why one visible path represents hidden or multiple edges. The optional
+`ui.edge_metadata_styles` object can tune only the bounded visual properties for
+those generic states; it cannot add predicates or redefine relationship meaning.
+The runtime applies semantic style first and metadata presentation second, then
+builds the Edge presentation legend from the same rules.
 
 Node and edge category parents are operational hierarchies. Excluding a parent
 through either facets or the legend excludes its descendants, and retained
@@ -118,6 +132,12 @@ reduction logic into the domain package.
 `load_repository_blueprint_graph(...)` and visualizes its canonical logical
 nodes. It never traverses or parses blueprint files independently.
 
+The adapter is decomposed by policy: `scope.py` selects repository entities,
+`catalog.py` declares blueprint categories, detail levels, and omission
+composition semantics, and the payload builder maps canonical blueprint records.
+The extraction facade and visualizer only coordinate these components and the
+parent module's generic payload, renderer, and artifact services.
+
 Use whole-repository scope for an architectural overview, or pass logical
 skill/module ids to select a smaller scope:
 
@@ -159,9 +179,21 @@ modules and out-of-scope boundaries, `source` adds behavioral sources, and
 projection decision; the renderer only implements the generic ordered-level
 contract.
 
-Hiding an ordinary node does not imply that arbitrary relationship types compose.
-An edge category must set `bridge_hidden_nodes: true` before the renderer derives
-a same-type path across hidden intermediate nodes.
+Hiding an ordinary node does not imply that arbitrary relationships compose.
+Adapters opt in through
+`relation_semantics.transformations.node_omission.rules`. Each finite rule names
+an incoming edge type, an outgoing edge type, the derived result type, and the
+omission causes for which the rule applies. Blueprint rules currently compose
+only nodes explicitly hidden by the user; filtering, detail-level omission, and
+container collapse retain their separate presentation semantics.
+
+An edge may set `projection_target` when its visible logical target is implemented
+through another canonical node. This lets a declared interface dependency continue
+through the exact implementing source if the interface is hidden, without guessing
+from siblings or containment. The renderer applies only declared finite transitions,
+never feeds derived edges back into projection, suppresses an indirect result when a
+corresponding direct edge exists, and records the canonical witness edges and omitted
+nodes as provenance on every derived edge.
 
 
 ## HTML renderer architecture

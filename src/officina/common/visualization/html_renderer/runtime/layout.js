@@ -57,16 +57,26 @@
       balanced: { extraClearance: 3, parallelSpacing: 12, mergeLaneDistance: 34, nodeSpacing: 46, layerSpacing: 150, edgeNodeSpacing: 40 },
       spacious: { extraClearance: 16, parallelSpacing: 36, mergeLaneDistance: 80, nodeSpacing: 120, layerSpacing: 210, edgeNodeSpacing: 110 }
     };
-    const shapePresets = {
-      sharp: { cornerRadius: 0 },
-      soft: { cornerRadius: 18 },
-      curvy: { cornerRadius: 60 }
-    };
+    const layoutPreferences = docData.ui?.layout || {};
+    const rankDirections = {LR: "RIGHT", RL: "LEFT", TB: "DOWN", BT: "UP"};
+    const layoutDirection = rankDirections[layoutPreferences.rankdir] || "RIGHT";
+    const preferredAspectRatio = Number(layoutPreferences.aspect_ratio) > 0
+      ? Number(layoutPreferences.aspect_ratio)
+      : 1.7;
     const routingConfig = {
       compactnessPreset: "balanced",
-      shapePreset: "soft",
+      geometry: "bezier",
+      polylineBend: 50,
+      splineTension: 22,
+      bezierCurvature: 30,
       ...routingPresets.balanced,
-      ...shapePresets.soft
+      cornerRadius: 18,
+      nodeSpacing: Number.isFinite(layoutPreferences.node_spacing)
+        ? layoutPreferences.node_spacing
+        : routingPresets.balanced.nodeSpacing,
+      layerSpacing: Number.isFinite(layoutPreferences.layer_spacing)
+        ? layoutPreferences.layer_spacing
+        : routingPresets.balanced.layerSpacing
     };
 
     edgeData.forEach(edge => {
@@ -78,7 +88,11 @@
 
     function syncRoutingControls() {
       routingCompactnessSelect.value = routingConfig.compactnessPreset;
-      routingShapeSelect.value = routingConfig.shapePreset;
+      routingGeometrySelect.value = routingConfig.geometry;
+      routingParallelRow.hidden = !hasParallelEdges;
+      routingGeometryRows.forEach(row => {
+        row.hidden = row.dataset.routingGeometry !== routingConfig.geometry;
+      });
       Object.entries(routingInputs).forEach(([key, input]) => {
         input.value = routingConfig[key];
         routingValueEls[key].textContent = routingConfig[key];
@@ -102,25 +116,62 @@
     async function computeLayout(visibleEntities, visibleEdges) {
       const elkInstance = ensureElk();
       if (!elkInstance) throw new Error("ELK failed to load.");
-      const graph = {
-        id: "root",
-        layoutOptions: {
-          "elk.algorithm": "layered",
-          "elk.direction": "RIGHT",
-          "elk.edgeRouting": "ORTHOGONAL",
-          "elk.hierarchyHandling": "INCLUDE_CHILDREN",
-          "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
-          "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
-          "elk.separateConnectedComponents": "true",
-          "elk.spacing.nodeNode": String(routingConfig.nodeSpacing),
-          "elk.layered.spacing.nodeNode": String(routingConfig.nodeSpacing),
-          "elk.layered.spacing.nodeNodeBetweenLayers": String(routingConfig.layerSpacing),
-          "elk.layered.spacing.edgeNodeBetweenLayers": String(routingConfig.edgeNodeSpacing),
-          "elk.padding": "[left=40,top=40,right=40,bottom=40]"
-        },
-        children: buildContainmentGraph(visibleEntities),
-        edges: visibleEdges.map((edge, idx) => ({ id: `elk_edge_${idx}`, sources: [edge.source], targets: [edge.target] }))
+      const layoutRootId = "__layout_root__";
+      const entitiesById = new Map(visibleEntities.map(entity => [entity.id, entity]));
+      const visibleIds = new Set(entitiesById.keys());
+      const visibleParents = new Map();
+      const childrenByParent = new Map([[layoutRootId, []]]);
+
+      visibleEntities.forEach(entity => {
+        const declaredParent = typeof entity.container === "string" ? entity.container.trim() : "";
+        const parentId = declaredParent && visibleIds.has(declaredParent) ? declaredParent : layoutRootId;
+        visibleParents.set(entity.id, parentId);
+        const siblings = childrenByParent.get(parentId) || [];
+        siblings.push(entity.id);
+        childrenByParent.set(parentId, siblings);
+      });
+
+      const compareEntityIds = (leftId, rightId) => {
+        const left = entitiesById.get(leftId);
+        const right = entitiesById.get(rightId);
+        const leftPosition = Number.isFinite(left?.position) ? left.position : Number.MAX_SAFE_INTEGER;
+        const rightPosition = Number.isFinite(right?.position) ? right.position : Number.MAX_SAFE_INTEGER;
+        return leftPosition - rightPosition || leftId.localeCompare(rightId);
       };
+      childrenByParent.forEach(children => children.sort(compareEntityIds));
+
+      function directChildOf(parentId, descendantId) {
+        if (descendantId === parentId || !visibleIds.has(descendantId)) return null;
+        let current = descendantId;
+        const seen = new Set();
+        while (!seen.has(current)) {
+          seen.add(current);
+          const currentParent = visibleParents.get(current);
+          if (!currentParent) return null;
+          if (currentParent === parentId) return current;
+          if (currentParent === layoutRootId) return parentId === layoutRootId ? current : null;
+          current = currentParent;
+        }
+        return null;
+      }
+
+      function projectedEdges(parentId, childIds) {
+        const childSet = new Set(childIds);
+        const represented = new Set();
+        const projected = [];
+        visibleEdges.forEach((edge, index) => {
+          const source = directChildOf(parentId, edge.source);
+          const target = directChildOf(parentId, edge.target);
+          if (!source || !target || source === target || !childSet.has(source) || !childSet.has(target)) return;
+          const key = `${source}\u0000${target}`;
+          if (represented.has(key)) return;
+          represented.add(key);
+          projected.push({id: `projected_${index}`, sources: [source], targets: [target]});
+        });
+        return projected;
+      }
+
+      async function runElk(graph) {
         const layoutPromise = elkInstance.layout(graph);
         const layoutTimeout = new Promise(function(_, reject) {
           window.setTimeout(function() {
@@ -128,6 +179,114 @@
           }, 15000);
         });
         return Promise.race([layoutPromise, layoutTimeout]);
+      }
+
+      async function arrangeChildren(parentId, childNodes, isRoot) {
+        const childIds = childNodes.map(child => child.id);
+        const edges = projectedEdges(parentId, childIds);
+        const requestedAlgorithm = layoutPreferences.elk_algorithm;
+        const algorithm = requestedAlgorithm || (edges.length ? "layered" : "rectpacking");
+        const rootNodeSpacing = String(routingConfig.nodeSpacing);
+        const containerMetrics = isRoot ? null : containerLayoutMetrics(parentId);
+        const nodeSpacing = isRoot
+          ? routingConfig.nodeSpacing
+          : Math.min(routingConfig.nodeSpacing, containerMetrics.nodeSpacing);
+        const layerSpacing = isRoot
+          ? routingConfig.layerSpacing
+          : Math.min(routingConfig.layerSpacing, containerMetrics.layerSpacing);
+        const graph = await runElk({
+          id: `layout_${parentId}`,
+          layoutOptions: {
+            "elk.algorithm": algorithm,
+            "elk.direction": layoutDirection,
+            "elk.edgeRouting": layoutPreferences.edge_routing || "ORTHOGONAL",
+            "elk.aspectRatio": String(preferredAspectRatio),
+            "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
+            "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
+            "elk.layered.considerModelOrder.strategy": "PREFER_NODES",
+            "elk.layered.considerModelOrder.components": "MODEL_ORDER",
+            "elk.separateConnectedComponents": "true",
+            "elk.spacing.nodeNode": isRoot ? rootNodeSpacing : String(nodeSpacing),
+            "elk.spacing.componentComponent": String(nodeSpacing),
+            "elk.layered.spacing.nodeNode": String(nodeSpacing),
+            "elk.layered.spacing.nodeNodeBetweenLayers": String(layerSpacing),
+            "elk.padding": isRoot
+              ? "[left=40,top=40,right=40,bottom=40]"
+              : `[left=${containerMetrics.sidePadding},top=${containerMetrics.headerPadding},right=${containerMetrics.sidePadding},bottom=${containerMetrics.bottomPadding}]`
+          },
+          children: childNodes.map(child => ({id: child.id, width: child.width, height: child.height})),
+          edges
+        });
+        const positions = new Map((graph.children || []).map(child => [child.id, child]));
+        childNodes.forEach(child => {
+          const position = positions.get(child.id);
+          child.x = position?.x || 0;
+          child.y = position?.y || 0;
+        });
+        return {
+          width: Math.max(
+            isRoot ? 0 : defaultNodeDimensions(parentId, {container: true}).width,
+            graph.width || 0,
+          ),
+          height: Math.max(
+            isRoot ? 0 : defaultNodeDimensions(parentId, {container: true}).height,
+            graph.height || 0,
+          ),
+          children: childNodes
+        };
+      }
+
+      async function layoutEntity(entityId) {
+        const childIds = childrenByParent.get(entityId) || [];
+        if (!childIds.length) {
+          const dimensions = defaultNodeDimensions(entityId);
+          return {id: entityId, width: dimensions.width, height: dimensions.height};
+        }
+        const childNodes = await Promise.all(childIds.map(layoutEntity));
+        const arranged = await arrangeChildren(entityId, childNodes, false);
+        return {id: entityId, width: arranged.width, height: arranged.height, children: arranged.children};
+      }
+
+      const rootIds = childrenByParent.get(layoutRootId) || [];
+      const rootNodes = await Promise.all(rootIds.map(layoutEntity));
+      const arrangedRoot = await arrangeChildren(layoutRootId, rootNodes, true);
+      const absolutePositions = new Map();
+      function collect(nodes, offsetX, offsetY) {
+        (nodes || []).forEach(node => {
+          const absolute = {
+            x: offsetX + (node.x || 0),
+            y: offsetY + (node.y || 0),
+            width: node.width || DEFAULT_NODE_WIDTH,
+            height: node.height || DEFAULT_NODE_HEIGHT
+          };
+          absolutePositions.set(node.id, absolute);
+          collect(node.children, absolute.x, absolute.y);
+        });
+      }
+      collect(arrangedRoot.children, 0, 0);
+      const edges = visibleEdges.map((edge, index) => {
+        const source = absolutePositions.get(edge.source);
+        const target = absolutePositions.get(edge.target);
+        const startPoint = source
+          ? {x: source.x + source.width / 2, y: source.y + source.height / 2}
+          : {x: 0, y: 0};
+        const endPoint = target
+          ? {x: target.x + target.width / 2, y: target.y + target.height / 2}
+          : {x: 0, y: 0};
+        return {
+          id: `elk_edge_${index}`,
+          sources: [edge.source],
+          targets: [edge.target],
+          sections: [{startPoint, endPoint}]
+        };
+      });
+      return {
+        id: "root",
+        width: arrangedRoot.width,
+        height: arrangedRoot.height,
+        children: arrangedRoot.children,
+        edges
+      };
     }
 
     function pointsForSection(section) {
@@ -172,7 +331,7 @@
         let nextY = null;
         layer.forEach(node => {
           if (nextY !== null && (node.y || 0) < nextY) node.y = nextY;
-          nextY = (node.y || 0) + (node.height || 68) + routingConfig.nodeSpacing;
+          nextY = (node.y || 0) + (node.height || DEFAULT_NODE_HEIGHT) + routingConfig.nodeSpacing;
         });
       });
     }
@@ -248,10 +407,10 @@
       arrowEl.style.display = pathEl.style.display;
       arrowEl.style.opacity = pathEl.style.opacity;
       arrowEl.style.filter = pathEl.style.filter;
-      arrowEl.setAttribute("fill", pathEl.style.stroke || pathEl.getAttribute("stroke") || "#111111");
+      arrowEl.setAttribute("fill", pathEl.dataset.edgeArrowColor || pathEl.style.stroke || pathEl.getAttribute("stroke") || "#111111");
       arrowEl.dataset.sourceNodeId = pathEl.dataset.sourceNodeId;
       arrowEl.dataset.targetNodeId = pathEl.dataset.targetNodeId;
-      arrowEl.dataset.bridge = pathEl.dataset.bridge;
+      arrowEl.dataset.derived = pathEl.dataset.derived;
     }
 
     function attachArrowhead(pathEl) {
@@ -291,8 +450,8 @@
         nodeEl.style.display = isHiddenNode(nodeId) ? "none" : "";
       });
 
-      // Toggle non-bridge edge elements
-      edgeLayer.querySelectorAll(".edge-path[data-bridge='false']").forEach(pathEl => {
+      // Toggle canonical edge elements without replacing their stable geometry.
+      edgeLayer.querySelectorAll(".edge-path[data-derived='false']").forEach(pathEl => {
         const src = pathEl.dataset.sourceNodeId;
         const dst = pathEl.dataset.targetNodeId;
         const sourceHidden = isHiddenNode(src);
@@ -303,13 +462,16 @@
         syncArrowheadForPath(pathEl);
       });
 
-      // Remove all bridge edges; recompute them from current node positions.
-      edgeLayer.querySelectorAll(".edge-path[data-bridge='true']").forEach(el => el.remove());
-      edgeLayer.querySelectorAll(".edge-arrow[data-bridge='true']").forEach(el => el.remove());
+      // Derived edges depend on the current omission set, so replace only them.
+      edgeLayer.querySelectorAll(".edge-path[data-derived='true']").forEach(el => {
+        removeEdgePresentationResources(el);
+        el.remove();
+      });
+      edgeLayer.querySelectorAll(".edge-arrow[data-derived='true']").forEach(el => el.remove());
 
       const visibleEdges = computeVisibleEdges();
       visibleEdges.forEach(edge => {
-        if (!edge.bridge) return;
+        if (!edge.derived) return;
         const srcPos = getEffectivePos(edge.source);
         const dstPos = getEffectivePos(edge.target);
         if (!srcPos || !dstPos) return;
@@ -317,24 +479,22 @@
         path.setAttribute("class", "edge-path");
         path.setAttribute("d", manualDoglegPath(srcPos, dstPos));
         const edgeStyle = edgeStyleForType(edge.type);
-        const edgeStroke = (edgeStyle && (edgeStyle.stroke || edgeStyle.color)) || edgeColorForTarget(edge.target);
-        path.setAttribute("stroke", edgeStroke);
-        if (edgeStyle && edgeStyle.dash) path.setAttribute("stroke-dasharray", edgeStyle.dash);
-        else path.setAttribute("stroke-dasharray", "6 4");
-        path.dataset.edgeId = edge.edge_id || `bridge_${edge.source}_${edge.target}`;
+        applyEdgeMetadataPresentation(path, edge, edgeStyle, edgeColorForTarget(edge.target));
+        path.dataset.edgeId = edge.edge_id || `projection_${edge.source}_${edge.target}`;
         path.dataset.targetNodeId = edge.target;
         path.dataset.sourceNodeId = edge.source;
-        path.dataset.bridge = "true";
+        path.dataset.derived = "true";
         path.dataset.edgeType = String(edge.type || "unknown");
         path.dataset.aggregate = edge.aggregate ? "true" : "false";
-        if (edge.aggregate) {
-          path.style.strokeWidth = "4";
-          path.style.strokeDasharray = "10 4 2 4";
-        }
+        path.__edgeMeta = edge;
         edgeLayer.appendChild(path);
+        syncEdgeMetadataPresentationGeometry(path);
         attachArrowhead(path);
         bindEdgeHover(path, edge);
       });
 
-      applyAncestorFocus();
+      syncEdgePresentationLegend();
+
+      refreshEdgeOcclusionMasks();
+      applyVisibilityPresentation();
     }

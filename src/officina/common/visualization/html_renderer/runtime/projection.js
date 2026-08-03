@@ -1,4 +1,4 @@
-    // ── Bridge edge helpers ──────────────────────────────────────────────────
+    // ── Declarative edge projection ──────────────────────────────────────────
 
     function confidenceRank(value) {
       if (value === "Verified") return 3;
@@ -7,17 +7,47 @@
       return 0;
     }
 
-    function bridgeEdge(sourceId, targetId, hiddenPath, seedEdge) {
-      const hiddenLabels = hiddenPath.map(id => entityMap.get(id)?.short_title || id);
+    function compositionTransitions(cause, leftType, rightType) {
+      const key = JSON.stringify([cause, leftType, rightType]);
+      return relationTransitions.get(key) || [];
+    }
+
+    function derivedProjectionEdge(sourceId, targetId, state) {
+      const hiddenLabels = state.omittedNodes.map(id => entityMap.get(id)?.short_title || id);
       return {
-        edge_id: `bridge_${sourceId}_${targetId}_${hiddenPath.join("_") || "direct"}`,
+        edge_id: `projection_${sourceId}_${targetId}_${state.type}`,
         source: sourceId,
         target: targetId,
-        type: seedEdge.type,
-        description: `Derived ${seedEdge.type} path across hidden nodes: ${hiddenLabels.join(" → ")}.`,
-        confidence: seedEdge?.confidence || "Likely",
-        evidence: `Bridge path: ${hiddenLabels.join(" → ")}`,
-        bridge: true
+        type: state.type,
+        description: `Derived ${state.type} relationship across omitted nodes: ${hiddenLabels.join(" → ")}.`,
+        confidence: "Likely",
+        implicit: true,
+        derived: true,
+        metadata: {
+          projection: {
+            fidelity: state.fidelity,
+            rule_ids: state.ruleIds,
+            omitted_nodes: state.omittedNodes,
+            omission_causes: state.causes,
+            represented_edge_ids: state.representedEdges.map(edge => edge.edge_id),
+            witness_path: state.witnessPath.concat(targetId),
+            witnesses: [{
+              canonical_edge_ids: state.representedEdges.map(edge => edge.edge_id),
+              omitted_nodes: state.omittedNodes,
+              omission_causes: state.causes,
+              witness_path: state.witnessPath.concat(targetId),
+              fidelity: state.fidelity,
+              transitions: state.transitions,
+            }],
+          },
+          represented_count: state.representedEdges.length,
+          represented_edges: state.representedEdges.map(edge => ({
+            edge_id: edge.edge_id,
+            source: edge.source,
+            target: edge.target,
+            type: edge.type,
+          })),
+        },
       };
     }
 
@@ -84,20 +114,35 @@
           : String(edge.edge_id);
         const existing = rendered.get(key);
         if (!existing) { rendered.set(key, edge); return; }
-        if (existing.aggregate && edge.aggregate) {
+        if ((existing.aggregate && edge.aggregate) || (existing.derived && edge.derived)) {
           const represented = [
             ...(existing.metadata?.represented_edges || []),
             ...(edge.metadata?.represented_edges || []),
           ];
+          const uniqueRepresented = Array.from(
+            new Map(represented.map(item => [String(item.edge_id), item])).values()
+          );
+          const witnesses = [
+            ...(existing.metadata?.projection?.witnesses || []),
+            ...(edge.metadata?.projection?.witnesses || []),
+          ];
+          const uniqueWitnesses = Array.from(new Map(witnesses.map(witness => [
+            JSON.stringify(witness.canonical_edge_ids || witness.witness_path || []), witness,
+          ])).values());
           existing.metadata = {
             ...(existing.metadata || {}),
-            represented_count: represented.length,
-            represented_edges: represented,
+            represented_count: uniqueRepresented.length,
+            represented_edges: uniqueRepresented,
+            ...(existing.derived ? {projection: {
+              ...(existing.metadata?.projection || {}),
+              fidelity: uniqueWitnesses.some(witness => witness.fidelity === "exact") ? "exact" : "degraded",
+              witnesses: uniqueWitnesses,
+            }} : {}),
           };
           return;
         }
-        const existingScore = (existing.bridge ? 0 : 10) + confidenceRank(existing.confidence);
-        const newScore = (edge.bridge ? 0 : 10) + confidenceRank(edge.confidence);
+        const existingScore = (existing.derived ? 0 : 10) + confidenceRank(existing.confidence);
+        const newScore = (edge.derived ? 0 : 10) + confidenceRank(edge.confidence);
         if (newScore > existingScore) rendered.set(key, edge);
       }
       function collapsedRepresentative(nodeId) {
@@ -136,7 +181,7 @@
           source,
           target,
           aggregate: true,
-          bridge: false,
+          derived: false,
           implicit: true,
           description: "Aggregated relationship between visible structural representatives.",
           metadata: {
@@ -151,28 +196,50 @@
           },
         });
       }
-      function traverse(sourceId, currentId, seedEdge, hiddenPath, seenHidden) {
+      function traverse(sourceId, currentId, state, seenStates) {
         if (currentId === sourceId) return;
         if (!entityMap.has(currentId)) return;
         if (!isHiddenNode(currentId)) {
-          if (hiddenPath.length === 0 && seedEdge && sourceId === seedEdge.source && currentId === seedEdge.target) {
-            addRendered({...seedEdge, bridge: false});
+          if (state.omittedNodes.length === 0) {
+            addRendered({...state.representedEdges[0], derived: false});
           } else {
-            addRendered(bridgeEdge(sourceId, currentId, hiddenPath, seedEdge));
+            addRendered(derivedProjectionEdge(sourceId, currentId, state));
           }
           return;
         }
-        if (nodeHiddenByDetailLevel(currentId)) return;
-        if (edgeCategoryCatalog.get(String(seedEdge?.type || ""))?.bridge_hidden_nodes !== true) return;
-        if (seenHidden.has(currentId)) return;
-        const nextSeen = new Set(seenHidden);
-        nextSeen.add(currentId);
-        const nextEdges = (outgoing.get(currentId) || []).filter(edge =>
-          !isHiddenEdgeType(edge) && String(edge.type) === String(seedEdge.type)
-        );
+        const cause = nodeOmissionCause(currentId);
+        if (!cause) return;
+        const stateKey = JSON.stringify([currentId, state.type, state.fidelity]);
+        if (seenStates.has(stateKey)) return;
+        const nextSeen = new Set(seenStates);
+        nextSeen.add(stateKey);
+        const nextEdges = (outgoing.get(currentId) || []).filter(edge => !isHiddenEdgeType(edge));
         if (nextEdges.length === 0) return;
         for (const outEdge of nextEdges) {
-          traverse(sourceId, outEdge.target, seedEdge || outEdge, hiddenPath.concat(currentId), nextSeen);
+          const transitions = compositionTransitions(cause, state.type, String(outEdge.type));
+          for (const transition of transitions) {
+            if (outEdge.target === sourceId) continue;
+            const fidelity = state.fidelity === "degraded" || transition.fidelity === "degraded"
+              ? "degraded"
+              : "exact";
+            traverse(sourceId, outEdge.target, {
+              type: transition.resultType,
+              omittedNodes: state.omittedNodes.concat(currentId),
+              causes: state.causes.concat(cause),
+              representedEdges: state.representedEdges.concat(outEdge),
+              witnessPath: state.witnessPath.concat(currentId),
+              ruleIds: state.ruleIds.concat(transition.ruleId),
+              fidelity,
+              transitions: state.transitions.concat({
+                rule_id: transition.ruleId,
+                fidelity: transition.fidelity,
+                left_type: state.type,
+                right_type: String(outEdge.type),
+                result_type: transition.resultType,
+                omitted_node: currentId,
+              }),
+            }, nextSeen);
+          }
         }
       }
       docData.entities.forEach(entity => {
@@ -183,10 +250,58 @@
             collapsedRepresentative(outEdge.source) !== outEdge.source ||
             collapsedRepresentative(outEdge.target) !== outEdge.target
           ) continue;
-          traverse(entity.id, outEdge.target, outEdge, [], new Set());
+          const canonicalTargetCause = nodeOmissionCause(outEdge.target);
+          const declaredProjectionTarget = String(outEdge.projection_target || "");
+          const projectionTargetCause = declaredProjectionTarget
+            ? nodeOmissionCause(declaredProjectionTarget)
+            : null;
+          const followsProjectionTarget = Boolean(
+            canonicalTargetCause &&
+            projectionTargetCause &&
+            entityMap.has(declaredProjectionTarget) &&
+            declaredProjectionTarget !== outEdge.target
+          );
+          traverse(entity.id, followsProjectionTarget ? declaredProjectionTarget : outEdge.target, {
+            type: String(outEdge.type),
+            omittedNodes: followsProjectionTarget ? [outEdge.target] : [],
+            causes: followsProjectionTarget ? [canonicalTargetCause] : [],
+            representedEdges: [outEdge],
+            witnessPath: followsProjectionTarget ? [entity.id, outEdge.target] : [entity.id],
+            ruleIds: [],
+            fidelity: "exact",
+            transitions: [],
+          }, new Set());
         }
       });
-      return bundleRenderedEdges(Array.from(rendered.values()));
+      const projected = Array.from(rendered.values()).filter(edge => !isHiddenEdgeType(edge));
+      const byEndpoints = new Map();
+      projected.forEach(edge => {
+        const key = JSON.stringify([edge.source, edge.target]);
+        if (!byEndpoints.has(key)) byEndpoints.set(key, []);
+        byEndpoints.get(key).push(edge);
+      });
+      const retained = projected.filter(edge => {
+        const peers = byEndpoints.get(JSON.stringify([edge.source, edge.target])) || [];
+        const fidelityRank = candidate => candidate.derived && candidate.metadata?.projection?.fidelity === "degraded" ? 0 : 1;
+        const dominator = peers.find(peer => {
+          if (peer === edge) return false;
+          const sameType = String(peer.type) === String(edge.type);
+          const strongerType = (subsumedTypesByType.get(String(peer.type)) || new Set()).has(String(edge.type));
+          const noWorseFidelity = fidelityRank(peer) >= fidelityRank(edge);
+          const strict = strongerType || fidelityRank(peer) > fidelityRank(edge);
+          return (sameType || strongerType) && noWorseFidelity && strict;
+        });
+        if (!dominator) return true;
+        dominator.metadata = {
+          ...(dominator.metadata || {}),
+          suppressed_relationships: [
+            ...(dominator.metadata?.suppressed_relationships || []),
+            edge,
+          ],
+        };
+        return false;
+      });
+      return bundleRenderedEdges(retained);
     }
 
     function edgeColorForTarget(targetId) {
@@ -213,10 +328,11 @@
         return {
           shape: (overrideStyle && overrideStyle.shape) || fallback.shape || "rect",
           color: (overrideStyle && overrideStyle.color) || fallback.color || "#566573",
+          colors: (overrideStyle && overrideStyle.colors) || fallback.colors,
         };
       }
       const style = typeStyles[nodeCategory(entity)] || { shape: "rect", color: "#566573" };
-      return { shape: style.shape, color: style.color };
+      return { shape: style.shape, color: style.color, colors: style.colors };
     }
 
     function flattenLayoutNodes(nodes, offsetX, offsetY, out) {
@@ -236,93 +352,42 @@
       });
     }
 
-    function enforceContainmentLayout(visibleEntities) {
-      const childrenByContainer = new Map();
+    function fitContainersAroundDescendants(visibleEntities) {
       const visibleIds = new Set(visibleEntities.map(entity => entity.id));
+      const childrenByContainer = new Map();
       visibleEntities.forEach(entity => {
-        const containerId = typeof entity.container === "string" ? entity.container.trim() : "";
-        if (!containerId || !visibleIds.has(containerId)) return;
-        const list = childrenByContainer.get(containerId) || [];
-        list.push(entity.id);
-        childrenByContainer.set(containerId, list);
+        const parentId = typeof entity.container === "string" ? entity.container.trim() : "";
+        if (!parentId || !visibleIds.has(parentId)) return;
+        const children = childrenByContainer.get(parentId) || [];
+        children.push(entity.id);
+        childrenByContainer.set(parentId, children);
       });
 
-      const CHILDBOX_W = 210;
-      const CHILDBOX_H = 68;
-      const X_PAD = 14;
-      const Y_PAD = 14;
-      const HEADER_H = 52;
-      const COL_GAP = 14;
-      const ROW_GAP = 14;
-      const measured = new Map();
-
-      function measure(entityId, visiting = new Set()) {
-        if (measured.has(entityId)) return measured.get(entityId);
-        if (visiting.has(entityId)) return {width: CHILDBOX_W, height: CHILDBOX_H};
-        const nextVisiting = new Set(visiting);
-        nextVisiting.add(entityId);
-        const children = Array.from(new Set(childrenByContainer.get(entityId) || [])).sort();
-        if (!children.length) {
-          const leaf = {width: CHILDBOX_W, height: CHILDBOX_H, children: [], columns: 0, colWidths: [], rowHeights: []};
-          measured.set(entityId, leaf);
-          return leaf;
+      const fitted = new Set();
+      const fitting = new Set();
+      function fit(containerId) {
+        if (fitted.has(containerId) || fitting.has(containerId)) return;
+        fitting.add(containerId);
+        const childIds = childrenByContainer.get(containerId) || [];
+        childIds.forEach(childId => fit(childId));
+        const container = lastNodePositions.get(containerId);
+        const children = childIds.map(childId => lastNodePositions.get(childId)).filter(Boolean);
+        if (container && children.length) {
+          const metrics = containerLayoutMetrics(containerId);
+          const left = Math.min(...children.map(child => child.x - metrics.sidePadding));
+          const top = Math.min(...children.map(child => child.y - metrics.headerPadding));
+          const right = Math.max(...children.map(child => child.x + child.width + metrics.sidePadding));
+          const bottom = Math.max(...children.map(child => child.y + child.height + metrics.bottomPadding));
+          container.x = left;
+          container.y = top;
+          container.width = right - left;
+          container.height = bottom - top;
         }
-        const columns = Math.min(3, Math.max(1, Math.ceil(Math.sqrt(children.length))));
-        const rows = Math.ceil(children.length / columns);
-        const childMeasures = children.map(childId => measure(childId, nextVisiting));
-        const colWidths = Array(columns).fill(0);
-        const rowHeights = Array(rows).fill(0);
-        childMeasures.forEach((size, index) => {
-          const column = index % columns;
-          const row = Math.floor(index / columns);
-          colWidths[column] = Math.max(colWidths[column], size.width);
-          rowHeights[row] = Math.max(rowHeights[row], size.height);
-        });
-        const result = {
-          width: Math.max(240, X_PAD * 2 + colWidths.reduce((a, b) => a + b, 0) + COL_GAP * Math.max(0, columns - 1)),
-          height: HEADER_H + Y_PAD * 2 + rowHeights.reduce((a, b) => a + b, 0) + ROW_GAP * Math.max(0, rows - 1),
-          children,
-          columns,
-          colWidths,
-          rowHeights,
-        };
-        measured.set(entityId, result);
-        return result;
+        fitting.delete(containerId);
+        fitted.add(containerId);
       }
 
-      function place(entityId, x, y) {
-        const size = measure(entityId);
-        const position = lastNodePositions.get(entityId) || {};
-        position.x = x;
-        position.y = y;
-        position.width = size.width;
-        position.height = size.height;
-        lastNodePositions.set(entityId, position);
-        if (!size.children.length) return;
-        const columnOffsets = [];
-        let nextX = x + X_PAD;
-        size.colWidths.forEach(width => {
-          columnOffsets.push(nextX);
-          nextX += width + COL_GAP;
-        });
-        const rowOffsets = [];
-        let nextY = y + HEADER_H + Y_PAD;
-        size.rowHeights.forEach(height => {
-          rowOffsets.push(nextY);
-          nextY += height + ROW_GAP;
-        });
-        size.children.forEach((childId, index) => {
-          place(childId, columnOffsets[index % size.columns], rowOffsets[Math.floor(index / size.columns)]);
-        });
-      }
-
-      const roots = visibleEntities
-        .filter(entity => !parentByNode.has(entity.id) || !visibleIds.has(parentByNode.get(entity.id)))
-        .map(entity => entity.id);
-      roots.forEach(rootId => {
-        const position = lastNodePositions.get(rootId) || {x: 0, y: 0};
-        place(rootId, position.x || 0, position.y || 0);
-      });
+      childrenByContainer.forEach((_, containerId) => fit(containerId));
     }
 
     function buildContainmentNode(entityMap, childrenByContainer, entityId, visiting) {
@@ -331,15 +396,22 @@
         return null;
       }
       if (visiting.has(entityId)) {
+        const fallbackDimensions = defaultNodeDimensions(entityId);
         return {
           id: entityId,
-          width: 210,
-          height: 68,
+          width: fallbackDimensions.width,
+          height: fallbackDimensions.height,
         };
       }
       visiting.add(entityId);
 
-      const childIds = Array.from(childrenByContainer.get(entityId) || []).sort();
+      const childIds = Array.from(childrenByContainer.get(entityId) || []).sort((leftId, rightId) => {
+        const left = entityMap.get(leftId);
+        const right = entityMap.get(rightId);
+        const leftPosition = Number.isFinite(left?.position) ? left.position : Number.MAX_SAFE_INTEGER;
+        const rightPosition = Number.isFinite(right?.position) ? right.position : Number.MAX_SAFE_INTEGER;
+        return leftPosition - rightPosition || leftId.localeCompare(rightId);
+      });
       const children = [];
       for (const childId of childIds) {
         const childNode = buildContainmentNode(entityMap, childrenByContainer, childId, visiting);
@@ -350,8 +422,9 @@
 
       visiting.delete(entityId);
       const isContainer = children.length > 0;
-      const width = isContainer ? Math.max(220, 210 + Math.min(children.length, 6) * 16) : 210;
-      const height = isContainer ? Math.max(110, 70 + children.length * 70) : 68;
+      const dimensions = defaultNodeDimensions(entityId, {container: isContainer});
+      const width = dimensions.width;
+      const height = dimensions.height;
 
       const node = {
         id: entityId,
@@ -397,6 +470,7 @@
 
       const roots = visibleEntities
         .filter((entity) => !hasContainer.has(entity.id))
+        .sort((left, right) => left.position - right.position || left.id.localeCompare(right.id))
         .map((entity) => entity.id);
 
       const seen = new Set();
