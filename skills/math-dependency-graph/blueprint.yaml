@@ -17,6 +17,12 @@ exports:
       allow_all_modules: true
       allowed_callers: []
     source_interface: math-dependency-graph.source.gateway.interface.default
+  math-dependency-graph.interface.extract:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - math-dependency-graph
+    source_interface: math-dependency-graph.source.instructions-extract.interface.extract
   math-dependency-graph.interface.scripts-build-math-dependency-graph:
     access:
       allow_all_modules: false
@@ -52,4 +58,8 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml
-version: 2
+  math-dependency-graph.source.instructions-extract:
+    blueprint:
+      base: module-root
+      path: blueprints/instructions-extract.yaml
+version: 3

@@ -83,14 +83,16 @@ interfaces:
           sensitivity: derived-private
       preconditions: []
     description: Primary LLM-facing skill instructions.
-    version: 1
+    version: 2
 node_type: behavioral_source
 schema_version: 5
 uses_interfaces:
+- interface: math-dependency-graph.interface.extract
+  version: 1
 - interface: math-dependency-graph.interface.scripts-build-math-dependency-graph
   version: 1
 - interface: math-dependency-graph.interface.scripts-extract-mathjax-macros
   version: 1
 - interface: math-dependency-graph.interface.scripts-serve-graph
   version: 1
-version: 1
+version: 2

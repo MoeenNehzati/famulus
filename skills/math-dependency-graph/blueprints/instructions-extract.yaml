@@ -1,0 +1,119 @@
+content:
+- instructions/extract\.md
+dependencies: []
+description: Owns semantic extraction of direct mathematical dependencies from source documents into canonical graph JSON.
+gateway:
+  language: Markdown
+  path: instructions/extract.md
+id: math-dependency-graph.source.instructions-extract
+interfaces:
+  math-dependency-graph.source.instructions-extract.interface.extract:
+    contract:
+      arguments:
+        request:
+          description: Source document content, requested scope, and output-path constraints for dependency extraction.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+      caller_warnings: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: mathematical source and extraction request
+          formats:
+          - text
+          id: read-1
+          medium: prompt
+          sensitivity: user-private
+        writes:
+        - access: write
+          content: canonical mathematical dependency graph
+          formats:
+          - json
+          id: write-1
+          medium: local-filesystem
+          sensitivity: derived-private
+      execution:
+        consistency:
+          snapshot: Every entity, relationship, and evidence item is derived from the source snapshot supplied for this run.
+        effects:
+        - action: create
+          confirmation_evidence:
+            kind: output
+            output_ref: graph-json
+          direct_io_ref: write-1
+          id: graph-json-write
+          may_occur_in_outcomes:
+          - extracted
+          - extracted-with-gaps
+          reversibility:
+            reversible: Delete the generated JSON artifact without changing the source document.
+          value_source:
+            argument_ref: request
+            kind: argument
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            atomic: The interface completes one canonical JSON artifact before returning its path.
+          concurrent_invocations:
+            unsafe: Concurrent extraction to the same requested path can overwrite an artifact.
+          idempotency:
+            idempotent: Re-extracting the same source snapshot and scope produces an equivalent graph artifact.
+          on_uncertain_completion:
+            verify_then_decide: Validate the requested JSON path before retrying extraction.
+          partial_effects_on_failure:
+            possible: An incomplete artifact may remain if writing is interrupted.
+          rollback_on_failure:
+            available: Remove only the incomplete artifact created by this invocation.
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: graph-json
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Pass the canonical JSON path to the deterministic graph builder.
+        class: success
+        effects: []
+        id: extracted
+        outputs:
+        - graph-json
+      - caller_action: Report unresolved evidence gaps instead of inventing dependencies.
+        class: success
+        effects: []
+        id: extracted-with-gaps
+        outputs:
+        - graph-json
+      - caller_action: Correct the source or output-path request before retrying.
+        class: error
+        effects: []
+        id: invalid-request
+        outputs: []
+      outputs:
+      - audience: machine
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Filesystem path to a schema-version-2 canonical graph whose entities carry valid nested connects_to edges, direct mathematical dependencies, and evidence.
+        direct_io_ref: write-1
+        empty: Never empty on success.
+        id: graph-json
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Extracts a notation-faithful direct mathematical dependency graph into canonical JSON.
+    version: 1
+node_type: behavioral_source
+schema_version: 5
+uses_interfaces: []
+version: 1

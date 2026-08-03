@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Lightweight wrapper entrypoint for rendering dependency graphs.
 
-Layout, node/edge rendering behavior, containment, and supernode/subnode handling
-are owned by the shared renderer in ``officina.common.visualization.base_renderer``.
+The LLM-facing instruction interface owns semantic extraction. This module loads
+its canonical JSON with an extractor-free ``BaseVisualizer`` and contributes
+only math-specific categories and MathJax configuration before generic rendering.
 """
 
 from __future__ import annotations
@@ -13,13 +14,8 @@ from pathlib import Path
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
-from officina.common.visualization.elk_html_renderer import (
-    build_html_with_elk,
-)
-from officina.common.visualization.base_renderer_cli import (
-    reduce_transitive_edges,
-    validate_document,
-)
+from officina.common.visualization.base_visualizer import BaseVisualizer
+from officina.common.visualization.elk_html_renderer import ElkHtmlRenderer
 
 TYPE_STYLES = {
     "standing-assumption": {"shape": "hexagon", "color": "#c0392b"},
@@ -29,9 +25,49 @@ TYPE_STYLES = {
     "lemma": {"shape": "ellipse", "color": "#1e8449"},
     "proposition": {"shape": "rect", "color": "#7d6608"},
     "theorem": {"shape": "rect", "color": "#6c3483"},
-    "corollary": {"shape": "circle", "color": "#b7950b"},
+    "corollary": {"shape": "ellipse", "color": "#b7950b"},
     "remark": {"shape": "rect", "color": "#616a6b"},
 }
+
+
+def prepare_math_payload(doc: dict) -> dict:
+    """Add math-domain categories without taking over generic rendering behavior."""
+    prepared = dict(doc)
+    entities = [dict(entity) for entity in prepared.get("entities", [])]
+    prepared["entities"] = entities
+    has_category_catalog = bool(prepared.get("categories"))
+
+    entity_types = list(dict.fromkeys(str(entity.get("type", "unknown")) for entity in entities))
+    if not has_category_catalog:
+        prepared["categories"] = [
+            {
+                "id": entity_type,
+                "label": entity_type.replace("-", " ").title(),
+                **TYPE_STYLES.get(entity_type, {}),
+            }
+            for entity_type in entity_types
+        ]
+    if not has_category_catalog:
+        for entity in entities:
+            entity.setdefault("category", str(entity.get("type", "unknown")))
+
+    relation_types = list(
+        dict.fromkeys(
+            str(edge.get("type", "dependency"))
+            for entity in entities
+            for edge in entity.get("connects_to", [])
+        )
+    )
+    if relation_types and not prepared.get("edge_categories"):
+        prepared["edge_categories"] = [
+            {
+                "id": relation_type,
+                "label": relation_type.replace("-", " ").title(),
+                "description": "A direct mathematical dependency classified by the LLM extractor.",
+            }
+            for relation_type in relation_types
+        ]
+    return prepared
 
 try:
     from ._tex_macro_reader import default_output_path, extract_macros, write_macros
@@ -151,15 +187,19 @@ def main(argv: list[str] | None = None) -> None:
     if not source_path.exists():
         raise SystemExit(f"Source JSON not found: {source_path}")
 
-    doc = json.loads(source_path.read_text(encoding="utf-8"))
-    validate_document(doc)
+    visualizer = BaseVisualizer(extractor=None, renderer=ElkHtmlRenderer())
+    source = visualizer.resolve_source(source_path)
+    doc = visualizer.build_payload(source)
+    doc = visualizer.prepare_payload(
+        prepare_math_payload(doc), source_value=str(source_path)
+    )
 
     macro_path = prepare_macro_file(args, source_path, doc)
     macro_count = merge_mathjax_macros(doc, macro_path)
     reduction_note = ""
     removed_edges: list[dict] = []
     if args.reduce_transitive_edges:
-        doc, removed_edges = reduce_transitive_edges(doc)
+        doc, removed_edges = visualizer.renderer.reduce_graph_json_transitive_edges(doc)
         reduction_note = (
             "Graph-theoretic transitive reduction enabled: "
             f"removed {len(removed_edges)} redundant edges from the rendered view."
@@ -172,10 +212,18 @@ def main(argv: list[str] | None = None) -> None:
         build_dir.mkdir(exist_ok=True)
         html_path = build_dir / source_path.with_suffix(".html").name
 
-    html_path.write_text(
-        build_html_with_elk(doc, reduction_note=reduction_note),
-        encoding="utf-8",
+    result = visualizer.render_payload(
+        source,
+        doc,
+        output_dir=html_path.parent,
+        output_name=html_path.stem,
+        render_html=True,
+        reduction_note=reduction_note,
+        apply_transitive_reduction=False,
     )
+    if result.html_path is None:
+        raise SystemExit("HTML rendering did not produce an artifact.")
+    html_path = result.html_path
 
     print(
         json.dumps(
