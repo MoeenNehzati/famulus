@@ -39,3 +39,24 @@ def _isolate_xdg_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     for var in ("XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME"):
         monkeypatch.delenv(var, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_localappdata_env(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    """Give every test its own `LOCALAPPDATA`, mirroring `_isolate_xdg_env` above.
+
+    `resolve_famulus_paths`'s Windows branch resolves *only* from the
+    `LOCALAPPDATA` env var and never falls back to (or is influenced by) its
+    `home` parameter -- unlike the Linux/XDG branch, there's no safe "clear
+    it" option here, since an unset `LOCALAPPDATA` is itself a tested error
+    path (`test_windows_requires_localappdata`). Left at whatever the real
+    Windows runner has ambiently, every test that resolves Windows paths
+    collides on that same real path regardless of its own `home=`/`tmp_path`
+    override -- the same cross-test collision `_isolate_xdg_env` fixes for
+    Linux, just via a variable that can't simply be cleared. Defaulting it to
+    this test's own unique `tmp_path` gives every test a private value; a
+    test that needs a specific value (or needs it unset) still wins by
+    calling `monkeypatch.setenv`/`delenv` itself, since that runs after this
+    fixture within the same test.
+    """
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
