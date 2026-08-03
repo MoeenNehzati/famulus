@@ -350,6 +350,7 @@ def test_windows_sync_creates_task_scheduler_entry(tmp_path):
 
     wrapper_text = (tmp_path / wrapper_name("my-job")).read_text(encoding="utf-8")
     assert "_job_executor.py" in wrapper_text
+    assert "_rtx/_rtx" not in wrapper_text.replace("\\", "/")
     assert "--jobs-file" in wrapper_text
     assert f'--log-dir" "{context.log_dir}' in wrapper_text
     assert "--job" in wrapper_text and '"my-job"' in wrapper_text
@@ -575,7 +576,7 @@ def test_windows_wrapper_tr_value_stays_well_under_261_char_limit(tmp_path):
         [
             str(long_root / "python.exe"),
             str(context.runtime_resolver),
-            str(SKILL_DIR / "_rtx" / "_job_executor.py"),
+            str(SKILL_DIR / "_job_executor.py"),
             "--jobs-file",
             str(context.jobs_file),
             "--job",

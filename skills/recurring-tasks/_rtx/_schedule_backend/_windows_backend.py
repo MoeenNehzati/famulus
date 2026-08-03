@@ -112,7 +112,7 @@ def _command_parts(job: ScheduleJob, context: ScheduleContext) -> list[str]:
     hardcoding ``sys.executable`` (which would pin the job to whichever
     interpreter happened to run the sync/installer script).
     """
-    executor = context.skill_dir / "_rtx" / "_job_executor.py"
+    executor = context.skill_dir / "_job_executor.py"
     return [
         _resolve_python_interpreter(),
         str(context.runtime_resolver),
