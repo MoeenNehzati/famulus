@@ -498,7 +498,12 @@ def _windows_smoke() -> None:
         # wrapper's own path instead of the full inline command.
         wrapper_path = tmp_dir / wrapper_name(job_name)
         try:
-            wrapper_path.write_text(wrapper_content(job, context), encoding="utf-8")
+            # Match WindowsScheduleBackend.sync(): wrapper_content() already
+            # contains literal CRLF, so default Windows newline translation
+            # would corrupt it into CRCRLF.
+            wrapper_path.write_text(
+                wrapper_content(job, context), encoding="utf-8", newline=""
+            )
             _run(
                 [
                     "schtasks",
