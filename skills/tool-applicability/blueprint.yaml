@@ -3,7 +3,6 @@ authority:
   suggested_permissions:
     bash: []
     network: []
-category: workflow-general-assistant
 children: {}
 content:
 - SKILL\.md
@@ -11,6 +10,15 @@ description: Determines whether a mathematical tool reaches a stated target unde
   current assumptions and identifies the exact nearest valid result or repair.
 discovery:
   mechanism: skill
+  catalog:
+    domain: research
+    topics:
+    - mathematical-reasoning
+    visibility: featured
+  activated_by:
+  - user-request
+  - skill-workflow
+  persistent_modifier: false
 exports:
   tool-applicability.interface.default:
     access:
@@ -21,10 +29,8 @@ gateway:
   language: Markdown
   path: SKILL.md
 id: tool-applicability
-kind: analyzer
 namespace_exports: {}
 node_type: module
-role: math-reasoning
 schema_version: 5
 sources:
   tool-applicability.source.gateway:

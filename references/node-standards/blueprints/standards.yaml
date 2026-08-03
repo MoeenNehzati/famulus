@@ -1,0 +1,14 @@
+content:
+- (?:authority\-disposition|[a-z0-9\-]+\.standard)\.yaml|semantic\-review\.md
+dependencies: []
+description: Defines the pinned base, structure, gateway-language, OOD, and refactoring
+  standards used by node-standard queries.
+gateway:
+  language: YAML
+  path: node.standard.yaml
+id: node-standards.source.standards
+interfaces: {}
+node_type: behavioral_source
+schema_version: 5
+uses_interfaces: []
+version: 1

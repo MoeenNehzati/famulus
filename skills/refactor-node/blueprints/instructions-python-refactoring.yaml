@@ -1,0 +1,196 @@
+content:
+- instructions/python\-refactoring\.md
+dependencies: []
+description: Implements characterization-first, approval-gated Python OOD refactoring
+  for an owned node or selected Python sub-scope.
+gateway:
+  language: Markdown
+  path: instructions/python-refactoring.md
+id: refactor-node.source.python-refactoring
+interfaces:
+  refactor-node.source.python-refactoring.interface.refactor-python:
+    contract:
+      arguments:
+        request:
+          description: Resolved owner node, selected Python scope, validated standard closure,
+            behavioral characterization, repository constraints, objective, and any approval to apply a proposal.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+      caller_warnings:
+      - external-side-effect: Approved moves may edit, move, create, or remove files
+          within the selected ownership boundary.
+      - external-side-effect: Remove code only after proving it orphaned within
+          the authorized scope; preserve uncertain external interfaces.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: Resolved target, selected scope, objective, constraints, and approval.
+          formats:
+          - text
+          id: request
+          medium: prompt
+          sensitivity: user-private
+          system: agent-runtime
+        - access: read
+          content: Selected Python source, callers, tests, repository instructions,
+            query-resolved ownership metadata, history when relevant, and current diff.
+          formats:
+          - python
+          - markdown
+          - yaml
+          - json
+          - git-metadata
+          - text
+          id: repository-state
+          medium: repository-filesystem
+          reason: Characterize behavior and choose an evidence-backed OOD move.
+          sensitivity: user-private
+        writes:
+        - access: write
+          content: Characterization, evidence, proposal, approval request, exact
+            diff, verification result, and stop reason.
+          formats:
+          - markdown
+          id: response
+          medium: prompt
+          sensitivity: derived-private
+          system: agent-runtime
+        - access: write
+          content: Approved behavior-preserving changes within the selected Python
+            ownership boundary.
+          formats:
+          - python
+          - markdown
+          - yaml
+          - json
+          - text
+          id: repository-write
+          medium: repository-filesystem
+          reason: Apply one approved structural move at a time.
+          sensitivity: user-private
+        - access: execute
+          content: Read-only inspection, focused tests, formatters, static checks,
+            generators, and validators required by the target repository.
+          formats:
+          - argv
+          - text
+          id: refactor-command
+          medium: subprocess
+          reason: Establish the baseline and verify each approved move.
+          sensitivity: user-private
+          system: repository tools
+      execution:
+        consistency:
+          per_source: Re-check the selected scope and invariants after every move.
+        effects:
+        - action: update
+          confirmation_evidence:
+            kind: output
+            output_ref: response
+          direct_io_ref: repository-write
+          id: repository-change
+          may_occur_in_outcomes:
+          - refactored
+          - partial
+          reversibility:
+            reversible: Restore only the failed move after checking the exact diff
+              and unrelated user work.
+          value_source:
+            argument_ref: request
+            kind: argument
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            per_effect_only: Each structural move and its generated consequences
+              are verified before another move begins.
+          concurrent_invocations:
+            unsafe: Concurrent edits can invalidate characterization, scope, or verification.
+          idempotency:
+            non_idempotent: Repeating structural moves can duplicate or further alter
+              repository state.
+          on_uncertain_completion:
+            verify_then_decide: Re-read the exact diff and rerun the selected verification
+              before proceeding.
+          partial_effects_on_failure:
+            possible: Earlier verified moves may remain when a later move fails.
+          rollback_on_failure:
+            available: Revert only the failed current move without disturbing unrelated
+              work.
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: response
+        - direct_io_ref: repository-state
+          method: direct-io-state
+      helpers: []
+      interaction:
+        channel: tty
+        mode: interactive
+        unattended_outcome: approval-required
+      outcomes:
+      - caller_action: Review the characterization, evidence, invariants, and ordered
+          proposal.
+        class: success
+        effects: []
+        id: proposal-ready
+        outputs:
+        - response
+      - caller_action: Approve the exact proposal before any repository mutation.
+        class: refusal
+        effects: []
+        id: approval-required
+        outputs:
+        - response
+      - caller_action: Review the exact diff and verification evidence before another
+          move or separate Git action.
+        class: success
+        effects:
+        - repository-change
+        id: refactored
+        outputs:
+        - response
+      - caller_action: Preserve verified moves and resolve or revert only the failed
+          move before continuing.
+        class: partial
+        effects:
+        - repository-change
+        id: partial
+        outputs:
+        - response
+      - caller_action: Resolve the reported ownership, baseline, instruction, or
+          verification failure before retrying.
+        class: error
+        effects: []
+        id: failed
+        outputs:
+        - response
+      outputs:
+      - audience: human
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Scope, behavioral contract, baseline evidence, diagnosed pressure,
+          ordered proposal, approval gate, exact diff, and verification result.
+        direct_io_ref: response
+        empty: Never empty.
+        id: response
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Diagnose and, after approval, apply one verified behavior-preserving
+      Python OOD refactoring move at a time.
+    version: 1
+node_type: behavioral_source
+schema_version: 5
+uses_interfaces: []
+version: 1

@@ -6,7 +6,8 @@ description: Use when a Google service needs a shared OAuth client prepared, or 
 <!-- BEGIN BLUEPRINT CONTRACT -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Category: workflow-general-assistant
+Catalog: assistant-operations; topics: external-integrations; visibility: listed
+Activation: user-request, skill-workflow; persistent modifier: no
 
 Skill Version: 2
 

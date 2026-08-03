@@ -6,7 +6,8 @@ description: Manage recurring AI job automation via systemd timers. Define jobs 
 <!-- BEGIN BLUEPRINT CONTRACT -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Category: system-assistant
+Catalog: assistant-operations; topics: task-automation, system-maintenance; visibility: featured
+Activation: user-request, skill-workflow, scheduled-job; persistent modifier: no
 
 Skill Version: 3
 

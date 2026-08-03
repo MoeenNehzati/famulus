@@ -53,13 +53,6 @@ def _copy_managed_skill(repo_root: Path) -> Path:
 
 def _copy_v5_managed_skill(repo_root: Path) -> tuple[Path, dict[str, object]]:
     root = copy_v5_fixture_tree(V5_AUTHORIZATION_FIXTURE, repo_root)
-    parent_marker = root / "skills" / "demo" / "blueprint.yaml"
-    parent = yaml.safe_load(parent_marker.read_text(encoding="utf-8"))
-    parent["category"] = "development-assistant"
-    parent_marker.write_text(
-        yaml.safe_dump(parent, sort_keys=False),
-        encoding="utf-8",
-    )
 
     runtime_path = (
         root
@@ -142,7 +135,11 @@ def test_generated_blocks_use_canonical_v5_exports(
         blueprint.repository_graph,
     )
 
-    assert "Category: workflow-general-assistant" in contract
+    assert (
+        "Catalog: assistant-interaction; topics: reasoning-control; "
+        "visibility: featured"
+    ) in contract
+    assert "Activation: user-request; persistent modifier: yes" in contract
     assert "Skill Version: 2" in contract
     assert "`loose-mode.interface.default`" in contract
     assert "Instruction Interfaces:" in interfaces
@@ -259,8 +256,9 @@ def test_sync_module_check_then_refreshes_generated_blocks(
     gateway = module_root / "SKILL.md"
     gateway.write_text(
         gateway.read_text(encoding="utf-8").replace(
-            "Category: workflow-general-assistant",
-            "Category: stale",
+            "Catalog: assistant-interaction; topics: reasoning-control; "
+            "visibility: featured",
+            "Catalog: stale",
             1,
         ),
         encoding="utf-8",
@@ -273,13 +271,13 @@ def test_sync_module_check_then_refreshes_generated_blocks(
     assert syncer.sync_module(blueprint, check_only=True) == []
 
 
-def test_generated_contract_requires_category_string(syncer) -> None:
+def test_generated_contract_requires_catalog_discovery(syncer) -> None:
     graph = SimpleNamespace(module_sources={}, nodes={}, exports={})
 
-    with pytest.raises(syncer.BlueprintError, match="category.*string"):
+    with pytest.raises(syncer.BlueprintError, match="discovery.*mapping"):
         syncer.generated_contract_block(
             "demo-skill",
-            {"category": ["workflow-general-assistant"], "version": 1},
+            {"version": 1},
             graph,
         )
 

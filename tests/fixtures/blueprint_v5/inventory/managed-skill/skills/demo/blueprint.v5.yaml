@@ -10,6 +10,15 @@ content:
   - SKILL\.md
 discovery:
   mechanism: skill
+  catalog:
+    domain: assistant-development
+    topics:
+      - assistant-authoring
+    visibility: listed
+  activated_by:
+    - user-request
+    - skill-workflow
+  persistent_modifier: false
 authority:
   owns_filesystem: []
 sources: {}

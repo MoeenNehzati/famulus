@@ -75,13 +75,33 @@ class BlueprintError(Exception):
     """Raised when a blueprint is invalid."""
 
 
-def module_category(data: dict[str, Any], context: str) -> str:
-    value = data.get("category")
-    if not isinstance(value, str) or not value.strip():
-        raise BlueprintError(
-            f"{context}: `category` must be a non-empty string"
-        )
-    return value
+def module_discovery(data: dict[str, Any], context: str) -> dict[str, Any]:
+    discovery = data.get("discovery")
+    if not isinstance(discovery, dict):
+        raise BlueprintError(f"{context}: `discovery` must be a mapping")
+    catalog = discovery.get("catalog")
+    if not isinstance(catalog, dict):
+        raise BlueprintError(f"{context}: `discovery.catalog` must be a mapping")
+    domain = catalog.get("domain")
+    topics = catalog.get("topics")
+    visibility = catalog.get("visibility")
+    activated_by = discovery.get("activated_by")
+    persistent_modifier = discovery.get("persistent_modifier")
+    if not isinstance(domain, str) or not domain:
+        raise BlueprintError(f"{context}: catalog domain must be non-empty")
+    if not isinstance(topics, list) or not topics or not all(
+        isinstance(topic, str) and topic for topic in topics
+    ):
+        raise BlueprintError(f"{context}: catalog topics must be non-empty strings")
+    if not isinstance(visibility, str) or not visibility:
+        raise BlueprintError(f"{context}: catalog visibility must be non-empty")
+    if not isinstance(activated_by, list) or not activated_by or not all(
+        isinstance(source, str) and source for source in activated_by
+    ):
+        raise BlueprintError(f"{context}: activated_by must be non-empty strings")
+    if not isinstance(persistent_modifier, bool):
+        raise BlueprintError(f"{context}: persistent_modifier must be boolean")
+    return discovery
 
 
 def load_blueprints(
@@ -117,10 +137,10 @@ def load_blueprints(
         module = modules_by_path.get(path.resolve())
         if module is None:
             raise BlueprintError(f"{path}: repository graph has no matching module")
-        if (
-            schema_version == 5
-            and module.declaration.get("discovery")
-            != {"mechanism": "skill"}
+        discovery = module.declaration.get("discovery")
+        if schema_version == 5 and not (
+            isinstance(discovery, dict)
+            and discovery.get("mechanism") == "skill"
         ):
             continue
         module_id = module.node_id
@@ -154,7 +174,8 @@ def generated_contract_block(
     data: dict[str, Any],
     repository_graph: RepositoryBlueprintGraph,
 ) -> str:
-    category = module_category(data, "generated_contract_block")
+    discovery = module_discovery(data, "generated_contract_block")
+    catalog = discovery["catalog"]
     uses: list[str] = []
     version = data.get("version")
     if not isinstance(version, int) or version < 1:
@@ -197,7 +218,17 @@ def generated_contract_block(
         "> Generated from `blueprint.yaml`. Do not edit this block by hand.",
         "",
     ]
-    lines.extend([f"Category: {category}", ""])
+    lines.extend(
+        [
+            "Catalog: "
+            f"{catalog['domain']}; topics: {', '.join(catalog['topics'])}; "
+            f"visibility: {catalog['visibility']}",
+            "Activation: "
+            f"{', '.join(discovery['activated_by'])}; persistent modifier: "
+            f"{'yes' if discovery['persistent_modifier'] else 'no'}",
+            "",
+        ]
+    )
 
     lines.append(f"Skill Version: {version}")
     lines.append("")

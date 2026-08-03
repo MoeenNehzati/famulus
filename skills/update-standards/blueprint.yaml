@@ -1,0 +1,42 @@
+authority:
+  owns_filesystem: []
+  suggested_permissions:
+    bash: []
+    network: []
+children: {}
+content:
+- (?:SKILL\.md|agents/openai\.yaml)
+description: Maintains canonical standard documents, pinned import closures, generated
+  views, and declared enforcement evidence without restating the standard schema.
+discovery:
+  mechanism: skill
+  catalog:
+    domain: assistant-development
+    topics:
+    - assistant-authoring
+    - assistant-architecture
+    - assistant-assurance
+    visibility: listed
+  activated_by:
+  - user-request
+  - skill-workflow
+  persistent_modifier: false
+exports:
+  update-standards.interface.default:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: update-standards.source.gateway.interface.default
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: update-standards
+namespace_exports: {}
+node_type: module
+schema_version: 5
+sources:
+  update-standards.source.gateway:
+    blueprint:
+      base: module-root
+      path: blueprints/gateway.yaml
+version: 2

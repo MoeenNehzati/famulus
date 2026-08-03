@@ -3,6 +3,9 @@ node_type: module
 id: guide
 version: 4
 description: Instruction-only skill parent.
+category: skill-making-development-assistant
+role: meta-skill
+kind: guide
 gateway:
   path: SKILL.md
   language: Markdown

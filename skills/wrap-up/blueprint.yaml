@@ -3,7 +3,6 @@ authority:
   suggested_permissions:
     bash: []
     network: []
-category: workflow-general-assistant
 children: {}
 content:
 - SKILL\.md
@@ -11,6 +10,17 @@ description: Orchestrates an interactive end-of-day review that updates complete
   plan and list work and queues deduplicated sessions needing handoff attention.
 discovery:
   mechanism: skill
+  catalog:
+    domain: personal-assistance
+    topics:
+    - planning
+    - personal-organization
+    - session-management
+    visibility: featured
+  activated_by:
+  - user-request
+  - skill-workflow
+  persistent_modifier: false
 exports:
   wrap-up.interface.default:
     access:
@@ -21,10 +31,8 @@ gateway:
   language: Markdown
   path: SKILL.md
 id: wrap-up
-kind: workflow
 namespace_exports: {}
 node_type: module
-role: productivity
 schema_version: 5
 sources:
   wrap-up.source.gateway:

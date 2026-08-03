@@ -1,0 +1,126 @@
+schema_version: 1
+runtime_authority: pinned import closures rooted at references/node-standards/*.standard.yaml
+query_interface: refactor-node.interface.query-standards
+source_authorities:
+  skill-guidelines:
+    former_path: references/skill-standards/skill-guidelines.standard.yaml
+    last_digest: sha256:b428c1af4175bf96fa17a7291409ee210d2d4878cb6b6c928c007ec4f10c992a
+    status: replaced
+    replacements: pinned import closures rooted at references/node-standards/*.standard.yaml
+    disposition: Every legacy semantic item is retained once by exact identity or an
+      audited atomization; deliberate leaf rewrites are enumerated below.
+  skill-refactoring:
+    former_path: references/skill-standards/skill-refactoring.standard.yaml
+    last_digest: sha256:f84eb2662c3e318ac0d4732daf3116114de84b6fa623ded8261333c7bfc6738f
+    status: migrated
+    replacement: references/node-standards/refactoring.standard.yaml
+    replacement_digest: sha256:717d311ce0b4ca7164f028d776d107e79de705f6e703c9263680d224b30987b8
+    disposition: The complete standard moved into the node-standards closure; semantic
+      IDs and content remain intact while document identity and canonical path changed.
+  interface-design:
+    path: references/skill-standards/interface-design.md
+    digest: sha256:3ae13ed76da955fd759581fd80b96d9caa7c37b22a8b0c8eeb2dbbc3b73c5497
+    status: excluded
+    disposition: Refactor-node does not load this design guide. Its query closure and
+      returned procedures are the sole repository-specific refactoring authority.
+retirements:
+  refactor-skills:
+    path: skills/refactor-skills
+    status: replaced
+    replacement: skills/refactor-node
+  python-ood-refactoring-reference:
+    path: skills/refactor-node/references/python-ood-refactoring.md
+    status: migrated
+    replacement: references/node-standards/python-ood.standard.yaml
+  skill-guidelines-semantic-review:
+    former_path: references/skill-standards/skill-guidelines-semantic-review.md
+    status: migrated
+    replacement: references/node-standards/semantic-review.md
+supersessions:
+  implementation-child-cardinality:
+    predecessor: exactly-one-code-child
+    replacement: optional-single-code-child
+    authority: node-standards.node
+  credential-storage:
+    predecessor: secrets-in-user-config-directory
+    replacement: secret-store-for-secrets-config-dir-for-sensitive-nonsecrets
+    authority: skill-guidelines.sensitive-configs.requirement-001#source-block
+proofs:
+  semantic-ownership: tests/test_node_standards.py
+  recursive-validation: references/standards/validate_standard_v6.py
+  query-behavior: skills/refactor-node/tests/test_query_standards.py
+migration_audit:
+  skill-guidelines:
+    audited_on: 2026-08-03
+    source_semantic_items: 238
+    same_id_items: 232
+    source_semantic_id_digest: sha256:54059558b8150329ea0de5abf35c1d4dd5a6e8012fc8fd3512ab59200776be84
+    exact_unchanged_leaf_items: 136
+    exact_unchanged_leaf_digest: sha256:cef7d9169a3033c19f64e16388f907fe1c0fc0992a6683980553719e5f9e2757
+    duplicate_items: 0
+    unresolved_items: 0
+    atomized_assertions:
+      skill-guidelines.runtime-code-boundary.requirement-001#source-block:
+      - skill-guidelines.runtime-code-boundary.requirement-001#no-inline-executable-logic
+      - skill-guidelines.runtime-code-boundary.requirement-001#no-executable-references
+      - skill-guidelines.runtime-code-boundary.requirement-001#no-opaque-runtime-paths
+      - skill-guidelines.runtime-code-boundary.requirement-001#execution-behind-interface
+      skill-guidelines.blueprint-authoring.requirement-002#source-block:
+      - skill-guidelines.blueprint-authoring.requirement-002#schema-driven-authoring
+      - node-standards.module-blueprint-authoring.requirement#module-blueprint
+      - node-standards.behavioral-source-blueprint-authoring.requirement#behavioral-source-blueprint
+      skill-guidelines.assistant-neutrality.requirement-002#source-block:
+      - skill-guidelines.assistant-neutrality.requirement-002#generic-runtime-file-neutrality
+      - node-standards.instruction-source-neutrality.requirement#instruction-source-neutrality
+      skill-guidelines.private-runtime-files.requirement-001#source-block:
+      - skill-guidelines.private-runtime-files.requirement-001#runtime-implementation-location
+      - node-standards.public-runtime-doc-boundary.requirement#public-docs-use-interfaces
+      skill-guidelines.private-runtime-files.requirement-005#source-block:
+      - skill-guidelines.private-runtime-files.requirement-005#no-private-runtime-directory-token
+      - skill-guidelines.private-runtime-files.requirement-005#no-same-skill-runtime-filename
+      - skill-guidelines.private-runtime-files.requirement-005#no-normalized-private-runtime-stem
+      - skill-guidelines.private-runtime-files.requirement-005#no-legacy-runtime-path
+      skill-guidelines.private-runtime-files.requirement-006#source-block:
+      - skill-guidelines.private-runtime-files.requirement-006#export-source-binding
+      - node-standards.private-runtime-reference-exceptions
+    rewritten_same_id_leaves:
+      skill-guidelines.assistant-neutrality.requirement-001#source-block: Generalized from skills to
+        all shared nodes; validator and test evidence moved to structured check, test, and assurance records.
+      skill-guidelines.canonical-blueprint-ownership.requirement-001#source-block: Consolidated the
+        ownership rule; generated-view and instruction-body clauses remain in the behavioral-source and
+        instruction-behavioral-source layers.
+      skill-guidelines.private-runtime-files.guidance-005: Replaced prose validator paths with
+        layer-local structured checks, tests, and assurances.
+      skill-guidelines.skill-taxonomy.guidance-001: Added the research-assistant applicability predicate
+        during migration, then aligned the predicate and wording with the configured research domain.
+      skill-guidelines.skill-taxonomy.requirement-001#source-block: Replaced the retired category,
+        role, and kind taxonomy with the configured discovery catalog and activation contract.
+      skill-guidelines.system-evolution.guidance-003: Restated the public-gateway boundary without
+        legacy invocation terminology.
+      skill-guidelines.system-evolution.guidance-004: Restated the authorized-export boundary without
+        binding it to one runtime API.
+      skill-guidelines.system-evolution.requirement-001#source-block: Made both permitted public boundaries
+        and the prohibition on internals explicit in one assertion.
+research_basis:
+  python-ood:
+    audited_on: 2026-08-03
+    primary_sources:
+    - url: https://docs.python.org/3/reference/datamodel.html
+      coverage: descriptors, slots, weak references, inheritance, and special-method lookup
+    - url: https://docs.python.org/3/howto/descriptor.html
+      coverage: data and non-data descriptor precedence and attribute operations
+    - url: https://docs.python.org/3/library/dataclasses.html
+      coverage: generated methods, signatures, hashing, freezing, slots, weak references,
+        pattern matching, and inheritance
+    - url: https://docs.python.org/3/library/typing.html
+      coverage: structural Protocols, runtime-checkable limitations, and nominal contracts
+    - url: https://docs.python.org/3/library/unittest.mock.html#where-to-patch
+      coverage: patching names where the system under test looks them up
+    skill_baselines:
+    - url: https://github.com/openai/skills/blob/main/skills/.system/skill-creator/SKILL.md
+      adopted: Keep deterministic resolution in runtime code and keep the model-facing wrapper concise.
+    - url: https://github.com/anthropics/skills/blob/main/skills/skill-creator/SKILL.md
+      adopted: Use progressive disclosure and move detailed reusable knowledge out of the gateway.
+    search_outcome: No maintained specialized Python OOD refactoring skill was found that was
+      authoritative enough to replace the Python documentation; public skills informed interface
+      economy, while Python's documentation remained the technical authority.

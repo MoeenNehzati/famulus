@@ -1,0 +1,160 @@
+content:
+- _closure_engine\.py
+dependencies:
+- blueprint:
+    base: repository-root
+    path: references/node-standards/blueprints/standards.yaml
+  reason: Supplies the layered canonical standards materialized by this query interface.
+  source: node-standards.source.standards
+  version: 1
+description: Resolves effective direct ownership for registered modules and behavioral sources,
+  validates pinned standard closures, evaluates applicability, and emits deduplicated standards,
+  evidence, remedies, and structured unsupported partitions as JSON.
+gateway:
+  language: Python
+  path: _closure_engine.py
+id: refactor-node-rtx.source.query-standards
+interfaces:
+  refactor-node-rtx.source.query-standards.interface.query-standards:
+    contract:
+      arguments:
+        facts-json:
+          default: '{}'
+          description: Optional JSON object of inspected target facts used by applies_when predicates.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+        repo-root:
+          description: Repository whose registered node and standards graph will be queried.
+          direct_io_ref: repository
+          required: false
+          sensitivity: user-private
+          type:
+            access: read
+            kind: dir
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+        view:
+          default: requirements
+          description: Select compact requirements, evidence, remedies, or the complete diagnostic projection.
+          required: false
+          sensitivity: public
+          type:
+            kind: string
+            sensitivity: public
+        target:
+          description: Registered node ID or repository-relative or absolute owned path.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+      caller_warnings: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: Blueprint graph, selected owned files, standard closures, and standard validator.
+          formats: [yaml, json, markdown, python, text]
+          id: repository
+          medium: local-filesystem
+          path: <repo-root>/**
+          path_match: glob
+          reason: Resolve ownership and materialize authoritative standards from current repository state.
+          sensitivity: user-private
+          system: filesystem
+        writes:
+        - access: write
+          content: Owner partitions and materialized standard query result.
+          formats: [json]
+          id: query-result
+          medium: stdout
+          sensitivity: derived-private
+          system: agent-runtime
+        - access: write
+          content: Invalid target, graph, standard, fact, or query diagnostics.
+          formats: [text]
+          id: error
+          medium: stderr
+          sensitivity: derived-private
+          system: agent-runtime
+      execution:
+        consistency:
+          snapshot: Every result is derived from files read during one invocation.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: query-result
+        - direct_io_ref: repository
+          method: direct-io-state
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Use the returned partitions, applicability buckets, evidence, and remedies as the
+          refactoring specification.
+        class: success
+        effects: []
+        id: resolved
+        outputs: [query-result]
+      - caller_action: Correct the target, repository graph, standard closure, or target facts before retrying.
+        class: error
+        effects: []
+        id: failed
+        outputs: [error]
+      outputs:
+      - audience: machine
+        cardinality: {minimum: 1, maximum: 1}
+        description: One JSON document containing effective owner scopes and the requested requirements,
+          evidence, remedies, or full standards projection.
+        direct_io_ref: query-result
+        empty: Never empty on success.
+        id: query-result
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        type:
+          format: {named: json}
+          kind: string
+          sensitivity: derived-private
+      - audience: human
+        cardinality: {minimum: 0, maximum: 1}
+        description: Invalid target, graph, standard, fact, or query diagnostic.
+        direct_io_ref: error
+        empty: Empty on success.
+        id: error
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Query effective node standards for a registered node or owned sub-scope.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - name: target-and-options
+        min_positionals: 1
+        max_positionals: 1
+        allow_stdin: false
+        allowed_flags: [--repo-root, --facts-json, --view]
+        flag_patterns:
+          --repo-root: .+
+          --facts-json: .+
+          --view: (?:requirements|evidence|remedies|full)
+    usage: <target> [--repo-root PATH] [--facts-json JSON] [--view requirements|evidence|remedies|full]
+    version: 2
+node_type: behavioral_source
+platform_support: {linux: true, macos: true, windows: true}
+runtime_dependencies: []
+schema_version: 5
+uses_interfaces:
+- interface: common.interface.standard-extractor
+  version: 1
+version: 2

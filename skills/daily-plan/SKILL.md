@@ -9,7 +9,8 @@ description: |
 <!-- BEGIN BLUEPRINT CONTRACT -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Category: workflow-general-assistant
+Catalog: personal-assistance; topics: planning, personal-organization; visibility: featured
+Activation: user-request, skill-workflow; persistent modifier: no
 
 Skill Version: 2
 

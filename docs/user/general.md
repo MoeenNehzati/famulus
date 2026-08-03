@@ -13,15 +13,17 @@ Example prompts:
 - `What is the weather before my afternoon meeting?`
 - `Add this to my shopping list.`
 
-<!-- BEGIN AUTO-GENERATED DOCS: productivity-general-assistant -->
+<!-- BEGIN AUTO-GENERATED DOCS: personal-assistance -->
 > Generated from live blueprints. Do not edit this block by hand.
 
+- `daily-plan` — Generate today's plan from calendar, todos, and weather
 - `email-client` — Read, search, and send email across configured accounts
 - `email-triage` — Triage the inbox into todo and triage lists since the last run
 - `g-calendar` — Read and modify Google Calendar via a local OAuth CLI
 - `get-weather` — Fetch weather for a location, day, or date range
 - `list-manager` — Manage personal YAML lists in cloud storage
-<!-- END AUTO-GENERATED DOCS: productivity-general-assistant -->
+- `wrap-up` — Review the day, record completions, and capture follow-up items
+<!-- END AUTO-GENERATED DOCS: personal-assistance -->
 
 ## Coordination
 
@@ -41,16 +43,11 @@ Typical flow:
 3. Finish with `wrap-up` so the plan is updated, follow-up items land in the right lists, and sessions missing a proper handoff are surfaced for review.
 4. Use `prepare-handoff` when a session produced decisions, failed paths, or repo changes that the next session should inherit directly from the repo.
 
-<!-- BEGIN AUTO-GENERATED DOCS: workflow-general-assistant -->
+<!-- BEGIN AUTO-GENERATED DOCS: assistant-interaction -->
 > Generated from live blueprints. Do not edit this block by hand.
 
-- `connect-google` — A Google service needs a shared OAuth client prepared, or when the user asks to prepare Google authentication for Famulus
-- `daily-plan` — Generate today's plan from calendar, todos, and weather
-- `find-handoff-candidates` — You need a mechanical, non-interpretive scan of today's (or another day's) work sessions to find ones that had substantial activity but no completed handoff
-- `llm-wakeup` — Schedule a Claude or Codex session after a usage reset, infer a wakeup from a timeout, or manage per-session automatic wakeups
+- `llm-wakeup` — Schedule a supported assistant session after a usage reset, infer a wakeup from a timeout, or manage per-session automatic wakeups
 - `loose-mode` — Broad, fast exploration mode with breadth over certainty
 - `prepare-handoff` — Prepare a clean handoff with workflow and documentation updates
 - `tight-mode` — Rigorous, verified output mode with certainty over speed
-- `tool-applicability` — Check whether a theorem or framework achieves a target in the current setting
-- `wrap-up` — Review the day, record completions, and capture follow-up items
-<!-- END AUTO-GENERATED DOCS: workflow-general-assistant -->
+<!-- END AUTO-GENERATED DOCS: assistant-interaction -->

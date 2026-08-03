@@ -3,6 +3,9 @@ node_type: module
 id: producer
 version: 3
 description: Code-bearing skill parent.
+category: coding-development-assistant
+role: development-assistant
+kind: tool
 gateway:
   path: SKILL.md
   language: Markdown

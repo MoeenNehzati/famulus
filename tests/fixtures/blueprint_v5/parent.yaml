@@ -3,9 +3,6 @@ node_type: module
 id: demo-skill
 version: 2
 description: Provides the discoverable demo skill.
-category: development-assistant
-role: automation
-kind: tool
 gateway:
   path: SKILL.md
   language: Markdown
@@ -13,6 +10,15 @@ content:
   - SKILL\.md
 discovery:
   mechanism: skill
+  catalog:
+    domain: assistant-development
+    topics:
+      - assistant-authoring
+    visibility: listed
+  activated_by:
+    - user-request
+    - skill-workflow
+  persistent_modifier: false
 authority:
   owns_filesystem: []
 sources: {}

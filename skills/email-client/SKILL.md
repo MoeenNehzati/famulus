@@ -6,7 +6,8 @@ description: Use when reading, listing, searching, or sending email for the user
 <!-- BEGIN BLUEPRINT CONTRACT -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Category: productivity-general-assistant
+Catalog: personal-assistance; topics: communications, external-integrations; visibility: featured
+Activation: user-request, skill-workflow; persistent modifier: no
 
 Skill Version: 2
 

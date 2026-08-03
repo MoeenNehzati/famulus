@@ -1,5 +1,6 @@
 [
-  "references/skill-standards/skill-guidelines.standard.yaml",
+  "references/node-standards/*.standard.yaml",
+  "references/node-standards/authority-disposition.yaml",
   "references/standards/standard-v6.schema.json",
   "references/standards/validate_standard_v6.py",
   "references/standards/render_standard_v6.py",

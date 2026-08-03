@@ -1,6 +1,5 @@
 authority:
   owns_filesystem: []
-category: skill-making-development-assistant
 children:
   install-assistant-tools-rtx:
     base: module-root
@@ -11,6 +10,15 @@ description: Installs or refreshes assistant launchers, shared dispatcher toolin
   and optional development-checkout configuration links across supported hosts.
 discovery:
   mechanism: skill
+  catalog:
+    domain: assistant-operations
+    topics:
+    - assistant-installation
+    - system-maintenance
+    visibility: listed
+  activated_by:
+  - user-request
+  persistent_modifier: false
 exports:
   install-assistant-tools.interface.default:
     access:
@@ -49,10 +57,8 @@ gateway:
   language: Markdown
   path: SKILL.md
 id: install-assistant-tools
-kind: installer
 namespace_exports: {}
 node_type: module
-role: system-operations
 schema_version: 5
 sources:
   install-assistant-tools.source.gateway:

@@ -8,12 +8,9 @@ from pathlib import Path
 import yaml
 
 
-CANONICAL_STANDARDS = (
-    Path("references/skill-standards/skill-guidelines.standard.yaml"),
-    Path("references/skill-standards/skill-refactoring.standard.yaml"),
+GENERATED_VIEW_STANDARDS = {
     Path("references/document-standards/document-profile.standard.yaml"),
-    Path("references/standards/docstring.standard.yaml"),
-)
+}
 TOOLING_ARTIFACTS = (
     Path("references/standards/standard-v6.schema.json"),
     Path("references/standards/validate_standard_v6.py"),
@@ -50,19 +47,11 @@ def validate(repo_root: Path) -> list[str]:
     ]
     if missing_tooling:
         return missing_tooling
-    expected = set(CANONICAL_STANDARDS)
-    actual = {
+    discovered = {
         path.relative_to(repo_root)
         for path in (repo_root / "references").rglob("*.standard.yaml")
     }
-    errors = [
-        f"{_display(path)}: missing canonical standard"
-        for path in sorted(expected - actual)
-    ]
-    errors.extend(
-        f"{_display(path)}: unexpected canonical standard"
-        for path in sorted(actual - expected)
-    )
+    errors = []
 
     try:
         validator = _load_tool(repo_root, "validate_standard_v6")
@@ -70,10 +59,8 @@ def validate(repo_root: Path) -> list[str]:
     except (ImportError, OSError) as exc:
         return errors + [f"references/standards: cannot load standards tooling: {exc}"]
 
-    for relative in CANONICAL_STANDARDS:
+    for relative in sorted(discovered):
         path = repo_root / relative
-        if not path.is_file():
-            continue
         if relative in NON_STANDARD_V6_PATHS:
             continue
         errors.extend(
@@ -91,6 +78,8 @@ def validate(repo_root: Path) -> list[str]:
             rendered = renderer.render_document(document)
         except Exception as exc:
             errors.append(f"{_display(relative)}: cannot render standard: {exc}")
+            continue
+        if relative not in GENERATED_VIEW_STANDARDS:
             continue
         view_relative = Path(str(relative).removesuffix(".standard.yaml") + ".md")
         view_path = repo_root / view_relative

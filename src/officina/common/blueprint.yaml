@@ -22,6 +22,7 @@ content:
 - process_binding_compiler\.py
 - repository_paths\.py
 - secret_store\.py
+- standard_extractor\.py
 - toml_io\.py
 description: Shared, narrowly exported Python helpers for secure file updates, project
   date keys, OAuth JSON, credential storage, and controlled TOML access.
@@ -138,6 +139,12 @@ exports:
       - email-client
       - email-client-rtx
     source_interface: common.source.secret-store.interface.python-api
+  common.interface.standard-extractor:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - refactor-node-rtx
+    source_interface: common.source.standard-extractor.interface.python-api
   common.interface.toml-io:
     access:
       allow_all_modules: false
@@ -217,8 +224,12 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/secret-store.yaml
+  common.source.standard-extractor:
+    blueprint:
+      base: module-root
+      path: blueprints/standard-extractor.yaml
   common.source.toml-io:
     blueprint:
       base: module-root
       path: blueprints/toml-io.yaml
-version: 3
+version: 4

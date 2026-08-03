@@ -29,7 +29,7 @@ Example prompts:
 - `Audit this bibliography for duplicates or bad metadata.`
 - `Convert this PDF into markdown I can inspect.`
 
-<!-- BEGIN AUTO-GENERATED DOCS: research-assistant -->
+<!-- BEGIN AUTO-GENERATED DOCS: research -->
 > Generated from live blueprints. Do not edit this block by hand.
 
 - `bib-audit` — Audit a `.bib` file for validity, style, external metadata, and duplicates
@@ -38,6 +38,8 @@ Example prompts:
 - `make-tex-docstring` — Create or propose a top-of-document TeX comment block that records the document profile and intended use
 - `math-dependency-graph` — Extract an assumptions-to-results dependency graph from a LaTeX document
 - `notation-review` — Audit and improve mathematical notation for lightness, unification, reuse across scopes, and semantic transparency
+- `pdf-to-markdown` — Convert a research-paper PDF into LLM-readable text
 - `proof-audit` — Audit a proof for soundness, coherence, hidden assumptions, and redundancy
 - `technical-flow-review` — Review flow, structure, motivation, and readability of a technical document
-<!-- END AUTO-GENERATED DOCS: research-assistant -->
+- `tool-applicability` — Check whether a theorem or framework achieves a target in the current setting
+<!-- END AUTO-GENERATED DOCS: research -->

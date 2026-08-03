@@ -20,18 +20,12 @@ from officina.common.blueprint_graph import (  # noqa: E402
 from officina.common.blueprint_inventory import BlueprintInventoryError  # noqa: E402
 
 
-_EXTENDED_PARENT_EXCEPTIONS = {"update-skill-guidelines"}
 _PARENT_PATH_RE = re.compile(
     r"(?:^|(?<=[^A-Za-z0-9_./~\-]))(?:\.\.?/)*\.\./"
 )
 _ALLOWED_DIRS_BASE = re.compile(
     r"(?:^|(?<=[^A-Za-z0-9_./~\-]))"
     r"(?:\.\.?/)*\.\./(?:references|tools|scripts)"
-    r"(?:/|[ \t`'\"]|$)"
-)
-_ALLOWED_DIRS_EXTENDED = re.compile(
-    r"(?:^|(?<=[^A-Za-z0-9_./~\-]))"
-    r"(?:\.\.?/)*\.\./(?:references|tools|scripts|\.githooks)"
     r"(?:/|[ \t`'\"]|$)"
 )
 _DEPRECATED_MARKERS_RE = re.compile(
@@ -79,11 +73,7 @@ def _word_boundary_mentions(text: str, module_id: str) -> bool:
 
 
 def _validate_parent_paths(skill_file: Path, module_id: str) -> list[str]:
-    allowed = (
-        _ALLOWED_DIRS_EXTENDED
-        if module_id in _EXTENDED_PARENT_EXCEPTIONS
-        else _ALLOWED_DIRS_BASE
-    )
+    allowed = _ALLOWED_DIRS_BASE
     errors: list[str] = []
     for lineno, line in enumerate(
         skill_file.read_text(encoding="utf-8").splitlines(),

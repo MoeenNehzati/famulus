@@ -1,6 +1,5 @@
 authority:
   owns_filesystem: []
-category: system-assistant
 children:
   recurring-tasks-rtx:
     base: module-root
@@ -11,6 +10,17 @@ description: Defines, installs, controls, and health-checks recurring assistant 
   through the host's native per-user scheduler.
 discovery:
   mechanism: skill
+  catalog:
+    domain: assistant-operations
+    topics:
+    - task-automation
+    - system-maintenance
+    visibility: featured
+  activated_by:
+  - user-request
+  - skill-workflow
+  - scheduled-job
+  persistent_modifier: false
 exports:
   recurring-tasks.interface.default:
     access:
@@ -91,10 +101,8 @@ gateway:
   language: Markdown
   path: SKILL.md
 id: recurring-tasks
-kind: scheduler
 namespace_exports: {}
 node_type: module
-role: system-operations
 schema_version: 5
 sources:
   recurring-tasks.source.gateway:

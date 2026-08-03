@@ -7,8 +7,7 @@ import pytest
 
 
 ROOT = Path(__file__).parents[1]
-STANDARD = ROOT / "references/skill-standards/skill-refactoring.standard.yaml"
-RENDERED = ROOT / "references/skill-standards/skill-refactoring.md"
+STANDARD = ROOT / "references/node-standards/refactoring.standard.yaml"
 FIXTURES = ROOT / "tests/fixtures/standards"
 SOURCE_MAP = FIXTURES / "skill-refactoring-source-map.yaml"
 
@@ -44,6 +43,11 @@ EXPECTED_SMELLS = {
     "god-skill": ("God skill", "several unrelated use cases", "God Class."),
     "thin-skill": ("Thin skill", "almost no logic on top of a sub-skill", "Middle Man."),
     "leaky-internals": ("Leaky internals", "bypasses the dispatcher", "Inappropriate Intimacy."),
+    "mixed-interface-responsibilities": (
+        "Mixed interface responsibilities",
+        "multiple substantial use cases",
+        "Divergent Change / multiple responsibilities.",
+    ),
 }
 
 EXPECTED_MAPPINGS = {
@@ -61,13 +65,18 @@ EXPECTED_MAPPINGS = {
     "god-skill": {"extract-sub-skill"},
     "thin-skill": {"inline-thin-skill"},
     "leaky-internals": {"depend-on-interface"},
+    "mixed-interface-responsibilities": {"decompose-interface"},
+}
+
+EXPECTED_WORKFLOW_MAPPINGS = {
+    "ordering-rules": {"restore-safe-order"},
 }
 
 EXPECTED_REMEDIES = {
     "purge-dead-content": ("Purge Dead Content", "Remove motivational paragraphs", "Every instruction that directs behavior", "low"),
     "tighten-description": ("Tighten Description", "Rewrite the YAML `description` field", "All existing trigger conditions", "low"),
     "declare-fix-category": ("Declare/fix Category", "Set or correct `category`", None, "low"),
-    "sync-generated-contract-artifacts": ("Sync generated contract artifacts", "regenerate the generated contract/interface blocks", None, "low"),
+    "sync-generated-contract-artifacts": ("Sync generated contract artifacts", "regenerate the generated contract/interface blocks", None, "medium"),
     "add-fix-blueprint": ("Add/fix blueprint", "Create or correct `blueprint.yaml`", "contract artifacts remain complete and synchronized", "low"),
     "clarify-interface": ("Clarify Interface", "what inputs the skill expects", "Actual behavior", "low"),
     "extract-reference": ("Extract Reference", "move it to top-level", "Content must be identical", "low"),
@@ -76,9 +85,15 @@ EXPECTED_REMEDIES = {
     "relocate-state": ("Relocate State", "Move persistent data files", "Data format and content", "medium"),
     "relocate-credentials": ("Relocate Credentials", "Move credentials", None, "medium"),
     "extract-sub-skill": ("Extract Sub-skill", "Identify a coherent sub-responsibility", "aggregate behavior must be identical", "high"),
-    "decompose-script": ("Decompose Script", "Split a monolithic script", "same output as before", "high"),
+    "decompose-script": ("Decompose Script", "Split one selected Python behavioral source", "same output as before", "high"),
     "inline-thin-skill": ("Inline Thin Skill", "near-empty pass-through", "same behavior", "high"),
     "depend-on-interface": ("Depend on Interface", "Replace the raw file call", "Output and side effects", "medium"),
+    "decompose-interface": (
+        "Decompose Instruction Interface",
+        "split substantial routes",
+        "public default entry continues",
+        "high",
+    ),
 }
 
 SMELL_TARGETS = {
@@ -128,8 +143,12 @@ def resolve_pointer(value, pointer):
     return value
 
 
-def assert_source_unit_mapping(unit, document):
+def assert_source_unit_mapping(unit, document, superseded_targets):
     nodes = semantic_nodes(document)
+    target_refs = {target["target_ref"] for target in unit.get("targets", [])}
+    if target_refs and target_refs <= set(superseded_targets):
+        assert all(superseded_targets[target] for target in target_refs)
+        return
     if unit.get("relation") == "remedied-by-target-refs":
         actual = sorted(
             link["target"]["ref"].rsplit(".", 1)[-1]
@@ -146,14 +165,17 @@ def assert_source_unit_mapping(unit, document):
 
 def test_standard_validates_and_has_explicit_canonical_path():
     document = load_standard()
-    assert document["canonical_path"] == "references/skill-standards/skill-refactoring.standard.yaml"
+    assert document["id"] == "node-standards.refactoring"
+    assert document["canonical_path"] == "references/node-standards/refactoring.standard.yaml"
     assert validator.validate_file(STANDARD, ROOT) == []
 
 
 def test_every_immutable_source_unit_has_exact_or_documented_fidelity():
     document = load_standard()
     nodes = semantic_nodes(document)
-    source_map = yaml.safe_load(SOURCE_MAP.read_text(encoding="utf-8"))["units"]
+    source_map_document = yaml.safe_load(SOURCE_MAP.read_text(encoding="utf-8"))
+    source_map = source_map_document["units"]
+    superseded_targets = source_map_document["superseded_targets"]
     fixture_paths = {
         name: FIXTURES / name
         for name in ("skill-smells.md", "skill-refactoring-catalog.md")
@@ -171,7 +193,7 @@ def test_every_immutable_source_unit_has_exact_or_documented_fidelity():
         )
     assert [(unit["source"], unit["line"], unit["text"]) for unit in source_map] == expected_units
     for unit in source_map:
-        assert_source_unit_mapping(unit, document)
+        assert_source_unit_mapping(unit, document, superseded_targets)
     assert source_map[0]["targets"][0]["target_ref"] == "skill-refactoring.diagnostic-signals"
     catalog_intro = next(unit for unit in source_map if unit["source"] == "skill-refactoring-catalog.md")
     assert catalog_intro["targets"][0]["target_ref"] == "skill-refactoring.refactoring-moves"
@@ -205,7 +227,7 @@ def test_mapped_procedure_steps_detect_mutation_in_each_risk_family():
             else:
                 del parent[last]
             with pytest.raises((AssertionError, KeyError, IndexError)):
-                assert_source_unit_mapping(unit, document)
+                assert_source_unit_mapping(unit, document, {})
 
 
 def test_all_diagnostic_signals_and_analogs_are_preserved():
@@ -239,14 +261,16 @@ def test_all_remedies_preserve_body_conditions_verification_and_risk():
             assert preserve in serialized
         assert node["risk"]["level"] == risk
     assert "loaded only on the route that needs it" in yaml.safe_dump(remedies["extract-reference"], width=10000)
-    assert "record outputs" in yaml.safe_dump(remedies["decompose-script"], width=10000)
+    assert "Record the selected source's public entry behavior" in yaml.safe_dump(
+        remedies["decompose-script"], width=10000
+    )
     assert "Verify output is equivalent" in yaml.safe_dump(remedies["depend-on-interface"], width=10000)
     verification_expectations = {
         "extract-reference": "invoke the skill and confirm the reference content is loaded",
         "extract-script": "confirm it produces the same result",
         "relocate-credentials": "verify scripts still authenticate",
-        "extract-sub-skill": "Verify aggregate behavior is unchanged",
-        "decompose-script": "verify the decomposed scripts match",
+        "extract-sub-skill": "stop without creating, moving, or deleting files",
+        "decompose-script": "Run the recorded checks",
         "depend-on-interface": "Verify output is equivalent",
     }
     for remedy_id, expected in verification_expectations.items():
@@ -255,15 +279,15 @@ def test_all_remedies_preserve_body_conditions_verification_and_risk():
         "purge-dead-content": "changes no behavior",
         "tighten-description": "triggers are preserved",
         "declare-fix-category": "None",
-        "sync-generated-contract-artifacts": "purely additive",
+        "sync-generated-contract-artifacts": "replace or remove stale derived content",
         "clarify-interface": "Low",
         "extract-reference": "test the loading behavior",
         "extract-script": "subtle change",
         "relocate-state": "break scripts silently",
         "relocate-credentials": "every reference",
-        "extract-sub-skill": "Test carefully",
-        "decompose-script": "one responsibility at a time",
-        "inline-thin-skill": "knowing all callers",
+        "extract-sub-skill": "separate approval",
+        "decompose-script": "owner-local responsibility",
+        "inline-thin-skill": "external callers",
         "depend-on-interface": "more or different output",
     }
     for remedy_id, expected in risk_expectations.items():
@@ -273,12 +297,17 @@ def test_all_remedies_preserve_body_conditions_verification_and_risk():
 def test_every_smell_has_exact_complete_remedied_by_mapping():
     document = load_standard()
     actual = {smell: set() for smell in EXPECTED_SMELLS}
+    workflow = {rule: set() for rule in EXPECTED_WORKFLOW_MAPPINGS}
     for link in document["links"].values():
         assert link["relation"] == "remedied-by"
         smell = link["source"]["ref"].rsplit(".", 1)[-1]
         remedy = link["target"]["ref"].rsplit(".", 1)[-1]
-        actual[smell].add(remedy)
+        if smell in actual:
+            actual[smell].add(remedy)
+        else:
+            workflow[smell].add(remedy)
     assert actual == EXPECTED_MAPPINGS
+    assert workflow == EXPECTED_WORKFLOW_MAPPINGS
 
 
 def test_risk_ordering_and_global_ordering_rules_are_explicit():
@@ -299,12 +328,15 @@ def test_risk_ordering_and_global_ordering_rules_are_explicit():
     ]
 
 
-def test_rendering_is_deterministic_and_checked_in_in_full():
+def test_rendering_is_deterministic_without_a_registered_generated_view():
     document = load_standard()
     first = renderer.render_document(document)
     second = renderer.render_document(document)
     assert first == second
-    assert RENDERED.read_text(encoding="utf-8") == first
     assert "Remedies: Add/fix blueprint" in first
     assert "Remedies: Inline to Reference" in first
-    assert first.count("Addresses:") == sum(len(value) for value in EXPECTED_MAPPINGS.values())
+    assert first.count("Addresses:") == sum(
+        len(value)
+        for mappings in (EXPECTED_MAPPINGS, EXPECTED_WORKFLOW_MAPPINGS)
+        for value in mappings.values()
+    )

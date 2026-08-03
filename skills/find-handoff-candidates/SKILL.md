@@ -6,7 +6,8 @@ description: Use when you need a mechanical, non-interpretive scan of today's (o
 <!-- BEGIN BLUEPRINT CONTRACT -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Category: workflow-general-assistant
+Catalog: assistant-interaction; topics: session-management, task-automation; visibility: hidden
+Activation: skill-workflow; persistent modifier: no
 
 Skill Version: 2
 

@@ -1,0 +1,36 @@
+authority:
+  owns_filesystem: []
+  suggested_permissions:
+    bash:
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _closure_engine.py
+      - Interface
+      reason: Resolve node ownership and materialize standards without modifying the repository.
+    network: []
+children: {}
+content:
+- __init__\.py
+- _closure_engine\.py
+description: Private read-only standards-query module for refactor-node.
+exports:
+  refactor-node-rtx.interface.query-standards:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: refactor-node-rtx.source.query-standards.interface.query-standards
+gateway:
+  language: Python>=3.11
+  path: __init__.py
+id: refactor-node-rtx
+namespace_exports: {}
+node_type: module
+schema_version: 5
+sources:
+  refactor-node-rtx.source.query-standards:
+    blueprint:
+      base: module-root
+      path: blueprints/query-standards.yaml
+version: 2

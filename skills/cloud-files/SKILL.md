@@ -10,7 +10,8 @@ description: |
 <!-- BEGIN BLUEPRINT CONTRACT -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Category: system-assistant
+Catalog: assistant-operations; topics: external-integrations, storage-and-sync; visibility: listed
+Activation: user-request, skill-workflow; persistent modifier: no
 
 Skill Version: 2
 

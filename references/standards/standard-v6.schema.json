@@ -3,8 +3,11 @@
   "$id": "references/standards/standard-v6.schema.json",
   "title": "Revised Simplified Standards Format v6",
   "definitions": {
+    "fact-value": {
+      "type": ["string", "number", "boolean", "null"]
+    },
     "predicate": {
-      "description": "A typed applicability predicate over declared applicability facts.",
+      "description": "A typed applicability predicate over a selected standard's domain facts and future externally observed target facts.",
       "oneOf": [
         {
           "type": "object",
@@ -12,7 +15,7 @@
           "additionalProperties": false,
           "properties": {
             "fact": {"type": "string", "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$"},
-            "equals": {}
+            "equals": {"$ref": "#/definitions/fact-value"}
           }
         },
         {
@@ -21,7 +24,12 @@
           "additionalProperties": false,
           "properties": {
             "fact": {"type": "string", "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$"},
-            "in": {"type": "array", "minItems": 1, "uniqueItems": true}
+            "in": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {"$ref": "#/definitions/fact-value"}
+            }
           }
         },
         {
@@ -92,9 +100,14 @@
       "type": "string",
       "minLength": 1
     },
-    "applicability_facts": {
+    "domain_facts": {
       "type": "object",
-      "default": {}
+      "propertyNames": {
+        "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$"
+      },
+      "additionalProperties": {"$ref": "#/definitions/fact-value"},
+      "default": {},
+      "description": "Complete scalar facts guaranteed whenever this standard is selected. Every direct import's domain facts must be a type-exact subset. Target-observed facts are external to the document and may supplement but never contradict this domain."
     },
     "imports": {
       "type": "object",
@@ -2115,6 +2128,10 @@
           "type": "string",
           "minLength": 1
         },
+        "applies_when": {
+          "$ref": "#/definitions/predicate",
+          "description": "Optional applicability predicate. Descendants inherit ancestor predicates by conjunction. Missing facts evaluate to unknown, never false."
+        },
         "origin": {
           "type": "object",
           "required": [
@@ -2280,6 +2297,10 @@
               "type": "string",
               "minLength": 1
             },
+            "applies_when": {
+              "$ref": "#/definitions/predicate",
+              "description": "Optional applicability predicate inherited by the rule's assertions. Missing facts evaluate to unknown, never false."
+            },
             "assertions": {
               "type": "array",
               "minItems": 1,
@@ -2311,6 +2332,10 @@
                   "rationale": {
                     "type": "string",
                     "minLength": 1
+                  },
+                  "applies_when": {
+                    "$ref": "#/definitions/predicate",
+                    "description": "Optional assertion applicability predicate, conjoined with its rule and ancestor-family predicates. Missing facts evaluate to unknown, never false."
                   },
                   "examples": {
                     "type": "array",
@@ -2860,6 +2885,10 @@
               "type": "string",
               "minLength": 1
             },
+            "applies_when": {
+              "$ref": "#/definitions/predicate",
+              "description": "Optional guidance applicability predicate, conjoined with ancestor-family predicates. Missing facts evaluate to unknown, never false."
+            },
             "examples": {
               "type": "array",
               "minItems": 1,
@@ -3233,6 +3262,10 @@
             "summary": {
               "type": "string",
               "minLength": 1
+            },
+            "applies_when": {
+              "$ref": "#/definitions/predicate",
+              "description": "Optional procedure applicability predicate, conjoined with ancestor-family predicates. Missing facts evaluate to unknown, never false."
             },
             "ordered": {
               "type": "boolean"

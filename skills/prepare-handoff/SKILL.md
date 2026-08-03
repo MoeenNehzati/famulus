@@ -6,7 +6,8 @@ description: Use when the user explicitly invokes this skill to prepare a handof
 <!-- BEGIN BLUEPRINT CONTRACT -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Category: workflow-general-assistant
+Catalog: assistant-interaction; topics: session-management, repository-workflow; visibility: listed
+Activation: user-request, skill-workflow; persistent modifier: no
 
 Skill Version: 2
 

@@ -78,13 +78,15 @@ interfaces:
       outcomes:
       - caller_action: Pass the canonical JSON path to the deterministic graph builder.
         class: success
-        effects: []
+        effects:
+        - graph-json-write
         id: extracted
         outputs:
         - graph-json
       - caller_action: Report unresolved evidence gaps instead of inventing dependencies.
         class: success
-        effects: []
+        effects:
+        - graph-json-write
         id: extracted-with-gaps
         outputs:
         - graph-json

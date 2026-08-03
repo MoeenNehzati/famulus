@@ -3,7 +3,6 @@ authority:
   suggested_permissions:
     bash: []
     network: []
-category: workflow-general-assistant
 children: {}
 content:
 - (?:SKILL\.md|agents/openai\.yaml)
@@ -11,6 +10,16 @@ description: Prepares approval-gated project handoffs by separating repository w
   and documentation updates, residual lessons, and optional memory candidates.
 discovery:
   mechanism: skill
+  catalog:
+    domain: assistant-interaction
+    topics:
+    - session-management
+    - repository-workflow
+    visibility: listed
+  activated_by:
+  - user-request
+  - skill-workflow
+  persistent_modifier: false
 exports:
   prepare-handoff.interface.default:
     access:
@@ -21,10 +30,8 @@ gateway:
   language: Markdown
   path: SKILL.md
 id: prepare-handoff
-kind: generator
 namespace_exports: {}
 node_type: module
-role: automation
 schema_version: 5
 sources:
   prepare-handoff.source.gateway:

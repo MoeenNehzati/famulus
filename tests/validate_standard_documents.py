@@ -10,8 +10,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 VALIDATOR_PATH = ROOT / "validators" / "standard_documents.py"
 CANONICAL = (
-    "references/skill-standards/skill-guidelines.standard.yaml",
-    "references/skill-standards/skill-refactoring.standard.yaml",
+    "references/node-standards/refactoring.standard.yaml",
     "references/document-standards/document-profile.standard.yaml",
     "references/standards/docstring.standard.yaml",
 )
@@ -75,7 +74,7 @@ def test_accepts_utf8_standards_and_crlf_views_under_windows_default_encoding(
 
 def test_rejects_schema_or_semantically_invalid_standard(tmp_path):
     repo = _copy_standard_repo(tmp_path)
-    path = repo / CANONICAL[1]
+    path = repo / CANONICAL[0]
     document = yaml.safe_load(path.read_text(encoding="utf-8"))
     remedy = next(link for link in document["links"].values() if link["relation"] == "remedied-by")
     remedy["source"]["kind"] = "procedure"
@@ -100,17 +99,17 @@ def test_rejects_json_schema_invalid_standard(tmp_path):
 
 def test_reports_malformed_yaml_without_crashing(tmp_path):
     repo = _copy_standard_repo(tmp_path)
-    path = repo / CANONICAL[2]
+    path = repo / CANONICAL[1]
     path.write_text("standards: [\n", encoding="utf-8")
 
     errors = _load_validator().validate(repo)
 
-    assert any(f"{CANONICAL[2]}: cannot load document" in error for error in errors)
+    assert any(f"{CANONICAL[1]}: cannot load document" in error for error in errors)
 
 
 def test_rejects_stale_generated_markdown(tmp_path):
     repo = _copy_standard_repo(tmp_path)
-    view = repo / "references/skill-standards/skill-refactoring.md"
+    view = repo / "references/document-standards/document-profile.md"
     view.write_text(
         view.read_text(encoding="utf-8") + "\nstale edit\n",
         encoding="utf-8",
@@ -119,21 +118,47 @@ def test_rejects_stale_generated_markdown(tmp_path):
     errors = _load_validator().validate(repo)
 
     assert errors == [
-        "references/skill-standards/skill-refactoring.md: generated view is stale; "
-        "render references/skill-standards/skill-refactoring.standard.yaml"
+        "references/document-standards/document-profile.md: generated view is stale; "
+        "render references/document-standards/document-profile.standard.yaml"
     ]
 
 
-def test_requires_exactly_the_four_canonical_standards(tmp_path):
+def test_discovers_additional_v6_standard_without_requiring_generated_view(tmp_path):
     repo = _copy_standard_repo(tmp_path)
-    (repo / CANONICAL[2]).unlink()
-    extra = repo / "references/skill-standards/extra.standard.yaml"
-    shutil.copy2(repo / CANONICAL[0], extra)
+    source = repo / CANONICAL[0]
+    document = yaml.safe_load(source.read_text(encoding="utf-8"))
+    relative = Path("references/node-standards/node.standard.yaml")
+    document["id"] = "node-standards.node"
+    document["canonical_path"] = relative.as_posix()
+    document["title"] = "Node Standard"
+    document["purpose"] = "Define requirements common to repository nodes."
+    extra = repo / relative
+    extra.parent.mkdir(parents=True, exist_ok=True)
+    extra.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
 
     errors = _load_validator().validate(repo)
 
-    assert f"{CANONICAL[2]}: missing canonical standard" in errors
-    assert "references/skill-standards/extra.standard.yaml: unexpected canonical standard" in errors
+    assert errors == []
+
+
+def test_validates_discovered_v6_standard(tmp_path):
+    repo = _copy_standard_repo(tmp_path)
+    source = repo / CANONICAL[0]
+    document = yaml.safe_load(source.read_text(encoding="utf-8"))
+    relative = Path("references/node-standards/node.standard.yaml")
+    document["id"] = "node-standards.node"
+    document["canonical_path"] = relative.as_posix()
+    del document["title"]
+    extra = repo / relative
+    extra.parent.mkdir(parents=True, exist_ok=True)
+    extra.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
+
+    errors = _load_validator().validate(repo)
+
+    assert any(
+        f"{relative.as_posix()}: schema validation failed" in error
+        for error in errors
+    )
 
 
 def test_rejects_canonical_path_mismatch_at_allowlisted_location(tmp_path):

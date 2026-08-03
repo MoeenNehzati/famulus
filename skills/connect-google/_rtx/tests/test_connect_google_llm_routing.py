@@ -82,9 +82,16 @@ def test_module_and_markdown_gateway_graph() -> None:
     assert root["schema_version"] == 5
     assert root["node_type"] == "module"
     assert root["id"] == "connect-google"
-    assert root["category"] == "workflow-general-assistant"
-    assert root["role"] == "integration"
-    assert root["kind"] == "setup"
+    assert root["discovery"] == {
+        "mechanism": "skill",
+        "catalog": {
+            "domain": "assistant-operations",
+            "topics": ["external-integrations"],
+            "visibility": "listed",
+        },
+        "activated_by": ["user-request", "skill-workflow"],
+        "persistent_modifier": False,
+    }
     assert not (SKILL_ROOT / ".SKILL.md.blueprint.yaml").exists()
     default_uses = {
         (entry["interface"], entry["version"])

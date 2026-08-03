@@ -3,17 +3,11 @@ authority:
 children: {}
 content:
 - interface\-design\.md
-- skill\-guidelines\-semantic\-review\.md
-- skill\-guidelines\.md
-- skill\-guidelines\.standard\.yaml
-- skill\-refactoring\.md
-- skill\-refactoring\.standard\.yaml
-description: Owns the canonical authored and structured standards for skill design
-  and refactoring.
+description: Owns the retained interface-design guide.
 exports: {}
 gateway:
-  language: YAML
-  path: skill-guidelines.standard.yaml
+  language: Markdown
+  path: interface-design.md
 id: skill-standards
 namespace_exports: {}
 node_type: module
@@ -23,12 +17,4 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/interface-design.yaml
-  skill-standards.source.skill-guidelines:
-    blueprint:
-      base: module-root
-      path: blueprints/skill-guidelines.yaml
-  skill-standards.source.skill-refactoring:
-    blueprint:
-      base: module-root
-      path: blueprints/skill-refactoring.yaml
 version: 1

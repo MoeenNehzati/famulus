@@ -3,7 +3,6 @@ authority:
   suggested_permissions:
     bash: []
     network: []
-category: workflow-general-assistant
 children: {}
 content:
 - SKILL\.md
@@ -11,6 +10,14 @@ description: Provides a breadth-first reasoning mode for fast strategy, decompos
   options, and clearly labeled levels of certainty.
 discovery:
   mechanism: skill
+  catalog:
+    domain: assistant-interaction
+    topics:
+    - reasoning-control
+    visibility: featured
+  activated_by:
+  - user-request
+  persistent_modifier: true
 exports:
   loose-mode.interface.default:
     access:
@@ -21,10 +28,8 @@ gateway:
   language: Markdown
   path: SKILL.md
 id: loose-mode
-kind: mode
 namespace_exports: {}
 node_type: module
-role: mode
 schema_version: 5
 sources:
   loose-mode.source.gateway:

@@ -19,7 +19,8 @@ description: |
 <!-- BEGIN BLUEPRINT CONTRACT -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Category: workflow-general-assistant
+Catalog: research; topics: mathematical-reasoning; visibility: featured
+Activation: user-request, skill-workflow; persistent modifier: no
 
 Skill Version: 2
 

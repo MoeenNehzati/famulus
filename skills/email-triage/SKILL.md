@@ -6,7 +6,8 @@ description: Use when asked to triage email, process the inbox, or surface actio
 <!-- BEGIN BLUEPRINT CONTRACT -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Category: productivity-general-assistant
+Catalog: personal-assistance; topics: communications, personal-organization; visibility: featured
+Activation: user-request, skill-workflow; persistent modifier: no
 
 Skill Version: 3
 

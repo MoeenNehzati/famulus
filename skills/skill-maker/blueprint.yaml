@@ -1,6 +1,5 @@
 authority:
   owns_filesystem: []
-category: skill-making-development-assistant
 children:
   skill-maker-rtx:
     base: module-root
@@ -11,6 +10,18 @@ description: Defines the personal skill-authoring workflow and owns repository s
   conformance validators plus generated blueprint-contract synchronization.
 discovery:
   mechanism: skill
+  catalog:
+    domain: assistant-development
+    topics:
+    - assistant-authoring
+    - assistant-architecture
+    - assistant-assurance
+    - repository-workflow
+    visibility: featured
+  activated_by:
+  - user-request
+  - skill-workflow
+  persistent_modifier: false
 exports:
   skill-maker.interface.default:
     access:
@@ -29,14 +40,12 @@ gateway:
   language: Markdown
   path: SKILL.md
 id: skill-maker
-kind: generator
 namespace_exports: {}
 node_type: module
-role: meta-skill
 schema_version: 5
 sources:
   skill-maker.source.gateway:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml
-version: 2
+version: 3

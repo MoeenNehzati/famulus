@@ -3,7 +3,6 @@ authority:
   suggested_permissions:
     bash: []
     network: []
-category: workflow-general-assistant
 children: {}
 content:
 - SKILL\.md
@@ -11,6 +10,14 @@ description: Applies a persistent rigor-first reasoning mode that verifies nontr
   claims, labels uncertainty, and separates diagnosis from approved repair.
 discovery:
   mechanism: skill
+  catalog:
+    domain: assistant-interaction
+    topics:
+    - reasoning-control
+    visibility: featured
+  activated_by:
+  - user-request
+  persistent_modifier: true
 exports:
   tight-mode.interface.default:
     access:
@@ -21,10 +28,8 @@ gateway:
   language: Markdown
   path: SKILL.md
 id: tight-mode
-kind: mode
 namespace_exports: {}
 node_type: module
-role: mode
 schema_version: 5
 sources:
   tight-mode.source.gateway:

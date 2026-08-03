@@ -6,7 +6,8 @@ description: Use when starting a brand new project that should follow a staged, 
 <!-- BEGIN BLUEPRINT CONTRACT -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Category: coding-development-assistant
+Catalog: software-development; topics: repository-workflow, assistant-assurance; visibility: listed
+Activation: user-request; persistent modifier: no
 
 Skill Version: 2
 

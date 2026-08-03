@@ -1,6 +1,5 @@
 authority:
   owns_filesystem: []
-category: workflow-general-assistant
 children:
   connect-google-rtx:
     base: module-root
@@ -11,6 +10,15 @@ description: Prepares a shared Google Desktop OAuth client and routes service-sp
   connection setup without exposing client credentials in prompts.
 discovery:
   mechanism: skill
+  catalog:
+    domain: assistant-operations
+    topics:
+    - external-integrations
+    visibility: listed
+  activated_by:
+  - user-request
+  - skill-workflow
+  persistent_modifier: false
 exports:
   connect-google.interface.client-status:
     access:
@@ -49,10 +57,8 @@ gateway:
   language: Markdown
   path: SKILL.md
 id: connect-google
-kind: setup
 namespace_exports: {}
 node_type: module
-role: integration
 schema_version: 5
 sources:
   connect-google.source.gateway:

@@ -23,7 +23,8 @@ description: |
 <!-- BEGIN BLUEPRINT CONTRACT -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Category: research-assistant
+Catalog: research; topics: mathematical-reasoning, research-writing; visibility: featured
+Activation: user-request, skill-workflow; persistent modifier: no
 
 Skill Version: 2
 

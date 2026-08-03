@@ -1,0 +1,208 @@
+schema_version: 6
+standard_version: 1.0.0
+revision: 9
+id: node-standards.behavioral-source
+canonical_path: references/node-standards/behavioral-source.standard.yaml
+title: Behavioral Source Standard
+purpose: Add requirements specific to behavioral-source nodes.
+imports:
+  node:
+    standard_id: node-standards.node
+    standard_version: 1.0.0
+    revision: 9
+    digest: sha256:438a67a64ba97196547699e63ba3a66c3dc36979726f6b0818bd0c7e19423540
+    artifact:
+      kind: artifact
+      ref: artifact.node-standard
+standards:
+- kind: family
+  id: skill-guidelines.canonical-interface-names
+  title: Canonical interface names
+  children:
+  - kind: guidance
+    id: skill-guidelines.canonical-interface-names.guidance-001
+    statement: '**Canonical interface names**'
+  - kind: guidance
+    id: skill-guidelines.canonical-interface-names.guidance-002
+    statement: 'Every blueprint interface has a canonical fully qualified name:'
+  - kind: guidance
+    id: skill-guidelines.canonical-interface-names.guidance-003
+    statement: '- module export: `<module>.interface.<name>`'
+  - kind: guidance
+    id: skill-guidelines.canonical-interface-names.guidance-004
+    statement: '- source-owned interface: `<module>.source.<source>.interface.<name>`'
+  - kind: rule
+    id: skill-guidelines.canonical-interface-names.requirement-001
+    assertions:
+    - id: source-block
+      modality: required
+      statement: 'The local `<name>` is the final component of the interface ID.
+
+        It must be dash-separated and must **not** contain `.`.'
+      atomicity: pending
+  - kind: guidance
+    id: skill-guidelines.canonical-interface-names.guidance-005
+    statement: 'The host-facing compatibility invocation form for a process-bound
+
+      export is permitted only for a discoverable parent caller:'
+  - kind: guidance
+    id: skill-guidelines.canonical-interface-names.example-001
+    statement: '```bash
+
+      dispatcher --caller-skill daily-plan list-manager.interface.read-list /tmp/todo.yaml
+
+      ```'
+- kind: family
+  id: node-standards.behavioral-source-blueprint-authoring
+  title: Behavioral-source blueprint authoring
+  children:
+  - kind: rule
+    id: node-standards.behavioral-source-blueprint-authoring.requirement
+    assertions:
+    - id: behavioral-source-blueprint
+      modality: required
+      statement: A behavioral-source blueprint must be authored from the behavioral-source schema and
+        its matching template.
+- kind: family
+  id: node-standards.source-interface-ownership
+  title: Source-interface field ownership
+  children:
+  - kind: guidance
+    id: skill-guidelines.canonical-blueprint-ownership.guidance-001
+    statement: '- a source interface''s `description` describes what the interface does.'
+  - kind: guidance
+    id: skill-guidelines.canonical-blueprint-ownership.guidance-002
+    statement: "- its `usage` provides the complete invocation argument\n  template."
+  - kind: guidance
+    id: skill-guidelines.canonical-blueprint-ownership.guidance-003
+    statement: "- `patterns[*].notes` gives mode-specific detail where multiple calling modes\n  exist."
+- kind: family
+  id: node-standards.private-runtime-interface-binding
+  title: Private runtime interface binding
+  children:
+  - kind: rule
+    id: skill-guidelines.private-runtime-files.requirement-006
+    assertions:
+    - id: export-source-binding
+      modality: required
+      statement: A module export must bind a public name to a source-owned interface; an optional process
+        binding may route that interface to a private implementation.
+- kind: procedure
+  id: node-standards.remedies.restore-local-source-conformance
+  title: Restore one behavioral-source requirement safely
+  ordered: true
+  steps:
+  - kind: step
+    id: resolve-source-contract
+    instruction: Identify the exact violated assertion and inspect query-resolved source ownership, interface
+      contracts, bindings, dependencies, callers, and behavior evidence.
+  - kind: step
+    id: choose-smallest-source-change
+    instruction: Choose the smallest owner-local change that satisfies the assertion; stop if it would
+      rename a public interface, migrate callers, change a binding or dependency, widen access, or if the
+      intended contract or caller behavior is unknown.
+    requires: [resolve-source-contract]
+  - kind: step
+    id: apply-one-source-repair
+    instruction: Apply one bounded repair while preserving public names, inputs, outputs, errors, effects,
+      ordering, authorization, and unrelated source content.
+    requires: [choose-smallest-source-change]
+  - kind: step
+    id: verify-source-contract
+    instruction: Run returned contract validators and focused behavior tests, then inspect the exact diff.
+    requires: [apply-one-source-repair]
+  invariants:
+  - id: source-boundary-preserved
+    statement: The repair stays within query-resolved ownership and does not expose private implementation
+      details or widen access.
+  completion_conditions:
+  - id: source-assertion-restored
+    statement: The selected assertion is satisfied with relevant verification passing, or the missing
+      contract decision is reported.
+  risk:
+    level: high
+    statement: Interface or binding changes can alter behavior and authorization across callers.
+- kind: procedure
+  id: node-standards.remedies.migrate-interface-name
+  title: Migrate a source interface to its canonical name
+  ordered: true
+  steps:
+  - kind: step
+    id: inventory-name-consumers
+    instruction: Inventory the source interface, module exports and facades, namespace routes, declared
+      dependencies, dispatch menus, generated views, direct callers, and external compatibility callers.
+  - kind: step
+    id: choose-canonical-name
+    instruction: Choose the schema-valid dash-separated local name that preserves the interface responsibility;
+      stop if public identity intent or external callers are unknown.
+    requires: [inventory-name-consumers]
+  - kind: step
+    id: migrate-authority-first
+    instruction: Rename the canonical source interface and update exports, facades, routes, and declared
+      dependencies before changing callers.
+    requires: [choose-canonical-name]
+  - kind: step
+    id: migrate-callers-and-views
+    instruction: Update each authorized caller and regenerate derived contract views without changing access.
+    requires: [migrate-authority-first]
+  - kind: step
+    id: verify-old-and-new-surfaces
+    instruction: Run graph, dispatch, caller, and contract tests; retain a compatibility alias only when
+      an approved external caller requires it.
+    requires: [migrate-callers-and-views]
+  invariants:
+  - id: authorization-preserved
+    statement: Renaming never widens the interface's caller or namespace access.
+  completion_conditions:
+  - id: canonical-name-resolves
+    statement: The canonical name resolves for every authorized caller and obsolete references are removed
+      or explicitly retained for compatibility.
+  risk:
+    level: high
+    statement: Interface renames can break undiscovered callers and generated facades.
+- kind: procedure
+  id: node-standards.remedies.restore-source-interface-binding
+  title: Restore a public export to its source-owned interface binding
+  ordered: true
+  steps:
+  - kind: step
+    id: resolve-interface-owner
+    instruction: Resolve the source that owns the semantic contract, its optional process binding, the
+      module export name, access policy, and all facade or namespace consumers.
+  - kind: step
+    id: separate-contract-export-and-process
+    instruction: Put the contract and optional process binding on the source interface and keep the module
+      export limited to source-interface identity and access; stop if the intended owner is ambiguous.
+    requires: [resolve-interface-owner]
+  - kind: step
+    id: regenerate-derived-facades
+    instruction: Regenerate module and child views so facades derive rather than copy contracts or bindings.
+    requires: [separate-contract-export-and-process]
+  - kind: step
+    id: verify-binding-and-access
+    instruction: Run blueprint, interface projection, dispatch, and focused behavior tests for every caller.
+    requires: [regenerate-derived-facades]
+  invariants:
+  - id: export-does-not-copy-contract
+    statement: The module export names the source interface and access only; it does not become a second
+      contract or process-binding authority.
+  completion_conditions:
+  - id: single-binding-owner
+    statement: One source-owned interface controls contract and binding, and all exports derive correctly.
+  risk:
+    level: high
+    statement: Binding migration can change process invocation and access if ownership is chosen incorrectly.
+artifacts:
+  artifact.node-standard:
+    path: references/node-standards/node.standard.yaml
+    format: yaml
+    roles:
+    - other
+domain_facts:
+  node.present: true
+  node.structure: behavioral-source
+  node.skill-owned: true
+links:
+  interface-name-remedy: {source: {kind: family, ref: skill-guidelines.canonical-interface-names}, relation: remedied-by, target: {kind: procedure, ref: node-standards.remedies.migrate-interface-name}, lifecycle: active, resolution: {state: resolved}}
+  source-blueprint-remedy: {source: {kind: family, ref: node-standards.behavioral-source-blueprint-authoring}, relation: remedied-by, target: {kind: procedure, ref: node-standards.remedies.restore-local-source-conformance}, lifecycle: active, resolution: {state: resolved}}
+  private-binding-remedy: {source: {kind: family, ref: node-standards.private-runtime-interface-binding}, relation: remedied-by, target: {kind: procedure, ref: node-standards.remedies.restore-source-interface-binding}, lifecycle: active, resolution: {state: resolved}}

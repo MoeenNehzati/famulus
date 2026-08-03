@@ -3,7 +3,6 @@ authority:
   suggested_permissions:
     bash: []
     network: []
-category: research-assistant
 children: {}
 content:
 - (?:SKILL\.md|references/audience\-familiarity\.md|references/document\-types/conference\-article/cs\.md|references/document\-types/conference\-article/econ\.md|references/document\-types/conference\-article/general\.md|references/document\-types/conference\-article/math\.md|references/document\-types/journal\-article/cs\.md|references/document\-types/journal\-article/econ\.md|references/document\-types/journal\-article/general\.md|references/document\-types/journal\-article/math\.md|references/document\-types/research\-notes/cs\.md|references/document\-types/research\-notes/econ\.md|references/document\-types/research\-notes/general\.md|references/document\-types/research\-notes/math\.md|references/document\-types/research\-presentation/cs\.md|references/document\-types/research\-presentation/econ\.md|references/document\-types/research\-presentation/general\.md|references/document\-types/research\-presentation/math\.md)
@@ -11,6 +10,16 @@ description: Reviews technical documents against their purpose, field, audience,
   and length constraints to diagnose structural and reader-flow problems.
 discovery:
   mechanism: skill
+  catalog:
+    domain: research
+    topics:
+    - research-writing
+    - scholarly-documents
+    visibility: featured
+  activated_by:
+  - user-request
+  - skill-workflow
+  persistent_modifier: false
 exports:
   technical-flow-review.interface.default:
     access:
@@ -21,10 +30,8 @@ gateway:
   language: Markdown
   path: SKILL.md
 id: technical-flow-review
-kind: reviewer
 namespace_exports: {}
 node_type: module
-role: research-writing
 schema_version: 5
 sources:
   technical-flow-review.source.gateway:

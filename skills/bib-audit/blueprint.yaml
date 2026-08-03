@@ -1,6 +1,5 @@
 authority:
   owns_filesystem: []
-category: research-assistant
 children:
   bib-audit-rtx:
     base: module-root
@@ -11,6 +10,16 @@ description: Audits bibliography files for local validity, metadata conflicts, d
   or version relationships, and explicitly approved project-aware corrections.
 discovery:
   mechanism: skill
+  catalog:
+    domain: research
+    topics:
+    - scholarly-documents
+    - research-writing
+    visibility: featured
+  activated_by:
+  - user-request
+  - skill-workflow
+  persistent_modifier: false
 exports:
   bib-audit.interface.default:
     access:
@@ -35,10 +44,8 @@ gateway:
   language: Markdown
   path: SKILL.md
 id: bib-audit
-kind: auditor
 namespace_exports: {}
 node_type: module
-role: document-processing
 schema_version: 5
 sources:
   bib-audit.source.gateway:

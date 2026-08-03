@@ -1,6 +1,5 @@
 authority:
   owns_filesystem: []
-category: workflow-general-assistant
 children:
   find-handoff-candidates-rtx:
     base: module-root
@@ -11,6 +10,15 @@ description: Mechanically identifies session transcripts with substantial work s
   their last completed handoff and provides threshold-calibration diagnostics.
 discovery:
   mechanism: skill
+  catalog:
+    domain: assistant-interaction
+    topics:
+    - session-management
+    - task-automation
+    visibility: hidden
+  activated_by:
+  - skill-workflow
+  persistent_modifier: false
 exports:
   find-handoff-candidates.interface.calibrate:
     access:
@@ -35,10 +43,8 @@ gateway:
   language: Markdown
   path: SKILL.md
 id: find-handoff-candidates
-kind: analyzer
 namespace_exports: {}
 node_type: module
-role: automation
 schema_version: 5
 sources:
   find-handoff-candidates.source.gateway:

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Update Standards"
+  short_description: "Keep standards and their closures aligned"
+  default_prompt: "Use $update-standards to revise a canonical standard and update its pinned closure, views, and declared evidence."

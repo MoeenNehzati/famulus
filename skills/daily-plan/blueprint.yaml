@@ -1,6 +1,5 @@
 authority:
   owns_filesystem: []
-category: workflow-general-assistant
 children:
   daily-plan-rtx:
     base: module-root
@@ -11,6 +10,16 @@ description: Builds, persists, refreshes, renders, and mutates a daily plan from
   weather, todo, and triage data.
 discovery:
   mechanism: skill
+  catalog:
+    domain: personal-assistance
+    topics:
+    - planning
+    - personal-organization
+    visibility: featured
+  activated_by:
+  - user-request
+  - skill-workflow
+  persistent_modifier: false
 exports:
   daily-plan.interface.default:
     access:
@@ -49,10 +58,8 @@ gateway:
   language: Markdown
   path: SKILL.md
 id: daily-plan
-kind: planner
 namespace_exports: {}
 node_type: module
-role: productivity
 schema_version: 5
 sources:
   daily-plan.source.gateway:

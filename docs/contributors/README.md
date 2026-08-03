@@ -16,7 +16,7 @@ Start with these architecture and contract references:
 - [docs/skill-blueprints.md](../skill-blueprints.md)
 - [references/blueprint/schema.json](../../references/blueprint/schema.json)
 - [references/blueprint/template.yaml](../../references/blueprint/template.yaml)
-- Generated [references/skill-standards/skill-guidelines.md](../../references/skill-standards/skill-guidelines.md)
+- Layered [node standards](../../references/node-standards/node.standard.yaml), queried through `refactor-node`
 
 ## How Skills Stay in Sync
 
@@ -46,42 +46,32 @@ For hook order, CI behavior, and Python test-suite boundaries, see [TESTING.md](
 
 ## Development-Facing Skill Areas
 
-### Skill Making
+### Assistant Development
 
-These skills own the authoring conventions, scaffolding rules, and skill-system refactors.
+These skills own assistant modules, standards, and their lifecycle.
 
-<!-- BEGIN AUTO-GENERATED DOCS: skill-making-development-assistant -->
+<!-- BEGIN AUTO-GENERATED DOCS: assistant-development -->
 > Generated from live blueprints. Do not edit this block by hand.
 
 - `hook-maker` — Design cross-host assistant hooks with one purpose and per-host bindings
-- `install-assistant-tools` — Install or update launchers, wiring, hooks, and environment on a machine
 - `refactor-node` — Refactor whole repository nodes or owned sub-scopes by gateway language
 - `regenerate-blueprints` — A refreshed blueprint.yaml for an existing skill generated under /tmp without modifying the skill
 - `skill-certifier` — Mechanical checks and semantic review should issue fresh node certificates for an exact committed repository state
 - `skill-drift` — Reading signed certificate currentness or canonical node hashes for Famulus modules
 - `skill-maker` — Author new skills that conform to the repo's skill-writing guideline
-- `update-skill-guidelines` — Change the skill-writing standard and its mechanical checks in lockstep
-<!-- END AUTO-GENERATED DOCS: skill-making-development-assistant -->
+- `update-standards` — Change canonical standards and keep their pinned closures aligned
+<!-- END AUTO-GENERATED DOCS: assistant-development -->
 
-### Coding
+### Software Development
 
-These skills focus on project scaffolding rather than the shared skill system itself.
+These skills support general software projects and repositories.
 
-<!-- BEGIN AUTO-GENERATED DOCS: coding-development-assistant -->
-> Generated from live blueprints. Do not edit this block by hand.
-
-- `initialize-tdd` — Scaffold a staged, approval-gated TDD project
-<!-- END AUTO-GENERATED DOCS: coding-development-assistant -->
-
-### General Development
-
-These tools support repo work without being part of the authored skill-contract machinery.
-
-<!-- BEGIN AUTO-GENERATED DOCS: development-assistant -->
+<!-- BEGIN AUTO-GENERATED DOCS: software-development -->
 > Generated from live blueprints. Do not edit this block by hand.
 
 - `git-workflow` — Branch-safety checks and commit hygiene for any repo
-<!-- END AUTO-GENERATED DOCS: development-assistant -->
+- `initialize-tdd` — Scaffold a staged, approval-gated TDD project
+<!-- END AUTO-GENERATED DOCS: software-development -->
 
 ## Where To Go Next
 

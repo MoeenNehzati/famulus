@@ -12,7 +12,8 @@ description: |
 <!-- BEGIN BLUEPRINT CONTRACT -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Category: productivity-general-assistant
+Catalog: personal-assistance; topics: personal-organization, storage-and-sync; visibility: featured
+Activation: user-request, skill-workflow; persistent modifier: no
 
 Skill Version: 2
 

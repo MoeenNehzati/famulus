@@ -1,0 +1,584 @@
+schema_version: 6
+standard_version: 1.0.0
+revision: 9
+id: node-standards.instruction-behavioral-source
+canonical_path: references/node-standards/instruction-behavioral-source.standard.yaml
+title: Instruction Behavioral Source Standard
+purpose: Add requirements specific to instruction-language gateway behavioral sources.
+imports:
+  behavioral-source:
+    standard_id: node-standards.behavioral-source
+    standard_version: 1.0.0
+    revision: 9
+    digest: sha256:db90a2c54ae4ac55837c2777c3b887989ca7edd64ab45d2ab4ba6e8b127f1a48
+    artifact:
+      kind: artifact
+      ref: artifact.behavioral-source-standard
+  instruction-node:
+    standard_id: node-standards.instruction-node
+    standard_version: 1.0.0
+    revision: 9
+    digest: sha256:dc1f829e3ef6ea33515acbe38385178c7dc34386483a1ec5667b145b9170b5b0
+    artifact:
+      kind: artifact
+      ref: artifact.instruction-node-standard
+standards:
+- kind: family
+  id: skill-guidelines.runtime-code-boundary
+  title: 10. No code in SKILL.md — runtime files only, with one exception
+  children:
+  - kind: rule
+    id: skill-guidelines.runtime-code-boundary.requirement-001
+    assertions:
+    - id: no-inline-executable-logic
+      modality: prohibited
+      statement: Hand-authored instruction sources must not contain executable code logic.
+      exceptions:
+      - condition: The instruction source exposes a specifically declared external tool and contains only
+          the tool-facing interface guidance needed to use it.
+        effect: waive
+    - id: no-executable-references
+      modality: prohibited
+      statement: Hand-authored instruction sources must not name executable files in execution contexts.
+      examples:
+      - kind: invalid
+        description: Executable filename used as an instruction
+        language: markdown
+        content: Run `tmp.py` after editing.
+      exceptions:
+      - condition: The reference occurs only inside a generated contract or interface block.
+        effect: waive
+    - id: no-opaque-runtime-paths
+      modality: prohibited
+      statement: Hand-authored instruction sources must not expose opaque `_cx/` or `_rtx/` runtime paths.
+      examples:
+      - kind: invalid
+        description: Opaque implementation path exposed to the model
+        language: markdown
+        content: The command implementation is `_rtx/_worker.py`.
+      exceptions:
+      - condition: The path occurs only inside a generated contract or interface block.
+        effect: waive
+    - id: execution-behind-interface
+      modality: required
+      statement: Required execution must be owned by an implementation behavioral source, bound to a source
+        interface, exported through its parent module, and referenced in authored prose only by the public
+        export and output interpretation.
+- kind: procedure
+  id: node-standards.remedies.extract-executable-logic
+  title: Extract executable logic behind an interface
+  summary: Move executable instruction logic behind the owning node's registered implementation interface
+    while preserving behavior.
+  ordered: true
+  steps:
+  - kind: step
+    id: characterize-behavior
+    instruction: Record the current inputs, outputs, errors, effects, and focused verification before
+      moving logic.
+  - kind: step
+    id: move-owned-logic
+    instruction: Move the executable logic into the node's owned implementation behavioral source.
+    requires:
+    - characterize-behavior
+  - kind: step
+    id: declare-binding
+    instruction: Declare the process binding and source-owned interface contract for the moved behavior.
+    requires:
+    - move-owned-logic
+  - kind: step
+    id: export-interface
+    instruction: Export the source interface through the parent module's public facade with the required
+      access policy.
+    requires:
+    - declare-binding
+  - kind: step
+    id: regenerate-views
+    instruction: Regenerate all derived contract and interface blocks from the updated blueprint graph.
+    requires:
+    - export-interface
+  - kind: step
+    id: replace-authored-details
+    instruction: Replace authored execution details with the public export name, required runtime-state
+      reads, and output interpretation.
+    requires:
+    - regenerate-views
+  - kind: step
+    id: verify-equivalence
+    instruction: Run the declared instruction-source validator and the focused behavior tests.
+    verification: The validator passes and characterized behavior remains unchanged.
+    requires:
+    - replace-authored-details
+  invariants:
+  - id: preserve-behavior
+    statement: Inputs, outputs, errors, side effects, ordering, and authorized callers remain unchanged.
+  - id: preserve-ownership
+    statement: The moved logic remains inside the selected node's ownership boundary.
+  completion_conditions:
+  - id: no-authored-execution-details
+    statement: Authored instruction prose contains no executable filename or opaque runtime path.
+  - id: verification-passes
+    statement: Declared validators and focused behavior tests pass.
+  risk:
+    level: medium
+    statement: Moving logic and introducing a process boundary can change errors, effects, or authorization
+      if performed as one unchecked step.
+- kind: family
+  id: node-standards.instruction-source-dependencies
+  title: Instruction-source dependency references
+  children:
+  - kind: guidance
+    id: skill-guidelines.system-evolution.guidance-003
+    statement: Invoke a dependency module through its autodiscovered public gateway when its gateway is
+      the declared boundary.
+  - kind: guidance
+    id: skill-guidelines.system-evolution.guidance-004
+    statement: Call a dependency module export through the authorized dispatcher interface, never through
+      its implementation path.
+  - kind: rule
+    id: skill-guidelines.system-evolution.requirement-004
+    assertions:
+    - id: source-block
+      modality: required
+      statement: "- **Keep SKILL.md references local.** Paths in `SKILL.md` must be relative. A\n  skill\
+        \ may refer to files under its own directory, to shared `../references/`\n  material, and to shared\
+        \ repo tools under `../../tools/`. It must not mention\n  parent-path addresses such as `../other-skill/...`,\
+        \ `../../skills/...`, or\n  any absolute filesystem path to another skill."
+      atomicity: pending
+- kind: family
+  id: node-standards.instruction-interface-views
+  title: Instruction-source interface views
+  children:
+  - kind: rule
+    id: skill-guidelines.canonical-blueprint-ownership.requirement-003
+    assertions:
+    - id: source-block
+      modality: required
+      statement: "- The skill body references interface names only — it never shows\n  `dispatcher --caller-skill`\
+        \ invocations or runtime file paths."
+      atomicity: pending
+  - kind: rule
+    id: skill-guidelines.canonical-blueprint-ownership.requirement-004
+    assertions:
+    - id: source-block
+      modality: required
+      statement: The generated blocks must be sufficient for a first-attempt correct invocation.
+      atomicity: pending
+  - kind: rule
+    id: skill-guidelines.canonical-blueprint-ownership.requirement-005
+    assertions:
+    - id: source-block
+      modality: required
+      statement: '**Interfaces that require runtime state should say so explicitly in the skill
+
+        body.** When an operation depends on information only available at call time,
+
+        the skill body must instruct the model to read that state first.'
+      atomicity: pending
+- kind: family
+  id: node-standards.instruction-source-neutrality
+  title: Instruction-source neutrality
+  children:
+  - kind: rule
+    id: node-standards.instruction-source-neutrality.requirement
+    assertions:
+    - id: instruction-source-neutrality
+      modality: required
+      statement: A hand-authored SKILL.md must not name a specific assistant host or operating system.
+- kind: procedure
+  id: node-standards.remedies.remove-leaked-implementation-reference
+  title: Remove a leaked implementation reference
+  summary: Replace an authored runtime filename or opaque path with the owning public interface and outcome.
+  ordered: true
+  steps:
+  - kind: step
+    id: locate-public-interface
+    instruction: Identify the public export that owns the referenced operation.
+  - kind: step
+    id: establish-interface-if-missing
+    instruction: If no suitable public export exists, apply the extract-executable-logic procedure before
+      continuing.
+    requires:
+    - locate-public-interface
+  - kind: step
+    id: replace-reference
+    instruction: Replace the implementation filename or opaque path with the public export name, required
+      runtime-state read, and output interpretation.
+    requires:
+    - establish-interface-if-missing
+  - kind: step
+    id: verify-clean-source
+    instruction: Run the instruction-source validator and focused behavior tests.
+    verification: No authored executable reference or opaque runtime path remains, and behavior is unchanged.
+    requires:
+    - replace-reference
+  invariants:
+  - id: preserve-behavior
+    statement: The operation's inputs, outputs, errors, effects, and authorization remain unchanged.
+  completion_conditions:
+  - id: public-reference-only
+    statement: Authored prose names only the public interface and interprets its outcome.
+  risk:
+    level: low
+    statement: A textual cleanup can hide a missing interface unless the public export is checked first.
+- kind: family
+  id: node-standards.public-runtime-doc-boundary
+  title: Public documentation and private runtime boundaries
+  children:
+  - kind: rule
+    id: node-standards.public-runtime-doc-boundary.requirement
+    assertions:
+    - id: public-docs-use-interfaces
+      modality: required
+      statement: Public skill documentation must describe and invoke public interfaces rather than private
+        runtime files.
+  - kind: rule
+    id: skill-guidelines.private-runtime-files.requirement-005
+    assertions:
+    - id: no-private-runtime-directory-token
+      modality: prohibited
+      statement: UTF-8 skill-facing Markdown in the validator's public-document scope must not contain
+        the literal `_rtx` token.
+    - id: no-same-skill-runtime-filename
+      modality: prohibited
+      statement: UTF-8 skill-facing Markdown must not name an inventoried same-skill private runtime file
+        with an allowed runtime suffix.
+    - id: no-normalized-private-runtime-stem
+      modality: prohibited
+      statement: UTF-8 skill-facing Markdown must not name an inventoried same-skill private runtime stem
+        in private-underscore, public-underscore, whitespace-separated, or hyphenated form.
+    - id: no-legacy-runtime-path
+      modality: prohibited
+      statement: UTF-8 skill-facing Markdown must not contain a legacy `scripts/<name><allowed-runtime-suffix>`
+        path.
+  - kind: guidance
+    id: skill-guidelines.private-runtime-files.guidance-002
+    statement: '- `_rtx`'
+  - kind: guidance
+    id: skill-guidelines.private-runtime-files.guidance-003
+    statement: '- runtime filenames ending in an allowed runtime suffix such as `.py`'
+  - kind: guidance
+    id: skill-guidelines.private-runtime-files.guidance-004
+    statement: "- normalized forms of private runtime stems, such as `_Calendar_Gateway`,\n  `Calendar_Gateway`,\
+      \ `calendar gateway`, or `calendar-gateway`"
+  - kind: guidance
+    id: skill-guidelines.private-runtime-files.guidance-005
+    statement: Mechanical coverage is declared by the layer-local runtime-layout and public-reference
+      checks, their focused tests, and their assertion assurances.
+  - kind: guidance
+    id: node-standards.private-runtime-reference-exceptions
+    statement: Tests, validators, and migration or design documentation may name private runtime details
+      when defining, checking, or changing the convention.
+- kind: procedure
+  id: node-standards.remedies.replace-private-instruction-dependency
+  title: Replace an instruction dependency on another module's internals
+  ordered: true
+  steps:
+  - kind: step
+    id: identify-required-capability
+    instruction: Identify the capability, inputs, outputs, errors, effects, and authorization currently
+      obtained through the private or cross-module reference.
+  - kind: step
+    id: locate-public-boundary
+    instruction: Resolve an existing authorized public module export or gateway that supplies the capability;
+      if none exists, stop for an interface-design decision rather than authoring a private dependency.
+    requires: [identify-required-capability]
+  - kind: step
+    id: declare-and-replace-dependency
+    instruction: Declare the exact public interface dependency and replace the authored private path or
+      implementation reference with the public export name and output interpretation.
+    requires: [locate-public-boundary]
+  - kind: step
+    id: verify-dependency-behavior
+    instruction: Run graph, authorization, instruction-source, and focused behavior checks for both modules.
+    requires: [declare-and-replace-dependency]
+  invariants:
+  - id: no-new-private-edge
+    statement: The repair does not introduce a direct runtime path, cross-module Python import, or broader
+      public access.
+  completion_conditions:
+  - id: public-dependency-only
+    statement: The instruction source names only an authorized public interface and preserves behavior.
+  risk:
+    level: high
+    statement: Replacing a dependency can change process errors, effects, and authorization.
+artifacts:
+  artifact.behavioral-source-standard:
+    path: references/node-standards/behavioral-source.standard.yaml
+    format: yaml
+    roles:
+    - other
+  artifact.instruction-node-standard:
+    path: references/node-standards/instruction-node.standard.yaml
+    format: yaml
+    roles:
+    - other
+  artifact.skill-body-execution-validator:
+    path: validators/skill/skill_body_execution.py
+    format: python
+    roles:
+    - validator
+  artifact.skill-body-execution-tests:
+    path: tests/validate_skill_body_execution.py
+    format: python
+    roles:
+    - test
+  artifact.skill-runtime-doc-references-validator:
+    path: validators/skill_runtime_doc_references.py
+    format: python
+    roles:
+    - validator
+  artifact.validate-skill-runtime-doc-references-pytest-file:
+    path: tests/validate_skill_runtime_doc_references.py
+    format: python
+    roles:
+    - test
+domain_facts:
+  node.present: true
+  node.structure: behavioral-source
+  gateway.language: markdown
+  node.skill-owned: true
+checks:
+  instruction-source.skill-body-execution:
+    artifact:
+      kind: artifact
+      ref: artifact.skill-body-execution-validator
+    selector:
+      kind: python-symbol
+      symbol: validate
+    integration:
+      state: resolved
+      points:
+      - precommit
+    lifecycle: active
+    resolution:
+      state: resolved
+  instruction-source.private-runtime-references:
+    artifact:
+      kind: artifact
+      ref: artifact.skill-runtime-doc-references-validator
+    selector:
+      kind: python-symbol
+      symbol: validate_with_graph
+    integration:
+      state: resolved
+      points:
+      - precommit
+    lifecycle: active
+    resolution:
+      state: resolved
+tests:
+  instruction-source.skill-body-execution-tests:
+    artifact:
+      kind: artifact
+      ref: artifact.skill-body-execution-tests
+    selector:
+      kind: pytest-node
+      node_id: tests/validate_skill_body_execution.py
+    integration:
+      state: resolved
+      points:
+      - precommit
+    lifecycle: active
+    resolution:
+      state: resolved
+    targets:
+    - target:
+        kind: check
+        ref: instruction-source.skill-body-execution
+      relation: tests-check
+      polarity: mixed
+      coverage_description: Exercises clean instruction sources, executable references, generated blocks,
+        and opaque runtime paths.
+  instruction-source.private-runtime-reference-tests:
+    artifact:
+      kind: artifact
+      ref: artifact.validate-skill-runtime-doc-references-pytest-file
+    selector:
+      kind: pytest-node
+      node_id: tests/validate_skill_runtime_doc_references.py
+    integration:
+      state: resolved
+      points:
+      - precommit
+    lifecycle: active
+    resolution:
+      state: resolved
+    targets:
+    - target:
+        kind: check
+        ref: instruction-source.private-runtime-references
+      relation: tests-check
+      polarity: mixed
+      coverage_description: Exercises public interface names, private directory tokens, filenames, normalized
+        stems, nested packages, exclusions, and graph-owned artifacts.
+assurances:
+  instruction-source.no-executable-references:
+    assertion:
+      kind: assertion
+      ref: skill-guidelines.runtime-code-boundary.requirement-001#no-executable-references
+    mechanism:
+      kind: check
+      ref: instruction-source.skill-body-execution
+    relation: enforces
+    strength: partial
+    aspects:
+    - execution-context-file-reference
+    coverage_description: Rejects executable filenames when authored prose directs execution.
+    lifecycle: active
+    resolution:
+      state: resolved
+    limitation: The validator recognizes a fixed executable-suffix list and selected lexical execution
+      contexts; other executable references require semantic review.
+  instruction-source.no-opaque-runtime-paths:
+    assertion:
+      kind: assertion
+      ref: skill-guidelines.runtime-code-boundary.requirement-001#no-opaque-runtime-paths
+    mechanism:
+      kind: check
+      ref: instruction-source.skill-body-execution
+    relation: enforces
+    strength: full
+    aspects:
+    - opaque-runtime-path
+    coverage_description: Rejects `_cx/` and `_rtx/` paths in hand-authored instruction prose.
+    lifecycle: active
+    resolution:
+      state: resolved
+  instruction-source.private-runtime-directory-token:
+    assertion:
+      kind: assertion
+      ref: skill-guidelines.private-runtime-files.requirement-005#no-private-runtime-directory-token
+    mechanism:
+      kind: check
+      ref: instruction-source.private-runtime-references
+    relation: enforces
+    strength: full
+    aspects:
+    - private-runtime-directory-token
+    coverage_description: Rejects the literal `_rtx` token in scanned public Markdown.
+    limitation: Coverage is limited to UTF-8 skill-facing Markdown; tests, assets, `_rtx`, `.system`,
+      and generated SKILL.md blocks are intentionally excluded.
+    lifecycle: active
+    resolution:
+      state: resolved
+  instruction-source.same-skill-runtime-filename:
+    assertion:
+      kind: assertion
+      ref: skill-guidelines.private-runtime-files.requirement-005#no-same-skill-runtime-filename
+    mechanism:
+      kind: check
+      ref: instruction-source.private-runtime-references
+    relation: enforces
+    strength: full
+    aspects:
+    - same-skill-runtime-filename
+    coverage_description: Rejects inventoried same-skill runtime filenames with an allowed suffix.
+    limitation: Coverage is limited to UTF-8 skill-facing Markdown; tests, assets, `_rtx`, `.system`,
+      and generated SKILL.md blocks are intentionally excluded.
+    lifecycle: active
+    resolution:
+      state: resolved
+  instruction-source.normalized-private-runtime-stem:
+    assertion:
+      kind: assertion
+      ref: skill-guidelines.private-runtime-files.requirement-005#no-normalized-private-runtime-stem
+    mechanism:
+      kind: check
+      ref: instruction-source.private-runtime-references
+    relation: enforces
+    strength: full
+    aspects:
+    - normalized-private-runtime-stem
+    coverage_description: Rejects four declared normalized forms derived from inventoried same-skill runtime
+      stems.
+    limitation: Coverage is limited to UTF-8 skill-facing Markdown; tests, assets, `_rtx`, `.system`,
+      and generated SKILL.md blocks are intentionally excluded.
+    lifecycle: active
+    resolution:
+      state: resolved
+  instruction-source.legacy-runtime-path:
+    assertion:
+      kind: assertion
+      ref: skill-guidelines.private-runtime-files.requirement-005#no-legacy-runtime-path
+    mechanism:
+      kind: check
+      ref: instruction-source.private-runtime-references
+    relation: enforces
+    strength: full
+    aspects:
+    - legacy-runtime-path
+    coverage_description: Rejects legacy scripts paths ending in an allowed runtime suffix.
+    limitation: Coverage is limited to UTF-8 skill-facing Markdown; tests, assets, `_rtx`, `.system`,
+      and generated SKILL.md blocks are intentionally excluded.
+    lifecycle: active
+    resolution:
+      state: resolved
+links:
+  instruction-source.inline-logic-remedy:
+    source:
+      kind: assertion
+      ref: skill-guidelines.runtime-code-boundary.requirement-001#no-inline-executable-logic
+    relation: remedied-by
+    target:
+      kind: procedure
+      ref: node-standards.remedies.extract-executable-logic
+    lifecycle: active
+    resolution:
+      state: resolved
+  instruction-source.executable-reference-remedy:
+    source:
+      kind: assertion
+      ref: skill-guidelines.runtime-code-boundary.requirement-001#no-executable-references
+    relation: remedied-by
+    target:
+      kind: procedure
+      ref: node-standards.remedies.remove-leaked-implementation-reference
+    lifecycle: active
+    resolution:
+      state: resolved
+  instruction-source.opaque-path-remedy:
+    source:
+      kind: assertion
+      ref: skill-guidelines.runtime-code-boundary.requirement-001#no-opaque-runtime-paths
+    relation: remedied-by
+    target:
+      kind: procedure
+      ref: node-standards.remedies.remove-leaked-implementation-reference
+    lifecycle: active
+    resolution:
+      state: resolved
+  instruction-source.interface-boundary-remedy:
+    source:
+      kind: assertion
+      ref: skill-guidelines.runtime-code-boundary.requirement-001#execution-behind-interface
+    relation: remedied-by
+    target:
+      kind: procedure
+      ref: node-standards.remedies.extract-executable-logic
+    lifecycle: active
+    resolution:
+      state: resolved
+  instruction-source.dependencies-remedy:
+    source: {kind: family, ref: node-standards.instruction-source-dependencies}
+    relation: remedied-by
+    target: {kind: procedure, ref: node-standards.remedies.replace-private-instruction-dependency}
+    lifecycle: active
+    resolution: {state: resolved}
+  instruction-source.interface-views-remedy:
+    source: {kind: family, ref: node-standards.instruction-interface-views}
+    relation: remedied-by
+    target: {kind: procedure, document: behavioral-source, ref: node-standards.remedies.restore-local-source-conformance}
+    lifecycle: active
+    resolution: {state: resolved}
+  instruction-source.neutrality-remedy:
+    source: {kind: family, ref: node-standards.instruction-source-neutrality}
+    relation: remedied-by
+    target: {kind: procedure, document: behavioral-source, ref: node-standards.remedies.restore-local-source-conformance}
+    lifecycle: active
+    resolution: {state: resolved}
+  instruction-source.public-runtime-boundary-remedy:
+    source: {kind: family, ref: node-standards.public-runtime-doc-boundary}
+    relation: remedied-by
+    target: {kind: procedure, ref: node-standards.remedies.remove-leaked-implementation-reference}
+    lifecycle: active
+    resolution: {state: resolved}

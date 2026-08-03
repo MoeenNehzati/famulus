@@ -1,0 +1,401 @@
+schema_version: 6
+standard_version: 1.0.0
+revision: 12
+id: node-standards.python-behavioral-source
+canonical_path: references/node-standards/python-behavioral-source.standard.yaml
+title: Python Behavioral Source Standard
+purpose: Add requirements specific to Python gateway behavioral sources.
+imports:
+  behavioral-source:
+    standard_id: node-standards.behavioral-source
+    standard_version: 1.0.0
+    revision: 9
+    digest: sha256:db90a2c54ae4ac55837c2777c3b887989ca7edd64ab45d2ab4ba6e8b127f1a48
+    artifact:
+      kind: artifact
+      ref: artifact.behavioral-source-standard
+  python-node:
+    standard_id: node-standards.python-node
+    standard_version: 1.0.0
+    revision: 12
+    digest: sha256:1039bf61b8db1bbe54b4234f694a755cd272d530da14a87d1a54b61bbd193cd9
+    artifact:
+      kind: artifact
+      ref: artifact.python-node-standard
+standards:
+- kind: family
+  id: node-standards.python-source-dispatch
+  title: Python behavioral-source dispatch
+  children:
+  - kind: rule
+    id: skill-guidelines.canonical-interface-names.requirement-002
+    assertions:
+    - id: source-block
+      modality: required
+      statement: 'Every Python behavioral-source gateway that may invoke another
+
+        module must define a declared dispatch menu. Runtime code calls
+
+        only entries from that menu, never raw dispatcher APIs:'
+      atomicity: pending
+  - kind: guidance
+    id: skill-guidelines.canonical-interface-names.example-002
+    statement: "```python\nfrom officina.runtime.python_machine_interface import DispatchCall, PythonMachineInterface\n\
+      \n\nclass Interface(PythonMachineInterface):\n    dispatches = {\n        \"read-list\": DispatchCall(\n\
+      \            caller_module_id=\"daily-plan\",\n            target_module_id=\"list-manager\",\n\
+      \            interface=\"read-list\",\n        )\n    }\n```"
+  - kind: guidance
+    id: skill-guidelines.canonical-interface-names.guidance-006
+    statement: 'Then execute by key:'
+  - kind: guidance
+    id: skill-guidelines.canonical-interface-names.example-003
+    statement: '```python
+
+      self.dispatch("read-list", args=["/tmp/todo.yaml"])
+
+      ```'
+  - kind: rule
+    id: skill-guidelines.canonical-interface-names.requirement-003
+    assertions:
+    - id: source-block
+      modality: required
+      statement: 'Do not import or call `officina.dispatcher` from skill runtime code. Do not
+
+        invoke the `dispatcher` CLI from Python skill code, and do not modify `sys.path`
+
+        to reach dispatcher internals.'
+      atomicity: pending
+  - kind: guidance
+    id: skill-guidelines.canonical-interface-names.guidance-007
+    statement: 'This is mechanically checked by
+
+      `validators/skill/dispatcher_usage.py`, which rejects raw
+
+      dispatcher imports and CLI dispatch from skill runtime code.'
+- kind: family
+  id: skill-guidelines.dispatcher-role
+  title: Dispatcher role
+  children:
+  - kind: guidance
+    id: skill-guidelines.dispatcher-role.guidance-001
+    statement: '**Dispatcher role**'
+  - kind: rule
+    id: skill-guidelines.dispatcher-role.requirement-001
+    assertions:
+    - id: source-block
+      modality: required
+      statement: 'The installed `dispatcher` command and the shared dispatcher runtime are the
+
+        only sanctioned local cross-module process boundary. Python behavioral-source
+
+        runtime code must reach that boundary through declared
+
+        `DispatchCall` entries and `PythonMachineInterface.dispatch()`. The
+
+        dispatcher runtime''s job is to:'
+      atomicity: pending
+  - kind: guidance
+    id: skill-guidelines.dispatcher-role.guidance-002
+    statement: 1. Parse the canonical target `<module>.interface.<name>`
+  - kind: guidance
+    id: skill-guidelines.dispatcher-role.guidance-003
+    statement: 2. Load the callee's version 5 registered module graph and resolve the export
+  - kind: guidance
+    id: skill-guidelines.dispatcher-role.guidance-004
+    statement: 3. Verify the export's module-level access policy
+  - kind: guidance
+    id: skill-guidelines.dispatcher-role.guidance-005
+    statement: 4. Parse caller arguments against the source-owned interface contract
+  - kind: guidance
+    id: skill-guidelines.dispatcher-role.guidance-006
+    statement: 5. Compile the interface's process binding against its source gateway
+  - kind: guidance
+    id: skill-guidelines.dispatcher-role.guidance-007
+    statement: 6. Build an invocation plan without depending on the caller's working directory
+  - kind: guidance
+    id: skill-guidelines.dispatcher-role.guidance-008
+    statement: 7. Return the dry-run plan or execute it
+  - kind: rule
+    id: skill-guidelines.dispatcher-role.requirement-002
+    assertions:
+    - id: source-block
+      modality: required
+      statement: 'The graph and process-binding approach enables static validation: git hooks verify
+
+        that only authorized modules use restricted exports, catching misuse
+
+        before deployment rather than only at runtime.'
+      atomicity: pending
+  - kind: guidance
+    id: skill-guidelines.dispatcher-role.guidance-009
+    statement: 'A discoverable parent caller may use `--dry-run` with the host-facing compatibility flag
+      to inspect the resolved invocation without executing it:'
+  - kind: guidance
+    id: skill-guidelines.dispatcher-role.example-001
+    statement: "```bash\ndispatcher --dry-run --caller-skill daily-plan \\\n  list-manager.interface.read-list\
+      \ /tmp/todo.yaml\n```"
+  - kind: rule
+    id: skill-guidelines.dispatcher-role.requirement-003
+    assertions:
+    - id: source-block
+      modality: required
+      statement: 'Every `DispatchCall(...)` declaration must include `caller_module_id` set to the declaring
+        module''s exact global ID and `target_module_id` set to
+
+        the target module''s exact global ID. Each value must be a string literal or a module-level
+
+        string constant that resolves statically.'
+      atomicity: pending
+- kind: family
+  id: skill-guidelines.private-runtime-files
+  title: Private runtime files
+  children:
+  - kind: guidance
+    id: skill-guidelines.private-runtime-files.guidance-001
+    statement: '**Private runtime files**'
+  - kind: rule
+    id: skill-guidelines.private-runtime-files.requirement-001
+    assertions:
+    - id: runtime-implementation-location
+      modality: required
+      statement: Skill-owned Python implementation files must live under the registered private runtime-execution
+        package, not under a legacy skill scripts directory.
+  - kind: rule
+    id: skill-guidelines.private-runtime-files.requirement-002
+    assertions:
+    - id: source-block
+      modality: required
+      statement: 'Every non-exempt file or package directory under `_rtx/` must use a private
+
+        multi-part stem. The rule cascades through nested packages: every directory
+
+        component below `_rtx/` and every runtime filename stem must match the same
+
+        private naming convention.'
+      atomicity: pending
+  - kind: guidance
+    id: skill-guidelines.private-runtime-files.example-001
+    statement: '```text
+
+      _rtx/_Calendar_Gateway.py
+
+      _rtx/_mail_transport.py
+
+      _rtx/_install_launcher/_windows_launcher.py
+
+      ```'
+  - kind: rule
+    id: skill-guidelines.private-runtime-files.requirement-003
+    assertions:
+    - id: source-block
+      modality: required
+      statement: 'Every private directory name and every runtime filename stem must match:'
+      atomicity: pending
+  - kind: guidance
+    id: skill-guidelines.private-runtime-files.example-002
+    statement: '```regex
+
+      ^_[A-Za-z0-9]+(?:_[A-Za-z0-9]+)+$
+
+      ```'
+  - kind: rule
+    id: skill-guidelines.private-runtime-files.requirement-004
+    assertions:
+    - id: source-block
+      modality: required
+      statement: 'That means each private runtime path component starts with `_` and has at
+
+        least two underscore-separated segments after it. Case is allowed, but
+
+        case-only path collisions are forbidden among siblings. `__init__.py` is the
+
+        only exempt package marker; package directories themselves are not exempt. The
+
+        allowed runtime file suffix list currently contains `.py`; add to that list
+
+        deliberately only if this policy is relaxed later.'
+      atomicity: pending
+- kind: procedure
+  id: node-standards.remedies.restore-declared-python-dispatch
+  title: Restore Python cross-module calls to the declared dispatch boundary
+  ordered: true
+  steps:
+  - kind: step
+    id: characterize-cross-module-call
+    instruction: Record the target capability, exact caller and target module identities, interface name,
+      arguments, outputs, errors, effects, ordering, and current authorization.
+  - kind: step
+    id: resolve-authorized-export
+    instruction: Resolve the canonical exported interface and verify the caller is permitted; stop if no
+      honest public export or required access exists.
+    requires: [characterize-cross-module-call]
+  - kind: step
+    id: declare-dispatch-menu-entry
+    instruction: Add the exact DispatchCall entry to the source gateway and declare its interface dependency
+      without importing dispatcher internals or modifying sys.path.
+    requires: [resolve-authorized-export]
+  - kind: step
+    id: replace-raw-call
+    instruction: Replace the raw CLI, dispatcher import, private import, or ad hoc process call with
+      PythonMachineInterface.dispatch using the declared menu key.
+    requires: [declare-dispatch-menu-entry]
+  - kind: step
+    id: verify-dispatch-contract
+    instruction: Run graph, authorization, dispatcher-usage, tracing, and focused behavior tests.
+    requires: [replace-raw-call]
+  invariants:
+  - id: exact-identities-and-access
+    statement: The migration preserves exact module identities, interface contract, caller access, errors,
+      effects, and ordering.
+  completion_conditions:
+  - id: declared-dispatch-only
+    statement: Cross-module runtime behavior uses only the declared DispatchCall menu and authorized export.
+  risk:
+    level: high
+    statement: Dispatch migration can change serialization, process errors, effects, and authorization.
+- kind: procedure
+  id: node-standards.remedies.restore-private-python-runtime-layout
+  title: Restore Python runtime files to the canonical private layout
+  ordered: true
+  steps:
+  - kind: step
+    id: inventory-runtime-consumers
+    instruction: Inventory runtime files, packages, imports, process bindings, entry identifiers, tests,
+      registered child artifacts, and dynamic or external references.
+  - kind: step
+    id: choose-canonical-private-path
+    instruction: Choose the `_rtx/` path and compliant private stem for each implementation file, preserving
+      `__init__.py` only as a package marker; stop on unknown external path consumers.
+    requires: [inventory-runtime-consumers]
+  - kind: step
+    id: move-one-runtime-unit
+    instruction: Move one file or package at a time and update same-source imports, blueprint process paths,
+      entry identifiers, and tests as separate path and entry values.
+    requires: [choose-canonical-private-path]
+  - kind: step
+    id: remove-proven-legacy-path
+    instruction: Remove the old path only after searches and runtime checks prove no registered, dynamic,
+      test, or external consumer remains.
+    requires: [move-one-runtime-unit]
+  - kind: step
+    id: validate-runtime-layout
+    instruction: Run runtime-layout, blueprint, import, dispatch, and focused behavior tests and inspect for
+      case-insensitive sibling collisions.
+    requires: [remove-proven-legacy-path]
+  invariants:
+  - id: behavior-and-entry-preserved
+    statement: Runtime inputs, outputs, errors, effects, ordering, process entry, and authorized callers remain
+      unchanged.
+  completion_conditions:
+  - id: canonical-runtime-layout
+    statement: All owned Python runtime paths are compliant, registered child artifacts remain excluded,
+      and no proven legacy reference remains.
+  risk:
+    level: high
+    statement: Runtime file moves can break imports, dynamic references, and process entry resolution.
+artifacts:
+  artifact.behavioral-source-standard:
+    path: references/node-standards/behavioral-source.standard.yaml
+    format: yaml
+    roles:
+    - other
+  artifact.python-node-standard:
+    path: references/node-standards/python-node.standard.yaml
+    format: yaml
+    roles:
+    - other
+  artifact.skill-runtime-files-validator:
+    path: validators/skill_runtime_files.py
+    format: python
+    roles:
+    - validator
+  artifact.validate-skill-runtime-files-pytest-file:
+    path: tests/validate_skill_runtime_files.py
+    format: python
+    roles:
+    - test
+domain_facts:
+  node.present: true
+  node.structure: behavioral-source
+  gateway.language: python
+  node.skill-owned: true
+checks:
+  python-source.private-runtime-layout:
+    artifact:
+      kind: artifact
+      ref: artifact.skill-runtime-files-validator
+    selector:
+      kind: python-symbol
+      symbol: validate_with_graph
+    integration:
+      state: resolved
+      points:
+      - precommit
+    lifecycle: active
+    resolution:
+      state: resolved
+tests:
+  python-source.private-runtime-layout-tests:
+    artifact:
+      kind: artifact
+      ref: artifact.validate-skill-runtime-files-pytest-file
+    selector:
+      kind: pytest-node
+      node_id: tests/validate_skill_runtime_files.py
+    integration:
+      state: resolved
+      points:
+      - precommit
+    lifecycle: active
+    resolution:
+      state: resolved
+    targets:
+    - target:
+        kind: check
+        ref: python-source.private-runtime-layout
+      relation: tests-check
+      polarity: mixed
+      coverage_description: Exercises valid and invalid runtime stems, suffixes, locations, graph-owned
+        artifacts, and case collisions.
+assurances:
+  python-source.runtime-implementation-location:
+    assertion:
+      kind: assertion
+      ref: skill-guidelines.private-runtime-files.requirement-001#runtime-implementation-location
+    mechanism:
+      kind: check
+      ref: python-source.private-runtime-layout
+    relation: enforces
+    strength: partial
+    aspects:
+    - legacy-scripts-location
+    coverage_description: Rejects Python runtime files placed in a legacy skill scripts directory.
+    limitation: The check does not classify every arbitrary file outside `_rtx` as implementation; it
+      detects allowed-suffix files under the legacy scripts location.
+    lifecycle: active
+    resolution:
+      state: resolved
+  python-source.private-runtime-layout:
+    assertion:
+      kind: assertion
+      ref: skill-guidelines.private-runtime-files.requirement-004#source-block
+    mechanism:
+      kind: check
+      ref: python-source.private-runtime-layout
+    relation: enforces
+    strength: partial
+    aspects:
+    - runtime-stem
+    - runtime-suffix
+    - case-insensitive-collision
+    coverage_description: Checks traversed non-exempt runtime files and directory components against naming,
+      suffix, and sibling-collision rules.
+    limitation: Empty directories are not traversed, and registered child artifacts are intentionally
+      exempt under graph-aware classification.
+    lifecycle: active
+    resolution:
+      state: resolved
+links:
+  python-dispatch-remedy: {source: {kind: family, ref: node-standards.python-source-dispatch}, relation: remedied-by, target: {kind: procedure, ref: node-standards.remedies.restore-declared-python-dispatch}, lifecycle: active, resolution: {state: resolved}}
+  dispatcher-role-remedy: {source: {kind: family, ref: skill-guidelines.dispatcher-role}, relation: remedied-by, target: {kind: procedure, ref: node-standards.remedies.restore-declared-python-dispatch}, lifecycle: active, resolution: {state: resolved}}
+  private-runtime-remedy: {source: {kind: family, ref: skill-guidelines.private-runtime-files}, relation: remedied-by, target: {kind: procedure, ref: node-standards.remedies.restore-private-python-runtime-layout}, lifecycle: active, resolution: {state: resolved}}

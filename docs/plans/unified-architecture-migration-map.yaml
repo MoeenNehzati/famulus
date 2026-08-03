@@ -646,7 +646,7 @@ declarations:
           source: blueprint.source.schema-annotated-draft
           version: 1
           blueprint: {base: repository-root, path: references/blueprint/blueprints/schema-annotated-draft.yaml}
-      - consumer: update-skill-guidelines.llm.default
+      - consumer: update-standards.llm.default
         authored:
           path: $repo/references/skill-standards/skill-guidelines.md
           content: skill
@@ -730,7 +730,7 @@ declarations:
       - skills/technical-flow-review/blueprint.yaml
       - skills/tight-mode/blueprint.yaml
       - skills/tool-applicability/blueprint.yaml
-      - skills/update-skill-guidelines/blueprint.yaml
+      - skills/update-standards/blueprint.yaml
       - skills/wrap-up/blueprint.yaml
   version_2:
     current_owner: typed root and sidecar blueprints plus references/blueprint/v2/
@@ -937,7 +937,7 @@ public_ids:
       - technical-flow-review
       - tight-mode
       - tool-applicability
-      - update-skill-guidelines
+      - update-standards
       - wrap-up
     named:
       - connect-google.llm.create-client

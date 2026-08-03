@@ -1,0 +1,38 @@
+schema_version: 6
+standard_version: 1.0.0
+revision: 9
+id: node-standards.instruction-node
+canonical_path: references/node-standards/instruction-node.standard.yaml
+title: Instruction Node Standard
+purpose: Add requirements common to instruction-language gateway nodes.
+imports:
+  node:
+    standard_id: node-standards.node
+    standard_version: 1.0.0
+    revision: 9
+    digest: sha256:438a67a64ba97196547699e63ba3a66c3dc36979726f6b0818bd0c7e19423540
+    artifact:
+      kind: artifact
+      ref: artifact.node-standard
+standards:
+- kind: family
+  id: skill-guidelines.output-focused-writing
+  title: 6. Output-focused, terse writing
+  children:
+  - kind: guidance
+    id: skill-guidelines.output-focused-writing.guidance-001
+    statement: '**6. Output-focused, terse writing** — specify what to invoke and how to
+
+      interpret output. Implementation internals belong in tool/script docs, not
+
+      `SKILL.md`. Every line earns its place.'
+artifacts:
+  artifact.node-standard:
+    path: references/node-standards/node.standard.yaml
+    format: yaml
+    roles:
+    - other
+domain_facts:
+  node.present: true
+  gateway.language: markdown
+  node.skill-owned: true

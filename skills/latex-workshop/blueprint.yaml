@@ -9,7 +9,6 @@ authority:
       - rg
       reason: Suggested approval for LaTeX Workshop-compatible builds.
     network: []
-category: research-assistant
 children: {}
 content:
 - SKILL\.md
@@ -17,6 +16,16 @@ description: Reconstructs and runs the effective VS Code LaTeX Workshop build fo
   a target TeX document, then reads artifacts from the configured output location.
 discovery:
   mechanism: skill
+  catalog:
+    domain: research
+    topics:
+    - scholarly-documents
+    - research-writing
+    visibility: featured
+  activated_by:
+  - user-request
+  - skill-workflow
+  persistent_modifier: false
 exports:
   latex-workshop.interface.default:
     access:
@@ -27,10 +36,8 @@ gateway:
   language: Markdown
   path: SKILL.md
 id: latex-workshop
-kind: builder
 namespace_exports: {}
 node_type: module
-role: document-processing
 schema_version: 5
 sources:
   latex-workshop.source.gateway:

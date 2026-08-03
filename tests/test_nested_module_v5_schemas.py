@@ -153,7 +153,7 @@ def test_v5_bundle_is_closed_and_every_schema_is_draft7_valid() -> None:
         if path.is_file() and not path.name.startswith(".")
     } == (
         SCHEMA_BUNDLE
-        | {"README.md", "blueprint.yaml", "runtime_dependencies.json", "template.yaml"}
+        | {"README.md", "blueprint.yaml", "config.yaml", "runtime_dependencies.json", "template.yaml"}
     )
 
     for name in SCHEMA_BUNDLE:

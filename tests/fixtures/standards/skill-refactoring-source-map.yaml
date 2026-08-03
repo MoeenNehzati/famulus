@@ -1,3 +1,7 @@
+superseded_targets:
+  skill-refactoring.remedies.extract-sub-skill: Legacy mutation steps crossed into a new unqueried owner; the live procedure now stops with an expanded-scope proposal.
+  skill-refactoring.remedies.decompose-script: Legacy steps edited SKILL.md and interfaces from a Python-source route; the live procedure is owner-local.
+  skill-refactoring.remedies.inline-thin-skill: Legacy deletion lacked direct and external caller proof; the live procedure stops for public-identity approval.
 units:
 - source: skill-smells.md
   line: 1
@@ -550,10 +554,12 @@ units:
 - source: skill-refactoring-catalog.md
   line: 27
   text: "**Risk:** None \u2014 purely additive."
+  disposition: superseded
+  reason: Generated synchronization may replace or delete stale derived content, so the source understated risk.
   targets:
   - target_ref: skill-refactoring.remedies.sync-generated-contract-artifacts
     field: /risk/statement
-    expected: "None \u2014 purely additive."
+    expected: Regeneration can replace or remove stale derived content; inspect the exact generated diff.
 - source: skill-refactoring-catalog.md
   line: 29
   text: '---'
@@ -766,10 +772,10 @@ units:
   targets:
   - target_ref: skill-refactoring.remedies.relocate-credentials
     field: /summary
-    expected: Move credentials from the skill directory to `~/.config/<name>/` with mode 600.
+    expected: Move credentials from repository files to the repository-approved secret store; retain only sensitive non-secret configuration under the user configuration directory.
   - target_ref: skill-refactoring.remedies.relocate-credentials
     field: /steps/0/instruction
-    expected: Move credentials, update all references, and verify scripts still authenticate.
+    expected: Move secret values through the repository-approved secret-store interface, update all references, and verify scripts still authenticate without exposing the value.
 - source: skill-refactoring-catalog.md
   line: 65
   text: "**Risk:** Medium \u2014 update all references, verify scripts still authenticate."

@@ -1,6 +1,5 @@
 authority:
   owns_filesystem: []
-category: skill-making-development-assistant
 children:
   skill-drift-rtx:
     base: module-root
@@ -11,6 +10,16 @@ description: Computes canonical v4 node hashes and reports whether installed mod
   have current signed certificates.
 discovery:
   mechanism: skill
+  catalog:
+    domain: assistant-development
+    topics:
+    - assistant-assurance
+    - assistant-architecture
+    visibility: listed
+  activated_by:
+  - user-request
+  - skill-workflow
+  persistent_modifier: false
 exports:
   skill-drift.interface.compute-hashes:
     access:
@@ -35,10 +44,8 @@ gateway:
   language: Markdown
   path: SKILL.md
 id: skill-drift
-kind: diagnostic
 namespace_exports: {}
 node_type: module
-role: meta-skill
 schema_version: 5
 sources:
   skill-drift.source.gateway:

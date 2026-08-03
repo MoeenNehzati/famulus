@@ -1,6 +1,5 @@
 authority:
   owns_filesystem: []
-category: productivity-general-assistant
 children:
   list-manager-rtx:
     base: module-root
@@ -12,6 +11,16 @@ description: Manage schema-validated local and cloud-backed personal lists throu
   updating, deleting, and migrating list data.
 discovery:
   mechanism: skill
+  catalog:
+    domain: personal-assistance
+    topics:
+    - personal-organization
+    - storage-and-sync
+    visibility: featured
+  activated_by:
+  - user-request
+  - skill-workflow
+  persistent_modifier: false
 exports:
   list-manager.interface.beautify-list:
     access:
@@ -139,10 +148,8 @@ gateway:
   language: Markdown
   path: SKILL.md
 id: list-manager
-kind: state-manager
 namespace_exports: {}
 node_type: module
-role: productivity
 schema_version: 5
 sources:
   list-manager.source.gateway:

@@ -1,0 +1,128 @@
+content:
+- standard_extractor\.py
+dependencies: []
+description: Validates pinned standard-v6 import closures and exposes their semantic,
+  evidence, remedy, artifact, and import records through field-addressable filters
+  and projections.
+gateway:
+  language: Python
+  path: standard_extractor.py
+id: common.source.standard-extractor
+interfaces:
+  common.source.standard-extractor.interface.python-api:
+    contract:
+      arguments:
+        repository:
+          description: Repository root containing the standard validator and every
+            artifact reachable from the selected standard leaf.
+          direct_io_ref: standard-repository
+          required: true
+          sensitivity: user-private
+          type:
+            access: read
+            kind: dir
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+        standard-leaf:
+          description: Absolute or repository-relative path to the most specialized
+            standard whose pinned import closure must be extracted.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+        facts:
+          description: Optional inspected target facts used to evaluate standard
+            applicability predicates.
+          required: false
+          sensitivity: user-private
+          type:
+            description: JSON-compatible mapping of fact names to scalar values.
+            kind: string
+        query:
+          description: Optional standard-record filter and projection using dotted
+            fields, wildcards, Boolean groups, and per-field regular expressions.
+          required: false
+          sensitivity: user-private
+          type:
+            description: JSON-compatible mapping with filter, select, and explain fields.
+            kind: string
+      caller_warnings: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: Standard leaf, pinned imports, schema, validator, and declared evidence artifacts.
+          formats: [yaml, json, markdown, python, text]
+          id: standard-repository
+          medium: local-filesystem
+          path: <repository>/**
+          path_match: glob
+          reason: Validate and extract the complete authoritative standard closure.
+          sensitivity: user-private
+          system: filesystem
+        writes:
+        - access: write
+          content: Validated closure metadata and filtered standard records.
+          formats: [python-object, json]
+          id: extraction
+          medium: local-system
+          sensitivity: derived-private
+      execution:
+        consistency:
+          snapshot: Results are derived from one validated read of the selected closure.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: result
+        - direct_io_ref: standard-repository
+          method: direct-io-state
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Consume only returned records and closure metadata.
+        class: success
+        effects: []
+        id: extracted
+        outputs: [result]
+      - caller_action: Correct the leaf, pinned closure, facts, or query before retrying.
+        class: error
+        effects: []
+        id: invalid-standard-query
+        outputs: []
+      outputs:
+      - audience: machine
+        cardinality: {minimum: 1, maximum: 1}
+        description: Closure metadata, effective facts, and filtered JSON-ready standard records.
+        direct_io_ref: extraction
+        empty: Never empty on success; the records list may be empty when no record matches.
+        id: result
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        type:
+          description: Python mapping with JSON-compatible values.
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Extract and query one authoritative standard closure.
+    version: 1
+node_type: behavioral_source
+platform_support: {linux: true, macos: true, windows: true}
+runtime_dependencies:
+- kind: python-package
+  name: PyYAML
+  platforms: {linux: true, macos: true, windows: true}
+  reason: Parses standard YAML documents.
+  version: any
+- kind: python-package
+  name: jsonschema
+  platforms: {linux: true, macos: true, windows: true}
+  reason: Supports the repository standard validator loaded by the extractor.
+  version: any
+schema_version: 5
+uses_interfaces: []
+version: 1

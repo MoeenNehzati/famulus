@@ -6,7 +6,8 @@ description: Use when reading signed certificate currentness or canonical node h
 <!-- BEGIN BLUEPRINT CONTRACT -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Category: skill-making-development-assistant
+Catalog: assistant-development; topics: assistant-assurance, assistant-architecture; visibility: listed
+Activation: user-request, skill-workflow; persistent modifier: no
 
 Skill Version: 2
 

@@ -91,7 +91,7 @@ certification dataclasses, pytest.
 - [ ] **Step 2: Run the focused status tests**
 
   Run:
-  `/usr/bin/env PYTHONPATH=/home/moeen/Documents/AI/src pytest -q tests/test_dispatcher_catalog.py`
+  `/usr/bin/env PYTHONPATH=src pytest -q tests/test_dispatcher_catalog.py`
 
   Expected: failures because `CatalogLookup` and `lookup_route_graph` do not
   exist.

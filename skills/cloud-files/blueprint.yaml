@@ -1,6 +1,5 @@
 authority:
   owns_filesystem: []
-category: system-assistant
 children:
   cloud-files-rtx:
     base: module-root
@@ -11,6 +10,16 @@ description: Provides caller-scoped read, write, and delete access to list and p
   files stored under the configured Google Drive root.
 discovery:
   mechanism: skill
+  catalog:
+    domain: assistant-operations
+    topics:
+    - external-integrations
+    - storage-and-sync
+    visibility: listed
+  activated_by:
+  - user-request
+  - skill-workflow
+  persistent_modifier: false
 exports:
   cloud-files.interface.default:
     access:
@@ -98,10 +107,8 @@ gateway:
   language: Markdown
   path: SKILL.md
 id: cloud-files
-kind: storage
 namespace_exports: {}
 node_type: module
-role: integration
 schema_version: 5
 sources:
   cloud-files.source.gateway:

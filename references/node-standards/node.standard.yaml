@@ -1,0 +1,596 @@
+schema_version: 6
+standard_version: 1.0.0
+revision: 9
+id: node-standards.node
+canonical_path: references/node-standards/node.standard.yaml
+title: Node Standard
+purpose: Define requirements common to registered skill-system graph nodes.
+imports:
+  refactoring:
+    standard_id: node-standards.refactoring
+    standard_version: 2.0.0
+    revision: 2
+    digest: sha256:717d311ce0b4ca7164f028d776d107e79de705f6e703c9263680d224b30987b8
+    artifact:
+      kind: artifact
+      ref: artifact.refactoring-standard
+standards:
+- kind: family
+  id: skill-guidelines.module-behavioral-source-v5
+  title: Version 5 nested modules and behavioral sources
+  summary: This family is the sole live blueprint and interface authoring authority.
+  children:
+  - kind: rule
+    id: skill-guidelines.module-behavioral-source-v5.node-kinds
+    assertions:
+    - id: unified-types
+      modality: required
+      statement: 'Every new or edited blueprint uses `schema_version: 5` and exactly one live `node_type`:
+        `node_type: module` or `node_type: behavioral_source`. A repository-managed discoverable skill
+        may have one direct non-discoverable implementation child. `_rtx/` is the canonical default location
+        for skill-owned executable code, but a skill without such code need not create or register an
+        implementation child. When present, the child has global ID `<skill-id>-rtx`, marker `_rtx/blueprint.yaml`,
+        gateway `_rtx/__init__.py`, no `discovery`, and no version-5 modules below it. `officina.common.blueprint_inventory.collect_blueprints`
+        mechanically accepts an absent child and validates the complete contract of a present child.'
+      atomicity: pending
+  - kind: rule
+    id: skill-guidelines.module-behavioral-source-v5.ownership
+    assertions:
+    - id: direct-ownership
+      modality: required
+      statement: Ownership selects the deepest registered module first and then its matching behavioral
+        source. Parent content prunes registered child roots. Each node hashes only directly owned inputs.
+        Hash what you own; certify what you depend on.
+      atomicity: pending
+- kind: family
+  id: skill-guidelines.blueprint-authoring
+  title: 'Blueprint authoring — REQUIRED: Use the version 5 schemas'
+  children:
+  - kind: rule
+    id: skill-guidelines.blueprint-authoring.requirement-001
+    assertions:
+    - id: source-block
+      modality: required
+      statement: '**Blueprint authoring — REQUIRED: Use the version 5 schemas**'
+      atomicity: pending
+  - kind: rule
+    id: skill-guidelines.blueprint-authoring.requirement-002
+    assertions:
+    - id: schema-driven-authoring
+      modality: required
+      statement: Author version-5 blueprints from the current schema and canonical templates rather than
+        inferring fields from older examples.
+- kind: family
+  id: skill-guidelines.state-ownership
+  title: 11. State data lives under the skill's directory
+  children:
+  - kind: rule
+    id: skill-guidelines.state-ownership.requirement-001
+    assertions:
+    - id: source-block
+      modality: required
+      statement: '**11. State data lives under the skill''s directory** — any persistent state a
+
+        skill writes must be stored under the skill''s own directory, not under system
+
+        directories or elsewhere outside the skills tree.'
+      atomicity: pending
+- kind: family
+  id: skill-guidelines.sensitive-configs
+  title: 12. Separate secret values from sensitive non-secret configuration
+  children:
+  - kind: rule
+    id: skill-guidelines.sensitive-configs.requirement-001
+    assertions:
+    - id: source-block
+      modality: required
+      statement: Sensitive non-secret configuration may live under `~/.config/<skill-name>/`.
+        Passwords, API keys, OAuth tokens, and equivalent secret values must use the
+        repository-approved secret-store interface and must never be stored under the
+        skill directory or in ordinary configuration files.
+      atomicity: pending
+- kind: family
+  id: skill-guidelines.cross-platform-tools
+  title: 13. Prefer widely available, cross-platform tools at every layer
+  children:
+  - kind: rule
+    id: skill-guidelines.cross-platform-tools.requirement-001
+    assertions:
+    - id: source-block
+      modality: required
+      statement: '**13. Prefer widely available, cross-platform tools at every layer** —
+
+        language, runtime, and any external tools invoked. Skills must work out of the
+
+        box across Linux, macOS, and Windows on machines other than your own.'
+      atomicity: pending
+- kind: family
+  id: skill-guidelines.system-evolution
+  title: 9. Skills are components in an evolving system — design accordingly.
+  children:
+  - kind: guidance
+    id: skill-guidelines.system-evolution.guidance-001
+    statement: '**9. Skills are components in an evolving system — design accordingly.**'
+  - kind: guidance
+    id: skill-guidelines.system-evolution.guidance-002
+    statement: "- **Reuse, don't reimplement.** Before writing new behavior, check whether an\n  existing\
+      \ skill already covers it. If yes, invoke or extend that skill."
+  - kind: rule
+    id: skill-guidelines.system-evolution.requirement-001
+    assertions:
+    - id: source-block
+      modality: required
+      statement: Cross-module dependencies must use the dependency module's public gateway or an authorized
+        exported interface; they must not depend on another module's internals.
+      atomicity: pending
+  - kind: guidance
+    id: skill-guidelines.system-evolution.guidance-005
+    statement: "- **Make your own interface explicit.** State what inputs your module expects\n  and what\
+      \ outputs it produces:"
+  - kind: guidance
+    id: skill-guidelines.system-evolution.guidance-006
+    statement: '  - the module blueprint declares sources, exports, and export access'
+  - kind: guidance
+    id: skill-guidelines.system-evolution.guidance-007
+    statement: '  - each behavioral source declares its own interfaces and direct dependencies'
+  - kind: guidance
+    id: skill-guidelines.system-evolution.guidance-008
+    statement: '  - `uses_interfaces` records exact sibling or exported interface dependencies'
+  - kind: guidance
+    id: skill-guidelines.system-evolution.guidance-009
+    statement: '  - each interface contract describes its immediate semantic IO'
+  - kind: guidance
+    id: skill-guidelines.system-evolution.guidance-010
+    statement: '  - `content` declares the files owned by each node'
+  - kind: guidance
+    id: skill-guidelines.system-evolution.guidance-011
+    statement: '  - dependency and interface versions are exact'
+- kind: family
+  id: skill-guidelines.canonical-blueprint-ownership
+  title: 7. The canonical blueprint graph owns all interface definitions
+  children:
+  - kind: rule
+    id: skill-guidelines.canonical-blueprint-ownership.requirement-001
+    assertions:
+    - id: source-block
+      modality: required
+      statement: The canonical blueprint graph owns module facts, source containment, exports, access,
+        source content, dependencies, and interface contracts. A node must not repeat a neighbor's intrinsic
+        information.
+      atomicity: pending
+  - kind: rule
+    id: skill-guidelines.canonical-blueprint-ownership.requirement-002
+    assertions:
+    - id: source-block
+      modality: required
+      statement: "- a source interface owns its contract and optional process binding; a module\n  export\
+        \ names that interface and access policy without copying either."
+      atomicity: pending
+- kind: family
+  id: skill-guidelines.assistant-neutrality
+  title: 14. Shared skill content must stay neutral about which specific AI-assistant host it runs under,
+    and must mention operating systems only in explicit platform-support metadata or platform-named implementation
+    files.
+  children:
+  - kind: rule
+    id: skill-guidelines.assistant-neutrality.requirement-001
+    assertions:
+    - id: source-block
+      modality: required
+      statement: Shared node content must remain neutral about assistant hosts and operating systems except
+        where a narrower platform metadata or platform-named implementation rule permits them.
+      atomicity: pending
+  - kind: rule
+    id: skill-guidelines.assistant-neutrality.requirement-003
+    assertions:
+    - id: source-block
+      modality: required
+      statement: "- authored blueprint files may name operating systems only in structured\n  `platform_support`\
+        \ and dependency `platforms` metadata. Do not put\n  platform-specific prose or implementation\
+        \ guidance in generic blueprint\n  fields."
+      atomicity: pending
+  - kind: rule
+    id: skill-guidelines.assistant-neutrality.requirement-004
+    assertions:
+    - id: source-block
+      modality: required
+      statement: "- Blueprint schema documentation and blueprint validation/sync tooling may name\n  the\
+        \ allowed platform keys because they define and enforce that metadata."
+      atomicity: pending
+- kind: procedure
+  id: node-standards.remedies.restore-local-node-conformance
+  title: Restore one node requirement safely
+  ordered: true
+  steps:
+  - kind: step
+    id: diagnose-exact-violation
+    instruction: Identify the exact violated assertion, its applicable exceptions, the owned files involved,
+      and the evidence that the current state violates it.
+  - kind: step
+    id: choose-smallest-compliant-change
+    instruction: Choose the smallest owner-local change that directly satisfies the assertion using only
+      the returned standard closure and query-resolved ownership; stop if it would move data or secrets,
+      rename a public identity, change dependencies, ownership, authorization, or platform support, or
+      if required facts or a unique safe remedy are missing.
+    requires: [diagnose-exact-violation]
+  - kind: step
+    id: apply-one-repair
+    instruction: Apply one bounded repair without changing unrelated behavior, public interfaces, effects,
+      authorization, or user-owned work.
+    requires: [choose-smallest-compliant-change]
+  - kind: step
+    id: verify-conformance
+    instruction: Run every returned relevant check and focused test, then inspect the exact diff against
+      the assertion and recorded baseline.
+    requires: [apply-one-repair]
+  invariants:
+  - id: standards-only-policy
+    statement: The repair introduces no repository policy not present in the returned closure.
+  - id: secrets-never-copied
+    statement: Secret material is never displayed, copied into ordinary files, or moved without an approved
+      secret-store destination.
+  completion_conditions:
+  - id: assertion-restored
+    statement: The selected assertion is satisfied and relevant verification passes, or work stops with
+      the unresolved fact or decision stated explicitly.
+  risk:
+    level: high
+    statement: A generic node repair can affect ownership, authorization, portability, or sensitive state;
+      ambiguity requires stopping rather than inventing policy.
+- kind: procedure
+  id: node-standards.remedies.repair-node-registration-and-ownership
+  title: Repair node registration and direct ownership
+  ordered: true
+  steps:
+  - kind: step
+    id: inventory-registered-graph
+    instruction: Resolve the canonical node inventory, deepest owning modules, direct behavioral sources,
+      registered child roots, declared content, exports, and all overlapping ownership evidence.
+  - kind: step
+    id: choose-canonical-owner
+    instruction: Determine the single schema-valid direct owner and registration edge from actual containment
+      and responsibility; stop if ownership intent or child identity is ambiguous.
+    requires: [inventory-registered-graph]
+  - kind: step
+    id: update-one-ownership-edge
+    instruction: Update one registration, content declaration, or source boundary at a time without moving
+      unrelated content or widening access.
+    requires: [choose-canonical-owner]
+  - kind: step
+    id: validate-ownership-graph
+    instruction: Run canonical blueprint inventory, ownership, graph, and currentness checks and verify
+      every affected file has exactly one direct owner.
+    requires: [update-one-ownership-edge]
+  invariants:
+  - id: child-roots-pruned
+    statement: Parent ownership excludes every registered child root and no content is multiply owned.
+  completion_conditions:
+  - id: unique-direct-ownership
+    statement: Registration and direct ownership are schema-valid, unambiguous, and verified for the affected
+      graph.
+  risk:
+    level: high
+    statement: Ownership changes affect hashing, authorization, dispatch, and certification boundaries.
+- kind: procedure
+  id: node-standards.remedies.repair-blueprint-from-schema
+  title: Repair a node blueprint from its canonical schema
+  ordered: true
+  steps:
+  - kind: step
+    id: select-node-schema
+    instruction: Resolve the node type, canonical schema and template, current ownership, and existing
+      behavior and interface contract from the query result.
+  - kind: step
+    id: author-existing-contract
+    instruction: Add or correct only the schema fields required to represent the existing node, source,
+      interfaces, dependencies, content, and access; stop if the existing contract is ambiguous.
+    requires: [select-node-schema]
+  - kind: step
+    id: regenerate-contract-views
+    instruction: Regenerate derived contract and interface views from the corrected blueprint.
+    requires: [author-existing-contract]
+  - kind: step
+    id: validate-blueprint-equivalence
+    instruction: Run schema, graph, ownership, contract-sync, dispatch, and focused behavior checks.
+    requires: [regenerate-contract-views]
+  invariants:
+  - id: records-existing-contract-only
+    statement: Blueprint repair does not invent new interfaces, dependencies, access, effects, or behavior.
+  completion_conditions:
+  - id: canonical-blueprint-valid
+    statement: The blueprint is schema-valid, generated views are current, and behavior remains equivalent.
+  risk:
+    level: high
+    statement: Incorrectly inferring an existing contract can change ownership, access, or dispatch.
+- kind: procedure
+  id: node-standards.remedies.restore-blueprint-authority
+  title: Restore the canonical blueprint as the single source of interface truth
+  ordered: true
+  steps:
+  - kind: step
+    id: locate-duplicated-fact
+    instruction: Identify the intrinsic module, source, export, access, dependency, content, contract, or
+      binding fact duplicated outside its canonical blueprint owner.
+  - kind: step
+    id: preserve-canonical-declaration
+    instruction: Correct or establish the fact at its schema-authorized blueprint location; stop if competing
+      declarations disagree and intent cannot be proven.
+    requires: [locate-duplicated-fact]
+  - kind: step
+    id: replace-duplicates-with-references
+    instruction: Replace authored copies with generated views or exact references to the canonical owner,
+      preserving public names and caller behavior.
+    requires: [preserve-canonical-declaration]
+  - kind: step
+    id: regenerate-and-validate
+    instruction: Regenerate derived contract views and run blueprint, interface, ownership, and behavior checks.
+    requires: [replace-duplicates-with-references]
+  invariants:
+  - id: no-competing-authority
+    statement: Each intrinsic fact has exactly one canonical blueprint owner; generated views remain derived.
+  completion_conditions:
+  - id: single-source-restored
+    statement: Duplicated intrinsic facts are removed and generated views match the canonical graph.
+  risk:
+    level: high
+    statement: Choosing the wrong authority can silently change interfaces or authorization.
+- kind: procedure
+  id: node-standards.remedies.restore-cross-platform-boundary
+  title: Restore a declared cross-platform boundary
+  ordered: true
+  steps:
+  - kind: step
+    id: characterize-platform-contract
+    instruction: Record supported platforms, public behavior, paths, process IO, dependencies, and current
+      platform-specific branches for the violated requirement.
+  - kind: step
+    id: choose-portable-or-explicit-adapter
+    instruction: Prefer a supported portable facility; otherwise isolate the smallest platform-specific
+      adapter behind a host-neutral interface and declare its platform support. Stop before dropping support.
+    requires: [characterize-platform-contract]
+  - kind: step
+    id: migrate-one-boundary
+    instruction: Replace one nonportable path, process, dependency, or implementation boundary without
+      changing public behavior.
+    requires: [choose-portable-or-explicit-adapter]
+  - kind: step
+    id: verify-supported-platforms
+    instruction: Run available platform-neutral tests and each returned platform-specific check; report
+      any supported platform that cannot be verified.
+    requires: [migrate-one-boundary]
+  invariants:
+  - id: support-not-silently-reduced
+    statement: A refactor never removes declared platform support without explicit user approval.
+  completion_conditions:
+  - id: platform-boundary-explicit
+    statement: The implementation is portable or platform-specific logic is isolated and declared with
+      verified host-neutral behavior.
+  risk:
+    level: high
+    statement: Platform changes can pass locally while breaking other supported hosts.
+artifacts:
+  artifact.refactoring-standard:
+    path: references/node-standards/refactoring.standard.yaml
+    format: yaml
+    roles:
+    - other
+  artifact.platform-neutral-validator:
+    path: validators/platform_neutral.py
+    format: python
+    roles:
+    - validator
+  artifact.platform-neutral-tests:
+    path: tests/validate_platform_neutral.py
+    format: python
+    roles:
+    - test
+  artifact.semantic-review-instructions:
+    path: references/node-standards/semantic-review.md
+    format: markdown
+    roles:
+    - other
+domain_facts:
+  node.present: true
+  node.skill-owned: true
+checks:
+  node.shared-platform-neutrality:
+    artifact:
+      kind: artifact
+      ref: artifact.platform-neutral-validator
+    selector:
+      kind: python-symbol
+      symbol: validate_with_graph
+    integration:
+      state: resolved
+      points:
+      - precommit
+    lifecycle: active
+    resolution:
+      state: resolved
+tests:
+  node.shared-platform-neutrality-tests:
+    artifact:
+      kind: artifact
+      ref: artifact.platform-neutral-tests
+    selector:
+      kind: pytest-node
+      node_id: tests/validate_platform_neutral.py
+    integration:
+      state: resolved
+      points:
+      - precommit
+    lifecycle: active
+    resolution:
+      state: resolved
+    targets:
+    - target:
+        kind: check
+        ref: node.shared-platform-neutrality
+      relation: tests-check
+      polarity: mixed
+      coverage_description: Exercises neutral and non-neutral shared content, platform-named files,
+        blueprint metadata, graph-owned artifacts, and case handling.
+assurances:
+  node.shared-platform-neutrality:
+    assertion:
+      kind: assertion
+      ref: skill-guidelines.assistant-neutrality.requirement-001#source-block
+    mechanism:
+      kind: check
+      ref: node.shared-platform-neutrality
+    relation: enforces
+    strength: partial
+    aspects:
+    - assistant-host-names
+    - operating-system-names
+    coverage_description: Scans shared owned content for named assistant hosts and operating systems
+      while honoring declared platform metadata and platform-named implementation boundaries.
+    limitation: Filename-based exceptions and explicitly excluded policy or platform-specific modules
+      remain outside this text check; blueprint graph validation supplies their structural boundary.
+    lifecycle: active
+    resolution:
+      state: resolved
+semantic_reviews:
+  node.identity:
+    coverage:
+    - target: {kind: family, ref: skill-guidelines.module-behavioral-source-v5}
+      strength: supporting
+      aspects: [naming, discovery, taxonomy, compatibility, permissions]
+      scope: node-and-descendants
+    reason: Identity and permission semantics require contextual review beyond schema validity.
+    question: Are naming, discovery, taxonomy, compatibility, and permission semantics coherent for the node?
+    procedure: Apply review-identity to the target, its registered descendants, and the returned evidence.
+    trigger: {kind: on-change, detail: "When node identity, discovery, taxonomy, compatibility, or permissions change."}
+    lifecycle: active
+    resolution: {state: resolved}
+    reviewer_kinds: [human, llm]
+    instructions: {artifact: {kind: artifact, ref: artifact.semantic-review-instructions}, instruction_id: review-identity}
+  node.blueprint:
+    coverage:
+    - target: {kind: family, ref: skill-guidelines.blueprint-authoring}
+      strength: supporting
+      aspects: [graph-authority, ownership, hashing, certification]
+      scope: node-and-descendants
+    reason: Blueprint meaning can be semantically wrong while remaining schema-valid.
+    question: Do graph authority, ownership, hashing, and certification claims match actual behavior?
+    procedure: Apply review-blueprint to the target graph, direct ownership, and declared evidence.
+    trigger: {kind: on-change, detail: "When blueprints, ownership, hashing, or certification claims change."}
+    lifecycle: active
+    resolution: {state: resolved}
+    reviewer_kinds: [human, llm]
+    instructions: {artifact: {kind: artifact, ref: artifact.semantic-review-instructions}, instruction_id: review-blueprint}
+  node.interfaces:
+    coverage:
+    - target: {kind: family, ref: skill-guidelines.canonical-blueprint-ownership}
+      strength: supporting
+      aspects: [public-contract, immediate-io, abstraction-boundary]
+      scope: node-and-descendants
+    reason: Interface descriptions and IO can leak internals or misstate public behavior without violating structure.
+    question: Do source-owned interfaces state their actual public contracts and immediate IO without leaking internals?
+    procedure: Apply review-interfaces to every selected source interface and its observable implementation behavior.
+    trigger: {kind: on-change, detail: "When an interface, export, binding, dependency, or observable IO changes."}
+    lifecycle: active
+    resolution: {state: resolved}
+    reviewer_kinds: [human, llm]
+    instructions: {artifact: {kind: artifact, ref: artifact.semantic-review-instructions}, instruction_id: review-interfaces}
+  node.runtime:
+    coverage:
+    - target: {kind: family, ref: skill-guidelines.system-evolution}
+      strength: supporting
+      aspects: [runtime-boundary, imports, injection, public-reference]
+      scope: node-and-descendants
+    reason: Runtime layering and dependency direction require repository-context judgment.
+    question: Are runtime boundaries, imports, injection lifecycle, and prose references aligned with public interfaces?
+    procedure: Apply review-runtime to runtime owners, dependency edges, lifecycle behavior, and authored references.
+    trigger: {kind: on-change, detail: "When runtime files, imports, injection, dependencies, or prose references change."}
+    lifecycle: active
+    resolution: {state: resolved}
+    reviewer_kinds: [human, llm]
+    instructions: {artifact: {kind: artifact, ref: artifact.semantic-review-instructions}, instruction_id: review-runtime}
+  node.state-security:
+    coverage:
+    - target: {kind: family, ref: skill-guidelines.state-ownership}
+      strength: supporting
+      aspects: [state-ownership, filesystem-effects]
+      scope: node-and-descendants
+    - target: {kind: family, ref: skill-guidelines.sensitive-configs}
+      strength: supporting
+      aspects: [credential-placement, sensitive-config]
+      scope: node-and-descendants
+    reason: State and credential placement can be unsafe even when declarations are structurally valid.
+    question: Do state ownership, credential placement, and declared filesystem effects match actual behavior?
+    procedure: Apply review-state-security without displaying or relocating secret material.
+    trigger: {kind: on-change, detail: "When persistent state, secrets, sensitive config, or filesystem effects change."}
+    lifecycle: active
+    resolution: {state: resolved}
+    reviewer_kinds: [human, llm]
+    instructions: {artifact: {kind: artifact, ref: artifact.semantic-review-instructions}, instruction_id: review-state-security}
+  node.portability:
+    coverage:
+    - target: {kind: family, ref: skill-guidelines.cross-platform-tools}
+      strength: supporting
+      aspects: [host-neutrality, platform-isolation, support-truthfulness]
+      scope: node-and-descendants
+    - target: {kind: family, ref: skill-guidelines.assistant-neutrality}
+      strength: supporting
+      aspects: [assistant-neutrality, platform-metadata]
+      scope: node-and-descendants
+    reason: Local success does not establish truthful cross-platform or host-neutral behavior.
+    question: Are neutrality claims true and platform-specific behavior isolated and explicitly declared?
+    procedure: Apply review-portability across supported platforms, adapters, metadata, and shared prose.
+    trigger: {kind: on-change, detail: "When dependencies, platform support, adapters, or host-facing prose change."}
+    lifecycle: active
+    resolution: {state: resolved}
+    reviewer_kinds: [human, llm]
+    instructions: {artifact: {kind: artifact, ref: artifact.semantic-review-instructions}, instruction_id: review-portability}
+  node.instructions:
+    coverage:
+    - target: {kind: family, ref: skill-guidelines.assistant-neutrality}
+      strength: supporting
+      aspects: [trigger-quality, terseness, neutrality, behavior-shaping]
+      scope: node-and-descendants
+    reason: Instruction quality and trigger behavior are semantic properties not fully captured by text checks.
+    question: Are triggers precise and instructions terse, neutral, and limited to behavior-shaping guidance?
+    procedure: Apply review-instructions to every selected instruction gateway and reference.
+    trigger: {kind: on-change, detail: "When instruction-language gateways or references change."}
+    lifecycle: active
+    resolution: {state: resolved}
+    reviewer_kinds: [human, llm]
+    instructions: {artifact: {kind: artifact, ref: artifact.semantic-review-instructions}, instruction_id: review-instructions}
+  node.workflow:
+    coverage:
+    - target: {kind: family, ref: skill-guidelines.system-evolution}
+      strength: supporting
+      aspects: [coordination, change-scope, validation, publication]
+      scope: node-and-descendants
+    reason: Workflow correctness depends on the requested scope and current repository state.
+    question: Do coordination, change scope, validation, and publication instructions fit the requested workflow?
+    procedure: Apply review-workflow to the requested operation, current diff, dependencies, and publication boundary.
+    trigger: {kind: on-change, detail: "When coordination, validation, or publication workflow changes."}
+    lifecycle: active
+    resolution: {state: resolved}
+    reviewer_kinds: [human, llm]
+    instructions: {artifact: {kind: artifact, ref: artifact.semantic-review-instructions}, instruction_id: review-workflow}
+  node.validation:
+    coverage:
+    - target: {kind: family, ref: skill-guidelines.blueprint-authoring}
+      strength: supporting
+      aspects: [mechanical-coverage, limitations, residual-gap]
+      scope: node-and-descendants
+    reason: Passing checks do not prove semantic coverage, and claimed enforcement must remain honest.
+    question: Does each normative rule have the strongest honest coverage with every residual semantic gap stated?
+    procedure: Apply review-validation to returned rules, checks, tests, assurances, evidence, and limitations.
+    trigger: {kind: on-change, detail: "When normative rules, enforcement, evidence, or limitations change."}
+    lifecycle: active
+    resolution: {state: resolved}
+    reviewer_kinds: [human, llm]
+    instructions: {artifact: {kind: artifact, ref: artifact.semantic-review-instructions}, instruction_id: review-validation}
+links:
+  node-kinds-remedy: {source: {kind: family, ref: skill-guidelines.module-behavioral-source-v5}, relation: remedied-by, target: {kind: procedure, ref: node-standards.remedies.repair-node-registration-and-ownership}, lifecycle: active, resolution: {state: resolved}}
+  blueprint-authoring-remedy: {source: {kind: family, ref: skill-guidelines.blueprint-authoring}, relation: remedied-by, target: {kind: procedure, ref: node-standards.remedies.repair-blueprint-from-schema}, lifecycle: active, resolution: {state: resolved}}
+  state-ownership-remedy: {source: {kind: family, ref: skill-guidelines.state-ownership}, relation: remedied-by, target: {kind: procedure, document: refactoring, ref: skill-refactoring.remedies.relocate-state}, lifecycle: active, resolution: {state: resolved}}
+  sensitive-config-remedy: {source: {kind: family, ref: skill-guidelines.sensitive-configs}, relation: remedied-by, target: {kind: procedure, document: refactoring, ref: skill-refactoring.remedies.relocate-credentials}, lifecycle: active, resolution: {state: resolved}}
+  cross-platform-remedy: {source: {kind: family, ref: skill-guidelines.cross-platform-tools}, relation: remedied-by, target: {kind: procedure, ref: node-standards.remedies.restore-cross-platform-boundary}, lifecycle: active, resolution: {state: resolved}}
+  system-evolution-remedy: {source: {kind: family, ref: skill-guidelines.system-evolution}, relation: remedied-by, target: {kind: procedure, document: refactoring, ref: skill-refactoring.remedies.depend-on-interface}, lifecycle: active, resolution: {state: resolved}}
+  blueprint-ownership-remedy: {source: {kind: family, ref: skill-guidelines.canonical-blueprint-ownership}, relation: remedied-by, target: {kind: procedure, ref: node-standards.remedies.restore-blueprint-authority}, lifecycle: active, resolution: {state: resolved}}
+  neutrality-remedy: {source: {kind: family, ref: skill-guidelines.assistant-neutrality}, relation: remedied-by, target: {kind: procedure, ref: node-standards.remedies.restore-local-node-conformance}, lifecycle: active, resolution: {state: resolved}}

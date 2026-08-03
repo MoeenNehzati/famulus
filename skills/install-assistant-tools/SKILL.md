@@ -6,7 +6,8 @@ description: Install or update the assistant, collab, coauthor, and tw/tmux-work
 <!-- BEGIN BLUEPRINT CONTRACT -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Category: skill-making-development-assistant
+Catalog: assistant-operations; topics: assistant-installation, system-maintenance; visibility: listed
+Activation: user-request; persistent modifier: no
 
 Skill Version: 3
 

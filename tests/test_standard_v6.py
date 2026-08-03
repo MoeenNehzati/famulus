@@ -2,6 +2,7 @@ import importlib.util
 import hashlib
 from pathlib import Path
 
+import pytest
 import yaml
 
 ROOT = Path(__file__).parents[1]
@@ -108,31 +109,135 @@ def test_schema_accepts_remedied_by() -> None:
     assert validate_document(document(), ROOT) == []
 
 
-def test_remedied_by_source_must_descend_from_diagnostic_signals() -> None:
+def test_schema_accepts_applicability_on_semantic_items() -> None:
     value = document()
+    value["domain_facts"] = {"gateway.language": "python"}
+    diagnostic_family = value["standards"][0]
+    diagnostic_family["applies_when"] = {
+        "fact": "gateway.language",
+        "equals": "python",
+    }
+    diagnostic_family["children"].append(
+        {
+            "kind": "guidance",
+            "id": "skill-refactoring.guidance.python-scope",
+            "statement": "Apply this guidance to Python gateways.",
+            "applies_when": {"fact": "gateway.language", "equals": "python"},
+        }
+    )
+    diagnostic_family["children"].append(
+        {
+            "kind": "rule",
+            "id": "skill-refactoring.rules.small-scope",
+            "applies_when": {"fact": "gateway.language", "equals": "python"},
+            "assertions": [
+                {
+                    "id": "preserve-contract",
+                    "modality": "required",
+                    "statement": "Preserve the selected scope's observable contract.",
+                    "applies_when": {
+                        "fact": "gateway.language",
+                        "equals": "python",
+                    },
+                }
+            ],
+        }
+    )
+    value["standards"][1]["children"][0]["applies_when"] = {
+        "fact": "gateway.language",
+        "equals": "python",
+    }
+
+    assert validate_document(value, ROOT) == []
+
+
+def test_schema_rejects_non_scalar_domain_facts() -> None:
+    value = document()
+    value["domain_facts"] = {"gateway.language": ["python"]}
+
+    errors = validate_document(value, ROOT)
+
+    assert any("schema validation failed" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        {"fact": "gateway.language", "equals": {"name": "python"}},
+        {"fact": "gateway.language", "in": ["python", ["markdown"]]},
+    ],
+)
+def test_schema_rejects_non_scalar_predicate_values(predicate: dict) -> None:
+    value = document()
+    value["standards"][0]["applies_when"] = predicate
+
+    errors = validate_document(value, ROOT)
+
+    assert any("schema validation failed" in error for error in errors)
+
+
+def test_applicability_predicates_use_three_valued_logic() -> None:
+    facts = {"gateway.language": "python", "node.public": True}
+
+    assert validator.evaluate_predicate(
+        {"fact": "gateway.language", "equals": "python"}, facts
+    ) == "true"
+    assert validator.evaluate_predicate(
+        {"fact": "gateway.language", "equals": "markdown"}, facts
+    ) == "false"
+    assert validator.evaluate_predicate(
+        {"fact": "python.uses-inheritance", "equals": True}, facts
+    ) == "unknown"
+    assert validator.evaluate_predicate(
+        {
+            "all": [
+                {"fact": "node.public", "equals": True},
+                {"fact": "python.uses-inheritance", "equals": True},
+            ]
+        },
+        facts,
+    ) == "unknown"
+    assert validator.evaluate_predicate(
+        {
+            "any": [
+                {"fact": "gateway.language", "equals": "python"},
+                {"fact": "python.uses-inheritance", "equals": True},
+            ]
+        },
+        facts,
+    ) == "true"
+    assert validator.evaluate_predicate(
+        {"not": {"fact": "python.uses-inheritance", "equals": True}}, facts
+    ) == "unknown"
+    assert validator.evaluate_predicate(
+        {"fact": "python.version", "equals": 1.0}, {"python.version": 1}
+    ) == "false"
+
+
+def test_remedied_by_accepts_assertion_noncompliance_source() -> None:
+    value = document()
+    value["standards"][0]["children"].append(
+        {
+            "kind": "rule",
+            "id": "skill-refactoring.rules.small-scope",
+            "assertions": [
+                {
+                    "id": "preserve-contract",
+                    "modality": "required",
+                    "statement": "Preserve the selected scope's observable contract.",
+                }
+            ],
+        }
+    )
     value["links"]["link.bloated-skill.extract-script"]["source"] = {
-        "kind": "family",
-        "ref": "skill-refactoring.remedies.extract-script",
+        "kind": "assertion",
+        "ref": "skill-refactoring.rules.small-scope#preserve-contract",
     }
 
-    errors = validate_document(value, ROOT)
-
-    assert any("diagnostic-signals" in error for error in errors)
+    assert validate_document(value, ROOT) == []
 
 
-def test_remedied_by_target_must_descend_from_refactoring_moves() -> None:
-    value = document()
-    value["links"]["link.bloated-skill.extract-script"]["target"] = {
-        "kind": "family",
-        "ref": "skill-refactoring.smells.bloated-skill",
-    }
-
-    errors = validate_document(value, ROOT)
-
-    assert any("refactoring-moves" in error for error in errors)
-
-
-def test_remedied_by_source_must_be_a_smell_family() -> None:
+def test_remedied_by_rejects_non_diagnostic_source_kind() -> None:
     value = document()
     value["links"]["link.bloated-skill.extract-script"]["source"] = {
         "kind": "definition",
@@ -141,19 +246,19 @@ def test_remedied_by_source_must_be_a_smell_family() -> None:
 
     errors = validate_document(value, ROOT)
 
-    assert any("source must be a family" in error for error in errors)
+    assert any("source must be a family, rule, or assertion" in error for error in errors)
 
 
-def test_remedied_by_target_must_be_a_family_or_procedure() -> None:
+def test_remedied_by_target_must_be_a_procedure() -> None:
     value = document()
     value["links"]["link.bloated-skill.extract-script"]["target"] = {
-        "kind": "step",
-        "ref": "skill-refactoring.remedies.extract-script#move-logic",
+        "kind": "family",
+        "ref": "skill-refactoring.smells.bloated-skill",
     }
 
     errors = validate_document(value, ROOT)
 
-    assert any("target must be a family or procedure" in error for error in errors)
+    assert any("target must be a procedure" in error for error in errors)
 
 
 def test_renderer_labels_forward_and_inverse_remedy_links() -> None:
@@ -323,6 +428,103 @@ def _add_import(value: dict, artifact_path: str, imported_path: Path) -> None:
     }
 
 
+def _set_imported_domain(
+    value: dict,
+    imported_path: Path,
+    domain_facts: dict,
+) -> None:
+    imported = yaml.safe_load(imported_path.read_text(encoding="utf-8"))
+    imported["domain_facts"] = domain_facts
+    _write_standard(imported_path, imported)
+    value["imports"]["imported"]["digest"] = (
+        "sha256:" + hashlib.sha256(imported_path.read_bytes()).hexdigest()
+    )
+
+
+def test_update_standards_acceptance_cascades_pins_evidence_and_view(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "repo"
+    base_path = root / "references" / "standards" / "base.standard.yaml"
+    dependent_path = root / "references" / "standards" / "dependent.standard.yaml"
+    source_path = root / "evidence" / "policy.md"
+    view_path = root / "references" / "standards" / "base.md"
+    source_path.parent.mkdir(parents=True)
+    source_path.write_text("policy v1\n", encoding="utf-8")
+
+    base = document()
+    base["id"] = "base"
+    base["canonical_path"] = "references/standards/base.standard.yaml"
+    base["artifacts"]["policy-source"] = {
+        "path": "evidence/policy.md",
+        "format": "markdown",
+        "roles": ["documentation"],
+    }
+    base["sources"] = {
+        "policy": {
+            "artifact": {"kind": "artifact", "ref": "policy-source"},
+            "revision": "v1",
+            "digest": "sha256:" + hashlib.sha256(source_path.read_bytes()).hexdigest(),
+        }
+    }
+    _write_standard(base_path, base)
+    view_path.write_text(render_document(base), encoding="utf-8")
+
+    dependent = document()
+    dependent["id"] = "dependent"
+    dependent["canonical_path"] = "references/standards/dependent.standard.yaml"
+    dependent["artifacts"]["base-standard"] = {
+        "path": "references/standards/base.standard.yaml",
+        "format": "yaml",
+        "roles": ["other"],
+    }
+    dependent["imports"] = {
+        "base": {
+            "standard_id": "base",
+            "standard_version": base["standard_version"],
+            "revision": base["revision"],
+            "digest": "sha256:" + hashlib.sha256(base_path.read_bytes()).hexdigest(),
+            "artifact": {"kind": "artifact", "ref": "base-standard"},
+        }
+    }
+    _write_standard(dependent_path, dependent)
+
+    assert validate_file(base_path, root=root) == []
+    assert validate_file(dependent_path, root=root) == []
+
+    source_path.write_text("policy v2\n", encoding="utf-8")
+    base["revision"] = 2
+    base["purpose"] = "Diagnose skill smells under the revised policy."
+    _write_standard(base_path, base)
+
+    assert any(
+        "sources.policy" in error and "digest" in error
+        for error in validate_file(base_path, root=root)
+    )
+    assert any(
+        "imports.base" in error and "digest mismatch" in error
+        for error in validate_file(dependent_path, root=root)
+    )
+    assert view_path.read_text(encoding="utf-8") != render_document(base)
+
+    base["sources"]["policy"]["revision"] = "v2"
+    base["sources"]["policy"]["digest"] = (
+        "sha256:" + hashlib.sha256(source_path.read_bytes()).hexdigest()
+    )
+    _write_standard(base_path, base)
+    dependent["revision"] = 2
+    dependent["imports"]["base"]["revision"] = base["revision"]
+    dependent["imports"]["base"]["digest"] = (
+        "sha256:" + hashlib.sha256(base_path.read_bytes()).hexdigest()
+    )
+    _write_standard(dependent_path, dependent)
+    view_path.write_text(render_document(base), encoding="utf-8")
+
+    assert validate_file(base_path, root=root) == []
+    assert validate_file(dependent_path, root=root) == []
+    assert view_path.read_text(encoding="utf-8") == render_document(base)
+
+
 def test_validate_file_accepts_in_root_import_and_source_artifacts(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     standard = root / "standards" / "main.standard.yaml"
@@ -347,6 +549,81 @@ def test_validate_file_accepts_in_root_import_and_source_artifacts(tmp_path: Pat
     _write_standard(standard, value)
 
     assert validate_file(standard, root=root) == []
+
+
+def test_validate_file_accepts_import_domain_subset(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    standard = root / "standards" / "main.standard.yaml"
+    imported_path = root / "standards" / "imported.standard.yaml"
+    value = document()
+    _add_import(value, "standards/imported.standard.yaml", imported_path)
+    _set_imported_domain(
+        value,
+        imported_path,
+        {"node.present": True, "gateway.language": "python"},
+    )
+    value["domain_facts"] = {
+        "node.present": True,
+        "gateway.language": "python",
+        "node.structure": "module",
+    }
+    _write_standard(standard, value)
+
+    assert validate_file(standard, root=root) == []
+
+
+def test_validate_file_rejects_missing_import_domain_fact(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    standard = root / "standards" / "main.standard.yaml"
+    imported_path = root / "standards" / "imported.standard.yaml"
+    value = document()
+    _add_import(value, "standards/imported.standard.yaml", imported_path)
+    _set_imported_domain(value, imported_path, {"node.present": True})
+    value["domain_facts"] = {"gateway.language": "python"}
+    _write_standard(standard, value)
+
+    errors = validate_file(standard, root=root)
+
+    assert any(
+        "imports.imported.domain_facts: missing inherited fact node.present" in error
+        for error in errors
+    )
+
+
+def test_validate_file_rejects_conflicting_import_domain_fact(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    standard = root / "standards" / "main.standard.yaml"
+    imported_path = root / "standards" / "imported.standard.yaml"
+    value = document()
+    _add_import(value, "standards/imported.standard.yaml", imported_path)
+    _set_imported_domain(value, imported_path, {"gateway.language": "python"})
+    value["domain_facts"] = {"gateway.language": "markdown"}
+    _write_standard(standard, value)
+
+    errors = validate_file(standard, root=root)
+
+    assert any(
+        "imports.imported.domain_facts: conflicting fact gateway.language" in error
+        for error in errors
+    )
+
+
+def test_validate_file_rejects_numeric_import_domain_type_change(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    standard = root / "standards" / "main.standard.yaml"
+    imported_path = root / "standards" / "imported.standard.yaml"
+    value = document()
+    _add_import(value, "standards/imported.standard.yaml", imported_path)
+    _set_imported_domain(value, imported_path, {"python.version": 1})
+    value["domain_facts"] = {"python.version": 1.0}
+    _write_standard(standard, value)
+
+    errors = validate_file(standard, root=root)
+
+    assert any(
+        "imports.imported.domain_facts: conflicting fact python.version" in error
+        for error in errors
+    )
 
 
 def test_validate_file_rejects_absolute_import_artifact(tmp_path: Path) -> None:

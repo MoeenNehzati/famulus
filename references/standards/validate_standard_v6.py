@@ -5,7 +5,7 @@ from pathlib import Path
 import jsonschema, yaml
 
 HERE=Path(__file__).parent
-OPTIONAL=('imports','applicability_facts','schema_authorities','schema_authority_links','checks','tests','assurances','semantic_reviews','links','sources','source_units','evidence_claims','external_exceptions')
+OPTIONAL=('imports','domain_facts','schema_authorities','schema_authority_links','checks','tests','assurances','semantic_reviews','links','sources','source_units','evidence_claims','external_exceptions')
 SEMANTIC={'family','rule','assertion','guidance','definition','procedure','step','evidence-claim'}
 
 def _schema():
@@ -25,6 +25,29 @@ def atomic_write(path,data):
 def _maps(d):
  for k in OPTIONAL: d.setdefault(k,{})
  return d
+def _fact_equal(left,right):
+ return type(left) is type(right) and left==right
+def evaluate_predicate(predicate,facts):
+ """Evaluate an applicability predicate as ``true``, ``false``, or ``unknown``.
+
+ Missing facts stay unknown so incomplete target inspection cannot silently
+ remove a potentially applicable standard from a refactoring query.
+ """
+ if 'fact' in predicate:
+  fact=predicate['fact']
+  if fact not in facts:return 'unknown'
+  if 'equals' in predicate:return 'true' if _fact_equal(facts[fact],predicate['equals']) else 'false'
+  return 'true' if any(_fact_equal(facts[fact],candidate) for candidate in predicate['in']) else 'false'
+ if 'not' in predicate:
+  state=evaluate_predicate(predicate['not'],facts)
+  return {'true':'false','false':'true','unknown':'unknown'}[state]
+ operator='all' if 'all' in predicate else 'any'
+ states=[evaluate_predicate(child,facts) for child in predicate[operator]]
+ if operator=='all':
+  if 'false' in states:return 'false'
+  return 'true' if all(state=='true' for state in states) else 'unknown'
+ if 'true' in states:return 'true'
+ return 'false' if all(state=='false' for state in states) else 'unknown'
 def _index(items,errors):
  out={}
  def add(k,i,n):
@@ -96,14 +119,10 @@ def _validate_document(document):
   local(l['source'],f'links.{lid}');local(l['target'],f'links.{lid}')
   if l['relation']=='remedied-by':
    source=l['source'];target=l['target']
-   if source['kind']!='family':
-    e.append(f'links.{lid}: remedied-by source must be a family')
-   if target['kind'] not in {'family','procedure'}:
-    e.append(f'links.{lid}: remedied-by target must be a family or procedure')
-   if source.get('document') or 'skill-refactoring.diagnostic-signals' not in ancestry.get(source['ref'],[]):
-    e.append(f'links.{lid}: remedied-by source must descend from diagnostic-signals')
-   if target.get('document') or 'skill-refactoring.refactoring-moves' not in ancestry.get(target['ref'],[]):
-    e.append(f'links.{lid}: remedied-by target must descend from refactoring-moves')
+   if source['kind'] not in {'family','rule','assertion'}:
+    e.append(f'links.{lid}: remedied-by source must be a family, rule, or assertion')
+   if target['kind']!='procedure':
+    e.append(f'links.{lid}: remedied-by target must be a procedure')
  for lid,l in d['schema_authority_links'].items():
   local(l['semantic_item'],f'schema_authority_links.{lid}'); a=d['schema_authorities'].get(l['authority']['ref']); ll,lr=status(l)
   if not a:e.append(f'schema_authority_links.{lid}: dangling authority')
@@ -246,10 +265,15 @@ def validate_file(path,root=None,cache=None,_stack=None):
   except Exception as exc:errors.append(f'imports.{alias}: cannot load imported document {target}: {exc}');continue
   try:jsonschema.validate(child,_schema())
   except jsonschema.ValidationError as exc:errors.append(f'imports.{alias}: schema validation failed at {exc.json_path}: {exc.message}');continue
-  imported[alias]=_maps(child)
+  child=_maps(child);imported[alias]=child
   for field in ('standard_version','revision'):
    if child[field]!=decl[field]:errors.append(f'imports.{alias}: {field} mismatch')
   if child['id']!=decl['standard_id']:errors.append(f'imports.{alias}: standard_id mismatch')
+  for fact,value in child['domain_facts'].items():
+   if fact not in d['domain_facts']:
+    errors.append(f'imports.{alias}.domain_facts: missing inherited fact {fact}')
+   elif not _fact_equal(d['domain_facts'][fact],value):
+    errors.append(f'imports.{alias}.domain_facts: conflicting fact {fact}')
   errors.extend(f'imports.{alias}: {x}' for x in validate_file(target,root,cache,stack))
  # Every external semantic reference site uses one resolver.
  refs=[]

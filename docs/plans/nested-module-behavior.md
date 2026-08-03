@@ -505,7 +505,7 @@ Existing `_rtx` roots:
 
 Skills receiving minimal empty children:
 
-`git-workflow`, `update-skill-guidelines`, `loose-mode`, `prepare-handoff`,
+`git-workflow`, `update-standards`, `loose-mode`, `prepare-handoff`,
 `proof-audit`, `latex-workshop`, `technical-flow-review`, `notation-review`,
 `tool-applicability`, `formal-prose-review`, `fix-bisync`, `wrap-up`,
 `refactor-skills`, `make-tex-docstring`, `hook-maker`, and `tight-mode`.

@@ -1,6 +1,5 @@
 authority:
   owns_filesystem: []
-category: system-assistant
 children:
   pdf-to-markdown-rtx:
     base: module-root
@@ -11,6 +10,15 @@ description: Obtains readable research-paper source by preferring extracted LaTe
   archives and otherwise guiding PDF-to-Markdown conversion.
 discovery:
   mechanism: skill
+  catalog:
+    domain: research
+    topics:
+    - scholarly-documents
+    visibility: listed
+  activated_by:
+  - user-request
+  - skill-workflow
+  persistent_modifier: false
 exports:
   pdf-to-markdown.interface.default:
     access:
@@ -35,10 +43,8 @@ gateway:
   language: Markdown
   path: SKILL.md
 id: pdf-to-markdown
-kind: converter
 namespace_exports: {}
 node_type: module
-role: document-processing
 schema_version: 5
 sources:
   pdf-to-markdown.source.gateway:

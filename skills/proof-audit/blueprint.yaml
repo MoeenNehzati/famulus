@@ -3,7 +3,6 @@ authority:
   suggested_permissions:
     bash: []
     network: []
-category: research-assistant
 children: {}
 content:
 - SKILL\.md
@@ -11,6 +10,17 @@ description: Audits mathematical arguments for soundness, coherence, redundancy,
   assumptions, theorem-use gaps, and edge cases before proposing repairs.
 discovery:
   mechanism: skill
+  catalog:
+    domain: research
+    topics:
+    - mathematical-reasoning
+    - research-writing
+    - scholarly-documents
+    visibility: featured
+  activated_by:
+  - user-request
+  - skill-workflow
+  persistent_modifier: false
 exports:
   proof-audit.interface.default:
     access:
@@ -21,10 +31,8 @@ gateway:
   language: Markdown
   path: SKILL.md
 id: proof-audit
-kind: auditor
 namespace_exports: {}
 node_type: module
-role: math-reasoning
 schema_version: 5
 sources:
   proof-audit.source.gateway:

@@ -6,7 +6,8 @@ description: Follow VS Code LaTeX Workshop build behavior for TeX/LaTeX document
 <!-- BEGIN BLUEPRINT CONTRACT -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Category: research-assistant
+Catalog: research; topics: scholarly-documents, research-writing; visibility: featured
+Activation: user-request, skill-workflow; persistent modifier: no
 
 Skill Version: 2
 

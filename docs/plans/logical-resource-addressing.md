@@ -506,7 +506,7 @@ This enforcement proves that declarations are well-formed, mutually interpretabl
 ### Task 7: Publish and Enforce the Normative Standard
 
 **Files:**
-- Create through `update-skill-guidelines`: `references/skill-standards/logical-resources.standard.yaml`
+- Create through `update-standards`: `references/skill-standards/logical-resources.standard.yaml`
 - Generate: `references/skill-standards/logical-resources.md`
 - Modify: `docs/skill-blueprints.md`
 - Modify: `references/blueprint/README.md`
@@ -520,7 +520,7 @@ This enforcement proves that declarations are well-formed, mutually interpretabl
 - Consumes: verified registry and behavior from Tasks 1 through 6.
 
 - [ ] **Step 1:** Write failing standard and documentation expectations for every normative section of this plan and every initial registry definition.
-- [ ] **Step 2:** Create the version-6 YAML standard through `update-skill-guidelines`, generate its Markdown view, and document blueprint examples plus enforcement limits.
+- [ ] **Step 2:** Create the version-6 YAML standard through `update-standards`, generate its Markdown view, and document blueprint examples plus enforcement limits.
 - [ ] **Step 3:** Run the four focused standards and documentation suites; expect all to pass.
 - [ ] **Step 4:** Run the complete resource registry, pattern, influence, blueprint, and migration suites; expect all to pass.
 - [ ] **Step 5:** Run `.githooks/pre-commit` and `.githooks/skill/check-blueprints`; expect both checks to pass.

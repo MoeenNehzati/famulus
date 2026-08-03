@@ -1,0 +1,165 @@
+content:
+- SKILL\.md
+dependencies: []
+description: Resolves a whole node or owned sub-scope and routes supported gateway
+  languages to their refactoring interfaces.
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: refactor-node.source.gateway
+interfaces:
+  refactor-node.source.gateway.interface.default:
+    contract:
+      arguments:
+        request:
+          description: Refactoring request naming a node or repository artifact,
+            optional narrower scope, objective, and constraints.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+      caller_warnings:
+      - external-side-effect: A selected language route may edit repository files
+          only after the user approves its proposal.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: Target, scope, objective, constraints, and approvals.
+          formats:
+          - text
+          id: request
+          medium: prompt
+          sensitivity: user-private
+          system: agent-runtime
+        - access: read
+          content: Query result, selected source content, scoped instructions, callers,
+            tests, and current diff.
+          formats:
+          - markdown
+          - yaml
+          - json
+          - python
+          - text
+          id: repository-state
+          medium: repository-filesystem
+          reason: Consume query-resolved ownership and inspect observable behavior
+            without reconstructing the blueprint graph.
+          sensitivity: user-private
+        writes:
+        - access: write
+          content: Approved behavior-preserving changes within returned owner scopes.
+          formats: [markdown, yaml, json, python, text]
+          id: repository-write
+          medium: repository-filesystem
+          reason: Apply only a proposal approved through the selected language route.
+          sensitivity: user-private
+        - access: write
+          content: Route decision, scope boundary, proposal, approval request, or
+            routed result.
+          formats:
+          - markdown
+          id: response
+          medium: prompt
+          sensitivity: derived-private
+          system: agent-runtime
+      execution:
+        consistency:
+          live: Use the standards query result for ownership, language, applicability,
+            evidence, and remedies.
+        effects:
+        - action: update
+          confirmation_evidence:
+            kind: output
+            output_ref: response
+          direct_io_ref: repository-write
+          id: routed-repository-change
+          may_occur_in_outcomes: [routed]
+          reversibility:
+            reversible: Restore only the failed current move after inspecting the exact diff.
+          value_source:
+            argument_ref: request
+            kind: argument
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            per_effect_only: Each approved move is verified before another begins.
+          concurrent_invocations:
+            unsafe: Concurrent edits can invalidate scope, characterization, or verification.
+          idempotency:
+            non_idempotent: Repeating a routed refactoring can duplicate or further alter state.
+          on_uncertain_completion:
+            verify_then_decide: Inspect the exact diff and verification evidence before proceeding.
+          partial_effects_on_failure:
+            possible: Earlier verified moves may remain when a later move fails.
+          rollback_on_failure:
+            available: Revert only the failed current move without disturbing unrelated work.
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: response
+        - direct_io_ref: repository-state
+          method: direct-io-state
+      helpers: []
+      interaction:
+        channel: tty
+        mode: interactive
+        unattended_outcome: approval-required
+      outcomes:
+      - caller_action: Review the resolved scope and routed proposal.
+        class: success
+        effects: [routed-repository-change]
+        id: routed
+        outputs:
+        - response
+      - caller_action: Approve the routed proposal before repository mutation.
+        class: refusal
+        effects: []
+        id: approval-required
+        outputs:
+        - response
+      - caller_action: Narrow the target or wait for a supported language route.
+        class: refusal
+        effects: []
+        id: unsupported
+        outputs:
+        - response
+      - caller_action: Resolve the reported ownership or repository-read failure.
+        class: error
+        effects: []
+        id: failed
+        outputs:
+        - response
+      outputs:
+      - audience: human
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Resolved owner and scope, selected route, unsupported partition,
+          approval request, or routed result.
+        direct_io_ref: response
+        empty: Never empty.
+        id: response
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Resolve node ownership and gateway language, then invoke the supported
+      refactoring route without crossing scope boundaries.
+    version: 1
+node_type: behavioral_source
+schema_version: 5
+uses_interfaces:
+- interface: refactor-node.interface.query-standards
+  version: 2
+- interface: refactor-node.source.instruction-refactoring.interface.refactor-instructions
+  version: 1
+- interface: refactor-node.source.python-refactoring.interface.refactor-python
+  version: 1
+version: 2

@@ -1,6 +1,5 @@
 authority:
   owns_filesystem: []
-category: productivity-general-assistant
 children:
   email-client-rtx:
     base: module-root
@@ -12,6 +11,16 @@ description: Read, search, download from, configure, verify, and send email thro
   store.
 discovery:
   mechanism: skill
+  catalog:
+    domain: personal-assistance
+    topics:
+    - communications
+    - external-integrations
+    visibility: featured
+  activated_by:
+  - user-request
+  - skill-workflow
+  persistent_modifier: false
 exports:
   email-client.interface.accounts-add:
     access:
@@ -115,10 +124,8 @@ gateway:
   language: Markdown
   path: SKILL.md
 id: email-client
-kind: client
 namespace_exports: {}
 node_type: module
-role: productivity
 schema_version: 5
 sources:
   email-client.source.gateway:

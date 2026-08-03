@@ -11,7 +11,6 @@ authority:
     match: regex
     path: ^\.certificates/[^/]+\.jsonl$
     reason: The certifier is the sole writer of append-only node certificate histories.
-category: skill-making-development-assistant
 children:
   skill-certifier-rtx:
     base: module-root
@@ -22,6 +21,16 @@ description: Certifies exact v5 module targets after mechanical checks and seman
   review, then issues append-only Ed25519 certificates for the exact reviewed commit.
 discovery:
   mechanism: skill
+  catalog:
+    domain: assistant-development
+    topics:
+    - assistant-assurance
+    - assistant-architecture
+    visibility: listed
+  activated_by:
+  - user-request
+  - skill-workflow
+  persistent_modifier: false
 exports:
   skill-certifier.interface.certify:
     access:
@@ -39,10 +48,8 @@ gateway:
   language: Markdown
   path: SKILL.md
 id: skill-certifier
-kind: certifier
 namespace_exports: {}
 node_type: module
-role: meta-skill
 schema_version: 5
 sources:
   skill-certifier.source.gateway:

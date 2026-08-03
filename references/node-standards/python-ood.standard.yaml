@@ -1,0 +1,434 @@
+schema_version: 6
+standard_version: 1.0.0
+revision: 6
+id: node-standards.python-ood
+canonical_path: references/node-standards/python-ood.standard.yaml
+title: Python Object-Oriented Refactoring Standard
+purpose: Define behavior-preserving Python object-design diagnoses, invariants, and remedies.
+standards:
+- kind: family
+  id: python-ood.behavior-preservation
+  title: Preserve the complete observable contract
+  children:
+  - kind: rule
+    id: python-ood.behavioral-contract
+    assertions:
+    - id: preserve-observables
+      modality: required
+      statement: Preserve published names, return values, exceptions, effects and their ordering,
+        edge cases, and supported subclass behavior unless the user separately approves a behavior change.
+  - kind: procedure
+    id: python-ood.remedies.characterize-before-moving
+    title: Characterize before moving structure
+    ordered: true
+    steps:
+    - kind: step
+      id: map-observables
+      instruction: Map callers, public and subclass surfaces, return values, exceptions, effects,
+        state transitions, invariants, and existing verification for the selected scope.
+    - kind: step
+      id: record-baseline
+      instruction: Run focused characterization checks and retain their exact results.
+      requires: [map-observables]
+    invariants:
+    - id: no-unapproved-behavior-change
+      statement: Structural work remains separable from feature, bug-fix, and public-API work.
+    completion_conditions:
+    - id: baseline-recorded
+      statement: Every observable contract at risk has a baseline or an explicit unresolved limitation.
+    risk:
+      level: low
+      statement: Read-only characterization.
+  - kind: procedure
+    id: python-ood.remedies.restore-observable-contract
+    title: Restore the last verified observable contract
+    ordered: true
+    steps:
+    - kind: step
+      id: identify-regression
+      instruction: Compare the failing observable with the recorded baseline and isolate the structural
+        change that introduced the regression.
+    - kind: step
+      id: restore-smallest-unit
+      instruction: Revert that structural unit or make the smallest direct restoration of the recorded
+        contract; do not patch forward into a new behavior.
+      requires: [identify-regression]
+    - kind: step
+      id: rerun-baseline
+      instruction: Re-run the characterization checks and inspect the exact diff before resuming refactoring.
+      requires: [restore-smallest-unit]
+    invariants:
+    - id: preserve-unrelated-work
+      statement: Do not revert unrelated user changes or widen the repair into feature or bug-fix work.
+    completion_conditions:
+    - id: baseline-restored
+      statement: The recorded observable contract passes again, or refactoring stops with the unresolved
+        behavioral difference stated explicitly.
+    risk:
+      level: medium
+      statement: Restoration can discard valid structural work if the regressing unit is not isolated first.
+- kind: family
+  id: python-ood.responsibility-design
+  title: Assign one coherent owner to related state and decisions
+  children:
+  - kind: rule
+    id: python-ood.responsibility-owner
+    assertions:
+    - id: class-earned-by-state
+      modality: required
+      statement: Keep stateless transformations as module functions; introduce or retain a class only
+        when identity, lifecycle, coordinated state, invariants, or substitutable behavior needs one owner.
+  - kind: rule
+    id: python-ood.cohesive-class
+    assertions:
+    - id: related-state-decisions
+      modality: required
+      statement: A class must own a coherent responsibility; unrelated state, decisions, and effects
+        must not accumulate merely because they share a caller.
+  - kind: procedure
+    id: python-ood.remedies.extract-or-move-responsibility
+    title: Extract or move one responsibility
+    ordered: true
+    steps:
+    - kind: step
+      id: identify-pressure
+      instruction: Identify the concrete responsibility pressure from state, invariants, decisions,
+        dependencies, effects, and callers.
+    - kind: step
+      id: choose-smallest-move
+      instruction: Choose the smallest fitting move, such as Extract Function, Extract Class,
+        Move Function, Encapsulate Collection, Introduce Parameter Object, Separate Query from
+        Modifier, or Split Phase.
+      requires: [identify-pressure]
+    - kind: step
+      id: move-one-unit
+      instruction: Move one coherent unit while preserving the old public entry when external callers
+        are unknown.
+      requires: [choose-smallest-move]
+    - kind: step
+      id: verify-contract
+      instruction: Re-run the characterization checks and inspect the exact diff.
+      requires: [move-one-unit]
+    invariants:
+    - id: smallest-sufficient-move
+      statement: Do not introduce speculative abstractions or mandatory class extraction.
+    completion_conditions:
+    - id: pressure-reduced
+      statement: The diagnosed responsibility pressure is reduced without widening the public API.
+    risk:
+      level: high
+      statement: Ownership and collaboration change.
+- kind: family
+  id: python-ood.collaboration-contracts
+  title: Use the narrowest honest collaboration contract
+  children:
+  - kind: rule
+    id: python-ood.composition-before-inheritance
+    assertions:
+    - id: honest-substitutability
+      modality: required
+      statement: Prefer composition or delegation for capability reuse; use inheritance only for a
+        genuine substitutable relationship with an intentional subclass surface.
+  - kind: rule
+    id: python-ood.protocol-selection
+    assertions:
+    - id: selective-contract
+      modality: required
+      statement: Use a small Protocol only when structural typing expresses the operations a collaborator
+        actually needs; use an abstract base class only when nominal membership, shared implementation,
+        or runtime registration is part of the contract. Preserve intentional runtime membership checks;
+        runtime-checkable Protocols verify attribute presence rather than type signatures.
+  - kind: procedure
+    id: python-ood.remedies.replace-inheritance-with-delegation
+    title: Replace unsuitable inheritance with delegation
+    ordered: true
+    steps:
+    - kind: step
+      id: inspect-subclass-contract
+      instruction: Inspect callers, overrides, method resolution order, and cooperative super calls.
+    - kind: step
+      id: introduce-delegate
+      instruction: Introduce the narrow collaborator and preserve the existing entry surface.
+      requires: [inspect-subclass-contract]
+    - kind: step
+      id: migrate-one-call
+      instruction: Delegate one behavior at a time and verify substitutability-sensitive tests.
+      requires: [introduce-delegate]
+    invariants:
+    - id: preserve-mro-semantics
+      statement: Do not change MRO or cooperative super behavior without explicit evidence and approval.
+    completion_conditions:
+    - id: capability-without-false-is-a
+      statement: Capability reuse no longer asserts a false is-a relationship.
+    risk:
+      level: high
+      statement: Inheritance and runtime dispatch semantics can change.
+  - kind: procedure
+    id: python-ood.remedies.introduce-narrow-contract
+    title: Introduce the narrowest honest collaboration contract
+    ordered: true
+    steps:
+    - kind: step
+      id: inspect-required-operations
+      instruction: Enumerate only the operations the collaborator's current callers use, including
+        runtime membership checks and shared implementation requirements.
+    - kind: step
+      id: choose-contract-form
+      instruction: Choose a function or callable type for one operation, a Protocol for structural
+        operations, or an abstract base class only for a required nominal or shared-runtime contract.
+      requires: [inspect-required-operations]
+    - kind: step
+      id: introduce-without-widening
+      instruction: Introduce the contract at the nearest stable boundary and verify existing collaborators
+        satisfy it without adding unused members.
+      requires: [choose-contract-form]
+    invariants:
+    - id: no-speculative-members
+      statement: The contract contains no member unsupported by a current caller need.
+    completion_conditions:
+    - id: honest-contract
+      statement: The selected contract form matches structural, nominal, runtime, and implementation needs.
+    risk:
+      level: medium
+      statement: Type and runtime membership behavior can diverge when the wrong contract form is chosen.
+- kind: family
+  id: python-ood.data-model-semantics
+  title: Preserve Python data-model and lookup semantics
+  children:
+  - kind: rule
+    id: python-ood.dataclass-contract
+    assertions:
+    - id: generated-method-semantics
+      modality: required
+      statement: Add or change dataclass only after checking initialization and keyword-only signatures,
+        representation, equality and ordering, hashing, mutability, pattern matching, slots and weak
+        references, and inheritance behavior against the existing contract.
+  - kind: rule
+    id: python-ood.attribute-lookup-contract
+    assertions:
+    - id: descriptor-slot-special-method-semantics
+      modality: required
+      statement: Before moving attributes or special methods, preserve descriptor precedence, caching,
+        assignment and deletion behavior, instance-dictionary and weak-reference support, slots, and
+        type-level special-method lookup.
+  - kind: procedure
+    id: python-ood.remedies.move-attribute-safely
+    title: Move an attribute without changing lookup behavior
+    ordered: true
+    steps:
+    - kind: step
+      id: classify-lookup
+      instruction: Classify the attribute as instance data, data descriptor, non-data descriptor,
+        property, cached property, slot, or special method.
+    - kind: step
+      id: preserve-operations
+      instruction: Preserve computation, caching, assignment, deletion, weak-reference, and lookup behavior.
+      requires: [classify-lookup]
+    - kind: step
+      id: verify-explicit-and-implicit-use
+      instruction: Verify both explicit access and implicit operator or protocol use.
+      requires: [preserve-operations]
+    invariants:
+    - id: lookup-equivalence
+      statement: Equivalent syntax must reach behavior with the same lookup and caching semantics.
+    completion_conditions:
+    - id: access-contract-verified
+      statement: Relevant access, assignment, deletion, caching, and operator behavior is verified.
+    risk:
+      level: high
+      statement: Attribute lookup changes can be silent and nonlocal.
+  - kind: procedure
+    id: python-ood.remedies.review-generated-data-model
+    title: Review generated data-model behavior before adopting a dataclass
+    ordered: true
+    steps:
+    - kind: step
+      id: characterize-generated-surface
+      instruction: Record current initialization, representation, equality, ordering, hashing, mutability,
+        inheritance, and pattern-matching behavior that generated methods could affect.
+    - kind: step
+      id: compare-dataclass-configuration
+      instruction: Compare each generated method and field option with the recorded contract; retain an
+        explicit implementation when generation would differ.
+      requires: [characterize-generated-surface]
+    - kind: step
+      id: verify-data-model
+      instruction: Run focused checks for every generated or retained data-model operation.
+      requires: [compare-dataclass-configuration]
+    invariants:
+    - id: generated-method-equivalence
+      statement: Dataclass generation must not silently change public construction or value semantics.
+    completion_conditions:
+    - id: generated-surface-accounted-for
+      statement: Every enabled or disabled generated method has an explicit contract justification.
+    risk:
+      level: high
+      statement: Generated methods can change public semantics while leaving ordinary method calls intact.
+- kind: family
+  id: python-ood.effects-and-tests
+  title: Keep effects visible and tests behavior-oriented
+  children:
+  - kind: rule
+    id: python-ood.effect-boundaries
+    assertions:
+    - id: narrow-visible-effects
+      modality: required
+      statement: Keep filesystem, process, network, clock, environment, and similar effects behind
+        narrow visible boundaries; inject a collaborator or function only when it reduces global coupling
+        without widening the public API.
+  - kind: rule
+    id: python-ood.patch-lookup-site
+    assertions:
+    - id: patch-where-looked-up
+      modality: required
+      statement: When a test patches a name, patch where the system under test looks it up; preserve
+        behavioral assertions rather than rewriting tests to accept changed behavior.
+  - kind: procedure
+    id: python-ood.remedies.isolate-effect-boundary
+    title: Isolate one effect boundary
+    ordered: true
+    steps:
+    - kind: step
+      id: locate-effect
+      instruction: Identify the exact effect, lookup site, ordering constraints, and failure behavior.
+    - kind: step
+      id: introduce-seam
+      instruction: Pass the narrowest collaborator or function at the nearest stable boundary.
+      requires: [locate-effect]
+    - kind: step
+      id: preserve-effect-contract
+      instruction: Verify arguments, ordering, errors, and observable side effects.
+      requires: [introduce-seam]
+    invariants:
+    - id: no-test-only-public-api
+      statement: Do not add a production public method used only for test cleanup or mocking.
+    completion_conditions:
+    - id: effect-visible
+      statement: The effect is owned at a visible boundary and remains behaviorally equivalent.
+    risk:
+      level: medium
+      statement: Dependency lookup and effect ordering can change.
+  - kind: procedure
+    id: python-ood.remedies.patch-at-lookup-site
+    title: Patch the name at its lookup site
+    ordered: true
+    steps:
+    - kind: step
+      id: trace-binding
+      instruction: Trace how the system under test imports or binds the collaborator and identify the
+        namespace from which the name is read at execution time.
+    - kind: step
+      id: correct-patch-target
+      instruction: Patch that lookup namespace without adding or changing a production seam.
+      requires: [trace-binding]
+    - kind: step
+      id: preserve-behavioral-assertions
+      instruction: Verify the patch intercepts the call and retain assertions about public behavior,
+        arguments, ordering, errors, and effects.
+      requires: [correct-patch-target]
+    invariants:
+    - id: no-test-driven-production-change
+      statement: A wrong patch target must not by itself cause a production API or dependency change.
+    completion_conditions:
+    - id: lookup-intercepted
+      statement: The test patches the exact name read by the system under test and still checks behavior.
+    risk:
+      level: low
+      statement: Test-only binding correction with unchanged production behavior.
+- kind: family
+  id: python-ood.orphan-cleanup
+  title: Remove only proven orphans
+  children:
+  - kind: rule
+    id: python-ood.proven-orphans-only
+    assertions:
+    - id: unknown-callers-stop
+      modality: required
+      statement: Remove unused imports, unreachable branches, obsolete wrappers, or uncalled helpers only
+        after proving them orphaned inside the authorized scope; preserve or stop on unknown external callers.
+  - kind: procedure
+    id: python-ood.remedies.remove-proven-orphans
+    title: Remove one proven orphan
+    ordered: true
+    steps:
+    - kind: step
+      id: search-static-and-dynamic-callers
+      instruction: Search imports, exports, entry points, registrations, dispatcher contracts, reflection,
+        string lookup, subclasses, tests, and repository history relevant to the authorized scope.
+    - kind: step
+      id: classify-caller-certainty
+      instruction: Classify the candidate as proven orphaned or unresolved; stop on unresolved external use.
+      requires: [search-static-and-dynamic-callers]
+    - kind: step
+      id: remove-one-orphan
+      instruction: Remove one proven orphan and run the smallest checks that exercise its former boundary.
+      requires: [classify-caller-certainty]
+    invariants:
+    - id: unknown-callers-preserved
+      statement: Unknown or out-of-scope callers prevent removal.
+    completion_conditions:
+    - id: orphan-removal-verified
+      statement: The removed unit has no remaining static, dynamic, registered, or external caller evidence.
+    risk:
+      level: medium
+      statement: Dynamic Python references can evade local static searches.
+artifacts: {}
+links:
+  behavior-remedy:
+    source: {kind: family, ref: python-ood.behavior-preservation}
+    relation: remedied-by
+    target: {kind: procedure, ref: python-ood.remedies.restore-observable-contract}
+    lifecycle: active
+    resolution: {state: resolved}
+  responsibility-remedy:
+    source: {kind: family, ref: python-ood.responsibility-design}
+    relation: remedied-by
+    target: {kind: procedure, ref: python-ood.remedies.extract-or-move-responsibility}
+    lifecycle: active
+    resolution: {state: resolved}
+  inheritance-remedy:
+    source: {kind: rule, ref: python-ood.composition-before-inheritance}
+    relation: remedied-by
+    target: {kind: procedure, ref: python-ood.remedies.replace-inheritance-with-delegation}
+    lifecycle: active
+    resolution: {state: resolved}
+  protocol-remedy:
+    source: {kind: rule, ref: python-ood.protocol-selection}
+    relation: remedied-by
+    target: {kind: procedure, ref: python-ood.remedies.introduce-narrow-contract}
+    lifecycle: active
+    resolution: {state: resolved}
+  dataclass-remedy:
+    source: {kind: rule, ref: python-ood.dataclass-contract}
+    relation: remedied-by
+    target: {kind: procedure, ref: python-ood.remedies.review-generated-data-model}
+    lifecycle: active
+    resolution: {state: resolved}
+  attribute-remedy:
+    source: {kind: rule, ref: python-ood.attribute-lookup-contract}
+    relation: remedied-by
+    target: {kind: procedure, ref: python-ood.remedies.move-attribute-safely}
+    lifecycle: active
+    resolution: {state: resolved}
+  effect-remedy:
+    source: {kind: rule, ref: python-ood.effect-boundaries}
+    relation: remedied-by
+    target: {kind: procedure, ref: python-ood.remedies.isolate-effect-boundary}
+    lifecycle: active
+    resolution: {state: resolved}
+  patch-remedy:
+    source: {kind: rule, ref: python-ood.patch-lookup-site}
+    relation: remedied-by
+    target: {kind: procedure, ref: python-ood.remedies.patch-at-lookup-site}
+    lifecycle: active
+    resolution: {state: resolved}
+  orphan-remedy:
+    source: {kind: rule, ref: python-ood.proven-orphans-only}
+    relation: remedied-by
+    target: {kind: procedure, ref: python-ood.remedies.remove-proven-orphans}
+    lifecycle: active
+    resolution: {state: resolved}
+domain_facts:
+  node.present: true
+  gateway.language: python
+  node.skill-owned: true

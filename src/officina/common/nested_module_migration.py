@@ -19,7 +19,7 @@ import stat
 import tempfile
 from typing import Any, Iterable, Mapping, Sequence
 
-from jsonschema import Draft7Validator, RefResolver
+import jsonschema
 import yaml
 
 from .atomic_files import AtomicWriteError, read_regular_file_bytes
@@ -43,6 +43,7 @@ from .certificate_records import (
     certificate_public_key_root,
     parse_certificate_log,
 )
+from .configured_schema import ConfiguredSchemaError, configured_validator
 from .git_provenance import capture_git_snapshot, run_git
 from .migration_candidate import (
     CutoverChange,
@@ -312,18 +313,34 @@ def _read_yaml(path: Path, *, root: Path) -> dict[str, Any]:
     return loaded
 
 
-def _schema_validator(schema_root: Path) -> Draft7Validator:
+def _schema_validator(schema_root: Path) -> jsonschema.protocols.Validator:
     try:
-        schema = json.loads((schema_root / "schema.json").read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        schema_path = (schema_root / "schema.json").resolve()
+        config_path = schema_root / "config.yaml"
+        if config_path.is_file():
+            return configured_validator(
+                schema_path,
+                config_path=config_path,
+                allowed_schema_root=schema_root,
+            )
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        validator_class = jsonschema.validators.validator_for(schema)
+        validator_class.check_schema(schema)
+        resolver = jsonschema.RefResolver(
+            base_uri=schema_path.as_uri(),
+            referrer=schema,
+        )
+        return validator_class(schema, resolver=resolver)
+    except (
+        OSError,
+        UnicodeError,
+        json.JSONDecodeError,
+        jsonschema.SchemaError,
+        ConfiguredSchemaError,
+    ) as exc:
         raise NestedModuleMigrationError(
             f"schema bundle is unavailable: {schema_root}"
         ) from exc
-    resolver = RefResolver(
-        base_uri=schema_root.resolve().as_uri() + "/",
-        referrer=schema,
-    )
-    return Draft7Validator(schema, resolver=resolver)
 
 
 def _validate_document(
@@ -331,7 +348,7 @@ def _validate_document(
     path: Path,
     *,
     root: Path,
-    validator: Draft7Validator,
+    validator: jsonschema.protocols.Validator,
     version: int,
 ) -> None:
     if declaration.get("schema_version") != version:
@@ -716,8 +733,60 @@ def _exact_repository_skill(
         module_root.parent == Path("skills")
         and _is_regular(root / module_root / "SKILL.md")
         and declaration.get("id") == module_root.name
-        and declaration.get("discovery") == {"mechanism": "skill"}
+        and isinstance(declaration.get("discovery"), Mapping)
+        and declaration["discovery"].get("mechanism") == "skill"
     )
+
+
+_LEGACY_CATEGORY_DOMAINS = {
+    "research-assistant": "research",
+    "general-assistant": "personal-assistance",
+    "productivity-general-assistant": "personal-assistance",
+    "workflow-general-assistant": "assistant-interaction",
+    "development-assistant": "software-development",
+    "coding-development-assistant": "software-development",
+    "skill-making-development-assistant": "assistant-development",
+    "system-assistant": "assistant-operations",
+}
+
+_LEGACY_ROLE_TOPICS = {
+    "productivity": "personal-organization",
+    "research-writing": "research-writing",
+    "math-reasoning": "mathematical-reasoning",
+    "document-processing": "scholarly-documents",
+    "development-assistant": "repository-workflow",
+    "system-operations": "system-maintenance",
+    "integration": "external-integrations",
+    "meta-skill": "assistant-authoring",
+    "automation": "task-automation",
+    "mode": "reasoning-control",
+}
+
+
+def _migrated_skill_discovery(
+    declaration: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Translate the retired v4 taxonomy into configured v5 discovery data."""
+
+    category = declaration.get("category")
+    role = declaration.get("role")
+    domain = _LEGACY_CATEGORY_DOMAINS.get(category)
+    topic = _LEGACY_ROLE_TOPICS.get(role)
+    if domain is None or topic is None:
+        raise NestedModuleMigrationError(
+            f"{declaration.get('id', '<unknown>')}: repository-managed v4 skill "
+            "requires recognized category and role values for catalog migration"
+        )
+    return {
+        "mechanism": "skill",
+        "catalog": {
+            "domain": domain,
+            "topics": [topic],
+            "visibility": "listed",
+        },
+        "activated_by": ["user-request", "skill-workflow"],
+        "persistent_modifier": role == "mode",
+    }
 
 
 def _validate_repository_skill_predicate(
@@ -2691,17 +2760,11 @@ def _overlay_canonical_cutover_references(
         for root in (
             project_root / "references" / "blueprint",
             project_root / "references" / "certification",
+            project_root / "references" / "node-standards",
         )
         for path in root.rglob("*")
         if path.is_file()
     ]
-    reference_paths.extend(
-        project_root / "references" / "skill-standards" / name
-        for name in (
-            "skill-guidelines.standard.yaml",
-            "skill-guidelines.md",
-        )
-    )
     for source in sorted(set(reference_paths)):
         relative = source.relative_to(project_root)
         _put(
@@ -2727,6 +2790,10 @@ def _overlay_canonical_cutover_references(
             "references/skill-standards/"
             "skill-guidelines.v2.candidate.md"
         ),
+        Path("references/skill-standards/skill-guidelines.standard.yaml"),
+        Path("references/skill-standards/skill-guidelines.md"),
+        Path("references/skill-standards/skill-refactoring.standard.yaml"),
+        Path("references/skill-standards/skill-refactoring.md"),
     }
     for relative in tracked:
         if relative in legacy_files or any(
@@ -3443,6 +3510,10 @@ def _plan_v4(
                 "exports": parent_exports,
             }
         )
+        parent.pop("category", None)
+        parent.pop("role", None)
+        parent.pop("kind", None)
+        parent["discovery"] = _migrated_skill_discovery(module.declaration)
         node_versions[module_id] = old_version + 1
         node_versions[child_id] = 1
         if not any(

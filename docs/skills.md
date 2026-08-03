@@ -8,67 +8,79 @@ This page is the complete skill inventory. For walkthroughs and examples, start 
 
 The graph gives a visual overview of the live skill set. The sections below are the complete text inventory.
 
-## General Assistant
+## Personal Assistance
 
-### Productivity
+### Featured
 
-- `email-client` — Read, search, and send email across configured accounts
-- `email-triage` — Triage the inbox into todo and triage lists since the last run
-- `g-calendar` — Read and modify Google Calendar via a local OAuth CLI
-- `get-weather` — Fetch weather for a location, day, or date range
-- `list-manager` — Manage personal YAML lists in cloud storage
+- `daily-plan` — Generate today's plan from calendar, todos, and weather _(topics: planning, personal-organization; activated by: user request, skill workflow)_
+- `email-client` — Read, search, and send email across configured accounts _(topics: communications, external-integrations; activated by: user request, skill workflow)_
+- `email-triage` — Triage the inbox into todo and triage lists since the last run _(topics: communications, personal-organization; activated by: user request, skill workflow)_
+- `g-calendar` — Read and modify Google Calendar via a local OAuth CLI _(topics: planning, personal-organization, external-integrations; activated by: user request, skill workflow)_
+- `get-weather` — Fetch weather for a location, day, or date range _(topics: planning, external-integrations; activated by: user request, skill workflow)_
+- `list-manager` — Manage personal YAML lists in cloud storage _(topics: personal-organization, storage-and-sync; activated by: user request, skill workflow)_
+- `wrap-up` — Review the day, record completions, and capture follow-up items _(topics: planning, personal-organization, session-management; activated by: user request, skill workflow)_
 
-### Coordination
+## Research
 
-- `connect-google` — A Google service needs a shared OAuth client prepared, or when the user asks to prepare Google authentication for Famulus
-- `daily-plan` — Generate today's plan from calendar, todos, and weather
-- `find-handoff-candidates` — You need a mechanical, non-interpretive scan of today's (or another day's) work sessions to find ones that had substantial activity but no completed handoff
-- `llm-wakeup` — Schedule a Claude or Codex session after a usage reset, infer a wakeup from a timeout, or manage per-session automatic wakeups
-- `loose-mode` — Broad, fast exploration mode with breadth over certainty
-- `prepare-handoff` — Prepare a clean handoff with workflow and documentation updates
-- `tight-mode` — Rigorous, verified output mode with certainty over speed
-- `tool-applicability` — Check whether a theorem or framework achieves a target in the current setting
-- `wrap-up` — Review the day, record completions, and capture follow-up items
+### Featured
 
-## Research Assistant
+- `bib-audit` — Audit a `.bib` file for validity, style, external metadata, and duplicates _(topics: scholarly-documents, research-writing; activated by: user request, skill workflow)_
+- `formal-prose-review` — Polish grammar, tone, and concision in technical prose without touching the math _(topics: research-writing, scholarly-documents; activated by: user request, skill workflow)_
+- `latex-workshop` — Follow VS Code LaTeX Workshop build behavior for TeX/LaTeX documents _(topics: scholarly-documents, research-writing; activated by: user request, skill workflow)_
+- `math-dependency-graph` — Extract an assumptions-to-results dependency graph from a LaTeX document _(topics: mathematical-reasoning, visualization, scholarly-documents; activated by: user request, skill workflow)_
+- `notation-review` — Audit and improve mathematical notation for lightness, unification, reuse across scopes, and semantic transparency _(topics: mathematical-reasoning, research-writing; activated by: user request, skill workflow)_
+- `proof-audit` — Audit a proof for soundness, coherence, hidden assumptions, and redundancy _(topics: mathematical-reasoning, research-writing, scholarly-documents; activated by: user request, skill workflow)_
+- `technical-flow-review` — Review flow, structure, motivation, and readability of a technical document _(topics: research-writing, scholarly-documents; activated by: user request, skill workflow)_
+- `tool-applicability` — Check whether a theorem or framework achieves a target in the current setting _(topics: mathematical-reasoning; activated by: user request, skill workflow)_
 
-### Skills
+### Listed
 
-- `bib-audit` — Audit a `.bib` file for validity, style, external metadata, and duplicates
-- `formal-prose-review` — Polish grammar, tone, and concision in technical prose without touching the math
-- `latex-workshop` — Follow VS Code LaTeX Workshop build behavior for TeX/LaTeX documents
-- `make-tex-docstring` — Create or propose a top-of-document TeX comment block that records the document profile and intended use
-- `math-dependency-graph` — Extract an assumptions-to-results dependency graph from a LaTeX document
-- `notation-review` — Audit and improve mathematical notation for lightness, unification, reuse across scopes, and semantic transparency
-- `proof-audit` — Audit a proof for soundness, coherence, hidden assumptions, and redundancy
-- `technical-flow-review` — Review flow, structure, motivation, and readability of a technical document
+- `make-tex-docstring` — Create or propose a top-of-document TeX comment block that records the document profile and intended use _(topics: scholarly-documents, research-writing; activated by: user request, skill workflow)_
+- `pdf-to-markdown` — Convert a research-paper PDF into LLM-readable text _(topics: scholarly-documents; activated by: user request, skill workflow)_
 
-## System Assistant
+## Software Development
 
-### Skills
+### Listed
 
-- `cloud-files` — Bounded read/write of plain files under a configured Google Drive root
-- `fix-bisync` — Diagnose and repair rclone bisync failures
-- `pdf-to-markdown` — Convert a research-paper PDF into LLM-readable text
-- `recurring-tasks` — Manage AI-driven recurring jobs as systemd user timers with health checks
+- `git-workflow` — Branch-safety checks and commit hygiene for any repo _(topics: repository-workflow; activated by: user request, skill workflow)_
+- `initialize-tdd` — Scaffold a staged, approval-gated TDD project _(topics: repository-workflow, assistant-assurance; activated by: user request)_
 
-## Development Assistant
+## Assistant Development
 
-### Skill Making
+### Featured
 
-- `hook-maker` — Design cross-host assistant hooks with one purpose and per-host bindings
-- `install-assistant-tools` — Install or update launchers, wiring, hooks, and environment on a machine
-- `refactor-node` — Refactor whole repository nodes or owned sub-scopes by gateway language
-- `regenerate-blueprints` — A refreshed blueprint.yaml for an existing skill generated under /tmp without modifying the skill
-- `skill-certifier` — Mechanical checks and semantic review should issue fresh node certificates for an exact committed repository state
-- `skill-drift` — Reading signed certificate currentness or canonical node hashes for Famulus modules
-- `skill-maker` — Author new skills that conform to the repo's skill-writing guideline
-- `update-skill-guidelines` — Change the skill-writing standard and its mechanical checks in lockstep
+- `refactor-node` — Refactor whole repository nodes or owned sub-scopes by gateway language _(topics: assistant-authoring, assistant-architecture, assistant-assurance, repository-workflow; activated by: user request, skill workflow)_
+- `skill-maker` — Author new skills that conform to the repo's skill-writing guideline _(topics: assistant-authoring, assistant-architecture, assistant-assurance, repository-workflow; activated by: user request, skill workflow)_
 
-### Coding
+### Listed
 
-- `initialize-tdd` — Scaffold a staged, approval-gated TDD project
+- `hook-maker` — Design cross-host assistant hooks with one purpose and per-host bindings _(topics: assistant-authoring, assistant-architecture; activated by: user request, skill workflow)_
+- `regenerate-blueprints` — A refreshed blueprint.yaml for an existing skill generated under /tmp without modifying the skill _(topics: assistant-authoring, assistant-architecture; activated by: user request, skill workflow)_
+- `skill-certifier` — Mechanical checks and semantic review should issue fresh node certificates for an exact committed repository state _(topics: assistant-assurance, assistant-architecture; activated by: user request, skill workflow)_
+- `skill-drift` — Reading signed certificate currentness or canonical node hashes for Famulus modules _(topics: assistant-assurance, assistant-architecture; activated by: user request, skill workflow)_
+- `update-standards` — Change canonical standards and keep their pinned closures aligned _(topics: assistant-authoring, assistant-architecture, assistant-assurance; activated by: user request, skill workflow)_
 
-### Development
+## Assistant Operations
 
-- `git-workflow` — Branch-safety checks and commit hygiene for any repo
+### Featured
+
+- `recurring-tasks` — Manage AI-driven recurring jobs as systemd user timers with health checks _(topics: task-automation, system-maintenance; activated by: user request, skill workflow, scheduled job)_
+
+### Listed
+
+- `cloud-files` — Bounded read/write of plain files under a configured Google Drive root _(topics: external-integrations, storage-and-sync; activated by: user request, skill workflow)_
+- `connect-google` — A Google service needs a shared OAuth client prepared, or when the user asks to prepare Google authentication for Famulus _(topics: external-integrations; activated by: user request, skill workflow)_
+- `fix-bisync` — Diagnose and repair rclone bisync failures _(topics: storage-and-sync, system-maintenance; activated by: user request)_
+- `install-assistant-tools` — Install or update launchers, wiring, hooks, and environment on a machine _(topics: assistant-installation, system-maintenance; activated by: user request)_
+
+## Assistant Interaction
+
+### Featured
+
+- `loose-mode` — Broad, fast exploration mode with breadth over certainty _(topics: reasoning-control; activated by: user request; persistent modifier)_
+- `tight-mode` — Rigorous, verified output mode with certainty over speed _(topics: reasoning-control; activated by: user request; persistent modifier)_
+
+### Listed
+
+- `llm-wakeup` — Schedule a supported assistant session after a usage reset, infer a wakeup from a timeout, or manage per-session automatic wakeups _(topics: session-management, task-automation; activated by: user request, skill workflow, scheduled job)_
+- `prepare-handoff` — Prepare a clean handoff with workflow and documentation updates _(topics: session-management, repository-workflow; activated by: user request, skill workflow)_

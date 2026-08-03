@@ -1,0 +1,221 @@
+schema_version: 6
+standard_version: 1.0.0
+revision: 9
+id: node-standards.module
+canonical_path: references/node-standards/module.standard.yaml
+title: Module Standard
+purpose: Add requirements specific to module nodes.
+imports:
+  node:
+    standard_id: node-standards.node
+    standard_version: 1.0.0
+    revision: 9
+    digest: sha256:438a67a64ba97196547699e63ba3a66c3dc36979726f6b0818bd0c7e19423540
+    artifact:
+      kind: artifact
+      ref: artifact.node-standard
+standards:
+- kind: family
+  id: node-standards.module-topology-and-authorization
+  title: Module topology and authorization
+  children:
+  - kind: rule
+    id: skill-guidelines.module-behavioral-source-v5.topology
+    assertions:
+    - id: explicit-registration
+      modality: required
+      statement: 'Every module declares explicit `children` and `namespace_exports` mappings, including
+        empty mappings. `children` registers each direct child by global ID and canonical `base: module-root`
+        `blueprint.yaml` locator. Containment chooses ownership; declarations choose authority.'
+      atomicity: pending
+  - kind: rule
+    id: skill-guidelines.module-behavioral-source-v5.exports
+    assertions:
+    - id: closed-export-forms
+      modality: required
+      statement: 'Each `exports` value is exactly one closed form: a source export has `source_interface`
+        and `access`; a facade export has one exact `facade_interface` target and version plus `access`.
+        A facade derives the child contract and binding. Facades preserve names, not permissions.'
+      atomicity: pending
+  - kind: rule
+    id: skill-guidelines.module-behavioral-source-v5.namespace-routing
+    assertions:
+    - id: child-authority-ceiling
+      modality: required
+      statement: A `namespace_exports` route pins one registered direct-child version, an access filter,
+        and exactly one `all` or nonempty exact-interface `only` surface. Child exports are the authority
+        ceiling. Registration reveals internally; namespace export routes outward.
+      atomicity: pending
+  - kind: rule
+    id: skill-guidelines.module-behavioral-source-v5.callers
+    assertions:
+    - id: exact-callers
+      modality: required
+      statement: Caller allowlists contain exact global module IDs or leading-dot relative references
+        with nonempty suffixes. `._rtx` names a skill's code child and `..parser` names the owner's sibling
+        parser. Relative references resolve through the certified registration tree and are never globs.
+      atomicity: pending
+  - kind: rule
+    id: skill-guidelines.module-behavioral-source-v5.authorization
+    assertions:
+    - id: one-resolver
+      modality: required
+      statement: Source/facade access, namespace filters, and interface-specific filters intersect and
+        never widen authority. Graph validation, projection, dispatch, tracing, and currentness consume
+        one authorization result. Resolve once; enforce everywhere.
+      atomicity: pending
+  - kind: rule
+    id: skill-guidelines.module-behavioral-source-v5.runtime-identities
+    assertions:
+    - id: module-identities
+      modality: required
+      statement: Dispatch and runtime metadata use internal `caller_module_id` and `target_module_id`
+        identities. The host-facing `--caller-skill` compatibility is limited to discoverable parent callers
+        only; non-discoverable children and all internal routes assert exact module identities.
+      atomicity: pending
+- kind: family
+  id: skill-guidelines.suggested-permissions
+  title: 4. `suggested_permissions`
+  children:
+  - kind: rule
+    id: skill-guidelines.suggested-permissions.requirement-001
+    assertions:
+    - id: source-block
+      modality: required
+      statement: '**4. `suggested_permissions`** — permission suggestions live in the module''s
+
+        `blueprint.yaml`, not in separate permission files. `suggested_permissions` is
+
+        advisory, not a grant. It should explain what is safe and useful to pre-approve
+
+        for smoother execution. Do not cascade another module''s suggested permissions;
+
+        declare the exact interface edge in `uses_interfaces` and let permission tooling
+
+        derive transitive grants from the interface graph.'
+      atomicity: pending
+- kind: family
+  id: node-standards.module-blueprint-authoring
+  title: Module blueprint authoring
+  children:
+  - kind: rule
+    id: node-standards.module-blueprint-authoring.requirement
+    assertions:
+    - id: module-blueprint
+      modality: required
+      statement: A module blueprint must be authored from the module schema and canonical module template,
+        and only a module root may own one.
+- kind: procedure
+  id: node-standards.remedies.restore-local-module-conformance
+  title: Restore one module requirement safely
+  ordered: true
+  steps:
+  - kind: step
+    id: resolve-current-graph
+    instruction: Identify the exact violated assertion and inspect the query-resolved module ownership,
+      registrations, exports, callers, authorization, and applicable schema evidence.
+  - kind: step
+    id: choose-smallest-graph-change
+    instruction: Choose the smallest owner-local schema-valid change that satisfies the assertion without
+      changing public identity, topology, callers, permissions, or authority; stop if any such change or
+      an ambiguous public surface would be required.
+    requires: [resolve-current-graph]
+  - kind: step
+    id: apply-one-declaration-repair
+    instruction: Apply one bounded module repair while preserving names, behavior, callers, and unrelated
+      graph declarations.
+    requires: [choose-smallest-graph-change]
+  - kind: step
+    id: validate-module-graph
+    instruction: Run returned graph and blueprint checks plus focused behavior tests, then inspect the diff.
+    requires: [apply-one-declaration-repair]
+  invariants:
+  - id: authority-never-widens
+    statement: Registration, exports, namespace routing, facade access, and permission suggestions never
+      grant broader authority as a side effect of repair.
+  completion_conditions:
+  - id: module-assertion-restored
+    statement: The selected assertion and schema contract are satisfied with relevant verification passing,
+      or the unresolved authorization decision is reported.
+  risk:
+    level: high
+    statement: Module graph changes can alter ownership and authorization nonlocally.
+- kind: procedure
+  id: node-standards.remedies.repair-module-graph-contract
+  title: Repair module topology and authorization
+  ordered: true
+  steps:
+  - kind: step
+    id: resolve-effective-authority
+    instruction: Resolve direct children, sources, exports, namespace routes, callers, facade targets,
+      access filters, runtime identities, and the single effective authorization result.
+  - kind: step
+    id: identify-invalid-edge
+    instruction: Identify the one declaration or resolver edge that violates the selected assertion and
+      determine its intended authority from current callers and canonical child exports; stop if intent is unknown.
+    requires: [resolve-effective-authority]
+  - kind: step
+    id: repair-without-widening
+    instruction: Correct one registration, export, namespace route, caller reference, facade, or resolver
+      edge while preserving names and intersecting authority ceilings.
+    requires: [identify-invalid-edge]
+  - kind: step
+    id: verify-all-authority-consumers
+    instruction: Run graph, projection, dispatch, trace, currentness, and focused caller tests and confirm
+      every consumer resolves the same authorization result.
+    requires: [repair-without-widening]
+  invariants:
+  - id: child-authority-ceiling
+    statement: No parent facade, namespace route, compatibility caller, or permission path exceeds the
+      canonical child export authority.
+  completion_conditions:
+  - id: graph-contract-restored
+    statement: The affected topology and authorization edges are schema-valid and agree across all consumers.
+  risk:
+    level: high
+    statement: Graph repairs can grant or revoke cross-module authority.
+- kind: procedure
+  id: node-standards.remedies.correct-suggested-permissions
+  title: Correct module permission suggestions without granting authority
+  ordered: true
+  steps:
+  - kind: step
+    id: inventory-required-effects
+    instruction: Inventory effects and external commands required by the module's own exported behavior,
+      excluding effects reachable only through another module.
+  - kind: step
+    id: derive-minimal-suggestions
+    instruction: Derive the narrowest useful advisory suggestions for those direct effects and keep
+      cross-module authority represented only by declared interface edges.
+    requires: [inventory-required-effects]
+  - kind: step
+    id: update-module-metadata
+    instruction: Add, narrow, or remove suggestions in the module blueprint without changing access or grants.
+    requires: [derive-minimal-suggestions]
+  - kind: step
+    id: validate-permission-derivation
+    instruction: Run blueprint and permission derivation checks and inspect the effective grant preview.
+    requires: [update-module-metadata]
+  invariants:
+  - id: advisory-only
+    statement: Suggested permissions never substitute for an interface edge and never grant access themselves.
+  completion_conditions:
+  - id: direct-effects-only
+    statement: Suggestions describe only the module's direct effects and transitive access remains derived.
+  risk:
+    level: high
+    statement: Overbroad suggestions can normalize unsafe pre-approval even when they are not grants.
+artifacts:
+  artifact.node-standard:
+    path: references/node-standards/node.standard.yaml
+    format: yaml
+    roles:
+    - other
+domain_facts:
+  node.present: true
+  node.structure: module
+  node.skill-owned: true
+links:
+  topology-remedy: {source: {kind: family, ref: node-standards.module-topology-and-authorization}, relation: remedied-by, target: {kind: procedure, ref: node-standards.remedies.repair-module-graph-contract}, lifecycle: active, resolution: {state: resolved}}
+  permissions-remedy: {source: {kind: family, ref: skill-guidelines.suggested-permissions}, relation: remedied-by, target: {kind: procedure, ref: node-standards.remedies.correct-suggested-permissions}, lifecycle: active, resolution: {state: resolved}}
+  module-blueprint-remedy: {source: {kind: family, ref: node-standards.module-blueprint-authoring}, relation: remedied-by, target: {kind: procedure, ref: node-standards.remedies.restore-local-module-conformance}, lifecycle: active, resolution: {state: resolved}}

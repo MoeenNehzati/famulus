@@ -13,22 +13,71 @@ from validators.readme_user_contract import validate as validate_readme  # noqa:
 from validators.user_docs_cover_blueprints import validate as validate_user_docs  # noqa: E402
 
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
 def _write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
 
 
-def _make_skill(repo_root: Path, name: str, category: str, description: str) -> None:
+def _make_skill(repo_root: Path, name: str, domain: str, description: str) -> None:
     skill_dir = repo_root / "skills" / name
     skill_dir.mkdir(parents=True)
     _write(
         skill_dir / "SKILL.md",
         f"---\nname: {name}\ndescription: {description}\n---\n\nBody.\n",
     )
-    _write(skill_dir / "blueprint.yaml", f"category: {category}\n")
+    _write(
+        skill_dir / "blueprint.yaml",
+        "\n".join(
+            [
+                "schema_version: 5",
+                "node_type: module",
+                f"id: {name}",
+                "version: 1",
+                f"description: {description}",
+                "gateway:",
+                "  path: SKILL.md",
+                "  language: Markdown",
+                "content:",
+                "- SKILL\\.md",
+                "discovery:",
+                "  mechanism: skill",
+                "  catalog:",
+                f"    domain: {domain}",
+                "    topics:",
+                "    - planning",
+                "    visibility: featured",
+                "  activated_by:",
+                "  - user-request",
+                "  persistent_modifier: false",
+                "authority:",
+                "  owns_filesystem: []",
+                "sources: {}",
+                "children: {}",
+                "namespace_exports: {}",
+                "exports: {}",
+                "",
+            ]
+        ),
+    )
 
 
 def _seed_docs(repo_root: Path) -> None:
+    _write(
+        repo_root / "references/blueprint/config.yaml",
+        (REPO_ROOT / "references/blueprint/config.yaml").read_text(
+            encoding="utf-8"
+        ),
+    )
+    for schema_name in ("common.schema.json", "module.schema.json"):
+        _write(
+            repo_root / "references/blueprint" / schema_name,
+            (REPO_ROOT / "references/blueprint" / schema_name).read_text(
+                encoding="utf-8"
+            ),
+        )
     _write(
         repo_root / "README.md",
         "\n".join(
@@ -63,12 +112,12 @@ def _seed_docs(repo_root: Path) -> None:
         "\n".join(
             [
                 "# General",
-                "## Productivity",
-                "<!-- BEGIN AUTO-GENERATED DOCS: productivity-general-assistant -->",
-                "<!-- END AUTO-GENERATED DOCS: productivity-general-assistant -->",
-                "## Workflow",
-                "<!-- BEGIN AUTO-GENERATED DOCS: workflow-general-assistant -->",
-                "<!-- END AUTO-GENERATED DOCS: workflow-general-assistant -->",
+                "## Personal Assistance",
+                "<!-- BEGIN AUTO-GENERATED DOCS: personal-assistance -->",
+                "<!-- END AUTO-GENERATED DOCS: personal-assistance -->",
+                "## Assistant Interaction",
+                "<!-- BEGIN AUTO-GENERATED DOCS: assistant-interaction -->",
+                "<!-- END AUTO-GENERATED DOCS: assistant-interaction -->",
                 "",
             ]
         ),
@@ -78,8 +127,8 @@ def _seed_docs(repo_root: Path) -> None:
         "\n".join(
             [
                 "# Research",
-                "<!-- BEGIN AUTO-GENERATED DOCS: research-assistant -->",
-                "<!-- END AUTO-GENERATED DOCS: research-assistant -->",
+                "<!-- BEGIN AUTO-GENERATED DOCS: research -->",
+                "<!-- END AUTO-GENERATED DOCS: research -->",
                 "",
             ]
         ),
@@ -89,8 +138,8 @@ def _seed_docs(repo_root: Path) -> None:
         "\n".join(
             [
                 "# System",
-                "<!-- BEGIN AUTO-GENERATED DOCS: system-assistant -->",
-                "<!-- END AUTO-GENERATED DOCS: system-assistant -->",
+                "<!-- BEGIN AUTO-GENERATED DOCS: assistant-operations -->",
+                "<!-- END AUTO-GENERATED DOCS: assistant-operations -->",
                 "",
             ]
         ),
@@ -110,15 +159,12 @@ def _seed_docs(repo_root: Path) -> None:
                 "references/blueprint/template.yaml",
                 "docs/scaffolding/README.md",
                 "docs/contributors/documentation-system.md",
-                "## Skill Making",
-                "<!-- BEGIN AUTO-GENERATED DOCS: skill-making-development-assistant -->",
-                "<!-- END AUTO-GENERATED DOCS: skill-making-development-assistant -->",
-                "## Coding",
-                "<!-- BEGIN AUTO-GENERATED DOCS: coding-development-assistant -->",
-                "<!-- END AUTO-GENERATED DOCS: coding-development-assistant -->",
-                "## Development",
-                "<!-- BEGIN AUTO-GENERATED DOCS: development-assistant -->",
-                "<!-- END AUTO-GENERATED DOCS: development-assistant -->",
+                "## Software Development",
+                "<!-- BEGIN AUTO-GENERATED DOCS: software-development -->",
+                "<!-- END AUTO-GENERATED DOCS: software-development -->",
+                "## Assistant Development",
+                "<!-- BEGIN AUTO-GENERATED DOCS: assistant-development -->",
+                "<!-- END AUTO-GENERATED DOCS: assistant-development -->",
                 "",
             ]
         ),
@@ -142,19 +188,19 @@ def _seed_docs(repo_root: Path) -> None:
     _write(repo_root / "references/blueprint/README.md", "# Blueprint Reference\n")
     _write(repo_root / "docs/skill-blueprints.md", "# Skill Blueprints\n")
     _write(repo_root / "references/blueprint/schema.json", "{}\n")
-    _write(repo_root / "references/blueprint/template.yaml", "category: example\n")
+    _write(repo_root / "references/blueprint/template.yaml", "discovery: {}\n")
 
 
 def _make_repo(tmp_path: Path) -> Path:
     repo_root = tmp_path
     _seed_docs(repo_root)
-    _make_skill(repo_root, "email-client", "productivity-general-assistant", "Read and send email.")
-    _make_skill(repo_root, "daily-plan", "workflow-general-assistant", "Generate today's plan.")
-    _make_skill(repo_root, "math-dependency-graph", "research-assistant", "Build a graph for LaTeX results.")
-    _make_skill(repo_root, "cloud-files", "system-assistant", "Read and write bounded cloud files.")
-    _make_skill(repo_root, "skill-maker", "skill-making-development-assistant", "Create new skills.")
-    _make_skill(repo_root, "initialize-tdd", "coding-development-assistant", "Scaffold a coding project.")
-    _make_skill(repo_root, "git-workflow", "development-assistant", "Check branch safety.")
+    _make_skill(repo_root, "email-client", "personal-assistance", "Read and send email.")
+    _make_skill(repo_root, "daily-plan", "assistant-interaction", "Generate today's plan.")
+    _make_skill(repo_root, "math-dependency-graph", "research", "Build a graph for LaTeX results.")
+    _make_skill(repo_root, "cloud-files", "assistant-operations", "Read and write bounded cloud files.")
+    _make_skill(repo_root, "skill-maker", "assistant-development", "Create new skills.")
+    _make_skill(repo_root, "initialize-tdd", "software-development", "Scaffold a coding project.")
+    _make_skill(repo_root, "git-workflow", "software-development", "Check branch safety.")
     generate_all(repo_root)
     return repo_root
 

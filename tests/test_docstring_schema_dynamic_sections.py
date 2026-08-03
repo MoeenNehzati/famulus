@@ -1558,7 +1558,7 @@ profiles:
 """,
     )
 
-    with pytest.raises(ValueError, match="unknown profile check"):
+    with pytest.raises(ValueError, match="Additional properties are not allowed"):
         load_docstring_schema()
 
 

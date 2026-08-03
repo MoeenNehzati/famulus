@@ -44,11 +44,11 @@ def test_excluded_install_path_skipped(tmp_path: Path) -> None:
 def test_standard_documents_are_excluded(
     tmp_path: Path,
 ) -> None:
-    standards = tmp_path / "references" / "skill-standards"
+    standards = tmp_path / "references" / "node-standards"
     standards.mkdir(parents=True)
     for name in (
-        "skill-guidelines.standard.yaml",
-        "skill-guidelines.md",
+        "node.standard.yaml",
+        "python-node.standard.yaml",
     ):
         (standards / name).write_text(
             "Supports Linux, macOS, Windows, Codex, and Claude.\n",
@@ -335,11 +335,11 @@ def test_init_py_always_exempt(tmp_path: Path) -> None:
     assert validate(tmp_path) == []
 
 
-def test_skill_guidelines_can_define_platform_rule(tmp_path: Path) -> None:
-    refs = tmp_path / "references" / "skill-standards"
+def test_node_standards_can_define_platform_rule(tmp_path: Path) -> None:
+    refs = tmp_path / "references" / "node-standards"
     refs.mkdir(parents=True)
-    (refs / "skill-guidelines.standard.yaml").write_text("Use Windows, macOS, Linux, Claude, and Codex here.\n")
-    (refs / "skill-guidelines.md").write_text("Use Windows, macOS, Linux, Claude, and Codex here.\n")
+    (refs / "node.standard.yaml").write_text("Use Windows, macOS, Linux, Claude, and Codex here.\n")
+    (refs / "python-node.standard.yaml").write_text("Use Windows, macOS, Linux, Claude, and Codex here.\n")
     assert validate(tmp_path) == []
 
 

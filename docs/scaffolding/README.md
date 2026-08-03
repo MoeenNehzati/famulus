@@ -102,9 +102,8 @@ When changing the architecture or schema:
 
 1. Update the existing schema, graph, compiler, or validator owner; do not add
    a parallel authority.
-2. Update
-   `references/skill-standards/skill-guidelines.standard.yaml` when the
-   authoring law changes, then regenerate its derived view.
+2. Use `update-standards` to change the smallest applicable document under
+   `references/node-standards/`, then update its pinned dependent closure.
 3. Update the relevant conceptual documentation.
 4. Run the complete validation and certification suites.
 
@@ -115,4 +114,4 @@ When changing the architecture or schema:
 - [Certification and drift](../certification_and_drift.md)
 - [Blueprint search](../blueprint_search.md)
 - [Blueprint schemas](../../references/blueprint/README.md)
-- [Generated skill guidelines](../../references/skill-standards/skill-guidelines.md)
+- [Layered node standards](../../references/node-standards/node.standard.yaml)

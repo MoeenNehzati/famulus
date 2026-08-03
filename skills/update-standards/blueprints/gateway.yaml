@@ -1,0 +1,214 @@
+content:
+- SKILL\.md
+dependencies: []
+description: Maintains any canonical standard document and its pinned import closure,
+  generated view, and declared enforcement evidence.
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: update-standards.source.gateway
+interfaces:
+  update-standards.source.gateway.interface.default:
+    contract:
+      arguments:
+        request:
+          description: Proposed addition, change, removal, or alignment audit for
+            one or more canonical standard documents.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+      caller_warnings:
+      - external-side-effect: The workflow may edit a standard, direct dependents,
+          generated views, and enforcement artifacts as one non-atomic change set.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: Standard change or alignment-audit request.
+          formats:
+          - text
+          id: request
+          medium: prompt
+          sensitivity: user-private
+          system: agent-runtime
+        - access: read
+          content: Target standard, pinned imports and direct dependents, schema,
+            validation and rendering policy, generated views, declared evidence,
+            current diff, and relevant enforcement artifacts.
+          formats:
+          - yaml
+          - markdown
+          - shell
+          - python
+          - git-metadata
+          - text
+          id: standards-state
+          medium: repository-filesystem
+          reason: Preserve semantic, provenance, import, view, and enforcement consistency.
+          sensitivity: user-private
+        writes:
+        - access: write
+          content: Maintenance report covering changes, no-op alignment, blockers,
+            generated views, evidence alignment, and validation results as applicable.
+          formats:
+          - markdown
+          id: response
+          medium: prompt
+          sensitivity: derived-private
+          system: agent-runtime
+        - access: write
+          content: Canonical standards, pinned dependent declarations, registered
+            generated views, and directly affected enforcement or evidence artifacts.
+          formats:
+          - yaml
+          - markdown
+          - shell
+          - python
+          - text
+          id: repository-write
+          medium: repository-filesystem
+          reason: Apply the requested semantic change and keep its declared closure aligned.
+          sensitivity: user-private
+        - access: execute
+          content: Focused standard validation, registered view rendering, enforcement
+            checks, and relevant repository validation.
+          formats:
+          - argv
+          - text
+          id: validation-command
+          medium: subprocess
+          reason: Prove that the changed closure, views, and declared evidence remain current.
+          sensitivity: derived-private
+          system: bash git and repository validators
+      execution:
+        consistency:
+          live: The report reflects the target closure, registered views, declared evidence,
+            affected enforcement, and validation results observed during this invocation.
+        effects:
+        - action: update
+          confirmation_evidence:
+            kind: output
+            output_ref: response
+          direct_io_ref: repository-write
+          id: standard-change
+          may_occur_in_outcomes:
+          - updated
+          - partial
+          reversibility:
+            reversible: Restore only the reviewed standard-maintenance change set after
+              checking generated and dependent overlap.
+          value_source:
+            argument_ref: request
+            kind: argument
+        - action: execute
+          confirmation_evidence:
+            kind: output
+            output_ref: response
+          direct_io_ref: validation-command
+          id: validation-run
+          may_occur_in_outcomes:
+          - updated
+          - partial
+          - validation-failed
+          reversibility:
+            reversible: Validation is observational except for generated artifacts
+              explicitly reported by the invoked repository checks.
+          value_source:
+            argument_ref: request
+            kind: argument
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            non_atomic: Standard, dependent pins, generated views, and enforcement
+              artifacts are separate updates.
+          concurrent_invocations:
+            unsafe: Concurrent edits can invalidate revision pins, digests, generated
+              views, and validation evidence.
+          idempotency:
+            non_idempotent: Reapplying a request can duplicate semantic items or overwrite
+              independently updated pins and evidence.
+          on_uncertain_completion:
+            verify_then_decide: Inspect the exact standard closure, generated views,
+              affected evidence, diff, and fresh validation output before retrying.
+          partial_effects_on_failure:
+            possible: Standard, dependent, generated-view, or enforcement edits may
+              remain when a later check fails.
+          rollback_on_failure:
+            available: Restore only this invocation's files after checking overlapping changes.
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: response
+        - direct_io_ref: standards-state
+          method: direct-io-state
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Retain the current closure because the audit found no divergence.
+        class: no-op
+        effects: []
+        id: aligned
+        outputs:
+        - response
+      - caller_action: Supply the unresolved ownership, compatibility, remedy, or
+          evidence-truth decision before repository mutation.
+        class: refusal
+        effects: []
+        id: needs-direction
+        outputs:
+        - response
+      - caller_action: Review the synchronized standard closure, generated views,
+          enforcement changes, and passing validation evidence.
+        class: success
+        effects:
+        - standard-change
+        - validation-run
+        id: updated
+        outputs:
+        - response
+      - caller_action: Preserve the inspected diff and repair the reported stale pin,
+          semantic link, generated view, enforcement artifact, or failing check.
+        class: partial
+        effects:
+        - standard-change
+        - validation-run
+        id: partial
+        outputs:
+        - response
+      - caller_action: Do not claim alignment; resolve the reported validation failure
+          and rerun the affected checks.
+        class: error
+        effects:
+        - validation-run
+        id: validation-failed
+        outputs:
+        - response
+      outputs:
+      - audience: human
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Maintenance result stating changes or no-op, revision and digest
+          status, view and evidence status, exact validation results, and blockers.
+        direct_io_ref: response
+        empty: Never empty.
+        id: response
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Update a canonical standard and keep its pinned closure, registered
+      views, and declared evidence aligned.
+    version: 1
+node_type: behavioral_source
+schema_version: 5
+uses_interfaces: []
+version: 1

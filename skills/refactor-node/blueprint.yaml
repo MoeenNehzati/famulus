@@ -1,0 +1,71 @@
+authority:
+  owns_filesystem: []
+  suggested_permissions:
+    bash: []
+    network: []
+children:
+  refactor-node-rtx:
+    base: module-root
+    path: _rtx/blueprint.yaml
+content:
+- (?:SKILL\.md|instructions/(?:instruction|python)\-refactoring\.md|tests/test_(?:refactor_node_routing|query_standards)\.py)
+description: Resolves repository nodes and selected sub-scopes to language-specific,
+  behavior-preserving refactoring interfaces.
+discovery:
+  mechanism: skill
+  catalog:
+    domain: assistant-development
+    topics:
+    - assistant-authoring
+    - assistant-architecture
+    - assistant-assurance
+    - repository-workflow
+    visibility: featured
+  activated_by:
+  - user-request
+  - skill-workflow
+  persistent_modifier: false
+exports:
+  refactor-node.interface.default:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: refactor-node.source.gateway.interface.default
+  refactor-node.interface.query-standards:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    facade_interface:
+      interface: refactor-node-rtx.interface.query-standards
+      version: 2
+  refactor-node.interface.refactor-instructions:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: refactor-node.source.instruction-refactoring.interface.refactor-instructions
+  refactor-node.interface.refactor-python:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: refactor-node.source.python-refactoring.interface.refactor-python
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: refactor-node
+namespace_exports: {}
+node_type: module
+schema_version: 5
+sources:
+  refactor-node.source.gateway:
+    blueprint:
+      base: module-root
+      path: blueprints/gateway.yaml
+  refactor-node.source.instruction-refactoring:
+    blueprint:
+      base: module-root
+      path: blueprints/instructions-instruction-refactoring.yaml
+  refactor-node.source.python-refactoring:
+    blueprint:
+      base: module-root
+      path: blueprints/instructions-python-refactoring.yaml
+version: 3

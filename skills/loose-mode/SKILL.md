@@ -6,7 +6,8 @@ description: Use when the user invokes "loose mode" or asks for broad exploratio
 <!-- BEGIN BLUEPRINT CONTRACT -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Category: workflow-general-assistant
+Catalog: assistant-interaction; topics: reasoning-control; visibility: featured
+Activation: user-request; persistent modifier: yes
 
 Skill Version: 2
 

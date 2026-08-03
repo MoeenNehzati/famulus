@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from docs_tooling.catalog import COVERAGE_BLOCKS, USER_DOCS, is_development_category, load_catalog
+from docs_tooling.catalog import COVERAGE_BLOCKS, USER_DOCS, load_catalog
 from docs_tooling.render import render_doc_with_updated_blocks
 
 
@@ -12,13 +12,20 @@ def validate(repo_root: Path) -> list[str]:
     catalog = load_catalog(repo_root)
     if not catalog and not (repo_root / "docs").exists():
         return []
-    covered_categories = {block.category for block in COVERAGE_BLOCKS if block.doc_path in USER_DOCS}
-    live_categories = {skill.category for skill in catalog if not is_development_category(skill.category)}
-    missing_categories = sorted(live_categories - covered_categories)
-    if missing_categories:
+    covered_domains = {
+        block.domain for block in COVERAGE_BLOCKS if block.doc_path in USER_DOCS
+    }
+    contributor_domains = {
+        block.domain for block in COVERAGE_BLOCKS if block.doc_path not in USER_DOCS
+    }
+    live_domains = {
+        skill.domain for skill in catalog if skill.domain not in contributor_domains
+    }
+    missing_domains = sorted(live_domains - covered_domains)
+    if missing_domains:
         errors.append(
-            "docs/user: missing coverage mapping for categories "
-            + ", ".join(missing_categories)
+            "docs/user: missing coverage mapping for domains "
+            + ", ".join(missing_domains)
         )
 
     for rel_path in USER_DOCS:

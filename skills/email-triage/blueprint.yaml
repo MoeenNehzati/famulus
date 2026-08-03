@@ -1,6 +1,5 @@
 authority:
   owns_filesystem: []
-category: productivity-general-assistant
 children:
   email-triage-rtx:
     base: module-root
@@ -11,6 +10,16 @@ description: Coordinates watermark-safe email triage, classification logging, fa
   recovery, and routing of extracted action items.
 discovery:
   mechanism: skill
+  catalog:
+    domain: personal-assistance
+    topics:
+    - communications
+    - personal-organization
+    visibility: featured
+  activated_by:
+  - user-request
+  - skill-workflow
+  persistent_modifier: false
 exports:
   email-triage.interface.default:
     access:
@@ -89,10 +98,8 @@ gateway:
   language: Markdown
   path: SKILL.md
 id: email-triage
-kind: triager
 namespace_exports: {}
 node_type: module
-role: productivity
 schema_version: 5
 sources:
   email-triage.source.gateway:

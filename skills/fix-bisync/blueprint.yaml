@@ -3,7 +3,6 @@ authority:
   suggested_permissions:
     bash: []
     network: []
-category: system-assistant
 children: {}
 content:
 - SKILL\.md
@@ -11,6 +10,15 @@ description: Diagnoses rclone bisync failures, proposes bounded prevention, and 
   an explicitly approved repair with post-run state verification.
 discovery:
   mechanism: skill
+  catalog:
+    domain: assistant-operations
+    topics:
+    - storage-and-sync
+    - system-maintenance
+    visibility: listed
+  activated_by:
+  - user-request
+  persistent_modifier: false
 exports:
   fix-bisync.interface.default:
     access:
@@ -21,10 +29,8 @@ gateway:
   language: Markdown
   path: SKILL.md
 id: fix-bisync
-kind: diagnostic
 namespace_exports: {}
 node_type: module
-role: system-operations
 schema_version: 5
 sources:
   fix-bisync.source.gateway:

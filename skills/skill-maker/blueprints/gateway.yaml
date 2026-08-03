@@ -1,13 +1,6 @@
 content:
 - SKILL\.md
-dependencies:
-- blueprint:
-    base: repository-root
-    path: references/skill-standards/blueprints/skill-guidelines.yaml
-  reason: Defines repository skill-module standards used when creating or editing
-    skills.
-  source: skill-standards.source.skill-guidelines
-  version: 1
+dependencies: []
 description: Guides creation and editing of personal skills under the canonical skill-module
   standards, including research choice, branch safety, interfaces, validators, and
   generated contract synchronization.
@@ -54,8 +47,9 @@ interfaces:
           sensitivity: user-private
           system: agent-runtime
         - access: read
-          content: target skill, canonical standards, schemas, validators, tests,
-            branch, and current diff
+          content: target skill, schemas, validators, tests, branch, and current
+            diff; canonical standards arrive through the declared standards-query
+            interface
           formats:
           - markdown
           - yaml
@@ -65,7 +59,7 @@ interfaces:
           - text
           id: read-2
           medium: repository-filesystem
-          path: $repo/{skills,references/skill-standards,references/blueprint,validators,tests,.git}/**
+          path: $repo/{skills,references/blueprint,validators,tests,.git}/**
           path_match: glob
           reason: Derive the requested change from exact live contracts and preserve
             unrelated work.
@@ -227,6 +221,8 @@ interfaces:
 node_type: behavioral_source
 schema_version: 5
 uses_interfaces:
+- interface: refactor-node.interface.query-standards
+  version: 2
 - interface: skill-maker.interface.sync-blueprints
   version: 1
-version: 1
+version: 2

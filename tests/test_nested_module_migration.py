@@ -298,7 +298,7 @@ class TestNestedModuleMigrationContract:
             "technical-flow-review",
             "tight-mode",
             "tool-applicability",
-            "update-skill-guidelines",
+            "update-standards",
             "wrap-up",
         }
         assert plan.is_noop
@@ -1002,13 +1002,20 @@ class TestNestedModuleMigrationContract:
                 "certification-basis-roots.json"
             ]
         )
-        standard_bytes = plan.planned_files[
-            "references/skill-standards/"
-            "skill-guidelines.standard.yaml"
-        ]
+        standard_bytes = b"\n".join(
+            content
+            for path, content in plan.planned_files.items()
+            if path.startswith("references/node-standards/")
+            and path.endswith(".standard.yaml")
+        )
+        assert standard_bytes
         assert b"validators/skill/" in standard_bytes
         assert b"skills/skill-maker/validators/" not in standard_bytes
         assert b"dispatch-caller-skill" not in standard_bytes
+        assert (
+            "references/skill-standards/skill-guidelines.standard.yaml"
+            not in plan.planned_files
+        )
         assert (
             b"validators/skill/"
             in plan.planned_files["references/blueprint/schema-meta.json"]
@@ -1888,6 +1895,9 @@ class TestNestedModuleMigrationContract:
                 "id": "skill-certifier",
                 "version": 4,
                 "description": "Fixture certifier.",
+                "category": "skill-making-development-assistant",
+                "role": "meta-skill",
+                "kind": "certifier",
                 "gateway": {
                     "path": "SKILL.md",
                     "language": "Markdown",
