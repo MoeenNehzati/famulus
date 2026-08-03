@@ -117,7 +117,7 @@ def test_v5_authorization_uses_target_side_lca_gates(
     ) == expected_gates
 
 
-def test_v5_relative_callers_resolve_exactly_and_never_grant_descendants(
+def test_v5_relative_callers_admit_their_registered_descendants(
     tmp_path: Path,
 ) -> None:
     _root, graph = _load_graph(tmp_path)
@@ -130,7 +130,7 @@ def test_v5_relative_callers_resolve_exactly_and_never_grant_descendants(
         caller_module_id="beta",
         interface_id="leaf.interface.run",
     )
-    denied_descendant = _resolve(
+    allowed_descendant = _resolve(
         graph,
         caller_module_id="beta-leaf",
         interface_id="alpha.interface.status",
@@ -145,10 +145,7 @@ def test_v5_relative_callers_resolve_exactly_and_never_grant_descendants(
         ("alpha", "..beta", "beta"),
         ("leaf", "...beta", "beta"),
     }
-    assert not denied_descendant.allowed
-    assert denied_descendant.diagnostic == (
-        "caller-filtered:terminal-export:alpha.interface.status"
-    )
+    assert allowed_descendant.allowed, allowed_descendant.diagnostic
 
 
 def test_v5_authorization_distinguishes_private_unknown_and_versioned_targets(
@@ -261,7 +258,6 @@ def test_v5_facade_preserves_caller_and_evaluates_self_at_both_owners(
         for requirement in facade.required_certificates
     } == {
         ("demo", 1),
-        ("demo.source.gateway", 1),
         ("demo-rtx", 1),
         ("demo-rtx.source.runtime", 1),
     }
@@ -275,6 +271,67 @@ def test_v5_facade_preserves_caller_and_evaluates_self_at_both_owners(
     assert unrelated_direct_child.diagnostic == (
         "missing-namespace-route:demo->demo-rtx"
     )
+
+
+def test_v5_facade_owner_is_immediate_caller_of_child_export(
+    tmp_path: Path,
+) -> None:
+    _root, graph = _load_graph(tmp_path)
+    facade = graph.exports["demo.interface.execute"].export_declaration
+    child = graph.exports[
+        "demo-rtx.interface.execute"
+    ].export_declaration
+    assert isinstance(facade, dict)
+    assert isinstance(child, dict)
+    facade["access"] = {
+        "allow_all_modules": True,
+        "allowed_callers": [],
+    }
+    child["access"] = {
+        "allow_all_modules": False,
+        "allowed_callers": ["demo"],
+    }
+
+    result = _resolve(
+        graph,
+        caller_module_id="outsider",
+        interface_id="demo.interface.execute",
+        version=3,
+    )
+
+    assert result.allowed, result.diagnostic
+
+
+def test_v5_namespace_route_owners_are_immediate_callers_of_next_hop(
+    tmp_path: Path,
+) -> None:
+    _root, graph = _load_graph(tmp_path)
+    root_route = graph.namespace_routes[("root", "alpha")].declaration
+    alpha_route = graph.namespace_routes[("alpha", "leaf")].declaration
+    leaf = graph.exports["leaf.interface.run"].export_declaration
+    assert isinstance(root_route, dict)
+    assert isinstance(alpha_route, dict)
+    assert isinstance(leaf, dict)
+    root_route["access"] = {
+        "allow_all_modules": False,
+        "allowed_callers": ["outsider"],
+    }
+    alpha_route["access"] = {
+        "allow_all_modules": False,
+        "allowed_callers": ["root"],
+    }
+    leaf["access"] = {
+        "allow_all_modules": False,
+        "allowed_callers": ["alpha"],
+    }
+
+    result = _resolve(
+        graph,
+        caller_module_id="outsider",
+        interface_id="leaf.interface.run",
+    )
+
+    assert result.allowed, result.diagnostic
 
 
 def test_v5_direct_child_request_bypasses_facade_filter(tmp_path: Path) -> None:
@@ -398,7 +455,7 @@ def test_v5_all_and_only_routes_are_materialized_not_wildcards(
     )
 
 
-def test_v5_authorization_requires_and_validates_caller_source_identity_and_use(
+def test_v5_authorization_ignores_caller_source_identity_and_declared_use(
     tmp_path: Path,
 ) -> None:
     _root, graph = _load_graph(tmp_path)
@@ -428,17 +485,9 @@ def test_v5_authorization_requires_and_validates_caller_source_identity_and_use(
         interface_id="leaf.interface.run",
     )
 
-    assert not missing_source.allowed
-    assert missing_source.diagnostic == "caller-source-required:beta"
-    assert not mismatched_source.allowed
-    assert mismatched_source.diagnostic == (
-        "caller-source-mismatch:outsider.source.caller:outsider!=beta"
-    )
-    assert not undeclared_use.allowed
-    assert undeclared_use.diagnostic == (
-        "undeclared-interface-use:outsider.source.caller:"
-        "leaf.interface.run@1"
-    )
+    assert missing_source.allowed, missing_source.diagnostic
+    assert mismatched_source.allowed, mismatched_source.diagnostic
+    assert undeclared_use.allowed, undeclared_use.diagnostic
 
 
 def test_v5_result_has_exact_relations_and_minimal_consulted_certificate_set(
@@ -481,7 +530,6 @@ def test_v5_result_has_exact_relations_and_minimal_consulted_certificate_set(
         ("leaf", 1),
         ("leaf.source.runtime", 1),
         ("outsider", 1),
-        ("outsider.source.caller", 1),
     }
     assert all(
         relation.relation != "contains-module"

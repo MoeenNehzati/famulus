@@ -7,10 +7,12 @@ import yaml
 
 import officina.common.blueprint_graph as blueprint_graph
 from officina.common.blueprint_graph import (
+    BlueprintDiagnostic,
     BlueprintGraphError,
     BlueprintNode,
     CertificationEdge,
     InterfaceExport,
+    load_dispatch_blueprint_graph,
     load_repository_blueprint_graph,
     resolved_node_content_paths,
     resolve_export,
@@ -55,6 +57,161 @@ def _copy_v5_authorization_fixture(tmp_path: Path) -> Path:
         V5_AUTHORIZATION_FIXTURE,
         tmp_path / "repo",
     )
+
+
+def test_dispatch_scoped_graph_warns_for_unrelated_invalid_module(
+    tmp_path: Path,
+) -> None:
+    root = _copy_v5_authorization_fixture(tmp_path)
+    outsider_source = root / "modules" / "outsider" / "blueprints" / "caller.yaml"
+    declaration = yaml.safe_load(outsider_source.read_text(encoding="utf-8"))
+    declaration["uses_interfaces"] = [
+        {"interface": "missing.interface.run", "version": 1}
+    ]
+    _write_yaml(outsider_source, declaration)
+
+    result = load_dispatch_blueprint_graph(
+        root,
+        caller_module_id="demo",
+        interface_id="demo.interface.execute",
+        schema_root=V5_SCHEMA_ROOT,
+    )
+
+    assert "demo.interface.execute" in result.graph.exports
+    assert len(result.diagnostics) == 1
+    assert result.diagnostics[0] == BlueprintDiagnostic(
+        code="unrelated-blueprint-invalid",
+        message=(
+            "outsider.source.caller: unresolved interface "
+            "'missing.interface.run'"
+        ),
+        path=None,
+    )
+
+
+def test_dispatch_scoped_graph_includes_absolute_access_policy_callers(
+    tmp_path: Path,
+) -> None:
+    root = _copy_v5_authorization_fixture(tmp_path)
+    runtime_module = root / "skills" / "demo" / "_rtx" / "blueprint.yaml"
+    declaration = yaml.safe_load(runtime_module.read_text(encoding="utf-8"))
+    declaration["exports"]["demo-rtx.interface.execute"]["access"][
+        "allowed_callers"
+    ].append("beta")
+    _write_yaml(runtime_module, declaration)
+    runtime_source = (
+        root / "skills" / "demo" / "_rtx" / "blueprints" / "runtime.yaml"
+    )
+    runtime = yaml.safe_load(runtime_source.read_text(encoding="utf-8"))
+    runtime["dependencies"] = [
+        {
+            "source": "dependency.source.runtime",
+            "version": 1,
+            "reason": "Exercise transitive source dependency closure.",
+            "blueprint": {
+                "base": "repository-root",
+                "path": "modules/dependency/blueprints/runtime.yaml",
+            },
+        }
+    ]
+    _write_yaml(runtime_source, runtime)
+    broken_root = root / "modules" / "broken"
+    (broken_root / "README.md").parent.mkdir(parents=True, exist_ok=True)
+    (broken_root / "README.md").write_text("Broken module.\n", encoding="utf-8")
+    (broken_root / "caller.py").write_text("pass\n", encoding="utf-8")
+    _write_yaml(
+        broken_root / "blueprint.yaml",
+        {
+            "schema_version": 5,
+            "node_type": "module",
+            "id": "broken",
+            "version": 1,
+            "gateway": {"path": "README.md", "language": "Markdown"},
+            "content": [r"(?:README\.md|caller\.py)"],
+            "authority": {"owns_filesystem": []},
+            "sources": {
+                "broken.source.caller": {
+                    "blueprint": {
+                        "base": "module-root",
+                        "path": "blueprints/caller.yaml",
+                    }
+                }
+            },
+            "children": {},
+            "namespace_exports": {},
+            "exports": {},
+        },
+    )
+    _write_yaml(
+        broken_root / "blueprints" / "caller.yaml",
+        {
+            "schema_version": 5,
+            "node_type": "behavioral_source",
+            "id": "broken.source.caller",
+            "version": 1,
+            "gateway": {"path": "caller.py", "language": "Python>=3.11"},
+            "content": [r"caller\.py"],
+            "dependencies": [],
+            "uses_interfaces": [
+                {"interface": "missing.interface.run", "version": 1}
+            ],
+            "interfaces": {},
+        },
+    )
+    dependency_root = root / "modules" / "dependency"
+    dependency_root.mkdir(parents=True, exist_ok=True)
+    (dependency_root / "README.md").write_text(
+        "Dependency module.\n", encoding="utf-8"
+    )
+    (dependency_root / "runtime.py").write_text("pass\n", encoding="utf-8")
+    _write_yaml(
+        dependency_root / "blueprint.yaml",
+        {
+            "schema_version": 5,
+            "node_type": "module",
+            "id": "dependency",
+            "version": 1,
+            "gateway": {"path": "README.md", "language": "Markdown"},
+            "content": [r"(?:README\.md|runtime\.py)"],
+            "authority": {"owns_filesystem": []},
+            "sources": {
+                "dependency.source.runtime": {
+                    "blueprint": {
+                        "base": "module-root",
+                        "path": "blueprints/runtime.yaml",
+                    }
+                }
+            },
+            "children": {},
+            "namespace_exports": {},
+            "exports": {},
+        },
+    )
+    _write_yaml(
+        dependency_root / "blueprints" / "runtime.yaml",
+        {
+            "schema_version": 5,
+            "node_type": "behavioral_source",
+            "id": "dependency.source.runtime",
+            "version": 1,
+            "gateway": {"path": "runtime.py", "language": "Python>=3.11"},
+            "content": [r"runtime\.py"],
+            "dependencies": [],
+            "uses_interfaces": [],
+            "interfaces": {},
+        },
+    )
+
+    result = load_dispatch_blueprint_graph(
+        root,
+        caller_module_id="demo",
+        interface_id="demo.interface.execute",
+        schema_root=V5_SCHEMA_ROOT,
+    )
+
+    assert "beta" in result.graph.nodes
+    assert "dependency.source.runtime" in result.graph.nodes
+    assert result.diagnostics[0].code == "unrelated-blueprint-invalid"
 
 
 def _v4_contract(*, helper: dict[str, object] | None = None) -> dict[str, object]:
@@ -1155,7 +1312,7 @@ def test_v5_graph_relationship_validation_requires_child_facade_admission(
 
 
 @pytest.mark.parametrize("filter_kind", ["namespace-route", "facade"])
-def test_v5_graph_rejects_filters_that_widen_terminal_export_access(
+def test_v5_graph_allows_broader_outer_filter_when_owner_can_call_next_hop(
     tmp_path: Path,
     filter_kind: str,
 ) -> None:
@@ -1176,12 +1333,11 @@ def test_v5_graph_rejects_filters_that_widen_terminal_export_access(
         }
     _write_yaml(marker, declaration)
 
-    with pytest.raises(BlueprintGraphError, match="widens terminal export access"):
-        load_repository_blueprint_graph(
-            root,
-            schema_root=V5_SCHEMA_ROOT,
-            expected_schema_version=5,
-        )
+    load_repository_blueprint_graph(
+        root,
+        schema_root=V5_SCHEMA_ROOT,
+        expected_schema_version=5,
+    )
 
 
 @pytest.mark.parametrize(

@@ -273,15 +273,15 @@ including identity/version, invocation, inputs/outputs, preconditions/outcomes,
 effects, lifecycle, and interface-specific machine capabilities as applicable.
 
 Caller authorization is not part of a source-owned interface contract.
-Cross-module authorization belongs only to the module export. A language-native
-call across modules therefore declares a use of the target module's export; the
-graph resolves that use to the exact implementing behavioral source. A source
-may separately declare an exact source dependency for authored behavior-shaping
-content that it reads but does not invoke. That dependency grants no interface
-access or privilege. One common interface contract describes inputs, outputs,
-preconditions, outcomes, effects, and lifecycle across gateway languages. An
-optional gateway binding describes only how those contract values map onto the
-gateway's invocation mechanics.
+Cross-module authorization belongs only to the target module's export or
+namespace policy. A runtime call identifies the immediately calling module;
+the graph resolves the target export to the exact implementing behavioral
+source. A source may separately declare `uses_interfaces` or an exact source
+dependency as static relationship and certification metadata. Neither grants
+runtime interface access or privilege. One common interface contract describes
+inputs, outputs, preconditions, outcomes, effects, and lifecycle across gateway
+languages. An optional gateway binding describes only how those contract
+values map onto the gateway's invocation mechanics.
 
 Gateway language, machine compatibility, and interface binding are orthogonal.
 The initial structured binding is the existing process binding for argv/stdin,
@@ -312,17 +312,22 @@ its subtree needs its own namespace route.
 
 A parent may separately export a facade under a parent-owned interface ID. A
 facade derives one exact child export's contract and version; it cannot export
-a private child interface or widen the child's access policy. The original
-caller must pass both the facade policy and the child export policy. Direct
-access to the child export is a distinct request: a parent or sibling already
-inside the registered subtree does not cross the common parent's outward
-namespace filter, but still needs authorization from the child.
+a private child interface. The external caller must pass the facade policy,
+then the facade-owning parent is the immediate caller checked by the child
+export. A facade may therefore admit callers that the child does not name, but
+only when the child admits the facade owner. Direct access to the child export
+is a distinct request: a parent or sibling already inside the registered
+subtree does not cross the common parent's outward namespace filter, but still
+needs authorization from the child.
 
 Caller allowlists use either globally unique module IDs or Python-style
 leading-dot references resolved against the certified registration tree.
 `._rtx` names a module's code child; `..parser` names its sibling `parser`.
-Relative references are exact identities, not globs or implicit descendant
-grants.
+Each reference identifies a registered module subtree: it admits that module
+and its descendants. Naming a child does not admit its parent or siblings.
+Thus `A/B` may call `A/C` only when `A/C` is public or names `A`, `A/B`, or an
+ancestor of `A/B`. An empty false allowlist is private to the owning module;
+the owner always admits itself.
 
 The interaction path for a facade call is:
 
@@ -330,17 +335,19 @@ The interaction path for a facade call is:
 calling behavioral-source gateway
   -> declared cross-module interface use
   -> parent facade export
-  -> child module export
+  -> parent module calls child module export
   -> child behavioral-source gateway
 ```
 
-The dispatcher or equivalent boundary mechanism attributes the call to the
-calling module and applies the canonical authorization resolver to direct
-exports, namespace routes, and facades. Source-level
-`uses_interfaces` agreement is a static graph invariant; the public dispatcher
-does not need to trust a caller-supplied source identity. The implementation may
-collapse redundant local routing steps, but the graph must preserve the same
-authority checks and contract ownership.
+The dispatcher or equivalent boundary mechanism checks the immediate caller at
+each direct export, namespace route, facade, and terminal export. After a
+namespace owner or facade accepts a call, that owner—not the original upstream
+caller—is the caller of the next hop. No caller chain or source identity is
+propagated as permission. Source-level `uses_interfaces` agreement is a static
+graph invariant; the public dispatcher does not need to trust a caller-supplied
+source identity. The implementation may collapse redundant local routing
+steps, but the graph must preserve the same hop-local authority checks and
+contract ownership.
 
 ## Discovery
 

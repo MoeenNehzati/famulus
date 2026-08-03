@@ -1105,54 +1105,39 @@ class PythonMachineInterface:
                 "`<module>.interface.<name>` target"
             )
         context = runtime_dispatch_context(self)
-        if context.caller_module_id is not None or context.caller_source_id is not None:
-            from officina.dispatcher.core import (
-                _resolve_dispatch,
-                _run_resolved_invocation,
+        if (
+            context.caller_module_id is not None
+            and context.caller_module_id != call.caller_module_id
+        ):
+            raise ValueError(
+                "runtime dispatch context caller module "
+                f"`{context.caller_module_id}` does not match declared "
+                f"dispatch caller `{call.caller_module_id}`"
             )
 
-            if (
-                context.caller_module_id is not None
-                and context.caller_module_id != call.caller_module_id
-            ):
-                raise ValueError(
-                    "runtime dispatch context caller module "
-                    f"`{context.caller_module_id}` does not match declared "
-                    f"dispatch caller `{call.caller_module_id}`"
-                )
-            resolved = _resolve_dispatch(
-                caller_skill=call.caller_module_id,
-                caller_source_id=context.caller_source_id,
-                target=target_interface_id,
-                args=list(args or []),
-                stdin_requested=stdin is not None,
-                repo_root=repo_root if repo_root is not None else context.repo_root,
-                target_version=call.version,
-                certification_view=None,
-                host_caller=False,
-            )
-            return _run_resolved_invocation(
-                resolved,
-                stdin=stdin,
-                timeout=timeout,
-                capture_output=capture_output,
-                check=check,
-                text=text,
-            )
+        from officina.dispatcher.core import (
+            _resolve_dispatch,
+            _run_resolved_invocation,
+        )
 
-        from officina.dispatcher import dispatch
-
-        return dispatch(
+        resolved = _resolve_dispatch(
             caller_skill=call.caller_module_id,
             target=target_interface_id,
             args=list(args or []),
-            stdin=stdin,
+            stdin_requested=stdin is not None,
+            caller_source_id=None,
+            repo_root=repo_root if repo_root is not None else context.repo_root,
             target_version=call.version,
+            certification_view=None,
+            host_caller=False,
+        )
+        return _run_resolved_invocation(
+            resolved,
+            stdin=stdin,
             timeout=timeout,
             capture_output=capture_output,
             check=check,
             text=text,
-            repo_root=repo_root,
         )
 
     def parse_args(self, parser: argparse.ArgumentParser, argv: list[str]) -> Any:

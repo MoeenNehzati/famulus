@@ -518,7 +518,7 @@ def _resolve_v5_trace(
     )
 
 
-def test_v5_dispatch_preserves_and_validates_deepest_registered_caller(
+def test_v5_dispatch_preserves_module_caller_and_ignores_source_identity(
     tmp_path: Path,
 ) -> None:
     root, graph = _load_v5_dispatch_graph(tmp_path)
@@ -541,14 +541,14 @@ def test_v5_dispatch_preserves_and_validates_deepest_registered_caller(
     assert "caller_skill" not in payload
     assert "target_skill" not in payload
 
-    with pytest.raises(InvocationError, match="caller-source-mismatch"):
-        _resolve_v5_trace(
-            root,
-            graph,
-            caller_skill="demo",
-            caller_source_id="demo-rtx.source.caller",
-            target="demo.interface.execute",
-        )
+    source_mismatch = _resolve_v5_trace(
+        root,
+        graph,
+        caller_skill="demo",
+        caller_source_id="demo-rtx.source.caller",
+        target="demo.interface.execute",
+    )
+    assert source_mismatch.caller_module_id == "demo"
 
 
 def test_v5_dispatch_distinguishes_parent_and_code_child_callers(
@@ -713,6 +713,81 @@ def test_v5_bootstrap_seam_receives_the_exact_requested_target_module(
     ]
 
 
+def test_v5_stale_certification_is_an_advisory_warning(
+    tmp_path: Path,
+) -> None:
+    root, graph = _load_v5_dispatch_graph(tmp_path)
+
+    class StaleCertificationView:
+        def check_authorization(self, _authorization):
+            return CertificationDecision(False, "stale", "Certificate is stale.")
+
+        def check_export(self, *_args):
+            pytest.fail("v5 authorization seam fell back to check_export")
+
+    with dispatcher_core._resolve_dispatch(
+        caller_skill="demo-rtx",
+        caller_source_id="demo-rtx.source.caller",
+        target="demo.interface.execute",
+        args=["--route-smoke"],
+        repo_root=root,
+        target_version=3,
+        certification_view=StaleCertificationView(),
+        graph=graph,
+    ) as resolved:
+        metadata = resolved.metadata()
+
+    assert metadata.diagnostics == (
+        dispatcher_core.InvocationDiagnostic(
+            severity="warning",
+            code="stale",
+            message="Certificate is stale.",
+            subject="demo.interface.execute",
+        ),
+    )
+    assert metadata.as_payload()["warnings"] == [
+        {
+            "code": "stale",
+            "message": "Certificate is stale.",
+            "subject": "demo.interface.execute",
+        }
+    ]
+
+
+def test_host_resolution_warns_for_unrelated_invalid_blueprint(
+    tmp_path: Path,
+) -> None:
+    root, _graph = _load_v5_dispatch_graph(tmp_path)
+    outsider_source = root / "modules" / "outsider" / "blueprints" / "caller.yaml"
+    declaration = yaml.safe_load(outsider_source.read_text(encoding="utf-8"))
+    declaration["uses_interfaces"] = [
+        {"interface": "missing.interface.run", "version": 1}
+    ]
+    outsider_source.write_text(
+        yaml.safe_dump(declaration, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    metadata = dispatcher_core._resolve_host_dispatch_metadata(
+        caller_skill="demo",
+        target="demo.interface.execute",
+        args=["--route-smoke"],
+        repo_root=root,
+        certification_view=_PassingCertificationView(),
+    )
+
+    assert metadata.diagnostics == (
+        dispatcher_core.InvocationDiagnostic(
+            severity="warning",
+            code="unrelated-blueprint-invalid",
+            message=(
+                "outsider.source.caller: unresolved interface "
+                "'missing.interface.run'"
+            ),
+        ),
+    )
+
+
 def test_v5_host_dispatch_accepts_discoverable_parent_not_code_child(
     tmp_path: Path,
 ) -> None:
@@ -742,7 +817,7 @@ def test_v5_host_dispatch_accepts_discoverable_parent_not_code_child(
         )
 
 
-def test_v5_host_dispatch_requires_gateway_declared_interface_use(
+def test_v5_host_dispatch_does_not_treat_declared_use_as_permission(
     tmp_path: Path,
 ) -> None:
     root, graph = _load_v5_dispatch_graph(tmp_path)
@@ -759,16 +834,17 @@ def test_v5_host_dispatch_requires_gateway_declared_interface_use(
         expected_schema_version=5,
     )
 
-    with pytest.raises(InvocationError, match="undeclared-interface-use"):
-        dispatcher_core._resolve_host_dispatch_metadata(
-            caller_skill="demo",
-            target="demo-rtx.interface.execute",
-            args=["--route-smoke"],
-            repo_root=root,
-            target_version=3,
-            certification_view=_PassingCertificationView(),
-            graph=graph,
-        )
+    metadata = dispatcher_core._resolve_host_dispatch_metadata(
+        caller_skill="demo",
+        target="demo-rtx.interface.execute",
+        args=["--route-smoke"],
+        repo_root=root,
+        target_version=3,
+        certification_view=_PassingCertificationView(),
+        graph=graph,
+    )
+
+    assert metadata.caller_module_id == "demo"
 
 
 def test_v5_python_runtime_uses_child_root_and_logical_package_only(

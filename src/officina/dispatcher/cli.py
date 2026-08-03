@@ -7,10 +7,19 @@ import json
 import sys
 
 from .core import (
+    InvocationDiagnostic,
     InvocationError,
     _dispatch_host,
     _resolve_host_dispatch_metadata,
 )
+
+
+def _print_warning(diagnostic: InvocationDiagnostic) -> None:
+    subject = f" [{diagnostic.subject}]" if diagnostic.subject is not None else ""
+    print(
+        f"warning: {diagnostic.code}: {diagnostic.message}{subject}",
+        file=sys.stderr,
+    )
 
 
 def parse_cli() -> argparse.Namespace:
@@ -75,6 +84,7 @@ def main() -> int:
             stdin=stdin,
             capture_output=True,
             check=False,
+            warning_handler=_print_warning,
         )
     except InvocationError as exc:
         print(f"error: {exc}", file=sys.stderr)

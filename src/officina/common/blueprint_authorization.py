@@ -205,10 +205,11 @@ def _evaluate_access(
         access=access,
     )
     caller_is_self = caller_module_id == owner_module_id
+    caller_ancestry = frozenset(graph.module_ancestry[caller_module_id])
     admits = (
         caller_is_self
         or policy.allow_all_modules
-        or caller_module_id in policy.caller_ids
+        or bool(caller_ancestry & policy.caller_ids)
     )
     return (
         EffectiveAuthorizationFilter(
@@ -280,43 +281,6 @@ def _resolve_access_policy(
         ),
         relations=tuple(sorted(set(relations))),
     )
-
-
-def _policy_capability(
-    policy: _ResolvedAccessPolicy,
-    *,
-    self_module_id: str | None = None,
-) -> tuple[bool, frozenset[str]]:
-    callers = policy.caller_ids
-    if self_module_id is not None:
-        callers = callers | {self_module_id}
-    return policy.allow_all_modules, callers
-
-
-def _intersect_capabilities(
-    first: tuple[bool, frozenset[str]],
-    second: tuple[bool, frozenset[str]],
-) -> tuple[bool, frozenset[str]]:
-    first_all, first_callers = first
-    second_all, second_callers = second
-    if first_all:
-        return second
-    if second_all:
-        return first
-    return False, first_callers & second_callers
-
-
-def _capability_is_subset(
-    candidate: tuple[bool, frozenset[str]],
-    ceiling: tuple[bool, frozenset[str]],
-) -> bool:
-    candidate_all, candidate_callers = candidate
-    ceiling_all, ceiling_callers = ceiling
-    if ceiling_all:
-        return True
-    if candidate_all:
-        return False
-    return candidate_callers <= ceiling_callers
 
 
 def _lowest_common_ancestor(
@@ -410,20 +374,6 @@ def _result(
     )
 
 
-def _declared_interface_use(
-    source_declaration: Mapping[str, Any],
-    interface_id: str,
-    version: int,
-) -> bool:
-    raw_uses = source_declaration.get("uses_interfaces", [])
-    return isinstance(raw_uses, list) and any(
-        isinstance(use, Mapping)
-        and use.get("interface") == interface_id
-        and use.get("version") == version
-        for use in raw_uses
-    )
-
-
 def resolve_interface_authorization(
     graph: RepositoryBlueprintGraph,
     request: AuthorizationRequest,
@@ -512,97 +462,12 @@ def resolve_interface_authorization(
         if relation.relation == "contains-module"
     )
 
-    if request.caller_source_id is None:
-        return _result(
-            graph,
-            request,
-            requested_owner_module_id=requested.module_node_id,
-            terminal_interface_id=terminal_interface_id,
-            terminal_version=terminal.version,
-            terminal_module_id=terminal_module_id,
-            implementing_source_id=terminal.source_node_id,
-            caller_ancestry=caller_ancestry,
-            target_ancestry=target_ancestry,
-            terminal_ancestry=terminal_ancestry,
-            lca_module_id=lca_module_id,
-            allowed=False,
-            diagnostic=f"caller-source-required:{request.caller_module_id}",
-            relations=tuple(relations),
-            required_node_ids=frozenset(required_node_ids),
-        )
-    source = graph.nodes.get(request.caller_source_id)
-    source_owner = graph.source_modules.get(request.caller_source_id)
-    if source is None or source.node_type != "behavioral_source":
-        return _result(
-            graph,
-            request,
-            requested_owner_module_id=requested.module_node_id,
-            terminal_interface_id=terminal_interface_id,
-            terminal_version=terminal.version,
-            terminal_module_id=terminal_module_id,
-            implementing_source_id=terminal.source_node_id,
-            caller_ancestry=caller_ancestry,
-            target_ancestry=target_ancestry,
-            terminal_ancestry=terminal_ancestry,
-            lca_module_id=lca_module_id,
-            allowed=False,
-            diagnostic=f"unknown-caller-source:{request.caller_source_id}",
-            relations=tuple(relations),
-            required_node_ids=frozenset(required_node_ids),
-        )
-    if source_owner != request.caller_module_id:
-        return _result(
-            graph,
-            request,
-            requested_owner_module_id=requested.module_node_id,
-            terminal_interface_id=terminal_interface_id,
-            terminal_version=terminal.version,
-            terminal_module_id=terminal_module_id,
-            implementing_source_id=terminal.source_node_id,
-            caller_ancestry=caller_ancestry,
-            target_ancestry=target_ancestry,
-            terminal_ancestry=terminal_ancestry,
-            lca_module_id=lca_module_id,
-            allowed=False,
-            diagnostic=(
-                f"caller-source-mismatch:{request.caller_source_id}:"
-                f"{source_owner}!={request.caller_module_id}"
-            ),
-            relations=tuple(relations),
-            required_node_ids=frozenset(required_node_ids),
-        )
-    if not _declared_interface_use(
-        source.declaration,
-        request.interface_id,
-        request.version,
-    ):
-        return _result(
-            graph,
-            request,
-            requested_owner_module_id=requested.module_node_id,
-            terminal_interface_id=terminal_interface_id,
-            terminal_version=terminal.version,
-            terminal_module_id=terminal_module_id,
-            implementing_source_id=terminal.source_node_id,
-            caller_ancestry=caller_ancestry,
-            target_ancestry=target_ancestry,
-            terminal_ancestry=terminal_ancestry,
-            lca_module_id=lca_module_id,
-            allowed=False,
-            diagnostic=(
-                f"undeclared-interface-use:{request.caller_source_id}:"
-                f"{request.interface_id}@{request.version}"
-            ),
-            relations=tuple(relations),
-            required_node_ids=frozenset(required_node_ids),
-        )
-    required_node_ids.update(
-        {request.caller_module_id, request.caller_source_id}
-    )
+    required_node_ids.add(request.caller_module_id)
 
     crossed: list[CrossedNamespaceGate] = []
     resolved_callers: list[ResolvedCallerReference] = []
     effective_filters: list[EffectiveAuthorizationFilter] = []
+    immediate_caller_module_id = request.caller_module_id
 
     def deny(diagnostic: str) -> AuthorizationResult:
         return _result(
@@ -682,7 +547,7 @@ def resolve_interface_authorization(
         try:
             route_filter, route_callers, route_relations = _evaluate_access(
                 graph,
-                caller_module_id=request.caller_module_id,
+                caller_module_id=immediate_caller_module_id,
                 owner_module_id=route_owner_id,
                 interface_id=request.interface_id,
                 kind="namespace-route",
@@ -713,7 +578,7 @@ def resolve_interface_authorization(
             try:
                 interface_filter, callers, proof = _evaluate_access(
                     graph,
-                    caller_module_id=request.caller_module_id,
+                    caller_module_id=immediate_caller_module_id,
                     owner_module_id=route_owner_id,
                     interface_id=request.interface_id,
                     kind="namespace-interface",
@@ -734,6 +599,7 @@ def resolve_interface_authorization(
                     f"caller-filtered:namespace-interface:{route_owner_id}:"
                     f"{request.interface_id}"
                 )
+        immediate_caller_module_id = route_owner_id
 
     is_facade = terminal_interface_id != requested.interface_id
     if is_facade:
@@ -757,7 +623,7 @@ def resolve_interface_authorization(
         try:
             facade_filter, callers, proof = _evaluate_access(
                 graph,
-                caller_module_id=request.caller_module_id,
+                caller_module_id=immediate_caller_module_id,
                 owner_module_id=requested.module_node_id,
                 interface_id=request.interface_id,
                 kind="facade-export",
@@ -781,11 +647,12 @@ def resolve_interface_authorization(
             return deny(
                 f"caller-filtered:facade-export:{request.interface_id}"
             )
+        immediate_caller_module_id = requested.module_node_id
 
     try:
         terminal_filter, callers, proof = _evaluate_access(
             graph,
-            caller_module_id=request.caller_module_id,
+            caller_module_id=immediate_caller_module_id,
             owner_module_id=terminal_module_id,
             interface_id=terminal_interface_id,
             kind="terminal-export",
@@ -885,100 +752,43 @@ def _validate_authorization_declarations(
             access=access,
         )
 
-    def export_capability(
-        interface_id: str,
-    ) -> tuple[bool, frozenset[str]]:
-        export = graph.exports[interface_id]
-        policy = _resolve_access_policy(
-            graph,
-            owner_module_id=export.module_node_id,
-            interface_id=interface_id,
-            kind="terminal-export",
-            access=(
-                export.export_declaration.get("access")
-                if isinstance(export.export_declaration, Mapping)
-                else None
-            ),
-        )
-        return _policy_capability(
-            policy,
-            self_module_id=export.module_node_id,
-        )
-
     for export in graph.exports.values():
         terminal_interface_id = (
             export.terminal_interface_id or export.interface_id
         )
         if terminal_interface_id == export.interface_id:
             continue
-        facade_policy = _resolve_access_policy(
+        terminal = graph.exports[terminal_interface_id]
+        result = resolve_interface_authorization(
             graph,
-            owner_module_id=export.module_node_id,
-            interface_id=export.interface_id,
-            kind="facade-export",
-            access=(
-                export.export_declaration.get("access")
-                if isinstance(export.export_declaration, Mapping)
-                else None
+            AuthorizationRequest(
+                caller_module_id=export.module_node_id,
+                caller_source_id=None,
+                interface_id=terminal_interface_id,
+                version=terminal.version,
             ),
         )
-        facade_capability = _policy_capability(
-            facade_policy,
-            self_module_id=export.module_node_id,
-        )
-        if not _capability_is_subset(
-            facade_capability,
-            export_capability(terminal_interface_id),
-        ):
+        if not result.allowed:
             raise _ResolutionFailure(
-                f"facade {export.interface_id} widens terminal export access "
-                f"{terminal_interface_id}"
+                f"facade owner {export.module_node_id} cannot call "
+                f"{terminal_interface_id}: {result.diagnostic}"
             )
 
     for route in graph.namespace_routes.values():
-        route_policy = _resolve_access_policy(
-            graph,
-            owner_module_id=route.route_owner_id,
-            interface_id=route.child_module_id,
-            kind="namespace-route",
-            access=route.declaration.get("access"),
-        )
-        route_capability = _policy_capability(route_policy)
-        raw_interface_access = route.declaration.get("interface_access", {})
-        if not isinstance(raw_interface_access, Mapping):
-            raise _ResolutionFailure(
-                f"invalid-access:namespace-route:{route.route_owner_id}:"
-                f"{route.child_module_id}"
-            )
         for routed in route.materialized_interfaces:
-            effective_capability = route_capability
-            interface_access = raw_interface_access.get(routed.interface_id)
-            if interface_access is not None:
-                interface_policy = _resolve_access_policy(
-                    graph,
-                    owner_module_id=route.route_owner_id,
+            result = resolve_interface_authorization(
+                graph,
+                AuthorizationRequest(
+                    caller_module_id=route.route_owner_id,
+                    caller_source_id=None,
                     interface_id=routed.interface_id,
-                    kind="namespace-interface",
-                    access=interface_access,
-                )
-                effective_capability = _intersect_capabilities(
-                    effective_capability,
-                    _policy_capability(interface_policy),
-                )
-            requested_export = graph.exports[routed.interface_id]
-            terminal_interface_id = (
-                requested_export.terminal_interface_id
-                or requested_export.interface_id
+                    version=routed.version,
+                ),
             )
-            if not _capability_is_subset(
-                effective_capability,
-                export_capability(terminal_interface_id),
-            ):
+            if not result.allowed:
                 raise _ResolutionFailure(
-                    f"namespace route {route.route_owner_id}->"
-                    f"{route.child_module_id} filter for "
-                    f"{routed.interface_id} widens terminal export access "
-                    f"{terminal_interface_id}"
+                    f"namespace route owner {route.route_owner_id} cannot call "
+                    f"{routed.interface_id}: {result.diagnostic}"
                 )
 
 

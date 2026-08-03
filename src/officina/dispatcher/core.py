@@ -10,7 +10,7 @@ import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from officina.common.blueprint_graph import (
     BlueprintGraphError,
@@ -19,6 +19,7 @@ from officina.common.blueprint_graph import (
     RuntimeFileBinding,
     descriptor_safe_open_supported,
     encode_runtime_python_package_snapshot,
+    load_dispatch_blueprint_graph,
     load_repository_blueprint_graph,
     open_runtime_python_package,
     resolve_export,
@@ -55,6 +56,28 @@ from officina.runtime.python_machine_interface import (
 
 class InvocationError(Exception):
     """Raised when a dispatcher request is invalid."""
+
+
+@dataclass(frozen=True)
+class InvocationDiagnostic:
+    """One advisory diagnostic attached to an otherwise valid invocation."""
+
+    severity: str
+    code: str
+    message: str
+    subject: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.severity != "warning":
+            raise ValueError("resolved invocation diagnostics must be warnings")
+        if not self.code or not self.message:
+            raise ValueError("invocation diagnostics require code and message")
+
+    def as_payload(self) -> dict[str, str]:
+        payload = {"code": self.code, "message": self.message}
+        if self.subject is not None:
+            payload["subject"] = self.subject
+        return payload
 
 
 _EXPORT_TARGET_RE = re.compile(
@@ -114,6 +137,7 @@ class ResolvedInvocationMetadata:
     implementing_source_id: str | None = None
     authorization: AuthorizationResult | None = None
     schema_version: int = 5
+    diagnostics: tuple[InvocationDiagnostic, ...] = ()
 
     def __init__(
         self,
@@ -131,6 +155,7 @@ class ResolvedInvocationMetadata:
         implementing_source_id: str | None = None,
         authorization: AuthorizationResult | None = None,
         schema_version: int = 5,
+        diagnostics: tuple[InvocationDiagnostic, ...] = (),
         *,
         caller_skill: str | None = None,
         target_skill: str | None = None,
@@ -166,6 +191,7 @@ class ResolvedInvocationMetadata:
             ("implementing_source_id", implementing_source_id),
             ("authorization", authorization),
             ("schema_version", schema_version),
+            ("diagnostics", diagnostics),
         ):
             object.__setattr__(self, name, value)
 
@@ -226,6 +252,10 @@ class ResolvedInvocationMetadata:
                     "target_skill": self.target_module_id,
                 }
             )
+        if self.diagnostics:
+            payload["warnings"] = [
+                diagnostic.as_payload() for diagnostic in self.diagnostics
+            ]
         return payload
 
 
@@ -250,6 +280,7 @@ class ResolvedInvocation:
     implementing_source_id: str | None = None
     authorization: AuthorizationResult | None = None
     schema_version: int = 5
+    diagnostics: tuple[InvocationDiagnostic, ...] = ()
 
     def __init__(
         self,
@@ -270,6 +301,7 @@ class ResolvedInvocation:
         implementing_source_id: str | None = None,
         authorization: AuthorizationResult | None = None,
         schema_version: int = 5,
+        diagnostics: tuple[InvocationDiagnostic, ...] = (),
         *,
         caller_skill: str | None = None,
         target_skill: str | None = None,
@@ -308,6 +340,7 @@ class ResolvedInvocation:
             ("implementing_source_id", implementing_source_id),
             ("authorization", authorization),
             ("schema_version", schema_version),
+            ("diagnostics", diagnostics),
         ):
             object.__setattr__(self, name, value)
 
@@ -386,6 +419,7 @@ class ResolvedInvocation:
             implementing_source_id=self.implementing_source_id,
             authorization=self.authorization,
             schema_version=self.schema_version,
+            diagnostics=self.diagnostics,
         )
 
     def as_payload(self) -> dict[str, Any]:
@@ -689,22 +723,47 @@ def _resolve_export_dispatch(
 ) -> ResolvedInvocation | None:
     """Resolve one v4 repository-graph export."""
 
+    diagnostics: list[InvocationDiagnostic] = []
     if graph is None:
         diagnostic_inventory = collect_blueprints(root, skip_parse_errors=True)
         target_is_module = False
         target_is_export = False
+        target_schema_version: int | None = None
         for document in diagnostic_inventory.documents:
             schema_version = document.declaration.get("schema_version")
             if schema_version in {4, 5} and document.node_type == "module":
                 if document.node_id == target:
                     target_is_module = True
+                    target_schema_version = schema_version
                 raw_exports = document.declaration.get("exports", {})
                 if isinstance(raw_exports, dict) and target in raw_exports:
                     target_is_export = True
+                    target_schema_version = schema_version
         if not target_is_module and not target_is_export:
             return None
         try:
-            graph = load_repository_blueprint_graph(root)
+            if target_schema_version == 5:
+                scoped = load_dispatch_blueprint_graph(
+                    root,
+                    caller_module_id=caller_skill,
+                    interface_id=target,
+                )
+                graph = scoped.graph
+                diagnostics.extend(
+                    InvocationDiagnostic(
+                        severity="warning",
+                        code=item.code,
+                        message=item.message,
+                        subject=(
+                            item.path.as_posix()
+                            if item.path is not None
+                            else None
+                        ),
+                    )
+                    for item in scoped.diagnostics
+                )
+            else:
+                graph = load_repository_blueprint_graph(root)
         except BlueprintInventoryError as exc:
             first = exc.issues[0]
             raise InvocationError(
@@ -861,9 +920,13 @@ def _resolve_export_dispatch(
                     argv=compiled.argv,
                 )
         if not decision.certified:
-            raise InvocationError(
-                f"{export.interface_id}: certification rejected "
-                f"[{decision.code}]: {decision.message}"
+            diagnostics.append(
+                InvocationDiagnostic(
+                    severity="warning",
+                    code=decision.code,
+                    message=decision.message,
+                    subject=export.interface_id,
+                )
             )
     except (BlueprintGraphError, ProcessBindingError) as exc:
         raise InvocationError(str(exc)) from exc
@@ -929,6 +992,7 @@ def _resolve_export_dispatch(
         implementing_source_id=implementing_source_id,
         authorization=authorization,
         schema_version=graph.schema_version,
+        diagnostics=tuple(diagnostics),
     )
 
 
@@ -1158,6 +1222,7 @@ def _dispatch_host(
     text: bool | None = None,
     repo_root: Path | None = None,
     target_version: int | None = None,
+    warning_handler: Callable[[InvocationDiagnostic], None] | None = None,
 ) -> subprocess.CompletedProcess[Any]:
     """Resolve and execute a host request from a discoverable parent skill."""
 
@@ -1170,6 +1235,9 @@ def _dispatch_host(
         target_version=target_version,
         host_caller=True,
     )
+    if warning_handler is not None:
+        for diagnostic in resolved.diagnostics:
+            warning_handler(diagnostic)
     return _run_resolved_invocation(
         resolved,
         stdin=stdin,

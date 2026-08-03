@@ -54,6 +54,33 @@ def test_v5_dispatch_caller_uses_deepest_registered_module(
     assert any("expected `demo-rtx`" in error for error in errors)
 
 
+def test_v5_validator_checks_registered_modules_outside_skills(
+    tmp_path: Path,
+) -> None:
+    copy_v5_fixture_tree(_V5_FIXTURE / "modules", tmp_path / "modules")
+    copy_v5_fixture_tree(_V5_FIXTURE / "skills", tmp_path / "skills")
+    graph = load_repository_blueprint_graph(
+        tmp_path,
+        schema_root=_V5_SCHEMA_ROOT,
+        expected_schema_version=5,
+    )
+    caller = tmp_path / "modules" / "outsider" / "caller.py"
+    caller.write_text(
+        "from officina.runtime.python_machine_interface import DispatchCall\n"
+        "CALL = DispatchCall(caller_module_id='root', "
+        "target_module_id='leaf', interface='run')\n",
+        encoding="utf-8",
+    )
+
+    errors = _mod.validate_with_graph(tmp_path, graph)
+
+    assert any(
+        "modules/outsider/caller.py" in error
+        and "expected `outsider`" in error
+        for error in errors
+    )
+
+
 def test_registered_child_tests_are_not_runtime_caller_declarations(
     tmp_path: Path,
 ) -> None:

@@ -110,87 +110,100 @@ def _validate(
     graph: RepositoryBlueprintGraph | None,
 ) -> list[str]:
     errors: list[str] = []
-    skills_root = repo_root / "skills"
-    if not skills_root.is_dir():
-        return errors
-
-    for blueprint_path in sorted(skills_root.glob("*/blueprint.yaml")):
-        skill_name = blueprint_path.parent.name
-        skill_dir = blueprint_path.parent
-        for path in _python_files(skill_dir):
-            expected_module_id = (
-                _deepest_module_id(graph, path, skill_name)
-                if graph is not None
-                else skill_name
-            )
+    candidates: list[tuple[Path, str]] = []
+    if graph is not None and graph.schema_version == 5:
+        for path, owner_id in sorted(graph.direct_file_owners.items()):
+            if path.suffix != ".py" or not path.is_file():
+                continue
             rel = path.relative_to(repo_root)
-            try:
-                tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-            except (SyntaxError, UnicodeDecodeError):
+            if "tests" in rel.parts:
                 continue
-
-            constants = _module_string_constants(tree)
-            (
-                direct_aliases,
-                module_aliases,
-                legacy_famulus_lines,
-            ) = _dispatch_aliases(tree)
-            for lineno in legacy_famulus_lines:
-                errors.append(
-                    f"{rel}:{lineno}: import officina.dispatcher instead of removed famulus.dispatcher"
+            candidates.append(
+                (path, graph.source_modules.get(owner_id, owner_id))
+            )
+    else:
+        skills_root = repo_root / "skills"
+        if not skills_root.is_dir():
+            return errors
+        for blueprint_path in sorted(skills_root.glob("*/blueprint.yaml")):
+            skill_name = blueprint_path.parent.name
+            for path in _python_files(blueprint_path.parent):
+                expected_module_id = (
+                    _deepest_module_id(graph, path, skill_name)
+                    if graph is not None
+                    else skill_name
                 )
-            for declaration in analyze_dispatch_call_declarations(tree):
-                if graph is not None and graph.schema_version == 5 and declaration.legacy_v4:
-                    errors.append(
-                        f"{rel}:{declaration.lineno}: DispatchCall() must use "
-                        "caller_module_id and target_module_id in v5 runtime code"
-                    )
-                    continue
-                if declaration.caller_module_id is None:
-                    errors.append(
-                        f"{rel}:{declaration.lineno}: DispatchCall() must include caller_module_id "
-                        "as a literal or module-level string constant"
-                    )
-                elif declaration.caller_module_id != expected_module_id:
-                    errors.append(
-                        f"{rel}:{declaration.lineno}: caller_module_id resolves to "
-                        f"`{declaration.caller_module_id}`, expected `{expected_module_id}`"
-                    )
+                candidates.append((path, expected_module_id))
 
-            if not direct_aliases and not module_aliases:
+    for path, expected_module_id in candidates:
+        rel = path.relative_to(repo_root)
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        except (SyntaxError, UnicodeDecodeError):
+            continue
+
+        constants = _module_string_constants(tree)
+        (
+            direct_aliases,
+            module_aliases,
+            legacy_famulus_lines,
+        ) = _dispatch_aliases(tree)
+        for lineno in legacy_famulus_lines:
+            errors.append(
+                f"{rel}:{lineno}: import officina.dispatcher instead of removed famulus.dispatcher"
+            )
+        for declaration in analyze_dispatch_call_declarations(tree):
+            if graph is not None and graph.schema_version == 5 and declaration.legacy_v4:
+                errors.append(
+                    f"{rel}:{declaration.lineno}: DispatchCall() must use "
+                    "caller_module_id and target_module_id in v5 runtime code"
+                )
+                continue
+            if declaration.caller_module_id is None:
+                errors.append(
+                    f"{rel}:{declaration.lineno}: DispatchCall() must include caller_module_id "
+                    "as a literal or module-level string constant"
+                )
+            elif declaration.caller_module_id != expected_module_id:
+                errors.append(
+                    f"{rel}:{declaration.lineno}: caller_module_id resolves to "
+                    f"`{declaration.caller_module_id}`, expected `{expected_module_id}`"
+                )
+
+        if not direct_aliases and not module_aliases:
+            continue
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            is_dispatch_call = _is_dispatch_call(node, direct_aliases, module_aliases)
+            if not is_dispatch_call:
                 continue
 
-            for node in ast.walk(tree):
-                if not isinstance(node, ast.Call):
-                    continue
-                is_dispatch_call = _is_dispatch_call(node, direct_aliases, module_aliases)
-                if not is_dispatch_call:
-                    continue
+            caller_expr = None
+            for keyword in node.keywords:
+                if keyword.arg == "caller_skill":
+                    caller_expr = keyword.value
+                    break
 
-                caller_expr = None
-                for keyword in node.keywords:
-                    if keyword.arg == "caller_skill":
-                        caller_expr = keyword.value
-                        break
+            lineno = getattr(node, "lineno", 0)
+            if caller_expr is None:
+                errors.append(f"{rel}:{lineno}: dispatch() call must include caller_skill")
+                continue
 
-                lineno = getattr(node, "lineno", 0)
-                if caller_expr is None:
-                    errors.append(f"{rel}:{lineno}: dispatch() call must include caller_skill")
-                    continue
+            resolved = _resolve_string(caller_expr, constants)
+            if resolved is None:
+                errors.append(
+                    f"{rel}:{lineno}: caller_skill must be a string literal or module-level string constant "
+                    f"resolving to `{expected_module_id}`"
+                )
+                continue
 
-                resolved = _resolve_string(caller_expr, constants)
-                if resolved is None:
-                    errors.append(
-                        f"{rel}:{lineno}: caller_skill must be a string literal or module-level string constant "
-                        f"resolving to `{expected_module_id}`"
-                    )
-                    continue
-
-                if resolved != expected_module_id:
-                    errors.append(
-                        f"{rel}:{lineno}: caller_skill resolves to `{resolved}`, "
-                        f"expected `{expected_module_id}`"
-                    )
+            if resolved != expected_module_id:
+                errors.append(
+                    f"{rel}:{lineno}: caller_skill resolves to `{resolved}`, "
+                    f"expected `{expected_module_id}`"
+                )
 
     return errors
 

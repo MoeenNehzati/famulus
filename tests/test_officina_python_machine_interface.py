@@ -1532,12 +1532,21 @@ def test_declared_dispatch_uses_generic_export_id_without_legacy_rewrite(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured = {}
+    sentinel = object()
 
-    def fake_dispatch(**kwargs):
+    def fake_resolve(**kwargs):
         captured.update(kwargs)
+        return sentinel
+
+    def fake_run(resolved, **kwargs):
+        assert resolved is sentinel
         return "ok"
 
-    monkeypatch.setattr("officina.dispatcher.dispatch", fake_dispatch)
+    monkeypatch.setattr("officina.dispatcher.core._resolve_dispatch", fake_resolve)
+    monkeypatch.setattr(
+        "officina.dispatcher.core._run_resolved_invocation",
+        fake_run,
+    )
 
     class Interface(PythonMachineInterface):
         dispatches = {
@@ -1558,12 +1567,21 @@ def test_declared_v5_dispatch_builds_target_from_module_and_local_interface(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured = {}
+    sentinel = object()
 
-    def fake_dispatch(**kwargs):
+    def fake_resolve(**kwargs):
         captured.update(kwargs)
+        return sentinel
+
+    def fake_run(resolved, **kwargs):
+        assert resolved is sentinel
         return "ok"
 
-    monkeypatch.setattr("officina.dispatcher.dispatch", fake_dispatch)
+    monkeypatch.setattr("officina.dispatcher.core._resolve_dispatch", fake_resolve)
+    monkeypatch.setattr(
+        "officina.dispatcher.core._run_resolved_invocation",
+        fake_run,
+    )
 
     class Interface(PythonMachineInterface):
         dispatches = {
@@ -1579,7 +1597,7 @@ def test_declared_v5_dispatch_builds_target_from_module_and_local_interface(
     assert captured["target"] == "cloud-files-rtx.interface.read"
 
 
-def test_declared_v5_dispatch_uses_runtime_source_context(
+def test_declared_v5_dispatch_ignores_runtime_source_context(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1627,10 +1645,7 @@ def test_declared_v5_dispatch_uses_runtime_source_context(
         == "ok"
     )
     assert captured_resolve["caller_skill"] == "demo-rtx"
-    assert (
-        captured_resolve["caller_source_id"]
-        == "demo-rtx.source.rtx-plan-orchestrate"
-    )
+    assert captured_resolve["caller_source_id"] is None
     assert captured_resolve["target"] == "cloud-files-rtx.interface.read"
     assert captured_resolve["repo_root"] == tmp_path
     assert captured_resolve["host_caller"] is False

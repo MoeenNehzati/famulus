@@ -160,8 +160,8 @@
       },
       "access-control": {
         "rule_kind": "repository-validation",
-        "description": "Validate unrestricted, allowlisted, and private module export access.",
-        "creation": "Set allow_all_modules or enumerate exact caller module IDs; an empty false allowlist denies all external callers.",
+        "description": "Validate immediate-caller access for unrestricted, subtree-allowlisted, and owner-private module surfaces.",
+        "creation": "Set allow_all_modules or enumerate caller module roots whose registered descendants are admitted; an empty false allowlist admits only the owner.",
         "validator": "validators/skill/blueprint_relationships.py",
         "tests": ["tests/validate_blueprint_relationships.py", "tests/test_officina_blueprint_graph.py"],
         "template": "The example export chooses one explicit access policy.",

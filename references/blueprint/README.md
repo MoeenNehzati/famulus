@@ -59,8 +59,15 @@ A module owns:
 - explicitly registered child modules under module-root-relative paths;
 - namespace exports that expose all or a selected subset of a direct child; and
 - exported interface IDs, each resolving either to one intrinsic source
-  interface or to an allowed direct-child facade with access no broader than
-  the child.
+  interface or to an allowed direct-child facade.
+
+An access policy admits the owning module, every module when
+`allow_all_modules` is true, or a caller whose registered ancestry contains an
+entry in `allowed_callers`. An empty false allowlist is therefore private to
+the owner. At a namespace or facade hop, the accepting owner becomes the
+immediate caller of the next hop; upstream caller and source identities are not
+propagated as permission. `uses_interfaces` is static relationship and
+certification metadata, not a runtime grant.
 
 Export versions are derived from their source interfaces. Contracts and
 process bindings remain intrinsic to behavioral sources; modules do not copy

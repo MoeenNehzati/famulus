@@ -19,9 +19,11 @@ import yaml
 from .atomic_files import AtomicWriteError, read_regular_file_bytes
 from .blueprint_inventory import (
     BlueprintDocument,
+    BlueprintInventoryError,
     JsonValue,
     _normalize_json,
     _StrictBlueprintLoader,
+    collect_blueprints,
     iter_blueprints as iter_inventory_blueprints,
 )
 from .repository_paths import (
@@ -142,6 +144,23 @@ class RepositoryBlueprintGraph:
         default_factory=dict
     )
     routed_interfaces: tuple[RoutedInterface, ...] = ()
+
+
+@dataclass(frozen=True)
+class BlueprintDiagnostic:
+    """One non-fatal repository blueprint defect outside a dispatch closure."""
+
+    code: str
+    message: str
+    path: Path | None = None
+
+
+@dataclass(frozen=True)
+class DispatchBlueprintGraph:
+    """A canonical graph sufficient for one dispatch plus unrelated warnings."""
+
+    graph: RepositoryBlueprintGraph
+    diagnostics: tuple[BlueprintDiagnostic, ...] = ()
 
 
 class RuntimeFileBinding:
@@ -696,65 +715,24 @@ def _json_error_path(error: jsonschema.ValidationError) -> str:
     return path
 
 
-def _load_schema_validator(schema_path: Path) -> jsonschema.Draft7Validator:
-    """Read a concrete v4 schema bundle through the shared confined reader."""
+def _load_schema_validator(schema_path: Path) -> jsonschema.protocols.Validator:
+    """Load a concrete blueprint schema with ordinary local-reference resolution."""
 
     schema_path = Path(os.path.abspath(schema_path))
-    schema_root = schema_path.parent
-    repo_root = schema_root.parent.parent
     try:
-        documents: dict[str, dict[str, Any]] = {}
-        for name in sorted(
-            name
-            for name in os.listdir(schema_root)
-            if name.endswith(".schema.json")
-        ):
-            child_path = schema_root / name
-            try:
-                document = json.loads(
-                    read_regular_file_bytes(
-                        child_path,
-                        allowed_root=repo_root,
-                        allow_non_atomic=False,
-                    ).decode("utf-8")
-                )
-                if not isinstance(document, dict):
-                    raise TypeError("schema top level must be a mapping")
-                documents[name] = document
-            except (OSError, UnicodeError, json.JSONDecodeError, TypeError) as exc:
-                raise BlueprintSchemaError(
-                    child_path,
-                    "$",
-                    f"cannot load schema: {exc}",
-                ) from exc
-        try:
-            selected = documents[schema_path.name]
-        except KeyError as exc:
-            raise BlueprintSchemaError(
-                schema_path,
-                "$",
-                "cannot load schema: file does not exist",
-            ) from exc
-        store: dict[str, dict[str, Any]] = {}
-        for name, document in documents.items():
-            store[name] = document
-            store[(schema_root / name).as_uri()] = document
-            schema_id = document.get("$id")
-            if isinstance(schema_id, str):
-                store[schema_id] = document
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        validator_class = jsonschema.validators.validator_for(schema)
+        validator_class.check_schema(schema)
         resolver = jsonschema.RefResolver(
             base_uri=schema_path.as_uri(),
-            referrer=selected,
-            store=store,
+            referrer=schema,
         )
-        return jsonschema.Draft7Validator(selected, resolver=resolver)
-    except BlueprintSchemaError:
-        raise
-    except (BlueprintGraphError, OSError) as exc:
+        return validator_class(schema, resolver=resolver)
+    except (OSError, UnicodeError, json.JSONDecodeError, jsonschema.SchemaError) as exc:
         raise BlueprintSchemaError(
             schema_path,
             "$",
-            f"cannot load schema bundle: {exc}",
+            f"cannot load schema: {exc}",
         ) from exc
 
 
@@ -762,7 +740,7 @@ def _declaration_schema_errors(
     blueprint_path: Path,
     declaration: dict[str, Any],
     schema_root: Path,
-    validators: dict[str, jsonschema.Draft7Validator],
+    validators: dict[str, jsonschema.protocols.Validator],
     *,
     expected_schema_version: int = 5,
 ) -> tuple[BlueprintSchemaError, ...]:
@@ -1670,7 +1648,7 @@ def _load_v4_repository_blueprint_graph(
     *,
     schema_root: Path,
 ) -> RepositoryBlueprintGraph:
-    validators: dict[str, jsonschema.Draft7Validator] = {}
+    validators: dict[str, jsonschema.protocols.Validator] = {}
     nodes: dict[str, BlueprintNode] = {}
     for document in documents:
         errors = _declaration_schema_errors(
@@ -2758,7 +2736,7 @@ def _load_v5_repository_blueprint_graph(
     *,
     schema_root: Path,
 ) -> RepositoryBlueprintGraph:
-    validators: dict[str, jsonschema.Draft7Validator] = {}
+    validators: dict[str, jsonschema.protocols.Validator] = {}
     nodes: dict[str, BlueprintNode] = {}
     for document in documents:
         errors = _declaration_schema_errors(
@@ -3088,6 +3066,272 @@ def _load_v5_repository_blueprint_graph(
         namespace_routes=namespace_routes,
         routed_interfaces=routed_interfaces,
     )
+
+
+def _declared_interface_references(value: JsonValue) -> tuple[str, ...]:
+    """Return interface identifiers conservatively referenced by a declaration."""
+
+    found: set[str] = set()
+
+    def visit(item: JsonValue) -> None:
+        if isinstance(item, list):
+            for child in item:
+                visit(child)
+            return
+        if not isinstance(item, dict):
+            return
+        interface_id = item.get("interface")
+        if isinstance(interface_id, str) and ".interface." in interface_id:
+            found.add(interface_id)
+        for child in item.values():
+            visit(child)
+
+    visit(value)
+    return tuple(sorted(found))
+
+
+def _declared_absolute_caller_references(value: JsonValue) -> tuple[str, ...]:
+    """Return absolute module IDs named by access-policy caller lists."""
+
+    found: set[str] = set()
+
+    def visit(item: JsonValue) -> None:
+        if isinstance(item, list):
+            for child in item:
+                visit(child)
+            return
+        if not isinstance(item, dict):
+            return
+        raw_callers = item.get("allowed_callers")
+        if isinstance(raw_callers, list):
+            found.update(
+                caller
+                for caller in raw_callers
+                if isinstance(caller, str) and not caller.startswith(".")
+            )
+        for child in item.values():
+            visit(child)
+
+    visit(value)
+    return tuple(sorted(found))
+
+
+def _declared_source_dependencies(value: JsonValue) -> tuple[str, ...]:
+    """Return behavioral-source IDs named by direct dependency declarations."""
+
+    if not isinstance(value, dict):
+        return ()
+    raw_dependencies = value.get("dependencies", [])
+    if not isinstance(raw_dependencies, list):
+        return ()
+    return tuple(
+        sorted(
+            {
+                source_id
+                for dependency in raw_dependencies
+                if isinstance(dependency, dict)
+                and isinstance((source_id := dependency.get("source")), str)
+            }
+        )
+    )
+
+
+def _dispatch_document_closure(
+    documents: tuple[BlueprintDocument, ...],
+    *,
+    caller_module_id: str,
+    interface_id: str,
+) -> tuple[tuple[BlueprintDocument, ...], frozenset[Path]]:
+    """Select a conservative module-family closure for one dispatch request."""
+
+    nodes: dict[str, BlueprintDocument] = {}
+    module_documents: dict[str, BlueprintDocument] = {}
+    export_owners: dict[str, str] = {}
+    module_ids_by_root: dict[Path, str] = {}
+    children: dict[str, set[str]] = {}
+    parents: dict[str, str] = {}
+    for document in documents:
+        node_id = document.node_id
+        if node_id is not None:
+            previous = nodes.get(node_id)
+            if previous is not None:
+                raise BlueprintGraphError(
+                    f"duplicate node id {node_id!r}: "
+                    f"{previous.path} and {document.path}"
+                )
+            nodes[node_id] = document
+        if document.node_type != "module" or node_id is None:
+            continue
+        module_documents[node_id] = document
+        module_ids_by_root[document.module_root] = node_id
+        raw_exports = document.declaration.get("exports", {})
+        if isinstance(raw_exports, dict):
+            for exported_id in raw_exports:
+                if not isinstance(exported_id, str):
+                    continue
+                previous_owner = export_owners.get(exported_id)
+                if previous_owner is not None:
+                    raise BlueprintGraphError(
+                        f"duplicate export {exported_id!r}: "
+                        f"{previous_owner!r} and {node_id!r}"
+                    )
+                export_owners[exported_id] = node_id
+        raw_children = document.declaration.get("children", {})
+        child_ids = {
+            child_id
+            for child_id in raw_children
+            if isinstance(child_id, str)
+        } if isinstance(raw_children, dict) else set()
+        children[node_id] = child_ids
+        for child_id in child_ids:
+            previous_parent = parents.get(child_id)
+            if previous_parent is not None and previous_parent != node_id:
+                raise BlueprintGraphError(
+                    f"module {child_id!r} has multiple parents: "
+                    f"{previous_parent!r} and {node_id!r}"
+                )
+            parents[child_id] = node_id
+
+    if caller_module_id not in module_documents:
+        raise BlueprintGraphError(
+            f"caller module {caller_module_id!r} does not exist"
+        )
+    target_owner = export_owners.get(interface_id)
+    if target_owner is None:
+        raise BlueprintGraphError(f"unknown export {interface_id!r}")
+
+    selected = {caller_module_id, target_owner}
+    while True:
+        expanded = set(selected)
+        for module_id in tuple(selected):
+            parent_id = parents.get(module_id)
+            if parent_id is not None:
+                expanded.add(parent_id)
+            expanded.update(children.get(module_id, ()))
+        selected_roots = {
+            module_documents[module_id].module_root
+            for module_id in expanded
+            if module_id in module_documents
+        }
+        for document in documents:
+            if document.module_root not in selected_roots:
+                continue
+            declaration = dict(document.declaration)
+            for referenced_id in _declared_interface_references(
+                declaration
+            ):
+                provider_id = export_owners.get(referenced_id)
+                if provider_id is not None:
+                    expanded.add(provider_id)
+            expanded.update(_declared_absolute_caller_references(declaration))
+            for source_id in _declared_source_dependencies(declaration):
+                target_document = nodes.get(source_id)
+                if target_document is None:
+                    continue
+                owner_id = module_ids_by_root.get(target_document.module_root)
+                if owner_id is not None:
+                    expanded.add(owner_id)
+        if expanded == selected:
+            break
+        selected = expanded
+
+    missing = sorted(selected - module_documents.keys())
+    if missing:
+        raise BlueprintGraphError(
+            "dispatch closure references unavailable modules: "
+            + ", ".join(missing)
+        )
+    selected_roots = frozenset(
+        module_documents[module_id].module_root for module_id in selected
+    )
+    return (
+        tuple(
+            document
+            for document in documents
+            if document.module_root in selected_roots
+        ),
+        selected_roots,
+    )
+
+
+def load_dispatch_blueprint_graph(
+    repo_root: Path,
+    *,
+    caller_module_id: str,
+    interface_id: str,
+    schema_root: Path | None = None,
+) -> DispatchBlueprintGraph:
+    """Load one dispatch closure while warning on proven-unrelated defects."""
+
+    root = Path(repo_root).resolve()
+    try:
+        return DispatchBlueprintGraph(
+            load_repository_blueprint_graph(
+                root,
+                schema_root=schema_root,
+                expected_schema_version=5,
+            )
+        )
+    except (BlueprintGraphError, BlueprintInventoryError) as full_error:
+        inventory = collect_blueprints(
+            root,
+            expected_schema_version=5,
+            skip_parse_errors=True,
+        )
+        selected_documents, selected_roots = _dispatch_document_closure(
+            inventory.documents,
+            caller_module_id=caller_module_id,
+            interface_id=interface_id,
+        )
+        unrelated_issues = []
+        known_roots = {
+            document.module_root for document in inventory.documents
+        }
+        for issue in inventory.issues:
+            issue_path = root / issue.relative_path
+            owners = {
+                module_root
+                for module_root in known_roots
+                if issue_path == module_root / "blueprint.yaml"
+                or issue_path.is_relative_to(module_root)
+            }
+            if not owners or owners & selected_roots:
+                raise BlueprintGraphError(
+                    f"{issue.relative_path.as_posix()}: {issue.message}"
+                ) from full_error
+            unrelated_issues.append(
+                BlueprintDiagnostic(
+                    code="unrelated-blueprint-invalid",
+                    message=issue.message,
+                    path=issue.relative_path,
+                )
+            )
+
+        selected_schema_root = (
+            Path(schema_root)
+            if schema_root is not None
+            else root / "references" / "blueprint"
+        )
+        if not (selected_schema_root / "module.schema.json").is_file():
+            selected_schema_root = (
+                Path(__file__).resolve().parents[3]
+                / "references"
+                / "blueprint"
+            )
+        graph = _load_v5_repository_blueprint_graph(
+            root,
+            selected_documents,
+            schema_root=selected_schema_root,
+        )
+        diagnostics = tuple(unrelated_issues)
+        if not diagnostics:
+            diagnostics = (
+                BlueprintDiagnostic(
+                    code="unrelated-blueprint-invalid",
+                    message=str(full_error),
+                ),
+            )
+        return DispatchBlueprintGraph(graph, diagnostics)
 
 
 def load_repository_blueprint_graph(

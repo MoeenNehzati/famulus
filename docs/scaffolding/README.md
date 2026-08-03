@@ -61,16 +61,18 @@ dispatcher --caller-skill <caller-module> \
 
 The dispatcher:
 
-1. loads the repository module/source graph;
+1. loads the dispatch-relevant module/source closure, treating unrelated
+   blueprint defects as warnings;
 2. resolves the module export to its contained source interface;
-3. checks the caller's declared interface use and the export access policy;
-4. requires current certificates for the exporting module and implementing
-   source;
+3. checks the immediately calling module against each target-side access
+   policy; source identity and `uses_interfaces` do not grant permission;
+4. reports unavailable or stale certificates as warnings;
 5. compiles the source-owned process binding;
 6. invokes the gateway through its runtime provider.
 
 Callers do not invoke another module's private runtime path or private source
-interface.
+interface. Runtime declarations must name the module that owns their Python
+file; repository validation checks this against the deepest registered module.
 
 ## Validation and certification
 
