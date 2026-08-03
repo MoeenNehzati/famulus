@@ -17,6 +17,13 @@
 > - [05 downstream workflow repairs -> 2026-07-27-downstream-workflows-v5-rebase.md](../../superpowers/plans/2026-07-27-downstream-workflows-v5-rebase.md)
 > - [06 macOS acceptance -> 2026-07-27-macos-acceptance-v5-rebase.md](../../superpowers/plans/2026-07-27-macos-acceptance-v5-rebase.md)
 >
+> All six rebased plans above are now implemented, reviewed, and CI-validated
+> (as of 2026-08-02). One follow-up deferred out of plan 01 to keep its diff
+> reviewable is still open: manifest v2 (ownership-aware install manifest,
+> unblocks the currently-skipped uninstall/purge/migration acceptance tests)
+> — plan written but not yet implemented:
+> [docs/manifest-v2-rebase.md](../../manifest-v2-rebase.md).
+>
 > Three feedback items were found already resolved by code that landed
 > outside this package and are dropped from the rebase: item 5 (cloud-files'
 > half of the duplicate-subcommand bug, fixed by the v5 migration itself),

@@ -1106,6 +1106,6 @@ Task 8 (blueprint sync + certification) ── final gate for Tasks 1-7
 
 ## Explicitly out of scope for this plan
 
-- Manifest v2 (`install-manifest.json` ownership/rollback model) — proceeds close to the original 2026-07-24 design since it never conflicted with the real `runtime_dependencies.json`; track it as a separate follow-up plan rather than folding it in here, to keep this plan's diff reviewable.
+- Manifest v2 (`install-manifest.json` ownership/rollback model) — proceeds close to the original 2026-07-24 design since it never conflicted with the real `runtime_dependencies.json`; tracked as a separate follow-up plan rather than folded in here, to keep this plan's diff reviewable. Rebased plan: [docs/manifest-v2-rebase.md](../../manifest-v2-rebase.md) (not yet implemented as of this writing).
 - Native macOS LaunchAgent smoke testing — owned by subplan 06 (`docs/plans/osx_feedback_fix/06-macos-acceptance.md`), which already has real coverage in `skills/recurring-tasks/_rtx/tests/test_scheduler_live_smoke.py`; do not duplicate it here.
 - Dispatcher structured-failure contracts, Google onboarding, recurring reliability, downstream workflow repairs — owned by subplans 02–05 of the umbrella, each needing their own (lighter) v5 rebase before implementation.
