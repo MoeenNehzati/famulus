@@ -12,11 +12,23 @@ description: Prepares a shared Google Desktop OAuth client and routes service-sp
 discovery:
   mechanism: skill
 exports:
+  connect-google.interface.authorize-services:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - connect-google
+      - install-assistant-tools
+      - install-assistant-tools-rtx
+    facade_interface:
+      interface: connect-google-rtx.interface.authorize-services
+      version: 1
   connect-google.interface.client-status:
     access:
       allow_all_modules: false
       allowed_callers:
       - connect-google
+      - install-assistant-tools
+      - install-assistant-tools-rtx
     facade_interface:
       interface: connect-google-rtx.interface.client-status
       version: 1

@@ -52,6 +52,33 @@ def test_list_schema_exists():
     assert not get_schema.list_schema_exists("not-a-schema")
 
 
+def test_domain_subcategory_names_personal_matches_task_list_personal_schema():
+    """Derived from task-list-personal.json's `name` enum -- if that schema's
+    fixed subcategory set ever changes, this must change with it rather than
+    silently drifting from a hardcoded duplicate."""
+    import json
+
+    schema_path = get_schema.SCHEMAS_DIR / "lists" / "task-list-personal.json"
+    with open(schema_path) as f:
+        schema = json.load(f)
+    expected = set(schema["items"]["properties"]["name"]["enum"])
+    assert set(get_schema.domain_subcategory_names(personal=True)) == expected
+    assert expected == {"Replies", "Payments", "Reading", "Writing", "Tasks", "Misc", "Shop"}
+
+
+def test_domain_subcategory_names_non_personal_matches_task_list_schema():
+    """Derived from task-list.json's `name` enum, the base (non-Personal)
+    domain's fixed subcategory set."""
+    import json
+
+    schema_path = get_schema.SCHEMAS_DIR / "lists" / "task-list.json"
+    with open(schema_path) as f:
+        schema = json.load(f)
+    expected = set(schema["items"]["properties"]["name"]["enum"])
+    assert set(get_schema.domain_subcategory_names(personal=False)) == expected
+    assert expected == {"Replies", "Payments", "Reading", "Writing", "Tasks", "Misc"}
+
+
 def test_validate_document_accepts_valid_minimal_todo():
     data = {"schema": "todo", "name": "Todo", "categories": []}
     get_schema.validate_document(data, "todo")  # must not raise

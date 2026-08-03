@@ -8,6 +8,11 @@
     "categories": {
       "type": "array",
       "items": {"$ref": "#/definitions/category"}
+    },
+    "revision": {
+      "description": "Optimistic-concurrency counter, bumped by one on every mutating save. Absent on files predating this field (treated as 0). See lists.py --expected-revision.",
+      "type": "integer",
+      "minimum": 0
     }
   },
   "additionalProperties": false,

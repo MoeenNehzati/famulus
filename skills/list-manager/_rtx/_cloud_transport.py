@@ -13,6 +13,8 @@ the process directly, since the two callers report errors differently
 """
 from __future__ import annotations
 
+import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -73,11 +75,38 @@ def _dispatch(interface_id: str, remote_path: str, *, stdin: str | None = None) 
     return result.returncode, result.stdout, result.stderr
 
 
+def _test_cloud_dir() -> Path | None:
+    """Test-only seam: when LIST_MANAGER_TEST_CLOUD_DIR is set, download_list
+    and upload_list read/write a plain file under that directory instead of
+    dispatching to the real cloud-files skill (which needs live Drive OAuth
+    and network access).
+
+    This exists so tests can exercise a genuine cross-process race against a
+    shared "remote" resource -- two real subprocess invocations of lists.py
+    --cloud, each still downloading to its own private tempfile.mkdtemp()
+    path (exactly like production), but both reading/writing the same
+    underlying file here in place of Drive. It reproduces the real bug
+    (independent local temp paths, shared remote resource) without needing
+    real cloud credentials. Unset in all non-test use; production always goes
+    through _dispatch()/the real cloud-files interfaces below.
+    """
+    override = os.environ.get("LIST_MANAGER_TEST_CLOUD_DIR")
+    return Path(override) if override else None
+
+
 def download_list(list_name: str, dest_path: Path) -> None:
     """Download list from cloud storage via cloud-files lists-read interface.
 
     Raises CloudTransportError on failure.
     """
+    test_dir = _test_cloud_dir()
+    if test_dir is not None:
+        remote_file = test_dir / f"{list_name}.yaml"
+        if not remote_file.exists():
+            raise CloudTransportError(f"no such cloud list (test backend): {list_name}")
+        shutil.copyfile(remote_file, dest_path)
+        return
+
     remote_path = f"lists/{list_name}.yaml"
     returncode, stdout, stderr = _dispatch("lists-read", remote_path)
     if returncode != 0:
@@ -91,6 +120,13 @@ def upload_list(list_name: str, src_path: Path) -> None:
 
     Raises CloudTransportError on failure.
     """
+    test_dir = _test_cloud_dir()
+    if test_dir is not None:
+        test_dir.mkdir(parents=True, exist_ok=True)
+        remote_file = test_dir / f"{list_name}.yaml"
+        shutil.copyfile(src_path, remote_file)
+        return
+
     remote_path = f"lists/{list_name}.yaml"
     with open(src_path, "r", encoding="utf-8") as f:
         content = f.read()

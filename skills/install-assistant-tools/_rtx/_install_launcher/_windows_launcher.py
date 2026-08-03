@@ -1,6 +1,7 @@
 """Windows launcher bundle installer."""
 from __future__ import annotations
 
+import shutil
 import sys
 from pathlib import Path
 
@@ -8,6 +9,8 @@ if __package__ and __package__.count('.') >= 1:
     from .._state_record import Manifest
 else:
     from _state_record import Manifest
+
+from officina.common.famulus_paths import resolve_famulus_paths
 
 from ._base_launcher import (
     DISPATCHER_WORKFLOWS,
@@ -19,17 +22,55 @@ from ._base_launcher import (
     log,
 )
 
+# Fixed, immutable location of the stable launch resolver beneath a given
+# runtime_root. The file deployed there is officina.install.resolvers.launch's
+# source (a dependency-free, stdlib-only script). Generated shims invoke
+# this path instead of embedding a release-specific repo checkout or
+# interpreter: this path does not change when the repo moves or a new
+# release is activated.
+_RESOLVER_RELATIVE_PATH = ("bootstrap", "resolvers", "v1", "launch.py")
 
-def _windows_dispatcher_content(repo_root: Path) -> str:
-    repo = LauncherInstallerBase._batch_path(repo_root)
-    python = LauncherInstallerBase._batch_path(Path(sys.executable))
+
+class WindowsPythonNotFoundError(RuntimeError):
+    """Raised when no ``python``/``py`` interpreter can be resolved on PATH."""
+
+
+def _resolve_python_interpreter() -> str:
+    """Resolve a concrete, absolute path to a python interpreter on PATH.
+
+    Tries ``python`` then falls back to the ``py`` launcher, raising a clear
+    error if neither is found rather than silently baking a bare,
+    unqualified name into the generated dispatcher.bat that Windows can't
+    validate without relying on ambient PATH resolution at run time.
+
+    Mirrors ``_schedule_backend._windows_backend._resolve_python_interpreter``
+    (recurring-tasks' equivalent fix for the same underlying problem); not
+    imported directly since install-assistant-tools and recurring-tasks keep
+    their ``_rtx`` internals independent of one another.
+    """
+    resolved = shutil.which("python") or shutil.which("py")
+    if not resolved:
+        raise WindowsPythonNotFoundError(
+            "could not resolve a python interpreter on PATH (tried 'python' and 'py'); "
+            "the generated dispatcher.bat requires a concrete, validatable interpreter path"
+        )
+    return resolved
+
+
+def _resolver_path(*, home: Path | None = None) -> Path:
+    """Return the fixed resolver path beneath this host's runtime_root."""
+    home = home or Path.home()
+    runtime_root = resolve_famulus_paths(platform=sys.platform, home=home).runtime_root
+    return runtime_root.joinpath(*_RESOLVER_RELATIVE_PATH)
+
+
+def _windows_dispatcher_content(repo_root: Path, *, home: Path | None = None) -> str:
+    resolver = LauncherInstallerBase._batch_path(_resolver_path(home=home))
+    interpreter = LauncherInstallerBase._batch_path(Path(_resolve_python_interpreter()))
     return (
         "@echo off\n"
         "setlocal\n"
-        "set \"AI=%AI%\"\n"
-        f"if \"%AI%\"==\"\" set \"AI={repo}\"\n"
-        "set \"PYTHONPATH=%AI%\\src;%PYTHONPATH%\"\n"
-        f"\"{python}\" -m officina.dispatcher.cli %*\n"
+        f"\"{interpreter}\" \"{resolver}\" -m officina.dispatcher.cli %*\n"
     )
 
 
@@ -72,6 +113,8 @@ class WindowsLauncherInstaller(LauncherInstallerBase):
         bin_dir: Path,
         dry_run: bool,
         manifest: Manifest | None = None,
+        *,
+        home: Path | None = None,
     ) -> LauncherInstallResult:
         bundle = LauncherBundleSpec(
             name="dispatcher",
@@ -80,7 +123,7 @@ class WindowsLauncherInstaller(LauncherInstallerBase):
                 LauncherFileSpec(
                     destination=bin_dir / "dispatcher.bat",
                     mode="generate",
-                    content=_windows_dispatcher_content(repo_root),
+                    content=_windows_dispatcher_content(repo_root, home=home),
                 )
             ],
         )

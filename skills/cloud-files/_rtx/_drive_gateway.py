@@ -30,6 +30,8 @@ class CloudFilesConfig:
     remote_llm_root: str
     timeout_seconds: int
     credentials_path: Path
+    credential_id: str | None = None
+    home: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -156,11 +158,15 @@ def load_config(home: Path | None = None) -> CloudFilesConfig:
         if credentials_value
         else default_credentials_path(home)
     )
+    credential_id_value = payload.get("credential_id")
+    credential_id = str(credential_id_value).strip() if credential_id_value else None
 
     return CloudFilesConfig(
         remote_llm_root=remote_llm_root,
         timeout_seconds=timeout_seconds,
         credentials_path=credentials_path,
+        credential_id=credential_id or None,
+        home=home or Path.home(),
     )
 
 
@@ -186,7 +192,17 @@ def load_credentials(config: CloudFilesConfig) -> dict[str, str]:
     return {key: str(payload[key]).strip() for key in required}
 
 
-def get_access_token(config: CloudFilesConfig) -> str:
+def get_access_token(config: CloudFilesConfig, *, platform: str = sys.platform) -> str:
+    if config.credential_id:
+        from officina.common.google_credentials import SERVICE_SCOPES, refresh_access_token
+
+        return refresh_access_token(
+            config.credential_id,
+            required_scopes=SERVICE_SCOPES["drive"],
+            home=config.home or Path.home(),
+            platform=platform,
+        )
+
     creds = load_credentials(config)
     data = urllib.parse.urlencode(
         {

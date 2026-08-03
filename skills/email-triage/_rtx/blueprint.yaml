@@ -69,6 +69,14 @@ authority:
       - Interface
       reason: Writes metrics (scanned, added, skipped counts) from a triage run to
         status.json for visibility.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _finalize_run.py
+      - Interface
+      reason: Writes metrics then advances the watermark in one ordered, idempotent,
+        replay-safe step keyed on a caller-minted run id.
     network: []
 children: {}
 content:
@@ -76,9 +84,11 @@ content:
 - _envelope_gate\.py
 - _failure_clearer\.py
 - _failure_sentinel\.py
+- _finalize_run\.py
 - __init__\.py
 - _log_compactor\.py
 - _mail_envelope_stream\.py
+- _rescan_filter\.py
 - _watermark_floor\.py
 - _watermark_writer\.py
 - _write_metrics\.py
@@ -91,6 +101,12 @@ exports:
       allowed_callers:
       - email-triage
     source_interface: email-triage-rtx.source.rtx-mail-envelope-stream.interface.fetch-filtered-envelopes
+  email-triage-rtx.interface.scripts-finalize-triage:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - email-triage
+    source_interface: email-triage-rtx.source.rtx-finalize-run.interface.scripts-finalize-triage
   email-triage-rtx.interface.scripts-clear-failure:
     access:
       allow_all_modules: false
@@ -163,6 +179,10 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/rtx-failure-sentinel.yaml
+  email-triage-rtx.source.rtx-finalize-run:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-finalize-run.yaml
   email-triage-rtx.source.rtx-init:
     blueprint:
       base: module-root

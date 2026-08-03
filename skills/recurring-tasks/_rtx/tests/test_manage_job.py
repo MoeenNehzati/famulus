@@ -141,25 +141,145 @@ def test_sync_units_passes_jobs_file_override():
 
 
 # ── test_job ────────────────────────────────────────────────────────────────────
+#
+# test_job() must not report pass/fail based on the scheduler backend's own
+# `test()` return value alone -- that only tells us the OS scheduler
+# *accepted the trigger* (e.g. `launchctl kickstart` and `schtasks /Run`
+# return immediately without waiting for the job to actually finish). The
+# real signal is the JobRunRecord a completed run writes to
+# logs/<job>/latest.json. So test_job() triggers the job, then waits
+# (bounded) for a *new* run record and reports pass/fail from its
+# `success` field.
 
-def test_test_job_reports_pass_on_zero_exit():
+def _write_run_record(
+    log_dir: Path, name: str, *, success: bool, run_id: str = "r1", finished_at: str = "t1"
+) -> None:
+    job_dir = log_dir / name
+    job_dir.mkdir(parents=True, exist_ok=True)
+    (job_dir / "latest.json").write_text(
+        f'{{"job_name": "{name}", "run_id": "{run_id}", "finished_at": "{finished_at}", '
+        f'"success": {str(success).lower()}, "reason": ""}}'
+    )
+
+
+def test_test_job_reports_pass_when_run_record_reports_success():
     mod = _load()
     backend = mock.Mock()
-    backend.test.return_value = True
-    with mock.patch.object(mod, "platform_schedule_backend", return_value=backend):
-        assert mod.test_job("my-job") is True
-        backend.test.assert_called_once()
-        assert backend.test.call_args[0][0] == "my-job"
-    print("PASS: test_job reports True and delegates to the scheduler backend")
+    with tempfile.TemporaryDirectory() as d:
+        mod.LOG_DIR = Path(d)
+
+        def fake_test(job_name, context):
+            # Simulates a synchronous backend (e.g. systemd's `start
+            # --wait`): the run record already exists by the time test()
+            # returns.
+            _write_run_record(mod.LOG_DIR, job_name, success=True, run_id="new")
+            return True
+
+        backend.test.side_effect = fake_test
+        with mock.patch.object(mod, "platform_schedule_backend", return_value=backend), \
+             mock.patch.object(mod.time, "sleep"):
+            assert mod.test_job("my-job", timeout_seconds=1) is True
+            backend.test.assert_called_once()
+            assert backend.test.call_args[0][0] == "my-job"
+    print("PASS: test_job reports True when the run record reports success")
 
 
-def test_test_job_reports_failure_on_nonzero_exit():
+def test_test_job_reports_failure_when_scheduler_rejects_trigger():
     mod = _load()
     backend = mock.Mock()
     backend.test.return_value = False
     with mock.patch.object(mod, "platform_schedule_backend", return_value=backend):
         assert mod.test_job("my-job") is False
-    print("PASS: test_job reports False when the scheduler backend fails the test")
+    print("PASS: test_job reports False when the scheduler backend rejects the trigger")
+
+
+def test_test_job_reports_failure_when_trigger_accepted_but_job_actually_failed():
+    """The core bug this fixes: the OS scheduler can happily accept a
+    trigger (backend.test() -> True) for a job whose underlying task then
+    fails. test_job() must report that failure, not the trigger's own
+    success."""
+    mod = _load()
+    backend = mock.Mock()
+
+    def fake_test(job_name, context):
+        _write_run_record(mod.LOG_DIR, job_name, success=False, run_id="new")
+        return True
+
+    backend.test.side_effect = fake_test
+    with tempfile.TemporaryDirectory() as d:
+        mod.LOG_DIR = Path(d)
+        with mock.patch.object(mod, "platform_schedule_backend", return_value=backend), \
+             mock.patch.object(mod.time, "sleep"):
+            assert mod.test_job("my-job", timeout_seconds=1) is False
+    print("PASS: test_job reports False when the trigger is accepted but the run record reports failure")
+
+
+def test_test_job_times_out_if_no_new_run_record_appears():
+    """Bounded wait: a backend whose trigger fires asynchronously and never
+    produces a run record (e.g. a wedged job) must not hang test_job()
+    forever."""
+    mod = _load()
+    backend = mock.Mock()
+    backend.test.return_value = True
+    with tempfile.TemporaryDirectory() as d:
+        mod.LOG_DIR = Path(d)
+        with mock.patch.object(mod, "platform_schedule_backend", return_value=backend), \
+             mock.patch.object(mod.time, "monotonic", side_effect=[0, 0, 10, 10]), \
+             mock.patch.object(mod.time, "sleep"):
+            assert mod.test_job("my-job", timeout_seconds=1) is False
+    print("PASS: test_job times out and reports False when no run record appears")
+
+
+def test_test_job_ignores_a_stale_run_record_from_a_previous_run():
+    """If logs/<job>/latest.json already exists from an earlier run before
+    this trigger, test_job() must wait for a *new* record (different
+    run_id), not immediately report the stale one's outcome."""
+    mod = _load()
+    backend = mock.Mock()
+    backend.test.return_value = True
+    with tempfile.TemporaryDirectory() as d:
+        mod.LOG_DIR = Path(d)
+        _write_run_record(mod.LOG_DIR, "my-job", success=False, run_id="stale")
+
+        calls = {"n": 0}
+
+        def fake_sleep(_interval):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                _write_run_record(mod.LOG_DIR, "my-job", success=True, run_id="fresh")
+
+        with mock.patch.object(mod, "platform_schedule_backend", return_value=backend), \
+             mock.patch.object(mod.time, "sleep", side_effect=fake_sleep):
+            assert mod.test_job("my-job", timeout_seconds=5) is True
+    print("PASS: test_job waits for a fresh run record rather than trusting a stale one")
+
+
+def test_test_job_detects_fresh_run_despite_same_second_finished_at_collision():
+    """finished_at has only second resolution, so a fast run (e.g. an
+    instant spawn failure) can legitimately share its timestamp string with
+    the baseline record. test_job() must still recognize it as fresh via
+    run_id rather than falsely timing out and reporting FAIL."""
+    mod = _load()
+    backend = mock.Mock()
+
+    def fake_test(job_name, context):
+        # Same finished_at as the pre-existing baseline record, but a
+        # distinct run_id: this is the collision case.
+        _write_run_record(
+            mod.LOG_DIR, job_name, success=True, run_id="run-2", finished_at="same-second"
+        )
+        return True
+
+    backend.test.side_effect = fake_test
+    with tempfile.TemporaryDirectory() as d:
+        mod.LOG_DIR = Path(d)
+        _write_run_record(
+            mod.LOG_DIR, "my-job", success=True, run_id="run-1", finished_at="same-second"
+        )
+        with mock.patch.object(mod, "platform_schedule_backend", return_value=backend), \
+             mock.patch.object(mod.time, "sleep"):
+            assert mod.test_job("my-job", timeout_seconds=1) is True
+    print("PASS: test_job detects a fresh run via run_id even when finished_at collides")
 
 
 # ── view_logs ───────────────────────────────────────────────────────────────────
@@ -225,6 +345,22 @@ def test_cli_test_subcommand_dispatches_to_test_job():
         mod.main()
         test_job.assert_called_once_with("my-job")
     print("PASS: CLI 'test' subcommand dispatches to test_job() with the job name")
+
+
+def test_cli_test_subcommand_exits_zero_when_test_job_succeeds():
+    mod = _load()
+    with mock.patch.object(mod.sys, "argv", ["manage_job.py", "test", "my-job"]), \
+         mock.patch.object(mod, "test_job", return_value=True):
+        assert mod.main() == 0
+    print("PASS: CLI 'test' subcommand exits 0 when test_job() reports success")
+
+
+def test_cli_test_subcommand_exits_nonzero_when_test_job_fails():
+    mod = _load()
+    with mock.patch.object(mod.sys, "argv", ["manage_job.py", "test", "my-job"]), \
+         mock.patch.object(mod, "test_job", return_value=False):
+        assert mod.main() != 0
+    print("PASS: CLI 'test' subcommand exits nonzero when test_job() reports failure")
 
 
 def test_cli_view_logs_subcommand_passes_lines_flag():
@@ -302,11 +438,17 @@ if __name__ == "__main__":
     test_default_jobs_file_calls_sync_units_with_no_override()
     test_sync_units_invokes_platform_backend()
     test_sync_units_passes_jobs_file_override()
-    test_test_job_reports_pass_on_zero_exit()
-    test_test_job_reports_failure_on_nonzero_exit()
+    test_test_job_reports_pass_when_run_record_reports_success()
+    test_test_job_reports_failure_when_scheduler_rejects_trigger()
+    test_test_job_reports_failure_when_trigger_accepted_but_job_actually_failed()
+    test_test_job_times_out_if_no_new_run_record_appears()
+    test_test_job_ignores_a_stale_run_record_from_a_previous_run()
+    test_test_job_detects_fresh_run_despite_same_second_finished_at_collision()
     test_status_lists_ai_timers()
     test_cli_sync_subcommand_dispatches_to_sync_units()
     test_cli_test_subcommand_dispatches_to_test_job()
+    test_cli_test_subcommand_exits_zero_when_test_job_succeeds()
+    test_cli_test_subcommand_exits_nonzero_when_test_job_fails()
     test_cli_view_logs_subcommand_passes_lines_flag()
     test_cli_status_subcommand_dispatches_to_status()
     test_cli_enable_subcommand_passes_jobs_file_and_no_sync()

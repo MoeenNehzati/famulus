@@ -309,15 +309,15 @@ interfaces:
 node_type: behavioral_source
 platform_support:
   linux: true
-  macos: false
-  windows: false
+  macos: true
+  windows: true
 runtime_dependencies:
 - kind: python-package
   name: PyYAML
   platforms:
     linux: true
-    macos: false
-    windows: false
+    macos: true
+    windows: true
   reason: Reads and writes YAML plan/list data through plan_runtime.
   version: '>=6'
 schema_version: 5

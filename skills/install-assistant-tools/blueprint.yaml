@@ -37,7 +37,7 @@ exports:
       allowed_callers: []
     facade_interface:
       interface: install-assistant-tools-rtx.interface.scripts-launchers
-      version: 2
+      version: 3
   install-assistant-tools.interface.scripts-scaffold:
     access:
       allow_all_modules: false

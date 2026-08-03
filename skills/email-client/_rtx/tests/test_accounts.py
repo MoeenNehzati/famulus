@@ -12,6 +12,8 @@ import pytest
 
 ACCOUNTS_PY = Path(__file__).parent.parent / "_email_accounts.py"
 REPO_SRC = Path(__file__).resolve().parents[4] / "src"
+if str(REPO_SRC) not in sys.path:
+    sys.path.insert(0, str(REPO_SRC))
 
 
 def run(config_dir, *args, input=None):
@@ -248,6 +250,172 @@ def test_set_password_reads_from_stdin_not_argv(config_dir, fake_keyring):
     assert "s3cret" not in calls  # secret goes over stdin, never appears in the logged argv
     stored = json.loads(store_file.read_text())
     assert stored["Famulus:email-client"]["work:imap"] == "s3cret"
+
+
+# ── use-google-credential (shared connect-google credential, per account) ──
+
+class FakeSecretBackend:
+    """Minimal in-memory secret backend for store_google_credential's own
+    refresh-token write. use-google-credential's scope check never touches
+    the secret store (load_credential only reads the JSON registry), so this
+    is only needed to satisfy store_google_credential while seeding the
+    registry fixture.
+    """
+
+    def __init__(self) -> None:
+        self.stored: dict[tuple[str, str], str] = {}
+
+    def store(self, namespace: str, key: str, value: str) -> None:
+        self.stored[(namespace, key)] = value
+
+    def lookup(self, namespace: str, key: str) -> str | None:
+        return self.stored.get((namespace, key))
+
+    def clear(self, namespace: str, key: str) -> bool:
+        return self.stored.pop((namespace, key), None) is not None
+
+
+
+# Must match the real runtime platform: the registry is written here via a
+# direct in-process call, but read back by `run()` below through a real
+# subprocess invocation of `_email_accounts.py`, whose `--home`-resolving
+# CLI defaults `platform` to `sys.platform` (the actual OS running the
+# test). A hardcoded "linux" here previously matched on Linux CI by
+# coincidence but silently wrote the fake registry to the wrong (Linux)
+# path layout on macOS/Windows CI, where the subprocess looks it up under
+# the platform-correct layout and finds nothing.
+CREDENTIAL_PLATFORM = sys.platform
+
+
+def _store_credential(home: Path, *, granted_gmail_scope: bool) -> str:
+    from officina.common.google_credentials import SERVICE_SCOPES, store_google_credential
+
+    scopes = {"openid", "email"}
+    if granted_gmail_scope:
+        scopes |= SERVICE_SCOPES["gmail"]
+
+    ref = store_google_credential(
+        subject="sub1",
+        account="user@example.com",
+        client_id="test-client-id",
+        token_uri="https://oauth2.example.test/token",
+        granted_scopes=frozenset(scopes),
+        refresh_token="refresh-token-value",
+        home=home,
+        platform=CREDENTIAL_PLATFORM,
+        secret_backend=FakeSecretBackend(),
+    )
+    return ref.credential_id
+
+
+@pytest.fixture
+def fake_registry_with_gmail_scope(tmp_path):
+    return _store_credential(tmp_path / "credential-home", granted_gmail_scope=True)
+
+
+@pytest.fixture
+def fake_registry_missing_gmail_scope(tmp_path):
+    return _store_credential(tmp_path / "credential-home", granted_gmail_scope=False)
+
+
+def test_use_google_credential_stores_only_credential_id(config_dir, tmp_path, fake_registry_with_gmail_scope):
+    credential_id = fake_registry_with_gmail_scope
+    run(config_dir, "add", "--nickname", "work", "--email", "me@example.com")
+
+    result = run(
+        config_dir, "use-google-credential",
+        "--nickname", "work", "--credential-id", credential_id, "--home", str(tmp_path / "credential-home"),
+    )
+    assert result.returncode == 0
+
+    record = json.loads(run(config_dir, "resolve", "--nickname", "work").stdout)
+    assert record["credential_id"] == credential_id
+    assert "client_secret" not in record
+    assert "refresh_token" not in record
+    assert "access_token" not in record
+
+
+def test_use_google_credential_rejects_insufficient_scope(config_dir, tmp_path, fake_registry_missing_gmail_scope):
+    credential_id = fake_registry_missing_gmail_scope
+    run(config_dir, "add", "--nickname", "work", "--email", "me@example.com")
+
+    result = run(
+        config_dir, "use-google-credential",
+        "--nickname", "work", "--credential-id", credential_id, "--home", str(tmp_path / "credential-home"),
+    )
+    assert result.returncode != 0
+
+    record = json.loads(run(config_dir, "resolve", "--nickname", "work").stdout)
+    assert "credential_id" not in record
+
+
+def test_use_google_credential_rejects_unknown_nickname(config_dir, tmp_path, fake_registry_with_gmail_scope):
+    credential_id = fake_registry_with_gmail_scope
+
+    result = run(
+        config_dir, "use-google-credential",
+        "--nickname", "ghost", "--credential-id", credential_id, "--home", str(tmp_path / "credential-home"),
+    )
+
+    assert result.returncode != 0
+    assert "unknown account" in result.stderr
+
+
+def test_use_google_credential_sets_gmail_oauth_auth_mode(config_dir, tmp_path, fake_registry_with_gmail_scope):
+    """Regression test: binding a Google credential must also flip the
+    account's `auth` field to gmail-oauth, since is_gmail_oauth()/
+    account_auth_mode() (the sole gate every real XOAUTH2 call site checks)
+    look at `auth` only -- `credential_id`'s mere presence is never
+    consulted at authentication time. Without this, binding a credential is
+    a silent no-op: the account keeps using its prior auth mode (here, the
+    app-password default) with no error.
+    """
+    credential_id = fake_registry_with_gmail_scope
+    run(config_dir, "add", "--nickname", "work", "--email", "me@example.com")
+
+    record = json.loads(run(config_dir, "resolve", "--nickname", "work").stdout)
+    assert record["auth"] == "app-password"
+
+    result = run(
+        config_dir, "use-google-credential",
+        "--nickname", "work", "--credential-id", credential_id, "--home", str(tmp_path / "credential-home"),
+    )
+    assert result.returncode == 0
+
+    record = json.loads(run(config_dir, "resolve", "--nickname", "work").stdout)
+    assert record["auth"] == "gmail-oauth"
+    assert record["credential_id"] == credential_id
+
+
+def test_use_google_credential_preserves_other_fields(config_dir, tmp_path, fake_registry_with_gmail_scope):
+    # Regression test for the merge-not-replace bug class found and fixed in
+    # cloud-files: use-google-credential must mutate the loaded record in
+    # place (like cmd_update) rather than rebuilding it, so unrelated fields
+    # on the account survive.
+    credential_id = fake_registry_with_gmail_scope
+    run(
+        config_dir, "add", "--nickname", "work", "--email", "me@example.com",
+        "--display-name", "Work Mail",
+        "--imap-host", "imap.example.com", "--imap-port", "993",
+        "--smtp-host", "smtp.example.com", "--smtp-port", "587", "--starttls",
+        "--auth", "gmail-oauth",
+    )
+
+    result = run(
+        config_dir, "use-google-credential",
+        "--nickname", "work", "--credential-id", credential_id, "--home", str(tmp_path / "credential-home"),
+    )
+    assert result.returncode == 0
+
+    record = json.loads(run(config_dir, "resolve", "--nickname", "work").stdout)
+    assert record["credential_id"] == credential_id
+    assert record["email"] == "me@example.com"
+    assert record["display_name"] == "Work Mail"
+    assert record["imap"] == {"host": "imap.example.com", "port": 993}
+    assert record["smtp"] == {"host": "smtp.example.com", "port": 587, "starttls": True}
+    assert record["auth"] == "gmail-oauth"
+    assert record["imap_service"] == "email-client-work-imap"
+    assert record["smtp_service"] == "email-client-work-smtp"
 
 
 def test_remove_purge_credentials_clears_both_services(config_dir, fake_keyring):

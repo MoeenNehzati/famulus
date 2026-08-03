@@ -16,9 +16,7 @@ dependencies:
   reason: Loads Python package support from _rtx/__init__.py.
   source: list-manager-rtx.source.rtx-init
   version: 1
-description: Python source implementing validated local and cloud-backed YAML list
-  reads, initialization, entry creation, updates, deletion, ID generation, and schema
-  description.
+description: Python source implementing validated local and cloud-backed YAML list reads, initialization, entry creation, updates, deletion, ID generation, and schema description.
 gateway:
   language: Python
   path: _yaml_store.py
@@ -44,15 +42,19 @@ interfaces:
               named: identifier
             kind: string
         target:
-          description: Existing category path or parent entry ID receiving the new
-            entries
+          description: Existing category path or parent entry ID receiving the new entries
           required: true
           sensitivity: user-private
           type:
             kind: string
+        expected_revision:
+          description: "Optional optimistic-concurrency guard: only apply if the downloaded snapshot's 'revision' field equals this value; rejects with a stale-revision error and uploads nothing otherwise."
+          required: false
+          sensitivity: user-private
+          type:
+            kind: integer
       caller_warnings:
-      - external-side-effect: Replaces the remote list after validating and adding
-          entries to the downloaded snapshot.
+      - external-side-effect: Replaces the remote list after validating and adding entries to the downloaded snapshot.
       - rate-limited: Cloud read and write helpers consume Google Drive API quota.
       direct_io:
         network: []
@@ -91,8 +93,7 @@ interfaces:
           sensitivity: derived-private
       execution:
         consistency:
-          live: Downloads current cloud content, mutates that snapshot, and uploads
-            the validated result.
+          live: Downloads current cloud content, mutates that snapshot, and uploads the validated result.
         effects:
         - action: update
           confirmation_evidence:
@@ -110,20 +111,15 @@ interfaces:
         lifecycle: finite
         mutation_safety:
           atomicity:
-            per_effect_only: Local mutation is validated before one remote upload;
-              download and upload are not a transaction.
+            per_effect_only: Local mutation is validated before one remote upload; download and upload are not a transaction.
           concurrent_invocations:
-            unsafe: Concurrent cloud writers can overwrite changes made after this
-              invocation downloads its snapshot.
+            unsafe: Unsafe by default -- concurrent cloud writers can overwrite changes made after this invocation downloads its snapshot -- unless the caller passes expected_revision, in which case a concurrent writer that saved first causes this call to be rejected before any upload instead of silently clobbering it.
           idempotency:
-            non_idempotent: Repeating the request creates additional entries with
-              new IDs.
+            non_idempotent: Repeating the request creates additional entries with new IDs.
           on_uncertain_completion:
-            verify_then_decide: Re-read the target category and inspect stable IDs
-              before retrying.
+            verify_then_decide: Re-read the target category and inspect stable IDs before retrying.
           partial_effects_on_failure:
-            possible: Remote upload completion can be uncertain after a transport
-              failure.
+            possible: Remote upload completion can be uncertain after a transport failure.
           rollback_on_failure:
             unavailable: The previous remote value is not retained for automatic rollback.
         state_effect: mutating
@@ -140,8 +136,7 @@ interfaces:
         - cloud-list-update
         id: created
         outputs: []
-      - caller_action: Correct the list, target, entry schema, or cloud error; never
-          upload after local validation failure.
+      - caller_action: Correct the list, target, entry schema, or cloud error; never upload after local validation failure. A stale-revision error means a concurrent writer saved this list first -- re-read it and retry.
         class: error
         effects: []
         id: error
@@ -183,12 +178,18 @@ interfaces:
           '1': ^[a-zA-Z0-9_/-]+$
         required_flags:
         - --cloud
+        allowed_flags:
+        - --expected-revision
+        flag_patterns:
+          --expected-revision: ^[0-9]+$
       - allow_stdin: false
         allowed_flags:
         - --cloud
         - --entries
+        - --expected-revision
         flag_patterns:
           --entries: ^.+$
+          --expected-revision: ^[0-9]+$
         max_positionals: 2
         min_positionals: 2
         name: file-mode
@@ -198,7 +199,7 @@ interfaces:
         required_flags:
         - --cloud
         - --entries
-    usage: <name> <category/path> --cloud --entries /tmp/entry.yaml
+    usage: <name> <category/path> --cloud --entries /tmp/entry.yaml [--expected-revision N]
     version: 1
   list-manager-rtx.source.rtx-yaml-store.interface.cloud-delete:
     contract:
@@ -225,9 +226,14 @@ interfaces:
             format:
               named: identifier
             kind: string
+        expected_revision:
+          description: "Optional optimistic-concurrency guard: only apply if the downloaded snapshot's 'revision' field equals this value; rejects with a stale-revision error and uploads nothing otherwise."
+          required: false
+          sensitivity: user-private
+          type:
+            kind: integer
       caller_warnings:
-      - external-side-effect: Deletes each selected entry and its nested subtree from
-          the remote list.
+      - external-side-effect: Deletes each selected entry and its nested subtree from the remote list.
       - rate-limited: Cloud read and write helpers consume Google Drive API quota.
       direct_io:
         network: []
@@ -256,8 +262,7 @@ interfaces:
           sensitivity: derived-private
       execution:
         consistency:
-          live: Downloads current cloud content, removes all requested IDs, validates,
-            and uploads the result.
+          live: Downloads current cloud content, removes all requested IDs, validates, and uploads the result.
         effects:
         - action: delete
           confirmation_evidence:
@@ -275,20 +280,15 @@ interfaces:
         lifecycle: finite
         mutation_safety:
           atomicity:
-            per_effect_only: All IDs are checked before one validated remote upload,
-              but download and upload are not transactional.
+            per_effect_only: All IDs are checked before one validated remote upload, but download and upload are not transactional.
           concurrent_invocations:
-            unsafe: Concurrent cloud writers can overwrite changes made after this
-              invocation downloads its snapshot.
+            unsafe: Unsafe by default -- concurrent cloud writers can overwrite changes made after this invocation downloads its snapshot -- unless the caller passes expected_revision, in which case a concurrent writer that saved first causes this call to be rejected before any upload instead of silently clobbering it.
           idempotency:
-            non_idempotent: Repeating a successful deletion fails because the IDs
-              are absent.
+            non_idempotent: Repeating a successful deletion fails because the IDs are absent.
           on_uncertain_completion:
-            verify_then_decide: Re-read the list and check whether every requested
-              ID is absent before retrying.
+            verify_then_decide: Re-read the list and check whether every requested ID is absent before retrying.
           partial_effects_on_failure:
-            possible: Remote upload completion can be uncertain after a transport
-              failure.
+            possible: Remote upload completion can be uncertain after a transport failure.
           rollback_on_failure:
             unavailable: Deleted entries are not retained for automatic restoration.
         state_effect: mutating
@@ -306,8 +306,7 @@ interfaces:
         id: success
         outputs:
         - deleted
-      - caller_action: Re-read the list when any ID is missing; no deletion is uploaded
-          in that case.
+      - caller_action: Re-read the list when any ID is missing; no deletion is uploaded in that case. A stale-revision error means a concurrent writer saved this list first -- re-read it and retry.
         class: error
         effects: []
         id: error
@@ -347,8 +346,7 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Delete one or more entries by id from a cloud list. Ids come after
-      --cloud.
+    description: Delete one or more entries by id from a cloud list. Ids come after --cloud.
     process_binding:
       args_prefix:
       - delete
@@ -359,6 +357,7 @@ interfaces:
         allow_stdin: false
         allowed_flags:
         - --cloud
+        - --expected-revision
         min_positionals: 2
         notes: Delete one or more entries by ID from a cloud list.
         positional_patterns:
@@ -366,7 +365,9 @@ interfaces:
           '1': ^[0-9a-f]{6}$
         required_flags:
         - --cloud
-    usage: <name> --cloud <id> [<id>...]
+        flag_patterns:
+          --expected-revision: ^[0-9]+$
+    usage: <name> --cloud <id> [<id>...] [--expected-revision N]
     version: 1
   list-manager-rtx.source.rtx-yaml-store.interface.cloud-init:
     contract:
@@ -399,8 +400,7 @@ interfaces:
             - description: Default list schema
               value: default
       caller_warnings:
-      - external-side-effect: Uploads a new empty list document under the selected
-          cloud name.
+      - external-side-effect: Uploads a new empty list document under the selected cloud name.
       - rate-limited: The cloud write helper consumes Google Drive API quota.
       direct_io:
         network: []
@@ -429,8 +429,7 @@ interfaces:
           sensitivity: derived-private
       execution:
         consistency:
-          live: Builds and validates a new empty list before uploading it to current
-            cloud state.
+          live: Builds and validates a new list -- pre-seeded with default categories for todo/triage schemas, empty for schemas with no fixed category vocabulary -- before uploading it to current cloud state.
         effects:
         - action: create
           confirmation_evidence:
@@ -441,29 +440,24 @@ interfaces:
           may_occur_in_outcomes:
           - created
           reversibility:
-            compensatable: Remove the uploaded list through the cloud storage owner
-              if it is no longer wanted.
+            compensatable: Remove the uploaded list through the cloud storage owner if it is no longer wanted.
           value_source:
             argument_ref: name
             kind: argument
         lifecycle: finite
         mutation_safety:
           atomicity:
-            per_effect_only: One validated list document is uploaded as the sole remote
-              effect.
+            per_effect_only: One validated list document is uploaded as the sole remote effect.
           concurrent_invocations:
             unsafe: Concurrent creation under the same cloud name is not serialized.
           idempotency:
-            non_idempotent: Repeating the call can replace or conflict with the same
-              remote path depending on cloud storage state.
+            non_idempotent: Repeating the call can replace or conflict with the same remote path depending on cloud storage state.
           on_uncertain_completion:
-            verify_then_decide: Read the named cloud list before retrying an interrupted
-              upload.
+            verify_then_decide: Read the named cloud list before retrying an interrupted upload.
           partial_effects_on_failure:
             possible: Remote completion can be uncertain after a transport failure.
           rollback_on_failure:
-            unavailable: No automatic remote deletion is attempted after an uncertain
-              upload.
+            unavailable: No automatic remote deletion is attempted after an uncertain upload.
         state_effect: mutating
         verification:
         - direct_io_ref: write-1
@@ -472,15 +466,14 @@ interfaces:
       interaction:
         mode: unattended
       outcomes:
-      - caller_action: Add categories or entries through the supported list interfaces.
+      - caller_action: Add entries through the supported list interfaces; todo/triage schemas start pre-seeded with usable default domain categories (Personal, Work) already carrying the schema's required subcategory set, not an empty list.
         class: success
         effects:
         - cloud-list-create
         id: created
         outputs:
         - result
-      - caller_action: Correct the name, schema, validation, or cloud error before
-          retrying.
+      - caller_action: Correct the name, schema, validation, or cloud error before retrying.
         class: error
         effects: []
         id: error
@@ -610,8 +603,7 @@ interfaces:
         id: success
         outputs:
         - list
-      - caller_action: Correct the list name, filter, sort field, schema, or cloud
-          error.
+      - caller_action: Correct the list name, filter, sort field, schema, or cloud error.
         class: error
         effects: []
         id: error
@@ -653,10 +645,7 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: 'Read a cloud list by name (raw YAML), optionally filtered. A filtered
-      read preserves structure: same shape as the full doc, pruned to only branches
-      containing a match -- ancestor categories/parent entries are kept, and a match
-      is never duplicated as both a nested child and a top-level result.'
+    description: 'Read a cloud list by name (raw YAML), optionally filtered. A filtered read preserves structure: same shape as the full doc, pruned to only branches containing a match -- ancestor categories/parent entries are kept, and a match is never duplicated as both a nested child and a top-level result.'
     process_binding:
       args_prefix:
       - read
@@ -671,9 +660,7 @@ interfaces:
         - -o
         - --output
         min_positionals: 1
-        notes: Read cloud list by name (raw YAML), optionally filtered. Filtered output
-          is a pruned tree, not a flat list of matches -- do not assume flat-list
-          shape.
+        notes: Read cloud list by name (raw YAML), optionally filtered. Filtered output is a pruned tree, not a flat list of matches -- do not assume flat-list shape.
         positional_patterns:
           '0': ^[a-zA-Z0-9_-]+$
         required_flags:
@@ -699,9 +686,14 @@ interfaces:
             format:
               named: yaml
             kind: string
+        expected_revision:
+          description: "Optional optimistic-concurrency guard: only apply if the downloaded snapshot's 'revision' field equals this value; rejects with a stale-revision error and uploads nothing otherwise."
+          required: false
+          sensitivity: user-private
+          type:
+            kind: integer
       caller_warnings:
-      - external-side-effect: Replaces the remote list with the validated patched
-          snapshot.
+      - external-side-effect: Replaces the remote list with the validated patched snapshot.
       - rate-limited: Cloud read and write helpers consume Google Drive API quota.
       direct_io:
         network: []
@@ -740,8 +732,7 @@ interfaces:
           sensitivity: derived-private
       execution:
         consistency:
-          live: Downloads current cloud content, patches and validates that snapshot,
-            and uploads the result.
+          live: Downloads current cloud content, patches and validates that snapshot, and uploads the result.
         effects:
         - action: update
           confirmation_evidence:
@@ -759,20 +750,15 @@ interfaces:
         lifecycle: finite
         mutation_safety:
           atomicity:
-            per_effect_only: All patches are validated before one remote upload; download
-              and upload are not a transaction.
+            per_effect_only: All patches are validated before one remote upload; download and upload are not a transaction.
           concurrent_invocations:
-            unsafe: Concurrent cloud writers can overwrite changes made after this
-              invocation downloads its snapshot.
+            unsafe: Unsafe by default -- concurrent cloud writers can overwrite changes made after this invocation downloads its snapshot -- unless the caller passes expected_revision, in which case a concurrent writer that saved first causes this call to be rejected before any upload instead of silently clobbering it.
           idempotency:
-            idempotent: Reapplying the same field values converges, although modified
-              is restamped on each touch.
+            idempotent: Reapplying the same field values converges, although modified is restamped on each touch.
           on_uncertain_completion:
-            verify_then_decide: Re-read the affected IDs before retrying an interrupted
-              upload.
+            verify_then_decide: Re-read the affected IDs before retrying an interrupted upload.
           partial_effects_on_failure:
-            possible: Remote upload completion can be uncertain after a transport
-              failure.
+            possible: Remote upload completion can be uncertain after a transport failure.
           rollback_on_failure:
             unavailable: The previous remote list is not retained for automatic rollback.
         state_effect: mutating
@@ -789,8 +775,7 @@ interfaces:
         - cloud-list-update
         id: updated
         outputs: []
-      - caller_action: Correct the patch sequence, quoted ID, field value, list state,
-          or cloud error; never upload after local validation failure.
+      - caller_action: Correct the patch sequence, quoted ID, field value, list state, or cloud error; never upload after local validation failure. A stale-revision error means a concurrent writer saved this list first -- re-read it and retry.
         class: error
         effects: []
         id: error
@@ -814,8 +799,7 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Update cloud-list entries from a YAML list of patch objects, each
-      with a quoted string `id`; input is not a mapping keyed by id.
+    description: Update cloud-list entries from a YAML list of patch objects, each with a quoted string `id`; input is not a mapping keyed by id.
     process_binding:
       args_prefix:
       - update
@@ -826,8 +810,10 @@ interfaces:
         allowed_flags:
         - --cloud
         - --file
+        - --expected-revision
         flag_patterns:
           --file: ^.+$
+          --expected-revision: ^[0-9]+$
         max_positionals: 1
         min_positionals: 1
         name: file-mode
@@ -848,7 +834,11 @@ interfaces:
           '0': ^[a-zA-Z0-9_-]+$
         required_flags:
         - --cloud
-    usage: <name> --cloud --file /tmp/patch.yaml
+        allowed_flags:
+        - --expected-revision
+        flag_patterns:
+          --expected-revision: ^[0-9]+$
+    usage: <name> --cloud --file /tmp/patch.yaml [--expected-revision N]
     version: 1
   list-manager-rtx.source.rtx-yaml-store.interface.create-entry:
     contract:
@@ -877,15 +867,19 @@ interfaces:
             relative_to: caller-cwd
             syntax: literal
         target:
-          description: Existing category path or parent entry ID receiving the new
-            entries
+          description: Existing category path or parent entry ID receiving the new entries
           required: true
           sensitivity: user-private
           type:
             kind: string
+        expected_revision:
+          description: "Optional optimistic-concurrency guard: only apply if the file's current 'revision' field equals this value; rejects with a stale-revision error and writes nothing otherwise."
+          required: false
+          sensitivity: user-private
+          type:
+            kind: integer
       caller_warnings:
-      - external-side-effect: Rewrites the local list after assigning missing IDs
-          and schema-aware defaults.
+      - external-side-effect: Rewrites the local list after assigning missing IDs and schema-aware defaults.
       direct_io:
         network: []
         reads:
@@ -936,8 +930,7 @@ interfaces:
           sensitivity: derived-private
       execution:
         consistency:
-          snapshot: Reads one local snapshot, mutates it in memory, validates it,
-            and rewrites the file.
+          snapshot: Reads one local snapshot, mutates it in memory, validates it, and rewrites the file.
         effects:
         - action: update
           confirmation_evidence:
@@ -948,24 +941,20 @@ interfaces:
           may_occur_in_outcomes:
           - created
           reversibility:
-            compensatable: Delete the newly assigned stable IDs if the additions should
-              be undone.
+            compensatable: Delete the newly assigned stable IDs if the additions should be undone.
           value_source:
             argument_ref: entries
             kind: argument
         lifecycle: finite
         mutation_safety:
           atomicity:
-            non_atomic: The list file is written directly after validation without
-              a transactional replacement guarantee.
+            non_atomic: The list file is written directly after validation without a transactional replacement guarantee.
           concurrent_invocations:
-            unsafe: Concurrent writers can overwrite one another.
+            unsafe: Unsafe by default -- concurrent writers can overwrite one another -- unless the caller passes expected_revision, in which case a concurrent writer that saved first causes this call to be rejected before any write instead of silently clobbering it.
           idempotency:
-            non_idempotent: Repeating the request creates additional entries with
-              new IDs.
+            non_idempotent: Repeating the request creates additional entries with new IDs.
           on_uncertain_completion:
-            verify_then_decide: Re-read the target category and inspect stable IDs
-              before retrying.
+            verify_then_decide: Re-read the target category and inspect stable IDs before retrying.
           partial_effects_on_failure:
             possible: A filesystem failure can interrupt the rewrite.
           rollback_on_failure:
@@ -984,8 +973,7 @@ interfaces:
         - list-update
         id: created
         outputs: []
-      - caller_action: Correct the file, target, entry shape, required fields, or
-          schema error before retrying.
+      - caller_action: Correct the file, target, entry shape, required fields, or schema error before retrying. A stale-revision error means a concurrent writer saved this file first -- re-read it and retry.
         class: error
         effects: []
         id: error
@@ -1030,17 +1018,23 @@ interfaces:
         max_positionals: 2
         min_positionals: 2
         name: stdin-mode
+        allowed_flags:
+        - --expected-revision
+        flag_patterns:
+          --expected-revision: ^[0-9]+$
       - allow_stdin: false
         allowed_flags:
         - --entries
+        - --expected-revision
         flag_patterns:
           --entries: ^.+$
+          --expected-revision: ^[0-9]+$
         max_positionals: 2
         min_positionals: 2
         name: file-mode
         required_flags:
         - --entries
-    usage: <file> <category/path> --entries /tmp/entry.yaml
+    usage: <file> <category/path> --entries /tmp/entry.yaml [--expected-revision N]
     version: 1
   list-manager-rtx.source.rtx-yaml-store.interface.describe-schema:
     contract:
@@ -1096,8 +1090,7 @@ interfaces:
       interaction:
         mode: unattended
       outcomes:
-      - caller_action: Use the returned types, required markers, and enum values instead
-          of guessing.
+      - caller_action: Use the returned types, required markers, and enum values instead of guessing.
         class: success
         effects: []
         id: success
@@ -1114,8 +1107,7 @@ interfaces:
         cardinality:
           maximum: 1
           minimum: 1
-        description: YAML mapping of requested field metadata, required fields, and
-          generated fields.
+        description: YAML mapping of requested field metadata, required fields, and generated fields.
         direct_io_ref: write-1
         empty: A valid schema description is always nonempty.
         id: schema-description
@@ -1154,9 +1146,7 @@ interfaces:
       - allow_stdin: false
         max_positionals: 2
         min_positionals: 1
-        notes: First positional is the schema name (todo, triage, default); optional
-          second positional is a field name, or '*'/omitted for all fields. Purely
-          local and read-only -- no cloud variant needed.
+        notes: First positional is the schema name (todo, triage, default); optional second positional is a field name, or '*'/omitted for all fields. Purely local and read-only -- no cloud variant needed.
     usage: <schema> [field]
     version: 1
   list-manager-rtx.source.rtx-yaml-store.interface.generate-id:
@@ -1244,8 +1234,7 @@ interfaces:
         cardinality:
           maximum: 1
           minimum: 1
-        description: Requested collision-free six-character hexadecimal IDs, one per
-          line.
+        description: Requested collision-free six-character hexadecimal IDs, one per line.
         direct_io_ref: write-1
         empty: A positive count always yields at least one ID.
         id: ids
@@ -1282,8 +1271,7 @@ interfaces:
         description: The list file must exist and be readable
         id: readable-list
         unmet_outcome: error
-    description: Generate one or more collision-free 6-char entry IDs against a local
-      list file.
+    description: Generate one or more collision-free 6-char entry IDs against a local list file.
     process_binding:
       args_prefix:
       - gen-id
@@ -1333,8 +1321,7 @@ interfaces:
             - description: Default list schema
               value: default
       caller_warnings:
-      - external-side-effect: Creates a new YAML list and refuses to overwrite an
-          existing path.
+      - external-side-effect: Creates a new YAML list and refuses to overwrite an existing path.
       direct_io:
         network: []
         reads:
@@ -1372,7 +1359,7 @@ interfaces:
           sensitivity: derived-private
       execution:
         consistency:
-          snapshot: Validates a newly constructed empty list before creating the file.
+          snapshot: Validates a newly constructed list -- pre-seeded with default categories for todo/triage schemas, empty for schemas with no fixed category vocabulary -- before creating the file.
         effects:
         - action: create
           confirmation_evidence:
@@ -1394,11 +1381,9 @@ interfaces:
           concurrent_invocations:
             unsafe: Concurrent callers targeting the same absent path are not serialized.
           idempotency:
-            non_idempotent: Repeating a successful call is refused because the file
-              exists.
+            non_idempotent: Repeating a successful call is refused because the file exists.
           on_uncertain_completion:
-            verify_then_decide: Check whether the file exists and validates before
-              retrying.
+            verify_then_decide: Check whether the file exists and validates before retrying.
           partial_effects_on_failure:
             possible: A filesystem failure can interrupt file creation.
           rollback_on_failure:
@@ -1411,7 +1396,7 @@ interfaces:
       interaction:
         mode: unattended
       outcomes:
-      - caller_action: Populate the new list through create-entry.
+      - caller_action: Populate the new list through create-entry; todo/triage schemas start pre-seeded with usable default domain categories (Personal, Work) already carrying the schema's required subcategory set, not an empty list.
         class: success
         effects:
         - list-create
@@ -1600,12 +1585,7 @@ interfaces:
         description: The list file must exist and be readable
         id: readable-list
         unmet_outcome: error
-    description: 'Read a local YAML list file, optionally filtered (raw YAML output).
-      A filtered read preserves structure: it returns the same shape as the input
-      (full doc with categories, or a bare list) pruned to only branches containing
-      a match -- every ancestor category and parent entry of a match is kept for context,
-      and a match is never duplicated as both a nested child and an independent top-level
-      result.'
+    description: 'Read a local YAML list file, optionally filtered (raw YAML output). A filtered read preserves structure: it returns the same shape as the input (full doc with categories, or a bare list) pruned to only branches containing a match -- every ancestor category and parent entry of a match is kept for context, and a match is never duplicated as both a nested child and an independent top-level result.'
     process_binding:
       args_prefix:
       - read
@@ -1615,10 +1595,7 @@ interfaces:
       - allow_extra_positionals: true
         allow_stdin: false
         min_positionals: 1
-        notes: First positional is the local YAML file; remaining positionals are
-          filters. Filtered output is a pruned tree (or pruned list, if the input
-          itself was a bare list), not a flat list of matches -- do not assume flat-list
-          shape.
+        notes: First positional is the local YAML file; remaining positionals are filters. Filtered output is a pruned tree (or pruned list, if the input itself was a bare list), not a flat list of matches -- do not assume flat-list shape.
     usage: <file> [filters]
     version: 1
   list-manager-rtx.source.rtx-yaml-store.interface.update-list:
@@ -1640,17 +1617,21 @@ interfaces:
             relative_to: caller-cwd
             syntax: literal
         patches:
-          description: YAML sequence of patch objects read from a file or stdin, each
-            with a stable string ID
+          description: YAML sequence of patch objects read from a file or stdin, each with a stable string ID
           required: true
           sensitivity: user-private
           type:
             format:
               named: yaml
             kind: string
+        expected_revision:
+          description: "Optional optimistic-concurrency guard: only apply if the file's current 'revision' field equals this value; rejects with a stale-revision error and writes nothing otherwise."
+          required: false
+          sensitivity: user-private
+          type:
+            kind: integer
       caller_warnings:
-      - external-side-effect: Rewrites the local list and automatically stamps modified
-          and first completion dates.
+      - external-side-effect: Rewrites the local list and automatically stamps modified and first completion dates.
       direct_io:
         network: []
         reads:
@@ -1701,8 +1682,7 @@ interfaces:
           sensitivity: derived-private
       execution:
         consistency:
-          snapshot: Reads one local snapshot, applies every patch, validates it, and
-            rewrites the file.
+          snapshot: Reads one local snapshot, applies every patch, validates it, and rewrites the file.
         effects:
         - action: update
           confirmation_evidence:
@@ -1720,13 +1700,11 @@ interfaces:
         lifecycle: finite
         mutation_safety:
           atomicity:
-            non_atomic: The list file is written directly after validation without
-              a transactional replacement guarantee.
+            non_atomic: The list file is written directly after validation without a transactional replacement guarantee.
           concurrent_invocations:
-            unsafe: Concurrent writers can overwrite one another.
+            unsafe: Unsafe by default -- concurrent writers can overwrite one another -- unless the caller passes expected_revision, in which case a concurrent writer that saved first causes this call to be rejected before any write instead of silently clobbering it.
           idempotency:
-            idempotent: Reapplying the same field values converges, although modified
-              is restamped on each touch.
+            idempotent: Reapplying the same field values converges, although modified is restamped on each touch.
           on_uncertain_completion:
             verify_then_decide: Re-read the affected IDs before retrying.
           partial_effects_on_failure:
@@ -1747,8 +1725,7 @@ interfaces:
         - list-update
         id: updated
         outputs: []
-      - caller_action: Correct the patch sequence, stable ID, immutable field, field
-          value, or schema error before retrying.
+      - caller_action: Correct the patch sequence, stable ID, immutable field, field value, or schema error before retrying. A stale-revision error means a concurrent writer saved this file first -- re-read it and retry.
         class: error
         effects: []
         id: error
@@ -1780,8 +1757,7 @@ interfaces:
         description: The target list must exist and be readable
         id: readable-list
         unmet_outcome: error
-    description: Update entries in a local YAML list file from a patch file (keyed
-      by id) or stdin.
+    description: Update entries in a local YAML list file from a patch file (keyed by id) or stdin.
     process_binding:
       args_prefix:
       - update
@@ -1791,8 +1767,10 @@ interfaces:
       - allow_stdin: false
         allowed_flags:
         - --file
+        - --expected-revision
         flag_patterns:
           --file: ^.+$
+          --expected-revision: ^[0-9]+$
         max_positionals: 1
         min_positionals: 1
         name: file-mode
@@ -1806,7 +1784,11 @@ interfaces:
         min_positionals: 1
         name: stdin-batch
         notes: Internal convenience mode for the owning skill when feeding YAML directly.
-    usage: <file> --file /tmp/patch.yaml
+        allowed_flags:
+        - --expected-revision
+        flag_patterns:
+          --expected-revision: ^[0-9]+$
+    usage: <file> --file /tmp/patch.yaml [--expected-revision N]
     version: 1
 node_type: behavioral_source
 platform_support:

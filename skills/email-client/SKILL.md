@@ -20,6 +20,7 @@ Public Interfaces:
 - `email-client.interface.accounts-set-password`
 - `email-client.interface.accounts-setup-oauth`
 - `email-client.interface.accounts-update`
+- `email-client.interface.accounts-use-google-credential`
 - `email-client.interface.default`
 - `email-client.interface.live-smoke`
 - `email-client.interface.mail-attachments`
@@ -47,6 +48,8 @@ Use the installed `dispatcher` command for these process-bound interfaces:
   - `dispatcher --caller-skill email-client email-client.interface.accounts-setup-oauth --nickname <nick> --client-config <path> [--no-open-browser]`
 - `email-client.interface.accounts-update` — Update fields on an existing account nickname.
   - `dispatcher --caller-skill email-client email-client.interface.accounts-update --nickname <nick> [--email <addr>] [--display-name <name>] [--imap-host H] [--imap-port P] [--smtp-host H] [--smtp-port P] [--auth app-password|gmail-oauth]`
+- `email-client.interface.accounts-use-google-credential` — Bind one account nickname to a shared connect-google credential_id after validating it carries Gmail scope, storing only the opaque identifier (never the client secret or refresh token) on that account's own registry record. Other accounts and other fields on this account are untouched. The pre-existing per-account Gmail OAuth path (accounts-setup-oauth) remains the unchanged fallback for accounts that have not adopted the shared credential.
+  - `dispatcher --caller-skill email-client email-client.interface.accounts-use-google-credential --nickname <nick> --credential-id <id> --home <dir>`
 - `email-client.interface.live-smoke` — Run explicit live provider smoke checks for one account. --imap and --smtp-auth authenticate without sending; --send-self sends a test email to the account's own address.
   - `dispatcher --caller-skill email-client email-client.interface.live-smoke -a <nickname> [--imap] [--smtp-auth] [--send-self] [--body <text>]`
 - `email-client.interface.mail-attachments` — List attachment metadata for one or more emails as JSON. Returns one record per requested UID with attachment entries containing filename, content_type, size_bytes, size_human, and disposition.

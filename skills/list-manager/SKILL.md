@@ -47,9 +47,9 @@ Use the installed `dispatcher` command for these process-bound interfaces:
   - `dispatcher --caller-skill list-manager list-manager.interface.beautify-list [-D|--no-descriptions] [--markdown|--table|--diff] [--relative-deadlines] [--ids]`
   - Reads YAML from stdin and renders user-facing list output. No allowed_flags restriction: -D/--markdown/--table/--diff/--relative-deadlines/--ids all pass through.
 - `list-manager.interface.cloud-create-entry` — Add entries to a cloud list under a category path.
-  - `dispatcher --caller-skill list-manager list-manager.interface.cloud-create-entry <name> <category/path> --cloud --entries /tmp/entry.yaml`
+  - `dispatcher --caller-skill list-manager list-manager.interface.cloud-create-entry <name> <category/path> --cloud --entries /tmp/entry.yaml [--expected-revision N]`
 - `list-manager.interface.cloud-delete` — Delete one or more entries by id from a cloud list. Ids come after --cloud.
-  - `dispatcher --caller-skill list-manager list-manager.interface.cloud-delete <name> --cloud <id> [<id>...]`
+  - `dispatcher --caller-skill list-manager list-manager.interface.cloud-delete <name> --cloud <id> [<id>...] [--expected-revision N]`
   - Delete one or more entries by ID from a cloud list.
 - `list-manager.interface.cloud-init` — Create a new list in cloud storage.
   - `dispatcher --caller-skill list-manager list-manager.interface.cloud-init <name> --cloud --schema <schema>`
@@ -64,11 +64,11 @@ Use the installed `dispatcher` command for these process-bound interfaces:
   - `dispatcher --caller-skill list-manager list-manager.interface.cloud-read-beautify <name> [filters] --cloud [-o FILE]`
   - Read a cloud list by name and render it as nested bullet-list markdown by default, optionally filtered.
 - `list-manager.interface.cloud-update` — Update cloud-list entries from a YAML list of patch objects, each with a quoted string `id`; input is not a mapping keyed by id.
-  - `dispatcher --caller-skill list-manager list-manager.interface.cloud-update <name> --cloud --file /tmp/patch.yaml`
+  - `dispatcher --caller-skill list-manager list-manager.interface.cloud-update <name> --cloud --file /tmp/patch.yaml [--expected-revision N]`
   - file-mode: Patch file must contain a YAML list of objects; quote every id string.
   - stdin-mode: Stdin patch must contain a YAML list of objects; quote every id string.
 - `list-manager.interface.create-entry` — Add entries to a local YAML list under a category path.
-  - `dispatcher --caller-skill list-manager list-manager.interface.create-entry <file> <category/path> --entries /tmp/entry.yaml`
+  - `dispatcher --caller-skill list-manager list-manager.interface.create-entry <file> <category/path> --entries /tmp/entry.yaml [--expected-revision N]`
 - `list-manager.interface.describe-schema` — Describe entry-level fields (types/required/enums) for a list schema.
   - `dispatcher --caller-skill list-manager list-manager.interface.describe-schema <schema> [field]`
   - First positional is the schema name (todo, triage, default); optional second positional is a field name, or '*'/omitted for all fields. Purely local and read-only -- no cloud variant needed.
@@ -85,7 +85,7 @@ Use the installed `dispatcher` command for these process-bound interfaces:
   - `dispatcher --caller-skill list-manager list-manager.interface.read-list <file> [filters]`
   - First positional is the local YAML file; remaining positionals are filters. Filtered output is a pruned tree (or pruned list, if the input itself was a bare list), not a flat list of matches -- do not assume flat-list shape.
 - `list-manager.interface.update-list` — Update entries in a local YAML list file from a patch file (keyed by id) or stdin.
-  - `dispatcher --caller-skill list-manager list-manager.interface.update-list <file> --file /tmp/patch.yaml`
+  - `dispatcher --caller-skill list-manager list-manager.interface.update-list <file> --file /tmp/patch.yaml [--expected-revision N]`
   - file-mode: Externally supported update mode; caller prepares the patch file.
   - stdin-batch: Internal convenience mode for the owning skill when feeding YAML directly.
 
@@ -119,3 +119,4 @@ Skill: list-manager
 - **Unsure what a field allows?** Use `describe-schema` instead of guessing — e.g. `describe-schema todo state` for just that field's spec, or `describe-schema todo` (or `describe-schema todo '*'`) for every field's type/required/enum. A filter or entry value outside a schema's enum is rejected with the valid values listed, but don't wait to be told — check first when unsure.
 - **Ambiguous values:** when a field value is genuinely ambiguous, offer a few short, concrete options to pick from rather than guessing or asking an open-ended question. Keep options terse so the choice is quick to read and answer. E.g. a relative deadline ("end of the week"), or a task that implies a physical place (pick up/drop off/visit) with no `location` given.
 - **`completed` / `modified`:** both are auto-stamped by `update-list`/`cloud-update` — never set them yourself or invent a value. `completed` is set once, the first time a patch itself transitions `state` into a finished value (`complete`/`accepted`/`rejected`); later unrelated edits never overwrite it. `modified` is a debugging aid only, stamped on every touch, and is never shown by any renderer. Pre-existing entries finished before these fields existed have no `completed` recorded and nothing backfills it — they render with no date badge until next explicitly touched.
+- **Concurrent writers / `--expected-revision`:** every list document carries an integer `revision` field, bumped by one on every successful mutating write. If a list has **never** had a mutating write since this field was introduced, it has no `revision` key at all — treat that as `revision: 0`, not as "unknown" or "unsupported"; do not skip the guard or invent a different number. When a caller may race with another writer (e.g. a scheduled run overlapping a manual edit, or two runs of the same skill), read the list first, note its `revision` (or use `0` if the key is absent), then pass `--expected-revision <that value>` on `create-entry`/`cloud-create-entry`/`update-list`/`cloud-update`/`cloud-delete`. A rejection (stale-revision error, nothing written) means another writer saved first — re-read the list, re-check for duplicates, and retry the single mutation; never assume the write went through and never skip the re-read. `--expected-revision` is optional and has no effect if omitted (existing unguarded call sites keep working).

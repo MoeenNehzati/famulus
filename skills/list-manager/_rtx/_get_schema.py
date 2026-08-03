@@ -44,6 +44,21 @@ def list_schema_exists(schema_name: str) -> bool:
     return list_schema_path(schema_name).exists()
 
 
+def domain_subcategory_names(personal: bool) -> list[str]:
+    """Return the fixed subcategory name set a todo/triage domain category
+    must carry, per task-list.json / task-list-personal.json's `name` enum
+    (the "Personal" domain requires the personal variant, which adds "Shop";
+    every other domain requires the base variant). Callers that need to seed
+    or validate a domain category's subcategories should derive the names
+    from here rather than hardcoding the enum elsewhere.
+    """
+    filename = "task-list-personal.json" if personal else "task-list.json"
+    path = SCHEMAS_DIR / "lists" / filename
+    with open(path) as f:
+        schema = json.load(f)
+    return list(schema["items"]["properties"]["name"]["enum"])
+
+
 def validate_document(data: dict, schema_name: str) -> None:
     """Validate data against schema_name's list schema.
 

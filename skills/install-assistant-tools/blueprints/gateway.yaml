@@ -101,7 +101,7 @@ uses_interfaces:
 - interface: install-assistant-tools.interface.scripts-install
   version: 2
 - interface: install-assistant-tools.interface.scripts-launchers
-  version: 2
+  version: 3
 - interface: install-assistant-tools.interface.scripts-scaffold
   version: 2
 version: 1

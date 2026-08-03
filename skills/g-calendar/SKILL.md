@@ -23,6 +23,7 @@ Public Interfaces:
 - `g-calendar.interface.ensure-oauth`
 - `g-calendar.interface.scripts-gcal`
 - `g-calendar.interface.setup-oauth`
+- `g-calendar.interface.use-google-credential`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
@@ -38,6 +39,9 @@ Use the installed `dispatcher` command for these process-bound interfaces:
 - `g-calendar.interface.setup-oauth` — Run the OAuth setup flow to generate or refresh Google Calendar credentials.
   - `dispatcher --caller-skill g-calendar g-calendar.interface.setup-oauth [--from-json /path/to/client.json]`
   - OAuth setup for Google Calendar access.
+- `g-calendar.interface.use-google-credential` — Bind g-calendar to a shared connect-google credential_id after validating it carries Calendar scope, storing only the opaque identifier (never the client secret or refresh token) in g-calendar's own config.json. The pre-existing per-service OAuth path (ensure-oauth) remains the unchanged fallback for callers who have not adopted the shared credential.
+  - `dispatcher --caller-skill g-calendar g-calendar.interface.use-google-credential --credential-id <id> --home <dir>`
+  - Bind g-calendar to a shared Google credential_id.
 
 Instruction Interfaces:
 

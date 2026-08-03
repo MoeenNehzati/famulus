@@ -1,0 +1,126 @@
+content:
+- _loopback_oauth\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: connect-google-rtx.source.rtx-init
+  version: 1
+description: Requests one combined Google OAuth 2.0 PKCE grant covering every selected service's scope in a single consent screen and stores exactly the scopes actually granted.
+gateway:
+  language: Python
+  path: _loopback_oauth.py
+id: connect-google-rtx.source.rtx-authorize-services
+interfaces:
+  connect-google-rtx.source.rtx-authorize-services.interface.authorize-services:
+    contract:
+      arguments:
+        services: {description: "Comma-separated Google services to request in one combined grant (drive, calendar, gmail).", required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+        account-hint: {description: Expected Google account email; the grant is rejected without storing a credential if the authorized account differs., required: false, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+        home: {description: Home directory used to resolve the canonical client and credential registry; defaults to the host home., required: false, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings:
+      - external-side-effect: Opens a browser consent screen, starts a local loopback HTTP listener for exactly one callback, and stores a refresh token in the host secret store and per-account credential registry.
+      outputs:
+      - {id: result, audience: machine, description: "One JSON object reporting the authorized account, opaque credential_id, requested services, and which services were actually granted versus denied.", direct_io_ref: write-3, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty on success., type: {kind: string, sensitivity: user-private, format: {named: json}}}
+      outcomes:
+      - {id: authorized, class: success, outputs: [result], effects: [credential-registry], caller_action: Hand credential_id to each granted service's use-google-credential interface.}
+      - {id: partial-grant, class: success, outputs: [result], effects: [credential-registry], caller_action: Report denied services to the user; the granted subset is already usable.}
+      - {id: refused, class: refusal, outputs: [], effects: [], caller_action: "Ask the user to request an unknown service by its supported name, or retry authorization."}
+      - {id: failed, class: error, outputs: [], effects: [], caller_action: "Report state mismatch, account mismatch, or token-exchange failure without exposing OAuth secrets; no credential is stored."}
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency: {live: "The authorization code, state, and granted scopes are all validated during this single invocation."}
+        effects:
+        - {id: credential-registry, direct_io_ref: write-1, action: update, value_source: {kind: direct-io, direct_io_ref: token-endpoint}, may_occur_in_outcomes: [authorized, partial-grant], confirmation_evidence: {kind: direct-io, direct_io_ref: write-1}, reversibility: {irreversible: No prior credential entry for this subject is retained.}}
+        mutation_safety:
+          atomicity: {atomic: The credential registry is replaced through the shared atomic JSON writer; the refresh token is stored in the secret store only after a fully verified grant.}
+          concurrent_invocations: {unsafe: Concurrent authorizations for the same subject are not serialized.}
+          idempotency: {non_idempotent: Each run performs a fresh consent exchange and may return a different set of granted scopes.}
+          on_uncertain_completion: {verify_then_decide: Use connect-google.interface.client-status and the owning service's credential check before retrying.}
+          partial_effects_on_failure: {impossible: "A state mismatch, account-hint mismatch, or failed token/UserInfo exchange stores nothing -- the credential registry and secret store are untouched."}
+          rollback_on_failure: {unavailable: No prior credential backup is retained.}
+        verification:
+        - {method: output-schema, output_ref: result}
+        - {method: direct-io-state, direct_io_ref: write-1}
+      helpers: []
+      direct_io:
+        network:
+        - {id: token-endpoint, medium: network, access: read-write, system: google-oauth-token-endpoint, content: authorization_code PKCE grant exchange, formats: [json], sensitivity: secret, endpoint: "Google OAuth 2.0 token endpoint from the installed client's auth/token URIs", reason: "Exchanges the loopback-captured authorization code and PKCE verifier for an access token and refresh token."}
+        - {id: userinfo-endpoint, medium: network, access: read, system: google-openid-userinfo-endpoint, content: OpenID UserInfo claims, formats: [json], sensitivity: user-private, endpoint: Google OpenID Connect UserInfo endpoint, reason: "Confirms the authorized account's verified email before any credential is stored."}
+        - {id: browser-consent, medium: network, access: read-write, system: local-loopback-http, content: "one-time OAuth redirect callback with authorization code and state", formats: [url-query], sensitivity: secret, endpoint: http://localhost on an ephemeral port, reason: "Receives exactly one browser redirect callback carrying the authorization code, then closes."}
+        reads:
+        - access: read
+          content: config
+          formats:
+          - json
+          id: read-1
+          medium: local-filesystem
+          path: platform Famulus config root (see common.interface.google-credentials) / connect-google/client.json
+          reason: Read the installed client_id, auth_uri, and token_uri; the client secret itself is never read from this file.
+          sensitivity: secret
+          system: filesystem
+        writes:
+        - access: write
+          content: config
+          formats:
+          - json
+          id: write-1
+          medium: local-filesystem
+          path: platform Famulus config root (see common.interface.google-credentials) / connect-google/credentials.json
+          reason: Record the authorized subject, account, client, token endpoint, and actually-granted scopes. The refresh token itself is stored via common.interface.google-credentials in the host secret store, not written to this file.
+          sensitivity: user-private
+          system: filesystem
+        - access: write
+          content: secret
+          formats:
+          - opaque-secret
+          id: write-2
+          medium: local-system
+          path: host secret store
+          reason: Store the new refresh token via common.interface.google-credentials, keyed by the opaque credential_id.
+          sensitivity: secret
+          system: host-credential-store
+        - access: write
+          content: metadata
+          formats:
+          - json
+          id: write-3
+          medium: stdout
+          reason: Return the authorization result only -- account, credential_id, and per-service grant status, never a token or client secret.
+          sensitivity: user-private
+          system: agent-runtime
+    description: Request one combined Google OAuth 2.0 PKCE grant across every
+      selected service and store exactly the scopes Google actually granted.
+    process_binding:
+      entry: AuthorizeServicesInterface
+      kind: process
+      patterns:
+      - allowed_flags:
+        - --services
+        - --account-hint
+        - --home
+        flag_patterns:
+          --services: ^.+$
+          --account-hint: ^.+$
+          --home: ^.+$
+        max_positionals: 0
+        min_positionals: 0
+        required_flags:
+        - --services
+    usage: --services <list> [--account-hint <email>] [--home <dir>]
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+schema_version: 5
+uses_interfaces:
+- interface: common.interface.google-credentials
+  version: 1
+version: 1

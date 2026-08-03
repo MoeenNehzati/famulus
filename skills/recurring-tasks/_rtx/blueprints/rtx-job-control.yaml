@@ -19,6 +19,12 @@ dependencies:
   reason: Imports Python source from _rtx/_schedule_backend/__init__.py.
   source: recurring-tasks-rtx.source.rtx-schedule-backend-init
   version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-run-record.yaml
+  reason: Reads the run record a triggered job's executor writes, to report the job's actual outcome instead of only the scheduler's trigger-acceptance result.
+  source: recurring-tasks-rtx.source.rtx-run-record
+  version: 1
 description: Implements enable, disable, immediate-run, status, and log-view operations
   for configured recurring jobs.
 gateway:
@@ -538,9 +544,20 @@ interfaces:
       caller_warnings:
       - external-side-effect: Starts the configured job immediately through the native
           scheduler.
+      - external-side-effect: Polls logs/<name>/latest.json for up to a bounded timeout after triggering, rather than trusting the scheduler's own trigger-acceptance result, since some native scheduler backends return immediately without waiting for the job to finish.
       direct_io:
         network: []
-        reads: []
+        reads:
+        - access: read
+          content: run-record
+          formats:
+          - json
+          id: read-2
+          medium: local-filesystem
+          path: logs/<name>/latest.json
+          path_match: exact
+          sensitivity: derived-private
+          system: filesystem
         writes:
         - access: execute
           content: recurring-job
@@ -566,8 +583,7 @@ interfaces:
           sensitivity: derived-private
       execution:
         consistency:
-          live: Requests an immediate native scheduler run and waits for the backend
-            command result.
+          live: Requests an immediate native scheduler run, then polls the job's run-record file until a fresh record appears or the bounded timeout elapses.
         effects:
         - action: execute
           confirmation_evidence:
@@ -578,6 +594,7 @@ interfaces:
           may_occur_in_outcomes:
           - passed
           - failed
+          - timed-out
           - execution-error
           reversibility:
             irreversible: Work already performed by the started job cannot be recalled
@@ -603,22 +620,31 @@ interfaces:
         verification:
         - method: output-schema
           output_ref: result
+        - method: direct-io-state
+          direct_io_ref: read-2
       helpers: []
       interaction:
         mode: unattended
       outcomes:
-      - caller_action: Treat the immediate scheduler run as successful.
+      - caller_action: Treat the job's actual run, not just the trigger, as successful.
         class: success
         effects:
         - start-job
         id: passed
         outputs:
         - result
-      - caller_action: Inspect service and run logs.
+      - caller_action: Inspect service and run logs; the trigger may have been accepted even though the job's own success contract was not met.
         class: error
         effects:
         - start-job
         id: failed
+        outputs:
+        - result
+      - caller_action: Inspect service and run logs; no fresh run record appeared within the bounded wait.
+        class: error
+        effects:
+        - start-job
+        id: timed-out
         outputs:
         - result
       - caller_action: Report the scheduler exception and inspect native scheduler
@@ -634,7 +660,7 @@ interfaces:
         cardinality:
           maximum: null
           minimum: 1
-        description: Pass or fail message from the immediate scheduler trigger
+        description: Pass or fail message reflecting the triggered job's run record (its declared success contract), not merely whether the scheduler accepted the trigger.
         direct_io_ref: write-2
         empty: A pass or fail line is always printed.
         id: result
@@ -662,8 +688,7 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Trigger a job immediately through the native scheduler, show output
-      and status.
+    description: Trigger a job immediately through the native scheduler, then wait (bounded) for its run record and report whether the job actually succeeded.
     process_binding:
       args_prefix:
       - test

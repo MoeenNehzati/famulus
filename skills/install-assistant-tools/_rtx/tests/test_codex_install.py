@@ -31,7 +31,10 @@ from install_test_utils import (  # noqa: E402
     can_create_symlink,
     codex_env,
     copy_repo_tree,
+    deploy_managed_uv,
     expected_skills,
+    managed_runtime_uv_bin,
+    managed_uv_python_install_dir,
     python_test_env,
     read_json,
     run_command,
@@ -214,6 +217,14 @@ class CodexInstallTests(unittest.TestCase):
             install_claude_home.mkdir()
             install_shell_rc = tmp_root / "install.bashrc"
 
+            if managed_runtime_uv_bin() is None:
+                # famulus-skip: category=capability-unavailable; reason=_phase_entry.py now builds a real managed-runtime candidate release ahead of scaffold, which requires a real uv binary; alternate=tests/test_officina_managed_runtime.py and tests/test_officina_launcher_entry.py cover the build+deploy+resolver flow directly
+                self.skipTest("uv is not installed on this machine")
+            # Simulate the separately scoped uv-bootstrap step that would
+            # place uv at the machine-local managed location before any real
+            # install ever runs _phase_entry.py's managed-runtime wiring.
+            deploy_managed_uv(install_home)
+
             install_cmd = [
                 sys.executable,
                 str(installed_path / "skills" / "install-assistant-tools" / "_rtx" / "_phase_entry.py"),
@@ -244,17 +255,33 @@ class CodexInstallTests(unittest.TestCase):
                     "HOME": str(install_home),
                     "CODEX_HOME": str(install_codex_home),
                     "CLAUDE_HOME": str(install_claude_home),
+                    # Reuse this machine's already-populated uv Python store
+                    # and package cache instead of letting uv resolve fresh,
+                    # empty ones under the isolated HOME above and attempt a
+                    # full network re-download of every declared dependency
+                    # (including marker-pdf's multi-GB torch/CUDA closure).
+                    "UV_PYTHON_INSTALL_DIR": managed_uv_python_install_dir(),
+                    "UV_CACHE_DIR": str(Path.home() / ".cache" / "uv"),
                 },
             )
-            run_command(install_cmd, env=install_env)
+            run_command(install_cmd, env=install_env, timeout=900)
 
             # workers are created at install time by the bootstrap (runtime
-            # dirs, not plugin content)
+            # dirs, not plugin content). This is a plugin-mode install
+            # (--no-dev-mode): the plugin cache (installed_path) is a
+            # public/immutable tree, so workers live under the platform
+            # Famulus state dir instead of installed_path/workers.
+            from officina.common.famulus_paths import resolve_famulus_paths
+
+            expected_worker_root = resolve_famulus_paths(
+                platform=sys.platform, home=install_home
+            ).worker_root
             for agent in ("assistant", "collab", "coauthor"):
                 self.assertTrue(
-                    (installed_path / "workers" / agent).is_dir(),
+                    (expected_worker_root / agent).is_dir(),
                     f"worker dir not created by installer bootstrap: {agent}",
                 )
+                self.assertFalse((installed_path / "workers" / agent).exists())
 
             def expect_symlink(path: Path, target: Path) -> None:
                 self.assertTrue(path.is_symlink(), f"Expected symlink: {path}")
@@ -342,23 +369,33 @@ class CodexInstallTests(unittest.TestCase):
                 for path, (source, agent) in mapping.items():
                     expect_copy(path, source, agent)
 
-            # dispatcher launcher: generated file (not symlink), runs
-            # officina.dispatcher from the repo with an install-time fallback
-            # path. Windows has a separate .bat launcher.
+            # dispatcher launcher: generated file (not symlink) that execs
+            # into the stable managed-runtime resolver at launch time,
+            # instead of embedding this install's repo checkout or
+            # interpreter path (see officina.install.resolvers.launch, a
+            # dependency-free stdlib-only script). Windows has a separate
+            # .bat launcher.
             if sys.platform == "win32":
                 self.assertFalse((install_bin / "dispatcher").exists())
                 launcher = install_bin / "dispatcher.bat"
                 self.assertTrue(launcher.is_file(), "dispatcher launcher missing")
                 launcher_text = launcher.read_text(encoding="utf-8")
                 self.assertIn("officina.dispatcher.cli", launcher_text)
-                self.assertIn(str(installed_path), launcher_text)
+                self.assertNotIn(str(installed_path), launcher_text)
+                self.assertIn("bootstrap", launcher_text)
+                self.assertIn("resolvers", launcher_text)
+                self.assertIn("launch.py", launcher_text)
             else:
                 launcher = install_bin / "dispatcher"
                 self.assertTrue(launcher.is_file(), "dispatcher launcher missing")
                 self.assertFalse(launcher.is_symlink(), "dispatcher must be a generated file")
                 self.assertTrue(os.access(launcher, os.X_OK), "dispatcher launcher not executable")
                 launcher_text = launcher.read_text(encoding="utf-8")
-                self.assertIn(f"os.environ.get('AI', '{installed_path}')", launcher_text)
+                self.assertNotIn(str(installed_path), launcher_text)
+                self.assertIn("os.execv(RESOLVER", launcher_text)
+                self.assertIn("bootstrap", launcher_text)
+                self.assertIn("resolvers", launcher_text)
+                self.assertIn("launch.py", launcher_text)
                 self.assertIn("officina.dispatcher.cli", launcher_text)
 
             if sys.platform != "win32":
@@ -377,15 +414,44 @@ class CodexInstallTests(unittest.TestCase):
                     "CODEX_HOME": str(install_codex_home),
                     "CLAUDE_HOME": str(install_claude_home),
                     "ASSISTANT_DEFAULT": "codex",
-                    "AI": str(installed_path),
+                    # $AI deliberately NOT set: this is a plugin-mode install
+                    # (--no-dev-mode above); dev_link.py is the only thing
+                    # that exports $AI, and it didn't run here. The launcher
+                    # must resolve its own repo root and worker dir the same
+                    # way a real plugin-mode session would.
                     "PATH": str(install_bin) + os.pathsep + os.environ.get("PATH", ""),
                 },
             )
-            run_command(
+            # python_test_env() starts from a copy of this process's own
+            # environment; explicitly drop any ambient $AI (e.g. this repo's
+            # own dev-mode install sets it) so the launcher genuinely sees
+            # plugin-mode ($AI unset), not whatever happens to be exported
+            # in the environment running this test.
+            launcher_env.pop("AI", None)
+            # "dispatcher" now execs into the stable managed-runtime resolver
+            # (officina.install.resolvers.launch) instead of running
+            # self-contained against this repo checkout. install_cmd above
+            # went through the real _phase_entry.py, which builds and
+            # activates a managed-runtime candidate release (deploying the
+            # resolver and its trusted-roots.json sidecar as part of that
+            # activation) before scaffold ever runs, so the resolver hop now
+            # succeeds. The release venv still has no `officina` package
+            # installed (a separate, deliberate scope decision -- see
+            # _install_scaffold.install_python_packages's docstring), so the
+            # only expected failure is ModuleNotFoundError for officina.
+            # dispatcher.cli, raised by the release interpreter after control
+            # has already transferred there -- never a resolver-side error.
+            dispatcher_result = run_command(
                 platform_shell_command("dispatcher", ["--help"]),
                 env=launcher_env,
                 cwd=workdir,
+                check=False,
             )
+            self.assertNotEqual(dispatcher_result.returncode, 0)
+            self.assertNotIn("No such file or directory", dispatcher_result.stderr)
+            self.assertNotIn("famulus launcher:", dispatcher_result.stderr)
+            self.assertIn("ModuleNotFoundError", dispatcher_result.stderr)
+            self.assertIn("officina", dispatcher_result.stderr)
             for agent in ("assistant", "collab", "coauthor"):
                 command = platform_shell_command(
                     agent,
@@ -401,7 +467,7 @@ class CodexInstallTests(unittest.TestCase):
                 self.assertIn(f"{plugin_name}:daily-plan", visible_text)
                 # visible_text is json.dumps output: backslashes in Windows
                 # paths are escaped, so compare in JSON-escaped space
-                worker_dir_json = json.dumps(str(installed_path / "workers" / agent))[1:-1]
+                worker_dir_json = json.dumps(str(expected_worker_root / agent))[1:-1]
                 self.assertIn(worker_dir_json, visible_text)
 
             # ── Uninstall phase: plugin removal must clean up completely ──

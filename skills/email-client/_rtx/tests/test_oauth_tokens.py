@@ -113,6 +113,70 @@ def test_xoauth2_string_matches_gmail_sasl_shape():
     assert oauth.xoauth2_bytes("me@example.com", "token") == b"user=me@example.com\x01auth=Bearer token\x01\x01"
 
 
+# ── get_gmail_access_token: shared credential vs. legacy per-account OAuth ──
+
+def test_get_gmail_access_token_uses_shared_credential_when_credential_id_present(monkeypatch, tmp_path):
+    import officina.common.google_credentials as google_credentials
+
+    calls = {}
+
+    def fake_refresh_access_token(credential_id, *, required_scopes, home, platform, urlopen=None, secret_backend=None):
+        calls["credential_id"] = credential_id
+        calls["required_scopes"] = required_scopes
+        calls["home"] = home
+        calls["platform"] = platform
+        return "shared-access-token"
+
+    monkeypatch.setattr(google_credentials, "refresh_access_token", fake_refresh_access_token)
+    # Legacy path must not even be consulted when credential_id is present.
+    monkeypatch.setattr(
+        oauth, "refresh_google_access_token",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("legacy OAuth path must not run when credential_id is set")),
+    )
+
+    account = {"auth": "gmail-oauth", "credential_id": "google:sub1", "email": "me@example.com"}
+    token = oauth.get_gmail_access_token("work", account, home=tmp_path, platform="linux")
+
+    assert token == "shared-access-token"
+    assert calls["credential_id"] == "google:sub1"
+    assert calls["required_scopes"] == google_credentials.SERVICE_SCOPES["gmail"]
+    assert calls["home"] == tmp_path
+    assert calls["platform"] == "linux"
+
+
+def test_get_gmail_access_token_falls_back_to_legacy_oauth_without_credential_id(monkeypatch):
+    calls = []
+
+    def fake_legacy(nickname, account, *, urlopen=None):
+        calls.append((nickname, account))
+        return "legacy-access-token"
+
+    monkeypatch.setattr(oauth, "refresh_google_access_token", fake_legacy)
+
+    account = {
+        "auth": "gmail-oauth",
+        "oauth": {"client_id": "client-id", "token_uri": "https://token.example.test"},
+        "email": "me@example.com",
+    }
+    token = oauth.get_gmail_access_token("work", account)
+
+    assert token == "legacy-access-token"
+    assert calls == [("work", account)]
+
+
+def test_get_gmail_access_token_wraps_google_credential_error_as_oautherror(monkeypatch, tmp_path):
+    import officina.common.google_credentials as google_credentials
+
+    def fake_refresh_access_token(credential_id, *, required_scopes, home, platform, urlopen=None, secret_backend=None):
+        raise google_credentials.GoogleCredentialError(f"credential {credential_id} lacks required scopes")
+
+    monkeypatch.setattr(google_credentials, "refresh_access_token", fake_refresh_access_token)
+
+    account = {"auth": "gmail-oauth", "credential_id": "google:sub1", "email": "me@example.com"}
+    with pytest.raises(oauth.OAuthError, match="lacks required scopes"):
+        oauth.get_gmail_access_token("work", account, home=tmp_path, platform="linux")
+
+
 def test_exchange_authorization_code_requires_access_token_response():
     def fake_urlopen(request, timeout):
         return FakeResponse({"error": "invalid_grant", "error_description": "bad code"})

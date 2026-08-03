@@ -17,6 +17,7 @@ _base = load_runtime_module(
     RUNTIME_ROOT / "_install_launcher" / "_base_launcher.py"
 )
 LauncherInstallerBase = _base.LauncherInstallerBase
+from install_test_utils import assert_default_bin_dir_matches_famulus_paths
 
 
 def write_runtime_dependencies_manifest(repo_root: Path, python_packages: list[str]) -> None:
@@ -35,6 +36,7 @@ def write_runtime_dependencies_manifest(repo_root: Path, python_packages: list[s
                                         "kind": "python-package",
                                         "name": package,
                                         "version": "any",
+                                        "platforms": {"linux": True, "macos": True, "windows": True},
                                     }
                                     for package in python_packages
                                 ]
@@ -47,6 +49,10 @@ def write_runtime_dependencies_manifest(repo_root: Path, python_packages: list[s
         ),
         encoding="utf-8",
     )
+
+
+def test_default_bin_dir_is_not_under_documents(tmp_path):
+    assert_default_bin_dir_matches_famulus_paths(scaffold.default_bin_dir, tmp_path)
 
 
 def test_run_writes_dispatcher_and_invoke_skill_launchers(tmp_path, monkeypatch):
@@ -66,21 +72,37 @@ def test_run_writes_dispatcher_and_invoke_skill_launchers(tmp_path, monkeypatch)
     assert invoke_skill.is_file()
     if os.name != "nt":
         assert dispatcher.stat().st_mode & 0o111  # executable bits set
-    assert repr(str(repo_root)) in dispatcher.read_text()
-    assert repr(str(Path(sys.executable))) in dispatcher.read_text()
-    assert "os.execv(EXPECTED_PYTHON" in dispatcher.read_text()
-    assert repr(str(Path(sys.executable))) in invoke_skill.read_text()
-    assert "os.execv(EXPECTED_PYTHON" in invoke_skill.read_text()
-    assert "_agent_invoker.sh" not in invoke_skill.read_text(encoding="utf-8")
+    dispatcher_text = dispatcher.read_text()
+    invoke_text = invoke_skill.read_text(encoding="utf-8")
+    # Generated launchers resolve the active release at launch time through
+    # the stable managed-runtime resolver instead of embedding this repo
+    # checkout's path or this test process's own interpreter.
+    assert str(repo_root) not in dispatcher_text
+    assert sys.executable not in dispatcher_text
+    assert "bootstrap" in dispatcher_text and "resolvers" in dispatcher_text and "launch.py" in dispatcher_text
+    assert "os.execv(RESOLVER" in dispatcher_text
+    assert sys.executable not in invoke_text
+    assert "_agent_invoker.sh" not in invoke_text
 
 
 def test_run_writes_windows_dispatcher_and_invoke_skill_launchers(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(sys, "platform", "win32")
     monkeypatch.setattr(scaffold, "ensure_path_windows", lambda *args, **kwargs: None)
+    # A real Windows host always has LOCALAPPDATA set; resolving the
+    # resolver's fixed path needs it now that this monkeypatches sys.platform.
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
+    # Dispatcher.bat generation resolves a concrete interpreter path via
+    # shutil.which; mock it (as test_schedule_backend.py's Windows tests
+    # do) rather than let the real shutil.which run its win32-specific
+    # branch on this non-Windows test host, where it would fail since
+    # _winapi isn't importable.
+    monkeypatch.setattr(
+        "_install_launcher._windows_launcher.shutil.which",
+        lambda name: r"C:\Python312\python.exe" if name == "python" else None,
+    )
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
     bin_dir = tmp_path / "bin"
-    python = LauncherInstallerBase._batch_path(Path(sys.executable))
 
     status = scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, dry_run=False)
 
@@ -91,7 +113,10 @@ def test_run_writes_windows_dispatcher_and_invoke_skill_launchers(tmp_path, monk
     assert dispatcher.is_file()
     assert invoke_skill.is_file()
     dispatcher_text = dispatcher.read_text(encoding="utf-8")
-    assert f'"{python}" -m officina.dispatcher.cli %*' in dispatcher_text
+    assert "-m officina.dispatcher.cli %*" in dispatcher_text
+    assert "bootstrap" in dispatcher_text and "resolvers" in dispatcher_text and "launch.py" in dispatcher_text
+    assert str(repo_root) not in dispatcher_text
+    assert sys.executable not in dispatcher_text
     assert "py -3" not in dispatcher_text
     assert "assistant --local --claude" in invoke_skill.read_text(encoding="utf-8")
     assert "OK: dispatcher" in output
@@ -168,11 +193,16 @@ def test_run_reruns_idempotently(tmp_path, monkeypatch):
     assert content.count('export PATH="') == 1
 
 
-def test_run_installs_required_python_packages(tmp_path, monkeypatch):
+def test_run_never_shells_out_to_ambient_python_for_package_install(tmp_path, monkeypatch):
+    """Scaffold must not install third-party Python packages into the
+    ambient interpreter at all (that's build_candidate_release's job, into
+    the managed release venv, run by _phase_entry.py before scaffold.run
+    ever executes) -- confirms feedback item 2/3's ambient-python-install
+    violation is fully gone, not just relocated to a different call site."""
     monkeypatch.setattr(sys, "platform", "linux")
     calls = []
     monkeypatch.setattr(
-        scaffold.subprocess, "run",
+        "subprocess.run",
         lambda cmd, **kw: (calls.append(cmd), type("R", (), {"returncode": 0, "stderr": ""})())[1],
     )
     repo_root = tmp_path / "repo"
@@ -184,40 +214,24 @@ def test_run_installs_required_python_packages(tmp_path, monkeypatch):
 
     scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, shell_rc=rc_file, dry_run=False)
 
-    assert any("dateparser" in " ".join(cmd) for cmd in calls)
+    for cmd in calls:
+        assert sys.executable not in cmd, f"scaffold invoked ambient sys.executable: {cmd}"
+        assert "pip" not in cmd, f"scaffold ran its own pip install: {cmd}"
 
 
-def test_run_installs_python_packages_from_runtime_dependency_manifest(tmp_path, monkeypatch):
+def test_run_warns_but_does_not_block_when_no_managed_release_is_active(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(sys, "platform", "linux")
-    calls = []
-    monkeypatch.setattr(
-        scaffold.subprocess, "run",
-        lambda cmd, **kw: (calls.append(cmd), type("R", (), {"returncode": 0, "stderr": ""})())[1],
-    )
-    monkeypatch.setattr(
-        scaffold,
-        "install_certificate_signing_material",
-        lambda repo_root, dry_run: scaffold.LauncherInstallResult(
-            name="certificate-signing-material",
-            required=True,
-            status="installed",
-            workflows=("v4 certification", "certificate verification"),
-        ),
-    )
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
-    write_runtime_dependencies_manifest(repo_root, ["PyYAML", "jsonschema", "cryptography"])
     bin_dir = tmp_path / "bin"
     rc_file = tmp_path / ".bashrc"
     rc_file.write_text("")
 
-    scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, shell_rc=rc_file, dry_run=False)
+    status = scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, shell_rc=rc_file, dry_run=False)
 
-    installed = {" ".join(cmd) for cmd in calls}
-    assert any("PyYAML" in cmd for cmd in installed)
-    assert any("jsonschema" in cmd for cmd in installed)
-    assert any("cryptography" in cmd for cmd in installed)
-    assert not any(" rg " in f" {cmd} " for cmd in installed)
+    output = capsys.readouterr().out
+    assert status == 0
+    assert "NOTE: no managed-runtime release is active yet" in output
 
 
 def test_required_python_packages_preserve_declared_versions(tmp_path):
@@ -237,6 +251,7 @@ def test_required_python_packages_preserve_declared_versions(tmp_path):
                                         "kind": "python-package",
                                         "name": "cryptography",
                                         "version": ">=44.0.1",
+                                        "platforms": {"linux": True, "macos": True, "windows": True},
                                     }
                                 ]
                             }
@@ -257,17 +272,20 @@ def test_required_python_packages_preserve_declared_versions(tmp_path):
 @pytest.mark.parametrize(
     ("runtime_platform", "expected"),
     [
-        ("linux", ["Example<2,>=1"]),
-        ("darwin", ["Example!=1.5,>=1"]),
-        ("win32", ["Example>=1,~=1.8"]),
+        ("linux", ["example<2"]),
+        ("darwin", ["EXAMPLE!=1.5"]),
+        ("win32", ["Example~=1.8"]),
     ],
 )
-def test_required_python_packages_merge_only_platform_applicable_versions(
+def test_required_python_packages_uses_first_declared_version_per_platform(
     tmp_path,
     monkeypatch,
     runtime_platform,
     expected,
 ):
+    """Each platform sees one declared spec per package name: the first
+    matching declaration in manifest order wins (see
+    officina.install.managed_runtime.declared_python_packages)."""
     repo_root = tmp_path / "repo"
     manifest = repo_root / scaffold.RUNTIME_DEPENDENCIES_MANIFEST
     manifest.parent.mkdir(parents=True)
@@ -280,11 +298,6 @@ def test_required_python_packages_merge_only_platform_applicable_versions(
                         "interfaces": {
                             "run": {
                                 "dependencies": [
-                                    {
-                                        "kind": "python-package",
-                                        "name": "Example",
-                                        "version": ">=1",
-                                    },
                                     {
                                         "kind": "python-package",
                                         "name": "example",
@@ -328,6 +341,19 @@ def test_required_python_packages_merge_only_platform_applicable_versions(
     monkeypatch.setattr(scaffold.sys, "platform", runtime_platform)
 
     assert scaffold.required_python_packages(repo_root) == expected
+
+
+def test_runtime_dependencies_manifest_is_still_schema_v1():
+    repo_root = Path(__file__).resolve().parents[4]
+    manifest_path = repo_root / scaffold.RUNTIME_DEPENDENCIES_MANIFEST
+    payload = json.loads(manifest_path.read_text())
+    assert payload["version"] == 1
+    assert "skills" in payload
+    # Spot check a known live entry keeps the documented shape.
+    entry = payload["skills"]["install-assistant-tools"]["interfaces"]["scripts-install"]
+    dep = entry["dependencies"][0]
+    assert set(dep) >= {"kind", "name", "platforms"}
+    assert set(dep["platforms"]) <= {"linux", "macos", "windows"}
 
 
 def test_certificate_signing_material_capability_uses_shared_owner(
@@ -379,6 +405,33 @@ def test_certificate_signing_material_capability_fails_closed(
     assert result.reason == "verification failed"
 
 
+def test_certificate_signing_material_capability_fails_clearly_when_cryptography_missing(
+    tmp_path,
+    monkeypatch,
+):
+    """On a fresh machine whose ambient interpreter never had `cryptography`
+    installed, certificate_records.py's module-level `import cryptography`
+    raises ModuleNotFoundError. This must surface as a clear, actionable
+    capability-failure reason -- not a raw traceback, and without the
+    installer silently pip-installing anything into the ambient
+    interpreter (that anti-pattern was deliberately removed elsewhere)."""
+
+    def fail_import():
+        raise ModuleNotFoundError("No module named 'cryptography'", name="cryptography")
+
+    monkeypatch.setattr(scaffold, "_import_certificate_records", fail_import)
+
+    result = scaffold.install_certificate_signing_material(
+        tmp_path / "repo",
+        dry_run=False,
+    )
+
+    assert result.blocks_install()
+    assert result.status == "failed"
+    assert "cryptography" in result.reason
+    assert "pip install cryptography" in result.reason
+
+
 def test_certificate_signing_material_dry_run_does_not_write(
     tmp_path,
     monkeypatch,
@@ -399,23 +452,33 @@ def test_certificate_signing_material_dry_run_does_not_write(
     assert result.status == "would-install"
 
 
-def test_python_package_install_timeout_warns_and_continues(tmp_path, monkeypatch, capsys):
-    repo_root = tmp_path / "repo"
-    repo_root.mkdir()
-    write_runtime_dependencies_manifest(repo_root, ["marker-pdf", "rich"])
-    calls = []
+# ── uv_release_target: resolves the real uv release-asset naming ────────────
 
-    def fake_run(cmd, **kwargs):
-        calls.append(cmd)
-        if "marker-pdf" in cmd:
-            raise scaffold.subprocess.TimeoutExpired(cmd, kwargs["timeout"])
-        return type("R", (), {"returncode": 0, "stderr": ""})()
 
-    monkeypatch.setenv("FAMULUS_PIP_INSTALL_TIMEOUT_SECONDS", "1")
-    monkeypatch.setattr(scaffold.subprocess, "run", fake_run)
+@pytest.mark.parametrize(
+    "platform_name,machine,expected_triple,expected_extension",
+    [
+        ("linux", "x86_64", "x86_64-unknown-linux-gnu", ".tar.gz"),
+        ("linux", "aarch64", "aarch64-unknown-linux-gnu", ".tar.gz"),
+        ("macos", "x86_64", "x86_64-apple-darwin", ".tar.gz"),
+        ("macos", "arm64", "aarch64-apple-darwin", ".tar.gz"),
+        ("windows", "AMD64", "x86_64-pc-windows-msvc", ".zip"),
+        ("windows", "ARM64", "aarch64-pc-windows-msvc", ".zip"),
+    ],
+)
+def test_uv_release_target_resolves_real_asset_naming(
+    platform_name, machine, expected_triple, expected_extension
+):
+    triple, extension = scaffold.uv_release_target(platform_name=platform_name, machine=machine)
+    assert triple == expected_triple
+    assert extension == expected_extension
 
-    scaffold.install_python_packages(repo_root, dry_run=False)
 
-    output = capsys.readouterr().out
-    assert "WARN: timed out installing marker-pdf after 1s" in output
-    assert any("rich" in cmd for cmd in calls)
+def test_uv_release_target_rejects_unsupported_platform():
+    with pytest.raises(scaffold.UvReleaseTargetError, match="platform"):
+        scaffold.uv_release_target(platform_name="freebsd", machine="x86_64")
+
+
+def test_uv_release_target_rejects_unsupported_machine():
+    with pytest.raises(scaffold.UvReleaseTargetError, match="architecture|machine"):
+        scaffold.uv_release_target(platform_name="linux", machine="sparc64")

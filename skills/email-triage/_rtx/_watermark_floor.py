@@ -19,14 +19,27 @@ import os
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
-# State lives next to this script (SKILL_DIR/state), matching update_watermark.py,
-# so it stays portable across machines regardless of $HOME layout or caller cwd.
-SKILL_DIR = Path(__file__).resolve().parent
-# Overridable via env var so tests can point at a tmp_path instead of the
-# real state/ directory.
-STATE_DIR = Path(os.environ["EMAIL_TRIAGE_STATE_DIR"]) if os.environ.get("EMAIL_TRIAGE_STATE_DIR") else SKILL_DIR / "state"
-WATERMARK = STATE_DIR / "last_run"
-STATUS_FILE = STATE_DIR / "status.json"
+SKILL_DIR = Path(__file__).resolve().parent.parent
+
+
+def default_state_dir(*, home: Path | None = None) -> Path:
+    """Resolve the mutable state root for email-triage.
+
+    Defaults to the shared Famulus state root (not SKILL_DIR/state, which may
+    be a read-only installed/plugin tree). Overridable via
+    EMAIL_TRIAGE_STATE_DIR so tests and CI can point at a tmp_path instead of
+    the real state directory.
+    """
+    override = os.environ.get("EMAIL_TRIAGE_STATE_DIR")
+    if override:
+        return Path(override)
+    from officina.common.famulus_paths import resolve_famulus_paths
+
+    return resolve_famulus_paths(platform=sys.platform, home=home or Path.home()).email_triage_state_root
+
+
+WATERMARK = default_state_dir() / "last_run"
+STATUS_FILE = default_state_dir() / "status.json"
 
 
 def record_warning(message: str) -> None:
@@ -36,7 +49,7 @@ def record_warning(message: str) -> None:
     for each enabled job and notifies the user if result != "ok". This is the
     same channel that already pops up desktop notifications for job failures.
     """
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
     STATUS_FILE.write_text(json.dumps({"result": "warning", "message": message}, indent=2))
 
 

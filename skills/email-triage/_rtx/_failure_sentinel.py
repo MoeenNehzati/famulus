@@ -14,11 +14,26 @@ from pathlib import Path
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
-SKILL_DIR = Path(__file__).resolve().parent
-# Overridable via env var so tests can point at a tmp_path instead of the
-# real state/ directory.
-STATE_DIR = Path(os.environ["EMAIL_TRIAGE_STATE_DIR"]) if os.environ.get("EMAIL_TRIAGE_STATE_DIR") else SKILL_DIR / "state"
-STATUS_FILE = STATE_DIR / "status.json"
+SKILL_DIR = Path(__file__).resolve().parent.parent
+
+
+def default_state_dir(*, home: Path | None = None) -> Path:
+    """Resolve the mutable state root for email-triage.
+
+    Defaults to the shared Famulus state root (not SKILL_DIR/state, which may
+    be a read-only installed/plugin tree). Overridable via
+    EMAIL_TRIAGE_STATE_DIR so tests and CI can point at a tmp_path instead of
+    the real state directory.
+    """
+    override = os.environ.get("EMAIL_TRIAGE_STATE_DIR")
+    if override:
+        return Path(override)
+    from officina.common.famulus_paths import resolve_famulus_paths
+
+    return resolve_famulus_paths(platform=sys.platform, home=home or Path.home()).email_triage_state_root
+
+
+STATUS_FILE = default_state_dir() / "status.json"
 
 class Interface(PythonArgvMachineInterface):
     prog = "mark_failure.py"
@@ -31,7 +46,7 @@ def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     reason = argv[0] if argv else "triage run failed (no reason given)"
 
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
     STATUS_FILE.write_text(json.dumps({"result": "error", "message": reason}, indent=2))
     print(f"Triage marked as failed: {reason}", file=sys.stderr)
     return 0

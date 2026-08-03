@@ -8,8 +8,13 @@ jobs invoke `invoke-skill <name>`. Both need to exist and be on PATH
 regardless of plugin vs dev-mode, and regardless of which agent launchers
 (assistant/collab/coauthor/tw) the user wants. Run this first, always.
 
-Also installs required third-party Python packages declared by blueprint
-executable interfaces, not tied to any particular agent.
+Required third-party Python packages declared by blueprint executable
+interfaces are provisioned into the managed-runtime release venv by
+officina.install.managed_runtime.build_candidate_release, which
+_phase_entry.py calls before this scaffold step runs at all -- scaffold no
+longer installs packages into the ambient Python itself (see
+warn_if_managed_release_missing for the lightweight, non-blocking sanity
+check that a managed release exists).
 
 Does NOT set ASSISTANT_DEFAULT (see launchers.py) or AI (see dev_link.py) —
 this subcommand only owns PATH.
@@ -17,9 +22,8 @@ this subcommand only owns PATH.
 from __future__ import annotations
 
 import argparse
-import json
 import os
-import subprocess
+import re
 import sys
 from pathlib import Path
 
@@ -29,6 +33,8 @@ if str(REPO_SRC) not in sys.path:
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+from officina.common.famulus_paths import resolve_famulus_paths
+from officina.install.managed_runtime import declared_python_packages
 
 if __package__:
     from ._install_launcher import LauncherInstallResult, platform_launcher_installer
@@ -42,6 +48,10 @@ if __package__:
     from ._shell_block import ensure_rc_vars
 else:
     from _shell_block import ensure_rc_vars
+if __package__:
+    from ._fs_links import default_bin_dir
+else:
+    from _fs_links import default_bin_dir
 
 
 def log(msg: str = "") -> None:
@@ -49,111 +59,133 @@ def log(msg: str = "") -> None:
 
 
 RUNTIME_DEPENDENCIES_MANIFEST = Path("references") / "blueprint" / "runtime_dependencies.json"
-DEFAULT_PIP_INSTALL_TIMEOUT_SECONDS = 60
+
+
+def _platform_name() -> str | None:
+    if sys.platform == "darwin":
+        return "macos"
+    if sys.platform.startswith("win"):
+        return "windows"
+    if sys.platform.startswith("linux"):
+        return "linux"
+    return None
+
+
+# uv's real per-OS release-asset target-triple suffixes and archive formats
+# (confirmed against the real 0.11.29 GitHub release asset list). This table
+# -- and the machine-architecture aliasing below -- is the one place that
+# translates _platform_name()'s generic vocabulary into uv's concrete
+# release-asset naming; officina.install.uv_bootstrap itself stays
+# platform-name-free and only ever sees the already-resolved triple/archive
+# pair this function returns.
+_UV_TRIPLE_OS_SUFFIX = {
+    "macos": "apple-darwin",
+    "linux": "unknown-linux-gnu",
+    "windows": "pc-windows-msvc",
+}
+
+# Normalizes platform.machine()'s real reported values (which differ by
+# platform: e.g. macOS Apple Silicon reports "arm64", Linux reports
+# "aarch64", Windows reports "AMD64") to uv's release-asset arch tokens.
+_UV_MACHINE_ALIASES = {
+    "x86_64": "x86_64",
+    "amd64": "x86_64",
+    "aarch64": "aarch64",
+    "arm64": "aarch64",
+}
+
+_UV_WINDOWS_ARCHIVE_EXTENSION = ".zip"
+_UV_POSIX_ARCHIVE_EXTENSION = ".tar.gz"
+
+
+class UvReleaseTargetError(ValueError):
+    """Raised when a platform/machine combination has no known uv release asset."""
+
+
+def uv_release_target(*, platform_name: str, machine: str) -> tuple[str, str]:
+    """Resolve the real uv release-asset (target-triple, archive-extension)
+    pair for ``platform_name`` (this module's own vocabulary: macos/linux/
+    windows) and ``machine`` (platform.machine()'s real reported value).
+
+    Raises UvReleaseTargetError for any unsupported platform or machine
+    architecture.
+    """
+    suffix = _UV_TRIPLE_OS_SUFFIX.get(platform_name)
+    if suffix is None:
+        raise UvReleaseTargetError(
+            f"unsupported platform for uv bootstrap: {platform_name!r} "
+            f"(supported: {sorted(_UV_TRIPLE_OS_SUFFIX)})"
+        )
+    arch = _UV_MACHINE_ALIASES.get(machine.casefold())
+    if arch is None:
+        raise UvReleaseTargetError(
+            f"unsupported machine architecture for uv bootstrap: {machine!r} "
+            f"(supported: {sorted(set(_UV_MACHINE_ALIASES.values()))})"
+        )
+    triple = f"{arch}-{suffix}"
+    extension = (
+        _UV_WINDOWS_ARCHIVE_EXTENSION
+        if platform_name == "windows"
+        else _UV_POSIX_ARCHIVE_EXTENSION
+    )
+    return triple, extension
+
+
+def _declares_package(spec: str, name: str) -> bool:
+    """Return whether install spec ``spec`` (e.g. "cryptography>=44.0.1") is
+    for the bare package ``name`` (case-insensitive)."""
+    bare = re.split(r"(==|>=|<=|!=|~=|>|<)", spec, maxsplit=1)[0]
+    return bare.strip().casefold() == name.casefold()
 
 
 def required_python_packages(repo_root: Path) -> list[str]:
-    packages: dict[str, tuple[str, set[str]]] = {}
-    platform_name = (
-        "macos"
-        if sys.platform == "darwin"
-        else "windows"
-        if sys.platform.startswith("win")
-        else "linux"
-        if sys.platform.startswith("linux")
-        else None
-    )
-    manifest = repo_root / RUNTIME_DEPENDENCIES_MANIFEST
-    if manifest.exists():
-        data = json.loads(manifest.read_text(encoding="utf-8"))
-        skills = data.get("skills", {})
-        if isinstance(skills, dict):
-            for skill in skills.values():
-                interfaces = (
-                    skill.get("interfaces", {})
-                    if isinstance(skill, dict)
-                    else {}
-                )
-                if not isinstance(interfaces, dict):
-                    continue
-                for interface in interfaces.values():
-                    dependencies = (
-                        interface.get("dependencies", [])
-                        if isinstance(interface, dict)
-                        else []
-                    )
-                    if not isinstance(dependencies, list):
-                        continue
-                    for dependency in dependencies:
-                        if (
-                            not isinstance(dependency, dict)
-                            or dependency.get("kind") != "python-package"
-                        ):
-                            continue
-                        platforms = dependency.get("platforms")
-                        if (
-                            isinstance(platforms, dict)
-                            and platform_name is not None
-                            and platforms.get(platform_name) is False
-                        ):
-                            continue
-                        name = dependency.get("name")
-                        version = dependency.get("version", "any")
-                        if not isinstance(name, str) or not name:
-                            continue
-                        key = name.casefold()
-                        display, versions = packages.setdefault(
-                            key,
-                            (name, set()),
-                        )
-                        if isinstance(version, str) and version and version != "any":
-                            versions.add(version)
-    requirements = [
-        display + ",".join(sorted(versions))
-        for display, versions in packages.values()
-    ]
-    return sorted(requirements, key=str.lower)
-
-
-def pip_install_timeout_seconds() -> int:
-    raw = os.environ.get("FAMULUS_PIP_INSTALL_TIMEOUT_SECONDS", "")
-    if not raw:
-        return DEFAULT_PIP_INSTALL_TIMEOUT_SECONDS
-    try:
-        timeout = int(raw)
-    except ValueError:
-        return DEFAULT_PIP_INSTALL_TIMEOUT_SECONDS
-    return max(1, timeout)
-
-
-def install_python_packages(repo_root: Path, dry_run: bool) -> None:
-    """Ensure required third-party Python packages are installed.
-
-    officina.dispatcher itself (first-party) is deliberately NOT pip-installed
-    here — it runs from the repo via the dispatcher launcher below.
+    """Return the declared python-package install specs for this platform,
+    sourced from the shared officina.install.managed_runtime manifest reader.
     """
-    log("\nInstalling required Python packages...")
-    timeout = pip_install_timeout_seconds()
-    for package in required_python_packages(repo_root):
-        if dry_run:
-            log(f"  (dry-run) Would install: {package}")
-            continue
-        log(f"  Installing: {package}")
-        try:
-            result = subprocess.run(
-                [sys.executable, "-m", "pip", "install", package, "--quiet"],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="strict",
-                timeout=timeout,
-            )
-            if result.returncode == 0:
-                log(f"  OK: {package}")
-            else:
-                log(f"  WARN: failed to install {package}: {result.stderr.strip()}")
-        except subprocess.TimeoutExpired:
-            log(f"  WARN: timed out installing {package} after {timeout}s")
+    manifest = repo_root / RUNTIME_DEPENDENCIES_MANIFEST
+    platform_name = _platform_name()
+    if not manifest.exists() or platform_name is None:
+        return []
+    return sorted(declared_python_packages(manifest, platform=platform_name), key=str.lower)
+
+
+def warn_if_managed_release_missing(*, home: Path) -> None:
+    """Log an advisory (non-blocking) note if no managed-runtime release is
+    active yet.
+
+    Scaffold no longer installs third-party Python packages itself: they are
+    provisioned into the managed release venv by
+    ``officina.install.managed_runtime.build_candidate_release``, which
+    ``_phase_entry.py`` calls before ``scaffold.run`` runs at all. This is a
+    lightweight sanity check for that call-order assumption, not a second
+    install — scaffold proceeds regardless, since it is also called directly
+    (bypassing `_phase_entry.py`) by targeted-repair invocations and tests.
+    """
+    try:
+        current_pointer = resolve_famulus_paths(platform=sys.platform, home=home).current_pointer
+    except Exception:
+        return
+    if not current_pointer.exists():
+        log(
+            "  NOTE: no managed-runtime release is active yet "
+            f"({current_pointer} not found). dispatcher/invoke-skill will "
+            "not work until officina.install.managed_runtime.build_candidate_release "
+            "has run (see _phase_entry.py)."
+        )
+
+
+def _import_certificate_records():
+    """Import point for ``officina.common.certificate_records``, isolated so
+    ``install_certificate_signing_material`` can be tested against a missing
+    ``cryptography`` dependency without actually uninstalling it (see that
+    function's ``ModuleNotFoundError`` handling below).
+    """
+    from officina.common.certificate_records import (
+        certificate_public_key_root,
+        provision_certificate_signing_material,
+    )
+
+    return certificate_public_key_root, provision_certificate_signing_material
 
 
 def install_certificate_signing_material(
@@ -172,11 +204,32 @@ def install_certificate_signing_material(
             workflows=workflows,
         )
     try:
-        from officina.common.certificate_records import (
-            certificate_public_key_root,
-            provision_certificate_signing_material,
+        certificate_public_key_root, provision_certificate_signing_material = (
+            _import_certificate_records()
         )
-
+    except ModuleNotFoundError as exc:
+        # certificate_records.py imports `cryptography` at module level, and
+        # this runs in-process against the installer's own ambient
+        # interpreter (not the managed-runtime venv that build_candidate_
+        # release provisions packages into -- see the module docstring).
+        # On a fresh machine whose ambient Python never had `cryptography`
+        # installed, fail with a clear, actionable message instead of a
+        # confusing raw traceback. Deliberately does NOT pip-install into
+        # the ambient interpreter: that ambient-mutation anti-pattern was
+        # removed elsewhere in this same effort (see module docstring).
+        return LauncherInstallResult(
+            name="certificate-signing-material",
+            required=True,
+            status="failed",
+            workflows=workflows,
+            reason=(
+                f"missing module {exc.name!r}: cryptography is not installed in the "
+                "interpreter running this installer -- install it with "
+                "`pip install cryptography`, or run the installer with a Python "
+                "environment that already has it"
+            ),
+        )
+    try:
         provision_certificate_signing_material(repo_root)
         path = certificate_public_key_root(repo_root)
     except Exception as exc:
@@ -266,23 +319,23 @@ def run(
     manifest: Manifest | None = None,
 ) -> int:
     home = home or Path.home()
-    bin_dir = bin_dir or home / "Documents" / "_rtx" / "bin"
+    bin_dir = bin_dir or default_bin_dir(home=home)
 
     if manifest is None and not dry_run:
         manifest = Manifest(manifest_path(home))
     if dry_run:
         manifest = None
 
-    install_python_packages(repo_root, dry_run)
+    if not dry_run:
+        warn_if_managed_release_missing(home=home)
+
+    declared_packages = required_python_packages(repo_root)
     launcher_installer = platform_launcher_installer()
     capability_results = [
-        launcher_installer.install_dispatcher_launcher(repo_root, bin_dir, dry_run, manifest),
+        launcher_installer.install_dispatcher_launcher(repo_root, bin_dir, dry_run, manifest, home=home),
         launcher_installer.install_invoke_skill_launcher(bin_dir, dry_run, manifest),
     ]
-    if any(
-        package.lower() == "cryptography"
-        for package in required_python_packages(repo_root)
-    ):
+    if any(_declares_package(package, "cryptography") for package in declared_packages):
         capability_results.append(
             install_certificate_signing_material(repo_root, dry_run)
         )
@@ -323,7 +376,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--repo-root", metavar="DIR", required=True, help="Path to the AI repo checkout")
     parser.add_argument("--home", metavar="DIR", help="Home directory (default: platform home)")
-    parser.add_argument("--bin-dir", metavar="DIR", help="Bin dir for launchers (default: ~/Documents/scripts/bin)")
+    parser.add_argument("--bin-dir", metavar="DIR", help="Bin dir for launchers (default: platform user-bin dir from officina.common.famulus_paths, e.g. ~/.local/bin on Linux/macOS)")
     parser.add_argument("--shell-rc", metavar="FILE", help="Shell rc file (auto-detected on Unix)")
     parser.add_argument("--dry-run", action="store_true", help="Print planned actions without writing")
     return parser.parse_args(argv)

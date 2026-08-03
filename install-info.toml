@@ -1,0 +1,8 @@
+schema_version = 1
+
+[bootstrap]
+uv_version = "0.11.29"
+
+[managed_python]
+preferred = "3.11"
+supported = ">=3.11,<3.12"

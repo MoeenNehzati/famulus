@@ -27,6 +27,7 @@ Public Interfaces:
 - `cloud-files.interface.plans-read`
 - `cloud-files.interface.plans-write`
 - `cloud-files.interface.setup-oauth`
+- `cloud-files.interface.use-google-credential`
 - `cloud-files.interface.write-config`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
@@ -59,6 +60,9 @@ Use the installed `dispatcher` command for these process-bound interfaces:
 - `cloud-files.interface.setup-oauth` — Run one-time OAuth2 setup for Google Drive access.
   - `dispatcher --caller-skill cloud-files cloud-files.interface.setup-oauth [--from-json <client_json_path>] [--client-id <id> --client-secret <secret>] [--port <port>]`
   - OAuth setup for Google Drive access.
+- `cloud-files.interface.use-google-credential` — Bind cloud-files to a shared connect-google credential_id after validating it carries Drive scope, storing only the opaque identifier (never the client secret or refresh token) in cloud-files' own config.json. The pre-existing per-service OAuth path (ensure-oauth/write-config) remains the unchanged fallback for callers who have not adopted the shared credential.
+  - `dispatcher --caller-skill cloud-files cloud-files.interface.use-google-credential --credential-id <id> --home <dir>`
+  - Bind cloud-files to a shared Google credential_id.
 - `cloud-files.interface.write-config` — Write ~/.config/cloud-files/config.json with the given remote LLM root. Relocated from install-assistant-tools.
   - `dispatcher --caller-skill cloud-files cloud-files.interface.write-config --home <dir> [--remote-llm-root <path>] [--dry-run]`
   - Write cloud-files config.json.

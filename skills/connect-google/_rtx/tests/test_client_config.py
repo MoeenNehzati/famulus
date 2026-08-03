@@ -38,7 +38,26 @@ def write_json(path: Path, payload: object) -> None:
 
 
 def canonical(home: Path) -> Path:
-    return home / ".config" / "connect-google" / "client.json"
+    from officina.common.famulus_paths import resolve_famulus_paths
+
+    return resolve_famulus_paths(platform=sys.platform, home=home).config_root / "connect-google" / "client.json"
+
+
+class FakeSecretBackend:
+    def __init__(self):
+        self.stored: list[tuple[str, str, str]] = []
+
+    def store(self, namespace: str, key: str, value: str) -> None:
+        self.stored.append((namespace, key, value))
+
+    def lookup(self, namespace: str, key: str) -> str | None:
+        for stored_namespace, stored_key, value in reversed(self.stored):
+            if stored_namespace == namespace and stored_key == key:
+                return value
+        return None
+
+    def clear(self, namespace: str, key: str) -> bool:
+        return False
 
 
 def test_validate_accepts_desktop_client_and_token_uri() -> None:
@@ -46,12 +65,21 @@ def test_validate_accepts_desktop_client_and_token_uri() -> None:
     assert client_config.validate_client_payload(payload) == payload
 
 
+def _installed_without(field: str) -> dict[str, object]:
+    return {key: value for key, value in desktop_client()["installed"].items() if key != field}
+
+
 @pytest.mark.parametrize(
     "payload, message",
     [
         ({"web": desktop_client()["installed"]}, "web"),
         ({"installed": []}, "installed"),
-        ({"installed": {"client_id": "cid"}}, "client_secret"),
+        ({"installed": {"client_id": "cid"}}, "auth_uri"),
+        ({"installed": _installed_without("client_secret")}, "client_secret"),
+        (
+            {"installed": {**desktop_client()["installed"], "client_secret_ref": "oauth-client:cid:client-secret"}},
+            "client_secret",
+        ),
         (
             {"installed": {**desktop_client()["installed"], "redirect_uris": []}},
             "redirect_uris",
@@ -87,8 +115,9 @@ def test_install_creates_private_canonical_copy_and_preserves_source(
     source = tmp_path / "download.json"
     write_json(source, desktop_client())
     before = source.read_bytes()
+    backend = FakeSecretBackend()
 
-    result = client_config.install_client(source, tmp_path / "home", replace=False)
+    result = client_config.install_client(source, tmp_path / "home", replace=False, secret_backend=backend)
 
     destination = canonical(tmp_path / "home")
     assert result == {
@@ -96,7 +125,12 @@ def test_install_creates_private_canonical_copy_and_preserves_source(
         "client_type": "desktop",
         "path": str(destination),
     }
-    assert json.loads(destination.read_text(encoding="utf-8")) == desktop_client()
+    installed = json.loads(destination.read_text(encoding="utf-8"))
+    rendered = json.dumps(installed)
+    assert "client_secret" not in installed["installed"]
+    assert '"secret"' not in rendered
+    assert installed["installed"]["client_secret_ref"] == "oauth-client:cid:client-secret"
+    assert backend.stored == [("connect-google", "oauth-client:cid:client-secret", "secret")]
     assert source.read_bytes() == before
     if os.name == "posix":
         assert destination.stat().st_mode & 0o777 == 0o600
@@ -108,9 +142,10 @@ def test_install_same_client_is_idempotent(tmp_path: Path) -> None:
     second = tmp_path / "second.json"
     write_json(first, desktop_client())
     write_json(second, desktop_client())
-    client_config.install_client(first, home, replace=False)
+    client_config.install_client(first, home, replace=False, secret_backend=FakeSecretBackend())
 
-    assert client_config.install_client(second, home, replace=False)["status"] == "unchanged"
+    result = client_config.install_client(second, home, replace=False, secret_backend=FakeSecretBackend())
+    assert result["status"] == "unchanged"
 
 
 def test_install_refuses_different_client_without_replace(tmp_path: Path) -> None:
@@ -119,10 +154,10 @@ def test_install_refuses_different_client_without_replace(tmp_path: Path) -> Non
     new_source = tmp_path / "new.json"
     write_json(old_source, desktop_client("old"))
     write_json(new_source, desktop_client("new"))
-    client_config.install_client(old_source, home, replace=False)
+    client_config.install_client(old_source, home, replace=False, secret_backend=FakeSecretBackend())
 
-    with pytest.raises(client_config.ClientConfigError, match="--replace"):
-        client_config.install_client(new_source, home, replace=False)
+    with pytest.raises(client_config.ClientConfigError, match="replace"):
+        client_config.install_client(new_source, home, replace=False, secret_backend=FakeSecretBackend())
     assert json.loads(canonical(home).read_text(encoding="utf-8"))["installed"]["client_id"] == "old"
 
 
@@ -132,9 +167,9 @@ def test_install_replaces_different_client_when_explicit(tmp_path: Path) -> None
     new_source = tmp_path / "new.json"
     write_json(old_source, desktop_client("old"))
     write_json(new_source, desktop_client("new"))
-    client_config.install_client(old_source, home, replace=False)
+    client_config.install_client(old_source, home, replace=False, secret_backend=FakeSecretBackend())
 
-    result = client_config.install_client(new_source, home, replace=True)
+    result = client_config.install_client(new_source, home, replace=True, secret_backend=FakeSecretBackend())
 
     assert result["status"] == "replaced"
     assert json.loads(canonical(home).read_text(encoding="utf-8"))["installed"]["client_id"] == "new"

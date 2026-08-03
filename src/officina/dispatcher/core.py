@@ -52,9 +52,34 @@ from officina.runtime.python_machine_interface import (
     PythonProcessTargetError,
     logical_python_package_name,
 )
+from officina.dispatcher.errors import (
+    BlueprintInvalidError,
+    CallerNotFoundError,
+    CertificationRejectedError,
+    ExportAccessMissingError,
+    GatewayOutsideModuleError,
+    InterfaceNotFoundError,
+    InterfaceUseUndeclaredError,
+    InvalidRequestError,
+    InvocationError,
+    LaunchFailedError,
+    ModuleNotCallableError,
+    ResolutionFailedError,
+    RuntimeInvalidError,
+    RuntimeMisconfiguredError,
+    UnauthorizedCallerError,
+    UnsupportedLanguageError,
+)
 
-class InvocationError(Exception):
-    """Raised when a dispatcher request is invalid."""
+# Re-exported for existing consumers that import `InvocationError` (and the
+# typed subclasses) from `officina.dispatcher.core` directly; the classes
+# themselves are defined in `errors.py`, which has no dependency on this
+# module, so there is no import cycle.
+
+
+def _target_module_id(target: str) -> str:
+    """Best-effort module id parsed from a `<module>.interface.<name>` target."""
+    return target.split(".interface.", 1)[0] if ".interface." in target else target
 
 
 _EXPORT_TARGET_RE = re.compile(
@@ -453,12 +478,14 @@ def _build_python_runtime(
     path = gateway.get("path")
     symbol = gateway.get("symbol")
     if not isinstance(path, str) or not path.strip():
-        raise InvocationError(
-            f"{interface_id}: Python gateway needs non-empty `path`"
+        raise RuntimeInvalidError(
+            f"{interface_id}: Python gateway needs non-empty `path`",
+            target_module_id=_target_module_id(interface_id),
         )
     if not isinstance(symbol, str) or not symbol.strip():
-        raise InvocationError(
-            f"{interface_id}: Python gateway needs non-empty `symbol`"
+        raise RuntimeInvalidError(
+            f"{interface_id}: Python gateway needs non-empty `symbol`",
+            target_module_id=_target_module_id(interface_id),
         )
     module_path = Path(path)
     root = get_repo_root(repo_root)
@@ -466,8 +493,9 @@ def _build_python_runtime(
     if not isinstance(args_prefix, list) or not all(
         isinstance(token, str) and token for token in args_prefix
     ):
-        raise InvocationError(
-            f"{interface_id}: Python gateway needs string list `args_prefix`"
+        raise RuntimeInvalidError(
+            f"{interface_id}: Python gateway needs string list `args_prefix`",
+            target_module_id=_target_module_id(interface_id),
         )
     env = os.environ.copy()
     src_root = root / "src"
@@ -562,7 +590,10 @@ def _build_python_runtime(
             logical_entrypoint=logical_entrypoint,
         )
     except PythonProcessTargetError as exc:
-        raise InvocationError(f"{interface_id}: {exc}") from exc
+        raise RuntimeInvalidError(
+            f"{interface_id}: {exc}",
+            target_module_id=_target_module_id(interface_id),
+        ) from exc
     try:
         if descriptor_safe_open_supported():
             package_bindings = open_runtime_python_package(
@@ -577,9 +608,10 @@ def _build_python_runtime(
             if source_binding is None:
                 for binding in package_bindings:
                     binding.close()
-                raise InvocationError(
+                raise RuntimeInvalidError(
                     f"{interface_id}: gateway is not a regular Python package source: "
-                    f"{module_path.as_posix()}"
+                    f"{module_path.as_posix()}",
+                    target_module_id=_target_module_id(interface_id),
                 )
             source_arguments = ["--source-fd", str(source_binding.fd)]
             package_arguments = [
@@ -602,9 +634,10 @@ def _build_python_runtime(
                 allow_non_atomic=False,
             )
             if not any(path == source_path for path, _source in snapshots):
-                raise InvocationError(
+                raise RuntimeInvalidError(
                     f"{interface_id}: gateway is not a regular Python package source: "
-                    f"{module_path.as_posix()}"
+                    f"{module_path.as_posix()}",
+                    target_module_id=_target_module_id(interface_id),
                 )
             transport = _create_runtime_snapshot_transport(
                 snapshots,
@@ -618,7 +651,10 @@ def _build_python_runtime(
                 transport.sha256,
             ]
     except (BlueprintGraphError, OSError) as exc:
-        raise InvocationError(f"{interface_id}: {exc}") from exc
+        raise RuntimeInvalidError(
+            f"{interface_id}: {exc}",
+            target_module_id=_target_module_id(interface_id),
+        ) from exc
     return (
         module_root,
         [
@@ -707,13 +743,23 @@ def _resolve_export_dispatch(
             graph = load_repository_blueprint_graph(root)
         except BlueprintInventoryError as exc:
             first = exc.issues[0]
-            raise InvocationError(
-                f"{root / first.relative_path}: cannot load blueprint YAML: {first.message}"
+            raise BlueprintInvalidError(
+                f"{root / first.relative_path}: cannot load blueprint YAML: {first.message}",
+                caller_module_id=caller_skill,
+                target_module_id=_target_module_id(target),
             ) from exc
         except BlueprintGraphError as exc:
-            raise InvocationError(f"repository blueprint graph is invalid: {exc}") from exc
+            raise BlueprintInvalidError(
+                f"repository blueprint graph is invalid: {exc}",
+                caller_module_id=caller_skill,
+                target_module_id=_target_module_id(target),
+            ) from exc
     if target in graph.nodes and graph.nodes[target].node_type == "module":
-        raise InvocationError(f"module id `{target}` is not callable")
+        raise ModuleNotCallableError(
+            f"module id `{target}` is not callable",
+            caller_module_id=caller_skill,
+            target_module_id=target,
+        )
     if target not in graph.exports:
         return None
     try:
@@ -725,8 +771,10 @@ def _resolve_export_dispatch(
         )
         caller_module = graph.nodes.get(caller_skill)
         if caller_module is None or caller_module.node_type != "module":
-            raise InvocationError(
-                f"caller module `{caller_skill}` does not exist"
+            raise CallerNotFoundError(
+                f"caller module `{caller_skill}` does not exist",
+                caller_module_id=caller_skill,
+                target_module_id=_target_module_id(target),
             )
         if graph.schema_version == 5 and host_caller:
             discovery = caller_module.declaration.get("discovery")
@@ -792,10 +840,11 @@ def _resolve_export_dispatch(
                     declares_exact_use = True
                     break
             if caller_skill != module.node_id and not declares_exact_use:
-                raise InvocationError(
+                raise InterfaceUseUndeclaredError(
                     f"caller module `{caller_skill}` does not declare use of "
-                    f"`{export.interface_id}` version {export.version} "
-                    "in a contained source"
+                    f"`{export.interface_id}` version {export.version} in a contained source",
+                    caller_module_id=caller_skill,
+                    target_module_id=module.node_id,
                 )
             access = (
                 export.export_declaration.get("access")
@@ -803,16 +852,21 @@ def _resolve_export_dispatch(
                 else None
             )
             if not isinstance(access, dict):
-                raise InvocationError(f"{target}: export access is missing")
+                raise ExportAccessMissingError(
+                    f"{target}: export access is missing",
+                    caller_module_id=caller_skill,
+                    target_module_id=module.node_id,
+                )
             allowed = access.get("allowed_callers", [])
             if (
                 caller_skill != module.node_id
                 and access.get("allow_all_modules") is not True
                 and caller_skill not in allowed
             ):
-                raise InvocationError(
-                    f"caller module `{caller_skill}` is not allowed to call "
-                    f"`{target}`"
+                raise UnauthorizedCallerError(
+                    caller_module_id=caller_skill,
+                    target_module_id=module.node_id,
+                    interface_id=target,
                 )
         if args == ["--route-smoke"] and not stdin_requested:
             compiled = compile_route_smoke_invocation(source, export)
@@ -861,24 +915,34 @@ def _resolve_export_dispatch(
                     argv=compiled.argv,
                 )
         if not decision.certified:
-            raise InvocationError(
+            raise CertificationRejectedError(
                 f"{export.interface_id}: certification rejected "
-                f"[{decision.code}]: {decision.message}"
+                f"[{decision.code}]: {decision.message}",
+                caller_module_id=caller_skill,
+                target_module_id=module.node_id,
             )
     except (BlueprintGraphError, ProcessBindingError) as exc:
-        raise InvocationError(str(exc)) from exc
+        raise ResolutionFailedError(
+            str(exc),
+            caller_module_id=caller_skill,
+            target_module_id=_target_module_id(target),
+        ) from exc
 
     target_module_id = module.node_id
     gateway = source.declaration.get("gateway")
     language = gateway.get("language") if isinstance(gateway, dict) else None
     language_name = gateway_language_name(language) if isinstance(language, str) else None
     if language_name != "Python":
-        raise InvocationError(
-            f"{export.interface_id}: unsupported process binding language {language!r}"
+        raise UnsupportedLanguageError(
+            f"{export.interface_id}: unsupported process binding language {language!r}",
+            caller_module_id=caller_skill,
+            target_module_id=module.node_id,
         )
     if source.gateway_path is None or compiled.entry is None:
-        raise InvocationError(
-            f"{export.interface_id}: Python process binding requires a gateway and entry"
+        raise RuntimeMisconfiguredError(
+            f"{export.interface_id}: Python process binding requires a gateway and entry",
+            caller_module_id=caller_skill,
+            target_module_id=module.node_id,
         )
     try:
         gateway_path = equivalent_root_relative_path(
@@ -886,8 +950,10 @@ def _resolve_export_dispatch(
             source.module_root,
         ).as_posix()
     except RepositoryPathError as exc:
-        raise InvocationError(
-            f"{export.interface_id}: gateway must remain inside its module"
+        raise GatewayOutsideModuleError(
+            f"{export.interface_id}: gateway must remain inside its module",
+            caller_module_id=caller_skill,
+            target_module_id=module.node_id,
         ) from exc
     (
         cwd,
@@ -947,13 +1013,16 @@ def _resolve_dispatch(
 ) -> ResolvedInvocation:
     args = args or []
     if not caller_skill.strip():
-        raise InvocationError("caller_skill must be a non-empty string")
+        raise InvalidRequestError(
+            "caller_skill must be a non-empty string",
+        )
     caller_skill = caller_skill.strip()
 
     root = get_repo_root(repo_root)
     if not isinstance(target, str) or _EXPORT_TARGET_RE.fullmatch(target) is None:
-        raise InvocationError(
-            "target must have form `<module>.interface.<name>`"
+        raise InvalidRequestError(
+            "target must have form `<module>.interface.<name>`",
+            caller_module_id=caller_skill,
         )
     resolved = _resolve_export_dispatch(
         root=root,
@@ -968,7 +1037,11 @@ def _resolve_dispatch(
         host_caller=host_caller,
     )
     if resolved is None:
-        raise InvocationError(f"unknown exported interface `{target}`")
+        raise InterfaceNotFoundError(
+            caller_module_id=caller_skill,
+            target_module_id=_target_module_id(target),
+            interface_id=target,
+        )
     return resolved
 
 
@@ -1106,8 +1179,10 @@ def _run_resolved_invocation(
         try:
             return subprocess.run(resolved.command, **run_kwargs)
         except OSError as exc:
-            raise InvocationError(
-                f"{resolved.target}: launch failed: {exc}"
+            raise LaunchFailedError(
+                f"{resolved.target}: launch failed: {exc}",
+                caller_module_id=resolved.caller_module_id,
+                target_module_id=resolved.target_module_id,
             ) from exc
     finally:
         resolved.close()

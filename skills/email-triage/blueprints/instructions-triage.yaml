@@ -85,9 +85,9 @@ uses_interfaces:
   version: 1
 - interface: email-triage.interface.scripts-mark-failure
   version: 1
-- interface: email-triage.interface.scripts-prune-log
+- interface: email-triage.interface.scripts-finalize-triage
   version: 1
-- interface: email-triage.interface.scripts-update-watermark
+- interface: email-triage.interface.scripts-prune-log
   version: 1
 - interface: list-manager.interface.default
   version: 1

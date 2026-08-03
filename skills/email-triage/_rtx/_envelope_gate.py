@@ -24,42 +24,68 @@ from pathlib import Path
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
-# State lives next to this script (SKILL_DIR/state), matching get_cutoff.py and
-# update_watermark.py, so it stays portable across machines regardless of
-# $HOME layout or the caller's cwd.
-SKILL_DIR = Path(__file__).resolve().parent
-# Overridable via env var so tests can point at a tmp_path instead of the
-# real state/ directory.
-STATE_DIR = Path(os.environ["EMAIL_TRIAGE_STATE_DIR"]) if os.environ.get("EMAIL_TRIAGE_STATE_DIR") else SKILL_DIR / "state"
-WATERMARK = STATE_DIR / "last_run"
-STATUS_FILE = STATE_DIR / "status.json"
+SKILL_DIR = Path(__file__).resolve().parent.parent
+
+
+def default_state_dir(*, home: Path | None = None) -> Path:
+    """Resolve the mutable state root for email-triage.
+
+    Defaults to the shared Famulus state root (not SKILL_DIR/state, which may
+    be a read-only installed/plugin tree). Overridable via
+    EMAIL_TRIAGE_STATE_DIR so tests and CI can point at a tmp_path instead of
+    the real state directory.
+    """
+    override = os.environ.get("EMAIL_TRIAGE_STATE_DIR")
+    if override:
+        return Path(override)
+    from officina.common.famulus_paths import resolve_famulus_paths
+
+    return resolve_famulus_paths(platform=sys.platform, home=home or Path.home()).email_triage_state_root
+
+
+WATERMARK = default_state_dir() / "last_run"
+STATUS_FILE = default_state_dir() / "status.json"
 
 
 def record_warning(message: str) -> None:
     """Surface a problem to the recurring-tasks healthcheck via status.json."""
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
     STATUS_FILE.write_text(json.dumps({"result": "warning", "message": message}, indent=2))
 
 
-def load_cutoff():
-    """Return (cutoff_datetime, warning_message|None)."""
+def _parse_cutoff_value(raw: str) -> datetime:
+    """Parse a watermark-shaped string (ISO datetime, or legacy date-only)
+    into a cutoff datetime. Shared by the file-backed watermark and by an
+    explicit `--rescan-after` override so both accept the same formats."""
+    try:
+        dt = datetime.fromisoformat(raw)
+        if dt.tzinfo is None:
+            dt = dt.astimezone()
+        return dt
+    except ValueError:
+        # Legacy date-only watermark — treat as midnight UTC on that date
+        from datetime import date
+        d = date.fromisoformat(raw)
+        return datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
+
+
+def load_cutoff(*, override: str | None = None):
+    """Return (cutoff_datetime, warning_message|None).
+
+    `override`, when given, is used in place of the stored watermark file --
+    this is how a manual historical rescan (`--rescan-after <value>`) fetches
+    from an arbitrary earlier point instead of the normal watermark, without
+    ever touching or advancing the real watermark file.
+    """
+    if override:
+        return _parse_cutoff_value(override), None
     if not WATERMARK.exists():
         cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
         msg = "No watermark found — defaulting to 24h lookback."
         record_warning(msg)
         return cutoff, f"WARNING: {msg}"
     raw = WATERMARK.read_text().strip()
-    try:
-        dt = datetime.fromisoformat(raw)
-        if dt.tzinfo is None:
-            dt = dt.astimezone()
-        return dt, None
-    except ValueError:
-        # Legacy date-only watermark — treat as midnight UTC on that date
-        from datetime import date
-        d = date.fromisoformat(raw)
-        dt = datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
-        return dt, None
+    return _parse_cutoff_value(raw), None
 
 
 def clear_stale_error():

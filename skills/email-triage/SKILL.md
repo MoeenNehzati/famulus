@@ -20,6 +20,7 @@ Public Interfaces:
 - `email-triage.interface.fetch-filtered-envelopes`
 - `email-triage.interface.scripts-clear-failure`
 - `email-triage.interface.scripts-filter-envelopes`
+- `email-triage.interface.scripts-finalize-triage`
 - `email-triage.interface.scripts-get-cutoff`
 - `email-triage.interface.scripts-log-decision`
 - `email-triage.interface.scripts-mark-failure`
@@ -35,11 +36,13 @@ Dispatcher Interfaces:
 
 Use the installed `dispatcher` command for these process-bound interfaces:
 - `email-triage.interface.fetch-filtered-envelopes` — Fetch email envelopes for one account through email-client and emit only envelopes strictly after the triage watermark.
-  - `dispatcher --caller-skill email-triage email-triage.interface.fetch-filtered-envelopes -a <account> --after YYYY-MM-DD`
+  - `dispatcher --caller-skill email-triage email-triage.interface.fetch-filtered-envelopes -a <account> --after YYYY-MM-DD [--rescan-after ISO_CUTOFF] [--dedup-against todo|triage]`
 - `email-triage.interface.scripts-clear-failure` — Clear a latched triage failure after its cause is fixed, without advancing the watermark.
   - `dispatcher --caller-skill email-triage email-triage.interface.scripts-clear-failure [reason]`
 - `email-triage.interface.scripts-filter-envelopes` — Filter JSON envelopes (from email-client's mail-list, piped via stdin) to those strictly after the triage watermark.
   - `dispatcher --caller-skill email-triage email-triage.interface.scripts-filter-envelopes -a <account>   < envelopes.json`
+- `email-triage.interface.scripts-finalize-triage` — Ordered, idempotent finalization of one triage run — writes metrics, then (only on success and only if no failure is latched) advances the watermark, recording the run id so a replayed call is a safe no-op.
+  - `dispatcher --caller-skill email-triage email-triage.interface.scripts-finalize-triage --run-id <id> --total-scanned N --added-todo N --added-triage N --skipped N [--deduped N] [--accounts a,b]`
 - `email-triage.interface.scripts-get-cutoff` — Return the cutoff date for the current triage run, with a fallback if no watermark exists.
   - `dispatcher --caller-skill email-triage email-triage.interface.scripts-get-cutoff`
 - `email-triage.interface.scripts-log-decision` — Append a triage classification decision for one email to triage.log.

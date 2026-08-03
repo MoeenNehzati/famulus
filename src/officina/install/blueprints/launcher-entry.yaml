@@ -1,0 +1,67 @@
+content:
+- launcher_entry\.py
+- resolvers/launch\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/init.yaml
+  reason: Loads Python package support from __init__.py.
+  source: install.source.init
+  version: 1
+description: Owns the stable, path-fixed launch resolver deployed at <runtime_root>/bootstrap/resolvers/v1/launch.py (resolvers/launch.py's own source -- a dependency-free, stdlib-only script that imports nothing beyond the Python standard library, since it runs under the user's ambient Python before any interpreter handoff). It reads current.json at launch time, using a minimal read-only reimplementation of officina.install.runtime_pointer's containment check, and execs into the active managed-runtime release's interpreter, so generated launcher shims (dispatcher, invoke-skill, ...) never need to embed a release-specific repo checkout or interpreter path that goes stale when the repo moves or a new release is activated. launcher_entry.py is a thin, ordinarily-importable wrapper around the same resolver source, used only by tests (the Task 4/5-style cross-check against officina.install.runtime_pointer's real containment check) -- production code never imports either module.
+gateway:
+  language: Python
+  path: launcher_entry.py
+id: install.source.launcher-entry
+interfaces:
+  install.source.launcher-entry.interface.cli:
+    contract:
+      arguments:
+        argv:
+          description: "Process argv as received by resolvers/launch.py when invoked directly (argv[0] is this file's own fixed deployment path, <runtime_root>/bootstrap/resolvers/v1/launch.py; argv[1:] is forwarded unchanged, e.g. '-m officina.dispatcher.cli' plus user args)."
+          required: true
+          sensitivity: public
+          type: {kind: list, element_type: {kind: string}}
+      preconditions:
+      - id: pointer-resolvable
+        description: A valid current.json must exist beneath the runtime_root derived from argv[0]'s fixed deployment location (three directories above bootstrap/resolvers/v1/launch.py).
+        check: {kind: argument, argument_ref: argv, predicate: present}
+        unmet_outcome: unresolved-pointer
+        caller_action: Finish installing/activating a managed-runtime release (officina.install.runtime_pointer.activate_release) before invoking a generated launcher.
+      interaction: {mode: unattended}
+      caller_warnings:
+      - external-side-effect: "On success this process image is replaced (os.execv) by the active release's interpreter; it never returns to its caller."
+      outputs:
+      - id: exit-code
+        audience: machine
+        description: "1 if the pointer could not be resolved/validated (message printed to stderr); on success the process image is replaced and this file's own exit code is never observed."
+        direct_io_ref: return-value
+        cardinality: {minimum: 1, maximum: 1}
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: Never empty.
+        type: {kind: integer, sensitivity: public, description: Process exit code.}
+      outcomes:
+      - {id: launched, class: success, outputs: [], effects: [], caller_action: "Not observed by the invoking shim -- os.execv replaces this process with the release interpreter running argv[1:]."}
+      - {id: unresolved-pointer, class: error, outputs: [exit-code], effects: [], caller_action: "Activate a managed-runtime release so current.json exists and validates beneath this resolver's runtime_root, then retry."}
+      execution:
+        state_effect: read-only
+        lifecycle: finite
+        consistency: {live: "current.json is read once per invocation, immediately before the exec."}
+        verification:
+        - {method: direct-io-state, direct_io_ref: pointer-file}
+      helpers: []
+      direct_io:
+        reads:
+        - {id: pointer-file, medium: local-filesystem, access: read, content: current.json pointer bytes, formats: [json], sensitivity: user-private, path: <runtime_root>/current.json}
+        - {id: trusted-roots-file, medium: local-filesystem, access: read, content: "flat JSON list of absolute trusted-interpreter-store paths, written by release-activation deployment alongside the resolver", formats: [json], sensitivity: public, path: <runtime_root>/bootstrap/resolvers/v1/trusted-roots.json}
+        writes:
+        - {id: return-value, medium: local-system, access: write, content: process exit code / replaced process image, formats: [text], sensitivity: public}
+        network: []
+    description: Fixed-path, dependency-free launch resolver invoked directly by generated Unix/Windows launcher shims instead of a baked-in repo/interpreter path. Deliberately NOT a normal Python-importable interface in production -- it is a deployable stdlib-only artifact; this contract documents its invocation shape for the shim generators and the test-only cross-check, not a package import.
+    version: 1
+node_type: behavioral_source
+schema_version: 5
+uses_interfaces: []
+version: 1

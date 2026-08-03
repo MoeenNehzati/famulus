@@ -97,6 +97,8 @@ exports:
     access:
       allow_all_modules: false
       allowed_callers:
+      - email-triage
+      - email-triage-rtx
       - list-manager
     source_interface: list-manager-rtx.source.rtx-yaml-store.interface.cloud-read
   list-manager-rtx.interface.cloud-read-beautify:

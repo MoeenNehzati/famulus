@@ -1,0 +1,69 @@
+content:
+- famulus_paths/__init__\.py
+dependencies: []
+description: Resolves platform-correct Famulus install, config, state, and runtime paths that avoid the user's Documents folder on every platform, honoring XDG and LOCALAPPDATA overrides.
+gateway:
+  language: Python
+  path: famulus_paths/__init__.py
+id: common.source.famulus-paths
+interfaces:
+  common.source.famulus-paths.interface.python-api:
+    contract:
+      arguments:
+        platform:
+          description: "Host platform identifier as returned by sys.platform: darwin, win32, or any other value treated as XDG-style POSIX."
+          required: true
+          sensitivity: public
+          type: {kind: string}
+        home:
+          description: Absolute path to the caller's home directory used as the base for non-override path resolution.
+          required: true
+          sensitivity: user-private
+          direct_io_ref: home-metadata
+          type: {kind: dir, syntax: literal, relative_to: caller-cwd, must_exist: false, access: read}
+      preconditions:
+      - id: absolute-home
+        description: home must be an absolute path.
+        check: {kind: argument, argument_ref: home, predicate: present}
+        unmet_outcome: invalid-home
+        caller_action: Supply an absolute home directory path.
+      interaction: {mode: unattended}
+      caller_warnings: []
+      outputs:
+      - id: result
+        audience: machine
+        description: FamulusPaths dataclass instance with data, config, state, runtime, and user-bin path fields.
+        direct_io_ref: return-value
+        cardinality: {minimum: 1, maximum: 1}
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: Never empty on success.
+        type: {kind: string, sensitivity: user-private, description: Python FamulusPaths dataclass instance.}
+      outcomes:
+      - {id: completed, class: success, outputs: [result], effects: [], caller_action: "Use the returned FamulusPaths fields to locate install, config, state, and runtime directories."}
+      - {id: invalid-home, class: refusal, outputs: [], effects: [], caller_action: Supply an absolute home directory path.}
+      - {id: missing-localappdata, class: error, outputs: [], effects: [], caller_action: Ensure LOCALAPPDATA is set before resolving paths on Windows.}
+      execution:
+        state_effect: read-only
+        lifecycle: finite
+        consistency: {live: Environment overrides are read once during the call.}
+        verification:
+        - {method: output-schema, output_ref: result}
+      helpers: []
+      direct_io:
+        reads:
+        - {id: home-metadata, medium: local-filesystem, access: read, content: home directory path used as the resolution base, formats: [path], sensitivity: user-private, path: "<home>", path_match: exact}
+        - {id: xdg-data-home-env, medium: local-system, access: read, system: process-environment, content: XDG_DATA_HOME override, formats: [environment-variable], sensitivity: public}
+        - {id: xdg-config-home-env, medium: local-system, access: read, system: process-environment, content: XDG_CONFIG_HOME override, formats: [environment-variable], sensitivity: public}
+        - {id: xdg-state-home-env, medium: local-system, access: read, system: process-environment, content: XDG_STATE_HOME override, formats: [environment-variable], sensitivity: public}
+        - {id: localappdata-env, medium: local-system, access: read, system: process-environment, content: LOCALAPPDATA override required on Windows, formats: [environment-variable], sensitivity: public}
+        writes:
+        - {id: return-value, medium: local-system, access: write, content: Python return value, formats: [path, text], sensitivity: user-private}
+        network: []
+    description: Provides Famulus path resolution to Python callers.
+    version: 1
+node_type: behavioral_source
+schema_version: 5
+uses_interfaces: []
+version: 1

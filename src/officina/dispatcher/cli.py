@@ -40,6 +40,16 @@ def parse_cli() -> argparse.Namespace:
         action="store_true",
         help="Print the resolved invocation as JSON instead of executing it.",
     )
+    parser.add_argument(
+        "--error-format",
+        choices=["text", "json"],
+        default="text",
+        help=(
+            "Format for a dispatcher failure printed to stderr. `text` (default) "
+            "prints `error: <message>`; `json` prints one schema-versioned JSON "
+            "object with a stable machine-readable `code`."
+        ),
+    )
     parser.add_argument("target_or_skill")
     parser.add_argument("rest", nargs=argparse.REMAINDER)
     return parser.parse_args()
@@ -77,7 +87,10 @@ def main() -> int:
             check=False,
         )
     except InvocationError as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        if args.error_format == "json" and hasattr(exc, "as_payload"):
+            print(json.dumps(exc.as_payload()), file=sys.stderr)
+        else:
+            print(f"error: {exc}", file=sys.stderr)
         return 2
 
     if completed.stdout:

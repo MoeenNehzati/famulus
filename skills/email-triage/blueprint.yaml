@@ -6,7 +6,7 @@ children:
     base: module-root
     path: _rtx/blueprint.yaml
 content:
-- (?:CHANGES\.md|DEBUGGING\.md|SKILL\.md|instructions/triage\.md|tests/test_llm_routing\.py)
+- (?:CHANGES\.md|DEBUGGING\.md|SKILL\.md|instructions/triage\.md|tests/test_finalize_run\.py|tests/test_llm_routing\.py|tests/test_rescan\.py)
 description: Coordinates watermark-safe email triage, classification logging, failure
   recovery, and routing of extracted action items.
 discovery:
@@ -37,6 +37,13 @@ exports:
       allowed_callers: []
     facade_interface:
       interface: email-triage-rtx.interface.scripts-filter-envelopes
+      version: 1
+  email-triage.interface.scripts-finalize-triage:
+    access:
+      allow_all_modules: false
+      allowed_callers: []
+    facade_interface:
+      interface: email-triage-rtx.interface.scripts-finalize-triage
       version: 1
   email-triage.interface.scripts-get-cutoff:
     access:

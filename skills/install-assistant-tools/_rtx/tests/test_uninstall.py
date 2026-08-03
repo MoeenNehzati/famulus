@@ -18,7 +18,13 @@ from pathlib import Path
 import pytest
 from test_support.git_repository import GitTestRepository
 
-from install_test_utils import REPO_ROOT, can_create_symlink, python_test_env, run_command
+from install_test_utils import (
+    REPO_ROOT,
+    assert_default_bin_dir_matches_famulus_paths,
+    can_create_symlink,
+    python_test_env,
+    run_command,
+)
 
 SCRIPTS = REPO_ROOT / "skills" / "install-assistant-tools" / "_rtx"
 sys.path.insert(0, str(SCRIPTS))
@@ -39,6 +45,10 @@ if __package__ and __package__.count('.') >= 1:
     from .. import _install_scaffold as scaffold
 else:
     import _install_scaffold as scaffold  # noqa: E402
+if __package__ and __package__.count('.') >= 1:
+    from .. import _install_uninstall as uninstall
+else:
+    import _install_uninstall as uninstall  # noqa: E402
 
 UNINSTALL = SCRIPTS / "_install_uninstall.py"
 
@@ -200,6 +210,10 @@ def run_uninstall(paths: dict[str, Path], *extra: str, check: bool = True):
 @pytest.fixture()
 def installed(tmp_path: Path) -> dict[str, Path]:
     return make_installed_state(tmp_path)
+
+
+def test_default_bin_dir_is_not_under_documents(tmp_path):
+    assert_default_bin_dir_matches_famulus_paths(uninstall.default_bin_dir, tmp_path)
 
 
 def test_removes_repo_symlinks_from_homes(installed):

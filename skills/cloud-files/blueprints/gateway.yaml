@@ -87,6 +87,8 @@ schema_version: 5
 uses_interfaces:
 - interface: cloud-files.interface.setup-oauth
   version: 1
+- interface: cloud-files.interface.use-google-credential
+  version: 1
 - interface: connect-google.interface.default
   version: 1
 - interface: cloud-files.interface.ensure-oauth

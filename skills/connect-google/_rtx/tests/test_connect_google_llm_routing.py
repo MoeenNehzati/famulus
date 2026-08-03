@@ -133,6 +133,7 @@ def test_module_and_markdown_gateway_graph() -> None:
     assert connect_services["uses_interfaces"] == [
         {"interface": name, "version": 1}
         for name in (
+            "connect-google.interface.authorize-services",
             "connect-google.interface.client-status",
             "connect-google.interface.install-client",
         )
@@ -145,6 +146,7 @@ def test_module_and_markdown_gateway_graph() -> None:
         "connect-google.interface.connect-services",
         "connect-google.interface.client-status",
         "connect-google.interface.install-client",
+        "connect-google.interface.authorize-services",
     }
     assert default_interface["version"] == 1
     assert create_client_interface["version"] == 1
@@ -166,7 +168,7 @@ def test_client_status_declares_every_google_client_path_it_reads() -> None:
     }
 
     assert declared_paths == {
-        "$HOME/.config/connect-google/client.json",
+        "platform Famulus config root (see common.interface.google-credentials) / connect-google/client.json",
         "$HOME/.config/cloud-files/client.json",
         "$HOME/.config/g-calendar/client.json",
     }

@@ -13,6 +13,7 @@ if __package__ and __package__.count('.') >= 1:
     from .. import _agent_launchers as launchers
 else:
     import _agent_launchers as launchers
+from install_test_utils import assert_default_bin_dir_matches_famulus_paths
 
 
 def _make_repo(tmp_path: Path) -> Path:
@@ -35,6 +36,35 @@ def _make_repo(tmp_path: Path) -> Path:
         "---\nname: assistant\ndescription: test\n---\n\nYou are a test agent.\n"
     )
     return repo_root
+
+
+def test_default_bin_dir_is_not_under_documents(tmp_path):
+    assert_default_bin_dir_matches_famulus_paths(launchers.default_bin_dir, tmp_path)
+
+
+def test_worker_root_in_plugin_mode_is_not_under_repo_workers(tmp_path):
+    from officina.common.famulus_paths import resolve_famulus_paths
+
+    repo_root = tmp_path / "repo"
+    expected_root = resolve_famulus_paths(platform=sys.platform, home=tmp_path).worker_root
+
+    result = launchers.install_worker_dir(
+        repo_root, "assistant", dry_run=True, mode="plugin", home=tmp_path
+    )
+
+    assert result == expected_root / "assistant"
+    assert result != repo_root / "workers" / "assistant"
+    assert "Documents" not in str(result)
+
+
+def test_worker_root_in_development_mode_stays_under_repo_workers(tmp_path):
+    repo_root = tmp_path / "repo"
+
+    result = launchers.install_worker_dir(
+        repo_root, "assistant", dry_run=True, mode="development", home=tmp_path
+    )
+
+    assert result == repo_root / "workers" / "assistant"
 
 
 def test_run_installs_only_selected_agents(tmp_path):
@@ -320,6 +350,41 @@ def test_tw_agent_links_both_tmux_workspace_and_tw_alias(tmp_path):
     assert (bin_dir / "tmux-workspace").is_symlink()
     assert (bin_dir / "tw").is_symlink()
     assert (bin_dir / "tmux-workspace").resolve() == (bin_dir / "tw").resolve()
+
+
+def test_launcher_closure_always_includes_assistant():
+    assert launchers.launcher_closure((), install_invoke_skill=True) == ("assistant",)
+
+
+def test_launcher_closure_puts_assistant_first_no_duplicate():
+    assert launchers.launcher_closure(("collab", "assistant"), install_invoke_skill=True) == ("assistant", "collab")
+
+
+def test_launcher_closure_no_op_when_install_invoke_skill_false():
+    assert launchers.launcher_closure(("collab",), install_invoke_skill=False) == ("collab",)
+
+
+def test_install_with_no_agents_still_creates_assistant_launcher(tmp_path):
+    repo_root = _make_repo(tmp_path)
+    bin_dir = tmp_path / "bin"
+
+    launchers.run(
+        repo_root=repo_root,
+        agents=[],
+        home=tmp_path / "home",
+        bin_dir=bin_dir,
+        codex_home=tmp_path / "codex",
+        claude_home=tmp_path / "claude",
+        shell_rc=tmp_path / ".bashrc",
+        default_llm="claude",
+        dry_run=False,
+        install_invoke_skill=True,
+    )
+
+    if sys.platform == "win32":
+        assert (bin_dir / "assistant.bat").exists()
+    else:
+        assert (bin_dir / "assistant").exists()
 
 
 def test_tw_agent_is_skipped_on_windows(tmp_path, monkeypatch):
