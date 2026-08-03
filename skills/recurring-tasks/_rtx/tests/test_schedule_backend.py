@@ -374,6 +374,8 @@ def test_windows_wrapper_content_uses_explicit_crlf_only(tmp_path):
     assert "\r\n" in content
     # No bare '\n' that isn't immediately preceded by '\r'.
     assert re.search(r"(?<!\r)\n", content) is None
+    assert f'if not exist "{context.log_dir / job.name}" mkdir ' in content
+    assert f'>> "{context.log_dir / job.name / "scheduler.log"}" 2>&1' in content
     assert content.endswith("exit /b %errorlevel%\r\n")
 
 

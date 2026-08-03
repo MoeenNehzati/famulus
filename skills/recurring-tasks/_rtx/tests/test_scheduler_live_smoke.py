@@ -523,7 +523,21 @@ def _windows_smoke() -> None:
                 "Windows scheduler wrapper preflight failed:\n"
                 f"stdout:\n{preflight.stdout}\nstderr:\n{preflight.stderr}"
             )
-            _assert_marker_written(marker, log_file=tmp_dir / job_name / "run.log")
+            try:
+                _assert_marker_written(marker, log_file=tmp_dir / job_name / "run.log")
+            except AssertionError as exc:
+                scheduler_log = tmp_dir / job_name / "scheduler.log"
+                scheduler_detail = (
+                    scheduler_log.read_text(encoding="utf-8", errors="replace")
+                    if scheduler_log.exists()
+                    else "scheduler.log was not created"
+                )
+                raise AssertionError(
+                    f"{exc}\n--- preflight stdout ---\n{preflight.stdout}"
+                    f"\n--- preflight stderr ---\n{preflight.stderr}"
+                    f"\n--- wrapper ---\n{wrapper_path.read_text(encoding='utf-8', errors='replace')}"
+                    f"\n--- scheduler log ---\n{scheduler_detail}"
+                ) from exc
             marker.unlink()
             _run(
                 [

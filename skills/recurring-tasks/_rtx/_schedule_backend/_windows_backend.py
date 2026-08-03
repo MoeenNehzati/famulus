@@ -151,10 +151,16 @@ def wrapper_content(job: ScheduleJob, context: ScheduleContext) -> str:
     instead, and ``/TR`` is pointed at just this file's own short path.
     """
     quoted = " ".join(_quote_cmd_arg(part) for part in _command_parts(job, context))
+    job_log_dir = context.log_dir / job.name
+    bootstrap_log = job_log_dir / "scheduler.log"
+    quoted_log_dir = _quote_cmd_arg(str(job_log_dir))
+    quoted_bootstrap_log = _quote_cmd_arg(str(bootstrap_log))
     return (
         "@echo off\r\nsetlocal\r\n"
+        + f"if not exist {quoted_log_dir} mkdir {quoted_log_dir}\r\n"
         + quoted
-        + "\r\nexit /b %errorlevel%\r\n"
+        + f" >> {quoted_bootstrap_log} 2>&1\r\n"
+        + "exit /b %errorlevel%\r\n"
     )
 
 
