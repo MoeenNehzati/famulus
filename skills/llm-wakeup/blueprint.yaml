@@ -1,0 +1,32 @@
+authority:
+  owns_filesystem: []
+category: workflow-general-assistant
+children: {}
+content:
+- SKILL\.md
+description: Routes assistant requests to guarded Claude and Codex wakeup scheduling
+  and per-session automatic scheduling policy.
+discovery:
+  mechanism: skill
+exports:
+  llm-wakeup.interface.default:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: llm-wakeup.source.gateway.interface.default
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: llm-wakeup
+kind: scheduler
+namespace_exports: {}
+node_type: module
+role: system-operations
+schema_version: 5
+sources:
+  llm-wakeup.source.gateway:
+    blueprint:
+      base: module-root
+      path: blueprints/gateway.yaml
+version: 1
+

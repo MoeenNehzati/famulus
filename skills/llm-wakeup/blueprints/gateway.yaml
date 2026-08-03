@@ -1,0 +1,100 @@
+content:
+- SKILL\.md
+dependencies: []
+description: Selects automatic-policy, inferred-scheduling, or explicit-scheduling
+  behavior from the user's wakeup request and reports the resulting target and time.
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: llm-wakeup.source.gateway
+interfaces:
+  llm-wakeup.source.gateway.interface.default:
+    contract:
+      arguments:
+        request:
+          description: User request to schedule a wakeup, infer one from a usage-limit
+            event, or manage automatic scheduling for a provider session.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+      caller_warnings:
+      - external-side-effect: Delegated wakeup interfaces can persist a wakeup job
+          or change per-session automatic scheduling policy.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: wakeup-request
+          formats:
+          - text
+          id: request-read
+          medium: prompt
+          sensitivity: user-private
+        writes:
+        - access: write
+          content: wakeup-result
+          formats:
+          - markdown
+          id: response-write
+          medium: prompt
+          sensitivity: derived-private
+      execution:
+        consistency:
+          live: Routing and the response reflect provider session and wakeup state
+            observed by the delegated interface during this request.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: response
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Present the resolved provider, canonical session, scheduled
+          local time, or automatic policy state.
+        class: success
+        effects: []
+        id: completed
+        outputs:
+        - response
+      - caller_action: Report the delegated error and request an explicit value when
+          provider, session, or reset inference is ambiguous.
+        class: error
+        effects: []
+        id: unavailable
+        outputs:
+        - response
+      outputs:
+      - audience: human
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Concise wakeup scheduling or policy result, or the exact missing
+          information required to continue.
+        direct_io_ref: response-write
+        empty: Never empty.
+        id: response
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Primary LLM-facing wakeup routing instructions.
+    version: 1
+node_type: behavioral_source
+schema_version: 5
+uses_interfaces:
+- interface: wakeup.interface.auto-policy
+  version: 1
+- interface: wakeup.interface.infer-schedule
+  version: 1
+- interface: wakeup.interface.explicit-schedule
+  version: 1
+version: 1
