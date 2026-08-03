@@ -167,8 +167,9 @@ and private interfaces inherit the language of their implementing source.
 
 Selected scopes retain immediate incoming and outgoing relationships as
 explicit boundary summaries grouped by the outside top-level module. Scope
-never expands implicitly. Modules initially render expanded with all contained
-nodes visible; users may collapse containers to declutter the graph.
+never expands implicitly. Blueprint graphs initially select module-level detail;
+users may reveal sources and interfaces through the detail control. Visible
+modules render expanded, and users may collapse containers to declutter the graph.
 Certification relationships are available but hidden by default. When an
 explicit interface use is also a direct certification dependency, the adapter
 annotates that interface edge instead of emitting a redundant indirect edge.

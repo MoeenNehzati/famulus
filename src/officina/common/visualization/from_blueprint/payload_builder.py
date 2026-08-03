@@ -554,7 +554,7 @@ def build_payload_from_repository_graph(
             "edge_styles": EDGE_STYLES,
             "layout": {"rankdir": "LR"},
             "visibility": {
-                "detail_level": "interface",
+                "detail_level": "module",
                 "collapsed_containers": collapsed,
                 "hidden_edge_types": certification_types,
             },

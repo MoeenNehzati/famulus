@@ -105,6 +105,7 @@ def test_selected_skill_scope_summarizes_crossing_relationships() -> None:
     assert entities[source.node_id]["kind"] == "markdown"
     assert payload["detail_levels"][0]["id"] == "module"
     assert payload["detail_levels"][-1]["id"] == "interface"
+    assert payload["ui"]["visibility"]["detail_level"] == "module"
     assert payload["ui"]["edge_styles"]["depends-on-source"] == {"color": "#d97706"}
     assert payload["ui"]["edge_styles"]["uses-interface"] == {
         "color": "#2563eb",
