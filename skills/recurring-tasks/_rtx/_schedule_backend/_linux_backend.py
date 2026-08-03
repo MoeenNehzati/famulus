@@ -82,7 +82,19 @@ def service_content(
     manager), so it is correct for whichever UID this systemd --user
     instance runs as instead of a hardcoded UID baked into jobs.yaml.
     """
-    resolver = PurePosixPath(runtime_resolver)
+    # This unit file always targets a systemd (Linux) host, regardless of
+    # which host OS actually generated it (the portability sentinel runs
+    # this same generator on all 3 CI platforms specifically to catch a
+    # host-OS-dependent leak here) -- every embedded path must render in
+    # clean POSIX form. ``Path.as_posix()`` (not ``PurePosixPath(other_path)``
+    # cross-flavour construction, which reconstructs from the *other* path's
+    # already-parsed native parts and can leave a mixed separator artifact
+    # behind, e.g. a drive anchor) is the documented, stable way to get a
+    # forward-slash string from any concrete Path regardless of the host
+    # that produced it.
+    resolver = PurePosixPath(runtime_resolver.as_posix())
+    executor_posix = executor.as_posix()
+    jobs_file_posix = jobs_file.as_posix()
     launcher_dir = launcher_bin or _launcher_bin_dir()
     path_value = (
         f"{launcher_dir}:{resolver.parent}:%h/.npm-global/bin:"
@@ -96,8 +108,8 @@ def service_content(
         "Type=oneshot\n"
         f"Environment={_systemd_quote(f'PATH={path_value}')}\n"
         f"Environment={_systemd_quote('DBUS_SESSION_BUS_ADDRESS=unix:path=%t/bus')}\n"
-        f"ExecStart={_systemd_quote(str(resolver))} {_systemd_quote(str(executor))} "
-        f"--jobs-file {_systemd_quote(str(jobs_file))} --job {job_name}\n"
+        f"ExecStart={_systemd_quote(str(resolver))} {_systemd_quote(executor_posix)} "
+        f"--jobs-file {_systemd_quote(jobs_file_posix)} --job {job_name}\n"
     )
 
 

@@ -27,6 +27,7 @@ from _schedule_backend import (  # noqa: E402
 from _schedule_backend._linux_backend import (  # noqa: E402
     LinuxScheduleBackend,
     cron_to_systemd_calendar,
+    service_content,
 )
 from _schedule_backend._osx_backend import (  # noqa: E402
     OSXScheduleBackend,
@@ -82,7 +83,16 @@ def test_linux_sync_writes_units_and_enables_timer(tmp_path):
 
     service = (tmp_path / "ai-my-job.service").read_text()
     timer = (tmp_path / "ai-my-job.timer").read_text()
-    assert f'ExecStart="{context.runtime_resolver}"' in service
+    # This unit file always targets a systemd (Linux) host regardless of
+    # which host OS generated it (the portability sentinel runs this exact
+    # test on all 3 CI platforms) -- assert the POSIX-normalized form, not
+    # the raw native path, and assert no backslash leaked in anywhere as a
+    # direct, host-independent regression guard.
+    executor_path = context.skill_dir / "_rtx" / "_job_executor.py"
+    assert f'ExecStart="{context.runtime_resolver.as_posix()}"' in service
+    assert executor_path.as_posix() in service
+    assert context.jobs_file.as_posix() in service
+    assert "\\" not in service
     assert sys.executable not in service
     assert 'Environment="PATH=/opt/famulus/bin:' in service
     assert 'Environment="DBUS_SESSION_BUS_ADDRESS=unix:path=%t/bus"' in service
@@ -94,6 +104,28 @@ def test_linux_sync_writes_units_and_enables_timer(tmp_path):
     assert ["systemctl", "--user", "enable", "--now", "ai-my-job.timer"] in [
         call.args[0] for call in run.call_args_list
     ]
+
+
+def test_linux_service_content_posix_normalizes_windows_style_input_paths():
+    """The portability sentinel runs this generator's real caller
+    (test_linux_sync_writes_units_and_enables_timer) on Windows CI, where
+    every native Path is backslash-separated -- but this unit file always
+    targets a systemd (Linux) host. Inject PureWindowsPath-shaped paths
+    directly (bypassing needing a real Windows host) to prove the output
+    never contains a raw host-native separator, host-independently."""
+    from pathlib import PureWindowsPath
+
+    content = service_content(
+        "my-job",
+        "My Job",
+        PureWindowsPath(r"D:\a\famulus\famulus\skills\recurring-tasks\jobs.yaml"),
+        PureWindowsPath(r"D:\a\famulus\famulus\skills\recurring-tasks\_rtx\_job_executor.py"),
+        PureWindowsPath(r"C:\Users\runneradmin\AppData\Local\Famulus\runtime\bootstrap\resolvers\v1\launch.py"),
+    )
+    assert "\\" not in content
+    assert "D:/a/famulus/famulus/skills/recurring-tasks/jobs.yaml" in content
+    assert "D:/a/famulus/famulus/skills/recurring-tasks/_rtx/_job_executor.py" in content
+    assert "C:/Users/runneradmin/AppData/Local/Famulus/runtime/bootstrap/resolvers/v1/launch.py" in content
 
 
 def test_linux_test_starts_expected_service():
