@@ -15,6 +15,7 @@ from typing import Any, Callable
 from officina.common.blueprint_graph import (
     BlueprintGraphError,
     BlueprintNode,
+    DispatchBlueprintGraph,
     RepositoryBlueprintGraph,
     RuntimeFileBinding,
     descriptor_safe_open_supported,
@@ -25,6 +26,7 @@ from officina.common.blueprint_graph import (
     resolve_export,
     snapshot_runtime_python_package,
 )
+from officina.common.atomic_files import AtomicWriteError
 from officina.common.blueprint_authorization import (
     AuthorizationRequest,
     AuthorizationResult,
@@ -52,6 +54,14 @@ from officina.runtime.python_machine_interface import (
     PythonProcessTarget,
     PythonProcessTargetError,
     logical_python_package_name,
+)
+from officina.dispatcher.catalog import (
+    CatalogRoute,
+    compact_route_graph,
+    load_route_certification_decision,
+    lookup_route_graph,
+    store_route_certification_decision,
+    store_route_graph,
 )
 
 class InvocationError(Exception):
@@ -724,6 +734,38 @@ def _resolve_export_dispatch(
     """Resolve one v4 repository-graph export."""
 
     diagnostics: list[InvocationDiagnostic] = []
+    catalog_enabled = graph is None
+    catalog_route = CatalogRoute(caller_skill, target)
+    catalog_diagnostics = ()
+    cached_decision = None
+    catalog_hit = False
+    catalog_lookup_status: str | None = None
+    if graph is None:
+        catalog_lookup = lookup_route_graph(root, catalog_route)
+        catalog_lookup_status = catalog_lookup.status
+        cached = catalog_lookup.graph
+        if cached is not None:
+            catalog_hit = True
+            graph = cached.graph
+            catalog_diagnostics = cached.diagnostics
+            if certification_view is None:
+                cached_decision = load_route_certification_decision(
+                    root,
+                    catalog_route,
+                )
+            diagnostics.extend(
+                InvocationDiagnostic(
+                    severity="warning",
+                    code=item.code,
+                    message=item.message,
+                    subject=(
+                        item.path.as_posix()
+                        if item.path is not None
+                        else None
+                    ),
+                )
+                for item in cached.diagnostics
+            )
     if graph is None:
         diagnostic_inventory = collect_blueprints(root, skip_parse_errors=True)
         target_is_module = False
@@ -749,6 +791,7 @@ def _resolve_export_dispatch(
                     interface_id=target,
                 )
                 graph = scoped.graph
+                catalog_diagnostics = scoped.diagnostics
                 diagnostics.extend(
                     InvocationDiagnostic(
                         severity="warning",
@@ -761,6 +804,18 @@ def _resolve_export_dispatch(
                         ),
                     )
                     for item in scoped.diagnostics
+                )
+                diagnostics.append(
+                    InvocationDiagnostic(
+                        severity="warning",
+                        code="dispatcher-catalog-rebuilt",
+                        message=(
+                            "route catalog was "
+                            f"{catalog_lookup_status or 'unavailable'}; "
+                            "canonical state was rebuilt"
+                        ),
+                        subject=target,
+                    )
                 )
             else:
                 graph = load_repository_blueprint_graph(root)
@@ -831,6 +886,26 @@ def _resolve_export_dispatch(
                 )
             terminal_module_id = authorization.terminal_module_id
             implementing_source_id = authorization.implementing_source_id
+            if catalog_enabled and not catalog_hit:
+                try:
+                    store_route_graph(
+                        root,
+                        catalog_route,
+                        DispatchBlueprintGraph(
+                            compact_route_graph(graph, authorization),
+                            catalog_diagnostics,
+                        ),
+                    )
+                except (AtomicWriteError, KeyError, OSError, TypeError, ValueError):
+                    # Catalog availability cannot change authorization.
+                    diagnostics.append(
+                        InvocationDiagnostic(
+                            severity="warning",
+                            code="dispatcher-catalog-write-failed",
+                            message="rebuilt route catalog could not be persisted",
+                            subject=target,
+                        )
+                    )
         else:
             declares_exact_use = False
             for source_id in graph.module_sources.get(caller_skill, ()):
@@ -882,28 +957,32 @@ def _resolve_export_dispatch(
                 stdin_requested=stdin_requested,
             )
             compiled = compile_gateway_invocation(source, export, parsed)
-        selected_view: CertificationView
-        if certification_view is not None:
-            selected_view = certification_view
+        selected_view: CertificationView | None = None
+        decision_from_cache = cached_decision is not None
+        if cached_decision is not None:
+            decision = cached_decision
         else:
-            try:
-                selected_view = repository_certification_view(root)
-            except RepositoryCertificationError:
-                selected_view = RejectingCertificationView()
-        check_authorization = getattr(
-            selected_view,
-            "check_authorization",
-            None,
-        )
-        if authorization is not None and callable(check_authorization):
-            decision = check_authorization(authorization)
-        else:
-            decision = selected_view.check_export(
-                module.node_id,
-                export.interface_id,
-                export.version,
-                export.source_node_id,
+            if certification_view is not None:
+                selected_view = certification_view
+            else:
+                try:
+                    selected_view = repository_certification_view(root)
+                except RepositoryCertificationError:
+                    selected_view = RejectingCertificationView()
+            check_authorization = getattr(
+                selected_view,
+                "check_authorization",
+                None,
             )
+            if authorization is not None and callable(check_authorization):
+                decision = check_authorization(authorization)
+            else:
+                decision = selected_view.check_export(
+                    module.node_id,
+                    export.interface_id,
+                    export.version,
+                    export.source_node_id,
+                )
         if not decision.certified:
             check_bootstrap = getattr(selected_view, "check_bootstrap", None)
             if callable(check_bootstrap):
@@ -919,6 +998,35 @@ def _resolve_export_dispatch(
                     pattern_name=compiled.pattern_name,
                     argv=compiled.argv,
                 )
+        if (
+            not decision_from_cache
+            and certification_view is None
+            and caller_skill != "skill-certifier"
+        ):
+            try:
+                certification_stored = store_route_certification_decision(
+                    root,
+                    catalog_route,
+                    graph,
+                    decision,
+                )
+                if not certification_stored:
+                    raise OSError("catalog entry was unavailable for certification")
+            except (AtomicWriteError, OSError, TypeError, ValueError):
+                if not any(
+                    item.code == "dispatcher-catalog-write-failed"
+                    for item in diagnostics
+                ):
+                    diagnostics.append(
+                        InvocationDiagnostic(
+                            severity="warning",
+                            code="dispatcher-catalog-write-failed",
+                            message=(
+                                "route certification decision could not be persisted"
+                            ),
+                            subject=target,
+                        )
+                    )
         if not decision.certified:
             diagnostics.append(
                 InvocationDiagnostic(

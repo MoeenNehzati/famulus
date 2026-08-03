@@ -785,6 +785,147 @@ def test_host_resolution_warns_for_unrelated_invalid_blueprint(
                 "'missing.interface.run'"
             ),
         ),
+        dispatcher_core.InvocationDiagnostic(
+            severity="warning",
+            code="dispatcher-catalog-rebuilt",
+            message="route catalog was missing; canonical state was rebuilt",
+            subject="demo.interface.execute",
+        ),
+    )
+
+
+def test_second_host_resolution_reuses_fresh_route_catalog(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, _graph = _load_v5_dispatch_graph(tmp_path)
+    outsider_source = root / "modules" / "outsider" / "blueprints" / "caller.yaml"
+    declaration = yaml.safe_load(outsider_source.read_text(encoding="utf-8"))
+    declaration["uses_interfaces"] = [
+        {"interface": "missing.interface.run", "version": 1}
+    ]
+    outsider_source.write_text(
+        yaml.safe_dump(declaration, sort_keys=False),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+
+    class UncertifiedView:
+        def check_authorization(self, _authorization):
+            return CertificationDecision(False, "specific", "Specific warning.")
+
+        def check_bootstrap(self, **_request):
+            return CertificationDecision(False, "final", "Final warning.")
+
+    monkeypatch.setattr(
+        dispatcher_core,
+        "repository_certification_view",
+        lambda _root: UncertifiedView(),
+    )
+
+    first = dispatcher_core._resolve_host_dispatch_metadata(
+        caller_skill="demo",
+        target="demo.interface.execute",
+        args=["--route-smoke"],
+        repo_root=root,
+    )
+
+    def unexpected_repository_read(*_args, **_kwargs):
+        pytest.fail("fresh route catalog rebuilt repository state")
+
+    monkeypatch.setattr(dispatcher_core, "collect_blueprints", unexpected_repository_read)
+    monkeypatch.setattr(
+        dispatcher_core,
+        "load_dispatch_blueprint_graph",
+        unexpected_repository_read,
+    )
+    monkeypatch.setattr(
+        dispatcher_core,
+        "load_repository_blueprint_graph",
+        unexpected_repository_read,
+    )
+    monkeypatch.setattr(
+        dispatcher_core,
+        "repository_certification_view",
+        unexpected_repository_read,
+    )
+
+    second = dispatcher_core._resolve_host_dispatch_metadata(
+        caller_skill="demo",
+        target="demo.interface.execute",
+        args=["--route-smoke"],
+        repo_root=root,
+    )
+
+    assert second.target == first.target
+    rebuild = next(
+        item
+        for item in first.diagnostics
+        if item.code == "dispatcher-catalog-rebuilt"
+    )
+    assert "missing" in rebuild.message
+    assert rebuild.subject == "demo.interface.execute"
+    assert not any(
+        item.code.startswith("dispatcher-catalog-")
+        for item in second.diagnostics
+    )
+    assert tuple(
+        item
+        for item in first.diagnostics
+        if item.code != "dispatcher-catalog-rebuilt"
+    ) == second.diagnostics
+    assert second.diagnostics[-1].code == "final"
+
+
+def test_catalog_write_failure_warns_without_blocking_dispatch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, _graph = _load_v5_dispatch_graph(tmp_path)
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+
+    def failed_store(*_args, **_kwargs):
+        raise OSError("cache filesystem is read-only")
+
+    monkeypatch.setattr(dispatcher_core, "store_route_graph", failed_store)
+
+    metadata = dispatcher_core._resolve_host_dispatch_metadata(
+        caller_skill="demo",
+        target="demo.interface.execute",
+        args=["--route-smoke"],
+        repo_root=root,
+        certification_view=_PassingCertificationView(),
+    )
+
+    assert metadata.target == "demo.interface.execute"
+    warnings = {item.code: item for item in metadata.diagnostics}
+    assert warnings["dispatcher-catalog-rebuilt"].subject == metadata.target
+    assert warnings["dispatcher-catalog-write-failed"].subject == metadata.target
+
+
+def test_catalog_certification_write_failure_is_reported(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, _graph = _load_v5_dispatch_graph(tmp_path)
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setattr(
+        dispatcher_core,
+        "store_route_certification_decision",
+        lambda *_args, **_kwargs: False,
+    )
+
+    metadata = dispatcher_core._resolve_host_dispatch_metadata(
+        caller_skill="demo",
+        target="demo.interface.execute",
+        args=["--route-smoke"],
+        repo_root=root,
+    )
+
+    assert any(
+        item.code == "dispatcher-catalog-write-failed"
+        and "certification" in item.message
+        for item in metadata.diagnostics
     )
 
 
