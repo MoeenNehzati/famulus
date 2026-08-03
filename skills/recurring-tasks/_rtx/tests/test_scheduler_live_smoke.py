@@ -45,7 +45,13 @@ else:
     plist_name,
 )
 if __package__ and __package__.count('.') >= 1:
-    from .._schedule_backend._windows_backend import cron_to_schtasks_args, executor_command, task_name
+    from .._schedule_backend._windows_backend import (
+        cron_to_schtasks_args,
+        executor_command,
+        task_name,
+        wrapper_content,
+        wrapper_name,
+    )
 else:
     from _schedule_backend._windows_backend import (  # noqa: E402
     cron_to_schtasks_args,
