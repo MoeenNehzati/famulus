@@ -98,6 +98,7 @@ def test_query_uses_the_common_standard_extractor_interface() -> None:
     common_root = _load_yaml(
         SKILL_ROOT.parents[1] / "src" / "officina" / "common" / "blueprint.yaml"
     )
+    assert r"configured_schema\.py" in common_root["content"]
     exported = common_root["exports"]["common.interface.standard-extractor"]
     assert exported["source_interface"] == (
         "common.source.standard-extractor.interface.python-api"
