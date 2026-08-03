@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from officina.wakeup import DEFAULT_MESSAGE
 from officina.wakeup.deadlines import DEFAULT_DELAY, parse_delay
 from officina.wakeup.claude_codex_cli import main
 from officina.wakeup.claude_codex_service import run_due, schedule
@@ -159,6 +160,44 @@ def test_doctor_reports_provider_queue_lock_and_scheduler_capabilities(
     assert any(item.name.startswith("provider:") for item in diagnostics)
 
 
+@pytest.mark.parametrize(
+    ("provider", "documented_name", "legacy_name"),
+    [
+        ("claude", "CLAUDE_EXECUTABLE", "LLM_WAKEUP_CLAUDE_BIN"),
+        ("codex", "CODEX_EXECUTABLE", "LLM_WAKEUP_CODEX_BIN"),
+    ],
+)
+def test_documented_provider_executable_overrides_are_honored(
+    provider: str,
+    documented_name: str,
+    legacy_name: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(legacy_name, raising=False)
+    monkeypatch.setenv(documented_name, "/documented/provider")
+
+    assert provider_for(provider).executable_override() == "/documented/provider"
+
+
+def test_doctor_rejects_an_unavailable_configured_executable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    transcript_root = tmp_path / "claude"
+    transcript_root.mkdir()
+    monkeypatch.setenv("LLM_WAKEUP_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("LLM_WAKEUP_CLAUDE_DIR", str(transcript_root))
+    monkeypatch.setenv("CLAUDE_EXECUTABLE", str(tmp_path / "missing-claude"))
+
+    diagnostic = next(
+        item
+        for item in collect_diagnostics()
+        if item.name == "provider:claude"
+    )
+
+    assert not diagnostic.ok
+    assert "configured executable unavailable" in diagnostic.detail
+
+
 def _claude_transcript(root: Path, session_id: str, cwd: Path) -> Path:
     path = root / "project" / f"{session_id}.jsonl"
     path.parent.mkdir(parents=True)
@@ -250,9 +289,61 @@ def test_due_worker_delivers_through_each_provider_adapter(
         provider,
         session_id,
         datetime(2026, 8, 2, 11, 59, tzinfo=timezone.utc),
-        "continue now",
+        None,
     )
     run_due()
 
-    assert "continue now" in output.read_text()
+    assert DEFAULT_MESSAGE in output.read_text()
+    assert json.loads((tmp_path / "state" / "jobs.json").read_text()) == []
+
+
+@pytest.mark.parametrize("provider", ["claude", "codex"])
+def test_due_worker_suppresses_delivery_after_session_progress(
+    provider: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session_id = "11111111-2222-4333-8444-555555555555"
+    if provider == "claude":
+        transcript = _claude_transcript(tmp_path / "claude", session_id, tmp_path)
+        progress = {
+            "type": "assistant",
+            "sessionId": session_id,
+            "message": {"role": "assistant", "content": "continued"},
+        }
+        monkeypatch.setenv("LLM_WAKEUP_CLAUDE_DIR", str(tmp_path / "claude"))
+    else:
+        transcript = tmp_path / "codex" / f"rollout-{session_id}.jsonl"
+        transcript.parent.mkdir(parents=True)
+        transcript.write_text(
+            json.dumps(
+                {
+                    "type": "session_meta",
+                    "payload": {"id": session_id, "cwd": str(tmp_path)},
+                }
+            )
+            + "\n"
+        )
+        progress = {
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "assistant",
+                "content": "continued",
+            },
+        }
+        monkeypatch.setenv("LLM_WAKEUP_CODEX_DIR", str(tmp_path / "codex"))
+    monkeypatch.setenv("LLM_WAKEUP_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("LLM_WAKEUP_NOW", "2026-08-02T12:00:00+00:00")
+    schedule(
+        provider,
+        session_id,
+        datetime(2026, 8, 2, 11, 59, tzinfo=timezone.utc),
+        DEFAULT_MESSAGE,
+    )
+    with transcript.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(progress) + "\n")
+
+    run_due()
+
     assert json.loads((tmp_path / "state" / "jobs.json").read_text()) == []

@@ -119,9 +119,11 @@ class CodexAdapter:
         return Path(value).expanduser() if isinstance(value, str) else None
 
     def executable_override(self) -> str | None:
-        """Return ``CODEX_EXECUTABLE`` when configured."""
+        """Return the documented or legacy Codex executable override."""
 
-        return os.environ.get("LLM_WAKEUP_CODEX_BIN")
+        return os.environ.get("CODEX_EXECUTABLE") or os.environ.get(
+            "LLM_WAKEUP_CODEX_BIN"
+        )
 
     def executable_candidates(self) -> tuple[Path, ...]:
         """Return common Codex installation paths."""

@@ -83,9 +83,11 @@ class ClaudeAdapter:
         return Path(value).expanduser() if isinstance(value, str) else None
 
     def executable_override(self) -> str | None:
-        """Return ``CLAUDE_EXECUTABLE`` when configured."""
+        """Return the documented or legacy Claude executable override."""
 
-        return os.environ.get("LLM_WAKEUP_CLAUDE_BIN")
+        return os.environ.get("CLAUDE_EXECUTABLE") or os.environ.get(
+            "LLM_WAKEUP_CLAUDE_BIN"
+        )
 
     def executable_candidates(self) -> tuple[Path, ...]:
         """Return common Claude installation paths."""

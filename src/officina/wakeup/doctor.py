@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import shutil
 from dataclasses import dataclass
+from pathlib import Path
 
 from .linux_osx_windows import scheduler_capability
 from .locking import locked_file
@@ -21,18 +22,36 @@ class Diagnostic:
     detail: str
 
 
+def _provider_executable(adapter: object) -> tuple[bool, str]:
+    """Resolve and validate an adapter executable without raising."""
+
+    override = adapter.executable_override()
+    if override:
+        path = Path(override).expanduser()
+        available = path.is_file() and os.access(path, os.X_OK)
+        detail = str(path) if available else f"configured executable unavailable: {path}"
+        return available, detail
+    discovered = shutil.which(adapter.name)
+    if discovered:
+        return True, discovered
+    for path in adapter.executable_candidates():
+        if path.is_file() and os.access(path, os.X_OK):
+            return True, str(path)
+    return False, "missing"
+
+
 def collect_diagnostics() -> list[Diagnostic]:
     """Inspect provider, queue, locking, and scheduler capabilities read-only."""
 
     results: list[Diagnostic] = []
     for adapter in all_providers():
-        executable = adapter.executable_override() or shutil.which(adapter.name)
+        executable_ok, executable_detail = _provider_executable(adapter)
         root = adapter.transcript_root()
         results.append(
             Diagnostic(
                 f"provider:{adapter.name}",
-                bool(executable) and root.is_dir(),
-                f"executable={executable or 'missing'} transcripts={root}",
+                executable_ok and root.is_dir(),
+                f"executable={executable_detail} transcripts={root}",
             )
         )
     root = data_dir()

@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import WakeupError
+from . import DEFAULT_MESSAGE, WakeupError
 from .claude_codex_sessions import resolve_session, session_cwd, transcript_state
 from .deadlines import utc_now
 from .locking import LockUnavailable, locked_file
@@ -51,7 +51,7 @@ def schedule(
         "provider": provider,
         "session_id": session_id,
         "run_at": deadline.astimezone(timezone.utc).isoformat(),
-        "message": message,
+        "message": DEFAULT_MESSAGE if message is None else message,
         "transcript": str(transcript),
         "state": transcript_state(provider, transcript),
         "attempts": 0,
