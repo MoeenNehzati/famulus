@@ -53,6 +53,7 @@ if __package__ and __package__.count('.') >= 1:
         _quote_cmd_arg,
         cron_to_schtasks_args,
         default_unit_dir,
+        task_run_command,
         task_name,
         wrapper_content,
         wrapper_name,
@@ -63,6 +64,7 @@ else:
     _quote_cmd_arg,
     cron_to_schtasks_args,
     default_unit_dir,
+    task_run_command,
     task_name,
     wrapper_content,
     wrapper_name,
@@ -336,13 +338,14 @@ def test_windows_sync_creates_task_scheduler_entry(tmp_path):
     create = next(args for args in calls if args[:2] == ["schtasks", "/Create"])
     assert create[create.index("/TN") + 1] == task_name("my-job")
     tr_value = create[create.index("/TR") + 1]
-    # The /TR value must be just the short wrapper .cmd path, not the full
-    # inline command -- schtasks /Create /TR has a hard 261-character limit
+    # The /TR value must invoke the short wrapper through cmd.exe, not embed
+    # the full executor command -- schtasks /Create /TR has a hard
+    # 261-character limit
     # on this value ("ERROR: Value for '/TR' option cannot be more than 261
     # character(s)"), and the full interpreter+resolver+executor+args
     # command line routinely exceeds that under a real install path.
     assert "_job_executor.py" not in tr_value
-    assert tr_value == str(tmp_path / wrapper_name("my-job"))
+    assert tr_value == task_run_command(tmp_path / wrapper_name("my-job"))
     assert create[-4:] == ["/SC", "DAILY", "/ST", "09:00"]
 
     wrapper_text = (tmp_path / wrapper_name("my-job")).read_text(encoding="utf-8")
@@ -370,6 +373,24 @@ def test_windows_wrapper_content_uses_explicit_crlf_only(tmp_path):
     assert "\r\n" in content
     # No bare '\n' that isn't immediately preceded by '\r'.
     assert re.search(r"(?<!\r)\n", content) is None
+
+
+def test_windows_task_run_command_uses_cmd_for_space_containing_wrapper_path():
+    wrapper_path = Path(r"C:\Users\Jane Doe\AppData\Local\Famulus\wrapper.cmd")
+
+    command = task_run_command(
+        wrapper_path, comspec=r"C:\Windows\System32\cmd.exe"
+    )
+
+    assert command == subprocess.list2cmdline(
+        [
+            r"C:\Windows\System32\cmd.exe",
+            "/D",
+            "/C",
+            "CALL",
+            str(wrapper_path),
+        ]
+    )
 
 
 def test_windows_sync_writes_wrapper_without_newline_translation(tmp_path):
@@ -494,9 +515,9 @@ def test_windows_wrapper_tr_value_stays_well_under_261_char_limit(tmp_path):
     (observed as schtasks /Create exit 2147500037 / 0x80004005). The fix
     writes that full command into a wrapper .cmd file under a short,
     fixed wrapper directory instead -- independent of how deep the
-    runtime/resolver/jobs-file paths are -- and points /TR at just the
-    wrapper's own path. Assert that NEW /TR value stays well under the
-    limit, with safety margin for real usernames/paths longer than CI's
+    runtime/resolver/jobs-file paths are -- and points /TR at a short
+    ``cmd.exe`` invocation of the wrapper. Assert that NEW /TR value stays
+    well under the limit, with safety margin for real usernames/paths longer than CI's
     ``RUNNER~1`` short name. The wrapper directory itself
     (``unit_dir``) is deliberately kept short here, mirroring
     ``default_unit_dir()``'s fixed, LOCALAPPDATA-rooted location on a
@@ -541,7 +562,7 @@ def test_windows_wrapper_tr_value_stays_well_under_261_char_limit(tmp_path):
         WindowsScheduleBackend().sync([job], context)
 
     wrapper_path = unit_dir / wrapper_name(job.name)
-    tr_value = str(wrapper_path)
+    tr_value = task_run_command(wrapper_path)
     assert len(tr_value) < 200, f"/TR value too long ({len(tr_value)} chars): {tr_value!r}"
 
     # The measured, previously-failing inline command for comparison: the

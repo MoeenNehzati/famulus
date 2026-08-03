@@ -48,6 +48,7 @@ if __package__ and __package__.count('.') >= 1:
     from .._schedule_backend._windows_backend import (
         cron_to_schtasks_args,
         executor_command,
+        task_run_command,
         task_name,
         wrapper_content,
         wrapper_name,
@@ -55,6 +56,7 @@ if __package__ and __package__.count('.') >= 1:
 else:
     from _schedule_backend._windows_backend import (  # noqa: E402
     cron_to_schtasks_args,
+    task_run_command,
     task_name,
     wrapper_content,
     wrapper_name,
@@ -494,8 +496,8 @@ def _windows_smoke() -> None:
         # /TR has a hard 261-character limit; these smoke-test paths are
         # already fairly long (nested under a GitHub Actions temp dir), so
         # -- mirroring WindowsScheduleBackend.sync() -- write the real
-        # command into a short wrapper .cmd file and point /TR at just that
-        # wrapper's own path instead of the full inline command.
+        # command into a short wrapper .cmd file and point /TR at a short
+        # cmd.exe invocation of that wrapper instead of the full command.
         wrapper_path = tmp_dir / wrapper_name(job_name)
         try:
             # Match WindowsScheduleBackend.sync(): wrapper_content() already
@@ -511,13 +513,21 @@ def _windows_smoke() -> None:
                     "/TN",
                     name,
                     "/TR",
-                    str(wrapper_path),
+                    task_run_command(wrapper_path),
                     "/F",
                     *cron_to_schtasks_args(schedule),
                 ]
             )
             _run(["schtasks", "/Run", "/TN", name])
-            _assert_marker_written(marker, log_file=tmp_dir / job_name / "run.log")
+            try:
+                _assert_marker_written(marker, log_file=tmp_dir / job_name / "run.log")
+            except AssertionError as exc:
+                query = _run(
+                    ["schtasks", "/Query", "/TN", name, "/FO", "LIST", "/V"],
+                    check=False,
+                )
+                detail = query.stdout.strip() or query.stderr.strip() or "no task details"
+                raise AssertionError(f"{exc}\n--- schtasks query ---\n{detail}") from exc
         finally:
             _run(["schtasks", "/Delete", "/TN", name, "/F"], check=False)
             post = _run(["schtasks", "/Query", "/TN", name], check=False)

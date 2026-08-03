@@ -45,6 +45,20 @@ def wrapper_name(job_name: str) -> str:
     return f"{task_name(job_name)}.cmd"
 
 
+def task_run_command(wrapper_path: Path, *, comspec: str | None = None) -> str:
+    """Build the short executable command stored in ``schtasks /TR``.
+
+    Task Scheduler execution actions are executable-oriented.  Invoke the
+    generated batch wrapper through the Windows command processor explicitly
+    so task execution does not depend on implicit ``.cmd`` file association.
+    ``CALL`` keeps a space-containing wrapper path as one batch-file operand.
+    """
+    command_processor = comspec or os.environ.get("COMSPEC") or "cmd.exe"
+    return subprocess.list2cmdline(
+        [command_processor, "/D", "/C", "CALL", str(wrapper_path)]
+    )
+
+
 def _quote_cmd_arg(value: str) -> str:
     """Double-quote one wrapper ``.cmd`` argument, doubling embedded quotes
     and ``%`` characters.
@@ -122,8 +136,8 @@ def executor_command(job: ScheduleJob, context: ScheduleContext) -> str:
     script + job executor script + ``--jobs-file <path>`` + ``--job
     <name>``) routinely exceeds that once assembled under a real install
     path. Instead this string is written into a short wrapper ``.cmd`` file
-    (see ``wrapper_content``/``sync``), and ``/TR`` points at just that
-    wrapper file's own short path.
+    (see ``wrapper_content``/``sync``), and ``/TR`` contains only a short
+    ``cmd.exe`` invocation of that wrapper.
     """
     return subprocess.list2cmdline(_command_parts(job, context))
 
@@ -242,7 +256,7 @@ class WindowsScheduleBackend:
                 "/TN",
                 task_name(job.name),
                 "/TR",
-                str(wrapper_path),
+                task_run_command(wrapper_path),
                 "/F",
                 *cron_to_schtasks_args(job.schedule),
             ]
