@@ -18,6 +18,14 @@ from officina.install.managed_runtime import (
 
 REAL_MANIFEST = Path(__file__).resolve().parents[1] / "references" / "blueprint" / "runtime_dependencies.json"
 UV_BIN = shutil.which("uv")
+# A real Path's str() renders with the host's native separators regardless
+# of the `platform=` string passed to build_candidate_release (that
+# parameter only selects *logical* branching inside the function, e.g.
+# venv layout -- it never changes how Python itself stringifies a Path
+# object on this interpreter). So every assertion below must compare
+# against str(FAKE_UV_BIN), not a hardcoded POSIX-style literal, to stay
+# correct on a real Windows test host.
+FAKE_UV_BIN = Path("/fake/uv")
 
 
 def test_declared_python_packages_matches_today_baseline():
@@ -94,14 +102,14 @@ def test_build_candidate_release_on_windows_uses_scripts_python_exe(monkeypatch,
         runtime_root=tmp_path / "runtime",
         manifest_path=REAL_MANIFEST,
         platform="windows",
-        uv_bin=Path("/fake/uv"),
+        uv_bin=FAKE_UV_BIN,
         python_version="3.11",
     )
 
     assert pointer.python_bin == pointer.runtime_source / "venv" / "Scripts" / "python.exe"
     assert pointer.python_bin.exists()
     pip_call = calls[1]
-    assert pip_call[:4] == ["/fake/uv", "pip", "install", "--python"]
+    assert pip_call[:4] == [str(FAKE_UV_BIN), "pip", "install", "--python"]
     assert pip_call[4] == str(pointer.python_bin)
 
 
@@ -115,16 +123,16 @@ def test_build_candidate_release_creates_venv_then_one_batch_pip_install(monkeyp
         runtime_root=tmp_path / "runtime",
         manifest_path=REAL_MANIFEST,
         platform="linux",
-        uv_bin=Path("/fake/uv"),
+        uv_bin=FAKE_UV_BIN,
         python_version="3.11",
     )
 
     assert len(calls) == 3  # uv venv, one batch pip-install call (not per-package), uv python dir
     venv_call, pip_call, python_dir_call = calls
-    assert venv_call == ["/fake/uv", "venv", "--python", "3.11", str(pointer.runtime_source / "venv")]
-    assert pip_call[:4] == ["/fake/uv", "pip", "install", "--python"]
+    assert venv_call == [str(FAKE_UV_BIN), "venv", "--python", "3.11", str(pointer.runtime_source / "venv")]
+    assert pip_call[:4] == [str(FAKE_UV_BIN), "pip", "install", "--python"]
     assert pip_call[4] == str(pointer.python_bin)
-    assert python_dir_call == ["/fake/uv", "python", "dir"]
+    assert python_dir_call == [str(FAKE_UV_BIN), "python", "dir"]
     assert pointer.python_bin.exists()
 
 
@@ -140,12 +148,12 @@ def test_build_candidate_release_provisions_venv_before_installing_packages(monk
         runtime_root=tmp_path / "runtime",
         manifest_path=REAL_MANIFEST,
         platform="linux",
-        uv_bin=Path("/fake/uv"),
+        uv_bin=FAKE_UV_BIN,
         python_version="3.11",
     )
 
-    assert calls[0][:4] == ["/fake/uv", "venv", "--python", "3.11"]
-    assert calls[1][0] == "/fake/uv"
+    assert calls[0][:4] == [str(FAKE_UV_BIN), "venv", "--python", "3.11"]
+    assert calls[1][0] == str(FAKE_UV_BIN)
 
 
 def test_build_candidate_release_failure_writes_no_pointer(monkeypatch, tmp_path):
@@ -163,7 +171,7 @@ def test_build_candidate_release_failure_writes_no_pointer(monkeypatch, tmp_path
             runtime_root=runtime_root,
             manifest_path=REAL_MANIFEST,
             platform="linux",
-            uv_bin=Path("/fake/uv"),
+            uv_bin=FAKE_UV_BIN,
             python_version="3.11",
         )
     assert not (runtime_root / "current.json").exists()
@@ -180,7 +188,7 @@ def test_build_candidate_release_venv_failure_writes_no_pointer(monkeypatch, tmp
             runtime_root=runtime_root,
             manifest_path=REAL_MANIFEST,
             platform="linux",
-            uv_bin=Path("/fake/uv"),
+            uv_bin=FAKE_UV_BIN,
             python_version="3.11",
         )
     assert not (runtime_root / "current.json").exists()
@@ -212,7 +220,7 @@ def test_build_candidate_release_resolver_deploy_failure_writes_no_pointer(monke
             runtime_root=runtime_root,
             manifest_path=REAL_MANIFEST,
             platform="linux",
-            uv_bin=Path("/fake/uv"),
+            uv_bin=FAKE_UV_BIN,
             python_version="3.11",
         )
 
@@ -257,7 +265,7 @@ def test_deploy_resolver_writes_through_atomic_replace_bytes_not_plain_copy(monk
         runtime_root=runtime_root,
         manifest_path=REAL_MANIFEST,
         platform="linux",
-        uv_bin=Path("/fake/uv"),
+        uv_bin=FAKE_UV_BIN,
         python_version="3.11",
     )
 
