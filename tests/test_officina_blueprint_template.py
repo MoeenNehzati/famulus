@@ -442,6 +442,7 @@ def test_v5_repository_managed_skill_generator_creates_parent_and_code_child(
         category="development-assistant",
         repo_root=repo,
         schema_root=schema_root,
+        include_code_child=True,
     )
 
     parent_path = repo / "skills" / "demo-skill" / "blueprint.yaml"
@@ -483,6 +484,34 @@ def test_v5_repository_managed_skill_generator_creates_parent_and_code_child(
     }
 
 
+def test_v5_repository_managed_skill_generator_defaults_to_parent_only(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    skill_root = repo / "skills" / "instruction-only"
+    skill_root.mkdir(parents=True)
+    (skill_root / "SKILL.md").write_text(
+        "---\nname: instruction-only\n---\nInstructions.\n",
+        encoding="utf-8",
+    )
+
+    outputs = blueprint_template.write_repository_managed_skill_blueprints(
+        "instruction-only",
+        category="development-assistant",
+        repo_root=repo,
+        schema_root=Path("references/blueprint").resolve(),
+    )
+
+    assert outputs == (skill_root / "blueprint.yaml",)
+    assert not (skill_root / "_rtx").exists()
+    graph = load_repository_blueprint_graph(
+        repo,
+        schema_root=Path("references/blueprint").resolve(),
+        expected_schema_version=5,
+    )
+    assert set(graph.nodes) == {"instruction-only"}
+
+
 def test_v5_repository_managed_skill_generator_requires_parent_skill_file(
     tmp_path: Path,
 ) -> None:
@@ -498,6 +527,7 @@ def test_v5_repository_managed_skill_generator_requires_parent_skill_file(
             category="development-assistant",
             repo_root=repo,
             schema_root=Path("references/blueprint").resolve(),
+            include_code_child=True,
         )
 
     assert not (skill_root / "blueprint.yaml").exists()
@@ -548,6 +578,7 @@ def test_v5_repository_managed_skill_generator_rolls_back_and_retries(
             category="development-assistant",
             repo_root=repo,
             schema_root=Path("references/blueprint").resolve(),
+            include_code_child=True,
         )
 
     assert failed
@@ -559,6 +590,7 @@ def test_v5_repository_managed_skill_generator_rolls_back_and_retries(
         category="development-assistant",
         repo_root=repo,
         schema_root=Path("references/blueprint").resolve(),
+        include_code_child=True,
     )
 
     assert retried == outputs
@@ -606,6 +638,7 @@ def test_v5_repository_managed_skill_generator_preserves_preexisting_child_root(
             category="development-assistant",
             repo_root=repo,
             schema_root=Path("references/blueprint").resolve(),
+            include_code_child=True,
         )
 
     assert child_root.is_dir()

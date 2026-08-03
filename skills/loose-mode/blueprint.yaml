@@ -4,10 +4,7 @@ authority:
     bash: []
     network: []
 category: workflow-general-assistant
-children:
-  loose-mode-rtx:
-    base: module-root
-    path: _rtx/blueprint.yaml
+children: {}
 content:
 - SKILL\.md
 description: Provides a breadth-first reasoning mode for fast strategy, decomposition,

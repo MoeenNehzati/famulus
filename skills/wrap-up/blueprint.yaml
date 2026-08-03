@@ -4,10 +4,7 @@ authority:
     bash: []
     network: []
 category: workflow-general-assistant
-children:
-  wrap-up-rtx:
-    base: module-root
-    path: _rtx/blueprint.yaml
+children: {}
 content:
 - SKILL\.md
 description: Orchestrates an interactive end-of-day review that updates completed

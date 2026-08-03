@@ -399,7 +399,7 @@ def test_composite_runner_permission_is_rejected_in_live_blueprint(
 def test_composite_runner_permission_is_rejected_in_registered_child(
     tmp_path: Path,
 ) -> None:
-    skill = _copy_module(tmp_path, "loose-mode")
+    skill = _copy_module(tmp_path, "get-weather")
     path = skill / "_rtx" / "blueprint.yaml"
     module = yaml.safe_load(path.read_text(encoding="utf-8"))
     module["authority"].setdefault("suggested_permissions", {})["bash"] = [

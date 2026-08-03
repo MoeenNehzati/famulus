@@ -14,7 +14,7 @@ import discipline. They are structural requirements, not style preferences.
 
 This family is the sole live blueprint and interface authoring authority.
 
-Every new or edited blueprint uses `schema_version: 5` and exactly one live `node_type`: `node_type: module` or `node_type: behavioral_source`. Every repository-managed discoverable skill has exactly one direct non-discoverable code child with global ID `<skill-id>-rtx`, rooted at `_rtx/`, with marker `_rtx/blueprint.yaml` and gateway `_rtx/__init__.py`. The child has no `discovery`, and there are no version-5 modules below `_rtx`.
+Every new or edited blueprint uses `schema_version: 5` and exactly one live `node_type`: `node_type: module` or `node_type: behavioral_source`. A repository-managed discoverable skill may have one direct non-discoverable implementation child. `_rtx/` is the canonical default location for skill-owned executable code, but a skill without such code need not create or register an implementation child. When present, the child has global ID `<skill-id>-rtx`, marker `_rtx/blueprint.yaml`, gateway `_rtx/__init__.py`, no `discovery`, and no version-5 modules below it. `officina.common.blueprint_inventory.collect_blueprints` mechanically accepts an absent child and validates the complete contract of a present child.
 
 Every module declares explicit `children` and `namespace_exports` mappings, including empty mappings. `children` registers each direct child by global ID and canonical `base: module-root` `blueprint.yaml` locator. Containment chooses ownership; declarations choose authority.
 
@@ -476,11 +476,9 @@ an explicit execution sentence.
 skill writes must be stored under the skill's own directory, not under system
 directories or elsewhere outside the skills tree.
 
-## 12. Sensitive configs live under `~/.config/<skill-name>/`
+## 12. Separate secret values from sensitive non-secret configuration
 
-**12. Sensitive configs live under `~/.config/<skill-name>/`** — passwords,
-API keys, OAuth tokens, and credentials must go there, never under the skill
-directory.
+Sensitive non-secret configuration may live under `~/.config/<skill-name>/`. Passwords, API keys, OAuth tokens, and equivalent secret values must use the repository-approved secret-store interface and must never be stored under the skill directory or in ordinary configuration files.
 
 ## 13. Prefer widely available, cross-platform tools at every layer
 

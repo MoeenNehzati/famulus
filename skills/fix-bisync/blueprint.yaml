@@ -4,10 +4,7 @@ authority:
     bash: []
     network: []
 category: system-assistant
-children:
-  fix-bisync-rtx:
-    base: module-root
-    path: _rtx/blueprint.yaml
+children: {}
 content:
 - SKILL\.md
 description: Diagnoses rclone bisync failures, proposes bounded prevention, and performs

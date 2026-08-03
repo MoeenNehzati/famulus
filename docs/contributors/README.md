@@ -55,7 +55,7 @@ These skills own the authoring conventions, scaffolding rules, and skill-system 
 
 - `hook-maker` — Design cross-host assistant hooks with one purpose and per-host bindings
 - `install-assistant-tools` — Install or update launchers, wiring, hooks, and environment on a machine
-- `refactor-skills` — Audit and refactor existing skills against local conventions
+- `refactor-node` — Refactor whole repository nodes or owned sub-scopes by gateway language
 - `regenerate-blueprints` — A refreshed blueprint.yaml for an existing skill generated under /tmp without modifying the skill
 - `skill-certifier` — Mechanical checks and semantic review should issue fresh node certificates for an exact committed repository state
 - `skill-drift` — Reading signed certificate currentness or canonical node hashes for Famulus modules

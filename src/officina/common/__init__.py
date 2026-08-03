@@ -40,7 +40,7 @@ from .docstring import (
     validate_pipeline_docstring,
 )
 from .visualization import (
-    render_module_artifacts,
+    build_docstring_graph,
 )
 
 __all__ = [
@@ -74,5 +74,5 @@ __all__ = [
     "resolve_interface_authorization",
     "validate_edge_expression",
     "validate_pipeline_docstring",
-    "render_module_artifacts",
+    "build_docstring_graph",
 ]

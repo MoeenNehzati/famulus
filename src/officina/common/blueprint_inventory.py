@@ -678,13 +678,14 @@ def _reconcile_v5_topology(
         code_root = skill_root / "_rtx"
         code_document = valid_markers.get(code_root)
         if code_document is None:
-            issues.append(
-                BlueprintInventoryIssue(
-                    skill_document.relative_path,
-                    f"repository-managed skill must have direct {skill_id}-rtx "
-                    "code child rooted at _rtx",
+            if code_root.exists():
+                issues.append(
+                    BlueprintInventoryIssue(
+                        skill_document.relative_path,
+                        "existing _rtx implementation directory must contain "
+                        "a valid blueprint.yaml",
+                    )
                 )
-            )
             continue
         if "discovery" in code_document.declaration:
             issues.append(

@@ -4,10 +4,7 @@ authority:
     bash: []
     network: []
 category: research-assistant
-children:
-  notation-review-rtx:
-    base: module-root
-    path: _rtx/blueprint.yaml
+children: {}
 content:
 - SKILL\.md
 description: Audits mathematical notation for lightness, coherent families, scope

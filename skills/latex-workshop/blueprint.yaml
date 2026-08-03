@@ -10,10 +10,7 @@ authority:
       reason: Suggested approval for LaTeX Workshop-compatible builds.
     network: []
 category: research-assistant
-children:
-  latex-workshop-rtx:
-    base: module-root
-    path: _rtx/blueprint.yaml
+children: {}
 content:
 - SKILL\.md
 description: Reconstructs and runs the effective VS Code LaTeX Workshop build for

@@ -59,7 +59,8 @@ def test_skill_guidelines_make_v5_the_only_live_blueprint_authoring_family():
         for rule in live["children"]
         for assertion in rule["assertions"]
     )
-    assert "exactly one direct non-discoverable code child" in statements
+    assert "may have one direct non-discoverable implementation child" in statements
+    assert "need not create or register an implementation child" in statements
     assert "Hash what you own; certify what you depend on." in statements
     for required in (
         "schema_version: 5",
@@ -140,11 +141,11 @@ def test_interface_design_is_one_source_owned_authority():
     assert design_blueprint["gateway"]["path"] == "interface-design.md"
     assert design_blueprint["id"] == "skill-standards.source.interface-design"
 
-    consumer = (ROOT / "skills/refactor-skills/SKILL.md").read_text(encoding="utf-8")
+    consumer = (ROOT / "skills/refactor-node/SKILL.md").read_text(encoding="utf-8")
     consumer_blueprint = (
-        ROOT / "skills/refactor-skills/blueprints/gateway.yaml"
+        ROOT / "skills/refactor-node/blueprints/gateway.yaml"
     ).read_text(encoding="utf-8")
-    assert "references/skill-standards/interface-design.md" in consumer
+    assert "references/skill-standards/interface-design.md" not in consumer
     assert "skill-standards.source.interface-design" in consumer_blueprint
 
 def test_skill_hooks_describe_the_live_v5_guideline_contract():
@@ -260,7 +261,7 @@ def test_v2_guidelines_are_canonical_after_cutover() -> None:
     assert validator.validate_file(GUIDELINES_V2, ROOT) == []
     document = yaml.safe_load(GUIDELINES_V2.read_text(encoding="utf-8"))
     assert document["standard_version"] == "2.0.0"
-    assert document["revision"] == 1
+    assert document["revision"] == 2
     assert document["canonical_path"] == (
         "references/skill-standards/skill-guidelines.standard.yaml"
     )
@@ -302,13 +303,13 @@ def test_shadow_v2_defines_complete_rtx_and_module_identity_contract() -> None:
         "`..parser`",
         "Child exports are the authority ceiling.",
         "Facades preserve names, not permissions.",
-        "exactly one direct non-discoverable code child",
+        "may have one direct non-discoverable implementation child",
+        "need not create or register an implementation child",
         "global ID `<skill-id>-rtx`",
-        "rooted at `_rtx/`",
         "marker `_rtx/blueprint.yaml`",
         "gateway `_rtx/__init__.py`",
-        "has no `discovery`",
-        "no version-5 modules below `_rtx`",
+        "no `discovery`",
+        "no version-5 modules below it",
         "internal `caller_module_id` and `target_module_id`",
         "host-facing `--caller-skill` compatibility",
         "discoverable parent callers only",
@@ -339,7 +340,7 @@ def test_shadow_v2_has_no_obsolete_v4_caller_identity_contract() -> None:
 def test_canonical_v2_preserves_frozen_v1_source_fixtures() -> None:
     canonical = yaml.safe_load(GUIDELINES.read_text(encoding="utf-8"))
     assert canonical["standard_version"] == "2.0.0"
-    assert canonical["revision"] == 1
+    assert canonical["revision"] == 2
     frozen = yaml.safe_load(FROZEN_GUIDELINES.read_text(encoding="utf-8"))
     assert frozen["standard_version"] == "1.0.0"
     assert frozen["revision"] == 3

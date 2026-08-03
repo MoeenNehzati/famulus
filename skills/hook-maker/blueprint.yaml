@@ -4,10 +4,7 @@ authority:
     bash: []
     network: []
 category: skill-making-development-assistant
-children:
-  hook-maker-rtx:
-    base: module-root
-    path: _rtx/blueprint.yaml
+children: {}
 content:
 - (?:SKILL\.md|references/cross\-host\-hook\-scaffold\.md)
 description: Designs and implements cross-host assistant hooks by separating semantic

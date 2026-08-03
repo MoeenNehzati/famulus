@@ -4,10 +4,7 @@ authority:
     bash: []
     network: []
 category: workflow-general-assistant
-children:
-  tight-mode-rtx:
-    base: module-root
-    path: _rtx/blueprint.yaml
+children: {}
 content:
 - SKILL\.md
 description: Applies a persistent rigor-first reasoning mode that verifies nontrivial

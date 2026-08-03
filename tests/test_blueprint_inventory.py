@@ -686,6 +686,42 @@ def test_v5_inventory_accepts_only_derived_skill_rtx_identity(
         collect_blueprints(root, expected_schema_version=5)
 
 
+def test_v5_inventory_accepts_managed_skill_without_rtx(
+    tmp_path: Path,
+) -> None:
+    root = _copy_v5_inventory_fixture("managed-skill", tmp_path)
+    skill_root = root / "skills" / "demo"
+    parent_path = skill_root / "blueprint.yaml"
+    parent = yaml.safe_load(parent_path.read_text(encoding="utf-8"))
+    parent["children"] = {}
+    _write(parent_path, yaml.safe_dump(parent, sort_keys=False))
+    (skill_root / "_rtx" / "blueprint.yaml").unlink()
+    (skill_root / "_rtx" / "__init__.py").unlink()
+    (skill_root / "_rtx").rmdir()
+
+    result = collect_blueprints(root, expected_schema_version=5)
+
+    assert [document.node_id for document in result.documents] == ["demo"]
+
+
+def test_v5_inventory_rejects_unconfigured_rtx_directory(
+    tmp_path: Path,
+) -> None:
+    root = _copy_v5_inventory_fixture("managed-skill", tmp_path)
+    skill_root = root / "skills" / "demo"
+    parent_path = skill_root / "blueprint.yaml"
+    parent = yaml.safe_load(parent_path.read_text(encoding="utf-8"))
+    parent["children"] = {}
+    _write(parent_path, yaml.safe_dump(parent, sort_keys=False))
+    (skill_root / "_rtx" / "blueprint.yaml").unlink()
+
+    with pytest.raises(
+        BlueprintInventoryError,
+        match="existing _rtx implementation directory must contain",
+    ):
+        collect_blueprints(root, expected_schema_version=5)
+
+
 def test_v5_inventory_rejects_partial_repository_skill_predicate(
     tmp_path: Path,
 ) -> None:

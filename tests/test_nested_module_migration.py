@@ -294,7 +294,7 @@ class TestNestedModuleMigrationContract:
             "notation-review",
             "prepare-handoff",
             "proof-audit",
-            "refactor-skills",
+            "refactor-node",
             "technical-flow-review",
             "tight-mode",
             "tool-applicability",

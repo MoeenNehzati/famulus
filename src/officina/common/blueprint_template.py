@@ -128,8 +128,9 @@ def write_repository_managed_skill_blueprints(
     category: str,
     repo_root: str | Path = ".",
     schema_root: str | Path | None = None,
-) -> tuple[Path, Path, Path]:
-    """Create one v5 discoverable parent and its non-discoverable code child."""
+    include_code_child: bool = False,
+) -> tuple[Path, ...]:
+    """Create a v5 skill blueprint and, when requested, its `_rtx` child."""
 
     if not skill_name or "/" in skill_name or "\\" in skill_name:
         raise ValueError(f"invalid skill name: {skill_name!r}")
@@ -143,7 +144,11 @@ def write_repository_managed_skill_blueprints(
     parent_path = skill_root / "blueprint.yaml"
     child_path = child_root / "blueprint.yaml"
     init_path = child_root / "__init__.py"
-    outputs = (parent_path, child_path, init_path)
+    outputs = (
+        (parent_path, child_path, init_path)
+        if include_code_child
+        else (parent_path,)
+    )
     if not skill_file.is_file():
         raise FileNotFoundError(f"missing parent SKILL.md: {skill_file}")
     existing = tuple(path for path in outputs if path.exists())
@@ -178,12 +183,16 @@ def write_repository_managed_skill_blueprints(
         "discovery": {"mechanism": "skill"},
         "authority": {"owns_filesystem": []},
         "sources": {},
-        "children": {
-            child_id: {
-                "base": "module-root",
-                "path": "_rtx/blueprint.yaml",
+        "children": (
+            {
+                child_id: {
+                    "base": "module-root",
+                    "path": "_rtx/blueprint.yaml",
+                }
             }
-        },
+            if include_code_child
+            else {}
+        ),
         "namespace_exports": {},
         "exports": {},
     }
@@ -221,16 +230,18 @@ def write_repository_managed_skill_blueprints(
 
     created_child_root = False
     try:
-        try:
-            child_root.mkdir(parents=True)
-        except FileExistsError:
-            if not child_root.is_dir():
-                raise
-        else:
-            created_child_root = True
+        if include_code_child:
+            try:
+                child_root.mkdir(parents=True)
+            except FileExistsError:
+                if not child_root.is_dir():
+                    raise
+            else:
+                created_child_root = True
         parent_path.write_text(parent_text, encoding="utf-8")
-        child_path.write_text(child_text, encoding="utf-8")
-        init_path.write_text("", encoding="utf-8")
+        if include_code_child:
+            child_path.write_text(child_text, encoding="utf-8")
+            init_path.write_text("", encoding="utf-8")
     except BaseException as error:
         for path in reversed(rollback_paths):
             try:

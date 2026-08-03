@@ -4,10 +4,7 @@ authority:
     bash: []
     network: []
 category: development-assistant
-children:
-  git-workflow-rtx:
-    base: module-root
-    path: _rtx/blueprint.yaml
+children: {}
 content:
 - SKILL\.md
 description: Enforces branch safety, change ownership, approval gates, and exact-scope
