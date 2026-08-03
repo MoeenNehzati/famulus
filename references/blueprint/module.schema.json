@@ -28,18 +28,6 @@
       "minLength": 1,
       "x-famulus": {"field_status": "optional", "template": {"include": true, "example": "Provides an example skill."}, "doc": {"authoring": ["Describe the module's external role; certification requires this field."]}, "related_validation_rules": ["schema-shape"]}
     },
-    "category": {
-      "$ref": "#/definitions/moduleCategory",
-      "x-famulus": {"field_status": "optional", "template": {"include": true, "example": "development-assistant"}, "doc": {"authoring": ["For discoverable skills, preserve the existing taxonomy category."]}, "related_validation_rules": ["schema-shape"]}
-    },
-    "role": {
-      "$ref": "#/definitions/discoveryRole",
-      "x-famulus": {"field_status": "optional", "template": {"include": true, "example": "automation"}, "doc": {"authoring": ["For discoverable skills, preserve the existing operating role."]}, "related_validation_rules": ["schema-shape"]}
-    },
-    "kind": {
-      "$ref": "#/definitions/discoveryKind",
-      "x-famulus": {"field_status": "optional", "template": {"include": true, "example": "tool"}, "doc": {"authoring": ["For discoverable skills, preserve the existing implementation kind."]}, "related_validation_rules": ["schema-shape"]}
-    },
     "gateway": {
       "$ref": "common.schema.json#/definitions/gateway",
       "x-famulus": {"field_status": "required", "template": {"include": true, "example": {"path": "SKILL.md", "language": "Markdown"}}, "doc": {"authoring": ["Name the module's whole-file operational gateway."]}, "related_validation_rules": ["gateway-file", "content-files"]}
@@ -54,7 +42,7 @@
     "discovery": {
       "$ref": "#/definitions/discovery",
       "description": "Optional discovery convention. Absence means the module is found only through an explicit dependency.",
-      "x-famulus": {"field_status": "optional", "template": {"include": true, "example": {"mechanism": "skill"}}, "doc": {"authoring": ["Use the verified skill mechanism only for host-discoverable skill modules; omit for dependency-only modules."]}, "related_validation_rules": ["schema-shape"]}
+      "x-famulus": {"field_status": "optional", "template": {"include": true, "example": {"mechanism": "skill", "catalog": {"domain": "research", "topics": ["mathematical-reasoning"], "visibility": "featured"}, "activated_by": ["user-request"], "persistent_modifier": false}}, "doc": {"authoring": ["Use this block only for host-discoverable skill modules. Classify the direct user outcome, list every directly served topic, declare supported activation paths, and state whether invocation persistently modifies later assistant behavior."]}, "related_validation_rules": ["schema-shape"]}
     },
     "authority": {
       "$ref": "#/definitions/authority",
@@ -86,65 +74,40 @@
     }
   },
   "definitions": {
-    "moduleCategory": {
+    "catalogDomain": {
       "type": "string",
-      "enum": [
-        "research-assistant",
-        "general-assistant",
-        "productivity-general-assistant",
-        "workflow-general-assistant",
-        "development-assistant",
-        "skill-making-development-assistant",
-        "coding-development-assistant",
-        "system-assistant"
-      ]
+      "description": "The single configured documentation domain matching the module's primary direct user outcome.",
+      "x-officina-config": {"operation": "values-to-enum", "source": "/blueprint_catalog/domains"}
     },
-    "discoveryRole": {
+    "catalogTopic": {
       "type": "string",
-      "description": "Primary user-facing domain served by a discoverable module.",
-      "enum": [
-        "productivity",
-        "research-writing",
-        "math-reasoning",
-        "document-processing",
-        "development-assistant",
-        "system-operations",
-        "integration",
-        "meta-skill",
-        "automation",
-        "mode"
-      ]
+      "description": "A configured cross-cutting subject directly served by the module, not merely used as an implementation dependency.",
+      "x-officina-config": {"operation": "values-to-enum", "source": "/blueprint_catalog/topics"}
     },
-    "discoveryKind": {
+    "catalogVisibility": {
       "type": "string",
-      "description": "Primary shape of help provided by a discoverable module.",
-      "enum": [
-        "workflow",
-        "tool",
-        "reviewer",
-        "auditor",
-        "certifier",
-        "generator",
-        "installer",
-        "planner",
-        "client",
-        "storage",
-        "scheduler",
-        "scaffold",
-        "guide",
-        "mode",
-        "diagnostic",
-        "orchestrator",
-        "triager",
-        "converter",
-        "renderer",
-        "builder",
-        "syncer",
-        "setup",
-        "state-manager",
-        "analyzer",
-        "maintenance"
-      ]
+      "description": "The configured generated-documentation prominence of this discoverable module.",
+      "x-officina-config": {"operation": "values-to-enum", "source": "/blueprint_catalog/visibility"}
+    },
+    "activationSource": {
+      "type": "string",
+      "description": "A configured mechanism that can actually initiate this module, not a merely possible caller.",
+      "x-officina-config": {"operation": "values-to-enum", "source": "/blueprint_catalog/activated_by"}
+    },
+    "catalog": {
+      "type": "object",
+      "required": ["domain", "topics", "visibility"],
+      "additionalProperties": false,
+      "properties": {
+        "domain": {"$ref": "#/definitions/catalogDomain"},
+        "topics": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/definitions/catalogTopic"}
+        },
+        "visibility": {"$ref": "#/definitions/catalogVisibility"}
+      }
     },
     "suggestedPermissions": {
       "type": "object",
@@ -190,9 +153,37 @@
     },
     "discovery": {
       "type": "object",
-      "required": ["mechanism"],
+      "required": ["mechanism", "catalog", "activated_by", "persistent_modifier"],
       "additionalProperties": false,
-      "properties": {"mechanism": {"const": "skill"}}
+      "properties": {
+        "mechanism": {"const": "skill", "description": "The host discovery convention used to find this module."},
+        "catalog": {"$ref": "#/definitions/catalog"},
+        "activated_by": {
+          "type": "array",
+          "description": "Every supported class of initiator that can directly activate this skill.",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/definitions/activationSource"}
+        },
+        "persistent_modifier": {
+          "type": "boolean",
+          "description": "Whether invocation intentionally changes assistant behavior beyond the activating invocation; true requires the reasoning-control topic."
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"persistent_modifier": {"const": true}}},
+          "then": {
+            "properties": {
+              "catalog": {
+                "properties": {
+                  "topics": {"contains": {"const": "reasoning-control"}}
+                }
+              }
+            }
+          }
+        }
+      ]
     },
     "authority": {
       "type": "object",

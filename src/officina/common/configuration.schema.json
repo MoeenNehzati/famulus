@@ -1,0 +1,252 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://officina.ai/schemas/configuration.schema.json",
+  "title": "Officina Repository Configuration",
+  "description": "Strict value-only configuration families used by the repository. Configuration documents contain ordinary YAML or JSON values, never schema fragments.",
+  "oneOf": [
+    {"$ref": "#/definitions/docstringConfig"},
+    {"$ref": "#/definitions/blueprintCatalogConfig"},
+    {"$ref": "#/definitions/nodeHashPolicy"},
+    {"$ref": "#/definitions/recurringJobsConfig"},
+    {"$ref": "#/definitions/cloudFilesConfig"}
+  ],
+  "definitions": {
+    "nonRootJsonPointer": {
+      "type": "string",
+      "pattern": "^/(?:[^~/]|~[01])*(?:/(?:[^~/]|~[01])*)*$"
+    },
+    "configAnnotation": {
+      "description": "Closed protocol for x-officina-config annotations. Configuration can only tighten enum constraints or add required object fields.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["operation", "source"],
+          "additionalProperties": false,
+          "properties": {
+            "operation": {"const": "keys-to-enum"},
+            "source": {"$ref": "#/definitions/nonRootJsonPointer"}
+          }
+        },
+        {
+          "type": "object",
+          "required": ["operation", "source"],
+          "additionalProperties": false,
+          "properties": {
+            "operation": {"const": "values-to-enum"},
+            "source": {"$ref": "#/definitions/nonRootJsonPointer"}
+          }
+        },
+        {
+          "type": "object",
+          "required": ["operation", "source"],
+          "additionalProperties": false,
+          "properties": {
+            "operation": {"const": "extend-required"},
+            "source": {"$ref": "#/definitions/nonRootJsonPointer"}
+          }
+        }
+      ]
+    },
+    "nonEmptyString": {"type": "string", "minLength": 1},
+    "nonEmptyStrings": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/definitions/nonEmptyString"}
+    },
+    "stringList": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/definitions/nonEmptyString"}
+    },
+    "blueprintCatalogConfig": {
+      "type": "object",
+      "required": ["blueprint_catalog"],
+      "additionalProperties": false,
+      "properties": {
+        "blueprint_catalog": {
+          "type": "object",
+          "required": ["domains", "topics", "visibility", "activated_by"],
+          "additionalProperties": false,
+          "properties": {
+            "domains": {"$ref": "#/definitions/nonEmptyStrings"},
+            "topics": {"$ref": "#/definitions/nonEmptyStrings"},
+            "visibility": {"$ref": "#/definitions/nonEmptyStrings"},
+            "activated_by": {"$ref": "#/definitions/nonEmptyStrings"}
+          }
+        }
+      }
+    },
+    "docstringConfig": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "allowed_abs": {"$ref": "#/definitions/nonEmptyStrings"},
+        "names_for_dependency_sections": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "calls": {"$ref": "#/definitions/nonEmptyString"},
+            "instantiations": {"$ref": "#/definitions/nonEmptyString"},
+            "dispatches": {"$ref": "#/definitions/nonEmptyString"}
+          }
+        },
+        "dependency_syntax": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "allow_legacy_flat": {"type": "boolean"},
+            "require_why": {"type": "boolean"}
+          }
+        },
+        "dependency_why": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "allow_legacy_string": {"type": "boolean"},
+            "misc_min_chars": {"type": "integer", "minimum": 1},
+            "actions": {"$ref": "#/definitions/nonEmptyStrings"},
+            "section_actions": {
+              "type": "object",
+              "propertyNames": {"$ref": "#/definitions/nonEmptyString"},
+              "additionalProperties": {"$ref": "#/definitions/nonEmptyStrings"}
+            }
+          }
+        },
+        "pseudocode_quality": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "forbidden_variables": {"$ref": "#/definitions/stringList"},
+            "require_assigned_dependency_output_use": {"type": "boolean"}
+          }
+        },
+        "repeated_template_detection": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "min_repetitions": {"type": "integer", "minimum": 2},
+            "min_normalized_chars": {"type": "integer", "minimum": 1}
+          }
+        },
+        "profiles": {
+          "type": "object",
+          "propertyNames": {"$ref": "#/definitions/nonEmptyString"},
+          "additionalProperties": {"$ref": "#/definitions/docstringProfile"}
+        }
+      }
+    },
+    "docstringProfile": {
+      "type": "object",
+      "required": ["applies_to"],
+      "additionalProperties": false,
+      "properties": {
+        "applies_to": {"$ref": "#/definitions/nonEmptyStrings"},
+        "checks": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "dependency_why_action": {"type": "boolean"},
+            "instantiation_product_pseudocode": {"type": "boolean"},
+            "pseudocode_dataflow": {"type": "boolean"},
+            "pseudocode_output_use": {"type": "boolean"},
+            "repeated_template_detection": {"type": "boolean"}
+          }
+        },
+        "callable": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "require_docstrings": {"type": "boolean"},
+            "required_sections": {"$ref": "#/definitions/stringList"},
+            "min_pseudocode_steps": {"type": "integer", "minimum": 0}
+          }
+        }
+      }
+    },
+    "nodeHashPolicy": {
+      "type": "object",
+      "required": ["policy_version", "path_syntax", "starting_set", "rules"],
+      "additionalProperties": false,
+      "properties": {
+        "policy_version": {"const": 1},
+        "path_syntax": {"const": "gitignore"},
+        "starting_set": {"const": "git-tracked-directly-owned-regular-files"},
+        "rules": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/definitions/nodeHashRule"}
+        }
+      }
+    },
+    "nodeHashPattern": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!!)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+    },
+    "nodeHashRule": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["action", "pattern"],
+          "additionalProperties": false,
+          "properties": {
+            "action": {"const": "include"},
+            "pattern": {"$ref": "#/definitions/nodeHashPattern"},
+            "require_match": {"type": "boolean", "default": false}
+          }
+        },
+        {
+          "type": "object",
+          "required": ["action", "pattern"],
+          "additionalProperties": false,
+          "properties": {
+            "action": {"const": "exclude"},
+            "pattern": {"$ref": "#/definitions/nodeHashPattern"}
+          }
+        }
+      ]
+    },
+    "recurringJobsConfig": {
+      "type": "object",
+      "required": ["jobs"],
+      "additionalProperties": false,
+      "properties": {
+        "jobs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/definitions/recurringJob"}
+        }
+      }
+    },
+    "recurringJob": {
+      "type": "object",
+      "required": ["name", "command", "schedule"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+        "description": {"$ref": "#/definitions/nonEmptyString"},
+        "command": {"$ref": "#/definitions/nonEmptyString"},
+        "schedule": {"$ref": "#/definitions/nonEmptyString"},
+        "enabled": {"type": "boolean"}
+      }
+    },
+    "cloudFilesConfig": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "remote_llm_root": {"type": "string"},
+        "timeout_seconds": {"type": "integer", "minimum": 1},
+        "credentials_path": {"type": "string"}
+      },
+      "anyOf": [
+        {"required": ["remote_llm_root"]},
+        {"required": ["timeout_seconds"]},
+        {"required": ["credentials_path"]}
+      ]
+    }
+  }
+}

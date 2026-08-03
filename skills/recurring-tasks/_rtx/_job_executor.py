@@ -12,8 +12,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import yaml
-
 SKILL_DIR = Path(__file__).parent
 REPO_ROOT = SKILL_DIR.parents[2]
 SRC_DIR = REPO_ROOT / "src"
@@ -21,6 +19,11 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+
+if __package__:
+    from ._jobs_config import load_jobs
+else:
+    from _jobs_config import load_jobs  # noqa: E402
 
 LOG_DIR = SKILL_DIR / "logs"
 ENV_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=.*$")
@@ -56,9 +59,7 @@ def parse_command(command: str, *, platform: str = sys.platform) -> tuple[dict[s
 
 
 def load_job(jobs_file: Path, job_name: str) -> dict:
-    with jobs_file.open(encoding="utf-8") as f:
-        jobs = (yaml.safe_load(f) or {}).get("jobs", [])
-    for job in jobs:
+    for job in load_jobs(jobs_file):
         if job.get("name") == job_name:
             return job
     raise ValueError(f"Job not found: {job_name}")

@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """Shared helpers for enable-job.py and disable-job.py."""
-import re, sys
+import sys
 from pathlib import Path
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+
+if __package__:
+    from ._jobs_config import load_jobs, write_jobs
+else:
+    from _jobs_config import load_jobs, write_jobs
 
 
 class Interface(PythonArgvMachineInterface):
@@ -22,18 +27,16 @@ def main(argv: list[str] | None = None) -> int:
 
 def set_enabled(jobs_path: Path, name: str, value: str) -> None:
     """Flip the enabled field for a named job. Raises SystemExit on failure."""
-    text = jobs_path.read_text()
-    # Match from `- name: <name>` (with word boundary) through its own `enabled:` line,
-    # stopping at any subsequent `- name:` entry. No DOTALL — line-by-line only.
-    pattern = (
-        rf'(- name: ["\']?{re.escape(name)}["\']?\b'
-        rf'(?:\n(?![ \t]*- name:).*)*?\n[ \t]+enabled:)\s+\S+'
-    )
-    new, count = re.subn(pattern, rf'\1 {value}', text, flags=re.MULTILINE)
-    if count == 0:
-        print(f"Error: job '{name}' not found in {jobs_path}", file=sys.stderr)
-        sys.exit(1)
-    jobs_path.write_text(new)
+    if value not in {"true", "false"}:
+        raise ValueError("enabled value must be 'true' or 'false'")
+    jobs = load_jobs(jobs_path)
+    for job in jobs:
+        if job["name"] == name:
+            job["enabled"] = value == "true"
+            write_jobs(jobs_path, jobs)
+            return
+    print(f"Error: job '{name}' not found in {jobs_path}", file=sys.stderr)
+    sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -29,26 +29,34 @@ def _load():
 def test_load_jobs_roundtrip():
     mod = _load()
     with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as f:
-        f.write("jobs:\n  - name: a\n    enabled: true\n")
+        f.write("jobs:\n  - name: a\n    command: 'true'\n    schedule: '0 * * * *'\n    enabled: true\n")
         path = Path(f.name)
     try:
         jobs = mod.load_jobs(path)
-        assert jobs == [{"name": "a", "enabled": True}]
+        assert jobs == [
+            {"name": "a", "command": "true", "schedule": "0 * * * *", "enabled": True}
+        ]
         jobs[0]["enabled"] = False
         mod.save_jobs(jobs, path)
-        assert mod.load_jobs(path) == [{"name": "a", "enabled": False}]
+        assert mod.load_jobs(path) == [
+            {"name": "a", "command": "true", "schedule": "0 * * * *", "enabled": False}
+        ]
     finally:
         path.unlink()
     print("PASS: load_jobs/save_jobs roundtrip")
 
 
-def test_load_jobs_empty_file_returns_empty_list():
+def test_load_jobs_empty_file_is_invalid_configuration():
     mod = _load()
     with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as f:
         f.write("")
         path = Path(f.name)
     try:
-        assert mod.load_jobs(path) == []
+        try:
+            mod.load_jobs(path)
+            assert False, "expected invalid configuration"
+        except ValueError as exc:
+            assert "document root must be an object" in str(exc)
     finally:
         path.unlink()
     print("PASS: empty jobs.yaml yields an empty list")
@@ -59,7 +67,7 @@ def test_load_jobs_empty_file_returns_empty_list():
 def test_enable_job_raises_for_unknown_name():
     mod = _load()
     with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as f:
-        f.write("jobs:\n  - name: a\n    enabled: false\n")
+        f.write("jobs:\n  - name: a\n    command: 'true'\n    schedule: '0 * * * *'\n    enabled: false\n")
         path = Path(f.name)
     try:
         try:
@@ -75,7 +83,7 @@ def test_enable_job_raises_for_unknown_name():
 def test_enable_job_skips_sync_when_requested():
     mod = _load()
     with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as f:
-        f.write("jobs:\n  - name: a\n    enabled: false\n")
+        f.write("jobs:\n  - name: a\n    command: 'true'\n    schedule: '0 * * * *'\n    enabled: false\n")
         path = Path(f.name)
     try:
         with mock.patch.object(mod, "sync_units") as sync_units:
@@ -89,7 +97,7 @@ def test_enable_job_skips_sync_when_requested():
 def test_disable_job_passes_custom_jobs_file_to_sync():
     mod = _load()
     with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as f:
-        f.write("jobs:\n  - name: a\n    enabled: true\n")
+        f.write("jobs:\n  - name: a\n    command: 'true'\n    schedule: '0 * * * *'\n    enabled: true\n")
         path = Path(f.name)
     try:
         with mock.patch.object(mod, "sync_units") as sync_units:
@@ -295,7 +303,7 @@ def test_cli_requires_a_subcommand():
 
 if __name__ == "__main__":
     test_load_jobs_roundtrip()
-    test_load_jobs_empty_file_returns_empty_list()
+    test_load_jobs_empty_file_is_invalid_configuration()
     test_enable_job_raises_for_unknown_name()
     test_enable_job_skips_sync_when_requested()
     test_disable_job_passes_custom_jobs_file_to_sync()

@@ -23,6 +23,13 @@ If you add a new call site for one of these utilities, update this file in the s
 
 ## Repository utility map (ordered by intent)
 
+### 0) Configuration and JSON Schema validation
+
+| Utility | Where it is used | Why this is the right tool | Don’t do this |
+|---|---|---|---|
+| `load_configuration`, `validate_configuration` (`configured_schema.py`) | docstring policy, certification hashing, recurring tasks, cloud-files | Validates compact YAML/JSON settings against the central natural-key configuration schema | Add JSON Schema syntax or a type discriminator to user configuration files |
+| `configured_validator`, `ConfiguredSchemaBundle` (`configured_schema.py`) | schemas whose allowed values or required fields are supplied by configuration | Owns configuration-driven schema composition and its local-reference confinement | Route ordinary, non-configured domain schemas through this module |
+
 ### 1) Repository path safety
 
 | Utility | Where it is used | Why this is the right tool | Don’t do this |

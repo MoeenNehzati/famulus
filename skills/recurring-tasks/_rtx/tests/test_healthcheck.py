@@ -271,9 +271,10 @@ def test_main_aggregates_failure_reasons_into_body():
     with tempfile.TemporaryDirectory() as d:
         mod = _load(Path(d))
         mod.JOBS_FILE.write_text(
-            "jobs:\n"
-            "  - name: job-a\n"
-            "    schedule: '0 * * * *'\n"
+                "jobs:\n"
+                "  - name: job-a\n"
+                "    command: 'true'\n"
+                "    schedule: '0 * * * *'\n"
             "    enabled: true\n"
         )
         with mock.patch.object(mod, "check_systemd_manager", return_value="systemd user manager: degraded"), \
@@ -298,8 +299,9 @@ def test_main_caps_listed_failures_at_five_with_overflow_note():
         jobs_yaml = "jobs:\n"
         for i in range(7):
             jobs_yaml += (
-                f"  - name: job-{i}\n"
-                "    schedule: '0 * * * *'\n"
+                    f"  - name: job-{i}\n"
+                    "    command: 'true'\n"
+                    "    schedule: '0 * * * *'\n"
                 "    enabled: true\n"
             )
         mod.JOBS_FILE.write_text(jobs_yaml)
@@ -319,9 +321,10 @@ def test_main_skips_disabled_jobs():
     with tempfile.TemporaryDirectory() as d:
         mod = _load(Path(d))
         mod.JOBS_FILE.write_text(
-            "jobs:\n"
-            "  - name: disabled-job\n"
-            "    schedule: '0 * * * *'\n"
+                "jobs:\n"
+                "  - name: disabled-job\n"
+                "    command: 'true'\n"
+                "    schedule: '0 * * * *'\n"
             "    enabled: false\n"
         )
         with mock.patch.object(mod, "check_systemd_manager", return_value=None), \

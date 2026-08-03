@@ -14,6 +14,8 @@ from pathlib import Path, PurePosixPath
 
 import yaml
 
+from ..configured_schema import load_configuration
+
 DOCSTRING_STANDARD_FILE = "docstring.standard.yaml"
 DOCSTRING_STANDARD_CANDIDATE_FILE = "docstring.standard.candidate.yaml"
 DOCSTRING_LEGACY_FORMAT_FILE = "docstring_format.yaml"
@@ -1440,8 +1442,10 @@ def load_docstring_config(path: str | Path | None = None) -> DocstringRuntimeCon
         constructs: "Builds the safe_str_tuple contribution used by load_docstring_config."
     """
     config_path = resolve_docstring_config_path(path)
-    config_value = _load_yaml(config_path)
     default = DocstringRuntimeConfig()
+    if not config_path.is_file():
+        return default
+    config_value = load_configuration(config_path)
     if not isinstance(config_value, dict):
         return default
 

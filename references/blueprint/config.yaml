@@ -1,0 +1,35 @@
+blueprint_catalog:
+  domains:
+    - personal-assistance
+    - research
+    - software-development
+    - assistant-development
+    - assistant-operations
+    - assistant-interaction
+  topics:
+    - planning
+    - communications
+    - personal-organization
+    - mathematical-reasoning
+    - research-writing
+    - scholarly-documents
+    - visualization
+    - repository-workflow
+    - assistant-authoring
+    - assistant-architecture
+    - assistant-assurance
+    - assistant-installation
+    - external-integrations
+    - storage-and-sync
+    - task-automation
+    - system-maintenance
+    - session-management
+    - reasoning-control
+  visibility:
+    - featured
+    - listed
+    - hidden
+  activated_by:
+    - user-request
+    - skill-workflow
+    - scheduled-job

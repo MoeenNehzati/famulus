@@ -58,8 +58,10 @@ does not separately declare which content is hash-relevant.
 The certifier derives each node's certification inputs from ownership, Git
 state, non-configurable safety rules, and one projectwide ordered policy at
 `references/certification/node-hash-policy.yaml`. The policy is validated by
-`references/certification/node-hash-policy.schema.json`; its exact syntax and
-examples belong in the existing `docs/certification_and_drift.md`.
+the central `src/officina/common/configuration.schema.json`; its exact syntax
+and examples belong in the existing `docs/certification_and_drift.md`. The old
+`references/certification/node-hash-policy.schema.json` remains only as frozen
+certification-basis evidence for historical records.
 
 The certifier loads and validates the policy once per repository. It checks
 include-only `require_match` globally, then starts each node from its tracked,
@@ -356,9 +358,24 @@ found without an explicit dependency declares a discovery mechanism in its
 blueprint. Skills are autodiscoverable modules whose host-facing convention
 uses `SKILL.md` as the module gateway.
 
-A discovery declaration identifies the mechanism and any required name or
-placement convention. A Boolean `autodiscoverable` flag alone is insufficient
-because it does not explain how discovery occurs.
+A discovery declaration identifies the mechanism and carries the skill catalog
+contract. `catalog.domain` gives the skill one stable documentation section,
+`catalog.topics` supplies nonempty cross-cutting filters, and
+`catalog.visibility` controls whether generated user documentation features,
+lists, or hides it. `activated_by` declares one or more supported initiator
+classes (`user-request`, `skill-workflow`, or `scheduled-job`).
+`persistent_modifier` states whether invocation intentionally changes assistant
+behavior beyond the activating invocation; when true, the catalog must include
+`reasoning-control`. These are discovery and documentation semantics, not
+authorization. Named callers and actual dependency relationships remain graph
+edges. A Boolean `autodiscoverable` flag alone is insufficient because it does
+not explain how discovery occurs.
+
+The authoritative meanings and selection rules for configured discovery values
+are documented in [Blueprint discovery metadata](contributors/blueprint-discovery-metadata.md).
+The schema guarantees structural validity and mechanically decidable
+cross-field rules. Semantic review remains responsible for whether a valid
+domain or topic truthfully describes the module.
 
 ## Graph
 

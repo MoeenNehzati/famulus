@@ -254,7 +254,7 @@ def test_generated_v5_templates_validate_against_live_authoring_schemas() -> Non
 def test_annotated_authoring_schema_routes_only_live_v5_nodes() -> None:
     schema = load_schema(Path("references/blueprint/schema.annotated-draft.json"))
 
-    assert schema["$ref"] == "schema.json"
+    assert schema["$ref"].endswith("schema.json")
     assert "Canonical authoring entry point" in schema["description"]
     assert list(
         schema_validator(schema).iter_errors(
@@ -439,7 +439,11 @@ def test_v5_repository_managed_skill_generator_creates_parent_and_code_child(
 
     outputs = blueprint_template.write_repository_managed_skill_blueprints(
         "demo-skill",
-        category="development-assistant",
+        domain="assistant-development",
+        topics=("assistant-authoring",),
+        visibility="listed",
+        activated_by=("user-request",),
+        persistent_modifier=False,
         repo_root=repo,
         schema_root=schema_root,
         include_code_child=True,
@@ -454,8 +458,16 @@ def test_v5_repository_managed_skill_generator_creates_parent_and_code_child(
     parent = yaml.safe_load(parent_path.read_text(encoding="utf-8"))
     child = yaml.safe_load(child_path.read_text(encoding="utf-8"))
     assert parent["id"] == "demo-skill"
-    assert parent["category"] == "development-assistant"
-    assert parent["discovery"] == {"mechanism": "skill"}
+    assert parent["discovery"] == {
+        "mechanism": "skill",
+        "catalog": {
+            "domain": "assistant-development",
+            "topics": ["assistant-authoring"],
+            "visibility": "listed",
+        },
+        "activated_by": ["user-request"],
+        "persistent_modifier": False,
+    }
     assert parent["children"] == {
         "demo-skill-rtx": {
             "base": "module-root",
@@ -497,7 +509,11 @@ def test_v5_repository_managed_skill_generator_defaults_to_parent_only(
 
     outputs = blueprint_template.write_repository_managed_skill_blueprints(
         "instruction-only",
-        category="development-assistant",
+        domain="assistant-development",
+        topics=("assistant-authoring",),
+        visibility="listed",
+        activated_by=("user-request",),
+        persistent_modifier=False,
         repo_root=repo,
         schema_root=Path("references/blueprint").resolve(),
     )
@@ -524,7 +540,11 @@ def test_v5_repository_managed_skill_generator_requires_parent_skill_file(
     ):
         blueprint_template.write_repository_managed_skill_blueprints(
             "demo-skill",
-            category="development-assistant",
+            domain="assistant-development",
+            topics=("assistant-authoring",),
+            visibility="listed",
+            activated_by=("user-request",),
+            persistent_modifier=False,
             repo_root=repo,
             schema_root=Path("references/blueprint").resolve(),
             include_code_child=True,
@@ -575,7 +595,11 @@ def test_v5_repository_managed_skill_generator_rolls_back_and_retries(
     with pytest.raises(OSError, match="injected child blueprint write failure"):
         blueprint_template.write_repository_managed_skill_blueprints(
             "demo-skill",
-            category="development-assistant",
+            domain="assistant-development",
+            topics=("assistant-authoring",),
+            visibility="listed",
+            activated_by=("user-request",),
+            persistent_modifier=False,
             repo_root=repo,
             schema_root=Path("references/blueprint").resolve(),
             include_code_child=True,
@@ -587,7 +611,11 @@ def test_v5_repository_managed_skill_generator_rolls_back_and_retries(
 
     retried = blueprint_template.write_repository_managed_skill_blueprints(
         "demo-skill",
-        category="development-assistant",
+        domain="assistant-development",
+        topics=("assistant-authoring",),
+        visibility="listed",
+        activated_by=("user-request",),
+        persistent_modifier=False,
         repo_root=repo,
         schema_root=Path("references/blueprint").resolve(),
         include_code_child=True,
@@ -635,7 +663,11 @@ def test_v5_repository_managed_skill_generator_preserves_preexisting_child_root(
     with pytest.raises(OSError, match="injected child blueprint write failure"):
         blueprint_template.write_repository_managed_skill_blueprints(
             "demo-skill",
-            category="development-assistant",
+            domain="assistant-development",
+            topics=("assistant-authoring",),
+            visibility="listed",
+            activated_by=("user-request",),
+            persistent_modifier=False,
             repo_root=repo,
             schema_root=Path("references/blueprint").resolve(),
             include_code_child=True,

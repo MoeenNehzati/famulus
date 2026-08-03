@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Regenerate host scheduler entries from jobs.yaml."""
 import sys
-import yaml
 from pathlib import Path
 from argparse import ArgumentParser
 
@@ -13,8 +12,10 @@ if str(RTX_DIR) not in sys.path:
     sys.path.insert(0, str(RTX_DIR))
 
 if __package__:
+    from ._jobs_config import load_jobs
     from ._schedule_backend import ScheduleBackend, ScheduleContext, platform_schedule_backend, schedule_jobs_from_mappings
 else:
+    from _jobs_config import load_jobs  # noqa: E402
     from _schedule_backend import (  # noqa: E402
     ScheduleBackend,
     ScheduleContext,
@@ -72,8 +73,7 @@ def main(argv: list[str] | None = None) -> int:
     live = args.unit_dir is None
     unit_dir = Path(args.unit_dir) if args.unit_dir else DEFAULT_UNIT_DIR
 
-    with open(args.jobs_file) as f:
-        jobs = (yaml.safe_load(f) or {}).get("jobs", [])
+    jobs = load_jobs(args.jobs_file)
 
     sync_units(jobs, unit_dir, LOG_DIR, live=live, jobs_file=Path(args.jobs_file))
     if live:

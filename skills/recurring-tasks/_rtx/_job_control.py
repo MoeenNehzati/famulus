@@ -18,8 +18,6 @@ import sys
 from argparse import ArgumentParser
 from pathlib import Path
 
-import yaml
-
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 SKILL_DIR = Path(__file__).parent
@@ -28,8 +26,10 @@ if str(RTX_DIR) not in sys.path:
     sys.path.insert(0, str(RTX_DIR))
 
 if __package__:
+    from ._jobs_config import load_jobs as _load_jobs, write_jobs as _write_jobs
     from ._schedule_backend import ScheduleContext, platform_schedule_backend, schedule_jobs_from_mappings
 else:
+    from _jobs_config import load_jobs as _load_jobs, write_jobs as _write_jobs  # noqa: E402
     from _schedule_backend import (  # noqa: E402
     ScheduleContext,
     platform_schedule_backend,
@@ -46,14 +46,12 @@ def schedule_context(jobs_file: Path = JOBS_FILE) -> ScheduleContext:
 
 def load_jobs(jobs_file: Path = JOBS_FILE) -> list:
     """Load jobs from YAML."""
-    with open(jobs_file) as f:
-        return (yaml.safe_load(f) or {}).get("jobs", [])
+    return _load_jobs(jobs_file)
 
 
 def save_jobs(jobs: list, jobs_file: Path = JOBS_FILE) -> None:
     """Save jobs to YAML."""
-    with open(jobs_file, "w") as f:
-        yaml.safe_dump({"jobs": jobs}, f, sort_keys=False)
+    _write_jobs(jobs_file, jobs)
 
 
 def sync_units(jobs_file: Path | None = None) -> None:

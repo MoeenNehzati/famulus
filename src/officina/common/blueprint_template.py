@@ -11,11 +11,17 @@ import json
 from pathlib import Path
 import re
 from textwrap import wrap
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 import jsonschema
 import yaml
 
+from .configured_schema import (
+    ConfiguredSchemaBundle,
+    ConfiguredSchemaError,
+    load_configured_schema_bundle,
+    schema_requires_configuration,
+)
 
 JsonMapping = Mapping[str, Any]
 DocMode = str
@@ -36,47 +42,85 @@ _AUTHORING_SCHEMA_BY_TYPE = {
 class SchemaDocument(dict[str, Any]):
     """Schema mapping with the local document bundle needed for relative refs."""
 
-    def __init__(self, value: Mapping[str, Any], path: Path) -> None:
+    def __init__(
+        self,
+        value: Mapping[str, Any],
+        path: Path,
+        documents: Mapping[str, Mapping[str, Any]],
+        bundle: ConfiguredSchemaBundle | None = None,
+    ) -> None:
         super().__init__(value)
-        self.path = path
-        self.documents: dict[str, dict[str, Any]] = {}
-        candidates = {
-            *path.parent.glob("*.schema.json"),
-            path.parent / "schema.json",
-            path.parent / "schema.annotated-draft.json",
-        }
-        for child in sorted(candidates):
-            if not child.is_file():
-                continue
-            document = json.loads(child.read_text(encoding="utf-8"))
-            self.documents[child.name] = document
-            self.documents[child.resolve().as_uri()] = document
-            schema_id = document.get("$id")
-            if isinstance(schema_id, str):
-                self.documents[schema_id] = document
+        self.path = path.resolve()
+        self.documents = {key: dict(document) for key, document in documents.items()}
+        self.bundle = bundle
 
 
 def load_schema(path: str | Path) -> SchemaDocument:
     """Load a JSON Schema together with its sibling schema documents."""
 
-    schema_path = Path(path)
-    return SchemaDocument(
-        json.loads(schema_path.read_text(encoding="utf-8")),
-        schema_path,
-    )
+    schema_path = Path(path).resolve()
+    config_path = schema_path.parent / "config.yaml"
+    if config_path.is_file():
+        catalog = tuple(
+            child
+            for child in sorted(schema_path.parent.glob("*.schema.json"))
+            if child.resolve() != schema_path
+        )
+        bundle = load_configured_schema_bundle(
+            schema_path,
+            config_path=config_path,
+            allowed_schema_root=schema_path.parent,
+            referenced_schema_paths=catalog,
+        )
+        documents: dict[str, dict[str, Any]] = {}
+        for child_path, document in bundle.documents.items():
+            documents[child_path.name] = dict(document)
+            documents[child_path.as_uri()] = dict(document)
+        documents.update({key: dict(value) for key, value in bundle.store.items()})
+        return SchemaDocument(
+            bundle.root_schema,
+            schema_path,
+            documents,
+            bundle,
+        )
+    documents: dict[str, dict[str, Any]] = {}
+    root: dict[str, Any] | None = None
+    for child in sorted(schema_path.parent.glob("*.json")):
+        document = json.loads(child.read_text(encoding="utf-8"))
+        if not isinstance(document, dict):
+            continue
+        documents[child.name] = document
+        documents[child.resolve().as_uri()] = document
+        schema_id = document.get("$id")
+        if isinstance(schema_id, str):
+            documents[schema_id] = document
+        if child.resolve() == schema_path:
+            root = document
+    if root is None:
+        raise FileNotFoundError(f"schema is not a JSON object: {schema_path}")
+    if any(schema_requires_configuration(document) for document in documents.values()):
+        raise ConfiguredSchemaError(
+            f"{schema_path}: schema bundle uses x-officina-config but sibling "
+            "config.yaml is missing"
+        )
+    return SchemaDocument(root, schema_path, documents)
 
 
-def schema_validator(schema: JsonMapping) -> jsonschema.Draft7Validator:
+def schema_validator(schema: JsonMapping) -> jsonschema.protocols.Validator:
     """Return a Draft 7 validator that resolves bundled local references."""
 
+    validator_class = jsonschema.validators.validator_for(schema)
+    validator_class.check_schema(schema)
     if isinstance(schema, SchemaDocument):
+        if schema.bundle is not None:
+            return schema.bundle.validator(schema.path)
         resolver = jsonschema.RefResolver(
-            base_uri=schema.path.parent.resolve().as_uri() + "/",
+            base_uri=schema.path.as_uri(),
             referrer=schema,
             store=schema.documents,
         )
-        return jsonschema.Draft7Validator(schema, resolver=resolver)
-    return jsonschema.Draft7Validator(schema)
+        return validator_class(schema, resolver=resolver)
+    return validator_class(schema)
 
 
 def write_regenerated_skill_blueprint(
@@ -125,7 +169,11 @@ def write_regenerated_skill_blueprint(
 def write_repository_managed_skill_blueprints(
     skill_name: str,
     *,
-    category: str,
+    domain: str,
+    topics: Sequence[str],
+    visibility: str,
+    activated_by: Sequence[str],
+    persistent_modifier: bool,
     repo_root: str | Path = ".",
     schema_root: str | Path | None = None,
     include_code_child: bool = False,
@@ -134,8 +182,12 @@ def write_repository_managed_skill_blueprints(
 
     if not skill_name or "/" in skill_name or "\\" in skill_name:
         raise ValueError(f"invalid skill name: {skill_name!r}")
-    if not isinstance(category, str) or not category:
-        raise ValueError("category must be a non-empty string")
+    if not isinstance(domain, str) or not domain:
+        raise ValueError("domain must be a non-empty string")
+    if isinstance(topics, str) or not topics:
+        raise ValueError("topics must be a non-empty sequence of strings")
+    if isinstance(activated_by, str) or not activated_by:
+        raise ValueError("activated_by must be a non-empty sequence of strings")
 
     root = Path(repo_root)
     skill_root = root / "skills" / skill_name
@@ -177,10 +229,18 @@ def write_repository_managed_skill_blueprints(
         "node_type": "module",
         "id": skill_name,
         "version": 1,
-        "category": category,
         "gateway": {"path": "SKILL.md", "language": "Markdown"},
         "content": [r"SKILL\.md"],
-        "discovery": {"mechanism": "skill"},
+        "discovery": {
+            "mechanism": "skill",
+            "catalog": {
+                "domain": domain,
+                "topics": list(topics),
+                "visibility": visibility,
+            },
+            "activated_by": list(activated_by),
+            "persistent_modifier": persistent_modifier,
+        },
         "authority": {"owns_filesystem": []},
         "sources": {},
         "children": (
@@ -348,7 +408,7 @@ def _select_authoring_schema(
     document = schema.documents.get(document_name)
     if document is None:
         raise ValueError(f"missing bundled authoring schema: {document_name}")
-    return SchemaDocument(document, schema.path.parent / document_name)
+    return load_schema(schema.path.parent / document_name)
 
 
 def _render_mapping(

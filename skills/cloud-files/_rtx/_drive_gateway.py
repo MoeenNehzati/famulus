@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Sequence
 
+from officina.common.configured_schema import ConfiguredSchemaError, load_configuration
+
 FOLDER_MIME_TYPE = "application/vnd.google-apps.folder"
 CONFIG_DIR_NAME = ".config/cloud-files"
 CONFIG_FILE_NAME = "config.json"
@@ -137,11 +139,11 @@ def default_credentials_path(home: Path | None = None) -> Path:
 def load_config(home: Path | None = None) -> CloudFilesConfig:
     config_path = default_config_path(home)
     try:
-        payload = json.loads(config_path.read_text(encoding="utf-8"))
+        payload = load_configuration(config_path)
     except FileNotFoundError as exc:
         raise CloudFilesError(f"missing config file: {config_path}") from exc
-    except json.JSONDecodeError as exc:
-        raise CloudFilesError(f"invalid JSON in config file: {config_path}") from exc
+    except ConfiguredSchemaError as exc:
+        raise CloudFilesError(f"invalid configuration in {config_path}: {exc}") from exc
 
     raw_llm_root = str(payload.get("remote_llm_root", "assistant/"))
     try:

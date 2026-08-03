@@ -18,8 +18,10 @@ if str(RTX_DIR) not in sys.path:
     sys.path.insert(0, str(RTX_DIR))
 
 if __package__:
+    from ._jobs_config import load_jobs
     from ._schedule_backend import ScheduleBackendUnsupported, platform_schedule_backend
 else:
+    from _jobs_config import load_jobs  # noqa: E402
     from _schedule_backend import ScheduleBackendUnsupported, platform_schedule_backend  # noqa: E402
 
 JOBS_FILE = SKILL_DIR / "jobs.yaml"
@@ -162,12 +164,9 @@ def main(argv: list[str] | None = None) -> int:
 
     log("=== healthcheck start ===")
 
-    import yaml
-
     # Load jobs
     try:
-        with open(JOBS_FILE) as f:
-            jobs = (yaml.safe_load(f) or {}).get("jobs", [])
+        jobs = load_jobs(JOBS_FILE)
     except Exception as e:
         log(f"FAIL: Failed to load jobs.yaml: {e}")
         return 0

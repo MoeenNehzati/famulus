@@ -19,6 +19,7 @@ import sys
 from pathlib import Path
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+from officina.common.configured_schema import load_configuration, validate_configuration
 
 CONFIG_DIR_NAME = "cloud-files"
 LABEL = "Google Drive (cloud-files)"
@@ -103,10 +104,7 @@ def write_config(home: Path, *, remote_llm_root: str, dry_run: bool) -> None:
 
     existing: dict[str, object] = {}
     if config_path.exists():
-        try:
-            existing = json.loads(config_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            existing = {}
+        existing = load_configuration(config_path)
 
     try:
         normalized_llm_root = normalize_llm_root(remote_llm_root)
@@ -119,6 +117,8 @@ def write_config(home: Path, *, remote_llm_root: str, dry_run: bool) -> None:
     }
     if "credentials_path" in existing:
         payload["credentials_path"] = existing["credentials_path"]
+
+    validate_configuration(payload, document_name=str(config_path))
 
     if dry_run:
         log(f"Would write cloud-files config {config_path}")

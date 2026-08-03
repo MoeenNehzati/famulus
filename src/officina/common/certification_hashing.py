@@ -15,7 +15,6 @@ import stat
 import subprocess
 from typing import Any, Iterable, Mapping, Sequence
 
-import jsonschema
 import yaml
 
 from .atomic_files import AtomicWriteError, read_regular_file_bytes
@@ -24,6 +23,7 @@ from .blueprint_graph import (
     BlueprintNode,
     RepositoryBlueprintGraph,
 )
+from .configured_schema import ConfiguredSchemaError, load_configuration
 from .git_provenance import capture_git_snapshot, git_file_provenance_batch, run_git
 from .repository_paths import RepositoryPathError, repository_relative_path
 
@@ -906,28 +906,13 @@ def load_node_hash_policy(
     """Load and validate the canonical ordered node-input policy."""
 
     path = Path(policy_path)
-    selected_schema = (
-        Path(schema_path)
-        if schema_path is not None
-        else _default_schema_root().parent / "certification" / "node-hash-policy.schema.json"
-    )
     try:
-        policy = yaml.safe_load(path.read_text(encoding="utf-8"))
-        schema = json.loads(selected_schema.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, yaml.YAMLError, json.JSONDecodeError) as exc:
-        raise CertificationHashError(f"{path}: cannot load node hash policy: {exc}") from exc
-    if not isinstance(policy, dict):
-        raise CertificationHashError(f"{path}: node hash policy must be a mapping")
-    errors = sorted(
-        jsonschema.Draft7Validator(schema).iter_errors(policy),
-        key=lambda error: (tuple(str(part) for part in error.path), error.message),
-    )
-    if errors:
-        first = errors[0]
-        location = "$" + "".join(f"[{part!r}]" for part in first.path)
-        raise CertificationHashError(
-            f"{path}: node hash policy schema error at {location}: {first.message}"
+        policy = load_configuration(
+            path,
+            config_schema_path=(Path(schema_path) if schema_path is not None else None),
         )
+    except ConfiguredSchemaError as exc:
+        raise CertificationHashError(f"{path}: cannot load node hash policy: {exc}") from exc
     return policy
 
 

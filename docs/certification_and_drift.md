@@ -59,9 +59,11 @@ certificate.
 ## Resolving node inputs
 
 The certifier loads one project policy from
-`references/certification/node-hash-policy.yaml` and validates it against
-`references/certification/node-hash-policy.schema.json`. The canonical policy
-has this shape:
+`references/certification/node-hash-policy.yaml` and validates it through the
+central `src/officina/common/configuration.schema.json`. The historical
+`references/certification/node-hash-policy.schema.json` remains in the
+certification basis for existing records but is not the active runtime
+validator. The canonical policy has this shape:
 
 ```yaml
 policy_version: 1

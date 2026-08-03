@@ -12,6 +12,8 @@ from pathlib import Path
 
 import yaml
 
+from officina.common.configured_schema import load_configuration, validate_configuration
+
 SKILL_DIR = Path(__file__).parent
 SCRIPTS = SKILL_DIR / 'scripts'
 DEFAULT_JOBS = SKILL_DIR / 'jobs.yaml'
@@ -23,12 +25,11 @@ TIMEOUT_SEC = 360
 
 
 def load_jobs(path: Path) -> dict:
-    data = yaml.safe_load(path.read_text()) or {}
-    data.setdefault('jobs', [])
-    return data
+    return load_configuration(path)
 
 
 def write_jobs(path: Path, data: dict) -> None:
+    validate_configuration(data, document_name=str(path))
     path.write_text(yaml.safe_dump(data, sort_keys=False))
 
 

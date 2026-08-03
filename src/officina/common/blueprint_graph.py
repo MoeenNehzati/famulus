@@ -26,6 +26,11 @@ from .blueprint_inventory import (
     collect_blueprints,
     iter_blueprints as iter_inventory_blueprints,
 )
+from .configured_schema import (
+    ConfiguredSchemaError,
+    configured_validator,
+    schema_requires_configuration,
+)
 from .repository_paths import (
     RepositoryPathError,
     equivalent_root_relative_path,
@@ -719,8 +724,20 @@ def _load_schema_validator(schema_path: Path) -> jsonschema.protocols.Validator:
     """Load a concrete blueprint schema with ordinary local-reference resolution."""
 
     schema_path = Path(os.path.abspath(schema_path))
+    config_path = schema_path.parent / "config.yaml"
     try:
+        if config_path.is_file():
+            return configured_validator(
+                schema_path,
+                config_path=config_path,
+                allowed_schema_root=schema_path.parent,
+            )
         schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        if schema_requires_configuration(schema):
+            raise ConfiguredSchemaError(
+                f"{schema_path}: schema uses x-officina-config but sibling "
+                "config.yaml is missing"
+            )
         validator_class = jsonschema.validators.validator_for(schema)
         validator_class.check_schema(schema)
         resolver = jsonschema.RefResolver(
@@ -728,7 +745,13 @@ def _load_schema_validator(schema_path: Path) -> jsonschema.protocols.Validator:
             referrer=schema,
         )
         return validator_class(schema, resolver=resolver)
-    except (OSError, UnicodeError, json.JSONDecodeError, jsonschema.SchemaError) as exc:
+    except (
+        OSError,
+        UnicodeError,
+        json.JSONDecodeError,
+        jsonschema.SchemaError,
+        ConfiguredSchemaError,
+    ) as exc:
         raise BlueprintSchemaError(
             schema_path,
             "$",
@@ -976,8 +999,12 @@ def load_module_blueprint(
     module_root: Path,
     *,
     schema_root: Path | None = None,
+    expected_schema_version: int = 4,
 ) -> BlueprintNode:
-    """Load and validate one exact v4 module marker without scanning siblings."""
+    """Load and validate one exact module marker without scanning siblings."""
+
+    if expected_schema_version not in {4, 5}:
+        raise ValueError("expected_schema_version must be 4 or 5")
 
     repository = Path(os.path.abspath(repo_root))
     module = Path(os.path.abspath(module_root))
@@ -1036,12 +1063,15 @@ def load_module_blueprint(
         dict(declaration),
         selected_schema_root,
         {},
-        expected_schema_version=4,
+        expected_schema_version=expected_schema_version,
     )
     if errors:
         raise errors[0]
 
-    node = _v4_node_from_document(document)
+    node = _node_from_document(
+        document,
+        expected_schema_version=expected_schema_version,
+    )
     if node.node_type != "module":
         raise BlueprintGraphError(f"{marker}: exact module marker must declare node_type module")
     if node.node_id != module.name:

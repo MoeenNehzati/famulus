@@ -4,7 +4,14 @@ from __future__ import annotations
 from pathlib import Path
 import re
 
-from .catalog import CATEGORY_DISPLAY, CATEGORY_TREE, COVERAGE_BLOCKS, SKILL_INDEX_PATH, load_catalog, skills_by_category
+from .catalog import (
+    COVERAGE_BLOCKS,
+    SKILL_INDEX_PATH,
+    configured_domains,
+    configured_visibilities,
+    load_catalog,
+    skills_by_domain,
+)
 
 
 def begin_marker(marker_id: str) -> str:
@@ -15,16 +22,16 @@ def end_marker(marker_id: str) -> str:
     return f"<!-- END AUTO-GENERATED DOCS: {marker_id} -->"
 
 
-def render_coverage_block(repo_root: Path, category: str) -> str:
-    catalog = skills_by_category(load_catalog(repo_root))
-    skills = catalog.get(category, [])
-    lines = [begin_marker(category), "> Generated from live blueprints. Do not edit this block by hand.", ""]
+def render_coverage_block(repo_root: Path, domain: str) -> str:
+    catalog = skills_by_domain(load_catalog(repo_root))
+    skills = catalog.get(domain, [])
+    lines = [begin_marker(domain), "> Generated from live blueprints. Do not edit this block by hand.", ""]
     if skills:
         for skill in skills:
             lines.append(f"- `{skill.name}` — {skill.summary}")
     else:
-        lines.append("- No skills currently map to this category.")
-    lines.append(end_marker(category))
+        lines.append("- No skills currently map to this domain.")
+    lines.append(end_marker(domain))
     return "\n".join(lines)
 
 
@@ -44,12 +51,13 @@ def render_doc_with_updated_blocks(repo_root: Path, rel_path: Path) -> str:
     for block in COVERAGE_BLOCKS:
         if block.doc_path != rel_path:
             continue
-        text = _replace_block(text, block.marker_id, render_coverage_block(repo_root, block.category), rel_path)
+        text = _replace_block(text, block.marker_id, render_coverage_block(repo_root, block.domain), rel_path)
     return text
 
 
 def render_skill_index(repo_root: Path) -> str:
-    grouped = skills_by_category(load_catalog(repo_root))
+    catalog = load_catalog(repo_root)
+    grouped = skills_by_domain(catalog)
     lines = [
         "# Skill Index",
         "",
@@ -62,19 +70,32 @@ def render_skill_index(repo_root: Path) -> str:
         "The graph gives a visual overview of the live skill set. The sections below are the complete text inventory.",
         "",
     ]
-    for audience, categories in CATEGORY_TREE:
-        lines.append(f"## {audience}")
+    for domain in configured_domains(repo_root, catalog):
+        skills = grouped.get(domain, [])
+        if not skills:
+            continue
+        lines.append(f"## {domain.replace('-', ' ').title()}")
         lines.append("")
-        for category in categories:
-            section_title = CATEGORY_DISPLAY[category]
-            if len(categories) == 1 and section_title == audience:
-                section_title = "Skills"
-            lines.append(f"### {section_title}")
+        for visibility in configured_visibilities(repo_root):
+            if visibility == "hidden":
+                continue
+            selected = [skill for skill in skills if skill.visibility == visibility]
+            if not selected:
+                continue
+            lines.append(f"### {visibility.title()}")
             lines.append("")
-            for skill in grouped.get(category, []):
-                lines.append(f"- `{skill.name}` — {skill.summary}")
-            if not grouped.get(category):
-                lines.append("- No skills currently map to this category.")
+            for skill in selected:
+                topics = ", ".join(skill.topics)
+                activation = ", ".join(
+                    value.replace("-", " ") for value in skill.activated_by
+                )
+                modifier = (
+                    "; persistent modifier" if skill.persistent_modifier else ""
+                )
+                lines.append(
+                    f"- `{skill.name}` — {skill.summary} "
+                    f"_(topics: {topics}; activated by: {activation}{modifier})_"
+                )
             lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 

@@ -7,6 +7,9 @@ import re
 
 import yaml
 
+from officina.common.configured_schema import load_configuration
+from officina.common.blueprint_graph import load_module_blueprint
+
 SKILL_INDEX_PATH = Path("docs/skills.md")
 
 GENERAL_DOC = Path("docs/user/general.md")
@@ -19,58 +22,45 @@ DOC_SYSTEM_DOC = Path("docs/contributors/documentation-system.md")
 @dataclass(frozen=True)
 class SkillInfo:
     name: str
-    category: str
+    domain: str
+    topics: tuple[str, ...]
+    visibility: str
+    activated_by: tuple[str, ...]
+    persistent_modifier: bool
     summary: str
     description: str
 
 
 @dataclass(frozen=True)
+class CatalogVocabulary:
+    domains: tuple[str, ...]
+    topics: tuple[str, ...]
+    visibility: tuple[str, ...]
+    activated_by: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class CoverageBlock:
     doc_path: Path
-    category: str
+    domain: str
     heading: str
 
     @property
     def marker_id(self) -> str:
-        return self.category
+        return self.domain
 
 
 COVERAGE_BLOCKS = (
-    CoverageBlock(GENERAL_DOC, "productivity-general-assistant", "Productivity"),
-    CoverageBlock(GENERAL_DOC, "workflow-general-assistant", "Coordination"),
-    CoverageBlock(RESEARCH_DOC, "research-assistant", "Research"),
-    CoverageBlock(SYSTEM_DOC, "system-assistant", "System"),
-    CoverageBlock(CONTRIBUTOR_DOC, "skill-making-development-assistant", "Skill Making"),
-    CoverageBlock(CONTRIBUTOR_DOC, "coding-development-assistant", "Coding"),
-    CoverageBlock(CONTRIBUTOR_DOC, "development-assistant", "Development"),
+    CoverageBlock(GENERAL_DOC, "personal-assistance", "Personal Assistance"),
+    CoverageBlock(GENERAL_DOC, "assistant-interaction", "Assistant Interaction"),
+    CoverageBlock(RESEARCH_DOC, "research", "Research"),
+    CoverageBlock(SYSTEM_DOC, "assistant-operations", "Assistant Operations"),
+    CoverageBlock(CONTRIBUTOR_DOC, "software-development", "Software Development"),
+    CoverageBlock(CONTRIBUTOR_DOC, "assistant-development", "Assistant Development"),
 )
 
 USER_DOCS = (GENERAL_DOC, RESEARCH_DOC, SYSTEM_DOC)
 CONTRIBUTOR_DOCS = (CONTRIBUTOR_DOC, DOC_SYSTEM_DOC)
-
-CATEGORY_DISPLAY = {
-    "research-assistant": "Research Assistant",
-    "productivity-general-assistant": "Productivity",
-    "workflow-general-assistant": "Coordination",
-    "skill-making-development-assistant": "Skill Making",
-    "coding-development-assistant": "Coding",
-    "development-assistant": "Development",
-    "system-assistant": "System Assistant",
-}
-
-CATEGORY_TREE = (
-    ("General Assistant", ("productivity-general-assistant", "workflow-general-assistant")),
-    ("Research Assistant", ("research-assistant",)),
-    ("System Assistant", ("system-assistant",)),
-    (
-        "Development Assistant",
-        (
-            "skill-making-development-assistant",
-            "coding-development-assistant",
-            "development-assistant",
-        ),
-    ),
-)
 
 SUMMARY_OVERRIDES = {
     "bib-audit": "Audit a `.bib` file for validity, style, external metadata, and duplicates",
@@ -94,10 +84,10 @@ SUMMARY_OVERRIDES = {
     "pdf-to-markdown": "Convert a research-paper PDF into LLM-readable text",
     "prepare-handoff": "Prepare a clean handoff with workflow and documentation updates",
     "recurring-tasks": "Manage AI-driven recurring jobs as systemd user timers with health checks",
-    "refactor-skills": "Audit and refactor existing skills against local conventions",
+    "refactor-node": "Refactor whole repository nodes or owned sub-scopes by gateway language",
     "tight-mode": "Rigorous, verified output mode with certainty over speed",
     "tool-applicability": "Check whether a theorem or framework achieves a target in the current setting",
-    "update-skill-guidelines": "Change the skill-writing standard and its mechanical checks in lockstep",
+    "update-standards": "Change canonical standards and keep their pinned closures aligned",
     "wrap-up": "Review the day, record completions, and capture follow-up items",
 }
 
@@ -135,8 +125,60 @@ def _summary(description: str) -> str:
     return sentence or "No summary available"
 
 
+def load_catalog_vocabulary(repo_root: Path) -> CatalogVocabulary:
+    """Load the configured, centrally validated discovery vocabulary."""
+    config_path = repo_root / "references" / "blueprint" / "config.yaml"
+    if not config_path.is_file():
+        raise ValueError(f"{config_path}: blueprint catalog configuration is missing")
+    config = load_configuration(config_path)["blueprint_catalog"]
+    return CatalogVocabulary(
+        domains=tuple(config["domains"]),
+        topics=tuple(config["topics"]),
+        visibility=tuple(config["visibility"]),
+        activated_by=tuple(config["activated_by"]),
+    )
+
+
+def _configured_value(
+    value: object,
+    *,
+    field: str,
+    allowed: tuple[str, ...],
+    blueprint_path: Path,
+) -> str:
+    if not isinstance(value, str) or value not in allowed:
+        choices = ", ".join(allowed)
+        raise ValueError(
+            f"{blueprint_path}: {field} must identify one configured value; "
+            f"choose one of: {choices}"
+        )
+    return value
+
+
+def _configured_values(
+    value: object,
+    *,
+    field: str,
+    allowed: tuple[str, ...],
+    blueprint_path: Path,
+) -> tuple[str, ...]:
+    if (
+        not isinstance(value, list)
+        or not value
+        or len(set(item for item in value if isinstance(item, str))) != len(value)
+        or any(not isinstance(item, str) or item not in allowed for item in value)
+    ):
+        choices = ", ".join(allowed)
+        raise ValueError(
+            f"{blueprint_path}: {field} must contain one or more unique configured "
+            f"values; choose from: {choices}"
+        )
+    return tuple(value)
+
+
 def load_catalog(repo_root: Path) -> list[SkillInfo]:
     """Return live skills from blueprints and SKILL.md frontmatter."""
+    vocabulary = load_catalog_vocabulary(repo_root)
     skills: list[SkillInfo] = []
     for blueprint_path in sorted((repo_root / "skills").glob("*/blueprint.yaml")):
         skill_dir = blueprint_path.parent
@@ -144,13 +186,60 @@ def load_catalog(repo_root: Path) -> list[SkillInfo]:
         if not skill_md.is_file():
             continue
         blueprint = yaml.safe_load(blueprint_path.read_text(encoding="utf-8")) or {}
-        category = str(blueprint.get("category", "")).strip()
+        discovery = blueprint.get("discovery")
+        catalog = discovery.get("catalog") if isinstance(discovery, dict) else None
+        if not isinstance(catalog, dict):
+            raise ValueError(f"{blueprint_path}: missing discovery.catalog")
+        domain = _configured_value(
+            catalog.get("domain"),
+            field="discovery.catalog.domain",
+            allowed=vocabulary.domains,
+            blueprint_path=blueprint_path,
+        )
+        topics = _configured_values(
+            catalog.get("topics"),
+            field="discovery.catalog.topics",
+            allowed=vocabulary.topics,
+            blueprint_path=blueprint_path,
+        )
+        visibility = _configured_value(
+            catalog.get("visibility"),
+            field="discovery.catalog.visibility",
+            allowed=vocabulary.visibility,
+            blueprint_path=blueprint_path,
+        )
+        activated_by = _configured_values(
+            discovery.get("activated_by"),
+            field="discovery.activated_by",
+            allowed=vocabulary.activated_by,
+            blueprint_path=blueprint_path,
+        )
+        persistent_modifier = discovery.get("persistent_modifier")
+        if not isinstance(persistent_modifier, bool):
+            raise ValueError(
+                f"{blueprint_path}: discovery.persistent_modifier must be boolean"
+            )
+        if persistent_modifier and "reasoning-control" not in topics:
+            raise ValueError(
+                f"{blueprint_path}: persistent modifiers must include the "
+                "reasoning-control topic"
+            )
+        load_module_blueprint(
+            repo_root,
+            skill_dir,
+            schema_root=repo_root / "references" / "blueprint",
+            expected_schema_version=5,
+        )
         description = str(_frontmatter(skill_md).get("description", "")).strip()
         summary = SUMMARY_OVERRIDES.get(skill_dir.name) or _summary(description)
         skills.append(
             SkillInfo(
                 name=skill_dir.name,
-                category=category,
+                domain=domain,
+                topics=topics,
+                visibility=visibility,
+                activated_by=activated_by,
+                persistent_modifier=persistent_modifier,
                 summary=summary,
                 description=description,
             )
@@ -158,12 +247,25 @@ def load_catalog(repo_root: Path) -> list[SkillInfo]:
     return skills
 
 
-def skills_by_category(catalog: list[SkillInfo]) -> dict[str, list[SkillInfo]]:
+def skills_by_domain(
+    catalog: list[SkillInfo],
+    *,
+    include_hidden: bool = False,
+) -> dict[str, list[SkillInfo]]:
     grouped: dict[str, list[SkillInfo]] = {}
     for skill in catalog:
-        grouped.setdefault(skill.category, []).append(skill)
+        if skill.visibility == "hidden" and not include_hidden:
+            continue
+        grouped.setdefault(skill.domain, []).append(skill)
     return grouped
 
 
-def is_development_category(category: str) -> bool:
-    return category.endswith("development-assistant") or category == "development-assistant"
+def configured_domains(repo_root: Path, catalog: list[SkillInfo]) -> tuple[str, ...]:
+    """Return domains in their configured documentation order."""
+    del catalog
+    return load_catalog_vocabulary(repo_root).domains
+
+
+def configured_visibilities(repo_root: Path) -> tuple[str, ...]:
+    """Return visibility classes in their configured documentation order."""
+    return load_catalog_vocabulary(repo_root).visibility
