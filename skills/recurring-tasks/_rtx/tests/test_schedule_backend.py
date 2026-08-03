@@ -351,6 +351,7 @@ def test_windows_sync_creates_task_scheduler_entry(tmp_path):
     wrapper_text = (tmp_path / wrapper_name("my-job")).read_text(encoding="utf-8")
     assert "_job_executor.py" in wrapper_text
     assert "--jobs-file" in wrapper_text
+    assert f'--log-dir" "{context.log_dir}' in wrapper_text
     assert "--job" in wrapper_text and '"my-job"' in wrapper_text
 
 
@@ -373,6 +374,7 @@ def test_windows_wrapper_content_uses_explicit_crlf_only(tmp_path):
     assert "\r\n" in content
     # No bare '\n' that isn't immediately preceded by '\r'.
     assert re.search(r"(?<!\r)\n", content) is None
+    assert content.endswith("exit /b %errorlevel%\r\n")
 
 
 def test_windows_task_run_command_uses_cmd_for_space_containing_wrapper_path():

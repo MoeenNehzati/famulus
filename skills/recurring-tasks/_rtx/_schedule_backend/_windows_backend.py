@@ -119,6 +119,8 @@ def _command_parts(job: ScheduleJob, context: ScheduleContext) -> list[str]:
         str(executor),
         "--jobs-file",
         str(context.jobs_file),
+        "--log-dir",
+        str(context.log_dir),
         "--job",
         job.name,
     ]
@@ -149,7 +151,11 @@ def wrapper_content(job: ScheduleJob, context: ScheduleContext) -> str:
     instead, and ``/TR`` is pointed at just this file's own short path.
     """
     quoted = " ".join(_quote_cmd_arg(part) for part in _command_parts(job, context))
-    return "@echo off\r\nsetlocal\r\n" + quoted + "\r\n"
+    return (
+        "@echo off\r\nsetlocal\r\n"
+        + quoted
+        + "\r\nexit /b %errorlevel%\r\n"
+    )
 
 
 def _cron_weekday(value: str) -> str | None:

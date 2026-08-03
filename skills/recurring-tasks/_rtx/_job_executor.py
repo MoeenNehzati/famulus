@@ -190,10 +190,13 @@ class Interface(PythonArgvMachineInterface):
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--jobs-file", type=Path, required=True)
+    parser.add_argument("--log-dir", type=Path, default=LOG_DIR)
     parser.add_argument("--job", required=True)
     args = parser.parse_args(argv)
     try:
-        return run_job(jobs_file=args.jobs_file, job_name=args.job)
+        return run_job(
+            jobs_file=args.jobs_file, job_name=args.job, log_dir=args.log_dir
+        )
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1

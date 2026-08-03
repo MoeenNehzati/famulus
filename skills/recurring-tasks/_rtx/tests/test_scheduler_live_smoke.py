@@ -506,6 +506,25 @@ def _windows_smoke() -> None:
             wrapper_path.write_text(
                 wrapper_content(job, context), encoding="utf-8", newline=""
             )
+            # Prove the exact resolver/executor wrapper independently before
+            # handing it to Task Scheduler.  Delete the preflight marker so
+            # the assertion below can only be satisfied by the scheduled run.
+            preflight = _run(
+                [
+                    os.environ.get("COMSPEC", "cmd.exe"),
+                    "/D",
+                    "/C",
+                    "CALL",
+                    str(wrapper_path),
+                ],
+                check=False,
+            )
+            assert preflight.returncode == 0, (
+                "Windows scheduler wrapper preflight failed:\n"
+                f"stdout:\n{preflight.stdout}\nstderr:\n{preflight.stderr}"
+            )
+            _assert_marker_written(marker, log_file=tmp_dir / job_name / "run.log")
+            marker.unlink()
             _run(
                 [
                     "schtasks",

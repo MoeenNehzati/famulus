@@ -51,6 +51,28 @@ def test_direct_executor_entrypoint_finds_repo_package_without_pythonpath():
 
     assert result.returncode == 0
     assert "--jobs-file" in result.stdout
+    assert "--log-dir" in result.stdout
+
+
+def test_main_forwards_explicit_log_dir(tmp_path):
+    jobs_file = tmp_path / "jobs.yaml"
+    log_dir = tmp_path / "logs"
+
+    with mock.patch.object(job_executor, "run_job", return_value=0) as run_job:
+        assert job_executor.main(
+            [
+                "--jobs-file",
+                str(jobs_file),
+                "--job",
+                "demo",
+                "--log-dir",
+                str(log_dir),
+            ]
+        ) == 0
+
+    run_job.assert_called_once_with(
+        jobs_file=jobs_file, job_name="demo", log_dir=log_dir
+    )
 
 
 def test_parse_command_splits_leading_environment_assignments():
