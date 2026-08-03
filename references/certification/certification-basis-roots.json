@@ -28,6 +28,7 @@
   "src/officina/common/certificate_records.py",
   "src/officina/common/certification_hashing.py",
   "src/officina/common/certification_view.py",
+  "src/officina/common/configured_schema.py",
   "src/officina/common/git_provenance.py",
   "src/officina/common/interface_projection.py",
   "src/officina/common/pooled_blueprint.py",

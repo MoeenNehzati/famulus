@@ -12,7 +12,6 @@ content:
 - blueprint_template\.py
 - certification_view\.py
 - codex_toml\.py
-- configured_schema\.py
 - dates\.py
 - git_provenance\.py
 - interface_injection_migration\.py
