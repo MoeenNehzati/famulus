@@ -3,20 +3,45 @@ authority:
 children: {}
 content:
 - CLAUDE-CODEX-README\.md
+- CLAUDE-CODEX-ARCHITECTURE\.md
 - __init__\.py
 - claude_codex_cli\.py
 - claude_codex_service\.py
 - claude_codex_sessions\.py
 - cli\.py
 - deadlines\.py
+- doctor\.py
+- linux_osx_windows\.py
+- locking\.py
+- claude_codex_monitor\.py
+- claude_codex_usage\.py
+- policies\.py
+- providers/.*\.py
 - store\.py
+- tests/.*
 - resources/llm-wakeup\.service\.in
 - resources/llm-wakeup\.timer
-description: Dependency-free Python infrastructure for scheduling guarded Claude
-  and Codex continuation messages after usage limits reset, with persistent JSON
-  jobs, transcript-progress suppression, provider-log inference, retry handling,
-  and journald-oriented worker events.
-exports: {}
+- resources/command-aliases\.json
+description: Dependency-free Python infrastructure for monitoring local Claude
+  and Codex quota signals and scheduling guarded continuation messages after
+  usage limits reset, with persistent JSON jobs, transcript-progress suppression,
+  provider-log inference, retry handling, and journald-oriented worker events.
+exports:
+  wakeup.interface.auto-policy:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: wakeup.source.cli.interface.auto-policy
+  wakeup.interface.infer-schedule:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: wakeup.source.cli.interface.infer-schedule
+  wakeup.interface.explicit-schedule:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: wakeup.source.cli.interface.explicit-schedule
 gateway:
   language: Python>=3.11
   path: __init__.py
@@ -24,5 +49,25 @@ id: wakeup
 namespace_exports: {}
 node_type: module
 schema_version: 5
-sources: {}
+sources:
+  wakeup.source.session-data:
+    blueprint:
+      base: module-root
+      path: blueprints/session-data.yaml
+  wakeup.source.persistence:
+    blueprint:
+      base: module-root
+      path: blueprints/persistence.yaml
+  wakeup.source.scheduler:
+    blueprint:
+      base: module-root
+      path: blueprints/scheduler.yaml
+  wakeup.source.monitor:
+    blueprint:
+      base: module-root
+      path: blueprints/monitor.yaml
+  wakeup.source.cli:
+    blueprint:
+      base: module-root
+      path: blueprints/cli.yaml
 version: 1

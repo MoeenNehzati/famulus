@@ -1,0 +1,32 @@
+schema_version: 5
+id: wakeup.source.monitor
+version: 1
+node_type: behavioral_source
+description: Acquire normalized quota observations and convert near-limit events into reminders or policy-controlled wakeups.
+gateway:
+  language: Python
+  path: claude_codex_monitor.py
+content:
+  - claude_codex_usage\.py
+  - claude_codex_monitor\.py
+dependencies:
+  - blueprint:
+      base: module-root
+      path: blueprints/session-data.yaml
+    source: wakeup.source.session-data
+    version: 1
+    reason: Read provider transcripts and normalize reset deadlines.
+  - blueprint:
+      base: module-root
+      path: blueprints/persistence.yaml
+    source: wakeup.source.persistence
+    version: 1
+    reason: Read auto-schedule policy and persist usage snapshots and deduplication markers.
+  - blueprint:
+      base: module-root
+      path: blueprints/scheduler.yaml
+    source: wakeup.source.scheduler
+    version: 1
+    reason: Schedule a wakeup when an observed session has opted into automation.
+interfaces: {}
+uses_interfaces: []

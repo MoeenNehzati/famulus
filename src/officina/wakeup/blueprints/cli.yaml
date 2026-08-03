@@ -1,0 +1,658 @@
+schema_version: 5
+id: wakeup.source.cli
+version: 1
+node_type: behavioral_source
+description: Expose scheduling, inference, policy, monitoring, capture, diagnostics, and due-job execution commands.
+gateway:
+  language: Python
+  path: cli.py
+content:
+  - cli\.py
+  - claude_codex_cli\.py
+  - doctor\.py
+dependencies:
+  - blueprint:
+      base: module-root
+      path: blueprints/session-data.yaml
+    source: wakeup.source.session-data
+    version: 1
+    reason: Support inferred scheduling and session inspection commands.
+  - blueprint:
+      base: module-root
+      path: blueprints/persistence.yaml
+    source: wakeup.source.persistence
+    version: 1
+    reason: Support policy and persisted-job commands.
+  - blueprint:
+      base: module-root
+      path: blueprints/scheduler.yaml
+    source: wakeup.source.scheduler
+    version: 1
+    reason: Execute scheduling and due-job commands.
+  - blueprint:
+      base: module-root
+      path: blueprints/monitor.yaml
+    source: wakeup.source.monitor
+    version: 1
+    reason: Capture and inspect provider quota observations.
+interfaces:
+  wakeup.source.cli.interface.auto-policy:
+    contract:
+      arguments:
+        action:
+          description: Enable, disable, or inspect automatic scheduling for one session.
+          required: true
+          sensitivity: public
+          type:
+            kind: enum
+            values:
+            - value: "on"
+              description: Enable automatic near-limit wakeup scheduling.
+            - value: "off"
+              description: Disable automatic near-limit wakeup scheduling.
+            - value: status
+              description: Report whether automatic scheduling is enabled.
+        provider:
+          description: Optional provider; omit only when the newest local session is unambiguous.
+          required: false
+          sensitivity: public
+          type:
+            kind: enum
+            values:
+            - value: claude
+              description: Target a Claude Code session.
+            - value: codex
+              description: Target a Codex session.
+        session-id:
+          description: Optional canonical session UUID or unambiguous provider alias.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+      caller_warnings:
+      - external-side-effect: The on and off actions atomically update persistent per-session policy.
+      direct_io:
+        network: []
+        reads:
+        - id: session-transcripts
+          access: read
+          content: Provider session identity and aliases used when the target is omitted or abbreviated.
+          formats:
+          - jsonl
+          - json
+          medium: local-filesystem
+          sensitivity: user-private
+        - id: policy-registry
+          access: read
+          content: Existing per-session automatic scheduling policy.
+          formats:
+          - json
+          medium: local-filesystem
+          path: $home/.local/share/llm-wakeup/session-policies.json
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        writes:
+        - id: policy-write
+          access: write
+          content: Atomic per-session automatic scheduling policy replacement.
+          formats:
+          - json
+          medium: local-filesystem
+          path: $home/.local/share/llm-wakeup/session-policies.json
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        - id: result-write
+          access: write
+          content: Resolved provider, session, and policy state.
+          formats:
+          - text
+          medium: stdout
+          sensitivity: user-private
+        - id: diagnostic-write
+          access: write
+          content: Validation, discovery, or persistence error.
+          formats:
+          - text
+          medium: stderr
+          sensitivity: derived-private
+      execution:
+        consistency:
+          live: Session resolution and policy state are read at invocation time.
+        effects:
+        - id: policy-state
+          action: update
+          direct_io_ref: policy-write
+          value_source:
+            kind: argument
+            argument_ref: action
+          confirmation_evidence:
+            kind: output
+            output_ref: result
+          reversibility:
+            reversible: A later on or off invocation restores the opposite policy state.
+          may_occur_in_outcomes:
+          - policy-updated
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            per_effect_only: The complete policy registry is replaced atomically.
+          concurrent_invocations:
+            safe: Advisory locking serializes policy readers and writers.
+          idempotency:
+            idempotent: Repeating on, off, or status converges to the same policy state and output.
+          on_uncertain_completion:
+            verify_then_decide: Invoke status for the same resolved session before retrying on or off.
+          partial_effects_on_failure:
+            possible: Policy replacement can complete before stdout is emitted.
+          rollback_on_failure:
+            unavailable: No automatic rollback runs after a successfully replaced policy file.
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: result
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - id: policy-updated
+        class: success
+        caller_action: Treat the reported provider and canonical session as the updated policy target.
+        effects:
+        - policy-state
+        outputs:
+        - result
+      - id: policy-reported
+        class: success
+        caller_action: Consume the reported policy state without assuming a mutation occurred.
+        effects: []
+        outputs:
+        - result
+      - id: target-invalid
+        class: error
+        caller_action: Supply an explicit provider and canonical session when local inference is ambiguous.
+        effects: []
+        outputs:
+        - diagnostic
+      - id: policy-failed
+        class: error
+        caller_action: Report the persistence error and preserve the previous known policy state.
+        effects: []
+        outputs:
+        - diagnostic
+      outputs:
+      - id: result
+        audience: both
+        description: One line reporting whether automatic scheduling is enabled or disabled for the resolved session.
+        direct_io_ref: result-write
+        cardinality:
+          minimum: 1
+          maximum: 1
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        empty: Empty only on an error outcome.
+        type:
+          kind: string
+          sensitivity: user-private
+      - id: diagnostic
+        audience: both
+        description: Concise target-resolution or policy persistence error.
+        direct_io_ref: diagnostic-write
+        cardinality:
+          minimum: 0
+          maximum: 1
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        empty: Empty after a successful policy update or status query.
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Manage opt-in automatic near-limit wakeup scheduling for one provider session.
+    process_binding:
+      kind: process
+      entry: Interface
+      args_prefix:
+      - auto
+      arguments:
+        action:
+          kind: positional
+          position: 0
+          arity:
+            minimum: 1
+            maximum: 1
+        provider:
+          kind: positional
+          position: 1
+          arity:
+            minimum: 0
+            maximum: 1
+        session-id:
+          kind: positional
+          position: 2
+          arity:
+            minimum: 0
+            maximum: 1
+    usage: '<on|off|status> [claude|codex] [session-id]'
+    version: 1
+  wakeup.source.cli.interface.infer-schedule:
+    contract:
+      arguments:
+        text:
+          description: Optional provider timeout or resume text; omitted to inspect recent local provider logs.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+        message:
+          description: Optional message delivered after reset; omitted to use the module default.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+        delay:
+          default: 1 minute
+          description: Duration to wait after the inferred reset time.
+          required: false
+          sensitivity: public
+          type:
+            kind: string
+      caller_warnings:
+      - external-side-effect: A successful invocation atomically adds or coalesces a persistent wakeup job.
+      direct_io:
+        network: []
+        reads:
+        - id: session-transcripts
+          access: read
+          content: Recent Claude and Codex session identity, reset, alias, working-directory, and progress events.
+          formats:
+          - jsonl
+          - json
+          medium: local-filesystem
+          sensitivity: user-private
+        - id: queue-state
+          access: read
+          content: Existing wakeup jobs used for timer-minute deduplication.
+          formats:
+          - json
+          medium: local-filesystem
+          path: $home/.local/share/llm-wakeup/jobs.json
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        writes:
+        - id: queue-write
+          access: write
+          content: Atomic persistent wakeup queue replacement.
+          formats:
+          - json
+          medium: local-filesystem
+          path: $home/.local/share/llm-wakeup/jobs.json
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        - id: result-write
+          access: write
+          content: Scheduled provider, canonical session, local delivery time, and job identifier.
+          formats:
+          - text
+          medium: stdout
+          sensitivity: user-private
+        - id: diagnostic-write
+          access: write
+          content: Inference, deadline, transcript, or persistence error.
+          formats:
+          - text
+          medium: stderr
+          sensitivity: derived-private
+      execution:
+        consistency:
+          live: Provider logs, transcript progress, and the queue are read at invocation time.
+        effects:
+        - id: wakeup-job
+          action: create
+          direct_io_ref: queue-write
+          value_source:
+            kind: argument
+            argument_ref: text
+          confirmation_evidence:
+            kind: output
+            output_ref: result
+          reversibility:
+            compensatable: The persisted job can be removed before delivery by queue administration.
+          may_occur_in_outcomes:
+          - scheduled
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            per_effect_only: The complete wakeup queue is replaced atomically.
+          concurrent_invocations:
+            safe: Advisory locking serializes queue readers and writers.
+          idempotency:
+            idempotent: Repeating identical inference in the same timer minute returns the coalesced job.
+          on_uncertain_completion:
+            verify_then_decide: Inspect the queue or repeat the same invocation and rely on coalescing.
+          partial_effects_on_failure:
+            possible: Queue replacement can complete before the confirmation line is emitted.
+          rollback_on_failure:
+            unavailable: No automatic rollback removes a successfully persisted wakeup.
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: result
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - id: scheduled
+        class: success
+        caller_action: Report the canonical session and local delivery time to the user.
+        effects:
+        - wakeup-job
+        outputs:
+        - result
+      - id: inference-failed
+        class: error
+        caller_action: Supply explicit timeout text or use the explicit scheduling interface.
+        effects: []
+        outputs:
+        - diagnostic
+      - id: schedule-failed
+        class: error
+        caller_action: Report the operational error without claiming a wakeup was queued.
+        effects: []
+        outputs:
+        - diagnostic
+      outputs:
+      - id: result
+        audience: both
+        description: One stable line identifying a new or coalesced wakeup and its local delivery time.
+        direct_io_ref: result-write
+        cardinality:
+          minimum: 1
+          maximum: 1
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        empty: Empty only on an error outcome.
+        type:
+          kind: string
+          sensitivity: user-private
+      - id: diagnostic
+        audience: both
+        description: Concise inference, validation, transcript, or persistence error.
+        direct_io_ref: diagnostic-write
+        cardinality:
+          minimum: 0
+          maximum: 1
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        empty: Empty after successful scheduling.
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Infer provider, canonical session, and reset time before persisting a guarded wakeup.
+    process_binding:
+      kind: process
+      entry: Interface
+      args_prefix:
+      - infer
+      arguments:
+        text:
+          kind: option
+          name: --text
+          arity:
+            minimum: 0
+            maximum: 1
+        message:
+          kind: option
+          name: --message
+          arity:
+            minimum: 0
+            maximum: 1
+        delay:
+          kind: option
+          name: --delay
+          arity:
+            minimum: 0
+            maximum: 1
+    usage: '[--text <timeout-or-resume-text>] [--message <message>] [--delay <duration>]'
+    version: 1
+  wakeup.source.cli.interface.explicit-schedule:
+    contract:
+      arguments:
+        provider:
+          description: Provider owning the existing session.
+          required: true
+          sensitivity: public
+          type:
+            kind: enum
+            values:
+            - value: claude
+              description: Schedule a Claude Code session.
+            - value: codex
+              description: Schedule a Codex session.
+        session-id:
+          description: Canonical session UUID or unambiguous provider alias.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+        reset-time:
+          description: Duration, local clock time, ISO-8601 instant, or supported provider reset expression.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+        message:
+          description: Optional message delivered after reset; omitted to use the module default.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+        delay:
+          default: 1 minute
+          description: Duration to wait after the reset time.
+          required: false
+          sensitivity: public
+          type:
+            kind: string
+      caller_warnings:
+      - external-side-effect: A successful invocation atomically adds or coalesces a persistent wakeup job.
+      direct_io:
+        network: []
+        reads:
+        - id: session-transcripts
+          access: read
+          content: Provider session identity, alias, working-directory, and progress events.
+          formats:
+          - jsonl
+          - json
+          medium: local-filesystem
+          sensitivity: user-private
+        - id: queue-state
+          access: read
+          content: Existing wakeup jobs used for timer-minute deduplication.
+          formats:
+          - json
+          medium: local-filesystem
+          path: $home/.local/share/llm-wakeup/jobs.json
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        writes:
+        - id: queue-write
+          access: write
+          content: Atomic persistent wakeup queue replacement.
+          formats:
+          - json
+          medium: local-filesystem
+          path: $home/.local/share/llm-wakeup/jobs.json
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        - id: result-write
+          access: write
+          content: Scheduled provider, canonical session, local delivery time, and job identifier.
+          formats:
+          - text
+          medium: stdout
+          sensitivity: user-private
+        - id: diagnostic-write
+          access: write
+          content: Session, deadline, transcript, or persistence error.
+          formats:
+          - text
+          medium: stderr
+          sensitivity: derived-private
+      execution:
+        consistency:
+          live: Session metadata, transcript progress, and the queue are read at invocation time.
+        effects:
+        - id: wakeup-job
+          action: create
+          direct_io_ref: queue-write
+          value_source:
+            kind: argument
+            argument_ref: session-id
+          confirmation_evidence:
+            kind: output
+            output_ref: result
+          reversibility:
+            compensatable: The persisted job can be removed before delivery by queue administration.
+          may_occur_in_outcomes:
+          - scheduled
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            per_effect_only: The complete wakeup queue is replaced atomically.
+          concurrent_invocations:
+            safe: Advisory locking serializes queue readers and writers.
+          idempotency:
+            idempotent: Repeating identical input in the same timer minute returns the coalesced job.
+          on_uncertain_completion:
+            verify_then_decide: Repeat the same invocation and rely on timer-minute coalescing.
+          partial_effects_on_failure:
+            possible: Queue replacement can complete before the confirmation line is emitted.
+          rollback_on_failure:
+            unavailable: No automatic rollback removes a successfully persisted wakeup.
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: result
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - id: scheduled
+        class: success
+        caller_action: Report the canonical session and local delivery time to the user.
+        effects:
+        - wakeup-job
+        outputs:
+        - result
+      - id: target-invalid
+        class: error
+        caller_action: Correct the provider, session, reset time, or delay.
+        effects: []
+        outputs:
+        - diagnostic
+      - id: schedule-failed
+        class: error
+        caller_action: Report the operational error without claiming a wakeup was queued.
+        effects: []
+        outputs:
+        - diagnostic
+      outputs:
+      - id: result
+        audience: both
+        description: One stable line identifying a new or coalesced wakeup and its local delivery time.
+        direct_io_ref: result-write
+        cardinality:
+          minimum: 1
+          maximum: 1
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        empty: Empty only on an error outcome.
+        type:
+          kind: string
+          sensitivity: user-private
+      - id: diagnostic
+        audience: both
+        description: Concise target, deadline, transcript, or persistence error.
+        direct_io_ref: diagnostic-write
+        cardinality:
+          minimum: 0
+          maximum: 1
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        empty: Empty after successful scheduling.
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Persist a guarded wakeup for an explicitly identified provider session and reset time.
+    process_binding:
+      kind: process
+      entry: Interface
+      args_prefix:
+      - schedule
+      arguments:
+        provider:
+          kind: positional
+          position: 0
+          arity:
+            minimum: 1
+            maximum: 1
+        session-id:
+          kind: positional
+          position: 1
+          arity:
+            minimum: 1
+            maximum: 1
+        reset-time:
+          kind: positional
+          position: 2
+          arity:
+            minimum: 1
+            maximum: 1
+        message:
+          kind: option
+          name: --message
+          arity:
+            minimum: 0
+            maximum: 1
+        delay:
+          kind: option
+          name: --delay
+          arity:
+            minimum: 0
+            maximum: 1
+    usage: '<claude|codex> <session-id> <reset-time> [--message <message>] [--delay <duration>]'
+    version: 1
+uses_interfaces: []

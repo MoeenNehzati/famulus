@@ -1,0 +1,25 @@
+schema_version: 5
+id: wakeup.source.scheduler
+version: 1
+node_type: behavioral_source
+description: Create, inspect, cancel, and deliver persistent wakeup jobs while suppressing stale wakeups.
+gateway:
+  language: Python
+  path: claude_codex_service.py
+content:
+  - claude_codex_service\.py
+dependencies:
+  - blueprint:
+      base: module-root
+      path: blueprints/session-data.yaml
+    source: wakeup.source.session-data
+    version: 1
+    reason: Resolve sessions and determine whether they progressed after scheduling.
+  - blueprint:
+      base: module-root
+      path: blueprints/persistence.yaml
+    source: wakeup.source.persistence
+    version: 1
+    reason: Store jobs and coordinate concurrent scheduler processes.
+interfaces: {}
+uses_interfaces: []

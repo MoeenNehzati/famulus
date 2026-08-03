@@ -9,15 +9,16 @@ scanner lock: scheduling remains available while a provider delivery runs.
 
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
 from . import WakeupError
+from .locking import locked_file
 
 
 def data_dir() -> Path:
@@ -59,17 +60,32 @@ def locked_jobs() -> Iterator[list[dict]]:
     root = data_dir()
     root.mkdir(parents=True, exist_ok=True)
     queue = root / "jobs.json"
-    with (root / "jobs.lock").open("a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with locked_file(root / "jobs.lock"):
         jobs = _read_jobs(queue)
         yield jobs
         _write_jobs(queue, jobs)
 
 
-def append_job(job: dict) -> None:
-    """Append one JSON-serializable job under the queue write lock."""
+def _timer_minute(value: str) -> str:
+    """Normalize an ISO timestamp to the UTC minute used for job coalescing."""
+
+    instant = datetime.fromisoformat(value).astimezone(timezone.utc)
+    return instant.replace(second=0, microsecond=0).isoformat()
+
+
+def append_job(job: dict) -> tuple[dict, bool]:
+    """Append a job unless its target already exists in the same timer minute."""
+
     with locked_jobs() as jobs:
+        for existing in jobs:
+            if (
+                existing.get("provider") == job.get("provider")
+                and existing.get("session_id") == job.get("session_id")
+                and _timer_minute(existing["run_at"]) == _timer_minute(job["run_at"])
+            ):
+                return existing.copy(), False
         jobs.append(job)
+        return job.copy(), True
 
 
 def due_jobs(now_iso: str) -> list[dict]:
