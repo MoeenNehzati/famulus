@@ -75,10 +75,27 @@ _FAKE_DISPATCHER_TEMPLATE = textwrap.dedent(
 def _write_fake_dispatcher(tmp_path: Path, responses: dict) -> _FakeDispatcher:
     script_dir = tmp_path / "fake_dispatcher"
     script_dir.mkdir(exist_ok=True)
-    script_path = script_dir / "dispatcher"
     (script_dir / "responses.json").write_text(json.dumps(responses))
-    script_path.write_text(_FAKE_DISPATCHER_TEMPLATE)
-    script_path.chmod(script_path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+
+    if sys.platform.startswith("win"):
+        # `dispatcher_launcher_path` resolves to `dispatcher.bat` on Windows
+        # (real dispatcher.bat is itself a batch wrapper that invokes a
+        # python interpreter -- see _install_launcher/_windows_launcher.py's
+        # _windows_dispatcher_content). A bare shebang script named
+        # `dispatcher` (no `.bat`/`.exe`) can't be launched directly by
+        # subprocess.run on Windows, which doesn't interpret shebang lines
+        # and fails with WinError 193 trying to load it as a PE executable.
+        logic_path = script_dir / "dispatcher_impl.py"
+        logic_path.write_text(_FAKE_DISPATCHER_TEMPLATE)
+        script_path = script_dir / "dispatcher.bat"
+        script_path.write_text(
+            f'@echo off\r\n"{sys.executable}" "{logic_path}" %*\r\n', newline=""
+        )
+    else:
+        script_path = script_dir / "dispatcher"
+        script_path.write_text(_FAKE_DISPATCHER_TEMPLATE)
+        script_path.chmod(script_path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+
     return _FakeDispatcher(script_path)
 
 
