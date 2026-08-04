@@ -230,7 +230,7 @@ interfaces:
         max_positionals: 1
         min_positionals: 1
         name: owner
-    usage: <name>
+    usage: <name> [--jobs-file FILE] [--no-sync]
     version: 1
   recurring-tasks-rtx.source.rtx-job-control.interface.scripts-enable:
     contract:
@@ -430,7 +430,7 @@ interfaces:
         max_positionals: 1
         min_positionals: 1
         name: owner
-    usage: <name>
+    usage: <name> [--jobs-file FILE] [--no-sync]
     version: 1
   recurring-tasks-rtx.source.rtx-job-control.interface.scripts-status:
     contract:

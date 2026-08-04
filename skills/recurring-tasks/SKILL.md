@@ -35,9 +35,9 @@ Dispatcher Interfaces:
 
 Use the installed `dispatcher` command for these process-bound interfaces:
 - `recurring-tasks.interface.scripts-disable` — Disable a job by setting enabled: false in jobs.yaml and syncing native scheduler entries.
-  - `dispatcher --caller-skill recurring-tasks recurring-tasks.interface.scripts-disable <name>`
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks.interface.scripts-disable <name> [--jobs-file FILE] [--no-sync]`
 - `recurring-tasks.interface.scripts-enable` — Enable a job by setting enabled: true in jobs.yaml and syncing native scheduler entries.
-  - `dispatcher --caller-skill recurring-tasks recurring-tasks.interface.scripts-enable <name>`
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks.interface.scripts-enable <name> [--jobs-file FILE] [--no-sync]`
 - `recurring-tasks.interface.scripts-ensure-agent-env` — Idempotently ensure recurring-tasks' systemd AI_AGENT_COMMAND_TEMPLATE is in place. Also run automatically by scripts-setup.
   - `dispatcher --caller-skill recurring-tasks recurring-tasks.interface.scripts-ensure-agent-env --repo-root DIR --home DIR --bin-dir DIR [--dry-run]`
 - `recurring-tasks.interface.scripts-healthcheck` — Run pre-flight and per-job health checks for all enabled recurring tasks; sends a desktop notification on failure.
