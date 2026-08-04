@@ -1,106 +1,37 @@
-# Cross-host hook scaffold
+# Cross-host hook design reference
 
-Use this reference when implementing a hook that serves one semantic purpose across multiple assistant hosts.
-
-The reusable base scaffold lives at `llmhooks/lib/cross_host.py`. Prefer subclassing it instead of copying ad hoc host-detection code into each hook.
+Use this reference when implementing a hook that serves one semantic purpose across multiple assistant hosts. Before editing, locate and read the repository's live cross-host abstraction, canonical registry, installers, supported-host contracts, and golden tests. Those artifacts own concrete paths, names, and APIs.
 
 ## Architecture
 
-Use this shape:
+Keep shared logic host-neutral. It returns semantic values such as additional context, decision state, diagnostics, or files to write; it does not emit host-shaped JSON.
 
-```text
-llmhooks/
-├── lib/
-│   └── cross_host.py
-├── registry.py
-├── session_start.py
-├── stop_summary.py
-└── ...
-```
-
-The shared logic must not emit host-shaped JSON. It should return semantic values such as additional context text, decision state, diagnostic messages, or files to write.
-
-The host adapter owns:
+Each host adapter owns:
 
 - accepted lifecycle event names and matchers
 - stdin payload interpretation
 - JSON output shape
-- stdout vs stderr rules
+- stdout versus stderr rules
 - exit-code meaning
-- truncation or escaping required by that host
+- host-required truncation and escaping
 
-The hook class itself should also own installation metadata:
+Keep installation metadata with the hook implementation:
 
 - shared default event and matcher
-- per-host event overrides
-- per-host matcher overrides
-- the exact CLI selector used in installed commands
+- per-host event and matcher overrides
+- the exact host selector used in installed commands
 
-## Minimal Python structure
+Prefer the live shared abstraction when the hook fits its standard parse/build/emit/install lifecycle. Use one module per purpose when the logic is small. Plain functions remain appropriate for a very small hook; a class is useful when hooks share lifecycle parsing, semantic result types, adapter behavior, or installation metadata.
 
-For standard hooks, prefer subclassing `llmhooks/lib/cross_host.py:CrossHostHook`.
+The hook implementation is the source of truth for runtime behavior and installation metadata. Installers resolve bindings from it instead of duplicating event, matcher, and selector values. A host-specific override takes precedence over the shared default; use the live abstraction's null sentinel to inherit, never a numeric placeholder.
 
-Use a single file per hook purpose when the logic is small:
+Register every installable hook in the canonical registry, and make installers install the registered hooks supported by the current host.
 
-```python
-from __future__ import annotations
+## Registration-selection rule
 
-from llmhooks.lib.cross_host import CrossHostHook, HookInput, HookResult, parse_platform_args
+Generated and development registrations must write an explicit host selector into the installed command. The user should not supply it manually.
 
-
-class InjectDispatcherContextHook(CrossHostHook):
-    hook_name = "inject-dispatcher-context"
-
-    event = "SessionStart"
-    matcher = "startup|clear|compact"
-
-    # If a host differs, override only that host.
-    host_a_event = None
-    host_b_event = None
-    host_c_event = None
-
-    host_a_matcher = None
-    host_b_matcher = None
-    host_c_matcher = None
-
-    def build(self, hook_input: HookInput) -> HookResult:
-        return HookResult(additional_context="...")
-
-    def output_for_host_a(self, hook_input: HookInput, result: HookResult) -> dict[str, object]:
-        return self.shared_output(hook_input, result)
-
-    def output_for_host_b(self, hook_input: HookInput, result: HookResult) -> dict[str, object]:
-        return self.shared_output(hook_input, result)
-
-    def output_for_host_c(self, hook_input: HookInput, result: HookResult) -> dict[str, object]:
-        return self.shared_output(hook_input, result)
-
-
-if __name__ == "__main__":
-    host = parse_platform_args()
-    raise SystemExit(InjectDispatcherContextHook().run(host))
-```
-
-Treat the host-specific method and field names above as placeholders. Adapt them to the exact names exposed by the live scaffold in `llmhooks/lib/cross_host.py`.
-
-The class should be the source of truth for both runtime behavior and installation metadata. Installer code should resolve `event` / `matcher` through the hook class instead of duplicating those values elsewhere.
-
-Installable hooks should also be listed in `llmhooks/registry.py`. The installer should import that registry and install every registered hook for the current host automatically.
-
-Resolution rule:
-
-- if a host-specific event override is not `None`, use it; otherwise use `event`
-- if a host-specific matcher override is not `None`, use it; otherwise use `matcher`
-
-Use `None`, not `NaN`, for “inherit the shared default”.
-
-For very small hooks, plain functions are enough. Use the class only when several hooks share lifecycle parsing, result types, or adapter behavior, or when the hook cleanly fits the standard parse/build/emit/install lifecycle.
-
-## Installed-command rule
-
-Installed hook commands must select the host explicitly. The host-specific installer or registration code must write the selector into the host config.
-
-Avoid a bare command with no selector when the script would otherwise guess the host from environment variables alone.
+If multiple hosts necessarily consume one static plugin registration, a compatibility adapter may select the host from one isolated host-owned registration signal. Keep that exception local to the shared registration, define its fallback explicitly, and never infer output shape from unrelated ambient variables.
 
 ## Lifecycle mapping
 
@@ -122,7 +53,7 @@ host B binding: host-specific stop or transcript event
 other host: closest durable-completion event
 ```
 
-Do not encode the purpose as `SessionStart` unless the purpose truly is host-specific to that lifecycle event. Prefer naming modules by purpose, then binding them to events in the installer.
+Do not name a hook for one event unless its purpose is genuinely specific to that lifecycle. Name modules by purpose, then bind them to events during installation.
 
 When the hosts mostly agree, keep the shared values in `event` and `matcher` and override only the differing hosts. This keeps the class readable.
 
@@ -133,11 +64,12 @@ For each supported host, add golden tests that verify:
 - minimal environment produces the expected host output shape
 - unrelated host environment variables do not change the selected output shape
 - stdin payload is parsed correctly for that host's event
-- no platform selector exits nonzero with a clear error
+- a generated or development entry point with no host selector exits nonzero with a clear error
+- a shared static plugin registration selects each supported host from its isolated signal and produces the documented fallback with no signal
 - missing optional shared dependencies still produce valid host JSON when possible
 - installer resolution of event, matcher, and command matches the class metadata
 
-A regression test for the current failure class should assert that an explicit host selector still emits the right output shape even when unrelated host variables are present, and that a minimal-environment startup does not fall back to a legacy top-level shape.
+A regression test for the current failure class should assert that explicit selectors remain stable under unrelated environment noise. When the shared-static-registration exception applies, golden-test both host-signal cases and the no-signal fallback, and verify that unrelated variables cannot select another output shape.
 
 ## Registration checklist
 
@@ -150,4 +82,4 @@ When adding or changing a cross-host hook, update and verify every active regist
 
 Treat these paths as a matched set; updating only one path leaves a host silently stale.
 
-The long-term target is installer automation: installers should be able to import the hook class, ask it for the resolved binding for each host, and register the hook without hardcoding event/matcher/flag triples in multiple places.
+Installers should obtain each host's resolved binding from the hook implementation and registry rather than hardcoding event, matcher, and selector triples in multiple places.
