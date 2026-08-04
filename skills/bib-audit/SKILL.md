@@ -38,15 +38,6 @@ These interfaces are documented prompt surfaces. They are not executed through `
 
 Conservative bibliography auditor. Default behavior: produce a structured report. Apply transformations only on explicit user approval.
 
-## Test files
-
-Ready-to-use test fixtures live in `test/`:
-- `test_biblatex.bib` — biblatex+Biber path: exact duplicate pair, preprint/journal version pair, missing fields, bad DOI, formatting inconsistencies
-- `test_natbib.bib` — BibTeX+natbib path: exact duplicate pair, year conflict, missing author, page-dash issues, mixed field casing
-- `test_modification.bib` + `test_modification.tex` — modification layer: deletion, merge, `.tex` citation rewrite, deduplication edge cases
-- `test_natbib_commands.tex` — all natbib citation command variants with optional args, multi-key, deduplication
-- `test_multifile_main.tex` + `test_multifile_section.tex` — multi-file citation rewrite
-
 ## Invocation
 
 Ask for:
