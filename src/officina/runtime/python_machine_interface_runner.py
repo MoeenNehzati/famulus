@@ -671,6 +671,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     runtime_caller_module_id: str | None = None
     runtime_caller_source_id: str | None = None
     runtime_repo_root: Path | None = None
+    runtime_repository_config: Path | None = None
     private_options = {
         "--source-fd",
         "--package-file",
@@ -682,6 +683,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--runtime-caller-module-id",
         "--runtime-caller-source-id",
         "--runtime-repo-root",
+        "--runtime-repository-config",
     }
     while argv and argv[0] in private_options:
         option = argv.pop(0)
@@ -737,6 +739,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return 2
             runtime_repo_root = Path(argv.pop(0)).resolve()
             continue
+        if option == "--runtime-repository-config":
+            if runtime_repository_config is not None:
+                print("error: duplicate runtime repository config", file=sys.stderr)
+                return 2
+            runtime_repository_config = Path(argv.pop(0))
+            continue
         try:
             descriptor = int(argv.pop(0))
         except ValueError:
@@ -788,6 +796,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             caller_module_id=runtime_caller_module_id,
             caller_source_id=runtime_caller_source_id,
             repo_root=runtime_repo_root,
+            repository_config=runtime_repository_config,
         )
         return run_python_machine_interface(interface, interface_argv)
 

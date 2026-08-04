@@ -9,6 +9,7 @@ import yaml
 
 from officina.common.repository_configuration import RepositoryConfiguration
 from officina.dispatcher.direct_authorization import resolve_direct_invocation
+from officina.dispatcher.core import _dispatch_host, _resolve_host_dispatch_metadata
 from officina.dispatcher.errors import (
     DirectBlueprintError,
     UnauthorizedCallerError,
@@ -78,6 +79,10 @@ def _repository(
 ) -> RepositoryConfiguration:
     modules = tmp_path / "skills"
     modules.mkdir()
+    (tmp_path / "officina.toml").write_text(
+        'schema_version = 1\n[modules]\nroots = ["skills"]\n',
+        encoding="utf-8",
+    )
     documents = {
         "root": _module(
             "root",
@@ -120,7 +125,7 @@ def _repository(
                 "contract": {"arguments": {}},
                 "process_binding": {
                     "kind": "process",
-                    "entry": "main",
+                    "entry": "Interface",
                     "args_prefix": ["read"],
                     "arguments": {},
                 },
@@ -129,7 +134,16 @@ def _repository(
     }
     _write_yaml(modules / "root" / "alpha" / "leaf" / "blueprints" / "runtime.yaml", source)
     (modules / "root" / "alpha" / "leaf" / "runtime.py").write_text(
-        "def main(): pass\n", encoding="utf-8"
+        "from officina.runtime.python_machine_interface import PythonMachineInterface\n"
+        "class Interface(PythonMachineInterface):\n"
+        "    def build_parser(self):\n"
+        "        parser = super().build_parser()\n"
+        "        parser.add_argument('command')\n"
+        "        return parser\n"
+        "    def run(self, args):\n"
+        "        print('direct-ok')\n"
+        "        return 0\n",
+        encoding="utf-8",
     )
     return RepositoryConfiguration(1, tmp_path / "officina.toml", tmp_path, (modules,))
 
@@ -315,3 +329,49 @@ def test_certification_status_is_warning_only(tmp_path: Path) -> None:
         certification_status={SOURCE_ID: "expired"},
     )
     assert any(item.code == "certification-expired" for item in invocation.diagnostics)
+
+
+def test_host_metadata_uses_explicit_config_without_legacy_routing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configuration = _repository(tmp_path, terminal_access=_access(public=True))
+
+    def forbidden(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("legacy routing reached")
+
+    monkeypatch.setattr("officina.dispatcher.core.load_snapshot_route", forbidden)
+    monkeypatch.setattr("officina.dispatcher.core.lookup_route_graph", forbidden)
+    monkeypatch.setattr("officina.dispatcher.core.load_repository_blueprint_graph", forbidden)
+
+    resolved = _resolve_host_dispatch_metadata(
+        caller_skill="root.alpha.leaf",
+        target=INTERFACE_ID,
+        args=[],
+        target_version=None,
+        repository_config=configuration.config_path,
+    )
+
+    assert resolved.schema_version == 6
+    assert resolved.python_target is not None
+
+
+def test_host_executes_direct_route_with_explicit_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configuration = _repository(tmp_path, terminal_access=_access(public=True))
+    monkeypatch.setenv("PYTHONPATH", str(Path(__file__).resolve().parents[1] / "src"))
+
+    completed = _dispatch_host(
+        caller_skill="root.alpha.leaf",
+        target=INTERFACE_ID,
+        args=[],
+        repository_config=configuration.config_path,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0
+    assert completed.stdout == "direct-ok\n"
+    assert completed.stderr == ""

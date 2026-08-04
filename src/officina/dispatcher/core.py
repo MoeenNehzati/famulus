@@ -44,6 +44,7 @@ from officina.common.repository_paths import (
     RepositoryPathError,
     equivalent_root_relative_path,
 )
+from officina.common.repository_configuration import load_repository_configuration
 from officina.runtime.python_machine_interface import (
     PythonProcessTarget,
     PythonProcessTargetError,
@@ -466,6 +467,7 @@ class ResolvedInvocation:
             "--runtime-caller-module-id": 1,
             "--runtime-caller-source-id": 1,
             "--runtime-repo-root": 1,
+            "--runtime-repository-config": 1,
         }
         try:
             index = command.index(
@@ -556,6 +558,7 @@ def _build_python_runtime(
     repo_root: Path | None = None,
     runtime_caller_module_id: str | None = None,
     runtime_caller_source_id: str | None = None,
+    runtime_repository_config: Path | None = None,
 ) -> tuple[
     Path,
     list[str],
@@ -633,7 +636,7 @@ def _build_python_runtime(
     physical_package_prefix: str | None = None
     package_root = module_root / "_rtx"
     snapshot_root = module_root
-    if schema_version == 5:
+    if schema_version in {5, 6}:
         logical_package = logical_python_package_name(target_module_id)
         physical_parts = (
             module_path.parent.parts
@@ -671,6 +674,13 @@ def _build_python_runtime(
                 root.as_posix(),
             ]
         )
+        if runtime_repository_config is not None:
+            runtime_context_arguments.extend(
+                [
+                    "--runtime-repository-config",
+                    runtime_repository_config.as_posix(),
+                ]
+            )
     try:
         python_target = PythonProcessTarget(
             module_path,
@@ -748,7 +758,7 @@ def _build_python_runtime(
         module_root,
         [
             sys.executable,
-            *(["-P"] if schema_version == 5 else []),
+            *(["-P"] if schema_version in {5, 6} else []),
             "-m",
             "officina.runtime.python_machine_interface_runner",
             *(
@@ -1220,6 +1230,80 @@ def _resolve_export_dispatch(
     )
 
 
+def _materialize_direct_invocation(
+    *,
+    repository_config: Path,
+    caller_module_id: str,
+    target: str,
+    args: list[str],
+    stdin_requested: bool,
+    target_version: int | None,
+) -> ResolvedInvocation:
+    """Turn direct route metadata into one executable Python invocation."""
+
+    from officina.dispatcher.direct_authorization import resolve_direct_invocation
+
+    configuration = load_repository_configuration(repository_config)
+    metadata = resolve_direct_invocation(
+        configuration=configuration,
+        caller_module_id=caller_module_id,
+        interface_id=target,
+        interface_version=target_version,
+        argv=args,
+        stdin_requested=stdin_requested,
+    )
+    python_target = metadata.python_target
+    if python_target is None:
+        raise RuntimeMisconfiguredError(
+            f"{target}: direct route has no Python target",
+            caller_module_id=caller_module_id,
+            target_module_id=metadata.target_module_id,
+        )
+    (
+        cwd,
+        command,
+        env,
+        runtime_bindings,
+        runtime_snapshots,
+        materialized_target,
+    ) = _build_python_runtime(
+        metadata.cwd,
+        metadata.target_module_id,
+        6,
+        target,
+        {
+            "path": python_target.gateway_path.as_posix(),
+            "symbol": python_target.process_entry,
+            "args_prefix": [],
+        },
+        list(metadata.command),
+        repo_root=configuration.repository_root,
+        runtime_caller_module_id=metadata.terminal_module_id,
+        runtime_caller_source_id=metadata.implementing_source_id,
+        runtime_repository_config=configuration.config_path,
+    )
+    return ResolvedInvocation(
+        caller_module_id=metadata.caller_module_id,
+        target_module_id=metadata.target_module_id,
+        script_interface=metadata.script_interface,
+        target=metadata.target,
+        pattern=metadata.pattern,
+        cwd=cwd,
+        command=command,
+        stdin=metadata.stdin,
+        python_target=materialized_target,
+        env=env,
+        runtime_bindings=runtime_bindings,
+        runtime_snapshots=runtime_snapshots,
+        caller_source_id=metadata.caller_source_id,
+        terminal_module_id=metadata.terminal_module_id,
+        implementing_source_id=metadata.implementing_source_id,
+        authorization=metadata.authorization,
+        schema_version=6,
+        diagnostics=metadata.diagnostics,
+    )
+
+
 def _resolve_dispatch(
     *,
     caller_skill: str,
@@ -1233,6 +1317,7 @@ def _resolve_dispatch(
     graph: RepositoryBlueprintGraph | None = None,
     host_caller: bool = False,
     require_active_snapshot: bool = False,
+    repository_config: Path | None = None,
 ) -> ResolvedInvocation:
     args = args or []
     if not caller_skill.strip():
@@ -1240,6 +1325,16 @@ def _resolve_dispatch(
             "caller_skill must be a non-empty string",
         )
     caller_skill = caller_skill.strip()
+
+    if repository_config is not None:
+        return _materialize_direct_invocation(
+            repository_config=repository_config,
+            caller_module_id=caller_skill,
+            target=target,
+            args=args,
+            stdin_requested=stdin_requested,
+            target_version=target_version,
+        )
 
     root = get_repo_root(repo_root)
     if not isinstance(target, str) or _EXPORT_TARGET_RE.fullmatch(target) is None:
@@ -1407,8 +1502,23 @@ def _resolve_host_dispatch_metadata(
     target_version: int | None = None,
     certification_view: CertificationView | None = None,
     graph: RepositoryBlueprintGraph | None = None,
+    repository_config: Path | None = None,
 ) -> ResolvedInvocationMetadata:
     """Resolve one host request, admitting only discoverable v5 parents."""
+
+    if repository_config is not None:
+        from officina.dispatcher.direct_authorization import (
+            resolve_direct_invocation,
+        )
+
+        return resolve_direct_invocation(
+            configuration=load_repository_configuration(repository_config),
+            caller_module_id=caller_skill,
+            interface_id=target,
+            interface_version=target_version,
+            argv=args or [],
+            stdin_requested=stdin_requested,
+        )
 
     with _resolve_dispatch(
         caller_skill=caller_skill,
@@ -1536,6 +1646,7 @@ def _dispatch_host(
     repo_root: Path | None = None,
     target_version: int | None = None,
     warning_handler: Callable[[InvocationDiagnostic], None] | None = None,
+    repository_config: Path | None = None,
 ) -> subprocess.CompletedProcess[Any]:
     """Resolve and execute a host request from a discoverable parent skill."""
 
@@ -1548,6 +1659,7 @@ def _dispatch_host(
         target_version=target_version,
         host_caller=True,
         require_active_snapshot=True,
+        repository_config=repository_config,
     )
     if warning_handler is not None:
         for diagnostic in resolved.diagnostics:

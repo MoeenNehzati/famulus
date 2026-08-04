@@ -32,6 +32,11 @@ from officina.dispatcher.direct_blueprints import (
     parse_interface_id,
 )
 from officina.dispatcher.errors import ResolutionFailedError, UnauthorizedCallerError
+from officina.runtime.python_machine_interface import (
+    PythonProcessTarget,
+    PythonProcessTargetError,
+    logical_python_package_name,
+)
 
 
 def _ancestry_ids(module_id: str) -> tuple[str, ...]:
@@ -272,7 +277,7 @@ def resolve_direct_invocation(
     configuration: RepositoryConfiguration,
     caller_module_id: str,
     interface_id: str,
-    interface_version: int,
+    interface_version: int | None,
     argv: list[str],
     stdin_requested: bool,
     certification_status: Mapping[str, object] | None = None,
@@ -291,6 +296,48 @@ def resolve_direct_invocation(
         raise DirectBlueprintError(
             f"interface not found: {interface_id}",
             code="dispatcher.interface_not_found",
+            target_module_id=target_module_id,
+        )
+
+    source_interface_id = raw_export.get("source_interface")
+    if not isinstance(source_interface_id, str) or ".source." not in source_interface_id:
+        raise DirectBlueprintError(
+            f"invalid source interface for {interface_id}",
+            code="dispatcher.source_interface_invalid",
+            target_module_id=target_module_id,
+        )
+    source_id, marker, source_local_name = source_interface_id.rpartition(".interface.")
+    if marker != ".interface." or not source_id.startswith(f"{target_module_id}.source."):
+        raise DirectBlueprintError(
+            f"source interface is not owned by {target_module_id}: {source_interface_id}",
+            code="dispatcher.source_interface_invalid",
+            target_module_id=target_module_id,
+        )
+    locator = terminal.declaration["sources"].get(source_id)
+    source, source_declaration = _load_source(terminal, source_id, locator)
+    interfaces = source_declaration.get("interfaces")
+    raw_source_interface = (
+        interfaces.get(source_interface_id) if isinstance(interfaces, Mapping) else None
+    )
+    if not isinstance(raw_source_interface, Mapping):
+        raise DirectBlueprintError(
+            f"source interface not found: {source_interface_id}",
+            code="dispatcher.source_interface_invalid",
+            target_module_id=target_module_id,
+        )
+    available_version = raw_source_interface.get("version")
+    if type(available_version) is not int:
+        raise DirectBlueprintError(
+            f"source interface version is invalid: {source_interface_id}",
+            code="dispatcher.source_interface_invalid",
+            target_module_id=target_module_id,
+        )
+    if interface_version is None:
+        interface_version = available_version
+    elif available_version != interface_version:
+        raise DirectBlueprintError(
+            f"version mismatch for {interface_id}: requested {interface_version}, available {available_version}",
+            code="dispatcher.interface_version_mismatch",
             target_module_id=target_module_id,
         )
 
@@ -382,39 +429,6 @@ def resolve_direct_invocation(
             diagnostic=f"caller-filtered:terminal-export:{interface_id}",
         )
 
-    source_interface_id = raw_export.get("source_interface")
-    if not isinstance(source_interface_id, str) or ".source." not in source_interface_id:
-        raise DirectBlueprintError(
-            f"invalid source interface for {interface_id}",
-            code="dispatcher.source_interface_invalid",
-            target_module_id=target_module_id,
-        )
-    source_id, marker, source_local_name = source_interface_id.rpartition(".interface.")
-    if marker != ".interface." or not source_id.startswith(f"{target_module_id}.source."):
-        raise DirectBlueprintError(
-            f"source interface is not owned by {target_module_id}: {source_interface_id}",
-            code="dispatcher.source_interface_invalid",
-            target_module_id=target_module_id,
-        )
-    locator = terminal.declaration["sources"].get(source_id)
-    source, source_declaration = _load_source(terminal, source_id, locator)
-    interfaces = source_declaration.get("interfaces")
-    raw_source_interface = (
-        interfaces.get(source_interface_id) if isinstance(interfaces, Mapping) else None
-    )
-    if not isinstance(raw_source_interface, Mapping):
-        raise DirectBlueprintError(
-            f"source interface not found: {source_interface_id}",
-            code="dispatcher.source_interface_invalid",
-            target_module_id=target_module_id,
-        )
-    available_version = raw_source_interface.get("version")
-    if available_version != interface_version:
-        raise DirectBlueprintError(
-            f"version mismatch for {interface_id}: requested {interface_version}, available {available_version}",
-            code="dispatcher.interface_version_mismatch",
-            target_module_id=target_module_id,
-        )
     export = InterfaceExport(
         interface_id=interface_id,
         version=interface_version,
@@ -487,6 +501,28 @@ def resolve_direct_invocation(
         ),
     )
     diagnostics = _certification_diagnostics(tuple(node_versions), certification_status)
+    gateway_relative = source.gateway_path.relative_to(source.module_root)
+    logical_package = logical_python_package_name(target_module_id)
+    physical_parts = (
+        gateway_relative.parent.parts
+        if gateway_relative.name == "__init__.py"
+        else (*gateway_relative.parent.parts, gateway_relative.stem)
+    )
+    suffix = ".".join(part for part in physical_parts if part not in {"", "."})
+    logical_entrypoint = logical_package if not suffix else f"{logical_package}.{suffix}"
+    try:
+        python_target = PythonProcessTarget(
+            gateway_relative,
+            plan.entry or "",
+            logical_package=logical_package,
+            logical_entrypoint=logical_entrypoint,
+        )
+    except PythonProcessTargetError as exc:
+        raise ResolutionFailedError(
+            f"cannot build Python target for {interface_id}: {exc}",
+            caller_module_id=caller_module_id,
+            target_module_id=target_module_id,
+        ) from exc
     return ResolvedInvocationMetadata(
         caller_module_id=caller_module_id,
         target_module_id=target_module_id,
@@ -496,6 +532,7 @@ def resolve_direct_invocation(
         cwd=terminal.blueprint_path.parent,
         command=list(plan.argv),
         stdin=plan.stdin_argument_id is not None,
+        python_target=python_target,
         caller_source_id=None,
         terminal_module_id=target_module_id,
         implementing_source_id=source_id,

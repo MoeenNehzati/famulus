@@ -21,6 +21,7 @@ import time
 from pathlib import Path
 
 from officina.common import atomic_files
+from officina.common import toml_io
 from officina.install.dispatch_snapshot_builder import build_dispatch_snapshot
 from officina.install.runtime_pointer import RuntimePointer, activate_release
 
@@ -312,6 +313,11 @@ def build_candidate_release(
         release_dir=release_dir,
         python_bin=python_bin,
         trusted_interpreter_roots=trusted_interpreter_roots,
+        repository_config=(
+            Path(repo_root).resolve() / toml_io.repository_config_filename()
+            if repo_root is not None
+            else None
+        ),
     )
 
 

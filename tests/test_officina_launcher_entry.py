@@ -85,6 +85,41 @@ def test_main_execs_into_pointer_python_bin(tmp_path, monkeypatch):
     assert exit_code == 1  # unreachable in a real exec; fake stand-in returns None -> main returns 1
 
 
+def test_main_injects_repository_config_from_v2_pointer(tmp_path, monkeypatch):
+    runtime_root = tmp_path / "runtime"
+    release_dir = runtime_root / "releases" / "good-release"
+    python_bin = release_dir / "venv" / "bin" / "python"
+    python_bin.parent.mkdir(parents=True)
+    python_bin.write_text("#!/bin/sh\n")
+    repository = tmp_path / "repository"
+    (repository / "skills").mkdir(parents=True)
+    config = repository / "officina.toml"
+    config.write_text('schema_version = 1\n[modules]\nroots = ["skills"]\n')
+    activate_release(
+        runtime_root=runtime_root,
+        release_dir=release_dir,
+        python_bin=python_bin,
+        repository_config=config,
+    )
+    recorded = {}
+
+    def fake_execv(path, argv):
+        recorded["path"] = path
+        recorded["argv"] = argv
+
+    monkeypatch.setattr("os.execv", fake_execv)
+    main(_resolver_argv(runtime_root, "-m", "officina.dispatcher.cli", "--dry-run"))
+
+    assert recorded["argv"] == [
+        str(python_bin),
+        "-m",
+        "officina.dispatcher.cli",
+        "--repository-config",
+        str(config),
+        "--dry-run",
+    ]
+
+
 def test_trusted_interpreter_roots_reads_sidecar_file(tmp_path, monkeypatch):
     """The dependency-free resolver must not shell out to uv or import
     anything: trust comes from a plain JSON sidecar file placed next to the

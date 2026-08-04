@@ -29,6 +29,49 @@ def test_activate_release_writes_pointer_atomically(tmp_path: Path) -> None:
     assert pointer.python_bin == python_bin
 
 
+def test_v2_pointer_carries_validated_repository_configuration(tmp_path: Path) -> None:
+    runtime_root = tmp_path / "runtime"
+    release_dir = runtime_root / "releases" / "release"
+    (release_dir / "venv" / "bin").mkdir(parents=True)
+    python_bin = release_dir / "venv" / "bin" / "python"
+    python_bin.write_text("#!/bin/sh\n")
+    repository = tmp_path / "repository"
+    (repository / "skills").mkdir(parents=True)
+    config = repository / "officina.toml"
+    config.write_text('schema_version = 1\n[modules]\nroots = ["skills"]\n')
+
+    activated = activate_release(
+        runtime_root=runtime_root,
+        release_dir=release_dir,
+        python_bin=python_bin,
+        repository_config=config,
+    )
+    loaded = load_current_pointer(runtime_root=runtime_root)
+
+    assert activated.repository_config == config
+    assert loaded.repository_config == config
+    assert json.loads((runtime_root / "current.json").read_text())["schema_version"] == 2
+
+
+def test_v2_pointer_rejects_missing_repository_configuration(tmp_path: Path) -> None:
+    runtime_root = tmp_path / "runtime"
+    runtime_root.mkdir()
+    release = runtime_root / "releases" / "release"
+    python_bin = release / "venv" / "bin" / "python"
+    python_bin.parent.mkdir(parents=True)
+    python_bin.write_text("#!/bin/sh\n")
+    (runtime_root / "current.json").write_text(json.dumps({
+        "schema_version": 2,
+        "release_id": "release",
+        "runtime_source": str(release),
+        "python_bin": str(python_bin),
+        "repository_config": str(tmp_path / "missing" / "officina.toml"),
+    }))
+
+    with pytest.raises(RuntimePointerError):
+        load_current_pointer(runtime_root=runtime_root)
+
+
 def test_load_current_pointer_rejects_path_outside_runtime_root(tmp_path: Path) -> None:
     runtime_root = tmp_path / "runtime"
     runtime_root.mkdir(parents=True)
