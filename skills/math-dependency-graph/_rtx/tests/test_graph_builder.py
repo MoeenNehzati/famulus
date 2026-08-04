@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from _graph_builder import prepare_math_payload
+from .._graph_builder import prepare_math_payload
 
 
 def test_prepare_math_payload_derives_categories_when_catalog_is_absent() -> None:
@@ -12,6 +12,14 @@ def test_prepare_math_payload_derives_categories_when_catalog_is_absent() -> Non
     prepared = prepare_math_payload(payload)
 
     assert prepared["entities"][0]["category"] == "theorem"
+    assert prepared["categories"] == [
+        {
+            "id": "theorem",
+            "label": "Theorem",
+            "shape": "rect",
+            "color": "#6c3483",
+        }
+    ]
 
 
 def test_prepare_math_payload_does_not_invent_category_for_caller_catalog() -> None:
