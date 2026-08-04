@@ -343,7 +343,7 @@ def test_resolver_end_to_end_execs_into_real_uv_managed_interpreter_with_clean_e
     """
     runtime_root = tmp_path / "runtime"
     manifest = tmp_path / "runtime_dependencies.json"
-    manifest.write_text(json.dumps({"version": 1, "skills": {}}))
+    manifest.write_text(json.dumps({"version": 2, "skills": {}}))
 
     managed_uv = _deploy_managed_uv(runtime_root)
     pointer = build_candidate_release(
@@ -390,7 +390,7 @@ def test_build_candidate_release_auto_deploys_resolver_with_clean_env(tmp_path):
     """
     runtime_root = tmp_path / "runtime"
     manifest = tmp_path / "runtime_dependencies.json"
-    manifest.write_text(json.dumps({"version": 1, "skills": {}}))
+    manifest.write_text(json.dumps({"version": 2, "skills": {}}))
 
     managed_uv = _deploy_managed_uv(runtime_root)
     pointer = build_candidate_release(
@@ -450,7 +450,7 @@ def test_generated_dispatcher_shim_reaches_the_real_release_interpreter_with_cle
     home = tmp_path / "home"
     runtime_root = home / ".local" / "share" / "famulus" / "runtime"
     manifest = tmp_path / "runtime_dependencies.json"
-    manifest.write_text(json.dumps({"version": 1, "skills": {}}))
+    manifest.write_text(json.dumps({"version": 2, "skills": {}}))
 
     managed_uv = _deploy_managed_uv(runtime_root)
     build_candidate_release(

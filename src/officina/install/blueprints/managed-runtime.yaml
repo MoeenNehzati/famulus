@@ -15,7 +15,7 @@ dependencies:
   reason: Loads Python package support from __init__.py.
   source: install.source.init
   version: 1
-description: Reads the real v1 runtime_dependencies.json manifest, builds immutable dispatcher routing snapshots, and builds a versioned managed-runtime candidate release by installing declared dependencies in one atomic batch before activating runtime state.
+description: Reads runtime_dependencies.json schema v2 and builds a versioned managed-runtime candidate containing a verified first-party Officina wheel, pinned core packages, and declared module dependencies before atomic activation.
 gateway:
   language: Python
   path: managed_runtime.py
@@ -31,10 +31,10 @@ interfaces:
           type:
             kind: enum
             values:
-            - {value: declared-python-packages, description: "Return the deduplicated, sorted pip install specs declared for a platform in the real v1 runtime_dependencies.json manifest."}
-            - {value: build-candidate-release, description: "Create a new release directory, install its declared Python dependencies in a single atomic batch, and activate it."}
+            - {value: declared-python-packages, description: "Return the deduplicated, sorted pip install specs declared for a platform in runtime_dependencies.json schema v2."}
+            - {value: build-candidate-release, description: "Create a new release, install and verify the first-party dispatcher artifact plus dependencies, and activate it."}
         manifest-path:
-          description: Path to the real v1 runtime_dependencies.json manifest to read declared Python dependencies from.
+          description: Path to runtime_dependencies.json schema v2 to read declared module dependencies from.
           required: true
           sensitivity: public
           direct_io_ref: manifest-file
@@ -51,7 +51,7 @@ interfaces:
           direct_io_ref: pointer-file
           type: {kind: dir, syntax: literal, relative_to: caller-cwd, must_exist: false, access: read-write}
         repo-root:
-          description: Canonical repository root used to derive and activate dispatcher routing state before runtime activation.
+          description: Canonical repository root containing the Officina source artifact and validated officina.toml configuration.
           required: false
           sensitivity: user-private
           direct_io_ref: repository-blueprints
@@ -64,13 +64,13 @@ interfaces:
           type: {kind: file, syntax: literal, relative_to: caller-cwd, must_exist: false, access: read, opaque_content: true}
       preconditions:
       - id: readable-manifest
-        description: manifest-path must be a readable, syntactically valid JSON file whose top-level "version" is 1.
+        description: manifest-path must be a readable, syntactically valid JSON file whose top-level "version" is 2.
         check: {kind: argument, argument_ref: manifest-path, predicate: present}
         unmet_outcome: unsupported-manifest
-        caller_action: Supply the real references/blueprint/runtime_dependencies.json (schema v1).
+        caller_action: Supply the real references/blueprint/runtime_dependencies.json (schema v2).
       interaction: {mode: unattended}
       caller_warnings:
-      - external-side-effect: build-candidate-release creates a new release directory beneath runtime-root, runs one batch dependency install through uv-bin, activates a validated dispatcher snapshot when repo-root is supplied, and — on success — atomically activates the release.
+      - external-side-effect: build-candidate-release creates a release beneath runtime-root, builds and installs a first-party wheel plus dependencies through uv-bin, validates it in isolation, and atomically activates it; it never builds routing state.
       outputs:
       - id: result
         audience: machine
@@ -83,8 +83,8 @@ interfaces:
         empty: declared-python-packages may be empty when no dependency is declared for platform; build-candidate-release never returns empty on success.
         type: {kind: string, sensitivity: public, description: "Python tuple[str, ...] or RuntimePointer instance."}
       outcomes:
-      - {id: completed, class: success, outputs: [result], effects: [release-state, dispatcher-snapshot-state], caller_action: "For build-candidate-release, use the returned RuntimePointer to locate the newly active release's interpreter; declared-python-packages has no effects to act on."}
-      - {id: unsupported-manifest, class: refusal, outputs: [], effects: [], caller_action: Repair or regenerate runtime_dependencies.json as a version 1 document.}
+      - {id: completed, class: success, outputs: [result], effects: [release-state], caller_action: "For build-candidate-release, use the returned RuntimePointer to locate the newly active release's interpreter; declared-python-packages has no effects to act on."}
+      - {id: unsupported-manifest, class: refusal, outputs: [], effects: [], caller_action: Repair or regenerate runtime_dependencies.json as a version 2 document.}
       - {id: install-failed, class: error, outputs: [], effects: [], caller_action: "Inspect the batch installer's reported error and retry once the underlying failure (network, missing package, disk) is resolved. No release is activated and current.json is left untouched."}
       execution:
         state_effect: mutating
@@ -98,13 +98,6 @@ interfaces:
           may_occur_in_outcomes: [completed]
           confirmation_evidence: {kind: direct-io, direct_io_ref: release-directory}
           reversibility: {compensatable: "An unwanted release directory can be deleted; activation only changes current.json, which activate-release can repoint again."}
-        - id: dispatcher-snapshot-state
-          direct_io_ref: dispatcher-snapshot
-          action: update
-          value_source: {kind: argument, argument_ref: repo-root}
-          may_occur_in_outcomes: [completed]
-          confirmation_evidence: {kind: direct-io, direct_io_ref: dispatcher-snapshot}
-          reversibility: {compensatable: "A later successful snapshot build can activate a replacement generation; prior generations remain immutable."}
         mutation_safety:
           atomicity: {per_effect_only: "The batch dependency install is one all-or-nothing subprocess call; release-directory creation and pointer activation are separate effects."}
           concurrent_invocations: {unsafe: Concurrent build-candidate-release calls against the same runtime-root are not serialized.}
@@ -118,12 +111,11 @@ interfaces:
       direct_io:
         reads:
         - {id: manifest-file, medium: local-filesystem, access: read, content: runtime_dependencies.json bytes, formats: [json], sensitivity: public, path: <manifest-path>}
-        - {id: repository-blueprints, medium: local-filesystem, access: read, content: Canonical repository blueprint graph and process bindings, formats: [yaml, json, python], sensitivity: user-private, path: <repo-root>}
+        - {id: repository-blueprints, medium: local-filesystem, access: read, content: Officina source tree and repository configuration, formats: [toml, python], sensitivity: user-private, path: <repo-root>}
         - {id: uv-binary, medium: local-filesystem, access: read, content: managed uv executable, formats: [binary], sensitivity: user-private, path: <uv-bin>}
         writes:
         - {id: release-directory, medium: local-filesystem, access: read-write, content: candidate release directory and its installed venv, formats: [path, python-package], sensitivity: user-private, path: <runtime-root>/releases/<release-id>}
         - {id: pointer-file, medium: local-filesystem, access: read-write, content: current.json pointer bytes, formats: [json], sensitivity: user-private, path: <runtime-root>/current.json}
-        - {id: dispatcher-snapshot, medium: local-filesystem, access: read-write, content: "Immutable route records, manifest, and atomic current.json pointer", formats: [json, binary], sensitivity: user-private, path: <famulus-data-root>/dispatcher/snapshots}
         - {id: return-value, medium: local-system, access: write, content: Python return value, formats: [text], sensitivity: public}
         network: []
     description: Provides declared-python-packages manifest reads and one-batch, atomic candidate-release builds to Python callers.

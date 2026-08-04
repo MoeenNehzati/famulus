@@ -43,7 +43,7 @@ def _build(monkeypatch, calls, tmp_path, runtime_root, *, trusted_python_dir=Non
     manifest = tmp_path / "runtime_dependencies.json"
     if not manifest.exists():
         manifest.write_text(
-            '{"version": 1, "skills": {}}',
+            '{"version": 2, "skills": {}}',
             encoding="utf-8",
         )
     return build_candidate_release(
@@ -96,7 +96,7 @@ def test_first_install_never_invokes_ambient_python(monkeypatch, tmp_path):
     manifest.write_text(
         json.dumps(
             {
-                "version": 1,
+                "version": 2,
                 "skills": {
                     "example": {
                         "interfaces": {
@@ -134,7 +134,7 @@ def test_first_install_never_invokes_ambient_python(monkeypatch, tmp_path):
 def test_successful_update_activates_new_release_old_retained(monkeypatch, tmp_path):
     runtime_root = tmp_path / "runtime"
     manifest = tmp_path / "runtime_dependencies.json"
-    manifest.write_text('{"version": 1, "skills": {}}', encoding="utf-8")
+    manifest.write_text('{"version": 2, "skills": {}}', encoding="utf-8")
 
     calls: list = []
     first, trusted_python_dir = _build(monkeypatch, calls, tmp_path, runtime_root)
@@ -153,7 +153,7 @@ def test_successful_update_activates_new_release_old_retained(monkeypatch, tmp_p
 def test_failed_update_leaves_prior_pointer_and_release_usable(monkeypatch, tmp_path):
     runtime_root = tmp_path / "runtime"
     manifest = tmp_path / "runtime_dependencies.json"
-    manifest.write_text('{"version": 1, "skills": {}}', encoding="utf-8")
+    manifest.write_text('{"version": 2, "skills": {}}', encoding="utf-8")
 
     calls: list = []
     good, trusted_python_dir = _build(monkeypatch, calls, tmp_path, runtime_root)
@@ -181,12 +181,18 @@ def test_failed_update_leaves_prior_pointer_and_release_usable(monkeypatch, tmp_
     assert good.python_bin.exists()
 
 
-def test_snapshot_build_failure_prevents_runtime_activation(monkeypatch, tmp_path):
+def test_candidate_build_never_constructs_dispatch_snapshot(monkeypatch, tmp_path):
     runtime_root = tmp_path / "runtime"
     repo_root = tmp_path / "repo"
     manifest = repo_root / "references" / "blueprint" / "runtime_dependencies.json"
     manifest.parent.mkdir(parents=True)
-    manifest.write_text('{"version": 1, "skills": {}}', encoding="utf-8")
+    manifest.write_text('{"version": 2, "skills": {}}', encoding="utf-8")
+    (repo_root / "officina.toml").write_text(
+        'schema_version = 1\n[modules]\nroots = ["skills", "src/officina"]\n',
+        encoding="utf-8",
+    )
+    (repo_root / "skills").mkdir()
+    (repo_root / "src" / "officina").mkdir(parents=True)
     calls: list = []
     trusted_python_dir = tmp_path / "uv-python-store"
     monkeypatch.setattr(
@@ -195,7 +201,7 @@ def test_snapshot_build_failure_prevents_runtime_activation(monkeypatch, tmp_pat
     )
 
     def fail_snapshot(*args, **kwargs):
-        raise RuntimeError("invalid routing state")
+        raise AssertionError("candidate construction must not build routing state")
 
     monkeypatch.setattr(
         "officina.install.managed_runtime.build_dispatch_snapshot",
@@ -203,23 +209,23 @@ def test_snapshot_build_failure_prevents_runtime_activation(monkeypatch, tmp_pat
         raising=False,
     )
 
-    with pytest.raises(ManagedRuntimeError, match="dispatcher snapshot"):
-        build_candidate_release(
-            runtime_root=runtime_root,
-            manifest_path=manifest,
-            platform="linux",
-            uv_bin=Path("/fake/uv"),
-            python_version="3.11",
-            repo_root=repo_root,
-        )
+    pointer = build_candidate_release(
+        runtime_root=runtime_root,
+        manifest_path=manifest,
+        platform="linux",
+        uv_bin=Path("/fake/uv"),
+        python_version="3.11",
+        repo_root=repo_root,
+    )
 
-    assert not (runtime_root / "current.json").exists()
+    assert (runtime_root / "current.json").exists()
+    assert pointer.repository_config == (repo_root / "officina.toml").resolve()
 
 
 def test_rollback_reactivates_previous_release(monkeypatch, tmp_path):
     runtime_root = tmp_path / "runtime"
     manifest = tmp_path / "runtime_dependencies.json"
-    manifest.write_text('{"version": 1, "skills": {}}', encoding="utf-8")
+    manifest.write_text('{"version": 2, "skills": {}}', encoding="utf-8")
 
     calls: list = []
     first, trusted_python_dir = _build(monkeypatch, calls, tmp_path, runtime_root)

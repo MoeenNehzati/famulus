@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "famulus-officina"
+version = "0.1.0"
+description = "Blueprint-authorized direct dispatcher and installation runtime"
+requires-python = ">=3.11"
+dependencies = ["PyYAML>=6"]
+
+[project.scripts]
+dispatcher = "officina.dispatcher.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["officina*"]
+
+[tool.setuptools.package-data]
+officina = ["**/*.json", "**/*.toml", "**/*.yaml"]

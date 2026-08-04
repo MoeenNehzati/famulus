@@ -178,8 +178,8 @@ def test_v5_generated_views_are_parent_only_and_derive_facade_contract(
     assert "`demo.interface.execute` — Execute the demo." in interfaces
     assert "dispatcher --caller-skill demo demo.interface.execute" in interfaces
     assert set(manifest["skills"]) == {"demo"}
-    assert manifest["skills"]["demo"]["interfaces"]["execute"] == {
-        "id": "demo.interface.execute",
+    assert manifest["version"] == 2
+    assert manifest["skills"]["demo"]["interfaces"]["demo.interface.execute"] == {
         "dependencies": [dependency],
     }
 
@@ -316,11 +316,69 @@ def test_runtime_dependency_manifest_uses_export_source_closure(syncer) -> None:
 
     manifest = syncer.generated_runtime_dependencies_manifest(blueprints)
 
-    assert manifest["skills"]["demo-skill"]["interfaces"]["run"] == {
-        "id": "demo-skill.interface.run",
+    assert manifest["version"] == 2
+    assert manifest["skills"]["demo-skill"]["interfaces"]["demo-skill.interface.run"] == {
         "dependencies": [dependency],
     }
     assert manifest["all"]["python-package"] == ["PyYAML"]
+
+
+def test_runtime_dependency_manifest_v2_keeps_all_descendant_interface_ids(syncer) -> None:
+    """Canonical IDs prevent equal child-local names from overwriting, and
+    aggregation follows ownership rather than namespace exposure."""
+    dependencies = {
+        "demo._rtx": {
+            "kind": "python-package", "name": "PyYAML", "version": ">=6",
+            "platforms": {"linux": True, "macos": True, "windows": True},
+            "reason": "Private child parser.",
+        },
+        "demo.worker": {
+            "kind": "python-package", "name": "rich", "version": "any",
+            "platforms": {"linux": True, "macos": True, "windows": True},
+            "reason": "Worker output.",
+        },
+    }
+    exports = {}
+    nodes = {}
+    for owner, dependency in dependencies.items():
+        source_id = f"{owner}.source.runner"
+        interface_id = f"{owner}.interface.run"
+        nodes[source_id] = SimpleNamespace(
+            node_id=source_id,
+            declaration={"runtime_dependencies": [dependency]},
+        )
+        exports[interface_id] = SimpleNamespace(
+            module_node_id=owner,
+            local_name="run",
+            source_node_id=source_id,
+            declaration={"process_binding": {"kind": "process"}},
+        )
+    graph = SimpleNamespace(
+        exports=exports,
+        nodes=nodes,
+        node_edges=(),
+        module_ancestry={
+            "demo": ("demo",),
+            "demo._rtx": ("demo", "demo._rtx"),
+            "demo.worker": ("demo", "demo.worker"),
+        },
+    )
+    blueprints = {
+        "demo": syncer.ModuleBlueprint(
+            "demo", Path("skills/demo/blueprint.yaml"),
+            {"schema_version": 6, "node_type": "module", "id": "demo"}, graph,
+        )
+    }
+
+    manifest = syncer.generated_runtime_dependencies_manifest(blueprints)
+
+    interfaces = manifest["skills"]["demo"]["interfaces"]
+    assert set(interfaces) == {
+        "demo._rtx.interface.run",
+        "demo.worker.interface.run",
+    }
+    assert interfaces["demo._rtx.interface.run"]["dependencies"] == [dependencies["demo._rtx"]]
+    assert interfaces["demo.worker.interface.run"]["dependencies"] == [dependencies["demo.worker"]]
 
 
 def test_consumer_blocks_use_root_and_named_gateway_placement(

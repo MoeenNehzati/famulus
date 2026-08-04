@@ -1,4 +1,4 @@
-"""Build a versioned managed-runtime candidate release from the real v1
+"""Build a versioned managed-runtime candidate release from the real v2
 runtime_dependencies.json manifest, installing all declared Python
 dependencies in one atomic batch instead of ambient, best-effort per-package
 pip calls.
@@ -13,6 +13,7 @@ ahead-of-managed-runtime ecosystem ambient package installs.
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 import secrets
@@ -22,12 +23,12 @@ from pathlib import Path
 
 from officina.common import atomic_files
 from officina.common import toml_io
-from officina.install.dispatch_snapshot_builder import build_dispatch_snapshot
 from officina.install.runtime_pointer import RuntimePointer, activate_release
 
 _VERSION_OPERATOR_RE = re.compile(r"^(==|>=|<=|!=|~=|>|<)")
 
 _DEFAULT_DEPENDENCY_INSTALL_TIMEOUT_SECONDS = 600
+_CORE_RUNTIME_PACKAGES = ("setuptools==80.9.0", "PyYAML==6.0.2")
 
 
 def _dependency_install_timeout_seconds() -> float:
@@ -62,7 +63,7 @@ def _package_spec(name: str, version: str | None) -> str:
 
 def declared_python_packages(manifest_path: Path, *, platform: str) -> tuple[str, ...]:
     """Return the deduplicated, sorted pip install specs for every
-    python-package dependency declared for ``platform`` in the real v1
+    python-package dependency declared for ``platform`` in the real v2
     runtime_dependencies.json manifest.
 
     The first version constraint seen for a given package name (case-folded)
@@ -70,7 +71,7 @@ def declared_python_packages(manifest_path: Path, *, platform: str) -> tuple[str
     ignored.
     """
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if payload.get("version") != 1:
+    if payload.get("version") != 2:
         raise ManagedRuntimeError(
             f"unsupported runtime_dependencies.json version: {payload.get('version')!r}"
         )
@@ -164,6 +165,83 @@ def _run_dependency_install(*, uv_bin: Path, python_bin: Path, packages: tuple[s
         raise ManagedRuntimeError(
             f"dependency install failed (exit {result.returncode}): {result.stderr.strip()}"
         )
+
+
+def _source_revision(repo_root: Path) -> str:
+    result = subprocess.run(
+        ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="strict",
+        timeout=30,
+    )
+    revision = result.stdout.strip()
+    if result.returncode != 0 or not re.fullmatch(r"[0-9a-f]{40}", revision):
+        raise ManagedRuntimeError(
+            f"could not identify Officina source revision: {result.stderr.strip()}"
+        )
+    return revision
+
+
+def _build_officina_wheel(
+    *, uv_bin: Path, python_bin: Path, repo_root: Path, artifact_dir: Path
+) -> tuple[Path, str, str]:
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    result = _run_uv(
+        [
+            str(uv_bin), "build", "--wheel", "--no-build-isolation",
+            "--python", str(python_bin), "--out-dir", str(artifact_dir),
+            str(repo_root),
+        ],
+        timeout=_dependency_install_timeout_seconds(),
+    )
+    if result.returncode != 0:
+        raise ManagedRuntimeError(
+            f"Officina wheel build failed (exit {result.returncode}): {result.stderr.strip()}"
+        )
+    wheels = tuple(artifact_dir.glob("famulus_officina-*.whl"))
+    if len(wheels) != 1:
+        raise ManagedRuntimeError(
+            f"Officina wheel build produced {len(wheels)} matching artifacts; expected 1"
+        )
+    wheel = wheels[0]
+    return wheel, hashlib.sha256(wheel.read_bytes()).hexdigest(), _source_revision(repo_root)
+
+
+def _run_candidate_probe(argv: list[str]) -> None:
+    env = dict(os.environ)
+    env.pop("PYTHONPATH", None)
+    env.pop("PYTHONHOME", None)
+    env["PYTHONNOUSERSITE"] = "1"
+    try:
+        result = subprocess.run(
+            argv,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="strict",
+            env=env,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ManagedRuntimeError(f"candidate runtime probe failed to run: {exc}") from exc
+    if result.returncode != 0:
+        raise ManagedRuntimeError(
+            f"candidate runtime probe failed (exit {result.returncode}): {result.stderr.strip()}"
+        )
+
+
+def _validate_candidate_runtime(*, python_bin: Path) -> None:
+    _run_candidate_probe(
+        [
+            str(python_bin), "-I", "-c",
+            "import yaml; assert yaml.CSafeLoader; import officina.dispatcher.cli",
+        ]
+    )
+    _run_candidate_probe(
+        [str(python_bin), "-I", "-m", "officina.dispatcher.cli", "--help"]
+    )
 
 
 def _venv_python_bin(venv_dir: Path, *, platform: str) -> Path:
@@ -293,18 +371,55 @@ def build_candidate_release(
     python_bin = _venv_python_bin(venv_dir, platform=platform)
 
     _create_release_venv(uv_bin=uv_bin, venv_dir=venv_dir, python_version=python_version)
-    _run_dependency_install(uv_bin=uv_bin, python_bin=python_bin, packages=packages)
-
+    repository_config = None
     if repo_root is not None:
+        resolved_repo_root = Path(repo_root).resolve()
+        repository_config = resolved_repo_root / toml_io.repository_config_filename()
         try:
-            build_dispatch_snapshot(
-                Path(repo_root).resolve(),
-                snapshot_root=runtime_root.parent / "dispatcher" / "snapshots",
-            )
+            from officina.common.repository_configuration import load_repository_configuration
+            load_repository_configuration(repository_config)
         except Exception as exc:
-            raise ManagedRuntimeError(
-                f"dispatcher snapshot build failed: {exc}"
-            ) from exc
+            raise ManagedRuntimeError(f"invalid repository configuration: {exc}") from exc
+        _run_dependency_install(
+            uv_bin=uv_bin,
+            python_bin=python_bin,
+            packages=_CORE_RUNTIME_PACKAGES,
+        )
+        wheel, wheel_sha256, source_revision = _build_officina_wheel(
+            uv_bin=uv_bin,
+            python_bin=python_bin,
+            repo_root=resolved_repo_root,
+            artifact_dir=release_dir / "artifacts",
+        )
+        _run_dependency_install(
+            uv_bin=uv_bin,
+            python_bin=python_bin,
+            packages=(str(wheel),),
+        )
+        module_packages = tuple(
+            package for package in packages
+            if not re.match(r"(?i)^(?:pyyaml|setuptools)(?:[<>=!~].*)?$", package)
+        )
+        _run_dependency_install(
+            uv_bin=uv_bin, python_bin=python_bin, packages=module_packages
+        )
+        _validate_candidate_runtime(python_bin=python_bin)
+        atomic_files.atomic_replace_bytes(
+            release_dir / "artifact.json",
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "wheel": wheel.name,
+                    "wheel_sha256": wheel_sha256,
+                    "source_revision": source_revision,
+                },
+                indent=2,
+            ).encode("utf-8"),
+            allowed_root=release_dir,
+            mode=0o600,
+        )
+    else:
+        _run_dependency_install(uv_bin=uv_bin, python_bin=python_bin, packages=packages)
 
     trusted_interpreter_roots = (_uv_python_install_dir(uv_bin),)
     _deploy_resolver(runtime_root=runtime_root, trusted_interpreter_roots=trusted_interpreter_roots)
@@ -313,11 +428,7 @@ def build_candidate_release(
         release_dir=release_dir,
         python_bin=python_bin,
         trusted_interpreter_roots=trusted_interpreter_roots,
-        repository_config=(
-            Path(repo_root).resolve() / toml_io.repository_config_filename()
-            if repo_root is not None
-            else None
-        ),
+        repository_config=repository_config,
     )
 
 
