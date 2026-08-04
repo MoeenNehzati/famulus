@@ -176,6 +176,10 @@ def test_repository_multiline_skill_summaries_remain_catalog_safe() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     summaries = {skill.name: skill.summary for skill in load_catalog(repo_root)}
 
+    assert summaries["make-tex-docstring"] == (
+        "A TeX document needs a top-of-document profile comment that records its "
+        "document profile and intended use"
+    )
     assert summaries["notation-review"] == (
         "Mathematical notation needs review for lightness, unification, reuse "
         "across scopes, or semantic transparency"
