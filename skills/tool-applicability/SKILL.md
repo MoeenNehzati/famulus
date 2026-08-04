@@ -1,19 +1,12 @@
 ---
 name: tool-applicability
 description: |
-  Check whether a theorem, framework, or mathematical tool can achieve a target objective in the current setting and, if not, what nearest valid result it still delivers.
-
-  Use when:
+  Use when checking whether a theorem, framework, or mathematical tool can achieve a target objective in the current setting and, if not, what nearest valid result it still delivers, including when:
   - the user asks whether a theorem, method, machinery, or formalism applies
   - the user wants to know whether a tool proves a target under current assumptions, what added assumptions would make it work, or what weaker nearby result it gives
 
   Do not use when:
   - the main task is line-by-line proof auditing, broad proof strategy without a specific candidate tool, or notation or document-structure review
-
-  Success criteria:
-  - identify the setting, target, and candidate tool clearly
-  - separate established assumptions from conjectures or hopes and track which assumptions are available versus newly required
-  - determine what the tool requires, what it gives, whether that is an exact fit, fit with added assumptions, nearby weaker result, or mismatch, and what the exact gap or weakest plausible repair is
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->
