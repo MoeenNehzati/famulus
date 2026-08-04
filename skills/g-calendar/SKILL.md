@@ -1,11 +1,6 @@
 ---
 name: g-calendar
-description: |
-  Read and modify the user's Google Calendar (list calendars, check agenda,
-  search events, create/update/delete events) via a local OAuth-backed
-  CLI - no MCP involved. Use when the user asks about their
-  schedule, meetings, availability, or wants to add/move/cancel a calendar
-  event.
+description: Use when the user asks to read or change Google Calendar events, calendars, schedules, meetings, or availability.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->
@@ -36,7 +31,16 @@ Use the installed `dispatcher` command for these process-bound interfaces:
   - `dispatcher --caller-skill g-calendar g-calendar.interface.ensure-oauth --home <dir> [--dry-run]`
   - Check OAuth status and guide setup for g-calendar.
 - `g-calendar.interface.scripts-gcal` — Query or modify Google Calendar events via the Python calendar CLI (agenda, search, create, update, delete, etc.).
-  - `dispatcher --caller-skill g-calendar g-calendar.interface.scripts-gcal <command> [options]`
+  - `dispatcher --caller-skill g-calendar g-calendar.interface.scripts-gcal <mode shown below>`
+  - token-or-calendars: `token` — Mint a bearer token only for an explicitly scoped one-off API operation; `calendars` — list accessible calendar IDs, roles, and names.
+  - create-calendar: `create-calendar --summary TEXT [--description TEXT] [--color-id ID] [--timezone TZ]` — Timezone defaults to the local IANA zone.
+  - agenda: `agenda [--calendar ID] [--all-calendars] [--from ISO] [--to ISO] [--days N]` — Calendar defaults to primary and the window to today in local time; ISO datetimes require a UTC offset; --days extends from --from or today; --all-calendars merges and time-sorts.
+  - search: `search QUERY [--calendar ID] [--all-calendars] [--from ISO] [--to ISO] [--days N]` — Calendar defaults to primary and the window to the previous 7 days through the next 30 days; ISO datetimes require a UTC offset; --days extends from --from or today; --all-calendars merges and time-sorts.
+  - get: `get --event-id ID [--calendar ID]` — Calendar defaults to primary.
+  - create: `create --summary TEXT --start ISO --end ISO [--calendar ID] [--description TEXT] [--location TEXT] [--timezone TZ] [--all-day]` — Calendar defaults to primary and timezone to the local IANA zone; timed ISO values require a UTC offset; all-day end dates are exclusive.
+  - update: `update --event-id ID [--calendar ID] [--summary TEXT] [--description TEXT] [--location TEXT] [--start ISO] [--end ISO] [--timezone TZ]` — Calendar defaults to primary; timed ISO values require a UTC offset; supply at least one changed field.
+  - delete: `delete --event-id ID [--calendar ID]` — Calendar defaults to primary.
+  - move: `move --event-id ID --to CALENDAR_ID [--from CALENDAR_ID]` — Source calendar defaults to primary.
 - `g-calendar.interface.setup-oauth` — Run the OAuth setup flow to generate or refresh Google Calendar credentials.
   - `dispatcher --caller-skill g-calendar g-calendar.interface.setup-oauth [--from-json /path/to/client.json]`
   - OAuth setup for Google Calendar access.
@@ -49,164 +53,60 @@ Instruction Interfaces:
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
 - `g-calendar.interface.default` — Primary LLM-facing skill instructions.
 <!-- END BLUEPRINT INTERFACES -->
-When this skill is used, begin with:
+# Google Calendar
 
-Skill: g-calendar
+Use `g-calendar.interface.scripts-gcal` for calendar reads and writes. Invoke one
+interface call per operation, minimize network round trips, and issue independent calls
+in parallel. Use the public process contract for complete subcommand and option shapes;
+do not improvise invocation forms. Prefer the `--all-calendars` mode for schedule-wide
+agenda or search requests.
 
-## 0. Read this first
+Reads may proceed directly. Create, update, and delete requests may proceed when
+the user supplied the necessary details for create, update, or delete. Confirm first
+when adding attendees because it sends invitations, and before deleting an event that
+has attendees or is far in the future. Treat `move` as authorized only when the user
+explicitly asked to move the identified event to the named destination calendar.
+Report each mutation's title, time, calendar, and link when available.
 
-- **Only use the `scripts-gcal` interface.** Every calendar operation must go
-  through `scripts-gcal` with the appropriate subcommand — the entire call,
-  nothing else on the line. No `cd`, `python3`, `date`, variable assignments,
-  `&&`/`;`/pipes/loops. This is the only allow-listed pattern; anything else
-  triggers a permission prompt. For N operations, issue N separate calls, one
-  `scripts-gcal` invocation each.
-- **Minimize invocations, then parallelize what's left.** Each call is a slow
-  network round-trip. Prefer `--all-calendars` over looping per calendar.
-  When you do need multiple independent calls (e.g. `get` on several event
-  ids), issue them all in one message. Only sequence calls when one needs the
-  result of a previous one.
-- **Reads** (`calendars`, `agenda`, `search`, `get`, `token`): just run them.
-- **`create`/`update`/`delete`**: just do it, then report what changed (title,
-  time, link). Exceptions requiring confirmation first:
-  - adding **attendees/guests** (sends email invitations - shared-state
-    action), or
-  - a `delete` that looks important (has attendees, far in the future).
-- **QC every write** - see section 3. Not optional; catches silent
-  wrong-day/time writes.
+## Routing calendar operations
 
-## 1. What this is
+Use `calendars` when the target calendar is unknown. Before `create`, match the event to
+the available calendar names. Use a clear match without asking; ask when multiple or no
+calendars plausibly fit. Do not silently use `primary` when another calendar is clearly
+more appropriate.
 
-The `scripts-gcal` interface talks directly to the Google Calendar API v3,
-using a locally stored refresh token. It runs through the dispatcher as a
-stdlib-only Python module and replaces the broken
-`calendarmcp.googleapis.com` MCP connector (see project memory
-`calendar-mcp-broken` - that connector's `tools/call` permanently fails with
-"The caller does not have permission", independent of re-auth).
+Agenda and search results are bounded to 50 events and do not paginate. Disclose that
+bound when the requested range may contain more results. Recurrence, attendees, and
+free-busy lack dedicated modes. For a genuine one-off unsupported API operation, use
+the declared token mode only when direct API access is explicitly in scope, keep the
+token secret, and apply the same confirmation rules. Prefer extending the public
+interface for repeated use.
 
-## 2. Commands
+## Verify writes
 
-All subcommands are invoked via the `scripts-gcal` interface. Run `scripts-gcal --help` for
-the full reference. Calendar IDs default to `primary`; use the `calendars` subcommand
-for other IDs (e.g. shared calendars).
+Through `g-calendar.interface.scripts-gcal`, verify every create and delete and every
+nontrivial update. The only exception is a metadata-only update limited to summary,
+description, or location.
 
-- `calendars` - list calendars (id, access role, name).
-- `agenda [--calendar ID | --all-calendars] [--from ISO] [--to ISO] [--days N]` -
-  list events. Defaults to `primary`, today (local time). `--days N` extends
-  the window from `--from` (default: today). `--all-calendars` queries every
-  calendar in parallel internally and returns one merged, time-sorted list -
-  use this for "what's on my schedule" / "busiest day" questions instead of
-  calling `agenda` per calendar.
-- `search QUERY [--calendar ID | --all-calendars] [--from ISO] [--to ISO]` -
-  text search. Defaults to `primary`, -7d..+30d window. `--all-calendars`
-  searches every calendar in parallel, merged and time-sorted.
-- `get --event-id ID [--calendar ID]` - fetch a single event (full
-  start/end/summary/location/description/status). Used for QC (section 3).
-- `create --summary TEXT --start ISO --end ISO [--calendar ID]
-  [--description TEXT] [--location TEXT] [--timezone TZ] [--all-day]` -
-  create an event. With `--all-day`, `--start`/`--end` are `YYYY-MM-DD` (end
-  exclusive). `--timezone` defaults to the system's local IANA timezone.
-- `update --event-id ID [--calendar ID] [--summary TEXT]
-  [--description TEXT] [--location TEXT] [--start ISO] [--end ISO]
-  [--timezone TZ]` - patch only the given fields.
-- `delete --event-id ID [--calendar ID]` - delete an event.
-- `move --event-id ID --to CALENDAR_ID [--from CALENDAR_ID]` - move an event
-  between calendars (`--from` defaults to `primary`).
-- `token` - print a fresh bearer token, for the raw-API fallback (section 4).
+- After `create`, fetch the returned event ID and compare start, end, summary,
+  location, and description with the request. On mismatch, delete the new event and
+  report the intended and observed values.
+- Before `update`, fetch and retain the fields being changed. Fetch again afterward.
+  On mismatch, restore the retained values and report the discrepancy.
+- After `delete`, fetch the event and require status `cancelled`; Google soft-deletes
+  events rather than returning not-found. If it remains confirmed, report failure.
 
-**Time format - the #1 source of errors**: any ISO timestamp passed to this
-CLI (`create`/`update`'s `--start`/`--end`, and `agenda`/`search`'s
-`--from`/`--to`) needs a full datetime *with a UTC offset*, e.g.
-`2026-06-15T10:00:00-04:00`. A bare date (`2026-06-15`) or an offset-less
-datetime returns `HTTP 400 Bad Request` with no more specific message.
+When completion is uncertain, inspect current event state before retrying; repeated
+creates can produce duplicates.
 
-Examples (use the `scripts-gcal` interface for each):
-- "what's on my calendar today" -> `agenda`
-- "what's on my NYU calendar this week" -> `calendars` (find the id),
-  then `agenda --calendar <id> --days 7`
-- "what's my busiest day next week" / "what's on my schedule this week"
-  (spans *all* calendars) -> one call: `agenda --all-calendars --from <ISO-with-offset> --days 7`
+## Google authorization
 
-## 2a. Which calendar to use for `create`
+Use the shared route first. Retain the two legacy routes only as the fallback.
 
-Before creating an event, use `scripts-gcal` with the `calendars` subcommand to see available calendars,
-then match the event content against calendar names:
+| Situation | Route | Interpret the result |
+|---|---|---|
+| `Shared setup or reauthorization` | `connect-google.interface.default -> g-calendar.interface.use-google-credential` | Bind the Calendar-granted credential_id using the same registry home, then verify with calendars and agenda. |
+| `Legacy status or recovery` | `g-calendar.interface.ensure-oauth` | Check readiness and guide or launch the fallback flow. |
+| `Direct legacy setup` | `g-calendar.interface.setup-oauth` | Use only for a Calendar configuration that has not adopted a shared credential. |
 
-- Pick the calendar whose name best fits the event type (e.g. "Medical" for
-  doctor visits, "Work" for meetings, "Classes" for coursework).
-- If the match is clear, use it without asking.
-- If 2+ calendars could plausibly fit, or none fit obviously, ask the user
-  before creating.
-- Never silently default to `primary` for an event that clearly belongs
-  elsewhere.
-
-## 3. QC after writes
-
-Every `create`/`update`/`delete` ends with a read-back verification - this is
-what catches a write that "succeeded" (HTTP 200) but landed on the wrong
-day/time, e.g. a timezone or relative-date resolution mistake (see project
-memory `uutils-date-dst-bug`).
-
-- **create**: take the `id` from the response, then
-  `get --event-id <id> --calendar <cal>`. Compare returned
-  `start`/`end`/`summary`/`location`/`description` against intent.
-  - Mismatch -> `delete --event-id <id> --calendar <cal>` (revert), then tell
-    the user what was intended vs. created, and a likely cause (e.g. "off by
-    exactly 1 hour - probably a DST/timezone resolution issue for this date").
-- **update**: BEFORE patching, `get --event-id <id>` and note current values
-  of every field you're about to change (revert target). Apply the update,
-  then `get` again and compare.
-  - Mismatch -> `update` again with the captured old values (revert), then
-    flag + diagnose as above.
-- **delete**: afterwards, `get --event-id <id> --calendar <cal>` still returns
-  HTTP 200 (Google soft-deletes, no 404) but with `Status: cancelled` - that's
-  the confirmation. If `Status` is still `confirmed`, the delete didn't take;
-  flag this (no revert path for delete).
-
-Skip QC only for trivial cases with no date/time component, e.g. an `update`
-that changes only `--summary`/`--description`/`--location`.
-
-## 4. Raw API fallback
-
-For anything not covered above (recurring events / RRULEs, attendees,
-free-busy queries, etc.) - last resort, since it requires a shell pipeline
-(`TOKEN=$(...) && curl ...`) that doesn't match the allow-listed Bash pattern
-and triggers a permission prompt every time. If a capability is needed
-repeatedly, add a small subcommand to `scripts-gcal` and keep exposing it through
-`scripts-gcal` instead (as was done for `get`, `create-calendar`, `move`).
-For genuine one-offs, use `scripts-gcal`
-with the `token` subcommand to obtain a bearer token, then call the API directly:
-
-```bash
-# Obtain a bearer token via scripts-gcal token, then:
-curl -s -H "Authorization: Bearer $TOKEN" \
-  "https://www.googleapis.com/calendar/v3/calendars/primary/events" \
-  -d '...' # see https://developers.google.com/calendar/api/v3/reference
-```
-
-## 5. Known limitations
-
-- `agenda`/`search` fetch at most 50 events (no pagination).
-- Only single (non-recurring) events; no attendee management via the CLI
-  subcommands (use the raw-API fallback).
-- If the OAuth consent screen is "Testing", the refresh token expires after 7
-  days - `scripts-gcal` fails with `invalid_grant`; see section 6 to fix.
-
-## 6. Private credentials and setup
-
-Working Calendar credentials live at
-`~/.config/g-calendar/credentials.json`, outside git. The service-owned
-`setup-oauth` interface writes them only after Google accepts the new token and
-a non-mutating Calendar request succeeds.
-
-For initial Google setup or reauthorization after `invalid_grant` or
-`invalid_client`, use `connect-google.interface.default` to prepare the shared Desktop
-client, then return here for Calendar authorization. This skill invokes its own
-`g-calendar.interface.setup-oauth` interface with
-`--from-json ~/.config/connect-google/client.json` and owns Calendar credentials
-and verification. Do not
-duplicate the Cloud Console procedure here.
-
-After setup, use `scripts-gcal` with `calendars`, then `agenda`, for an
-additional read-only check. Calendar remains a single active account in this
-version; replacing it requires explicit confirmation in that workflow.
+Replacing the single active Calendar account requires explicit confirmation.

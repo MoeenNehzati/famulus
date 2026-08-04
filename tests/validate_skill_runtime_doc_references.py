@@ -19,11 +19,76 @@ def _skill(tmp_path: Path) -> Path:
     return skill
 
 
+def _write_module_blueprint(skill: Path, export_id: str) -> None:
+    (skill / "blueprint.yaml").write_text(
+        "schema_version: 5\n"
+        "node_type: module\n"
+        "id: demo-skill\n"
+        "exports:\n"
+        f"  {export_id}: {{}}\n",
+        encoding="utf-8",
+    )
+
+
 def test_public_interface_name_passes(tmp_path: Path) -> None:
     skill = _skill(tmp_path)
     (skill / "SKILL.md").write_text("Use the `read-calendar` interface.\n", encoding="utf-8")
 
     assert _mod.validate(tmp_path) == []
+
+
+def test_declared_public_interface_id_may_match_private_runtime_stem(tmp_path: Path) -> None:
+    skill = _skill(tmp_path)
+    _write_module_blueprint(skill, "demo-skill.interface.calendar-gateway")
+    (skill / "SKILL.md").write_text(
+        "Use `demo-skill.interface.calendar-gateway`.\n",
+        encoding="utf-8",
+    )
+
+    assert _mod.validate(tmp_path) == []
+
+
+def test_noncanonical_export_cannot_mask_private_runtime_stem(tmp_path: Path) -> None:
+    skill = _skill(tmp_path)
+    _write_module_blueprint(skill, "calendar-gateway")
+    (skill / "SKILL.md").write_text("Use `calendar-gateway`.\n", encoding="utf-8")
+
+    errors = _mod.validate(tmp_path)
+
+    assert any("private runtime name `_Calendar_Gateway`" in error for error in errors)
+
+
+def test_malformed_module_blueprint_cannot_mask_private_runtime_stem(tmp_path: Path) -> None:
+    skill = _skill(tmp_path)
+    (skill / "blueprint.yaml").write_text(
+        "schema_version: 4\n"
+        "node_type: module\n"
+        "id: demo-skill\n"
+        "exports:\n"
+        "  demo-skill.interface.calendar-gateway: {}\n",
+        encoding="utf-8",
+    )
+    (skill / "SKILL.md").write_text(
+        "Use `demo-skill.interface.calendar-gateway`.\n",
+        encoding="utf-8",
+    )
+
+    errors = _mod.validate(tmp_path)
+
+    assert any("private runtime name `_Calendar_Gateway`" in error for error in errors)
+
+
+def test_public_id_does_not_mask_adjacent_private_runtime_stem(tmp_path: Path) -> None:
+    skill = _skill(tmp_path)
+    _write_module_blueprint(skill, "demo-skill.interface.calendar-gateway")
+    (skill / "SKILL.md").write_text(
+        "Use `demo-skill.interface.calendar-gateway`, not `calendar-gateway`.\n",
+        encoding="utf-8",
+    )
+
+    errors = _mod.validate(tmp_path)
+
+    assert any("private runtime name `_Calendar_Gateway`" in error for error in errors)
 
 
 def test_private_runtime_directory_name_is_rejected(tmp_path: Path) -> None:

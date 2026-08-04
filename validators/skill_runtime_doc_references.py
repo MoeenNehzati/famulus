@@ -5,6 +5,8 @@ import re
 import sys
 from pathlib import Path
 
+import yaml
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -27,6 +29,44 @@ _OLD_RUNTIME_PATH_RE = re.compile(
     rf"(?<!/)scripts/[\w.-]+(?:{_SUFFIX_ALT})(?![{_WORD}])",
     re.IGNORECASE,
 )
+_PUBLIC_INTERFACE_NAME_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+
+
+def _declared_public_interface_ids(skill_dir: Path) -> frozenset[str]:
+    """Return canonical same-skill exports from a schema-v5 module blueprint."""
+    try:
+        blueprint_text = (skill_dir / "blueprint.yaml").read_text(encoding="utf-8")
+        document = yaml.safe_load(blueprint_text)
+    except (OSError, UnicodeDecodeError, yaml.YAMLError):
+        return frozenset()
+    if (
+        not isinstance(document, dict)
+        or document.get("schema_version") != 5
+        or document.get("node_type") != "module"
+        or document.get("id") != skill_dir.name
+        or not isinstance(document.get("exports"), dict)
+    ):
+        return frozenset()
+    prefix = f"{skill_dir.name}.interface."
+    return frozenset(
+        key
+        for key in document["exports"]
+        if isinstance(key, str)
+        and key.startswith(prefix)
+        and _PUBLIC_INTERFACE_NAME_RE.fullmatch(key.removeprefix(prefix)) is not None
+    )
+
+
+def _mask_declared_public_interfaces(line: str, interface_ids: frozenset[str]) -> str:
+    """Hide verified public tokens so normalized runtime-stem checks ignore them."""
+    for interface_id in sorted(interface_ids, key=len, reverse=True):
+        line = re.sub(
+            rf"(?<![A-Za-z0-9_.-]){re.escape(interface_id)}(?![A-Za-z0-9_.-])",
+            " " * len(interface_id),
+            line,
+        )
+    return line
+
 
 def _iter_skill_markdown(repo_root: Path):
     skills_root = repo_root / "skills"
@@ -110,6 +150,11 @@ def _validate(repo_root: Path, graph: object | None) -> list[str]:
         for skill_dir in sorted(skills_root.iterdir())
         if skill_dir.is_dir() and skill_dir.name != ".system"
     }
+    public_interfaces_by_skill = {
+        skill_dir.name: _declared_public_interface_ids(skill_dir)
+        for skill_dir in sorted(skills_root.iterdir())
+        if skill_dir.is_dir() and skill_dir.name != ".system"
+    }
 
     for path, rel_path in _iter_skill_markdown(repo_root):
         skill_name = rel_path.parts[1]
@@ -124,6 +169,10 @@ def _validate(repo_root: Path, graph: object | None) -> list[str]:
             continue
         lines = _public_markdown_text(path, text).splitlines()
         for lineno, line in enumerate(lines, start=1):
+            stem_scan_line = _mask_declared_public_interfaces(
+                line,
+                public_interfaces_by_skill.get(skill_name, frozenset()),
+            )
             if RTX_DIR_NAME in line:
                 errors.append(f"{rel_path}:{lineno}: skill-facing Markdown must not mention `{RTX_DIR_NAME}`")
             old_path = _OLD_RUNTIME_PATH_RE.search(line)
@@ -142,7 +191,7 @@ def _validate(repo_root: Path, graph: object | None) -> list[str]:
                         )
                         break
             for stem, pattern in stem_patterns:
-                if pattern.search(line):
+                if pattern.search(stem_scan_line):
                     errors.append(
                         f"{rel_path}:{lineno}: skill-facing Markdown must not mention private runtime "
                         f"name `{stem}`"

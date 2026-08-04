@@ -156,6 +156,18 @@ def test_email_guidance_routes_shared_credential_and_legacy_fallback() -> None:
     assert "fallback" in legacy
 
 
+def test_calendar_gateway_declares_complete_oauth_route_invariants() -> None:
+    _, gateway, _ = exported_interface("g-calendar", "g-calendar.interface.default")
+
+    assert {edge["interface"] for edge in gateway["uses_interfaces"]} == {
+        "connect-google.interface.default",
+        "g-calendar.interface.ensure-oauth",
+        "g-calendar.interface.scripts-gcal",
+        "g-calendar.interface.setup-oauth",
+        "g-calendar.interface.use-google-credential",
+    }
+
+
 def test_installer_does_not_depend_on_connect_google() -> None:
     text = authored_skill("install-assistant-tools")
     assert "phase 2" in text
