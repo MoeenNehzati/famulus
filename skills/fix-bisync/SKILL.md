@@ -1,7 +1,8 @@
 ---
 name: fix-bisync
-description: |
-  Diagnose rclone bisync failures by inspecting wrapper configuration, logs, state files, and filters; identify the first real failure and any concrete culprit files; propose prevention options; with user approval implement preventive changes; then either provide the repair command or run it depending on the user's preference.
+description: Use when a live rclone bisync job fails, requests `--resync`, has
+  corrupted state, needs its first real fault or culprit files identified, or
+  repeatedly fails and needs a safe prevention or recovery decision.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->
