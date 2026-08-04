@@ -1,0 +1,105 @@
+content:
+- repository_configuration\.py
+dependencies: []
+description: Loads the exact root-level officina.toml supplied by a launcher and
+  returns confined repository module roots without ambient discovery.
+gateway:
+  language: Python
+  path: repository_configuration.py
+id: common.source.repository-configuration
+interfaces:
+  common.source.repository-configuration.interface.python-api:
+    contract:
+      arguments:
+        config-path:
+          description: Absolute path to the repository's root-level officina.toml.
+          direct_io_ref: repository-configuration
+          required: true
+          sensitivity: user-private
+          type:
+            access: read
+            kind: file
+            must_exist: true
+            opaque_content: true
+            relative_to: caller-cwd
+            syntax: literal
+        operation:
+          description: Repository configuration operation to perform.
+          required: true
+          sensitivity: public
+          type:
+            kind: enum
+            values:
+            - description: Load and validate one exact repository configuration.
+              value: load
+      caller_warnings: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: officina.toml bytes and configured-root filesystem metadata
+          formats:
+          - toml
+          - filesystem-metadata
+          id: repository-configuration
+          medium: local-filesystem
+          path: <config-path> and configured module roots
+          sensitivity: user-private
+        writes:
+        - access: write
+          content: Validated repository configuration value
+          formats:
+          - python-object
+          id: return-value
+          medium: local-system
+          sensitivity: user-private
+      execution:
+        consistency:
+          live: The file and configured root metadata are read during the call.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: result
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Use only the returned absolute repository and module roots.
+        class: success
+        effects: []
+        id: loaded
+        outputs:
+        - result
+      - caller_action: Repair the named configuration or unsafe filesystem path.
+        class: error
+        effects: []
+        id: invalid
+        outputs: []
+      outputs:
+      - audience: machine
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Immutable validated repository configuration.
+        direct_io_ref: return-value
+        empty: Never empty on success.
+        id: result
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          description: RepositoryConfiguration Python value.
+          kind: string
+          sensitivity: user-private
+      preconditions: []
+    description: Loads one exact repository configuration for Python callers.
+    version: 1
+node_type: behavioral_source
+schema_version: 5
+uses_interfaces:
+- interface: common.interface.toml-io
+  version: 1
+version: 1

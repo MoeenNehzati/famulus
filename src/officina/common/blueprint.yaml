@@ -24,6 +24,7 @@ content:
 - pooled_blueprint\.py
 - process_binding_compiler\.py
 - repository_paths\.py
+- repository_configuration\.py
 - secret_store\.py
 - standard_extractor\.py
 - toml_io\.py
@@ -162,6 +163,11 @@ exports:
       - skill-certifier-rtx
       - skill-maker
     source_interface: common.source.repository-paths.interface.python-api
+  common.interface.repository-configuration:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: common.source.repository-configuration.interface.python-api
   common.interface.secret-store:
     access:
       allow_all_modules: false
@@ -258,6 +264,10 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/repository-paths.yaml
+  common.source.repository-configuration:
+    blueprint:
+      base: module-root
+      path: blueprints/repository-configuration.yaml
   common.source.secret-store:
     blueprint:
       base: module-root
