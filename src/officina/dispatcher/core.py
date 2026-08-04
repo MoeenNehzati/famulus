@@ -468,6 +468,7 @@ class ResolvedInvocation:
             "--runtime-caller-source-id": 1,
             "--runtime-repo-root": 1,
             "--runtime-repository-config": 1,
+            "--confined-module-root": 1,
         }
         try:
             index = command.index(
@@ -694,7 +695,12 @@ def _build_python_runtime(
             target_module_id=_target_module_id(interface_id),
         ) from exc
     try:
-        if descriptor_safe_open_supported():
+        if schema_version == 6:
+            package_arguments = [
+                "--confined-module-root",
+                module_root.as_posix(),
+            ]
+        elif descriptor_safe_open_supported():
             package_bindings = open_runtime_python_package(
                 package_root,
                 snapshot_root,

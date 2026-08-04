@@ -135,14 +135,19 @@ def _repository(
     _write_yaml(modules / "root" / "alpha" / "leaf" / "blueprints" / "runtime.yaml", source)
     (modules / "root" / "alpha" / "leaf" / "runtime.py").write_text(
         "from officina.runtime.python_machine_interface import PythonMachineInterface\n"
+        "from .helper import message\n"
         "class Interface(PythonMachineInterface):\n"
         "    def build_parser(self):\n"
         "        parser = super().build_parser()\n"
         "        parser.add_argument('command')\n"
         "        return parser\n"
         "    def run(self, args):\n"
-        "        print('direct-ok')\n"
+        "        print(message)\n"
         "        return 0\n",
+        encoding="utf-8",
+    )
+    (modules / "root" / "alpha" / "leaf" / "helper.py").write_text(
+        "message = 'direct-ok'\n",
         encoding="utf-8",
     )
     return RepositoryConfiguration(1, tmp_path / "officina.toml", tmp_path, (modules,))
@@ -362,6 +367,12 @@ def test_host_executes_direct_route_with_explicit_config(
 ) -> None:
     configuration = _repository(tmp_path, terminal_access=_access(public=True))
     monkeypatch.setenv("PYTHONPATH", str(Path(__file__).resolve().parents[1] / "src"))
+
+    def forbidden(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("eager package scan reached")
+
+    monkeypatch.setattr("officina.dispatcher.core.open_runtime_python_package", forbidden)
+    monkeypatch.setattr("officina.dispatcher.core.snapshot_runtime_python_package", forbidden)
 
     completed = _dispatch_host(
         caller_skill="root.alpha.leaf",
