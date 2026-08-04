@@ -295,6 +295,51 @@ def test_v4_default_search_result_uses_generic_node_metadata(tmp_path: Path) -> 
     ]
 
 
+def test_v5_search_exposes_current_skill_drift_registered_descriptions() -> None:
+    rows = _canonical_search_blueprints(
+        REPO_ROOT,
+        {
+            "schema_version": 5,
+            "filter": {
+                "any": [
+                    {"path": "id", "op": "eq", "value": "skill-drift"},
+                    {
+                        "path": "id",
+                        "op": "eq",
+                        "value": "skill-drift.source.gateway",
+                    },
+                ]
+            },
+            "select": ["id", "description"],
+        },
+    )
+
+    assert rows == [
+        {
+            "module": "skill-drift",
+            "path": "skills/skill-drift/blueprint.yaml",
+            "values": {
+                "id": "skill-drift",
+                "description": (
+                    "Computes canonical v5 node hashes and reports whether "
+                    "installed modules have current signed certificates."
+                ),
+            },
+        },
+        {
+            "module": "skill-drift",
+            "path": "skills/skill-drift/blueprints/gateway.yaml",
+            "values": {
+                "id": "skill-drift.source.gateway",
+                "description": (
+                    "Defines the LLM-facing rules for reading exact "
+                    "signed-certificate currentness and canonical v5 node hashes."
+                ),
+            },
+        },
+    ]
+
+
 def test_v5_search_uses_global_module_ids_and_registered_ancestry(
     tmp_path: Path,
 ) -> None:

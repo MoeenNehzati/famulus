@@ -6,7 +6,7 @@ children:
     path: _rtx/blueprint.yaml
 content:
 - (?:README\.md|SKILL\.md)
-description: Computes canonical v4 node hashes and reports whether installed modules
+description: Computes canonical v5 node hashes and reports whether installed modules
   have current signed certificates.
 discovery:
   mechanism: skill

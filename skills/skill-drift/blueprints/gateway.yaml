@@ -9,7 +9,7 @@ dependencies:
   source: skill-certifier.source.gateway
   version: 2
 description: Defines the LLM-facing rules for reading exact signed-certificate currentness
-  and canonical v4 node hashes.
+  and canonical v5 node hashes.
 gateway:
   language: Markdown
   path: SKILL.md
