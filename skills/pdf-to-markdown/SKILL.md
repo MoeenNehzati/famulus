@@ -30,7 +30,7 @@ Use the installed `dispatcher` command for these process-bound interfaces:
 - `pdf-to-markdown.interface.scripts-check-marker-models` — Check whether required Marker/Surya models are downloaded and cached locally.
   - `dispatcher --caller-skill pdf-to-markdown pdf-to-markdown.interface.scripts-check-marker-models`
 - `pdf-to-markdown.interface.scripts-fetch-arxiv-source` — Download and extract the LaTeX source tarball for a paper from arXiv.
-  - `dispatcher --caller-skill pdf-to-markdown pdf-to-markdown.interface.scripts-fetch-arxiv-source <arxiv-id> <output-dir>`
+  - `dispatcher --caller-skill pdf-to-markdown pdf-to-markdown.interface.scripts-fetch-arxiv-source <arxiv-id> [<output-dir>]`
 
 Instruction Interfaces:
 
@@ -50,7 +50,7 @@ Convert a research paper to LLM-readable text. Prefer LaTeX source over PDF conv
 ### arXiv (check first — highest hit rate for CS/math/econ)
 
 1. No arXiv ID? Search `arxiv [title] [authors]` via WebSearch to find one.
-2. Run the `scripts-fetch-arxiv-source` interface with `<arxiv-id> <output-dir>`.
+2. Run the `scripts-fetch-arxiv-source` interface with `<arxiv-id> [<output-dir>]`.
    - Script downloads `arxiv.org/src/<id>`, extracts, lists `.tex` files found.
    - If arXiv returns HTML instead of a tarball, the paper has no source — move on.
 3. Root file is usually `main.tex`; if absent, scan for the file that `\begin{document}`.

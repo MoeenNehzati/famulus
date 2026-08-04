@@ -205,7 +205,7 @@ interfaces:
       - max_positionals: 2
         min_positionals: 1
         name: owner
-    usage: <arxiv-id> <output-dir>
+    usage: <arxiv-id> [<output-dir>]
     version: 1
 node_type: behavioral_source
 platform_support:
