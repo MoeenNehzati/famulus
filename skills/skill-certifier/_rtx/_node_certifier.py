@@ -105,12 +105,47 @@ RouteSmokeAuditResult = tuple[
 
 
 class CertificationError(RuntimeError):
-    """Raised when certification cannot safely continue."""
+    """CertificationError marks certification-stop failures raised by this issuer.
+
+    Intent
+    ------
+    Carry deliberate rejection messages through a dedicated exception type so CLI handling can distinguish certification denials from unexpected crashes.
+
+    Rationale
+    ---------
+    Repository, provenance, hash, signing, and policy gates all reject by message; the shared type keeps those denials catchable without weakening the individual gate text.
+
+    Pseudocode
+    ----------
+    - raise certification_rejection_message
+
+    Wraps
+    -----
+    - none
+    """
 
 
 @dataclass(frozen=True)
 class V4CertificationResult:
-    """Private Task-3 result for converted temporary repositories."""
+    """V4CertificationResult records the certificates written by the private issuer.
+
+    Intent
+    ------
+    Store the source module, reviewed commit, module root, and per-node outcomes returned by the certificate writer.
+
+    Rationale
+    ---------
+    The public API needs one immutable value that can be rendered as text or JSON without re-reading logs after issuance.
+
+    Pseudocode
+    ----------
+    - set result_fields = module source module_root nodes
+    - return issued_certificate_record
+
+    Wraps
+    -----
+    - none
+    """
 
     node_ids: tuple[str, ...]
     source_commit: str
@@ -118,7 +153,25 @@ class V4CertificationResult:
 
 @dataclass(frozen=True)
 class V4GateSnapshot:
-    """Exact derived node/content snapshot presented to certifier-owned gates."""
+    """V4GateSnapshot freezes the evidence used by v4 gate checks.
+
+    Intent
+    ------
+    Group node hash, source commit, manifest, dependency hashes, basis digest, and certifier identity into one gate input.
+
+    Rationale
+    ---------
+    Deterministic and semantic gates must compare the same evidence bundle that later enters the signed certificate payload.
+
+    Pseudocode
+    ----------
+    - set snapshot_fields = node_hash source_commit manifests identity
+    - return snapshot_fields
+
+    Wraps
+    -----
+    - none
+    """
 
     node_id: str
     node_hash: str
@@ -131,7 +184,25 @@ class V4GateSnapshot:
 
 @dataclass(frozen=True)
 class V4CompletenessFinding:
-    """One certifier-owned semantic presence requirement for a v4 draft."""
+    """V4CompletenessFinding names one missing certification disclosure.
+
+    Intent
+    ------
+    Record the node, blueprint path, subject, field, and message for a v4 completeness gap.
+
+    Rationale
+    ---------
+    Completeness auditing reports all missing review material at once, so each finding needs enough location data for a human to repair the blueprint.
+
+    Pseudocode
+    ----------
+    - set finding_fields = node_id subject field message
+    - return finding_fields
+
+    Wraps
+    -----
+    - none
+    """
 
     subject_id: str
     blueprint_path: Path
@@ -155,7 +226,33 @@ V4_REQUIRED_CONTRACT_SECTIONS = (
 def v4_certification_completeness_findings(
     graph: RepositoryBlueprintGraph,
 ) -> tuple[V4CompletenessFinding, ...]:
-    """Return deterministic semantic omissions that prohibit v4 signing."""
+    """v4_certification_completeness_findings lists missing v4 signing disclosures.
+
+    Intent
+    ------
+    Scan nodes and skill interfaces for descriptions, required contract sections, verification rows, and endpoint disclosures before signing.
+
+    Rationale
+    ---------
+    The pre-signing gate returns a complete tuple of repair targets instead of hiding later missing fields behind the first failure.
+
+    Pseudocode
+    ----------
+    - set findings = empty_collection
+    - for node in graph_nodes:
+      - set findings = findings_with_node_gaps
+    - return findings
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .V4CompletenessFinding:
+      why:
+        constructs: "Each finding is a carried certification-completeness product identifying subject, blueprint path, field, and remediation message."
+    """
 
     findings: list[V4CompletenessFinding] = []
     for node_id, node in sorted(graph.nodes.items()):
@@ -245,7 +342,25 @@ def v4_certification_completeness_findings(
 def v4_protected_projection(
     graph: RepositoryBlueprintGraph,
 ) -> dict[str, object]:
-    """Project every migration fact that a semantic repair may not change."""
+    """v4_protected_projection extracts the v4 fields protected during semantic review.
+
+    Intent
+    ------
+    Build a comparable projection of module ids, node kinds, gateway paths, dependencies, and interface contracts.
+
+    Rationale
+    ---------
+    Semantic migration review may alter blueprint wording, but it must not silently change executable wiring or protected dependency structure.
+
+    Pseudocode
+    ----------
+    - set projection = protected_node_and_interface_fields
+    - return projection
+
+    Wraps
+    -----
+    - none
+    """
 
     projected: dict[str, object] = {}
     for node_id, node in sorted(graph.nodes.items()):
@@ -316,7 +431,25 @@ def v4_protected_projection(
 
 @dataclass(frozen=True)
 class V4CandidateInspection:
-    """Read-only semantic-completeness report for one committed candidate."""
+    """V4CandidateInspection stores the evidence collected from a migration candidate.
+
+    Intent
+    ------
+    Keep candidate path, reviewed commit, source commit, reconciliation digest, legacy context, and completeness findings together.
+
+    Rationale
+    ---------
+    Inspection output feeds both human review and later certification, so its fields preserve the exact artifacts examined before signing.
+
+    Pseudocode
+    ----------
+    - set inspection_fields = candidate_path commits digest context findings
+    - return inspection_fields
+
+    Wraps
+    -----
+    - none
+    """
 
     node_ids: tuple[str, ...]
     source_commit: str
@@ -327,7 +460,25 @@ class V4CandidateInspection:
 
 @dataclass(frozen=True)
 class V4LegacyReviewContext:
-    """One immutable legacy claim supplied as non-blocking review evidence."""
+    """V4LegacyReviewContext records one legacy skill-interface review row.
+
+    Intent
+    ------
+    Tie a legacy interface subject to its blueprint path, node id, module, source, and declared review metadata.
+
+    Rationale
+    ---------
+    Migration checks need these rows to compare old review claims with the candidate graph without re-decoding every legacy blueprint.
+
+    Pseudocode
+    ----------
+    - set context_fields = subject blueprint node module source review
+    - return context_fields
+
+    Wraps
+    -----
+    - none
+    """
 
     subject_id: str
     blueprint_path: Path
@@ -338,22 +489,136 @@ class V4LegacyReviewContext:
 
 
 class _EphemeralSecretBackend:
+    """_EphemeralSecretBackend keeps signing secrets in memory for tests.
+
+    Intent
+    ------
+    Provide the secret-backend protocol used by certificate signing without touching a persistent key store.
+
+    Rationale
+    ---------
+    Tests need deterministic isolation for generated keys; the namespace/key dictionary mimics storage while remaining process-local.
+
+    Pseudocode
+    ----------
+    - set secret_table = empty_mapping
+    - return backend
+
+    Wraps
+    -----
+    - none
+    """
     name = "ephemeral-v4-candidate"
 
     def __init__(self) -> None:
+        """__init__ creates the in-memory namespace table.
+
+        Intent
+        ------
+        Initialize the private mapping that stores test signing secrets by namespace and key.
+
+        Rationale
+        ---------
+        The backend must start empty for each test run so key provisioning cannot leak across certification scenarios.
+
+        Pseudocode
+        ----------
+        - set values = empty_mapping
+        - return initialized_backend
+
+        Wraps
+        -----
+        - none
+        """
         self._values: dict[tuple[str, str], str] = {}
 
     def store(self, namespace: str, key: str, secret: str) -> None:
+        """store writes one namespaced secret value.
+
+        Intent
+        ------
+        Persist the supplied bytes under the namespace/key pair used by the signing-material helpers.
+
+        Rationale
+        ---------
+        The fake backend has to match the production lookup contract while avoiding filesystem or external secret-service dependencies.
+
+        Pseudocode
+        ----------
+        - set stored_secret = secret_bytes
+        - return stored_secret
+
+        Wraps
+        -----
+        - none
+        """
         self._values[(namespace, key)] = secret
 
     def lookup(self, namespace: str, key: str) -> str | None:
+        """lookup reads one namespaced secret value.
+
+        Intent
+        ------
+        Return the bytes previously stored for the namespace/key pair, or no value when the key is absent.
+
+        Rationale
+        ---------
+        Certificate helpers use lookup to decide whether to reuse signing material, so absence must be represented without raising.
+
+        Pseudocode
+        ----------
+        - set value = values_for_namespace_key
+        - return value
+
+        Wraps
+        -----
+        - none
+        """
         return self._values.get((namespace, key))
 
     def clear(self, namespace: str, key: str) -> bool:
+        """clear removes one namespaced secret value.
+
+        Intent
+        ------
+        Delete the stored bytes for a namespace/key pair and report whether anything was removed.
+
+        Rationale
+        ---------
+        Tests can reset signing state through the same backend abstraction that production code uses for key lifecycle operations.
+
+        Pseudocode
+        ----------
+        - set existed = remove_namespace_key
+        - return existed
+
+        Wraps
+        -----
+        - none
+        """
         return self._values.pop((namespace, key), None) is not None
 
 
 def _v4_hash_bytes(value: bytes) -> str:
+    """_v4_hash_bytes returns the canonical SHA-256 label for byte evidence.
+
+    Intent
+    ------
+    Convert an already-read byte payload into the prefixed digest string used in manifests and deterministic comparisons.
+
+    Rationale
+    ---------
+    Keeping the prefixing rule in one helper prevents certificate evidence from mixing raw hexadecimal hashes with canonical digest labels.
+
+    Pseudocode
+    ----------
+    - set digest = hashed_bytes
+    - return prefixed_digest
+
+    Wraps
+    -----
+    - none
+    """
     return "sha256:" + hashlib.sha256(value).hexdigest()
 
 
@@ -361,7 +626,33 @@ def _expected_file_hashes(
     snapshot: GitSnapshot | None,
     paths: Sequence[Path],
 ) -> dict[str, str]:
-    """Capture the exact regular-file bytes passed to commit readiness."""
+    """_expected_file_hashes computes digest expectations for regular files.
+
+    Intent
+    ------
+    Walk candidate paths inside a Git snapshot and return repo-relative SHA-256 labels for files that still exist as regular files.
+
+    Rationale
+    ---------
+    Commit-readiness checks compare expected and observed input hashes, so this helper filters missing, escaping, and non-file paths before hashing.
+
+    Pseudocode
+    ----------
+    - set expected = empty_mapping
+    - for path in input_paths:
+      - set expected = expected_with_regular_file_digest
+    - return expected
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._v4_hash_bytes:
+      why:
+        serializes: "The helper digest becomes the expected hash label for tracked file evidence."
+    """
 
     if snapshot is None:
         return {}
@@ -382,7 +673,47 @@ def _python_route_smoke_trace_specs(
     graph: RepositoryBlueprintGraph,
     certification_node_ids: Sequence[str],
 ) -> tuple[tuple[str, str, PythonProcessTarget], ...]:
-    """Return unique scoped Python source/target traces."""
+    """_python_route_smoke_trace_specs selects Python process bindings for route-smoke tracing.
+
+    Intent
+    ------
+    Walk requested behavioral-source nodes, reject unknown ids, ignore non-Python gateways, and emit unique process targets with interface ids.
+
+    Rationale
+    ---------
+    Route-smoke auditing needs executable Python targets rather than raw blueprint fragments; this helper preserves ownership while normalizing gateway bindings.
+
+    Pseudocode
+    ----------
+    - raise %officina.common.certification_hashing.CertificationHashError(invalid_route_smoke_subject)
+    - set selected = requested_behavioral_sources
+    - for interface in selected_interfaces:
+      - if gateway_language_is_python:
+        - set selected = selected_with_process_target
+    - return selected
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    officina.common.process_binding_compiler.gateway_language_name:
+      why:
+        computes: "Classifies the gateway language so only Python process bindings enter route-smoke tracing."
+
+    InstantiationsFromRepo
+    ----------------------
+    officina.common.certification_hashing.CertificationHashError:
+      why:
+        raises: "Rejected route-smoke inputs leave the helper as a typed hash-policy error."
+    officina.runtime.python_machine_interface.PythonProcessTarget:
+      why:
+        constructs: "The returned trace spec carries this process target into dependency tracing."
+    officina.runtime.python_machine_interface.logical_python_package_name:
+      why:
+        transforms: "The v5 module id becomes logical package evidence stored on each constructed process target."
+    """
 
     selected: set[str] = set()
     for node_id in certification_node_ids:
@@ -482,7 +813,45 @@ def audit_route_smoke_dependencies(
     certification_node_ids: Sequence[str],
     schema_root: Path | None = None,
 ) -> RouteSmokeAuditResult:
-    """Run the certifier-owned scoped Python route-smoke dependency audit."""
+    """audit_route_smoke_dependencies maps traced Python imports to certification dependencies.
+
+    Intent
+    ------
+    Trace selected Python process targets, map loaded files back to blueprint dependencies, and return stable signatures for each node/interface pair.
+
+    Rationale
+    ---------
+    The certifier must prove runtime imports seen during smoke execution are covered by the same node-hash graph that is about to be signed.
+
+    Pseudocode
+    ----------
+    - set trace_specs = selected_route_smoke_targets
+    - set traces = traced_python_process_dependencies
+    - set mapped = mapped_blueprint_dependencies
+    - return route_smoke_audit_rows
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._python_route_smoke_trace_specs:
+      why:
+        constructs: "Selected route-smoke specifications are carried into batch tracing and final audit rows."
+    officina.common.certification_hashing.CertificationHashError:
+      why:
+        raises: "Trace and mapping failures leave the audit as a typed certification-hash rejection."
+    officina.common.certification_hashing.map_route_smoke_dependencies:
+      why:
+        transforms: "Loaded Python paths become dependency mappings consumed by the signature step."
+    officina.common.certification_hashing.route_smoke_trace_signature:
+      why:
+        serializes: "Mapped dependencies become the tuple signature returned in each route-smoke audit row."
+    officina.runtime.python_machine_interface.trace_python_route_smoke_dependencies_batch:
+      why:
+        constructs: "Observed import traces are carried forward for dependency mapping."
+    """
 
     root = Path(repo_root).resolve()
     trace_specs = _python_route_smoke_trace_specs(
@@ -547,6 +916,34 @@ def _v4_route_smoke_audit(
     certification_node_ids: Sequence[str],
     schema_root: Path | None = None,
 ) -> RouteSmokeAuditResult:
+    """_v4_route_smoke_audit runs route-smoke dependency auditing when configured.
+
+    Intent
+    ------
+    Invoke the route-smoke mapper for selected certification nodes and convert hash-policy failures into certification failures.
+
+    Rationale
+    ---------
+    Route-smoke evidence is optional by schema version, but when required it must fail before certificate payloads are signed.
+
+    Pseudocode
+    ----------
+        - set audit_rows = traced_route_smoke_dependencies
+        - return audit_rows
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .CertificationError:
+      why:
+        raises: "Route-smoke tracing failures are converted into certification denials before gate evidence is recorded."
+    .audit_route_smoke_dependencies:
+      why:
+        constructs: "Route-smoke audit rows become optional gate evidence for the private writer."
+    """
     try:
         schema_options = (
             {"schema_root": schema_root}
@@ -579,6 +976,38 @@ def _v4_payload(
     certified_at: str,
     expected_schema_version: int = 4,
 ) -> dict[str, object]:
+    """_v4_payload builds the dictionary signed as a node certificate.
+
+    Intent
+    ------
+    Gather subject paths, node-hash state, certifier identity, checks, key metadata, previous-entry linkage, and timestamp into one payload.
+
+    Rationale
+    ---------
+    Signing code should receive a stable repository-relative payload shape, with missing gateway paths rejected before envelope serialization.
+
+    Pseudocode
+    ----------
+    - raise %.CertificationError(missing_gateway_path)
+    - set payload_paths = repository_relative_subject_paths
+    - return certificate_payload_mapping
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    officina.common.repository_paths.repository_relative_path:
+      why:
+        transforms: "Converts subject blueprint and gateway paths into repository-relative payload strings."
+
+    InstantiationsFromRepo
+    ----------------------
+    .CertificationError:
+      why:
+        raises: "A certificate subject without a gateway path leaves as a typed certifier rejection."
+    """
     node = graph.nodes[node_id]
     state = states[node_id]
     if node.gateway_path is None:
@@ -620,6 +1049,35 @@ def _v4_gate_snapshot(
     source_commit: str,
     certifier_identity: Mapping[str, object],
 ) -> V4GateSnapshot:
+    """_v4_gate_snapshot builds the evidence view consumed by v4 gates.
+
+    Intent
+    ------
+    Extract one node state, basis hash, source commit, manifests, dependencies, and certifier identity for deterministic gate evaluation.
+
+    Rationale
+    ---------
+    Gate helpers should not reach back into the whole graph when checking one node; this snapshot gives them the bounded evidence they need.
+
+    Pseudocode
+    ----------
+        - raise %.CertificationError(missing_gate_state)
+        - set snapshot = node_gate_evidence
+        - return snapshot
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .CertificationError:
+      why:
+        raises: "Missing node state or basis evidence rejects the snapshot before deterministic gates can read it."
+    .V4GateSnapshot:
+      why:
+        constructs: "The snapshot object packages one node evidence bundle for deterministic comparisons."
+    """
     node_hash = getattr(state, "node_hash", None)
     basis_hash = getattr(state, "certification_basis_hash", None)
     if not isinstance(node_hash, str) or not isinstance(basis_hash, str):
@@ -644,6 +1102,38 @@ def _passed_v4_check(
     *,
     expected_schema_version: int = 4,
 ) -> dict[str, object]:
+    """_passed_v4_check creates a passed check record from the certifier registry.
+
+    Intent
+    ------
+    Resolve a gate name against the schema-versioned registry and return the normalized passed-check mapping.
+
+    Rationale
+    ---------
+    Certificate payloads store check ids and versions, not ad hoc labels, so missing registry entries must reject before signing.
+
+    Pseudocode
+    ----------
+    - set registry = versioned_check_registry
+    - raise %.CertificationError(missing_gate)
+    - return passed_check_mapping
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    officina.common.certification_hashing.certifier_check_registry:
+      why:
+        validates: "Selects the versioned check registry used to authorize the requested gate name."
+
+    InstantiationsFromRepo
+    ----------------------
+    .CertificationError:
+      why:
+        raises: "A missing gate name leaves this helper as a typed certifier rejection."
+    """
     registry = (
         CERTIFIER_CHECK_REGISTRY
         if expected_schema_version == 4
@@ -668,7 +1158,45 @@ def _v4_deterministic_check(
     states: Mapping[str, NodeHashState],
     expected_schema_version: int = 4,
 ) -> dict[str, object]:
-    """Assert that the owned derived state is exactly the state being signed."""
+    """_v4_deterministic_check validates one node against deterministic v4 evidence.
+
+    Intent
+    ------
+    Compare recomputed node hashes, input manifests, dependency hashes, basis digest, and certifier identity for a gate snapshot.
+
+    Rationale
+    ---------
+    A certificate is meaningful only if the deterministic evidence at signing time equals the reviewed evidence captured in the node state.
+
+    Pseudocode
+    ----------
+        - set expected = reviewed_gate_snapshot
+        - if observed_evidence_differs:
+          - raise %.CertificationError(deterministic_mismatch)
+        - return passed_check
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .v4_certification_completeness_findings:
+      why:
+        orchestrates: "The completeness scan confirms schema disclosures before deterministic evidence is accepted."
+
+    InstantiationsFromRepo
+    ----------------------
+    .CertificationError:
+      why:
+        raises: "Hash, manifest, dependency, basis, or identity mismatches reject the deterministic gate."
+    ._passed_v4_check:
+      why:
+        constructs: "The passed-check row records the successful gate name and registry version."
+    ._v4_gate_snapshot:
+      why:
+        constructs: "The reconstructed snapshot provides the observed evidence compared against the reviewed snapshot."
+    """
 
     node = graph.nodes.get(snapshot.node_id)
     state = states.get(snapshot.node_id)
@@ -699,7 +1227,35 @@ def _v4_semantic_attestation(
     reviewed_commit: str,
     expected_schema_version: int = 4,
 ) -> dict[str, object]:
-    """Record that the LLM attested this exact committed snapshot."""
+    """_v4_semantic_attestation creates the semantic-review check row when migration review is required.
+
+    Intent
+    ------
+    Run semantic-attestation replay for v4 migration certificates and return the corresponding passed gate record.
+
+    Rationale
+    ---------
+    The migration path allows reviewed blueprint edits only when replay proves the protected projection stayed stable.
+
+    Pseudocode
+    ----------
+        - if migration_review_required:
+          - set attestation = semantic_replay_result
+        - return semantic_check_row
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .CertificationError:
+      why:
+        raises: "Failed semantic replay rejects migration-review certification before a passed check is emitted."
+    ._passed_v4_check:
+      why:
+        constructs: "The passed-check row records the successful gate name and registry version."
+    """
 
     if not reviewed_commit or snapshot.source_commit != reviewed_commit:
         raise CertificationError(f"{snapshot.node_id}: semantic review does not match HEAD")
@@ -713,6 +1269,36 @@ def _v4_blueprint_paths(
     graph: RepositoryBlueprintGraph,
     repo_root: Path,
 ) -> set[Path]:
+    """_v4_blueprint_paths collects blueprint paths contained in a graph.
+
+    Intent
+    ------
+    Convert every graph node blueprint path into a repository-relative path set.
+
+    Rationale
+    ---------
+    Semantic-attestation diff checks need a compact allowlist of blueprint files so unrelated reviewed changes are rejected.
+
+    Pseudocode
+    ----------
+        - set paths = empty_set
+        - for node in graph_nodes:
+          - set paths = paths_with_repo_relative_blueprint
+        - return paths
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    officina.common.repository_paths.repository_relative_path:
+      why:
+        constructs: "The path normalizer converts blueprint locations into the allowlist used by semantic attestation."
+    .CertificationError:
+      why:
+        raises: "Blueprint paths that escape the repository reject the semantic-attestation allowlist."
+    """
     try:
         return {
             repository_relative_path(node.blueprint_path, repo_root)
@@ -729,7 +1315,43 @@ def _materialize_v4_local_inputs(
     *,
     allow_non_atomic: bool,
 ) -> None:
-    """Overlay exact ignored/untracked node inputs needed to load the graph."""
+    """_materialize_v4_local_inputs copies untracked v4 inputs into a reconstructed commit tree.
+
+    Intent
+    ------
+    Find local manifest entries, reject unsafe paths or collisions, read each byte payload, and write it under the temporary mechanical tree.
+
+    Rationale
+    ---------
+    Semantic-attestation replay must restore declared local evidence exactly while preserving repository-boundary and atomic-write guarantees.
+
+    Pseudocode
+    ----------
+    - raise %.CertificationError(unsafe_local_input)
+    - set copied_inputs = declared_local_manifest_entries
+    - for input_path in copied_inputs:
+      - set copied_inputs = copied_inputs_with_materialized_bytes
+    - return copied_inputs
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    officina.common.atomic_files.atomic_replace_bytes:
+      why:
+        writes: "Writes each declared local input into the reconstructed tree after path and collision checks."
+
+    InstantiationsFromRepo
+    ----------------------
+    .CertificationError:
+      why:
+        raises: "Unsafe or unreadable local-input materialization leaves as a typed certifier rejection."
+    officina.common.atomic_files.read_regular_file_bytes:
+      why:
+        serializes: "The copied byte payload is read once and carried into the bounded atomic write."
+    """
 
     relative_paths = {
         Path(entry["path"])
@@ -782,7 +1404,56 @@ def _validate_v4_semantic_attestation(
     reviewed_commit: str,
     allow_non_atomic: bool,
 ) -> None:
-    """Prove that LLM review changed semantics but no protected mechanics."""
+    """_validate_v4_semantic_attestation replays the mechanical baseline behind a reviewed v4 commit.
+
+    Intent
+    ------
+    Materialize the mechanical commit, restore local inputs, load its graph, verify ancestry, restrict changed files, and compare protected projections.
+
+    Rationale
+    ---------
+    The semantic-review certificate depends on proving that review commits changed only allowed blueprint text and not executable protected structure.
+
+    Pseudocode
+    ----------
+    - set mechanical_tree = materialized_mechanical_commit
+    - set mechanical_graph = loaded_mechanical_blueprint_graph
+    - set changed_paths = reviewed_diff_paths
+    - if protected_projection_changed:
+      - raise %.CertificationError(semantic_attestation_failed)
+    - return attestation_passed
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._materialize_v4_local_inputs:
+      why:
+        writes: "Restores declared local inputs into the temporary mechanical tree before graph loading."
+    ._v4_blueprint_paths:
+      why:
+        computes: "Builds the allowed blueprint-path set used to reject unrelated reviewed-file changes."
+    .v4_protected_projection:
+      why:
+        validates: "Compares protected graph projections after path-level review checks pass."
+    officina.common.git_provenance.materialize_git_commit:
+      why:
+        writes: "Expands the mechanical commit into the temporary attestation workspace."
+
+    InstantiationsFromRepo
+    ----------------------
+    .CertificationError:
+      why:
+        raises: "Any failed replay, ancestry, diff, or projection check leaves as a typed certifier rejection."
+    officina.common.blueprint_graph.load_repository_blueprint_graph:
+      why:
+        constructs: "The replayed graph provides the baseline projection compared against the reviewed graph."
+    officina.common.git_provenance.run_git:
+      why:
+        constructs: "Ancestry and changed-path command results are carried into attestation branch decisions."
+    """
 
     with tempfile.TemporaryDirectory(prefix="v4-mechanical-commit-") as raw_root:
         mechanical_root = Path(raw_root)
@@ -860,6 +1531,39 @@ def _verify_executing_candidate_certifier(
     graph: RepositoryBlueprintGraph,
     states: Mapping[str, NodeHashState],
 ) -> None:
+    """_verify_executing_candidate_certifier proves the running certifier belongs to the candidate graph.
+
+    Intent
+    ------
+    Locate this file inside the candidate root, find its behavioral-source owner, enforce module ownership, and compare its digest to the manifest.
+
+    Rationale
+    ---------
+    Self-certification is valid only when the process issuing certificates is itself the source file represented by the candidate node hash.
+
+    Pseudocode
+    ----------
+    - set executing_relative = repository_relative_certifier_path
+    - if owner_or_digest_mismatch:
+      - raise %.CertificationError(candidate_certifier_mismatch)
+    - return ownership_verified
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    officina.common.repository_paths.repository_relative_path:
+      why:
+        transforms: "Normalizes the executing certifier path before matching it against manifest entries."
+
+    InstantiationsFromRepo
+    ----------------------
+    .CertificationError:
+      why:
+        raises: "Path escapes, missing ownership, wrong module ownership, and digest mismatch leave as typed rejections."
+    """
     executing = Path(__file__).resolve()
     try:
         executing_relative = repository_relative_path(executing, root).as_posix()
@@ -907,12 +1611,162 @@ def _certify_v4_repository(
     expected_schema_version: int = 5,
     schema_root: Path | None = None,
 ) -> V4CertificationResult:
-    """Certify exact version-selected targets from one committed repository snapshot.
+    """_certify_v4_repository issues signed certificates for selected v4 or v5 nodes.
 
-    Migration candidates additionally require the reserved mechanical baseline
-    and protected semantic-review transition. The live v4 route uses the same
-    writer after the repository cutover without replaying that migration-only
-    transition.
+    Intent
+    ------
+    Freeze repository state, derive graph hashes and certifier identity, run gates, sign each target payload, and append certificate log entries.
+
+    Rationale
+    ---------
+    This private writer binds Git inputs, local evidence, key material, pooled reviews, and log tails into one exact reviewed commit before signing.
+
+    Pseudocode
+    ----------
+        - raise %.CertificationError(rejected_repository_or_gate)
+        - set derived = graph_hashes_identity_and_basis
+        - set gate_rows = deterministic_and_route_smoke_checks
+        - set envelope = signed_certificate_envelope
+        - return certification_result
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._expected_file_hashes:
+      why:
+        computes: "Builds digest expectations for tracked inputs during readiness checks."
+    ._v4_hash_bytes:
+      why:
+        computes: "Hashes tracked and local input bytes for freeze checks."
+    ._validate_v4_semantic_attestation:
+      why:
+        validates: "Replays the mechanical baseline before semantic-review certificates are allowed."
+    ._verify_executing_candidate_certifier:
+      why:
+        validates: "Confirms candidate self-certification is running the owned certifier source."
+    officina.common.atomic_files.atomic_compare_and_append_bytes:
+      why:
+        writes: "Appends each signed envelope only if the current log tail matches the expected entry hash."
+    officina.common.atomic_files.atomic_replace_bytes:
+      why:
+        writes: "Publishes generated pooled-review artifacts and public-key bytes within bounded roots."
+    officina.common.atomic_files.read_regular_file_bytes:
+      why:
+        computes: "Reads frozen tracked and local inputs for digest comparison."
+    officina.common.certificate_records.certificate_public_key_root:
+      why:
+        computes: "Locates the public-key directory used when the writer provisions signing material."
+    officina.common.certification_hashing.expected_certifier_checks:
+      why:
+        validates: "Checks that the gate list matches the schema-versioned registry."
+    officina.common.git_provenance.snapshot_head_matches:
+      why:
+        validates: "Confirms later Git snapshots still match the reviewed commit before and after writes."
+    officina.common.pooled_blueprint.pooled_review_path:
+      why:
+        computes: "Selects per-module pooled-review artifact paths that must be tolerated during freeze checks."
+    officina.common.pooled_blueprint.render_pooled_review:
+      why:
+        serializes: "Renders pooled blueprint review bytes before the bounded artifact write."
+    officina.common.repository_paths.repository_relative_path:
+      why:
+        transforms: "Normalizes certification input and artifact paths against the repository root."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._passed_v4_check:
+      why:
+        constructs: "Creates normalized pass records only after each gate succeeds."
+    ._v4_deterministic_check:
+      why:
+        constructs: "Recomputes deterministic node evidence before signing each payload."
+    ._v4_semantic_attestation:
+      why:
+        constructs: "Builds the optional semantic-attestation check record for v4 migration certificates."
+    .CertificationError:
+      why:
+        raises: "Repository, graph, key, freeze, gate, signing, or append failures leave as typed certifier rejections."
+    .V4CertificationResult:
+      why:
+        constructs: "The returned result carries the written node ids and reviewed commit to public callers."
+    ._v4_gate_snapshot:
+      why:
+        constructs: "Gate snapshots carry node-hash evidence into deterministic and payload construction."
+    ._v4_payload:
+      why:
+        constructs: "Payload mappings are carried into envelope serialization and signing."
+    ._v4_route_smoke_audit:
+      why:
+        constructs: "The route-smoke audit result is compared for stability and recorded as passed gate evidence."
+    ._v4_hash_bytes:
+      why:
+        serializes: "Input byte digests are carried into frozen-input comparisons and certificate evidence."
+    .v4_certification_completeness_findings:
+      why:
+        constructs: "Completeness findings are carried into the pre-signing rejection branch."
+    officina.common.blueprint_graph.load_repository_blueprint_graph:
+      why:
+        constructs: "The loaded graph drives target expansion, hash derivation, and certificate-log placement."
+    officina.common.certificate_records.canonical_certificate_envelope_bytes:
+      why:
+        serializes: "Canonical envelope bytes are carried into signing, entry hashing, and log append."
+    officina.common.certificate_records.certificate_entry_hash:
+      why:
+        serializes: "Entry hashes are carried into log-tail verification and the next append expectation."
+    officina.common.certificate_records.load_or_create_certificate_signing_key:
+      why:
+        constructs: "Signing keys are carried into payload signing and public-key provisioning."
+    officina.common.certificate_records.parse_certificate_log:
+      why:
+        constructs: "Existing log entries are carried into previous-entry hash and currentness checks."
+    officina.common.certificate_records.provision_certificate_signing_material:
+      why:
+        constructs: "Provisioned key metadata selects the signer identity and public verification material for each envelope."
+    officina.common.certificate_records.sign_certificate_payload:
+      why:
+        serializes: "Payload signatures are carried into canonical envelope construction."
+    officina.common.certification_hashing.certification_target_postorder:
+      why:
+        transforms: "Expanded target ids become the dependency-respecting certification order."
+    officina.common.certification_hashing.compute_certification_basis_hash:
+      why:
+        serializes: "The basis digest binds node hashes and signed payloads to the same reviewed support files."
+    officina.common.certification_hashing.compute_node_hash_states:
+      why:
+        constructs: "Node hash states carry manifests, dependency hashes, and basis hashes through every gate."
+    officina.common.certification_hashing.derive_certifier_identity:
+      why:
+        constructs: "The derived identity ties gate evidence and signed payloads to the issuing certifier implementation."
+    officina.common.certification_hashing.normalize_node_checks:
+      why:
+        transforms: "Raw check rows become normalized payload check lists per node."
+    officina.common.certification_hashing.resolve_certification_basis_paths:
+      why:
+        transforms: "Resolved basis paths feed basis hashing, freeze checks, and route-smoke mapping."
+    officina.common.certification_view.CertificateCurrentnessView:
+      why:
+        constructs: "Currentness records are carried into stale-certificate rejection decisions."
+    officina.common.certification_view.certificate_log_path:
+      why:
+        constructs: "Per-node log paths are carried into log parsing and append writes."
+    officina.common.certification_view.evaluate_certificate_currentness:
+      why:
+        constructs: "Currentness evaluation results decide whether a node can be skipped or must be rewritten."
+    officina.common.git_provenance.blueprint_v4_mechanical_commit:
+      why:
+        constructs: "The baseline commit identifies the tree that semantic review is allowed to refine."
+    officina.common.git_provenance.capture_git_snapshot:
+      why:
+        constructs: "Git snapshots are carried into HEAD matching, readiness checks, and status freezes."
+    officina.common.git_provenance.check_commit_readiness:
+      why:
+        constructs: "Readiness results are carried into tracked-input rejection decisions."
+    officina.common.git_provenance.run_git:
+      why:
+        constructs: "Git command results are carried into status, index, and branch-gate decisions."
     """
 
     root = Path(repo_root).resolve()
@@ -941,6 +1795,35 @@ def _certify_v4_repository(
         raise CertificationError("v4 certification HEAD does not match the reviewed commit")
 
     def porcelain_status_records(phase: str) -> tuple[bytes, ...]:
+        """porcelain_status_records returns raw porcelain status records for a freeze phase.
+
+Intent
+------
+Run `git status --porcelain=v1 -z --untracked-files=all`, reject an unavailable status command, and return nonempty raw records for the caller's phase-specific checks.
+
+Rationale
+---------
+The enclosing writer needs byte-preserving status records so it can distinguish preexisting untracked files from new certificate artifacts without losing undecodable path evidence.
+
+Pseudocode
+----------
+- status = %officina.common.git_provenance.run_git(status_command)
+- raise %.CertificationError(status_unavailable)
+- return records_from(status)
+
+Wraps
+-----
+- none
+
+InstantiationsFromRepo
+----------------------
+.CertificationError:
+  why:
+    raises: "Unavailable Git status leaves as a typed freeze-phase rejection."
+officina.common.git_provenance.run_git:
+  why:
+    constructs: "The status command result is parsed into the returned raw record tuple."
+        """
         status = run_git(
             root,
             "status",
@@ -997,6 +1880,57 @@ def _certify_v4_repository(
         tuple[Path, ...],
         dict[str, object],
     ]:
+        """derive loads graph evidence for the private certificate writer.
+
+        Intent
+        ------
+        Load the schema-versioned graph, reject incomplete v4 material, resolve basis paths, compute hashes, and derive certifier identity together.
+
+        Rationale
+        ---------
+        The writer signs evidence that must come from one coherent graph/basis/identity bundle, so this closure computes those values in one place.
+
+        Pseudocode
+        ----------
+        - set graph = loaded_repository_blueprint_graph
+        - set basis = resolved_certification_basis
+        - set states = computed_node_hash_states
+        - return graph states basis identity
+
+        Wraps
+        -----
+        - none
+
+        CallsFromRepo
+        -------------
+        ._verify_executing_candidate_certifier:
+          why:
+            validates: "When candidate execution is required, confirms the running certifier belongs to the derived graph state."
+
+        InstantiationsFromRepo
+        ----------------------
+        .CertificationError:
+          why:
+            raises: "Graph, completeness, basis, hash, or identity derivation failures leave as typed certifier rejections."
+        .v4_certification_completeness_findings:
+          why:
+            constructs: "Completeness findings are inspected before hash evidence is accepted."
+        officina.common.blueprint_graph.load_repository_blueprint_graph:
+          why:
+            constructs: "The loaded graph is returned with all derived certification evidence."
+        officina.common.certification_hashing.compute_certification_basis_hash:
+          why:
+            serializes: "The basis hash is returned and fed into node-state computation."
+        officina.common.certification_hashing.compute_node_hash_states:
+          why:
+            constructs: "Node hash states are returned for gate checks and payload construction."
+        officina.common.certification_hashing.derive_certifier_identity:
+          why:
+            constructs: "Certifier identity is returned for snapshots and payloads."
+        officina.common.certification_hashing.resolve_certification_basis_paths:
+          why:
+            transforms: "Resolved basis paths are returned for hashing and later freeze checks."
+        """
         try:
             graph = load_repository_blueprint_graph(
                 root,
@@ -1117,6 +2051,42 @@ def _certify_v4_repository(
     }
 
     def require_commit_readiness(current_snapshot: object, phase: str) -> None:
+        """require_commit_readiness enforces that tracked inputs match the reviewed commit.
+
+        Intent
+        ------
+        Compare readiness findings with expected input hashes before allowing certificate writes.
+
+        Rationale
+        ---------
+        Signing must stop if tracked files changed after review, because otherwise the certificate would attest to bytes different from the reviewed basis.
+
+        Pseudocode
+        ----------
+                - set findings = commit_readiness_findings
+                - if findings_are_not_clean:
+                  - raise %.CertificationError(tracked_input_mismatch)
+                - return readiness_passed
+
+        Wraps
+        -----
+        - none
+
+        CallsFromRepo
+        -------------
+        ._expected_file_hashes:
+          why:
+            computes: "expected_file_hashes computes comparison material used by this certifier branch."
+
+        InstantiationsFromRepo
+        ----------------------
+        .CertificationError:
+          why:
+            raises: "Dirty tracked inputs reject signing before certificate logs are opened."
+        officina.common.git_provenance.check_commit_readiness:
+          why:
+            constructs: "officina.common.git_provenance.check_commit_readiness supplies a carried value for this certification step."
+        """
         readiness = check_commit_readiness(
             current_snapshot,
             ordered_tracked_paths,
@@ -1130,6 +2100,42 @@ def _certify_v4_repository(
             )
 
     def require_local_claims(phase: str) -> None:
+        """require_local_claims validates declared local input evidence.
+
+        Intent
+        ------
+        Check untracked manifest entries against local file bytes and reject missing or mismatched claims.
+
+        Rationale
+        ---------
+        Local inputs are outside Git history, so the certificate writer must compare their declared digests immediately before signing.
+
+        Pseudocode
+        ----------
+                - set local_claims = untracked_manifest_entries
+                - if local_claims_mismatch:
+                  - raise %.CertificationError(local_input_mismatch)
+                - return local_claims_valid
+
+        Wraps
+        -----
+        - none
+
+        CallsFromRepo
+        -------------
+        ._v4_hash_bytes:
+          why:
+            computes: "v4_hash_bytes computes comparison material used by this certifier branch."
+        officina.common.atomic_files.read_regular_file_bytes:
+          why:
+            orchestrates: "The bounded file read obtains local input bytes for direct digest comparison."
+
+        InstantiationsFromRepo
+        ----------------------
+        .CertificationError:
+          why:
+            raises: "Missing or mismatched local evidence rejects signing for untracked input claims."
+        """
         if any(
             _v4_hash_bytes(
                 read_regular_file_bytes(
@@ -1169,6 +2175,25 @@ def _certify_v4_repository(
         raise CertificationError("certificate public-key root is outside repository") from exc
 
     def is_pooled_review_temp(relative: Path) -> bool:
+        """is_pooled_review_temp identifies generated pooled-review artifacts.
+
+        Intent
+        ------
+        Return whether a path is one of the temporary review files tolerated during freeze checks.
+
+        Rationale
+        ---------
+        The writer may create pooled review artifacts while still rejecting unrelated dirtiness in the reviewed repository.
+
+        Pseudocode
+        ----------
+        - set tolerated = path_matches_pooled_review_area
+        - return tolerated
+
+        Wraps
+        -----
+        - none
+        """
         name = relative.name
         if not name.startswith("..pooled-blueprint-review.yaml.tmp-"):
             return False
@@ -1176,6 +2201,45 @@ def _certify_v4_repository(
         return final in pooled_review_relatives
 
     def require_frozen_tracked_inputs(phase: str) -> None:
+        """require_frozen_tracked_inputs rejects tracked-input drift during signing.
+
+        Intent
+        ------
+        Read expected tracked inputs and compare their current bytes to the frozen reviewed snapshot.
+
+        Rationale
+        ---------
+        Certificate logs should never be appended after a tracked input mutates, even if the mutation occurs between earlier readiness checks and signing.
+
+        Pseudocode
+        ----------
+                - set frozen_hashes = expected_tracked_input_hashes
+                - if tracked_bytes_changed:
+                  - raise %.CertificationError(frozen_input_drift)
+                - return tracked_inputs_frozen
+
+        Wraps
+        -----
+        - none
+
+        CallsFromRepo
+        -------------
+        ._v4_hash_bytes:
+          why:
+            computes: "v4_hash_bytes computes comparison material used by this certifier branch."
+
+        InstantiationsFromRepo
+        ----------------------
+        .CertificationError:
+          why:
+            raises: "Tracked-byte drift rejects signing at the final frozen-input gate."
+        officina.common.atomic_files.read_regular_file_bytes:
+          why:
+            serializes: "The bounded byte read feeds the frozen-input hash check immediately before signing."
+        officina.common.git_provenance.run_git:
+          why:
+            constructs: "officina.common.git_provenance.run_git supplies a carried value for this certification step."
+        """
         current_preexisting_records: set[bytes] = set()
         for record in porcelain_status_records(phase):
             if not record:
@@ -1481,6 +2545,40 @@ def _certify_v4_repository(
 def _load_v4_migration_candidate(
     repo_root: Path,
 ) -> tuple[Path, GitSnapshot, RepositoryBlueprintGraph]:
+    """_load_v4_migration_candidate reads a candidate migration manifest.
+
+    Intent
+    ------
+    Load candidate metadata, normalize declared paths, and return the inputs needed for v4 migration inspection.
+
+    Rationale
+    ---------
+    Migration certification needs one canonical description of source, reviewed commit, and local artifact paths before running graph checks.
+
+    Pseudocode
+    ----------
+        - set candidate = loaded_candidate_metadata
+        - return candidate
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .CertificationError:
+      why:
+        raises: "Invalid candidate metadata rejects migration loading before graph inspection begins."
+    officina.common.blueprint_graph.load_repository_blueprint_graph:
+      why:
+        constructs: "The loaded candidate graph drives migration inspection and completeness checks."
+    officina.common.git_provenance.capture_git_snapshot:
+      why:
+        constructs: "The captured snapshot pins the candidate repository state used for inspection."
+    officina.common.git_provenance.run_git:
+      why:
+        constructs: "Git command output identifies source commits and candidate provenance for migration review."
+    """
     root = Path(repo_root).resolve()
     atomic = run_git(
         root, "config", "--bool", "--get", "famulus.candidateAtomicGuarantee",
@@ -1510,6 +2608,31 @@ def _load_v4_migration_candidate(
 
 
 def _v4_module_renames(root: Path) -> dict[str, str]:
+    """_v4_module_renames extracts declared legacy module remaps.
+
+    Intent
+    ------
+    Read migration declarations and return the mapping from old module ids to canonical review subjects.
+
+    Rationale
+    ---------
+    Legacy review rows need the same subject names that the candidate graph uses after migration remapping.
+
+    Pseudocode
+    ----------
+        - set remaps = declared_module_renames
+        - return remaps
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .CertificationError:
+      why:
+        raises: "Malformed migration remap declarations reject legacy subject normalization."
+    """
     try:
         migration_map = yaml.safe_load(
             (root / "docs/plans/unified-architecture-migration-map.yaml").read_text(
@@ -1541,7 +2664,45 @@ def _v4_module_renames(root: Path) -> dict[str, str]:
 def _v4_legacy_review_context(
     root: Path, graph: RepositoryBlueprintGraph
 ) -> tuple[V4LegacyReviewContext, ...]:
-    """Read immutable legacy claims without treating them as failed checks."""
+    """_v4_legacy_review_context reconstructs legacy review context rows.
+
+    Intent
+    ------
+    Read legacy blueprint evidence from the candidate overlay and normalize skill-interface review claims into typed context records.
+
+    Rationale
+    ---------
+    Attestation checks need a compact bridge from v4 blueprint declarations to the candidate graph subjects now being certified.
+
+    Pseudocode
+    ----------
+        - set overlay = candidate_source_overlay
+        - set remaps = legacy_subject_remaps
+        - set contexts = decoded_legacy_interface_reviews
+        - return contexts
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .CertificationError:
+      why:
+        raises: "Invalid legacy blueprint evidence rejects reconstruction of review context rows."
+    .V4LegacyReviewContext:
+      why:
+        constructs: "Each context row carries decoded legacy interface review metadata into reconciliation checks."
+    ._v4_module_renames:
+      why:
+        constructs: "The remap table converts legacy subjects before review context rows are assembled."
+    officina.common.git_provenance.blueprint_v4_source_overlay_commit:
+      why:
+        constructs: "The overlay commit selects the legacy blueprint tree inspected for review claims."
+    officina.common.git_provenance.run_git:
+      why:
+        constructs: "Git output supplies legacy blueprint file contents from the candidate overlay."
+    """
 
     context: list[V4LegacyReviewContext] = []
     try:
@@ -1630,6 +2791,31 @@ def _v4_reconciliation_digest(
     root: Path,
     context: Sequence[V4LegacyReviewContext],
 ) -> str:
+    """_v4_reconciliation_digest hashes migration reconciliation evidence.
+
+    Intent
+    ------
+    Serialize the reconciliation inputs that bind legacy context to the inspected candidate migration.
+
+    Rationale
+    ---------
+    The digest gives review and certification a stable fingerprint for the migration evidence bundle.
+
+    Pseudocode
+    ----------
+    - set reconciliation_payload = normalized_legacy_and_candidate_evidence
+    - return reconciliation_digest
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    officina.common.repository_paths.repository_relative_path:
+      why:
+        orchestrates: "The path normalizer makes reconciliation evidence stable across checkout locations."
+    """
     payload = [
         {
             "subject_id": item.subject_id,
@@ -1654,6 +2840,36 @@ def _require_v4_reconciliation_commit(
     reviewed_commit: str,
     digest: str,
 ) -> None:
+    """_require_v4_reconciliation_commit validates the reviewed migration commit.
+
+    Intent
+    ------
+    Require the candidate reconciliation commit to match the expected reviewed source and digest.
+
+    Rationale
+    ---------
+    Migration certification must reject candidates whose reviewed commit no longer corresponds to the inspected reconciliation evidence.
+
+    Pseudocode
+    ----------
+        - set reconciliation = expected_migration_reconciliation
+        - if reconciliation_mismatch:
+          - raise %.CertificationError(reconciliation_mismatch)
+        - return reconciliation_verified
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .CertificationError:
+      why:
+        raises: "A reconciliation mismatch rejects migration certification for the reviewed commit."
+    officina.common.git_provenance.run_git:
+      why:
+        constructs: "Git output verifies that the reviewed migration commit matches the expected reconciliation point."
+    """
     if reviewed_commit == mechanical_commit:
         raise CertificationError("reviewed commit must strictly descend from mechanical baseline")
     message = run_git(root, "show", "-s", "--format=%B", reviewed_commit, check=False)
@@ -1668,7 +2884,45 @@ def _require_v4_reconciliation_commit(
 
 
 def inspect_v4_migration_candidate(repo_root: Path) -> V4CandidateInspection:
-    """Report blocking omissions and immutable semantic-review context."""
+    """inspect_v4_migration_candidate gathers evidence for a v4 migration review.
+
+    Intent
+    ------
+    Load the migration candidate, build graph state, collect legacy context, compute reconciliation digest, and report completeness findings.
+
+    Rationale
+    ---------
+    Inspection is read-only evidence preparation; it tells reviewers what would be certified before any signing side effects occur.
+
+    Pseudocode
+    ----------
+        - set candidate = loaded_migration_candidate
+        - set context = legacy_review_context
+        - set digest = reconciliation_digest
+        - return candidate_inspection
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._v4_reconciliation_digest:
+      why:
+        constructs: "v4_reconciliation_digest computes comparison material used by this certifier branch."
+    .v4_certification_completeness_findings:
+      why:
+        constructs: "The completeness scan adds repair findings to the migration inspection report."
+    .V4CandidateInspection:
+      why:
+        constructs: "The inspection object returns candidate commits, legacy context, digest, and findings together."
+    ._load_v4_migration_candidate:
+      why:
+        constructs: "The loaded candidate supplies commits, paths, and graph state for migration review."
+    ._v4_legacy_review_context:
+      why:
+        constructs: "Legacy context rows connect old interface claims to the migrated certification subjects."
+    """
 
     root, snapshot, graph = _load_v4_migration_candidate(repo_root)
     context = _v4_legacy_review_context(root, graph)
@@ -1687,7 +2941,60 @@ def certify_v4_migration_candidate(
     reviewed_commit: str,
     certified_at: str | None = None,
 ) -> V4CertificationResult:
-    """Certify an exact candidate commit after cooperative LLM review."""
+    """certify_v4_migration_candidate signs certificates for an inspected v4 migration.
+
+    Intent
+    ------
+    Validate reconciliation evidence, run semantic-attestation requirements, invoke the private writer, and return migration certificate outcomes.
+
+    Rationale
+    ---------
+    The migration entrypoint separates review reconciliation from certificate issuance while passing through the same v4 writer used by normal certification.
+
+    Pseudocode
+    ----------
+        - set inspection = migration_candidate_inspection
+        - set reconciliation = verified_reconciliation_commit
+        - set result = private_certificate_writer_result
+        - return migration_certification_result
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._EphemeralSecretBackend:
+      why:
+        orchestrates: "The in-memory secret backend gives migration certification isolated signing material for the run."
+    ._require_v4_reconciliation_commit:
+      why:
+        orchestrates: "The reconciliation check proves the candidate commit matches the inspected migration evidence."
+    ._v4_reconciliation_digest:
+      why:
+        computes: "v4_reconciliation_digest computes comparison material used by this certifier branch."
+
+    InstantiationsFromRepo
+    ----------------------
+    .CertificationError:
+      why:
+        raises: "Migration issuance failures leave through the public migration certification boundary."
+    ._certify_v4_repository:
+      why:
+        constructs: "The private writer result determines which migration node certificates were issued."
+    ._load_v4_migration_candidate:
+      why:
+        constructs: "The loaded candidate supplies commits, paths, and graph state for migration review."
+    ._v4_legacy_review_context:
+      why:
+        constructs: "Legacy context rows connect old interface claims to the migrated certification subjects."
+    .v4_certification_completeness_findings:
+      why:
+        constructs: "Completeness findings decide whether migration signing can proceed."
+    officina.common.git_provenance.blueprint_v4_mechanical_commit:
+      why:
+        constructs: "The mechanical commit anchors semantic replay for migration certification."
+    """
 
     root, snapshot, graph = _load_v4_migration_candidate(repo_root)
     if snapshot.commit != reviewed_commit:
@@ -1739,6 +3046,25 @@ def certify_v4_migration_candidate(
 
 @dataclass(frozen=True)
 class CommandResult:
+    """CommandResult stores one mechanical command outcome.
+
+    Intent
+    ------
+    Keep command name, argv, exit status, stdout, and stderr together for certification evidence rendering.
+
+    Rationale
+    ---------
+    Mechanical checks are evidence even when they fail, so callers need a stable object that can report both status and captured output.
+
+    Pseudocode
+    ----------
+    - set command_fields = name argv exit_code stdout stderr
+    - return command_fields
+
+    Wraps
+    -----
+    - none
+    """
     name: str
     command: list[str]
     exit_code: int
@@ -1747,9 +3073,47 @@ class CommandResult:
 
     @property
     def passed(self) -> bool:
+        """passed reports whether the command exited successfully.
+
+        Intent
+        ------
+        Convert the stored process exit code into the boolean used by certification summaries.
+
+        Rationale
+        ---------
+        Rendering and certification flow should not duplicate the success convention for local command evidence.
+
+        Pseudocode
+        ----------
+        - set success = exit_code_is_zero
+        - return success
+
+        Wraps
+        -----
+        - none
+        """
         return self.exit_code == 0
 
     def as_payload(self) -> dict[str, Any]:
+        """as_payload serializes command evidence for JSON output.
+
+        Intent
+        ------
+        Return the command name, argv, exit code, stdout, and stderr as primitive payload fields.
+
+        Rationale
+        ---------
+        The CLI JSON path needs mechanical evidence without dataclass instances or process objects leaking into the response.
+
+        Pseudocode
+        ----------
+        - set payload = command_evidence_mapping
+        - return payload
+
+        Wraps
+        -----
+        - none
+        """
         return {
             "name": self.name,
             "command": self.command,
@@ -1762,10 +3126,48 @@ class CommandResult:
 
 @dataclass(frozen=True)
 class NodeCertificationOutcome:
+    """NodeCertificationOutcome records the certificate path for one node.
+
+    Intent
+    ------
+    Store the certified node id and log path belonging to a module-level certification result.
+
+    Rationale
+    ---------
+    Public reporting groups node outcomes by module but still needs the exact certificate log written for each node.
+
+    Pseudocode
+    ----------
+    - set node_fields = node_id certificate_path
+    - return node_fields
+
+    Wraps
+    -----
+    - none
+    """
     node_id: str
     certificate_path: Path
 
     def as_payload(self) -> dict[str, str]:
+        """as_payload serializes one node certification outcome.
+
+        Intent
+        ------
+        Return the node id and certificate path as primitive JSON-ready fields.
+
+        Rationale
+        ---------
+        The CLI should expose node-level certificate locations without requiring callers to understand dataclass internals.
+
+        Pseudocode
+        ----------
+        - set payload = node_certificate_mapping
+        - return payload
+
+        Wraps
+        -----
+        - none
+        """
         return {
             "node_id": self.node_id,
             "certificate_path": self.certificate_path.as_posix(),
@@ -1774,12 +3176,50 @@ class NodeCertificationOutcome:
 
 @dataclass(frozen=True)
 class CertificationOutcome:
+    """CertificationOutcome groups certification results for one source module.
+
+    Intent
+    ------
+    Store the module id, source name, module root, and node outcomes returned by certification.
+
+    Rationale
+    ---------
+    The public API reports by module because a user target can expand into several certified node logs.
+
+    Pseudocode
+    ----------
+    - set outcome_fields = module source root nodes
+    - return outcome_fields
+
+    Wraps
+    -----
+    - none
+    """
     module: str
     source: str
     module_root: Path
     nodes: tuple[NodeCertificationOutcome, ...]
 
     def as_payload(self) -> dict[str, Any]:
+        """as_payload serializes a module certification outcome.
+
+        Intent
+        ------
+        Return module metadata and node payloads as a JSON-ready mapping.
+
+        Rationale
+        ---------
+        The JSON renderer needs a stable primitive shape while text rendering can still use the typed outcome object.
+
+        Pseudocode
+        ----------
+        - set node_payloads = serialized_node_outcomes
+        - return module_payload
+
+        Wraps
+        -----
+        - none
+        """
         return {
             "module": self.module,
             "source": self.source,
@@ -1795,6 +3235,31 @@ def run_local_command(
     *,
     repo_root: Path = REPO_ROOT,
 ) -> CommandResult:
+    """run_local_command executes a named local command and captures its result.
+
+    Intent
+    ------
+    Run the provided argv in the requested repository root without raising on nonzero exit, then package the captured process output.
+
+    Rationale
+    ---------
+    Mechanical checks must remain visible in certification output even when they fail, so command evidence is returned rather than thrown away.
+
+    Pseudocode
+    ----------
+    - set completed = completed_subprocess_result
+    - return %.CommandResult(completed)
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .CommandResult:
+      why:
+        constructs: "The returned command result carries argv, exit status, stdout, and stderr into check evidence."
+    """
     completed = subprocess.run(
         command,
         cwd=repo_root,
@@ -1816,7 +3281,34 @@ def run_local_command(
 def run_v4_mechanical_checks(
     repo_root: Path = REPO_ROOT,
 ) -> CommandResult:
-    """Run blueprint-conformance checks owned by certification."""
+    """run_v4_mechanical_checks runs the local validators required before certification.
+
+    Intent
+    ------
+    Execute the configured command checks in the reviewed repository and return their captured results.
+
+    Rationale
+    ---------
+    Certification should include the validator evidence that justified issuance, not only the final certificate paths.
+
+    Pseudocode
+    ----------
+        - set results = executed_mechanical_checks
+        - return command_evidence
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .CertificationError:
+      why:
+        raises: "Unavailable local validators reject mechanical evidence collection for certification."
+    .run_local_command:
+      why:
+        constructs: "Captured command results become the mechanical evidence returned to callers."
+    """
 
     result = run_local_command(
         "validators",
@@ -1834,7 +3326,31 @@ def resolve_reviewed_repository_targets(
     graph: RepositoryBlueprintGraph,
     requests: Sequence[str],
 ) -> tuple[BlueprintNode, ...]:
-    """Resolve exact module nodes from the already validated reviewed graph."""
+    """resolve_reviewed_repository_targets maps user target names to reviewed graph nodes.
+
+    Intent
+    ------
+    Resolve module names, source ids, and node ids against the reviewed blueprint graph while rejecting ambiguity.
+
+    Rationale
+    ---------
+    The public CLI accepts user-facing target strings, but the private writer needs concrete behavioral-source nodes.
+
+    Pseudocode
+    ----------
+        - set resolved = matching_reviewed_targets
+        - return resolved
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .CertificationError:
+      why:
+        raises: "Unknown or ambiguous target names reject public certification before signing."
+    """
 
     module_nodes = tuple(
         sorted(
@@ -1897,7 +3413,62 @@ def certify(
     reviewed_commit: str | None = None,
     allow_non_atomic: bool = False,
 ) -> tuple[list[CommandResult], list[CertificationOutcome]]:
-    """Issue certificates for exact canonical v5 module targets."""
+    """certify runs the public reviewed-repository certification flow.
+
+    Intent
+    ------
+    Require reviewed repository inputs, load the v5 graph, resolve requested modules, run mechanical checks, invoke the writer, and shape outcomes.
+
+    Rationale
+    ---------
+    The dispatcher-facing API keeps argument validation and report construction outside the private signing routine while preserving commit-specific evidence.
+
+    Pseudocode
+    ----------
+        - raise %.CertificationError(missing_or_invalid_reviewed_input)
+        - set graph = reviewed_blueprint_graph
+        - set resolved = concrete_certification_targets
+        - set evidence = mechanical_check_results
+        - set issued = private_writer_result
+        - return certification_evidence_and_outcomes
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    officina.common.certificate_records.certificate_public_key_root:
+      why:
+        computes: "Supplies the public-key root passed into the private writer."
+    officina.common.certification_view.certificate_log_path:
+      why:
+        computes: "Maps each certified node to the log path reported in public outcomes."
+
+    InstantiationsFromRepo
+    ----------------------
+    .CertificationError:
+      why:
+        raises: "Missing reviewed inputs, non-v5 graphs, private-writer failure, or incomplete issuance leave as typed API rejections."
+    .CertificationOutcome:
+      why:
+        constructs: "Module-level outcomes are returned to CLI rendering or JSON output."
+    .NodeCertificationOutcome:
+      why:
+        constructs: "Node-level certificate paths are carried inside returned module outcomes."
+    ._certify_v4_repository:
+      why:
+        constructs: "The private writer result determines which requested nodes were actually issued."
+    .resolve_reviewed_repository_targets:
+      why:
+        transforms: "User target requests become concrete module nodes for expansion and reporting."
+    .run_v4_mechanical_checks:
+      why:
+        constructs: "Validator command evidence is returned alongside certification outcomes."
+    officina.common.blueprint_graph.load_repository_blueprint_graph:
+      why:
+        constructs: "The reviewed v5 graph drives target resolution and outcome path lookup."
+    """
 
     if reviewed_repository is None or reviewed_commit is None:
         raise CertificationError(
@@ -1976,6 +3547,25 @@ def certify(
 
 
 def render_text(outcomes: Sequence[CertificationOutcome]) -> str:
+    """render_text formats certification outcomes for terminal output.
+
+    Intent
+    ------
+    Convert module and node outcomes into stable human-readable lines.
+
+    Rationale
+    ---------
+    The CLI text path should summarize certificate locations without changing the JSON payload contract.
+
+    Pseudocode
+    ----------
+    - set lines = rendered_outcome_lines
+    - return lines
+
+    Wraps
+    -----
+    - none
+    """
     lines = [
         "# Certificate Report",
         "",
@@ -1992,6 +3582,25 @@ def render_text(outcomes: Sequence[CertificationOutcome]) -> str:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """build_parser constructs the skill-certifier CLI parser.
+
+    Intent
+    ------
+    Declare reviewed-repository, target, timestamp, JSON, and atomicity options for the command entrypoint.
+
+    Rationale
+    ---------
+    Parser construction is isolated so tests and the runtime interface share the same argument contract.
+
+    Pseudocode
+    ----------
+    - set parser = configured_argument_parser
+    - return parser
+
+    Wraps
+    -----
+    - none
+    """
     parser = argparse.ArgumentParser(
         description="Issue signed certificates for blueprint-backed modules."
     )
@@ -2006,6 +3615,41 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """main coordinates CLI parsing, certification, rendering, and exit status.
+
+    Intent
+    ------
+    Parse argv, call the public certification API, render JSON or text output, and translate certification failures into process status.
+
+    Rationale
+    ---------
+    The entrypoint is the boundary where structured certification exceptions become user-facing command results.
+
+    Pseudocode
+    ----------
+        - set args = parsed_cli_arguments
+        - set outcomes = certification_api_result
+        - return process_exit_status
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .build_parser:
+      why:
+        orchestrates: "The parser defines the CLI argument contract consumed by the entrypoint."
+    .render_text:
+      why:
+        serializes: "render_text formats certification evidence without becoming the returned product of main."
+
+    InstantiationsFromRepo
+    ----------------------
+    .certify:
+      why:
+        constructs: "The certification API result supplies evidence and outcomes for CLI rendering."
+    """
     args = build_parser().parse_args(list(sys.argv[1:] if argv is None else argv))
     try:
         evidence, outcomes = certify(
@@ -2042,9 +3686,45 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 class Interface(PythonArgvMachineInterface):
-    """Dispatcher adapter for certificate issuance."""
+    """Interface exposes the skill-certifier argv machine boundary.
+
+    Intent
+    ------
+    Provide the dispatcher-visible runtime object that forwards argv into the module CLI entrypoint.
+
+    Rationale
+    ---------
+    The class keeps the interface contract explicit while leaving command semantics in the module-level parser and main routine.
+
+    Pseudocode
+    ----------
+    - set interface = argv_machine_boundary
+    - return interface
+
+    Wraps
+    -----
+    - none
+    """
 
     def run(self, argv: list[str]) -> int:
+        """run delegates dispatcher argv to the module entrypoint.
+
+        Intent
+        ------
+        Forward the received argument vector to the CLI main function and return its process status unchanged.
+
+        Rationale
+        ---------
+        This method is intentionally a thin runtime adapter; documenting the wrap edge makes the handoff visible in graphs.
+
+        Pseudocode
+        ----------
+        - return @.main(argv)
+
+        Wraps
+        -----
+        .main -> preprocess: receives dispatcher argv without translating command semantics; postprocess: returns the module entrypoint exit status unchanged; fixed_arguments: none
+        """
         return main(argv)
 
 
