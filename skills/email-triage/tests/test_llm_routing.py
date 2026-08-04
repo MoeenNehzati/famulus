@@ -126,16 +126,11 @@ def test_canonical_triage_workflow_is_retained() -> None:
     body = (SKILL_ROOT / "instructions" / "triage.md").read_text(
         encoding="utf-8"
     )
+    normalized_body = " ".join(body.split())
 
     assert "Personal preferences" not in body
     assert "personal-preferences.md" not in body
     for marker in (
-        "## Step 1",
-        "## Step 3",
-        "## Step 4",
-        "## Step 5",
-        "## Step 6",
-        "## Step 7",
         "email-triage.interface.fetch-filtered-envelopes",
         "email-client.interface.default`'s `mail-read` interface",
         "email-triage.interface.scripts-log-decision",
@@ -143,6 +138,27 @@ def test_canonical_triage_workflow_is_retained() -> None:
         "email-triage.interface.scripts-finalize-triage",
     ):
         assert marker in body
+    assert "Steps 1 and 2 explicitly parallelize unrelated reads" in normalized_body
+
+
+def test_triage_workflow_retains_exact_ordered_steps() -> None:
+    body = (SKILL_ROOT / "instructions" / "triage.md").read_text(
+        encoding="utf-8"
+    )
+    step_headings = [
+        line
+        for line in body.splitlines()
+        if line.startswith("## Step ")
+    ]
+
+    assert step_headings == [
+        "## Step 1 — Fetch new envelopes (run in parallel per account)",
+        "## Step 2 — Read email bodies in batches",
+        "## Step 3 — Read both destination lists via `list-manager.interface.default`",
+        "## Step 4 — Add action items, deduplicating",
+        "## Step 5 — Collect metrics and report",
+        "## Step 6 — Finalize the run (metrics + watermark), then prune log",
+    ]
 
 
 def test_triage_uses_mail_read_interface_without_raw_invocation_template() -> None:

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Record that this triage run failed, so update_watermark.py refuses to advance.
 
-Call this as soon as a list-manager add/update fails (Step 5). Do not call
+Call this as soon as a list-manager add/update fails (Step 4). Do not call
 scripts-update-watermark afterward in the same run — this file is the guard
 that makes that mistake safe even if the instruction is skipped.
 

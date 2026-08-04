@@ -92,7 +92,7 @@ def clear_stale_error():
     """Reset a leftover result=error from a previously-failed, already-reported
     run. Runs at the start of every triage cycle so a stale failure can't block
     update_watermark.py forever once the underlying problem is fixed — this
-    run's own mark_failure.py call (if any) will set it again before Step 7."""
+    run's own mark_failure.py call (if any) will set it again before Step 6."""
     if STATUS_FILE.exists():
         try:
             status = json.loads(STATUS_FILE.read_text())

@@ -33,13 +33,13 @@ Run this per account returned by `accounts-list`, in parallel across accounts.
 
 Reading always goes through `email-client.interface.default`'s `mail-list`/`mail-read` interfaces — never call an IMAP CLI directly.
 
-If `email-triage.interface.fetch-filtered-envelopes` prints `(no new emails for …)`, skip that account in later steps. If stderr contains a `WARNING:` line, include it in the Step 6 report.
+If `email-triage.interface.fetch-filtered-envelopes` prints `(no new emails for …)`, skip that account in later steps. If stderr contains a `WARNING:` line, include it in the Step 5 report.
 
 Each envelope is JSON: `id`, `flags` (IMAP flags — absence of `\Seen` means unread, `\Answered` means replied), `subject`, `from`, `date`, `message_id`.
 
 **Skip immediately** (don't read body) when the subject alone makes it unambiguous: sales/discount offers, newsletter digests, GitHub notifications, delivery confirmations, social media digests, referral bonuses. For financial senders (banks, SoFi, Spotify, utilities): read the subject — skip if promotional, read the body if it could be a statement, payment due, or alert. **Log each skip with `SKIP` and one sentence why.**
 
-**Never skip** if the subject suggests a message is waiting on a portal ("you have a message", "new message", "someone replied") — a human sent it; classify as Type 3 in Step 3.
+**Never skip** if the subject suggests a message is waiting on a portal ("you have a message", "new message", "someone replied") — a human sent it; classify as Type 3 in Step 2.
 
 **Manual historical rescan (operator-invoked, not part of a normal triage run):**
 `email-triage.interface.fetch-filtered-envelopes` also accepts `--rescan-after
@@ -50,13 +50,13 @@ watermark file is never read or written by a rescan). `--dedup-against` fetches 
 named destination list internally and drops any candidate envelope whose
 `message_id` already matches a `source.message_id` already present in that list —
 this only works for entries created after this feature shipped and carrying a
-`source` field (see Step 5); older entries have no `source` and cannot be deduped
-this way. An operator runs this directly (outside the normal Step 1–7 flow); do not
+`source` field (see Step 4); older entries have no `source` and cannot be deduped
+this way. An operator runs this directly (outside the normal Step 1–6 flow); do not
 invoke it automatically as part of a regular triage run.
 
 ---
 
-## Step 3 — Read email bodies in batches
+## Step 2 — Read email bodies in batches
 
 Use `email-client.interface.default`'s `mail-read` interface for each filtered email.
 Batch up to 10 interface calls in parallel. Classify each email by sender type
@@ -84,13 +84,13 @@ and targeting:
 
 ---
 
-## Step 4 — Read both destination lists via `list-manager.interface.default`
+## Step 3 — Read both destination lists via `list-manager.interface.default`
 
 Invoke `list-manager.interface.default` to read `todo` and `triage`.
 
 ---
 
-## Step 5 — Add action items, deduplicating
+## Step 4 — Add action items, deduplicating
 
 Every item sent to `list-manager.interface.default` must be concrete enough for the list
 skill to infer title, optional description, and optional deadline. Do not
@@ -106,14 +106,14 @@ same file. Guard against this:
 - Issue additions to a given destination list (`todo` or `triage`) **one at a
   time, in sequence** — never fire multiple `list-manager.interface.default`
   add calls at the same destination list in parallel, even though Steps 1 and
-  3 explicitly parallelize unrelated reads. Two lists (`todo` and `triage`)
+  2 explicitly parallelize unrelated reads. Two lists (`todo` and `triage`)
   are independent files, so calls to different lists don't need to serialize
   against each other.
 - The underlying list-manager write path supports an optional
   `--expected-revision <N>` guard: pass the `revision` value observed when
-  the list was last read (Step 4) and the write is rejected — loudly, with no
+  the list was last read (Step 3) and the write is rejected — loudly, with no
   partial write — if another process has saved the file since. If the list
-  read in Step 4 has no `revision` field at all (it predates this field, or
+  read in Step 3 has no `revision` field at all (it predates this field, or
   has never had a mutating write since), pass `0` — that is the documented
   convention for "no revision yet", not a sign the guard doesn't apply. On
   rejection, re-read the list, re-check for a duplicate, and retry the single
@@ -134,7 +134,7 @@ Every entry created in `todo` or `triage` must carry a structured `source` in th
     mailbox: work
 ```
 
-`source.message_id` is the envelope's `message_id` field from Step 1/3 (required);
+`source.message_id` is the envelope's `message_id` field from Step 1/2 (required);
 `mailbox` is the account nickname the email came from (optional but include it when
 known). This is what lets a later historical rescan (see "Manual historical rescan"
 near Step 1) deterministically skip messages already filed here instead of relying
@@ -156,7 +156,7 @@ If deadline or date is unknown, omit rather than guess.
 
 ---
 
-## Step 6 — Collect metrics and report
+## Step 5 — Collect metrics and report
 
 **Metrics tracking:** Count as you process emails:
 - **total_scanned** = sum of all envelopes from all accounts (SKIP, NO_ACTION, TODO, POTENTIAL, DEDUP)
@@ -175,7 +175,7 @@ Include these counts in your summary, then pass them to the metrics interface.
 
 ---
 
-## Step 7 — Finalize the run (metrics + watermark), then prune log
+## Step 6 — Finalize the run (metrics + watermark), then prune log
 
 **Run id:** before doing anything else in this step, mint one run id for this
 triage run — any short unique token (e.g. a random hex string) is fine. Reuse
@@ -183,7 +183,7 @@ the *same* run id for every finalize call attempted in this run, including
 retries. A fresh triage run (a new invocation of this skill) must mint a new
 run id.
 
-If any `list-manager.interface.default` add/update in Step 5 failed (e.g. a validation error), invoke `email-triage.interface.scripts-mark-failure "<reason>"` and stop — do not invoke the finalization interface below. This keeps next run's lookback window covering the emails that didn't get filed, and surfaces the failure as a desktop notification via the scheduled health check.
+If any `list-manager.interface.default` add/update in Step 4 failed (e.g. a validation error), invoke `email-triage.interface.scripts-mark-failure "<reason>"` and stop — do not invoke the finalization interface below. This keeps next run's lookback window covering the emails that didn't get filed, and surfaces the failure as a desktop notification via the scheduled health check.
 
 After the failure's cause has been fixed, an operator may invoke
 `email-triage.interface.scripts-clear-failure "<recovery reason>"` before starting
@@ -194,7 +194,7 @@ it.
 Otherwise, after a successful run, invoke:
 
 1. `email-triage.interface.scripts-finalize-triage` with the run id from above
-   and the counts from Step 6 (total scanned, added to todo, added to triage,
+   and the counts from Step 5 (total scanned, added to todo, added to triage,
    skipped, deduped, accounts). This single call records the counters and then
    advances the watermark, in that order, as one step — it refuses to advance
    the watermark if recording the counters fails or if a failure is still

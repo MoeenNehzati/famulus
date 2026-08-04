@@ -126,4 +126,4 @@ Each count comes from the `scripts-log-decision` calls in triage.log:
 - **skipped** = count of SKIP decisions
 - **deduped** = count of DEDUP decisions
 
-The LLM collects these counts while processing each email and stores them for Step 7.
+The LLM collects these counts while processing each email and stores them for Step 6.

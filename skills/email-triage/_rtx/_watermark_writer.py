@@ -20,7 +20,7 @@ already shows this run id as finalized, so a replay with the same run id
 short-circuits as a no-op instead of advancing the watermark a second time
 to a later timestamp. The only failure mode left is the safe direction —
 the watermark file lags one commit behind what status.json claims, which
-just makes the next run re-scan a bit more mail (caught by Step 5's dedup)
+just makes the next run re-scan a bit more mail (caught by Step 4's dedup)
 rather than silently skipping any. A later run with a fresh run id (or no
 run id at all) advances normally and self-heals the lag.
 """
