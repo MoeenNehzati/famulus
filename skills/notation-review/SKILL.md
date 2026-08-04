@@ -1,9 +1,6 @@
 ---
 name: notation-review
 description: |
-  Audit and improve mathematical notation for lightness, unification, reuse across scopes,
-  and semantic transparency.
-
   Use when:
   - the user asks to review, simplify, unify, standardize, or clean up notation
   - related objects should share a notation family, or notation should be lighter, more reusable, or more self-explanatory
@@ -12,12 +9,6 @@ description: |
   Do not use when:
   - the main issue is proof validity, prose editing, stylistic rewriting, or grammar
   - the user wants a proof plan or mathematical strategy rather than notation review
-
-  Success criteria:
-  - identify notation that is heavier than needed
-  - identify opportunities to unify notation across sections or scopes and cases where notation hides mathematical relationships
-  - prefer standard or paper-local conventions when they clarify the mathematics
-  - produce a coherent candidate notation scheme without rewriting text unless asked
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->

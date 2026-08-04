@@ -37,7 +37,7 @@ Example prompts:
 - `latex-workshop` — Follow VS Code LaTeX Workshop build behavior for TeX/LaTeX documents
 - `make-tex-docstring` — Create or propose a top-of-document TeX comment block that records the document profile and intended use
 - `math-dependency-graph` — Extract an assumptions-to-results dependency graph from a LaTeX document
-- `notation-review` — Audit and improve mathematical notation for lightness, unification, reuse across scopes, and semantic transparency
+- `notation-review` — When: - the user asks to review, simplify, unify, standardize, or clean up notation - related objects should share a notation family, or notation should be lighter, more reusable, or more self-explanatory - the user asks whether notation follows standard conventions or the paper's local conventions Do not use when: - the main issue is proof validity, prose editing, stylistic rewriting, or grammar - the user wants a proof plan or mathematical strategy rather than notation review
 - `pdf-to-markdown` — Convert a research-paper PDF into LLM-readable text
 - `proof-audit` — Audit a proof for soundness, coherence, hidden assumptions, and redundancy
 - `technical-flow-review` — Review flow, structure, motivation, and readability of a technical document
