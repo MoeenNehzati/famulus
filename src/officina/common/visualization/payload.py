@@ -10,6 +10,8 @@ import json
 from pathlib import Path
 from typing import Any, Callable
 
+import jsonschema
+
 from .graph import Graph
 
 Payload = dict[str, Any]
@@ -17,6 +19,7 @@ PayloadValidator = Callable[[Payload], None]
 
 _SCHEMA_PATH = Path(__file__).resolve().parent / "graph_specification.schema.json"
 _SCHEMA: dict[str, Any] | None = None
+_VALIDATOR: Any | None = None
 
 
 class GraphPayloadProcessor:
@@ -79,11 +82,10 @@ class GraphPayloadProcessor:
         if self.validator is not None:
             self.validator(payload)
             return
-        try:
-            from jsonschema import validate
-        except Exception as exc:  # pragma: no cover - environment-specific
-            raise RuntimeError("jsonschema is required for graph payload validation.") from exc
-        validate(instance=payload, schema=self.schema())
+        global _VALIDATOR
+        if _VALIDATOR is None:
+            _VALIDATOR = jsonschema.Draft7Validator(self.schema())
+        _VALIDATOR.validate(payload)
         self.graph.validate_graph(payload)
 
     def reduce_transitive_edges(self, payload: Payload) -> tuple[Payload, list[Payload]]:
@@ -97,7 +99,10 @@ class GraphPayloadProcessor:
         if _SCHEMA is None:
             if not _SCHEMA_PATH.is_file():
                 raise FileNotFoundError(f"Visualization graph schema not found: {_SCHEMA_PATH}")
-            _SCHEMA = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
+            loaded = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
+            if not isinstance(loaded, dict):
+                raise ValueError("Visualization graph schema must be a JSON object")
+            _SCHEMA = loaded
         return _SCHEMA
 
 

@@ -55,13 +55,16 @@ def validate_document(data: dict, schema_name: str) -> None:
     if not HAS_JSONSCHEMA:
         raise RuntimeError("jsonschema package is not installed")
 
-    schema_path = list_schema_path(schema_name)
-    with open(schema_path) as f:
-        schema = json.load(f)
-    resolver = jsonschema.RefResolver(
-        base_uri=schema_path.resolve().as_uri(), referrer=schema
-    )
-    jsonschema.validate(data, schema, resolver=resolver, format_checker=FormatChecker())
+    path = list_schema_path(schema_name).resolve()
+    schema = json.loads(path.read_text(encoding="utf-8"))
+    jsonschema.Draft7Validator(
+        schema,
+        resolver=jsonschema.RefResolver(
+            base_uri=path.as_uri(),
+            referrer=schema,
+        ),
+        format_checker=FormatChecker(),
+    ).validate(data)
 
 
 def _resolve_type_schema(type_filename: str, _seen: set[str] | None = None) -> dict:
@@ -76,8 +79,7 @@ def _resolve_type_schema(type_filename: str, _seen: set[str] | None = None) -> d
     path = SCHEMAS_DIR / "types" / type_filename
     if not path.exists():
         return {"properties": {}, "required": []}
-    with open(path) as f:
-        raw = json.load(f)
+    raw = json.loads(path.read_text(encoding="utf-8"))
 
     merged_properties: dict = {}
     merged_required: set[str] = set()

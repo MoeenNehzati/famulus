@@ -12,6 +12,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
+import jsonschema
+
 from ..repository_paths import resolve_logical_module_path, resolve_python_source_path
 from .base_extractor import BaseJsonExtractor
 from .artifacts import GraphArtifactWriter
@@ -150,27 +152,26 @@ class BaseVisualizer:
             schema_path = Path(schema)
             if not schema_path.is_file():
                 raise ValueError(f"graph schema is not a readable file: {schema}")
-            raw_schema = schema_path.read_text(encoding="utf-8")
             try:
-                import json
-
-                parsed = json.loads(raw_schema)
+                loaded = json.loads(schema_path.read_text(encoding="utf-8"))
+                validator_class = jsonschema.validators.validator_for(loaded)
+                validator_class.check_schema(loaded)
+                validator_instance = validator_class(
+                    loaded,
+                    resolver=jsonschema.RefResolver(
+                        base_uri=schema_path.resolve().as_uri(),
+                        referrer=loaded,
+                    ),
+                )
             except Exception as exc:
-                raise ValueError(f"could not parse schema JSON from {schema_path}") from exc
+                raise ValueError(f"could not load schema from {schema_path}") from exc
         else:
-            parsed = dict(schema)
-        if not isinstance(parsed, dict):
-            raise ValueError("schema must be a mapping for JSON schema validation")
-
-        try:
-            from jsonschema import validate
-        except Exception as exc:
-            raise RuntimeError(
-                "jsonschema is required to validate with custom schema"
-            ) from exc
+            validator_class = jsonschema.validators.validator_for(schema)
+            validator_class.check_schema(schema)
+            validator_instance = validator_class(schema)
 
         def _validator(payload: dict[str, Any]) -> None:
-            validate(instance=payload, schema=parsed)
+            validator_instance.validate(payload)
 
         return _validator
 
