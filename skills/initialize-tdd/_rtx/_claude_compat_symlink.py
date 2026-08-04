@@ -3,7 +3,7 @@ project, so a host that looks for CLAUDE.md specifically finds the same
 content other hosts read via AGENTS.md.
 
 Exempt from validators/platform_neutral.py because this filename itself
-names the host (see references/skill-standards/skill-guidelines.md, guideline 13).
+names the host (see the queried ``skill-guidelines.assistant-neutrality`` rule).
 """
 from __future__ import annotations
 

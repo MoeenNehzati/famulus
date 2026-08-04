@@ -5,8 +5,8 @@ Not part of the skill's exported interface -- this is a manual dev tool for
 re-deriving reasonable per-host thresholds when the current defaults start
 to feel wrong (too many/too few sessions flagged in practice). Fully
 generic like scan.py itself -- loops over whatever __init__.py's `parsers`
-list provides, never naming a host (see references/skill-standards/skill-guidelines.md,
-guideline 13).
+list provides, never naming a host (see the queried
+``skill-guidelines.assistant-neutrality`` rule).
 
 Measures whole-file net chars (raw length minus each host's own opaque
 field, via scan.opaque_len) across all session files touched in the last
