@@ -1,6 +1,8 @@
 ---
 name: notation-review
 description: |
+  Use when mathematical notation needs review for lightness, unification, reuse across scopes, or semantic transparency.
+
   Use when:
   - the user asks to review, simplify, unify, standardize, or clean up notation
   - related objects should share a notation family, or notation should be lighter, more reusable, or more self-explanatory

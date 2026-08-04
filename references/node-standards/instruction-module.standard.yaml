@@ -1,11 +1,19 @@
 schema_version: 6
 standard_version: 1.0.0
-revision: 14
+revision: 15
 id: node-standards.instruction-module
 canonical_path: references/node-standards/instruction-module.standard.yaml
 title: Instruction Module Standard
 purpose: Add requirements specific to instruction-language gateway modules.
 imports:
+  refactoring:
+    standard_id: node-standards.refactoring
+    standard_version: 2.0.0
+    revision: 3
+    digest: sha256:f20606020255d3c6e638aff8ff345befd3783b7163a8e51b0b40a65e91304a37
+    artifact:
+      kind: artifact
+      ref: artifact.refactoring-standard
   module:
     standard_id: node-standards.module
     standard_version: 1.0.0
@@ -111,7 +119,8 @@ standards:
     assertions:
     - id: source-block
       modality: required
-      statement: Write frontmatter `description:` as "Use when..." plus triggering conditions or symptoms;
+      statement: Start frontmatter `description:` with a standalone, sentence-terminated "Use when..."
+        trigger summary suitable for the generated catalog; additional trigger detail may follow, but
         omit workflow steps and outputs.
       atomicity: pending
 - kind: procedure
@@ -148,6 +157,11 @@ standards:
     level: high
     statement: Public identity migration can break discovery, dispatch, dependencies, and external callers.
 artifacts:
+  artifact.refactoring-standard:
+    path: references/node-standards/refactoring.standard.yaml
+    format: yaml
+    roles:
+    - other
   artifact.module-standard:
     path: references/node-standards/module.standard.yaml
     format: yaml
@@ -158,14 +172,44 @@ artifacts:
     format: yaml
     roles:
     - other
+  artifact.docs-catalog-tests:
+    path: tests/test_docs_catalog.py
+    format: python
+    roles:
+    - test
 domain_facts:
   node.present: true
   node.structure: module
   gateway.language: markdown
   node.skill-owned: true
+tests:
+  instruction-module.catalog-summary-tests:
+    artifact: {kind: artifact, ref: artifact.docs-catalog-tests}
+    selector: {kind: pytest-node, node_id: tests/test_docs_catalog.py::test_multiline_description_uses_standalone_first_sentence_as_summary}
+    integration: {state: resolved, points: [precommit]}
+    lifecycle: active
+    resolution: {state: resolved}
+    targets:
+    - target: {kind: assertion, ref: skill-guidelines.trigger-description.requirement-001#source-block}
+      relation: tests-behavior
+      polarity: positive
+      coverage_description: Exercises a multiline trigger description and verifies that generated catalog
+        output uses only its standalone first sentence, excluding detailed triggers and exclusions.
+  instruction-module.repository-catalog-summary-regression:
+    artifact: {kind: artifact, ref: artifact.docs-catalog-tests}
+    selector: {kind: pytest-node, node_id: tests/test_docs_catalog.py::test_repository_multiline_skill_summaries_remain_catalog_safe}
+    integration: {state: resolved, points: [precommit]}
+    lifecycle: active
+    resolution: {state: resolved}
+    targets:
+    - target: {kind: assertion, ref: skill-guidelines.trigger-description.requirement-001#source-block}
+      relation: tests-behavior
+      polarity: positive
+      coverage_description: Locks the public summaries for representative multiline skill descriptions so
+        removing their standalone first sentence reintroduces a failing flattened-list regression.
 links:
   identity-remedy: {source: {kind: family, ref: skill-guidelines.identity-contract}, relation: remedied-by, target: {kind: procedure, ref: node-standards.remedies.migrate-instruction-module-identity}, lifecycle: active, resolution: {state: resolved}}
   injection-remedy: {source: {kind: family, ref: skill-guidelines.injection-lifecycle}, relation: remedied-by, target: {kind: procedure, document: module, ref: node-standards.remedies.restore-local-module-conformance}, lifecycle: active, resolution: {state: resolved}}
   taxonomy-remedy: {source: {kind: family, ref: skill-guidelines.skill-taxonomy}, relation: remedied-by, target: {kind: procedure, document: module, ref: node-standards.remedies.restore-local-module-conformance}, lifecycle: active, resolution: {state: resolved}}
   override-remedy: {source: {kind: family, ref: skill-guidelines.personal-override-structure}, relation: remedied-by, target: {kind: procedure, document: module, ref: node-standards.remedies.restore-local-module-conformance}, lifecycle: active, resolution: {state: resolved}}
-  trigger-remedy: {source: {kind: family, ref: skill-guidelines.trigger-description}, relation: remedied-by, target: {kind: procedure, document: module, ref: node-standards.remedies.restore-local-module-conformance}, lifecycle: active, resolution: {state: resolved}}
+  trigger-remedy: {source: {kind: family, ref: skill-guidelines.trigger-description}, relation: remedied-by, target: {kind: procedure, document: refactoring, ref: skill-refactoring.remedies.tighten-description}, lifecycle: active, resolution: {state: resolved}}

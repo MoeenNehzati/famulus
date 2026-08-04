@@ -139,6 +139,52 @@ def test_skill_index_separates_featured_and_listed_and_shows_topics(
     assert "scholarly-documents" in rendered
 
 
+def test_multiline_description_uses_standalone_first_sentence_as_summary(
+    tmp_path: Path,
+) -> None:
+    _write_skill(
+        tmp_path,
+        "notation-review",
+        domain="research",
+        topics=["mathematical-reasoning"],
+        visibility="featured",
+    )
+    (tmp_path / "skills" / "notation-review" / "SKILL.md").write_text(
+        """---
+name: notation-review
+description: |
+  Use when mathematical notation needs review for clarity and consistency.
+
+  Use when:
+  - symbols should be unified
+
+  Do not use when:
+  - the task is prose editing
+---
+""",
+        encoding="utf-8",
+    )
+
+    rendered = render_skill_index(tmp_path)
+
+    assert "Mathematical notation needs review for clarity and consistency" in rendered
+    assert "symbols should be unified" not in rendered
+    assert "Do not use when" not in rendered
+
+
+def test_repository_multiline_skill_summaries_remain_catalog_safe() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    summaries = {skill.name: skill.summary for skill in load_catalog(repo_root)}
+
+    assert summaries["notation-review"] == (
+        "Mathematical notation needs review for lightness, unification, reuse "
+        "across scopes, or semantic transparency"
+    )
+    assert summaries["technical-flow-review"] == (
+        "A technical document needs review for flow, structure, motivation, or readability"
+    )
+
+
 def test_catalog_errors_name_field_and_configured_choices(tmp_path: Path) -> None:
     _write_skill(
         tmp_path,

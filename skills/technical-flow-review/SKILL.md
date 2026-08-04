@@ -1,7 +1,9 @@
 ---
 name: technical-flow-review
 description: |
-  Use when reviewing the flow, structure, motivation, or readability of a technical document, especially when:
+  Use when a technical document needs review for flow, structure, motivation, or readability.
+
+  Especially when:
   - the user wants feedback on section-level or whole-document flow
   - the user wants to know whether the problem, goal, or contribution is obvious early enough
   - the user wants to assess whether the intended audience can follow the document without mastering all technical details
