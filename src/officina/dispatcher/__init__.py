@@ -9,6 +9,7 @@ __all__ = [
     "ResolvedInvocation",
     "ResolvedInvocationMetadata",
     "dispatch",
+    "resolve_direct_invocation",
     "resolve_dispatch",
     "resolve_dispatch_metadata",
 ]
@@ -19,6 +20,10 @@ def __getattr__(name: str) -> Any:
 
     if name not in __all__:
         raise AttributeError(name)
+    if name == "resolve_direct_invocation":
+        from .direct_authorization import resolve_direct_invocation
+
+        return resolve_direct_invocation
     from . import core
 
     return getattr(core, name)
