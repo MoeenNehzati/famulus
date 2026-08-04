@@ -62,5 +62,3 @@ plan metadata. Master-list edits (`mark-done`, `reject`, `set-deadline`) also
 propagate to the underlying lists through `list-manager`. Use the `mutate-plan`
 interface to apply these mutations. Omit `--date` for today's plan, or pass
 `--date M-D-YY` / `--date YYYY-MM-DD` to mutate a different stored plan.
-
-For the runtime algorithm and storage contract, see `plan_runtime.py` in the skill's scripts directory.
