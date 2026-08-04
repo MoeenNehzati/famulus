@@ -1,0 +1,23 @@
+site_name: Famulus
+site_description: Documentation and architectural graphs for the Famulus skill suite
+site_url: https://moeennehzati.github.io/famulus/
+repo_url: https://github.com/MoeenNehzati/famulus
+repo_name: MoeenNehzati/famulus
+edit_uri: edit/master/docs/
+
+docs_dir: _build/docs-site/source
+site_dir: _build/docs-site/site
+strict: true
+
+theme:
+  name: readthedocs
+
+plugins:
+  - search
+
+hooks:
+  - docs_tooling/mkdocs_hooks.py
+
+watch:
+  - docs
+  - docs_tooling

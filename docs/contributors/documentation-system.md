@@ -36,10 +36,14 @@ That module owns:
 
 Top-level scripts should stay thin wrappers around `docs_tooling/`.
 
-The local repo browser and rendered-doc server also live on this side of the boundary:
+The bounded website assembler also lives on this side of the boundary:
 
-- [scripts/serve-repo.py](../../scripts/serve-repo.py)
-- [docs_tooling/repo_browser.py](../../docs_tooling/repo_browser.py)
+- [scripts/docs-site.py](../../scripts/docs-site.py)
+- [docs_tooling/site.py](../../docs_tooling/site.py)
+
+MkDocs owns Markdown rendering, navigation, search, local serving, and static
+site output. The repository-owned assembler decides which sources are public
+and rewrites links to unpublished repository content.
 
 ## Generated Blocks
 
@@ -69,18 +73,33 @@ This regenerates:
 
 ## Local Browsing
 
-To browse the repo and rendered Markdown pages locally through a web server:
+Install the documentation dependencies, then serve the same bounded site that
+is published through GitHub Pages:
 
 ```bash
-./scripts/serve-repo.py --port 8765
+python3 -m pip install -r requirements-docs.txt
+./scripts/docs-site.py serve
 ```
 
-This serves:
+The site includes:
 
-- a lightweight repo home page
-- directory browsing under `/browse/...`
-- rendered Markdown pages for docs and READMEs
-- raw-file links for the underlying sources
+- Markdown files directly under `docs/`
+- Markdown files under `docs/contributors/`
+- curated graph assets required by those pages
+- the generated interactive repository blueprint graph
+
+Other documentation subdirectories are not published. Links to those files and
+to repository source code open the corresponding GitHub page.
+
+To build without starting the local server:
+
+```bash
+./scripts/docs-site.py build
+```
+
+Both commands write only under the ignored `_build/docs-site/` tree, apart from
+the existing generated-Markdown refresh performed by
+`scripts/generate-doc-artifacts.py`.
 
 ## Validators
 
