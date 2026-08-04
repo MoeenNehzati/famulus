@@ -47,3 +47,19 @@ def test_cloud_update_contract_requires_list_patches_with_quoted_string_ids():
     assert "quote every `id`" in skill_body
     assert "number-to-id mapping" in skill_body
     assert "report the resolved ids and intended change" in skill_body
+
+
+def test_local_update_description_matches_its_sequence_patch_contract():
+    graph = load_repository_blueprint_graph(
+        REPO_ROOT,
+        schema_root=SCHEMA_ROOT,
+        expected_schema_version=SCHEMA_VERSION,
+    )
+    _module, _source, export = resolve_export(
+        graph,
+        "list-manager.interface.update-list",
+    )
+    update_list = export.declaration
+
+    assert "YAML sequence of patch objects" in update_list["description"]
+    assert "keyed by id" not in update_list["description"]

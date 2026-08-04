@@ -1757,7 +1757,7 @@ interfaces:
         description: The target list must exist and be readable
         id: readable-list
         unmet_outcome: error
-    description: Update entries in a local YAML list file from a patch file (keyed by id) or stdin.
+    description: Update entries in a local YAML list file using a YAML sequence of patch objects supplied by file or stdin.
     process_binding:
       args_prefix:
       - update
