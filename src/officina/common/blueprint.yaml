@@ -11,6 +11,7 @@ content:
 - blueprint_inventory\.py
 - blueprint_template\.py
 - certification_view\.py
+- certification_types\.py
 - codex_toml\.py
 - dates\.py
 - famulus_paths/__init__\.py

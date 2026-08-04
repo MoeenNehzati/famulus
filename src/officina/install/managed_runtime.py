@@ -21,6 +21,7 @@ import time
 from pathlib import Path
 
 from officina.common import atomic_files
+from officina.install.dispatch_snapshot_builder import build_dispatch_snapshot
 from officina.install.runtime_pointer import RuntimePointer, activate_release
 
 _VERSION_OPERATOR_RE = re.compile(r"^(==|>=|<=|!=|~=|>|<)")
@@ -266,6 +267,7 @@ def build_candidate_release(
     platform: str,
     uv_bin: Path,
     python_version: str,
+    repo_root: Path | None = None,
 ) -> RuntimePointer:
     """Create a new release directory, provision its managed interpreter,
     install its declared Python dependencies in a single atomic batch, and
@@ -291,6 +293,17 @@ def build_candidate_release(
 
     _create_release_venv(uv_bin=uv_bin, venv_dir=venv_dir, python_version=python_version)
     _run_dependency_install(uv_bin=uv_bin, python_bin=python_bin, packages=packages)
+
+    if repo_root is not None:
+        try:
+            build_dispatch_snapshot(
+                Path(repo_root).resolve(),
+                snapshot_root=runtime_root.parent / "dispatcher" / "snapshots",
+            )
+        except Exception as exc:
+            raise ManagedRuntimeError(
+                f"dispatcher snapshot build failed: {exc}"
+            ) from exc
 
     trusted_interpreter_roots = (_uv_python_install_dir(uv_bin),)
     _deploy_resolver(runtime_root=runtime_root, trusted_interpreter_roots=trusted_interpreter_roots)

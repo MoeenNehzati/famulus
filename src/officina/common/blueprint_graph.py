@@ -13,24 +13,7 @@ import re
 import stat
 from typing import Any, Callable, Mapping
 
-import jsonschema
-import yaml
-
 from .atomic_files import AtomicWriteError, read_regular_file_bytes
-from .blueprint_inventory import (
-    BlueprintDocument,
-    BlueprintInventoryError,
-    JsonValue,
-    _normalize_json,
-    _StrictBlueprintLoader,
-    collect_blueprints,
-    iter_blueprints as iter_inventory_blueprints,
-)
-from .configured_schema import (
-    ConfiguredSchemaError,
-    configured_validator,
-    schema_requires_configuration,
-)
 from .repository_paths import (
     RepositoryPathError,
     equivalent_root_relative_path,
@@ -723,6 +706,13 @@ def _json_error_path(error: jsonschema.ValidationError) -> str:
 def _load_schema_validator(schema_path: Path) -> jsonschema.protocols.Validator:
     """Load a concrete blueprint schema with ordinary local-reference resolution."""
 
+    import jsonschema
+    from .configured_schema import (
+        ConfiguredSchemaError,
+        configured_validator,
+        schema_requires_configuration,
+    )
+
     schema_path = Path(os.path.abspath(schema_path))
     config_path = schema_path.parent / "config.yaml"
     try:
@@ -1002,6 +992,13 @@ def load_module_blueprint(
     expected_schema_version: int = 4,
 ) -> BlueprintNode:
     """Load and validate one exact module marker without scanning siblings."""
+
+    import yaml
+    from .blueprint_inventory import (
+        BlueprintDocument,
+        _normalize_json,
+        _StrictBlueprintLoader,
+    )
 
     if expected_schema_version not in {4, 5}:
         raise ValueError("expected_schema_version must be 4 or 5")
@@ -3293,6 +3290,8 @@ def load_dispatch_blueprint_graph(
 ) -> DispatchBlueprintGraph:
     """Load one dispatch closure while warning on proven-unrelated defects."""
 
+    from .blueprint_inventory import BlueprintInventoryError, collect_blueprints
+
     root = Path(repo_root).resolve()
     try:
         return DispatchBlueprintGraph(
@@ -3372,6 +3371,8 @@ def load_repository_blueprint_graph(
 ) -> RepositoryBlueprintGraph:
     """Load one explicit repository-wide graph; v5 is canonical."""
 
+    from .blueprint_inventory import iter_blueprints as iter_inventory_blueprints
+
     if expected_schema_version not in {4, 5}:
         raise ValueError("expected_schema_version must be 4 or 5")
     root = Path(repo_root).resolve()
@@ -3426,6 +3427,8 @@ def load_repository_blueprint_graph(
 
 def repository_schema_version(repo_root: Path) -> int:
     """Return the canonical repository schema version, defaulting legacy trees to v4."""
+
+    import yaml
 
     marker = (
         Path(repo_root)

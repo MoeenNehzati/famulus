@@ -1130,6 +1130,7 @@ class PythonMachineInterface:
             target_version=call.version,
             certification_view=None,
             host_caller=False,
+            require_active_snapshot=True,
         )
         return _run_resolved_invocation(
             resolved,

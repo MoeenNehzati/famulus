@@ -1,5 +1,10 @@
 # Dispatcher Route Catalog Design
 
+**Status:** Superseded by `2026-08-04-fast-dispatcher-design.md`.
+
+This document records the former self-rebuilding cache design. It is not the
+current runtime contract.
+
 ## Objective
 
 Make repeated dispatcher resolution a bounded cache read instead of repeated

@@ -96,10 +96,12 @@ class UnauthorizedCallerError(DispatcherError):
         caller_module_id: str,
         target_module_id: str,
         interface_id: str,
+        diagnostic: str | None = None,
     ) -> None:
         self.interface_id = interface_id
+        suffix = f" [{diagnostic}]" if diagnostic else ""
         super().__init__(
-            f"{caller_module_id} is not an allowed caller of {interface_id}",
+            f"{caller_module_id} is not an allowed caller of {interface_id}{suffix}",
             caller_module_id=caller_module_id,
             target_module_id=target_module_id,
         )
@@ -177,6 +179,25 @@ class InterfaceNotFoundError(DispatcherError):
         return payload
 
 
+class DispatcherSnapshotError(DispatcherError):
+    """Active dispatcher snapshot state is unavailable or unusable."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str,
+        caller_module_id: str = "",
+        target_module_id: str = "",
+    ) -> None:
+        self.code = code
+        super().__init__(
+            message,
+            caller_module_id=caller_module_id,
+            target_module_id=target_module_id,
+        )
+
+
 __all__ = [
     "SCHEMA_VERSION",
     "InvocationError",
@@ -196,4 +217,5 @@ __all__ = [
     "RuntimeInvalidError",
     "LaunchFailedError",
     "InterfaceNotFoundError",
+    "DispatcherSnapshotError",
 ]

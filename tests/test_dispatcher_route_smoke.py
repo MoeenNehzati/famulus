@@ -131,10 +131,12 @@ def _route_smoke_cases(
 
 
 def _run_dispatcher(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+    env = _dispatcher_env()
+    env["XDG_DATA_HOME"] = str(cwd / "data")
     return subprocess.run(
         [sys.executable, "-m", "officina.dispatcher.cli", *args],
         cwd=cwd,
-        env=_dispatcher_env(),
+        env=env,
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -153,7 +155,7 @@ def test_dispatcher_module_cli_help_is_available(tmp_path: Path) -> None:
     assert "--error-format" in result.stdout
 
 
-def test_dispatcher_cli_default_error_format_is_unchanged_text(tmp_path: Path) -> None:
+def test_dispatcher_cli_text_reports_missing_active_snapshot(tmp_path: Path) -> None:
     result = _run_dispatcher(
         [
             "--caller-skill",
@@ -165,8 +167,8 @@ def test_dispatcher_cli_default_error_format_is_unchanged_text(tmp_path: Path) -
 
     assert result.returncode == 2
     assert result.stdout == ""
-    assert result.stderr.startswith("error: interface not found:")
-    assert "nonexistent-module.interface.does-not-exist" in result.stderr
+    assert result.stderr.startswith("error: active dispatcher snapshot is missing")
+    assert "officina.install.dispatch_snapshot_builder" in result.stderr
 
 
 def test_dispatcher_cli_error_format_json_emits_structured_payload(
@@ -187,10 +189,9 @@ def test_dispatcher_cli_error_format_json_emits_structured_payload(
     assert result.stdout == ""
     payload = json.loads(result.stderr)
     assert payload["schema_version"] == 1
-    assert payload["code"] == "dispatcher.interface_not_found"
+    assert payload["code"] == "dispatcher.snapshot_missing"
     assert payload["caller_module_id"] == "demo-caller"
     assert payload["target_module_id"] == "nonexistent-module"
-    assert payload["interface_id"] == "nonexistent-module.interface.does-not-exist"
     assert "token" not in result.stderr.lower()
     assert "secret" not in result.stderr.lower()
 

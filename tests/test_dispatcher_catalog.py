@@ -279,6 +279,43 @@ def test_route_certification_decision_is_bound_to_runtime_inputs(
     )
 
 
+def test_uncertified_advisory_decision_does_not_expire(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    root = tmp_path / "repo"
+    cache_root = tmp_path / "cache"
+    graph = _graph(root)
+    _materialize_blueprints(graph)
+    route = CatalogRoute("caller", "demo.interface.run")
+    decision = CertificationDecision(False, "stale", "Certificate is stale.")
+    store_route_graph(
+        root,
+        route,
+        DispatchBlueprintGraph(graph),
+        cache_root=cache_root,
+    )
+    monkeypatch.setattr(dispatcher_catalog.time, "time_ns", lambda: 100)
+    store_route_certification_decision(
+        root,
+        route,
+        graph,
+        decision,
+        cache_root=cache_root,
+    )
+    monkeypatch.setattr(
+        dispatcher_catalog.time,
+        "time_ns",
+        lambda: 100 + 24 * 60 * 60 * 1_000_000_000,
+    )
+
+    assert load_route_certification_decision(
+        root,
+        route,
+        cache_root=cache_root,
+    ) == decision
+
+
 def test_route_certification_decision_is_invalidated_by_new_runtime_file(
     tmp_path: Path,
 ) -> None:

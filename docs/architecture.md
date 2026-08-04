@@ -177,8 +177,10 @@ Schema validity and certification are distinct. A schema-valid blueprint may
 be an uncertified draft: it must have enough identity, gateway, containment,
 and relationship structure to enter the graph, but semantic facts that cannot
 be recovered mechanically may still be absent. Absence never means approval
-or an implicit default. It is a certifier finding, and a node without a current
-certificate is unavailable to the runtime.
+or an implicit default. It is a certifier finding. Runtime routing and
+authorization remain fail-closed on blueprint policy, while missing, expired,
+stale, malformed, unavailable, or unknown certification status is surfaced as
+a warning and does not deny an otherwise authorized invocation.
 
 Migration therefore has two stages. The converter losslessly moves every
 authored fact into the generic module, source, interface, process-binding, and
@@ -305,38 +307,35 @@ mechanism is a language-native import. An authored non-invocation reference may
 instead create an exact cross-module source dependency, but does not bypass
 module authority or expose the target source as a public Famulus interface.
 
-### Dispatcher route catalog
+### Dispatcher activation snapshot
 
-Repository discovery, schema validation, graph construction, and certificate
-currentness derivation are validation work, not per-invocation work. After the
-canonical resolver admits a version 5 request, the dispatcher stores a compact
-route graph and final certification decision in its user cache. The route key
-contains the canonical repository, immediate caller module, and requested
-interface. The cached graph retains only the caller/target ancestry, crossed
-namespace gates, implementing source, interface contracts, and authorization
-facts needed to replay that hop.
+Repository discovery, schema validation, graph construction, and certification
+derivation are never dispatcher work. Blueprint synchronization and
+installation invoke a separate builder directly. The builder derives complete,
+versioned, data-only route records, reload-validates the candidate generation,
+and atomically switches a small `current.json` pointer only after the candidate
+is complete.
 
-Every entry is data-only JSON decoded through an explicit type allowlist. It is
-bound to the blueprint, schema, runtime-source, certification-basis, and
-certificate inputs that produced it. A changed, missing, malformed, wrongly
-rooted, or unsupported entry is a cache miss and canonical resolution runs
-again; stale state is never authoritative. An uncertified decision is also
-short-lived so a newly issued certificate is observed without manual cache
-management. Cache failure cannot admit a request or prevent an otherwise valid
-uncached request.
+The active route key contains the canonical repository, immediate caller
+module, and requested interface. Its record retains only the graph facts needed
+to reevaluate every namespace, facade, and terminal authorization predicate,
+compile the selected process binding, and emit precomputed advisory
+certification status. Records are decoded through an explicit type allowlist;
+paths and record digests are checked before use.
 
-Catalog recovery is visible in the ordinary structured warning stream. A
-successful canonical rebuild after a missing, stale, malformed, or unavailable
-lookup emits `dispatcher-catalog-rebuilt` with the lookup status. Failure to
-persist the rebuilt graph or its certification decision emits
-`dispatcher-catalog-write-failed`; execution continues because cache
-persistence is not an authorization boundary. A fresh cache hit emits neither
-warning.
+Host dispatch is read-only and fail-closed. A missing, malformed, incomplete,
+wrongly rooted, or unsupported snapshot returns a structured error naming the
+direct snapshot-builder repair command. Dispatcher does not discover
+blueprints, load a repository-wide graph, inspect Git, derive certification,
+write a cache, rebuild a route, or invoke the builder. Consequently first use
+and repeated use execute the same bounded path.
 
-The catalog is route-scoped rather than repository-global. This preserves the
-rule that a defect proven outside the requested dispatch closure is a warning,
-not a blocker. It also preserves hop-local identity: no caller chain or
-propagated privilege is stored or passed to the next module.
+Blueprint edits do not silently change active routing. They become active only
+after successful synchronization or installation generates and activates a new
+snapshot. Certification status remains separate and warning-only; it cannot
+grant permission or deny an otherwise authorized route. Hop-local identity is
+preserved: no caller chain or propagated privilege is stored or passed to the
+next module.
 
 Modules may register direct child modules. Registration establishes physical
 containment and makes the child addressable inside the registered subtree; it

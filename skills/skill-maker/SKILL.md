@@ -25,7 +25,7 @@ Public Interfaces:
 Dispatcher Interfaces:
 
 Use the installed `dispatcher` command for these process-bound interfaces:
-- `skill-maker.interface.sync-blueprints` — Validate every skill blueprint and either check or refresh generated SKILL.md contract blocks and the runtime-dependency manifest.
+- `skill-maker.interface.sync-blueprints` — Validate every skill blueprint, check or refresh generated artifacts, and directly validate or activate dispatcher routing state.
   - `dispatcher --caller-skill skill-maker skill-maker.interface.sync-blueprints [--check]`
   - sync: Refresh generated files from blueprint.yaml.
   - check: Validate blueprints and fail if generated files are out of sync.

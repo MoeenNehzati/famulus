@@ -39,17 +39,7 @@ from .blueprint_authorization import AuthorizationResult
 from .blueprint_template import load_schema, schema_validator
 from .git_provenance import capture_git_snapshot, check_commit_readiness
 from .repository_paths import RepositoryPathError, repository_relative_posix
-
-
-@dataclass(frozen=True)
-class CertificationDecision:
-    certified: bool
-    code: str
-    message: str
-
-    def __post_init__(self) -> None:
-        if not self.code or not self.message:
-            raise ValueError("certification decisions require nonempty code and message")
+from .certification_types import CertificationDecision
 
 
 @dataclass(frozen=True)

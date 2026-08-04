@@ -9,7 +9,7 @@ if REPO_SRC not in sys.path:
     sys.path.insert(0, REPO_SRC)
 
 from officina.common.certification_view import CertificationDecision
-from officina.dispatcher.core import resolve_dispatch_metadata
+from officina.dispatcher.core import _resolve_repository_dispatch_metadata
 
 
 class _PassingCertificationView:
@@ -28,7 +28,7 @@ def test_forced_orchestrate_dispatch_pattern_is_unambiguous(monkeypatch) -> None
         "officina.dispatcher.core.repository_certification_view",
         lambda _root: _PassingCertificationView(),
     )
-    metadata = resolve_dispatch_metadata(
+    metadata = _resolve_repository_dispatch_metadata(
         caller_skill="daily-plan",
         target="daily-plan.interface.orchestrate",
         args=["--forced"],

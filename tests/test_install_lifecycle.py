@@ -181,6 +181,41 @@ def test_failed_update_leaves_prior_pointer_and_release_usable(monkeypatch, tmp_
     assert good.python_bin.exists()
 
 
+def test_snapshot_build_failure_prevents_runtime_activation(monkeypatch, tmp_path):
+    runtime_root = tmp_path / "runtime"
+    repo_root = tmp_path / "repo"
+    manifest = repo_root / "references" / "blueprint" / "runtime_dependencies.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text('{"version": 1, "skills": {}}', encoding="utf-8")
+    calls: list = []
+    trusted_python_dir = tmp_path / "uv-python-store"
+    monkeypatch.setattr(
+        "subprocess.run",
+        fake_uv_subprocess_run(calls, trusted_python_dir=trusted_python_dir),
+    )
+
+    def fail_snapshot(*args, **kwargs):
+        raise RuntimeError("invalid routing state")
+
+    monkeypatch.setattr(
+        "officina.install.managed_runtime.build_dispatch_snapshot",
+        fail_snapshot,
+        raising=False,
+    )
+
+    with pytest.raises(ManagedRuntimeError, match="dispatcher snapshot"):
+        build_candidate_release(
+            runtime_root=runtime_root,
+            manifest_path=manifest,
+            platform="linux",
+            uv_bin=Path("/fake/uv"),
+            python_version="3.11",
+            repo_root=repo_root,
+        )
+
+    assert not (runtime_root / "current.json").exists()
+
+
 def test_rollback_reactivates_previous_release(monkeypatch, tmp_path):
     runtime_root = tmp_path / "runtime"
     manifest = tmp_path / "runtime_dependencies.json"

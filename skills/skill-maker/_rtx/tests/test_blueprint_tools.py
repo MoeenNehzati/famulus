@@ -427,3 +427,34 @@ def test_generated_used_interface_block_is_deterministic(syncer) -> None:
     assert first == second
     assert first.startswith(syncer.USED_INTERFACES_START)
     assert first.endswith(f"{syncer.USED_INTERFACES_END}\n")
+
+
+def test_sync_activates_snapshot_and_check_does_not_replace_it(
+    tmp_path: Path,
+    syncer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from officina.install.dispatch_snapshot import repository_snapshot_root
+
+    repo_root, _dependency = _copy_v5_managed_skill(tmp_path / "repo")
+    skill_file = repo_root / "skills" / "demo" / "SKILL.md"
+    skill_file.write_text(
+        "---\nname: demo\ndescription: Test fixture.\n---\n\nInstructions.\n",
+        encoding="utf-8",
+    )
+    manifest = repo_root / "references" / "blueprint" / "runtime_dependencies.json"
+    manifest.parent.mkdir(parents=True)
+    monkeypatch.setattr(syncer, "REPO_ROOT", repo_root)
+    monkeypatch.setattr(syncer, "SKILLS_ROOT", repo_root / "skills")
+    monkeypatch.setattr(syncer, "RUNTIME_DEPENDENCIES_PATH", manifest)
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+
+    assert syncer.run_sync(check_only=False, schema_version=5) == 0
+    active_root = repository_snapshot_root(repo_root)
+    pointer = active_root / "current.json"
+    before_pointer = pointer.read_bytes()
+    before_generations = sorted((active_root / "generations").iterdir())
+
+    assert syncer.run_sync(check_only=True, schema_version=5) == 0
+    assert pointer.read_bytes() == before_pointer
+    assert sorted((active_root / "generations").iterdir()) == before_generations

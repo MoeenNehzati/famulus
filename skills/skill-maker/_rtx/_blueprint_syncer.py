@@ -21,6 +21,7 @@ import json
 import re
 import stat
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -43,6 +44,7 @@ from officina.common.blueprint_graph import (
 from officina.common.atomic_files import atomic_replace_bytes
 from officina.common.certification_view import CertificationView
 from officina.common.interface_projection import project_consumer_interfaces
+from officina.install.dispatch_snapshot_builder import build_dispatch_snapshot
 
 SKILLS_ROOT = REPO_ROOT / "skills"
 CONTRACT_START = "<!-- BEGIN BLUEPRINT CONTRACT -->"
@@ -791,6 +793,21 @@ def run_sync(*, check_only: bool, schema_version: int = 5) -> int:
     for blueprint in blueprints.values():
         errors.extend(sync_module(blueprint, check_only=check_only))
     errors.extend(sync_runtime_dependencies_manifest(blueprints, check_only=check_only))
+
+    if not errors:
+        try:
+            if check_only:
+                with tempfile.TemporaryDirectory(
+                    prefix="famulus-dispatch-snapshot-check-"
+                ) as temporary_root:
+                    build_dispatch_snapshot(
+                        REPO_ROOT,
+                        snapshot_root=Path(temporary_root),
+                    )
+            else:
+                build_dispatch_snapshot(REPO_ROOT)
+        except Exception as exc:
+            errors.append(f"dispatcher snapshot generation failed: {exc}")
 
     if errors:
         print("error: invalid or out-of-sync skill blueprints.", file=sys.stderr)

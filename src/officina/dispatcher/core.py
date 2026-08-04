@@ -10,7 +10,7 @@ import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from officina.common.blueprint_graph import (
     BlueprintGraphError,
@@ -27,16 +27,11 @@ from officina.common.blueprint_graph import (
     snapshot_runtime_python_package,
 )
 from officina.common.atomic_files import AtomicWriteError
+from officina.common.certification_types import CertificationDecision
 from officina.common.blueprint_authorization import (
     AuthorizationRequest,
     AuthorizationResult,
     resolve_interface_authorization,
-)
-from officina.common.certification_view import (
-    CertificationView,
-    RejectingCertificationView,
-    RepositoryCertificationError,
-    repository_certification_view,
 )
 from officina.common.process_binding_compiler import (
     ProcessBindingError,
@@ -45,7 +40,6 @@ from officina.common.process_binding_compiler import (
     gateway_language_name,
     parse_caller_invocation,
 )
-from officina.common.blueprint_inventory import BlueprintInventoryError, collect_blueprints
 from officina.common.repository_paths import (
     RepositoryPathError,
     equivalent_root_relative_path,
@@ -81,11 +75,33 @@ from officina.dispatcher.errors import (
     UnauthorizedCallerError,
     UnsupportedLanguageError,
 )
+from officina.install.dispatch_snapshot import load_snapshot_route
+
+if TYPE_CHECKING:
+    from officina.common.certification_view import CertificationView
 
 # Re-exported for existing consumers that import `InvocationError` (and the
 # typed subclasses) from `officina.dispatcher.core` directly; the classes
 # themselves are defined in `errors.py`, which has no dependency on this
 # module, so there is no import cycle.
+
+
+def collect_blueprints(*args: Any, **kwargs: Any) -> Any:
+    """Lazy compatibility seam for repository-only inventory work."""
+
+    from officina.common.blueprint_inventory import collect_blueprints as implementation
+
+    return implementation(*args, **kwargs)
+
+
+def repository_certification_view(*args: Any, **kwargs: Any) -> Any:
+    """Lazy compatibility seam for repository-only certification derivation."""
+
+    from officina.common.certification_view import (
+        repository_certification_view as implementation,
+    )
+
+    return implementation(*args, **kwargs)
 
 
 def _target_module_id(target: str) -> str:
@@ -113,6 +129,35 @@ class InvocationDiagnostic:
         if self.subject is not None:
             payload["subject"] = self.subject
         return payload
+
+
+class _SnapshotCertificationView:
+    """Replay builder-owned advisory status without repository inspection."""
+
+    def __init__(self, decision: Any | None) -> None:
+        self._decision = decision or CertificationDecision(
+            False,
+            "certification-status-unavailable",
+            "precomputed certification status is unavailable",
+        )
+
+    def check_authorization(
+        self,
+        _authorization: AuthorizationResult,
+    ) -> Any:
+        return self._decision
+
+    def check_export(
+        self,
+        _module_id: str,
+        _interface_id: str,
+        _interface_version: int,
+        _source_node_id: str,
+    ) -> Any:
+        return self._decision
+
+    def certificate_for(self, _node_id: str) -> None:
+        return None
 
 
 _EXPORT_TARGET_RE = re.compile(
@@ -803,6 +848,8 @@ def _resolve_export_dispatch(
                 for item in cached.diagnostics
             )
     if graph is None:
+        from officina.common.blueprint_inventory import BlueprintInventoryError
+
         diagnostic_inventory = collect_blueprints(root, skip_parse_errors=True)
         target_is_module = False
         target_is_export = False
@@ -1019,6 +1066,11 @@ def _resolve_export_dispatch(
             if certification_view is not None:
                 selected_view = certification_view
             else:
+                from officina.common.certification_view import (
+                    RejectingCertificationView,
+                    RepositoryCertificationError,
+                )
+
                 try:
                     selected_view = repository_certification_view(root)
                 except RepositoryCertificationError:
@@ -1180,6 +1232,7 @@ def _resolve_dispatch(
     certification_view: CertificationView | None = None,
     graph: RepositoryBlueprintGraph | None = None,
     host_caller: bool = False,
+    require_active_snapshot: bool = False,
 ) -> ResolvedInvocation:
     args = args or []
     if not caller_skill.strip():
@@ -1194,6 +1247,18 @@ def _resolve_dispatch(
             "target must have form `<module>.interface.<name>`",
             caller_module_id=caller_skill,
         )
+    if require_active_snapshot and graph is None:
+        snapshot_route = load_snapshot_route(
+            root,
+            CatalogRoute(caller_skill, target),
+        )
+        if snapshot_route.graph is None:
+            raise RuntimeError("authorized snapshot route has no graph")
+        graph = snapshot_route.graph.graph
+        if certification_view is None:
+            certification_view = _SnapshotCertificationView(
+                snapshot_route.certification
+            )
     resolved = _resolve_export_dispatch(
         root=root,
         caller_skill=caller_skill,
@@ -1235,6 +1300,72 @@ def resolve_dispatch(
         target_version=target_version,
         certification_view=None,
         host_caller=True,
+        require_active_snapshot=True,
+    )
+
+
+def _resolve_repository_dispatch(
+    *,
+    caller_skill: str,
+    target: str,
+    args: list[str] | None = None,
+    stdin_requested: bool = False,
+    repo_root: Path,
+    target_version: int | None = None,
+) -> ResolvedInvocation:
+    """Canonical repository resolver for builders, validators, and tests."""
+
+    return _resolve_dispatch(
+        caller_skill=caller_skill,
+        target=target,
+        args=args,
+        stdin_requested=stdin_requested,
+        repo_root=repo_root,
+        target_version=target_version,
+        certification_view=None,
+        host_caller=True,
+    )
+
+
+def _resolve_repository_dispatch_metadata(
+    **kwargs: Any,
+) -> ResolvedInvocationMetadata:
+    """Close a canonical repository resolution into descriptor-free metadata."""
+
+    with _resolve_repository_dispatch(**kwargs) as resolved:
+        return resolved.metadata()
+
+
+def _dispatch_repository(
+    *,
+    caller_skill: str,
+    target: str,
+    args: list[str] | None = None,
+    stdin: str | bytes | None = None,
+    timeout: float | None = None,
+    capture_output: bool = True,
+    check: bool = False,
+    text: bool | None = None,
+    repo_root: Path,
+    target_version: int | None = None,
+) -> subprocess.CompletedProcess[Any]:
+    """Execute through the explicit canonical repository maintenance path."""
+
+    resolved = _resolve_repository_dispatch(
+        caller_skill=caller_skill,
+        target=target,
+        args=args or [],
+        stdin_requested=stdin is not None,
+        repo_root=repo_root,
+        target_version=target_version,
+    )
+    return _run_resolved_invocation(
+        resolved,
+        stdin=stdin,
+        timeout=timeout,
+        capture_output=capture_output,
+        check=check,
+        text=text,
     )
 
 
@@ -1289,6 +1420,7 @@ def _resolve_host_dispatch_metadata(
         certification_view=certification_view,
         graph=graph,
         host_caller=True,
+        require_active_snapshot=True,
     ) as resolved:
         return resolved.metadata()
 
@@ -1415,6 +1547,7 @@ def _dispatch_host(
         repo_root=repo_root,
         target_version=target_version,
         host_caller=True,
+        require_active_snapshot=True,
     )
     if warning_handler is not None:
         for diagnostic in resolved.diagnostics:

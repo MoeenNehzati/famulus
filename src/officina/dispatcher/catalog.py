@@ -29,20 +29,12 @@ from officina.common.blueprint_graph import (
     RepositoryBlueprintGraph,
     RoutedInterface,
 )
-from officina.common.certification_view import (
-    CertificationDecision,
-    certificate_log_path,
-)
 from officina.common.blueprint_authorization import AuthorizationResult
-from officina.common.certification_hashing import (
-    CertificationHashError,
-    resolve_certification_basis_paths,
-)
+from officina.common.certification_types import CertificationDecision
 
 
 _KIND = "__officina_catalog_kind__"
 _FORMAT_VERSION = 5
-_UNCERTIFIED_MAX_AGE_NS = 5 * 60 * 1_000_000_000
 _DATACLASS_TYPES = {
     cls.__name__: cls
     for cls in (
@@ -352,6 +344,12 @@ def _certification_input_paths(
     repo_root: Path,
     graph: RepositoryBlueprintGraph,
 ) -> tuple[Path, ...]:
+    from officina.common.certification_hashing import (
+        CertificationHashError,
+        resolve_certification_basis_paths,
+    )
+    from officina.common.certification_view import certificate_log_path
+
     selected = set(_graph_input_paths(repo_root, graph))
     selected.update(path.resolve() for path in graph.direct_file_owners)
     module_roots = {node.module_root.resolve() for node in graph.nodes.values()}
@@ -519,11 +517,6 @@ def load_route_certification_decision(
         or not isinstance(raw["code"], str)
         or not isinstance(raw["message"], str)
         or not isinstance(generated_ns, int)
-    ):
-        return None
-    if (
-        not certified
-        and time.time_ns() - generated_ns > _UNCERTIFIED_MAX_AGE_NS
     ):
         return None
     try:

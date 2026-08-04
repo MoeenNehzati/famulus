@@ -11,10 +11,12 @@ content:
 - install_info\.py
 - runtime_pointer\.py
 - managed_runtime\.py
+- dispatch_snapshot\.py
+- dispatch_snapshot_builder\.py
 - launcher_entry\.py
 - resolvers/launch\.py
 - uv_bootstrap\.py
-description: Parses the pinned bootstrap/runtime versions in install-info.toml, manages the atomic current.json pointer for the installed, versioned Famulus runtime, builds new candidate releases by installing the real v1 runtime_dependencies.json manifest's Python dependencies in one atomic batch, provides the stable, path-fixed launch resolver that generated launcher shims exec into instead of embedding a release-specific repo/interpreter path, and bootstraps a machine-local managed uv binary from the real astral-sh/uv GitHub release when one is not already present.
+description: Parses the pinned bootstrap/runtime versions in install-info.toml, manages the atomic current.json pointer for the installed, versioned Famulus runtime, builds and activates immutable dispatcher routing snapshots, builds new candidate releases by installing the real v1 runtime_dependencies.json manifest's Python dependencies in one atomic batch, provides the stable, path-fixed launch resolver that generated launcher shims exec into instead of embedding a release-specific repo/interpreter path, and bootstraps a machine-local managed uv binary from the real astral-sh/uv GitHub release when one is not already present.
 exports:
   install.interface.install-info:
     access:

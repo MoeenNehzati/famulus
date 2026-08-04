@@ -10,6 +10,7 @@ import yaml
 
 from officina.common.certification_view import CertificationDecision
 from officina.common.blueprint_graph import load_repository_blueprint_graph
+from officina.install.dispatch_snapshot_builder import build_dispatch_snapshot
 import officina.dispatcher.core as dispatcher_core
 from officina.dispatcher.core import (
     InvocationError,
@@ -33,6 +34,9 @@ V5_AUTHORIZATION_FIXTURE = (
 
 class _PassingCertificationView:
     def check_export(self, module_id: str, interface_id: str, interface_version: int, source_node_id: str | None) -> CertificationDecision:
+        return CertificationDecision(True, "current", "Current test certificate.")
+
+    def check_authorization(self, _authorization) -> CertificationDecision:
         return CertificationDecision(True, "current", "Current test certificate.")
 
 
@@ -754,12 +758,16 @@ def test_v5_stale_certification_is_an_advisory_warning(
     ]
 
 
-def test_host_resolution_warns_for_unrelated_invalid_blueprint(
+def test_host_resolution_uses_activated_state_despite_later_blueprint_edit(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     root, _graph = _load_v5_dispatch_graph(tmp_path)
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    build_dispatch_snapshot(
+        root,
+        certification_view=_PassingCertificationView(),
+    )
     outsider_source = root / "modules" / "outsider" / "blueprints" / "caller.yaml"
     declaration = yaml.safe_load(outsider_source.read_text(encoding="utf-8"))
     declaration["uses_interfaces"] = [
@@ -778,51 +786,23 @@ def test_host_resolution_warns_for_unrelated_invalid_blueprint(
         certification_view=_PassingCertificationView(),
     )
 
-    assert metadata.diagnostics == (
-        dispatcher_core.InvocationDiagnostic(
-            severity="warning",
-            code="unrelated-blueprint-invalid",
-            message=(
-                "outsider.source.caller: unresolved interface "
-                "'missing.interface.run'"
-            ),
-        ),
-        dispatcher_core.InvocationDiagnostic(
-            severity="warning",
-            code="dispatcher-catalog-rebuilt",
-            message="route catalog was missing; canonical state was rebuilt",
-            subject="demo.interface.execute",
-        ),
-    )
+    assert metadata.diagnostics == ()
 
 
-def test_second_host_resolution_reuses_fresh_route_catalog(
+def test_repeated_host_resolution_reuses_active_snapshot(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     root, _graph = _load_v5_dispatch_graph(tmp_path)
-    outsider_source = root / "modules" / "outsider" / "blueprints" / "caller.yaml"
-    declaration = yaml.safe_load(outsider_source.read_text(encoding="utf-8"))
-    declaration["uses_interfaces"] = [
-        {"interface": "missing.interface.run", "version": 1}
-    ]
-    outsider_source.write_text(
-        yaml.safe_dump(declaration, sort_keys=False),
-        encoding="utf-8",
-    )
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
 
     class UncertifiedView:
         def check_authorization(self, _authorization):
             return CertificationDecision(False, "specific", "Specific warning.")
 
-        def check_bootstrap(self, **_request):
-            return CertificationDecision(False, "final", "Final warning.")
-
-    monkeypatch.setattr(
-        dispatcher_core,
-        "repository_certification_view",
-        lambda _root: UncertifiedView(),
+    build_dispatch_snapshot(
+        root,
+        certification_view=UncertifiedView(),
     )
 
     first = dispatcher_core._resolve_host_dispatch_metadata(
@@ -860,31 +840,20 @@ def test_second_host_resolution_reuses_fresh_route_catalog(
     )
 
     assert second.target == first.target
-    rebuild = next(
-        item
-        for item in first.diagnostics
-        if item.code == "dispatcher-catalog-rebuilt"
-    )
-    assert "missing" in rebuild.message
-    assert rebuild.subject == "demo.interface.execute"
-    assert not any(
-        item.code.startswith("dispatcher-catalog-")
-        for item in second.diagnostics
-    )
-    assert tuple(
-        item
-        for item in first.diagnostics
-        if item.code != "dispatcher-catalog-rebuilt"
-    ) == second.diagnostics
-    assert second.diagnostics[-1].code == "final"
+    assert first.diagnostics == second.diagnostics
+    assert second.diagnostics[-1].code == "specific"
 
 
-def test_catalog_write_failure_warns_without_blocking_dispatch(
+def test_host_dispatch_never_writes_route_catalog(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     root, _graph = _load_v5_dispatch_graph(tmp_path)
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    build_dispatch_snapshot(
+        root,
+        certification_view=_PassingCertificationView(),
+    )
 
     def failed_store(*_args, **_kwargs):
         raise OSError("cache filesystem is read-only")
@@ -900,17 +869,19 @@ def test_catalog_write_failure_warns_without_blocking_dispatch(
     )
 
     assert metadata.target == "demo.interface.execute"
-    warnings = {item.code: item for item in metadata.diagnostics}
-    assert warnings["dispatcher-catalog-rebuilt"].subject == metadata.target
-    assert warnings["dispatcher-catalog-write-failed"].subject == metadata.target
+    assert metadata.diagnostics == ()
 
 
-def test_catalog_certification_write_failure_is_reported(
+def test_host_dispatch_never_writes_certification_cache(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     root, _graph = _load_v5_dispatch_graph(tmp_path)
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    build_dispatch_snapshot(
+        root,
+        certification_view=_PassingCertificationView(),
+    )
     monkeypatch.setattr(
         dispatcher_core,
         "store_route_certification_decision",
@@ -924,11 +895,7 @@ def test_catalog_certification_write_failure_is_reported(
         repo_root=root,
     )
 
-    assert any(
-        item.code == "dispatcher-catalog-write-failed"
-        and "certification" in item.message
-        for item in metadata.diagnostics
-    )
+    assert metadata.diagnostics == ()
 
 
 def test_v5_host_dispatch_accepts_discoverable_parent_not_code_child(
@@ -1126,7 +1093,7 @@ def test_v4_export_uses_source_gateway_language_and_process_entry(tmp_path: Path
     _write_v4_module(tmp_path)
     _write_v4_caller(tmp_path)
 
-    metadata = resolve_dispatch_metadata(
+    metadata = dispatcher_core._resolve_repository_dispatch_metadata(
         caller_skill="caller-skill",
         target="demo-skill.interface.run",
         args=["value"],
@@ -1162,7 +1129,7 @@ def test_v4_dispatch_uses_repository_certification_view_by_default(
         repository_view,
     )
 
-    metadata = resolve_dispatch_metadata(
+    metadata = dispatcher_core._resolve_repository_dispatch_metadata(
         caller_skill="caller-skill",
         target="demo-skill.interface.run",
         args=["value"],
@@ -1177,7 +1144,7 @@ def test_v4_route_smoke_bypasses_required_caller_arguments(tmp_path: Path) -> No
     _write_v4_module(tmp_path)
     _write_v4_caller(tmp_path)
 
-    metadata = resolve_dispatch_metadata(
+    metadata = dispatcher_core._resolve_repository_dispatch_metadata(
         caller_skill="caller-skill",
         target="demo-skill.interface.run",
         args=["--route-smoke"],
@@ -1198,7 +1165,7 @@ def test_v4_process_dispatch_fails_closed_for_unsupported_language(tmp_path: Pat
     _write_v4_caller(tmp_path)
 
     with pytest.raises(InvocationError, match="unsupported process binding language"):
-        resolve_dispatch_metadata(
+        dispatcher_core._resolve_repository_dispatch_metadata(
             caller_skill="caller-skill",
             target="demo-skill.interface.run",
             args=["value"],
@@ -1210,7 +1177,7 @@ def test_v4_dispatch_rejects_unknown_caller_module(tmp_path: Path) -> None:
     _write_v4_module(tmp_path)
 
     with pytest.raises(InvocationError, match="caller module.*does not exist"):
-        resolve_dispatch_metadata(
+        dispatcher_core._resolve_repository_dispatch_metadata(
             caller_skill="caller-skill",
             target="demo-skill.interface.run",
             args=["value"],
@@ -1225,7 +1192,7 @@ def test_v4_dispatch_requires_exact_declared_use_in_contained_source(
     _write_v4_caller(tmp_path, interface=None)
 
     with pytest.raises(InvocationError, match="does not declare use.*version 1"):
-        resolve_dispatch_metadata(
+        dispatcher_core._resolve_repository_dispatch_metadata(
             caller_skill="caller-skill",
             target="demo-skill.interface.run",
             args=["value"],
@@ -1238,7 +1205,7 @@ def test_v4_dispatch_rejects_declared_use_with_wrong_version(tmp_path: Path) -> 
     _write_v4_caller(tmp_path, version=2)
 
     with pytest.raises(InvocationError, match="version 2.*target version is 1"):
-        resolve_dispatch_metadata(
+        dispatcher_core._resolve_repository_dispatch_metadata(
             caller_skill="caller-skill",
             target="demo-skill.interface.run",
             args=["value"],
@@ -1257,7 +1224,7 @@ def test_v4_python_runtime_preserves_utf8_and_descriptor_confinement(
     _write_v4_module(tmp_path)
     _write_v4_caller(tmp_path)
 
-    with resolve_dispatch(
+    with dispatcher_core._resolve_repository_dispatch(
         caller_skill="caller-skill",
         target="demo-skill.interface.run",
         args=["value"],
@@ -1280,7 +1247,7 @@ def test_python_process_target_keeps_gateway_and_entry_separate(
     _write_v4_module(tmp_path)
     _write_v4_caller(tmp_path)
 
-    with resolve_dispatch(
+    with dispatcher_core._resolve_repository_dispatch(
         caller_skill="caller-skill",
         target="demo-skill.interface.run",
         args=["value"],
@@ -1320,7 +1287,7 @@ def test_v4_python_runtime_falls_back_to_confined_path_snapshot(
         reject_descriptor_package,
     )
 
-    completed = dispatch(
+    completed = dispatcher_core._dispatch_repository(
         caller_skill="caller-skill",
         target="demo-skill.interface.run",
         args=["--route-smoke"],
@@ -1361,7 +1328,7 @@ def test_v4_descriptor_free_runtime_executes_parent_snapshot_after_source_swap(
 
     monkeypatch.setattr(dispatcher_core.subprocess, "run", swap_then_run)
 
-    completed = dispatch(
+    completed = dispatcher_core._dispatch_repository(
         caller_skill="caller-skill",
         target="demo-skill.interface.run",
         args=["--route-smoke"],
@@ -1394,7 +1361,7 @@ def test_v4_descriptor_free_runtime_rejects_tampered_snapshot(
 
     monkeypatch.setattr(dispatcher_core.subprocess, "run", tamper_then_run)
 
-    completed = dispatch(
+    completed = dispatcher_core._dispatch_repository(
         caller_skill="caller-skill",
         target="demo-skill.interface.run",
         args=["--route-smoke"],
@@ -1417,7 +1384,7 @@ def test_v4_descriptor_free_metadata_and_launch_failure_clean_snapshot_transport
     _use_descriptor_free_runtime(monkeypatch)
     snapshot_paths = _track_runtime_snapshot_paths(monkeypatch)
 
-    metadata = resolve_dispatch_metadata(
+    metadata = dispatcher_core._resolve_repository_dispatch_metadata(
         caller_skill="caller-skill",
         target="demo-skill.interface.run",
         args=["--route-smoke"],
@@ -1434,7 +1401,7 @@ def test_v4_descriptor_free_metadata_and_launch_failure_clean_snapshot_transport
     monkeypatch.setattr(dispatcher_core.subprocess, "run", fail_launch)
 
     with pytest.raises(InvocationError, match="launch failed: launch broke"):
-        dispatch(
+        dispatcher_core._dispatch_repository(
             caller_skill="caller-skill",
             target="demo-skill.interface.run",
             args=["--route-smoke"],
@@ -1456,7 +1423,7 @@ def test_v4_python_runtime_uses_resolved_module_root_outside_skills(
     _write_v4_module(tmp_path, module_root=module_root)
     _write_v4_caller(tmp_path)
 
-    with resolve_dispatch(
+    with dispatcher_core._resolve_repository_dispatch(
         caller_skill="caller-skill",
         target="demo-skill.interface.run",
         args=["value"],
@@ -1493,7 +1460,7 @@ def test_v4_dispatch_pins_utf8_strict_text_mode(
 
     monkeypatch.setattr("officina.dispatcher.core.subprocess.run", fake_run)
 
-    result = dispatch(
+    result = dispatcher_core._dispatch_repository(
         caller_skill="caller-skill",
         target="demo-skill.interface.run",
         args=["value"],
@@ -1519,7 +1486,7 @@ def test_v4_dispatch_normalizes_launch_failure(
     monkeypatch.setattr("officina.dispatcher.core.subprocess.run", fail_launch)
 
     with pytest.raises(InvocationError, match="launch failed: launch broke"):
-        dispatch(
+        dispatcher_core._dispatch_repository(
             caller_skill="caller-skill",
             target="demo-skill.interface.run",
             args=["value"],
@@ -1536,7 +1503,7 @@ def test_v4_dispatch_rejects_symlinked_python_gateway(tmp_path: Path) -> None:
     worker.symlink_to(real_worker.name)
 
     with pytest.raises(InvocationError, match="gateway must be included in content"):
-        resolve_dispatch_metadata(
+        dispatcher_core._resolve_repository_dispatch_metadata(
             caller_skill="caller-skill",
             target="demo-skill.interface.run",
             args=["value"],

@@ -177,6 +177,7 @@ def _build_managed_runtime_candidate(*, repo_root: Path, home: Path) -> int:
             platform=platform_name,
             uv_bin=paths.uv_bin,
             python_version=info.managed_python,
+            repo_root=repo_root,
         )
     except (managed_runtime.ManagedRuntimeError, runtime_pointer.RuntimePointerError) as exc:
         log(f"Managed-runtime candidate build failed: {exc}")

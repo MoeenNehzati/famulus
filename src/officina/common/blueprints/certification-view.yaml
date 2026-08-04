@@ -1,4 +1,5 @@
 content:
+- certification_types\.py
 - certification_view\.py
 dependencies:
 - blueprint:
