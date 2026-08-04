@@ -227,6 +227,25 @@ def test_math_dependency_graph_description_is_concise_trigger_only() -> None:
     }
 
 
+def test_regenerate_blueprints_description_is_trigger_only() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    skill = next(
+        skill for skill in load_catalog(repo_root) if skill.name == "regenerate-blueprints"
+    )
+
+    assert skill.description.startswith("Use when ")
+    assert skill.description.endswith(".")
+    assert skill.description.count(".") == 2  # ``blueprint.yaml`` plus sentence end.
+    assert "\n" not in skill.description
+
+    lowered = skill.description.lower()
+    for concept in ("existing", "skill", "blueprint.yaml"):
+        assert concept in lowered
+    assert "refresh" in lowered or "regenerat" in lowered
+    for workflow_detail in ("/tmp", "generated under", "without modifying"):
+        assert workflow_detail not in lowered
+
+
 def test_catalog_errors_name_field_and_configured_choices(tmp_path: Path) -> None:
     _write_skill(
         tmp_path,

@@ -1,6 +1,6 @@
 ---
 name: regenerate-blueprints
-description: Use when the user wants a refreshed blueprint.yaml for an existing skill generated under /tmp without modifying the skill.
+description: Use when an existing skill's blueprint.yaml needs regeneration or refresh.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->

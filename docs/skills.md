@@ -55,7 +55,7 @@ The graph gives a visual overview of the live skill set. The sections below are 
 ### Listed
 
 - `hook-maker` — Design cross-host assistant hooks with one purpose and per-host bindings _(topics: assistant-authoring, assistant-architecture; activated by: user request, skill workflow)_
-- `regenerate-blueprints` — A refreshed blueprint.yaml for an existing skill generated under /tmp without modifying the skill _(topics: assistant-authoring, assistant-architecture; activated by: user request, skill workflow)_
+- `regenerate-blueprints` — An existing skill's blueprint.yaml needs regeneration or refresh _(topics: assistant-authoring, assistant-architecture; activated by: user request, skill workflow)_
 - `skill-certifier` — Mechanical checks and semantic review should issue fresh node certificates for an exact committed repository state _(topics: assistant-assurance, assistant-architecture; activated by: user request, skill workflow)_
 - `skill-drift` — Reading signed certificate currentness or canonical node hashes for Famulus modules _(topics: assistant-assurance, assistant-architecture; activated by: user request, skill workflow)_
 - `update-standards` — Change canonical standards and keep their pinned closures aligned _(topics: assistant-authoring, assistant-architecture, assistant-assurance; activated by: user request, skill workflow)_
