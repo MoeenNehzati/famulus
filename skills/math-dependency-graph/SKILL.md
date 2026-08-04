@@ -1,18 +1,9 @@
 ---
 name: math-dependency-graph
 description: |
-  Extract a direct mathematical dependency graph from a LaTeX math document, including standing assumptions, definitions, lemmas, propositions, theorems, corollaries, notation blocks, and dependency edges with evidence.
-
-  Use when the user wants document-internal assumptions-to-results structure, a canonical JSON artifact, or an interactive HTML graph of direct dependencies.
+  Use when a LaTeX math document needs a direct dependency graph of its assumptions-to-results structure, covering standing assumptions, definitions, mathematical results, notation, and evidence, as canonical JSON or interactive HTML.
 
   Do not use when the main goal is proof validation, notation cleanup, prose review, or a literature map.
-
-  Success criteria:
-  - produce JSON as the source of truth for entities and direct dependencies
-  - represent only direct dependencies, not inherited transitive closure
-  - identify ambient assumptions from notation or scope phrases
-  - attach short descriptions and evidence to dependency links
-  - render a standalone HTML graph from the JSON
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->

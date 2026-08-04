@@ -189,6 +189,44 @@ def test_repository_multiline_skill_summaries_remain_catalog_safe() -> None:
     )
 
 
+def test_math_dependency_graph_description_is_concise_trigger_only() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    skill = next(
+        skill for skill in load_catalog(repo_root) if skill.name == "math-dependency-graph"
+    )
+    paragraphs = skill.description.split("\n\n")
+    assert len(paragraphs) == 2
+    summary, exclusion = paragraphs
+
+    assert summary.startswith("Use when ")
+    assert summary.endswith(".")
+    assert summary.count(".") == 1
+    assert len(summary.split()) <= 35
+
+    lowered = summary.lower()
+    assert "latex math document" in lowered
+    assert "direct dependency graph" in lowered
+    assert "assumptions-to-results" in lowered
+    for concept in (
+        "standing assumption",
+        "definition",
+        "result",
+        "notation",
+        "evidence",
+    ):
+        assert concept in lowered
+    for artifact in ("canonical json", "interactive html"):
+        assert artifact in lowered
+
+    assert exclusion == (
+        "Do not use when the main goal is proof validation, notation cleanup, "
+        "prose review, or a literature map."
+    )
+    assert not {"success criteria:", "workflow:", "outputs:"} & {
+        line.strip().lower() for line in skill.description.splitlines()
+    }
+
+
 def test_catalog_errors_name_field_and_configured_choices(tmp_path: Path) -> None:
     _write_skill(
         tmp_path,
