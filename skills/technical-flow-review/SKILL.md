@@ -1,9 +1,7 @@
 ---
 name: technical-flow-review
 description: |
-  Review flow, structure, motivation, and readability of a technical document.
-
-  Use when:
+  Use when reviewing the flow, structure, motivation, or readability of a technical document, especially when:
   - the user wants feedback on section-level or whole-document flow
   - the user wants to know whether the problem, goal, or contribution is obvious early enough
   - the user wants to assess whether the intended audience can follow the document without mastering all technical details
@@ -11,13 +9,6 @@ description: |
 
   Do not use when:
   - the main task is proof verification, notation review, or sentence-level prose editing or copyediting
-
-  Success criteria:
-  - identify the document's function, field, and audience before judging flow
-  - review the document relative to its purpose rather than against a generic standard
-  - identify where the reader can and cannot understand the document's aim without deep technical engagement
-  - identify section-level and whole-document flow problems
-  - suggest a clearer structural direction without rewriting the document unless asked
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->
