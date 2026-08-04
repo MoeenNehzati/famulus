@@ -1,21 +1,67 @@
+"""Owner-local behavioral contracts for recurring-task job edits."""
+
 from pathlib import Path
 
 import pytest
-import yaml
+
+from test_support.runtime_module import load_runtime_module
 
 
-SOURCE_BLUEPRINT = (
-    Path(__file__).resolve().parents[1] / "blueprints" / "rtx-job-control.yaml"
+SCRIPT = Path(__file__).resolve().parents[1] / "_job_control.py"
+
+
+@pytest.mark.parametrize(
+    ("operation", "initial_enabled", "expected_enabled"),
+    [
+        ("enable", False, True),
+        ("disable", True, False),
+    ],
 )
-INTERFACE_PREFIX = "recurring-tasks-rtx.source.rtx-job-control.interface."
+def test_job_edit_interface_uses_custom_file_without_scheduler_sync(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+    initial_enabled: bool,
+    expected_enabled: bool,
+) -> None:
+    job_control = load_runtime_module(SCRIPT)
+    jobs_file = tmp_path / "jobs.yaml"
+    job_control.save_jobs(
+        [
+            {
+                "name": "target",
+                "command": "true",
+                "schedule": "0 * * * *",
+                "enabled": initial_enabled,
+            },
+            {
+                "name": "sibling",
+                "command": "true",
+                "schedule": "0 1 * * *",
+                "enabled": True,
+            },
+        ],
+        jobs_file,
+    )
 
+    def reject_sync(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("--no-sync must not invoke scheduler synchronization")
 
-@pytest.mark.parametrize("operation", ["disable", "enable"])
-def test_job_edit_usage_includes_declared_optional_arguments(operation: str) -> None:
-    source = yaml.safe_load(SOURCE_BLUEPRINT.read_text(encoding="utf-8"))
-    interface = source["interfaces"][f"{INTERFACE_PREFIX}scripts-{operation}"]
-    arguments = interface["contract"]["arguments"]
+    monkeypatch.setattr(job_control, "sync_units", reject_sync)
 
-    assert arguments["jobs-file"]["required"] is False
-    assert arguments["no-sync"]["required"] is False
-    assert interface["usage"] == "<name> [--jobs-file FILE] [--no-sync]"
+    result = job_control.Interface().run(
+        [
+            operation,
+            "target",
+            "--jobs-file",
+            str(jobs_file),
+            "--no-sync",
+        ]
+    )
+
+    assert result == 0
+    jobs_by_name = {
+        job["name"]: job for job in job_control.load_jobs(jobs_file)
+    }
+    assert jobs_by_name["target"]["enabled"] is expected_enabled
+    assert jobs_by_name["sibling"]["enabled"] is True

@@ -9,6 +9,7 @@ from officina.common.blueprint_graph import (
     HelperEdge,
     InterfaceExport,
     load_repository_blueprint_graph,
+    resolve_export,
 )
 
 _canonical_load_repository_blueprint_graph = load_repository_blueprint_graph
@@ -39,6 +40,7 @@ from v5_blueprint_fixtures import copy_v5_fixture_tree
 V5_SCHEMA_ROOT = (
     Path(__file__).resolve().parents[1] / "references" / "blueprint"
 )
+REPO_ROOT = Path(__file__).resolve().parents[1]
 V5_AUTHORIZATION_FIXTURE = (
     Path(__file__).parent / "fixtures" / "blueprint_v5" / "authorization"
 )
@@ -443,6 +445,106 @@ def test_v5_projection_derives_facade_contract_from_terminal_child(
         for definition in projection.document["definitions"].values()
     } == {"demo-rtx"}
     assert certification.checked == ["demo.interface.execute"]
+
+
+def test_pdf_to_markdown_public_facade_projects_optional_output_directory() -> None:
+    public_interface = (
+        "pdf-to-markdown.interface.scripts-fetch-arxiv-source"
+    )
+    source_interface = (
+        "pdf-to-markdown-rtx.source.rtx-source-fetcher.interface."
+        "scripts-fetch-arxiv-source"
+    )
+    graph = _load_v5_projection_graph(REPO_ROOT)
+
+    module, source, export = resolve_export(graph, public_interface, 1)
+    projection = project_consumer_interfaces(
+        graph,
+        "pdf-to-markdown.source.gateway",
+        _PassingView(),
+    )
+    projected = projection.document["interfaces"][public_interface]
+
+    assert module.node_id == "pdf-to-markdown"
+    assert source.node_id == "pdf-to-markdown-rtx.source.rtx-source-fetcher"
+    assert export.terminal_interface_id == (
+        "pdf-to-markdown-rtx.interface.scripts-fetch-arxiv-source"
+    )
+    assert export.source_interface_id == source_interface
+    assert export.declaration["usage"] == "<arxiv-id> [<output-dir>]"
+    assert projected["id"] == public_interface
+    assert projected["source_module"] == "pdf-to-markdown-rtx"
+    assert projected["source_interface"] == source_interface
+    output_directory = projected["contract"]["arguments"]["output-dir"]
+    assert output_directory["required"] is False
+    assert output_directory["default"] == "."
+    assert projected["process_binding"]["patterns"] == [
+        {
+            "max_positionals": 2,
+            "min_positionals": 1,
+            "name": "owner",
+        }
+    ]
+
+
+def test_recurring_tasks_public_job_edit_facades_project_complete_usage() -> None:
+    operations = ("disable", "enable")
+    public_interfaces = [
+        f"recurring-tasks.interface.scripts-{operation}"
+        for operation in operations
+    ]
+    graph = _load_v5_projection_graph(REPO_ROOT)
+    gateway = graph.nodes["recurring-tasks.source.gateway"]
+    declared_uses = gateway.declaration["uses_interfaces"]
+    assert all(
+        {"interface": public_interface, "version": 1} in declared_uses
+        for public_interface in public_interfaces
+    )
+    gateway.declaration["uses_interfaces"] = [
+        {"interface": public_interface, "version": 1}
+        for public_interface in public_interfaces
+    ]
+    projection = project_consumer_interfaces(
+        graph,
+        "recurring-tasks.source.gateway",
+        _PassingView(),
+    )
+
+    for operation, public_interface in zip(
+        operations, public_interfaces, strict=True
+    ):
+        child_interface = f"recurring-tasks-rtx.interface.scripts-{operation}"
+        source_interface = (
+            "recurring-tasks-rtx.source.rtx-job-control.interface."
+            f"scripts-{operation}"
+        )
+        module, source, export = resolve_export(graph, public_interface, 1)
+        projected = projection.document["interfaces"][public_interface]
+
+        assert module.node_id == "recurring-tasks"
+        assert source.node_id == "recurring-tasks-rtx.source.rtx-job-control"
+        assert export.terminal_interface_id == child_interface
+        assert export.source_interface_id == source_interface
+        assert export.declaration["usage"] == (
+            "<name> [--jobs-file FILE] [--no-sync]"
+        )
+        assert projected["id"] == public_interface
+        assert projected["source_module"] == "recurring-tasks-rtx"
+        assert projected["source_interface"] == source_interface
+        arguments = projected["contract"]["arguments"]
+        assert arguments["jobs-file"]["required"] is False
+        assert arguments["jobs-file"]["default"] == "jobs.yaml"
+        assert arguments["no-sync"]["required"] is False
+        assert arguments["no-sync"]["default"] is False
+        assert projected["process_binding"]["patterns"] == [
+            {
+                "allowed_flags": ["--jobs-file", "--no-sync"],
+                "flag_patterns": {"--jobs-file": "^.+$"},
+                "max_positionals": 1,
+                "min_positionals": 1,
+                "name": "owner",
+            }
+        ]
 
 
 def test_v5_projection_follows_helper_closure_through_facade(

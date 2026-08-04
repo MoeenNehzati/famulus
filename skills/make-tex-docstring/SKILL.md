@@ -1,7 +1,7 @@
 ---
 name: make-tex-docstring
 description: |
-  Use when a TeX document needs a top-of-document profile comment that records its document profile and intended use.
+  Create or propose a top-of-document TeX comment block that records the document profile and intended use.
 
   Use when:
   - a TeX document is missing a top-of-document profile comment

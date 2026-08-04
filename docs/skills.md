@@ -35,7 +35,7 @@ The graph gives a visual overview of the live skill set. The sections below are 
 
 ### Listed
 
-- `make-tex-docstring` — A TeX document needs a top-of-document profile comment that records its document profile and intended use _(topics: scholarly-documents, research-writing; activated by: user request, skill workflow)_
+- `make-tex-docstring` — Create or propose a top-of-document TeX comment block that records the document profile and intended use _(topics: scholarly-documents, research-writing; activated by: user request, skill workflow)_
 - `pdf-to-markdown` — Convert a research-paper PDF into LLM-readable text _(topics: scholarly-documents; activated by: user request, skill workflow)_
 
 ## Software Development
