@@ -71,6 +71,7 @@ def test_email_interfaces_are_not_exposed_to_connect_google() -> None:
         "accounts-add",
         "accounts-update",
         "accounts-setup-oauth",
+        "accounts-use-google-credential",
         "live-smoke",
     ):
         canonical_id = f"email-client.interface.{interface}"
@@ -81,53 +82,78 @@ def test_email_interfaces_are_not_exposed_to_connect_google() -> None:
 
 
 def test_google_service_gateways_delegate_to_connect_google() -> None:
-    setup_interfaces = {
-        "cloud-files": "cloud-files.interface.setup-oauth",
-        "g-calendar": "g-calendar.interface.setup-oauth",
-        "email-client": "email-client.interface.accounts-setup-oauth",
+    expected_interfaces = {
+        "cloud-files": (
+            "cloud-files.interface.use-google-credential",
+            "cloud-files.interface.setup-oauth",
+        ),
+        "g-calendar": (
+            "g-calendar.interface.use-google-credential",
+            "g-calendar.interface.setup-oauth",
+        ),
+        "email-client": (
+            "email-client.interface.accounts-use-google-credential",
+            "email-client.interface.accounts-setup-oauth",
+        ),
     }
-    for skill, setup_interface in setup_interfaces.items():
+    for skill, service_interfaces in expected_interfaces.items():
         root, gateway, _ = exported_interface(skill, f"{skill}.interface.default")
         assert {
             "interface": "connect-google.interface.default",
             "version": 1,
         } in gateway["uses_interfaces"]
-        assert {
-            "interface": setup_interface,
-            "version": 1,
-        } in gateway["uses_interfaces"]
+        for service_interface in service_interfaces:
+            assert {
+                "interface": service_interface,
+                "version": 1,
+            } in gateway["uses_interfaces"]
 
 
-def test_service_guidance_has_one_google_onboarding_owner() -> None:
-    for skill in ("cloud-files", "g-calendar", "email-client"):
-        text = authored_skill(skill)
-        assert "connect-google.interface.default" in text
-        assert "initial google setup" in text
-        assert "reauthorization" in text
-        assert "create an oauth client" not in text
-        assert "create credentials" not in text
-        assert "google cloud project" not in text
+def test_authorization_contract_hands_opaque_credential_to_service_owners() -> None:
+    _, _, authorize = exported_interface(
+        "connect-google", "connect-google.interface.authorize-services"
+    )
+    result = next(
+        output for output in authorize["contract"]["outputs"] if output["id"] == "result"
+    )
+    assert result["type"]["format"] == {"named": "json"}
+    assert "credential_id" in result["description"]
+    authorized = next(
+        outcome
+        for outcome in authorize["contract"]["outcomes"]
+        if outcome["id"] == "authorized"
+    )
+    assert "credential_id" in authorized["caller_action"]
+    assert "use-google-credential" in authorized["caller_action"]
 
-
-def test_service_guidance_hands_canonical_client_to_owned_setup_interface() -> None:
     expected = {
-        "cloud-files": (
-            "cloud-files.interface.setup-oauth",
-            "--from-json ~/.config/connect-google/client.json",
-        ),
-        "g-calendar": (
-            "g-calendar.interface.setup-oauth",
-            "--from-json ~/.config/connect-google/client.json",
-        ),
-        "email-client": (
-            "email-client.interface.accounts-setup-oauth",
-            "--client-config ~/.config/connect-google/client.json",
-        ),
+        "cloud-files": "cloud-files.interface.use-google-credential",
+        "g-calendar": "g-calendar.interface.use-google-credential",
+        "email-client": "email-client.interface.accounts-use-google-credential",
     }
-    for skill, fragments in expected.items():
-        text = authored_skill(skill)
-        for fragment in fragments:
-            assert fragment in text
+    for skill, interface_id in expected.items():
+        _, _, interface = exported_interface(skill, interface_id)
+        assert "credential-id" in interface["contract"]["arguments"]
+
+
+def test_email_guidance_routes_shared_credential_and_legacy_fallback() -> None:
+    text = authored_skill("email-client")
+    paragraphs = text.split("\n\n")
+    shared = next(
+        paragraph
+        for paragraph in paragraphs
+        if "email-client.interface.accounts-use-google-credential" in paragraph
+    )
+    assert "connect-google.interface.default" in shared
+    assert "credential_id" in shared
+
+    legacy = next(
+        paragraph
+        for paragraph in paragraphs
+        if "email-client.interface.accounts-setup-oauth" in paragraph
+    )
+    assert "per-account" in legacy
+    assert "fallback" in legacy
 
 
 def test_installer_does_not_depend_on_connect_google() -> None:
