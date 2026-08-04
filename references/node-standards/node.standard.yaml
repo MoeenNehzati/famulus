@@ -1,6 +1,6 @@
 schema_version: 6
 standard_version: 1.0.0
-revision: 9
+revision: 11
 id: node-standards.node
 canonical_path: references/node-standards/node.standard.yaml
 title: Node Standard
@@ -9,8 +9,8 @@ imports:
   refactoring:
     standard_id: node-standards.refactoring
     standard_version: 2.0.0
-    revision: 2
-    digest: sha256:717d311ce0b4ca7164f028d776d107e79de705f6e703c9263680d224b30987b8
+    revision: 3
+    digest: sha256:f20606020255d3c6e638aff8ff345befd3783b7163a8e51b0b40a65e91304a37
     artifact:
       kind: artifact
       ref: artifact.refactoring-standard
@@ -23,16 +23,18 @@ standards:
   - kind: rule
     id: skill-guidelines.module-behavioral-source-v5.node-kinds
     assertions:
-    - id: unified-types
+    - id: blueprint-node-type
       modality: required
-      statement: 'Every new or edited blueprint uses `schema_version: 5` and exactly one live `node_type`:
-        `node_type: module` or `node_type: behavioral_source`. A repository-managed discoverable skill
-        may have one direct non-discoverable implementation child. `_rtx/` is the canonical default location
-        for skill-owned executable code, but a skill without such code need not create or register an
-        implementation child. When present, the child has global ID `<skill-id>-rtx`, marker `_rtx/blueprint.yaml`,
-        gateway `_rtx/__init__.py`, no `discovery`, and no version-5 modules below it. `officina.common.blueprint_inventory.collect_blueprints`
-        mechanically accepts an absent child and validates the complete contract of a present child.'
-      atomicity: pending
+      statement: "Every new or edited blueprint uses `schema_version: 5` and exactly one live `node_type`,
+        either `module` or `behavioral_source`."
+    - id: optional-implementation-child
+      modality: required
+      statement: "A repository-managed discoverable skill may have at most one direct non-discoverable
+        implementation child; a skill without owned executable code need not declare one."
+    - id: implementation-child-contract
+      modality: required
+      statement: "A discoverable skill's implementation child, when present, has global ID `<skill-id>-rtx`,
+        marker `_rtx/blueprint.yaml`, gateway `_rtx/__init__.py`, no `discovery`, and no version-5 module below it."
   - kind: rule
     id: skill-guidelines.module-behavioral-source-v5.ownership
     assertions:
@@ -47,13 +49,6 @@ standards:
   title: 'Blueprint authoring — REQUIRED: Use the version 5 schemas'
   children:
   - kind: rule
-    id: skill-guidelines.blueprint-authoring.requirement-001
-    assertions:
-    - id: source-block
-      modality: required
-      statement: '**Blueprint authoring — REQUIRED: Use the version 5 schemas**'
-      atomicity: pending
-  - kind: rule
     id: skill-guidelines.blueprint-authoring.requirement-002
     assertions:
     - id: schema-driven-authoring
@@ -62,22 +57,19 @@ standards:
         inferring fields from older examples.
 - kind: family
   id: skill-guidelines.state-ownership
-  title: 11. State data lives under the skill's directory
+  title: State ownership
   children:
   - kind: rule
     id: skill-guidelines.state-ownership.requirement-001
     assertions:
     - id: source-block
       modality: required
-      statement: '**11. State data lives under the skill''s directory** — any persistent state a
-
-        skill writes must be stored under the skill''s own directory, not under system
-
-        directories or elsewhere outside the skills tree.'
+      statement: Store persistent node state under the owning skill directory, not in system directories
+        or elsewhere outside the skills tree.
       atomicity: pending
 - kind: family
   id: skill-guidelines.sensitive-configs
-  title: 12. Separate secret values from sensitive non-secret configuration
+  title: Secret and sensitive configuration boundaries
   children:
   - kind: rule
     id: skill-guidelines.sensitive-configs.requirement-001
@@ -91,26 +83,20 @@ standards:
       atomicity: pending
 - kind: family
   id: skill-guidelines.cross-platform-tools
-  title: 13. Prefer widely available, cross-platform tools at every layer
+  title: Cross-platform tools
   children:
   - kind: rule
     id: skill-guidelines.cross-platform-tools.requirement-001
     assertions:
     - id: source-block
       modality: required
-      statement: '**13. Prefer widely available, cross-platform tools at every layer** —
-
-        language, runtime, and any external tools invoked. Skills must work out of the
-
-        box across Linux, macOS, and Windows on machines other than your own.'
+      statement: Use widely available cross-platform languages, runtimes, and external tools; skills must
+        work across Linux, macOS, and Windows on machines other than the author's.
       atomicity: pending
 - kind: family
   id: skill-guidelines.system-evolution
-  title: 9. Skills are components in an evolving system — design accordingly.
+  title: Evolution and reuse
   children:
-  - kind: guidance
-    id: skill-guidelines.system-evolution.guidance-001
-    statement: '**9. Skills are components in an evolving system — design accordingly.**'
   - kind: guidance
     id: skill-guidelines.system-evolution.guidance-002
     statement: "- **Reuse, don't reimplement.** Before writing new behavior, check whether an\n  existing\
@@ -147,7 +133,7 @@ standards:
     statement: '  - dependency and interface versions are exact'
 - kind: family
   id: skill-guidelines.canonical-blueprint-ownership
-  title: 7. The canonical blueprint graph owns all interface definitions
+  title: Canonical blueprint ownership
   children:
   - kind: rule
     id: skill-guidelines.canonical-blueprint-ownership.requirement-001
@@ -163,14 +149,12 @@ standards:
     assertions:
     - id: source-block
       modality: required
-      statement: "- a source interface owns its contract and optional process binding; a module\n  export\
-        \ names that interface and access policy without copying either."
+      statement: A source interface owns its contract and optional process binding; a module export names
+        that interface and access policy without copying either.
       atomicity: pending
 - kind: family
   id: skill-guidelines.assistant-neutrality
-  title: 14. Shared skill content must stay neutral about which specific AI-assistant host it runs under,
-    and must mention operating systems only in explicit platform-support metadata or platform-named implementation
-    files.
+  title: Assistant and platform neutrality
   children:
   - kind: rule
     id: skill-guidelines.assistant-neutrality.requirement-001
@@ -185,17 +169,16 @@ standards:
     assertions:
     - id: source-block
       modality: required
-      statement: "- authored blueprint files may name operating systems only in structured\n  `platform_support`\
-        \ and dependency `platforms` metadata. Do not put\n  platform-specific prose or implementation\
-        \ guidance in generic blueprint\n  fields."
+      statement: Authored blueprints may name operating systems only in structured `platform_support`
+        and dependency `platforms` metadata, not in generic prose fields.
       atomicity: pending
   - kind: rule
     id: skill-guidelines.assistant-neutrality.requirement-004
     assertions:
     - id: source-block
       modality: required
-      statement: "- Blueprint schema documentation and blueprint validation/sync tooling may name\n  the\
-        \ allowed platform keys because they define and enforce that metadata."
+      statement: Blueprint schema documentation and validation or synchronization tooling may name allowed
+        platform keys when defining or enforcing that metadata.
       atomicity: pending
 - kind: procedure
   id: node-standards.remedies.restore-local-node-conformance
@@ -384,6 +367,21 @@ artifacts:
     format: python
     roles:
     - test
+  artifact.blueprint-validator:
+    path: validators/skill/blueprints.py
+    format: python
+    roles:
+    - validator
+  artifact.blueprint-validator-tests:
+    path: tests/validate_blueprints.py
+    format: python
+    roles:
+    - test
+  artifact.blueprint-inventory-tests:
+    path: tests/test_blueprint_inventory.py
+    format: python
+    roles:
+    - test
   artifact.semantic-review-instructions:
     path: references/node-standards/semantic-review.md
     format: markdown
@@ -393,6 +391,20 @@ domain_facts:
   node.present: true
   node.skill-owned: true
 checks:
+  node.blueprint-contract:
+    artifact:
+      kind: artifact
+      ref: artifact.blueprint-validator
+    selector:
+      kind: python-symbol
+      symbol: validate_with_graph
+    integration:
+      state: resolved
+      points:
+      - precommit
+    lifecycle: active
+    resolution:
+      state: resolved
   node.shared-platform-neutrality:
     artifact:
       kind: artifact
@@ -408,6 +420,50 @@ checks:
     resolution:
       state: resolved
 tests:
+  node.blueprint-contract-tests:
+    artifact:
+      kind: artifact
+      ref: artifact.blueprint-validator-tests
+    selector:
+      kind: pytest-node
+      node_id: tests/validate_blueprints.py
+    integration:
+      state: resolved
+      points:
+      - precommit
+    lifecycle: active
+    resolution:
+      state: resolved
+    targets:
+    - target:
+        kind: check
+        ref: node.blueprint-contract
+      relation: tests-check
+      polarity: mixed
+      coverage_description: Exercises schema-version selection, node types, canonical module markers,
+        and generated blueprint views.
+  node.blueprint-inventory-tests:
+    artifact:
+      kind: artifact
+      ref: artifact.blueprint-inventory-tests
+    selector:
+      kind: pytest-node
+      node_id: tests/test_blueprint_inventory.py
+    integration:
+      state: resolved
+      points:
+      - precommit
+    lifecycle: active
+    resolution:
+      state: resolved
+    targets:
+    - target:
+        kind: check
+        ref: node.blueprint-contract
+      relation: tests-check
+      polarity: mixed
+      coverage_description: Exercises registered-child ownership, optional implementation children,
+        derived implementation identities, and invalid nested registrations.
   node.shared-platform-neutrality-tests:
     artifact:
       kind: artifact
@@ -431,6 +487,61 @@ tests:
       coverage_description: Exercises neutral and non-neutral shared content, platform-named files,
         blueprint metadata, graph-owned artifacts, and case handling.
 assurances:
+  node.blueprint-node-type:
+    assertion:
+      kind: assertion
+      ref: skill-guidelines.module-behavioral-source-v5.node-kinds#blueprint-node-type
+    mechanism:
+      kind: check
+      ref: node.blueprint-contract
+    relation: enforces
+    strength: full
+    aspects:
+    - schema-version
+    - node-type
+    coverage_description: Validates version-5 blueprints against the selected module or behavioral-source
+      schema and rejects incompatible canonical markers.
+    lifecycle: active
+    resolution:
+      state: resolved
+  node.optional-implementation-child:
+    assertion:
+      kind: assertion
+      ref: skill-guidelines.module-behavioral-source-v5.node-kinds#optional-implementation-child
+    mechanism:
+      kind: check
+      ref: node.blueprint-contract
+    relation: enforces
+    strength: partial
+    aspects:
+    - optional-child
+    - child-cardinality
+    coverage_description: Validates registered child topology and accepts managed skills without an
+      implementation child.
+    limitation: The check validates declarations and owned paths; it cannot infer whether undeclared files
+      constitute intended executable behavior.
+    lifecycle: active
+    resolution:
+      state: resolved
+  node.implementation-child-contract:
+    assertion:
+      kind: assertion
+      ref: skill-guidelines.module-behavioral-source-v5.node-kinds#implementation-child-contract
+    mechanism:
+      kind: check
+      ref: node.blueprint-contract
+    relation: enforces
+    strength: full
+    aspects:
+    - derived-child-id
+    - canonical-marker
+    - discovery-boundary
+    - nesting
+    coverage_description: Validates the derived implementation-child identity, canonical locator,
+      non-discoverability, and registration topology.
+    lifecycle: active
+    resolution:
+      state: resolved
   node.shared-platform-neutrality:
     assertion:
       kind: assertion

@@ -1,6 +1,6 @@
 schema_version: 6
 standard_version: 1.0.0
-revision: 12
+revision: 15
 id: node-standards.python-node
 canonical_path: references/node-standards/python-node.standard.yaml
 title: Python Node Standard
@@ -9,8 +9,8 @@ imports:
   node:
     standard_id: node-standards.node
     standard_version: 1.0.0
-    revision: 9
-    digest: sha256:438a67a64ba97196547699e63ba3a66c3dc36979726f6b0818bd0c7e19423540
+    revision: 11
+    digest: sha256:8f496d1cd7ea867e2fd9c1b10875ab4d10eccb75b088b3acb6437854115208f0
     artifact:
       kind: artifact
       ref: artifact.node-standard
@@ -27,59 +27,21 @@ standards:
   id: skill-guidelines.import-discipline
   title: Import discipline
   children:
-  - kind: guidance
-    id: skill-guidelines.import-discipline.guidance-001
-    statement: '**Import discipline**'
   - kind: rule
     id: skill-guidelines.import-discipline.requirement-001
     assertions:
     - id: source-block
       modality: required
-      statement: 'Skill Python files may import only:'
-      atomicity: pending
-  - kind: guidance
-    id: skill-guidelines.import-discipline.guidance-002
-    statement: '- relative modules from their own skill-local `_rtx/` package'
-  - kind: guidance
-    id: skill-guidelines.import-discipline.guidance-003
-    statement: '- first-party shared packages under `src/officina/`'
-  - kind: guidance
-    id: skill-guidelines.import-discipline.guidance-004
-    statement: '- stdlib and approved third-party packages'
+      statement: Skill Python files may import same-skill relative runtime modules, first-party shared
+        packages under `src/officina/`, the standard library, and approved third-party packages.
   - kind: rule
     id: skill-guidelines.import-discipline.requirement-002
     assertions:
     - id: source-block
       modality: required
-      statement: 'They must not import:'
-      atomicity: pending
-  - kind: guidance
-    id: skill-guidelines.import-discipline.guidance-005
-    statement: '- another skill''s Python modules directly'
-  - kind: guidance
-    id: skill-guidelines.import-discipline.guidance-006
-    statement: '- repo-maintainer packages outside `src/officina/`'
-  - kind: guidance
-    id: skill-guidelines.import-discipline.guidance-007
-    statement: "- another skill's runtime directory through `sys.path`, path loading, or\n  dynamic module\
-      \ tricks"
-  - kind: guidance
-    id: skill-guidelines.import-discipline.guidance-008
-    statement: 'This is the intended model:'
-  - kind: guidance
-    id: skill-guidelines.import-discipline.guidance-009
-    statement: '- local reuse inside one skill: relative imports'
-  - kind: guidance
-    id: skill-guidelines.import-discipline.guidance-010
-    statement: '- generic shared infrastructure: `officina.*`'
-  - kind: guidance
-    id: skill-guidelines.import-discipline.guidance-011
-    statement: "- cross-skill behavior: declared `DispatchCall` entries plus\n  `PythonMachineInterface.dispatch()`"
-  - kind: guidance
-    id: skill-guidelines.import-discipline.guidance-012
-    statement: 'The dispatch discipline is mechanically checked by
-
-      `validators/skill/dispatcher_usage.py`.'
+      statement: Skill Python files must not import another skill's modules, repository-maintainer
+        packages outside `src/officina/`, or another skill's runtime through sys.path, path loading,
+        or dynamic import.
   - kind: rule
     id: skill-guidelines.import-discipline.requirement-003
     assertions:
@@ -99,9 +61,6 @@ standards:
   id: skill-guidelines.toml-io-boundary
   title: TOML IO boundary
   children:
-  - kind: guidance
-    id: skill-guidelines.toml-io-boundary.guidance-001
-    statement: '**TOML IO boundary**'
   - kind: rule
     id: skill-guidelines.toml-io-boundary.requirement-001
     assertions:
@@ -124,44 +83,27 @@ standards:
   - kind: rule
     id: skill-guidelines.toml-io-boundary.requirement-002
     assertions:
-    - id: source-block
+    - id: literal-filename-boundary
       modality: required
-      statement: 'Outside `src/officina/common/toml_io.py`, a `.toml` filename may appear only as
-
-        the direct filename argument to `toml_io.open(...)`. Do not build TOML filenames
-
-        through variables, concatenation, `Path(...)`, `/` path joins, `open(...)`,
-
-        `.read_text(...)`, `.write_text(...)`, `tomllib`, or ad hoc regex/string
-
-        rewrites. If a caller needs a reusable TOML filename or discovery rule, add a
-
-        named helper under `src/officina/common/` and keep filename construction there.
-
-        When the helper is specific to a host or platform, give the helper file a
-
-        matching platform name and include `toml` in the filename, such as
-
-        `codex_toml.py`, so both the TOML boundary and platform-neutral boundary stay
-
-        explicit.'
-      atomicity: pending
+      statement: Outside `src/officina/common/toml_io.py`, a `.toml` filename may appear only as the
+        direct filename argument to `toml_io.open(...)`; do not construct or use it through variables,
+        joins, direct file IO, `tomllib`, or ad hoc text rewriting.
+    - id: shared-filename-helper
+      modality: required
+      statement: Reusable TOML filenames and discovery rules belong in a named helper under
+        `src/officina/common/`.
+    - id: platform-helper-name
+      modality: required
+      statement: A host-specific TOML helper's filename names both the host and TOML boundary, such as
+        `codex_toml.py`.
   - kind: guidance
     id: skill-guidelines.toml-io-boundary.guidance-003
-    statement: '`toml_io.open(...)` owns UTF-8 text mode, filename validation, and parse
-
-      validation after writes. This rule is enforced by
-
-      `validators/toml_io_boundary.py`, with behavior tests in
-
-      `tests/validate_toml_io_boundary.py`.'
+    statement: '`toml_io.open(...)` owns UTF-8 text mode, filename validation, and parse validation
+      after writes.'
 - kind: family
   id: skill-guidelines.subprocess-text-boundaries
   title: Subprocess text boundaries
   children:
-  - kind: guidance
-    id: skill-guidelines.subprocess-text-boundaries.guidance-001
-    statement: '**Subprocess text boundaries**'
   - kind: rule
     id: skill-guidelines.subprocess-text-boundaries.requirement-001
     assertions:
@@ -195,24 +137,12 @@ standards:
       atomicity: pending
   - kind: guidance
     id: skill-guidelines.subprocess-text-boundaries.guidance-003
-    statement: 'The shared dispatcher owns this boundary for process-bound exports: text-mode
-
-      dispatcher invocations use UTF-8 strict in the parent process, and Python module
-
-      runtimes get `PYTHONIOENCODING=utf-8:strict` in the child environment. This is
-
-      enforced by `validators/subprocess_text_encoding.py`, with behavior tests in
-
-      `tests/test_officina_dispatcher.py` and
-
-      `tests/validate_subprocess_text_encoding.py`.'
+    statement: Text-mode dispatcher invocations use UTF-8 strict in the parent process, and Python
+      module runtimes receive `PYTHONIOENCODING=utf-8:strict` in the child environment.
 - kind: family
   id: skill-guidelines.test-file-conventions
   title: Test file conventions
   children:
-  - kind: guidance
-    id: skill-guidelines.test-file-conventions.guidance-001
-    statement: '### Test file conventions'
   - kind: guidance
     id: skill-guidelines.test-file-conventions.guidance-002
     statement: '- Validator tests live in `tests/validate_<name>.py`.'
@@ -226,15 +156,15 @@ standards:
   - kind: rule
     id: skill-guidelines.test-file-conventions.requirement-001
     assertions:
-    - id: source-block
+    - id: git-test-repository
       modality: required
-      statement: 'Ordinary Git-backed tests under `tests/**` and `skills/*/tests/**` use `test_support.git_repository.GitTestRepository`
-        for deterministic identity, branch, line endings, file mode, and isolated Git execution. A test
-        whose subject requires raw Git or direct `run_git` must annotate the immediately following AST
-        statement with `# famulus-raw-git: category=<category>; reason=<nonempty reason>`, where category
-        is one of `ambient-config`, `hooks`, `object-format`, `index-stages`, `validator-isolation`, or
-        `run-git-contract`. This is mechanically checked by `validators/cross_platform.py`.'
-      atomicity: pending
+      statement: Ordinary Git-backed tests under `tests/**` and `skills/*/tests/**` use
+        `test_support.git_repository.GitTestRepository` for deterministic, isolated Git execution.
+    - id: raw-git-annotation
+      modality: required
+      statement: 'A test that requires raw Git or direct `run_git` annotates the immediately following
+        AST statement with `# famulus-raw-git: category=<category>; reason=<nonempty reason>`, using an
+        allowed category.'
 - kind: family
   id: node-standards.python-portability
   title: Python portability boundaries
@@ -242,28 +172,18 @@ standards:
   - kind: rule
     id: skill-guidelines.cross-platform-tools.requirement-002
     assertions:
-    - id: source-block
+    - id: shared-common-neutrality
       modality: required
-      statement: 'Shared code under `src/officina/common/` must be host-neutral by default. Put
-
-        repo-wide policy there only when more than one skill can plausibly need the
-
-        same boundary, and keep the surface thin: validation, naming, error
-
-        normalization, and test seams are appropriate; product-specific behavior is
-
-        not. Prefer a mature cross-platform adapter over per-host in-house
-
-        implementations when the adapter delegates to the host facility. For example,
-
-        `officina.common.secret_store` owns the repo contract for small local secrets
-
-        and delegates storage to Python `keyring`; skills should call that wrapper
-
-        instead of importing `keyring` directly or shelling out to host-specific
-
-        credential commands.'
-      atomicity: pending
+      statement: Shared code under `src/officina/common/` is host-neutral, plausibly reusable by more
+        than one skill, and limited to thin policy surfaces rather than product behavior.
+    - id: prefer-platform-adapter
+      modality: required
+      statement: Prefer a mature cross-platform adapter that delegates to host facilities over separate
+        in-house implementations per host.
+    - id: secret-store-boundary
+      modality: required
+      statement: Skills store small local secrets through `officina.common.secret_store`, not by importing
+        `keyring` directly or invoking host-specific credential commands.
   - kind: rule
     id: skill-guidelines.cross-platform-tools.requirement-003
     assertions:
@@ -279,19 +199,23 @@ standards:
 
         `officina.common.dates` instead of retyping ad hoc formatting logic in each
 
-        skill. This is mechanically checked by `validators/portable_dates.py`.'
+        skill.'
       atomicity: pending
   - kind: rule
     id: skill-guidelines.cross-platform-tools.requirement-004
     assertions:
-    - id: source-block
+    - id: repository-path-helper
       modality: required
-      statement: Repository-relative path conversion must use `officina.common.repository_paths`; do not
-        duplicate containment or equivalent-root logic. Python process targets must carry the `_rtx/*.py`
-        gateway path and process-entry identifier as separate values through dispatch, tracing, runner
-        arguments, and permission arrays. Composite `path.py:Entry` targets are migration input only.
-        These boundaries are mechanically checked by `validators/cross_platform.py`.
-      atomicity: pending
+      statement: Repository-relative path conversion uses `officina.common.repository_paths` rather than
+        duplicating containment or equivalent-root logic.
+    - id: separate-process-target
+      modality: required
+      statement: Python process targets carry the gateway path and process-entry identifier as separate
+        values through dispatch, tracing, runner arguments, and permission arrays.
+    - id: composite-target-migration-only
+      modality: prohibited
+      statement: Composite `path.py:Entry` process targets are permitted only as migration input, not as
+        live declarations.
 - kind: family
   id: node-standards.python-cross-module-boundaries
   title: Python cross-module boundaries
@@ -301,16 +225,15 @@ standards:
     assertions:
     - id: source-block
       modality: required
-      statement: "- **Do not introduce new cross-module Python imports.** If behavior should be\n  shared\
-        \ across modules, expose it through a module gateway, module export, or a\n  first-party shared\
-        \ package under `src/officina/`."
+      statement: Do not introduce cross-module Python imports; share behavior through a module gateway,
+        module export, or first-party shared package under `src/officina/`.
       atomicity: pending
   - kind: rule
     id: skill-guidelines.system-evolution.requirement-003
     assertions:
     - id: source-block
       modality: required
-      statement: '- **Do not reach into another skill''s runtime directory from local runtime code.**'
+      statement: Local runtime code must not reach into another skill's runtime directory.
       atomicity: pending
   - kind: guidance
     id: node-standards.python-cross-module-boundaries.dispatch-call-guidance
@@ -328,25 +251,22 @@ standards:
         system.
   - kind: guidance
     id: skill-guidelines.assistant-neutrality.guidance-001
-    statement: "- If a skill or shared package genuinely needs platform-specific logic, put\n  that logic\
-      \ in a file whose own filename names the platform, such as\n  `claude`, `codex`, `windows`, `osx`,\
-      \ or `linux`."
+    statement: Platform-specific logic belongs in a file whose name identifies the platform, such as
+      `claude`, `codex`, `windows`, `osx`, or `linux`.
   - kind: rule
     id: skill-guidelines.assistant-neutrality.requirement-005
     assertions:
     - id: source-block
       modality: required
-      statement: "- A small cross-platform adapter may temporarily dispatch to platform-specific\n  commands\
-        \ while a backend split is pending, but new platform-specific command\n  bodies should live in\
-        \ platform-named files."
+      statement: A small cross-platform adapter may temporarily dispatch to platform-specific commands
+        while a backend split is pending, but new platform-specific command bodies belong in platform-named files.
       atomicity: pending
   - kind: rule
     id: skill-guidelines.assistant-neutrality.requirement-006
     assertions:
     - id: source-block
       modality: required
-      statement: "- `__init__.py` remains the conventional aggregation seam for\n  platform-specific modules.\
-        \ It may import platform-named files and re-export\n  a host-neutral API for the rest of the codebase."
+      statement: '`__init__.py` may aggregate platform-named modules and re-export a host-neutral API.'
       atomicity: pending
 - kind: procedure
   id: node-standards.remedies.replace-cross-module-python-dependency
@@ -398,10 +318,188 @@ artifacts:
     format: yaml
     roles:
     - other
+  artifact.toml-io-validator:
+    path: validators/toml_io_boundary.py
+    format: python
+    roles: [validator]
+  artifact.toml-io-tests:
+    path: tests/validate_toml_io_boundary.py
+    format: python
+    roles: [test]
+  artifact.subprocess-text-validator:
+    path: validators/subprocess_text_encoding.py
+    format: python
+    roles: [validator]
+  artifact.subprocess-text-tests:
+    path: tests/validate_subprocess_text_encoding.py
+    format: python
+    roles: [test]
+  artifact.portable-dates-validator:
+    path: validators/portable_dates.py
+    format: python
+    roles: [validator]
+  artifact.portable-dates-tests:
+    path: tests/validate_portable_dates.py
+    format: python
+    roles: [test]
+  artifact.cross-platform-validator:
+    path: validators/cross_platform.py
+    format: python
+    roles: [validator]
+  artifact.cross-platform-tests:
+    path: tests/validate_cross_platform.py
+    format: python
+    roles: [test]
 domain_facts:
   node.present: true
   gateway.language: python
   node.skill-owned: true
+checks:
+  python-node.toml-io-boundary:
+    artifact: {kind: artifact, ref: artifact.toml-io-validator}
+    selector: {kind: python-symbol, symbol: validate}
+    integration: {state: resolved, points: [precommit]}
+    lifecycle: active
+    resolution: {state: resolved}
+  python-node.subprocess-text-encoding:
+    artifact: {kind: artifact, ref: artifact.subprocess-text-validator}
+    selector: {kind: python-symbol, symbol: validate}
+    integration: {state: resolved, points: [precommit]}
+    lifecycle: active
+    resolution: {state: resolved}
+  python-node.portable-dates:
+    artifact: {kind: artifact, ref: artifact.portable-dates-validator}
+    selector: {kind: python-symbol, symbol: validate}
+    integration: {state: resolved, points: [precommit]}
+    lifecycle: active
+    resolution: {state: resolved}
+  python-node.cross-platform:
+    artifact: {kind: artifact, ref: artifact.cross-platform-validator}
+    selector: {kind: python-symbol, symbol: validate_with_graph}
+    integration: {state: resolved, points: [precommit]}
+    lifecycle: active
+    resolution: {state: resolved}
+tests:
+  python-node.toml-io-boundary-tests:
+    artifact: {kind: artifact, ref: artifact.toml-io-tests}
+    selector: {kind: pytest-node, node_id: tests/validate_toml_io_boundary.py}
+    integration: {state: resolved, points: [precommit]}
+    lifecycle: active
+    resolution: {state: resolved}
+    targets:
+    - target: {kind: check, ref: python-node.toml-io-boundary}
+      relation: tests-check
+      polarity: mixed
+      coverage_description: Exercises direct and constructed TOML paths, literal filenames through
+        `toml_io.open`, and shared-helper exemptions.
+  python-node.subprocess-text-encoding-tests:
+    artifact: {kind: artifact, ref: artifact.subprocess-text-tests}
+    selector: {kind: pytest-node, node_id: tests/validate_subprocess_text_encoding.py}
+    integration: {state: resolved, points: [precommit]}
+    lifecycle: active
+    resolution: {state: resolved}
+    targets:
+    - target: {kind: check, ref: python-node.subprocess-text-encoding}
+      relation: tests-check
+      polarity: mixed
+      coverage_description: Exercises binary subprocess use and text calls with missing or explicit encoding
+        and error policies.
+  python-node.portable-dates-tests:
+    artifact: {kind: artifact, ref: artifact.portable-dates-tests}
+    selector: {kind: pytest-node, node_id: tests/validate_portable_dates.py}
+    integration: {state: resolved, points: [precommit]}
+    lifecycle: active
+    resolution: {state: resolved}
+    targets:
+    - target: {kind: check, ref: python-node.portable-dates}
+      relation: tests-check
+      polarity: mixed
+      coverage_description: Exercises portable date formatting and rejects GNU/POSIX-only and Windows-only
+        padding modifiers.
+  python-node.cross-platform-tests:
+    artifact: {kind: artifact, ref: artifact.cross-platform-tests}
+    selector: {kind: pytest-node, node_id: tests/validate_cross_platform.py}
+    integration: {state: resolved, points: [precommit]}
+    lifecycle: active
+    resolution: {state: resolved}
+    targets:
+    - target: {kind: check, ref: python-node.cross-platform}
+      relation: tests-check
+      polarity: mixed
+      coverage_description: Exercises raw-Git annotations, platform-specific process use, registered-child
+        artifacts, and live composite process targets.
+assurances:
+  python-node.toml-io-use:
+    assertion: {kind: assertion, ref: skill-guidelines.toml-io-boundary.requirement-001#source-block}
+    mechanism: {kind: check, ref: python-node.toml-io-boundary}
+    relation: enforces
+    strength: partial
+    aspects: [direct-toml-io]
+    coverage_description: Rejects direct TOML construction and IO patterns in governed production Python.
+    limitation: The check recognizes enumerated syntax patterns and does not prove semantic absence of every
+      dynamically constructed path.
+    lifecycle: active
+    resolution: {state: resolved}
+  python-node.toml-filename-boundary:
+    assertion: {kind: assertion, ref: skill-guidelines.toml-io-boundary.requirement-002#literal-filename-boundary}
+    mechanism: {kind: check, ref: python-node.toml-io-boundary}
+    relation: enforces
+    strength: partial
+    aspects: [literal-filename, direct-file-io]
+    coverage_description: Accepts literal filenames passed directly to `toml_io.open` and rejects covered
+      variable, concatenation, path, and direct-IO forms.
+    limitation: Static syntax checks do not prove the behavior of arbitrary dynamic helpers.
+    lifecycle: active
+    resolution: {state: resolved}
+  python-node.subprocess-text-encoding:
+    assertion: {kind: assertion, ref: skill-guidelines.subprocess-text-boundaries.requirement-001#source-block}
+    mechanism: {kind: check, ref: python-node.subprocess-text-encoding}
+    relation: enforces
+    strength: full
+    aspects: [encoding, errors]
+    coverage_description: Rejects text-mode subprocess calls that omit either explicit encoding or errors.
+    lifecycle: active
+    resolution: {state: resolved}
+  python-node.portable-dates:
+    assertion: {kind: assertion, ref: skill-guidelines.cross-platform-tools.requirement-003#source-block}
+    mechanism: {kind: check, ref: python-node.portable-dates}
+    relation: enforces
+    strength: partial
+    aspects: [strftime-padding]
+    coverage_description: Rejects known host-specific strftime padding modifiers in governed Python code.
+    limitation: The check does not enforce reuse of the shared date helper or evaluate dynamically assembled
+      format strings.
+    lifecycle: active
+    resolution: {state: resolved}
+  python-node.raw-git-annotation:
+    assertion: {kind: assertion, ref: skill-guidelines.test-file-conventions.requirement-001#raw-git-annotation}
+    mechanism: {kind: check, ref: python-node.cross-platform}
+    relation: enforces
+    strength: full
+    aspects: [annotation-placement, category, reason]
+    coverage_description: Requires a statement-local annotation with an allowed category and nonempty reason
+      for covered raw Git calls.
+    lifecycle: active
+    resolution: {state: resolved}
+  python-node.separate-process-target:
+    assertion: {kind: assertion, ref: skill-guidelines.cross-platform-tools.requirement-004#separate-process-target}
+    mechanism: {kind: check, ref: python-node.cross-platform}
+    relation: enforces
+    strength: partial
+    aspects: [gateway-path, process-entry]
+    coverage_description: Rejects live composite Python targets in blueprints, projections, and permission arrays.
+    limitation: The check validates declared target shapes; it does not inspect every transient in-memory value.
+    lifecycle: active
+    resolution: {state: resolved}
+  python-node.composite-target-migration-only:
+    assertion: {kind: assertion, ref: skill-guidelines.cross-platform-tools.requirement-004#composite-target-migration-only}
+    mechanism: {kind: check, ref: python-node.cross-platform}
+    relation: enforces
+    strength: full
+    aspects: [live-target-prohibition, migration-input]
+    coverage_description: Allows composite targets only through migration parsing and rejects live declarations.
+    lifecycle: active
+    resolution: {state: resolved}
 links:
   import-discipline-remedy: {source: {kind: family, ref: skill-guidelines.import-discipline}, relation: remedied-by, target: {kind: procedure, document: node, ref: node-standards.remedies.restore-local-node-conformance}, lifecycle: active, resolution: {state: resolved}}
   toml-boundary-remedy: {source: {kind: family, ref: skill-guidelines.toml-io-boundary}, relation: remedied-by, target: {kind: procedure, document: node, ref: node-standards.remedies.restore-local-node-conformance}, lifecycle: active, resolution: {state: resolved}}

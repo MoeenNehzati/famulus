@@ -145,6 +145,9 @@ def resolve_pointer(value, pointer):
 
 def assert_source_unit_mapping(unit, document, superseded_targets):
     nodes = semantic_nodes(document)
+    if unit.get("retired"):
+        assert unit["retired"].strip()
+        return
     target_refs = {target["target_ref"] for target in unit.get("targets", [])}
     if target_refs and target_refs <= set(superseded_targets):
         assert all(superseded_targets[target] for target in target_refs)
@@ -230,19 +233,16 @@ def test_mapped_procedure_steps_detect_mutation_in_each_risk_family():
                 assert_source_unit_mapping(unit, document, {})
 
 
-def test_all_diagnostic_signals_and_analogs_are_preserved():
+def test_all_diagnostic_signals_are_preserved_without_analogy_labels():
     smells = descendants_by_id(load_standard(), "skill-refactoring.diagnostic-signals")
     smells = {key: value for key, value in smells.items() if value["kind"] == "family"}
     assert set(smells) == set(EXPECTED_SMELLS)
-    for smell_id, (title, signal, analog) in EXPECTED_SMELLS.items():
+    for smell_id, (title, signal, _) in EXPECTED_SMELLS.items():
         node = smells[smell_id]
         assert node["title"] == title
         definitions = {child["term"]: child["meaning"] for child in node["children"]}
         assert signal in definitions["Signal"]
-        if analog is None:
-            assert "Analog" not in definitions
-        else:
-            assert definitions["Analog"] == analog
+        assert "Analog" not in definitions
 
 
 def test_all_remedies_preserve_body_conditions_verification_and_risk():

@@ -1,6 +1,6 @@
 schema_version: 6
 standard_version: 1.0.0
-revision: 13
+revision: 16
 id: node-standards.python-module
 canonical_path: references/node-standards/python-module.standard.yaml
 title: Python Module Standard
@@ -9,16 +9,16 @@ imports:
   module:
     standard_id: node-standards.module
     standard_version: 1.0.0
-    revision: 9
-    digest: sha256:1b412ae1d938994b9d70a7c45eb42c685b7e61acbbb4284ba2fee3310cd6433f
+    revision: 11
+    digest: sha256:b200e270cc3fa4c41e353043ebd45540d29c225735e996a25ae5114fafa2e81f
     artifact:
       kind: artifact
       ref: artifact.module-standard
   python-node:
     standard_id: node-standards.python-node
     standard_version: 1.0.0
-    revision: 12
-    digest: sha256:1039bf61b8db1bbe54b4234f694a755cd272d530da14a87d1a54b61bbd193cd9
+    revision: 15
+    digest: sha256:662662de8c0cb47e4491c1705110a3c528ed64624c5f6348cb91b3a47a2e0569
     artifact:
       kind: artifact
       ref: artifact.python-node-standard
@@ -31,19 +31,9 @@ standards:
     equals: true
   children:
   - kind: guidance
-    id: skill-guidelines.validator-test-conventions.guidance-001
-    statement: '## Validator and test conventions'
-  - kind: guidance
     id: skill-guidelines.validator-test-conventions.guidance-002
-    statement: 'Mechanical repository checks run on every commit via `validators/runner.py` (called from
-
-      `.githooks/pre-commit`). The runner auto-discovers two packages:'
-  - kind: guidance
-    id: skill-guidelines.validator-test-conventions.guidance-003
-    statement: '- **`validators/`** — repo-wide checks'
-  - kind: guidance
-    id: skill-guidelines.validator-test-conventions.guidance-004
-    statement: '- **`validators/skill/`** — skill-system checks'
+    statement: The repository validator runner discovers repo-wide checks under `validators/` and
+      skill-system checks under `validators/skill/`.
   - kind: rule
     id: skill-guidelines.validator-test-conventions.requirement-001
     assertions:
@@ -61,26 +51,47 @@ standards:
     fact: node.is-repository-validator
     equals: true
   children:
-  - kind: guidance
-    id: skill-guidelines.adding-validator.guidance-001
-    statement: '### Adding a new validator'
-  - kind: guidance
-    id: skill-guidelines.adding-validator.guidance-002
-    statement: "1. Create `validators/<name>.py` or\n   `validators/skill/<name>.py`."
-  - kind: guidance
-    id: skill-guidelines.adding-validator.guidance-003
-    statement: '2. Export exactly one function: `validate(repo_root: Path) -> list[str]`.'
-  - kind: guidance
-    id: skill-guidelines.adding-validator.guidance-004
-    statement: 3. Optionally add a `main()` so it can be run standalone.
-  - kind: guidance
-    id: skill-guidelines.adding-validator.guidance-005
-    statement: "4. Add a `tests/validate_<name>.py` with at least a pass case and a fail case.\n   Use\
-      \ `pytest` conventions (plain functions, `tmp_path` fixture for\n   isolation). Load the validator\
-      \ via `importlib.util.spec_from_file_location`\n   rather than importing it as a package."
-  - kind: guidance
-    id: skill-guidelines.adding-validator.guidance-006
-    statement: The runner picks up the new file automatically — no registration needed.
+  - kind: rule
+    id: node-standards.add-validator.requirement
+    assertions:
+    - id: canonical-entrypoint
+      modality: required
+      statement: 'A repository validator exposes the canonical `validate(repo_root: Path) -> list[str]`
+        entrypoint from an auto-discovered validator package.'
+    - id: focused-tests
+      modality: required
+      statement: A repository validator has focused pass and fail tests using isolated repository state.
+    - id: runner-discovery
+      modality: required
+      statement: The repository validator runner discovers the validator without manual registration.
+  - kind: procedure
+    id: node-standards.procedures.add-validator
+    title: Add one repository validator
+    ordered: true
+    steps:
+    - kind: step
+      id: create-validator
+      instruction: 'Create `validators/<name>.py` or `validators/skill/<name>.py` and export exactly
+        `validate(repo_root: Path) -> list[str]`; add `main()` only for standalone use.'
+    - kind: step
+      id: add-focused-tests
+      instruction: Add `tests/validate_<name>.py` with a pass case and a fail case using plain pytest
+        functions and `tmp_path`; load the validator with `importlib.util.spec_from_file_location`.
+      requires: [create-validator]
+    - kind: step
+      id: verify-discovery
+      instruction: Run the repository validator runner and confirm automatic discovery without manual
+        registration.
+      requires: [add-focused-tests]
+    invariants:
+    - id: canonical-entrypoint
+      statement: The validator exposes one canonical `validate` entrypoint through an allowed package.
+    completion_conditions:
+    - id: pass-and-fail-covered
+      statement: Focused tests demonstrate both accepted and rejected input and runner discovery succeeds.
+    risk:
+      level: low
+      statement: Incorrect placement or entrypoint shape prevents discovery.
 artifacts:
   artifact.module-standard:
     path: references/node-standards/module.standard.yaml
@@ -99,3 +110,4 @@ domain_facts:
   node.skill-owned: true
 links:
   validator-conventions-remedy: {source: {kind: family, ref: skill-guidelines.validator-test-conventions}, relation: remedied-by, target: {kind: procedure, document: module, ref: node-standards.remedies.restore-local-module-conformance}, lifecycle: active, resolution: {state: resolved}}
+  add-validator-procedure: {source: {kind: family, ref: skill-guidelines.adding-validator}, relation: remedied-by, target: {kind: procedure, ref: node-standards.procedures.add-validator}, lifecycle: active, resolution: {state: resolved}}

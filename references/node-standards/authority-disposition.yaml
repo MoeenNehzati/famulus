@@ -14,9 +14,9 @@ source_authorities:
     last_digest: sha256:f84eb2662c3e318ac0d4732daf3116114de84b6fa623ded8261333c7bfc6738f
     status: migrated
     replacement: references/node-standards/refactoring.standard.yaml
-    replacement_digest: sha256:717d311ce0b4ca7164f028d776d107e79de705f6e703c9263680d224b30987b8
-    disposition: The complete standard moved into the node-standards closure; semantic
-      IDs and content remain intact while document identity and canonical path changed.
+    replacement_digest: sha256:f20606020255d3c6e638aff8ff345befd3783b7163a8e51b0b40a65e91304a37
+    disposition: Diagnostic signals and remedies moved into the node-standards closure;
+      analogy-only labels were retired because they do not affect diagnosis or repair.
   interface-design:
     path: references/skill-standards/interface-design.md
     digest: sha256:3ae13ed76da955fd759581fd80b96d9caa7c37b22a8b0c8eeb2dbbc3b73c5497
@@ -53,12 +53,63 @@ migration_audit:
   skill-guidelines:
     audited_on: 2026-08-03
     source_semantic_items: 238
-    same_id_items: 232
+    same_id_items: 164
     source_semantic_id_digest: sha256:54059558b8150329ea0de5abf35c1d4dd5a6e8012fc8fd3512ab59200776be84
-    exact_unchanged_leaf_items: 136
-    exact_unchanged_leaf_digest: sha256:cef7d9169a3033c19f64e16388f907fe1c0fc0992a6683980553719e5f9e2757
+    exact_unchanged_leaf_items: 46
+    exact_unchanged_leaf_digest: sha256:015b6d0e1a968751f8388eabeefea6c1a15779236bca4754758a5ed07b569a8a
     duplicate_items: 0
     unresolved_items: 0
+    economy_retirements:
+    - skill-guidelines.module-boundary.guidance-001
+    - skill-guidelines.validator-test-conventions.guidance-001
+    - skill-guidelines.adding-validator.guidance-001
+    - skill-guidelines.test-file-conventions.guidance-001
+    - skill-guidelines.skill-taxonomy.guidance-001
+    - skill-guidelines.change-publication-workflow
+    - skill-guidelines.change-publication-workflow.guidance-001
+    - skill-guidelines.canonical-interface-names.guidance-001
+    - skill-guidelines.module-boundary
+    - skill-guidelines.module-boundary.guidance-002
+    - skill-guidelines.identity-contract.guidance-001
+    - skill-guidelines.injection-lifecycle.guidance-001
+    - skill-guidelines.blueprint-authoring.requirement-001
+    - skill-guidelines.blueprint-authoring.requirement-001#source-block
+    - skill-guidelines.system-evolution.guidance-001
+    - skill-guidelines.dispatcher-role.guidance-001
+    - skill-guidelines.private-runtime-files.guidance-001
+    - skill-guidelines.import-discipline.guidance-001
+    - skill-guidelines.toml-io-boundary.guidance-001
+    - skill-guidelines.subprocess-text-boundaries.guidance-001
+    - skill-guidelines.canonical-interface-names.guidance-002
+    - skill-guidelines.canonical-interface-names.guidance-007
+    - skill-guidelines.dispatcher-role.guidance-002
+    - skill-guidelines.dispatcher-role.guidance-003
+    - skill-guidelines.dispatcher-role.guidance-004
+    - skill-guidelines.dispatcher-role.guidance-005
+    - skill-guidelines.dispatcher-role.guidance-006
+    - skill-guidelines.dispatcher-role.guidance-007
+    - skill-guidelines.dispatcher-role.guidance-008
+    - skill-guidelines.dispatcher-role.requirement-002
+    - skill-guidelines.dispatcher-role.requirement-002#source-block
+    - skill-guidelines.import-discipline.guidance-002
+    - skill-guidelines.import-discipline.guidance-003
+    - skill-guidelines.import-discipline.guidance-004
+    - skill-guidelines.import-discipline.guidance-005
+    - skill-guidelines.import-discipline.guidance-006
+    - skill-guidelines.import-discipline.guidance-007
+    - skill-guidelines.import-discipline.guidance-008
+    - skill-guidelines.import-discipline.guidance-009
+    - skill-guidelines.import-discipline.guidance-010
+    - skill-guidelines.import-discipline.guidance-011
+    - skill-guidelines.import-discipline.guidance-012
+    - skill-guidelines.injection-lifecycle.guidance-002
+    - skill-guidelines.injection-lifecycle.guidance-003
+    - skill-guidelines.injection-lifecycle.guidance-004
+    - skill-guidelines.injection-lifecycle.guidance-005
+    - skill-guidelines.private-runtime-files.requirement-003
+    - skill-guidelines.private-runtime-files.requirement-003#source-block
+    - skill-guidelines.validator-test-conventions.guidance-003
+    - skill-guidelines.validator-test-conventions.guidance-004
     atomized_assertions:
       skill-guidelines.runtime-code-boundary.requirement-001#source-block:
       - skill-guidelines.runtime-code-boundary.requirement-001#no-inline-executable-logic
@@ -83,7 +134,69 @@ migration_audit:
       skill-guidelines.private-runtime-files.requirement-006#source-block:
       - skill-guidelines.private-runtime-files.requirement-006#export-source-binding
       - node-standards.private-runtime-reference-exceptions
+      skill-guidelines.canonical-interface-names.guidance-003:
+      - skill-guidelines.canonical-interface-names.requirement-001#module-export-name
+      skill-guidelines.canonical-interface-names.guidance-004:
+      - skill-guidelines.canonical-interface-names.requirement-001#source-interface-name
+      skill-guidelines.canonical-blueprint-ownership.guidance-001:
+      - node-standards.source-interface-ownership.requirement#description-owned
+      skill-guidelines.canonical-blueprint-ownership.guidance-002:
+      - node-standards.source-interface-ownership.requirement#usage-complete
+      skill-guidelines.canonical-blueprint-ownership.guidance-003:
+      - node-standards.source-interface-ownership.requirement#pattern-notes-specific
+      skill-guidelines.adding-validator.guidance-002:
+      - node-standards.procedures.add-validator#create-validator
+      skill-guidelines.adding-validator.guidance-003:
+      - node-standards.procedures.add-validator#create-validator
+      skill-guidelines.adding-validator.guidance-004:
+      - node-standards.procedures.add-validator#create-validator
+      skill-guidelines.adding-validator.guidance-005:
+      - node-standards.procedures.add-validator#add-focused-tests
+      skill-guidelines.adding-validator.guidance-006:
+      - node-standards.procedures.add-validator#verify-discovery
+      skill-guidelines.module-behavioral-source-v5.node-kinds#unified-types:
+      - skill-guidelines.module-behavioral-source-v5.node-kinds#blueprint-node-type
+      - skill-guidelines.module-behavioral-source-v5.node-kinds#optional-implementation-child
+      - skill-guidelines.module-behavioral-source-v5.node-kinds#implementation-child-contract
+      skill-guidelines.output-focused-writing.guidance-001:
+      - skill-guidelines.output-focused-writing.requirement
+      - skill-guidelines.output-focused-writing.requirement#invocation-and-output
+      - skill-guidelines.output-focused-writing.requirement#execution-relevant-prose
+      skill-guidelines.private-runtime-files.requirement-004#source-block:
+      - skill-guidelines.private-runtime-files.requirement-004#case-collision
+      - skill-guidelines.private-runtime-files.requirement-004#package-marker-exception
+      - skill-guidelines.private-runtime-files.requirement-004#runtime-suffix
+      skill-guidelines.system-evolution.requirement-004#source-block:
+      - skill-guidelines.system-evolution.requirement-004#local-relative-paths
+      - skill-guidelines.system-evolution.requirement-004#no-cross-module-paths
+      skill-guidelines.test-file-conventions.requirement-001#source-block:
+      - skill-guidelines.test-file-conventions.requirement-001#git-test-repository
+      - skill-guidelines.test-file-conventions.requirement-001#raw-git-annotation
+      skill-guidelines.toml-io-boundary.requirement-002#source-block:
+      - skill-guidelines.toml-io-boundary.requirement-002#literal-filename-boundary
+      - skill-guidelines.toml-io-boundary.requirement-002#shared-filename-helper
+      - skill-guidelines.toml-io-boundary.requirement-002#platform-helper-name
+      skill-guidelines.cross-platform-tools.requirement-002#source-block:
+      - skill-guidelines.cross-platform-tools.requirement-002#shared-common-neutrality
+      - skill-guidelines.cross-platform-tools.requirement-002#prefer-platform-adapter
+      - skill-guidelines.cross-platform-tools.requirement-002#secret-store-boundary
+      skill-guidelines.cross-platform-tools.requirement-004#source-block:
+      - skill-guidelines.cross-platform-tools.requirement-004#repository-path-helper
+      - skill-guidelines.cross-platform-tools.requirement-004#separate-process-target
+      - skill-guidelines.cross-platform-tools.requirement-004#composite-target-migration-only
     rewritten_same_id_leaves:
+      skill-guidelines.injection-lifecycle.requirement-001#source-block: Removed enforcement-path prose;
+        retained the prohibition on hand-editing derived artifacts.
+      skill-guidelines.personal-override-structure.requirement-001#source-block: Removed the duplicated
+        heading and retained the canonical override name.
+      skill-guidelines.trigger-description.requirement-001#source-block: Removed the duplicated heading
+        and compressed the trigger-only description rule.
+      skill-guidelines.suggested-permissions.requirement-001#source-block: Removed prose repetition while
+        preserving placement, advisory status, non-cascading, and exact-edge derivation.
+      skill-guidelines.state-ownership.requirement-001#source-block: Removed the duplicated heading while
+        preserving the state ownership boundary.
+      skill-guidelines.cross-platform-tools.requirement-001#source-block: Removed the duplicated heading
+        while preserving the cross-platform requirement.
       skill-guidelines.assistant-neutrality.requirement-001#source-block: Generalized from skills to
         all shared nodes; validator and test evidence moved to structured check, test, and assurance records.
       skill-guidelines.canonical-blueprint-ownership.requirement-001#source-block: Consolidated the
@@ -101,6 +214,50 @@ migration_audit:
         binding it to one runtime API.
       skill-guidelines.system-evolution.requirement-001#source-block: Made both permitted public boundaries
         and the prohibition on internals explicit in one assertion.
+      skill-guidelines.assistant-neutrality.guidance-001: Removed list markup while preserving the
+        platform-named-file guidance.
+      skill-guidelines.assistant-neutrality.requirement-003#source-block: Compressed prose without changing
+        the host-neutral shared-content requirement.
+      skill-guidelines.assistant-neutrality.requirement-004#source-block: Compressed prose without changing
+        the platform-metadata boundary.
+      skill-guidelines.assistant-neutrality.requirement-005#source-block: Removed list markup while preserving
+        the temporary-adapter exception and platform-file rule.
+      skill-guidelines.assistant-neutrality.requirement-006#source-block: Compressed the package aggregation
+        exception without changing its boundary.
+      skill-guidelines.canonical-blueprint-ownership.requirement-002#source-block: Removed implementation
+        narration while preserving generated-view ownership.
+      skill-guidelines.canonical-blueprint-ownership.requirement-003#source-block: Compressed the declaration
+        ownership rule without changing its meaning.
+      skill-guidelines.canonical-blueprint-ownership.requirement-005#source-block: Compressed the behavioral-source
+        ownership rule without changing its meaning.
+      skill-guidelines.canonical-interface-names.requirement-001#source-block: Joined the fragment into one
+        self-contained local-name assertion.
+      skill-guidelines.canonical-interface-names.requirement-002#source-block: Joined the fragment into one
+        self-contained Python source-name assertion.
+      skill-guidelines.cross-platform-tools.requirement-003#source-block: Moved the validator claim to
+        structured evidence and retained the portable-date rule.
+      skill-guidelines.dispatcher-role.requirement-001#source-block: Replaced an introductory fragment with
+        the complete dispatcher-boundary rule.
+      skill-guidelines.identity-contract.requirement-001#source-block: Replaced an introductory fragment with
+        the complete identity rule.
+      skill-guidelines.import-discipline.requirement-001#source-block: Folded the allowed-import list into
+        one self-contained assertion.
+      skill-guidelines.import-discipline.requirement-002#source-block: Folded the prohibited-import list into
+        one self-contained assertion.
+      skill-guidelines.personal-override-structure.requirement-002#source-block: Removed list markup while
+        preserving the override-directory contract.
+      skill-guidelines.private-runtime-files.requirement-002#source-block: Embedded the exact filename pattern
+        into the assertion so the requirements view is self-contained.
+      skill-guidelines.subprocess-text-boundaries.guidance-003: Moved validator and test claims to structured
+        evidence while retaining runtime encoding behavior.
+      skill-guidelines.system-evolution.requirement-002#source-block: Removed list markup without changing the
+        cross-module Python boundary.
+      skill-guidelines.system-evolution.requirement-003#source-block: Removed list markup without changing the
+        private-runtime reach-through prohibition.
+      skill-guidelines.toml-io-boundary.guidance-003: Moved validator and test claims to structured evidence
+        while retaining shared-boundary behavior.
+      skill-guidelines.validator-test-conventions.guidance-002: Consolidated the two validator-package bullets
+        into one self-contained discovery statement.
 research_basis:
   python-ood:
     audited_on: 2026-08-03

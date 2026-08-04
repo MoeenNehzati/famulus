@@ -1,6 +1,6 @@
 schema_version: 6
 standard_version: 1.0.0
-revision: 9
+revision: 12
 id: node-standards.instruction-behavioral-source
 canonical_path: references/node-standards/instruction-behavioral-source.standard.yaml
 title: Instruction Behavioral Source Standard
@@ -9,23 +9,23 @@ imports:
   behavioral-source:
     standard_id: node-standards.behavioral-source
     standard_version: 1.0.0
-    revision: 9
-    digest: sha256:db90a2c54ae4ac55837c2777c3b887989ca7edd64ab45d2ab4ba6e8b127f1a48
+    revision: 11
+    digest: sha256:c0c383959dadc327463767b0cc3d8c52989a429a9b485187419b41f1f45c692d
     artifact:
       kind: artifact
       ref: artifact.behavioral-source-standard
   instruction-node:
     standard_id: node-standards.instruction-node
     standard_version: 1.0.0
-    revision: 9
-    digest: sha256:dc1f829e3ef6ea33515acbe38385178c7dc34386483a1ec5667b145b9170b5b0
+    revision: 12
+    digest: sha256:ea9b80e2cd9fd1dbb9fa70ec3d68dca7d15c7940d08dc6e2c042fddc4cd900c1
     artifact:
       kind: artifact
       ref: artifact.instruction-node-standard
 standards:
 - kind: family
   id: skill-guidelines.runtime-code-boundary
-  title: 10. No code in SKILL.md — runtime files only, with one exception
+  title: Runtime code stays behind interfaces
   children:
   - kind: rule
     id: skill-guidelines.runtime-code-boundary.requirement-001
@@ -137,13 +137,14 @@ standards:
   - kind: rule
     id: skill-guidelines.system-evolution.requirement-004
     assertions:
-    - id: source-block
+    - id: local-relative-paths
       modality: required
-      statement: "- **Keep SKILL.md references local.** Paths in `SKILL.md` must be relative. A\n  skill\
-        \ may refer to files under its own directory, to shared `../references/`\n  material, and to shared\
-        \ repo tools under `../../tools/`. It must not mention\n  parent-path addresses such as `../other-skill/...`,\
-        \ `../../skills/...`, or\n  any absolute filesystem path to another skill."
-      atomicity: pending
+      statement: Paths in `SKILL.md` must be relative and may address only the skill's directory,
+        shared `../references/` material, or shared repository tools under `../../tools/`.
+    - id: no-cross-module-paths
+      modality: prohibited
+      statement: '`SKILL.md` must not name another skill through parent-path addressing or an absolute
+        filesystem path.'
 - kind: family
   id: node-standards.instruction-interface-views
   title: Instruction-source interface views
@@ -153,8 +154,8 @@ standards:
     assertions:
     - id: source-block
       modality: required
-      statement: "- The skill body references interface names only — it never shows\n  `dispatcher --caller-skill`\
-        \ invocations or runtime file paths."
+      statement: The skill body references interface names only; it does not show dispatcher commands
+        or runtime file paths.
       atomicity: pending
   - kind: rule
     id: skill-guidelines.canonical-blueprint-ownership.requirement-004
@@ -168,12 +169,8 @@ standards:
     assertions:
     - id: source-block
       modality: required
-      statement: '**Interfaces that require runtime state should say so explicitly in the skill
-
-        body.** When an operation depends on information only available at call time,
-
-        the skill body must instruct the model to read that state first.'
-      atomicity: pending
+      statement: When an interface depends on information available only at call time, the skill body
+        instructs the model to read that runtime state before invocation.
 - kind: family
   id: node-standards.instruction-source-neutrality
   title: Instruction-source neutrality

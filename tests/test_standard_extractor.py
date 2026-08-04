@@ -162,7 +162,7 @@ def test_extract_standard_filters_standard_document_fields() -> None:
             "values": {
                 "title": "Python Module Standard",
                 "standard_version": "1.0.0",
-                    "revision": 13,
+                    "revision": 16,
             },
         }
     ]

@@ -28,15 +28,16 @@ When this skill is used, begin with:
 
 Skill: update-standards
 
-The schema is the field-level authority. Do not restate it here or infer fields from
-older examples.
+The schema is the field-level authority. Resolve only definitions for fields being
+changed; do not load the whole schema, restate it here, or infer fields from older
+examples.
 
 ## Maintenance workflow
 
 1. Identify the canonical target, its pinned import closure, every direct dependent,
    and whether the repository registers a generated view for it.
-2. Read the target with the current schema and validator. Change the smallest semantic
-   unit that expresses the requested policy.
+2. Read the target, relevant schema definitions, and validator output. Change the
+   smallest semantic unit that expresses the requested policy.
 3. Keep the operational relationships honest:
    - each violated requirement has an applicable remedy;
    - checks, tests, assurances, reviews, and evidence claims name only mechanisms that

@@ -1,6 +1,6 @@
 schema_version: 6
 standard_version: 1.0.0
-revision: 9
+revision: 11
 id: node-standards.module
 canonical_path: references/node-standards/module.standard.yaml
 title: Module Standard
@@ -9,8 +9,8 @@ imports:
   node:
     standard_id: node-standards.node
     standard_version: 1.0.0
-    revision: 9
-    digest: sha256:438a67a64ba97196547699e63ba3a66c3dc36979726f6b0818bd0c7e19423540
+    revision: 11
+    digest: sha256:8f496d1cd7ea867e2fd9c1b10875ab4d10eccb75b088b3acb6437854115208f0
     artifact:
       kind: artifact
       ref: artifact.node-standard
@@ -75,24 +75,16 @@ standards:
       atomicity: pending
 - kind: family
   id: skill-guidelines.suggested-permissions
-  title: 4. `suggested_permissions`
+  title: Suggested permissions
   children:
   - kind: rule
     id: skill-guidelines.suggested-permissions.requirement-001
     assertions:
     - id: source-block
       modality: required
-      statement: '**4. `suggested_permissions`** — permission suggestions live in the module''s
-
-        `blueprint.yaml`, not in separate permission files. `suggested_permissions` is
-
-        advisory, not a grant. It should explain what is safe and useful to pre-approve
-
-        for smoother execution. Do not cascade another module''s suggested permissions;
-
-        declare the exact interface edge in `uses_interfaces` and let permission tooling
-
-        derive transitive grants from the interface graph.'
+      statement: Declare advisory `suggested_permissions` in the module blueprint. They do not grant
+        authority and must not copy another module's suggestions; declare exact `uses_interfaces` edges
+        and derive transitive grants from the interface graph.
       atomicity: pending
 - kind: family
   id: node-standards.module-blueprint-authoring

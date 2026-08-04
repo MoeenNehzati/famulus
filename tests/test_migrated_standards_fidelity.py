@@ -55,18 +55,35 @@ def test_skill_guidelines_make_v5_the_only_live_blueprint_authoring_family():
         path.read_text(encoding="utf-8")
         for path in NODE_STANDARDS.glob("*.standard.yaml")
     )
+    node_kinds = next(
+        rule
+        for rule in live["children"]
+        if rule["id"] == "skill-guidelines.module-behavioral-source-v5.node-kinds"
+    )
+    node_kind_assertions = {
+        assertion["id"]: assertion for assertion in node_kinds["assertions"]
+    }
+    assert set(node_kind_assertions) == {
+        "blueprint-node-type",
+        "optional-implementation-child",
+        "implementation-child-contract",
+    }
+    optional_child = node_kind_assertions["optional-implementation-child"]
+    assert optional_child["modality"] == "required"
+    assert "at most one direct non-discoverable implementation child" in optional_child[
+        "statement"
+    ]
+    assert "need not declare one" in optional_child["statement"]
+    blueprint_type = node_kind_assertions["blueprint-node-type"]["statement"]
+    for required in ("schema_version: 5", "node_type", "module", "behavioral_source"):
+        assert required in blueprint_type
     statements = "\n".join(
         assertion["statement"]
         for rule in live["children"]
         for assertion in rule["assertions"]
     )
-    assert "may have one direct non-discoverable implementation child" in statements
-    assert "need not create or register an implementation child" in statements
     assert "Hash what you own; certify what you depend on." in statements
     for required in (
-        "schema_version: 5",
-        "node_type: module",
-        "node_type: behavioral_source",
         "discovery",
         "gateway",
         "content",

@@ -1,6 +1,6 @@
 schema_version: 6
 standard_version: 1.0.0
-revision: 9
+revision: 12
 id: node-standards.instruction-node
 canonical_path: references/node-standards/instruction-node.standard.yaml
 title: Instruction Node Standard
@@ -9,23 +9,26 @@ imports:
   node:
     standard_id: node-standards.node
     standard_version: 1.0.0
-    revision: 9
-    digest: sha256:438a67a64ba97196547699e63ba3a66c3dc36979726f6b0818bd0c7e19423540
+    revision: 11
+    digest: sha256:8f496d1cd7ea867e2fd9c1b10875ab4d10eccb75b088b3acb6437854115208f0
     artifact:
       kind: artifact
       ref: artifact.node-standard
 standards:
 - kind: family
   id: skill-guidelines.output-focused-writing
-  title: 6. Output-focused, terse writing
+  title: Output-focused writing
   children:
-  - kind: guidance
-    id: skill-guidelines.output-focused-writing.guidance-001
-    statement: '**6. Output-focused, terse writing** — specify what to invoke and how to
-
-      interpret output. Implementation internals belong in tool/script docs, not
-
-      `SKILL.md`. Every line earns its place.'
+  - kind: rule
+    id: skill-guidelines.output-focused-writing.requirement
+    assertions:
+    - id: invocation-and-output
+      modality: required
+      statement: Specify what to invoke and how to interpret its output.
+    - id: execution-relevant-prose
+      modality: required
+      statement: Keep implementation internals in tool documentation; every authored `SKILL.md` line
+        must affect execution.
 artifacts:
   artifact.node-standard:
     path: references/node-standards/node.standard.yaml
@@ -36,3 +39,5 @@ domain_facts:
   node.present: true
   gateway.language: markdown
   node.skill-owned: true
+links:
+  output-focused-writing-remedy: {source: {kind: family, ref: skill-guidelines.output-focused-writing}, relation: remedied-by, target: {kind: procedure, document: node, ref: node-standards.remedies.restore-local-node-conformance}, lifecycle: active, resolution: {state: resolved}}

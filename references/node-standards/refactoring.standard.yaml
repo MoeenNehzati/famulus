@@ -1,6 +1,6 @@
 schema_version: 6
 standard_version: 2.0.0
-revision: 2
+revision: 3
 id: node-standards.refactoring
 canonical_path: references/node-standards/refactoring.standard.yaml
 title: Node Refactoring Standard
@@ -20,49 +20,42 @@ standards:
           - {fact: gateway.language, equals: markdown}
         children:
           - {kind: definition, id: skill-refactoring.smells.bloated-skill.signal, term: Signal, meaning: "SKILL.md is long, covers multiple distinct responsibilities, or mixes orchestration with implementation detail."}
-          - {kind: definition, id: skill-refactoring.smells.bloated-skill.analog, term: Analog, meaning: "God Class / Long Method."}
       - kind: family
         id: skill-refactoring.smells.executable-logic
         title: Executable logic in SKILL.md
         applies_when: *instruction-module
         children:
           - {kind: definition, id: skill-refactoring.smells.executable-logic.signal, term: Signal, meaning: "Shell commands, Python snippets, or other runnable code appears inline in SKILL.md rather than behind a blueprint interface and private `_rtx/` runtime file."}
-          - {kind: definition, id: skill-refactoring.smells.executable-logic.analog, term: Analog, meaning: "Wrong layer of abstraction."}
       - kind: family
         id: skill-refactoring.smells.missing-contract-artifacts
         title: Missing or incomplete contract artifacts
         applies_when: *instruction-module
         children:
           - {kind: definition, id: skill-refactoring.smells.missing-contract-artifacts.signal, term: Signal, meaning: "A migrated skill is missing `blueprint.yaml`, its generated `SKILL.md` contract/interface blocks are stale, or repo-level blueprint manifests are out of sync."}
-          - {kind: definition, id: skill-refactoring.smells.missing-contract-artifacts.analog, term: Analog, meaning: "Missing interface declaration."}
       - kind: family
         id: skill-refactoring.smells.duplicated-guidelines
         title: Duplicated guidelines
         applies_when: *instruction-module
         children:
           - {kind: definition, id: skill-refactoring.smells.duplicated-guidelines.signal, term: Signal, meaning: "Conventions, rules, or reference content that already exist in another skill or `references/` file are copy-pasted here."}
-          - {kind: definition, id: skill-refactoring.smells.duplicated-guidelines.analog, term: Analog, meaning: "Duplicated Code."}
       - kind: family
         id: skill-refactoring.smells.mixed-abstraction-levels
         title: Mixed abstraction levels
         applies_when: *instruction-module
         children:
           - {kind: definition, id: skill-refactoring.smells.mixed-abstraction-levels.signal, term: Signal, meaning: "SKILL.md both directs high-level orchestration (\"invoke the lists skill\") and describes low-level implementation (\"the script reads line 3 of the file\")."}
-          - {kind: definition, id: skill-refactoring.smells.mixed-abstraction-levels.analog, term: Analog, meaning: "Mixed Levels of Abstraction."}
       - kind: family
         id: skill-refactoring.smells.dead-content
         title: Dead content
         applies_when: *instruction-module
         children:
           - {kind: definition, id: skill-refactoring.smells.dead-content.signal, term: Signal, meaning: "Motivational paragraphs, restatements of why the skill exists, \"this is important because…\" passages that add length without adding instruction."}
-          - {kind: definition, id: skill-refactoring.smells.dead-content.analog, term: Analog, meaning: "Comments that restate the code."}
       - kind: family
         id: skill-refactoring.smells.undeclared-interface
         title: Undeclared interface
         applies_when: *instruction-module
         children:
           - {kind: definition, id: skill-refactoring.smells.undeclared-interface.signal, term: Signal, meaning: "SKILL.md never states what inputs it expects or what outputs it produces, making it hard for other skills to depend on it cleanly."}
-          - {kind: definition, id: skill-refactoring.smells.undeclared-interface.analog, term: Analog, meaning: "Undocumented public API."}
       - kind: family
         id: skill-refactoring.smells.wrong-or-missing-category
         title: Wrong or missing Category
@@ -74,7 +67,6 @@ standards:
         title: State in wrong location
         children:
           - {kind: definition, id: skill-refactoring.smells.state-in-wrong-location.signal, term: Signal, meaning: "Skill writes persistent data (logs, cache, watermarks) to `/tmp`, `~/.config`, or anywhere outside the skill's own directory."}
-          - {kind: definition, id: skill-refactoring.smells.state-in-wrong-location.analog, term: Analog, meaning: "Feature Envy / wrong module."}
       - kind: family
         id: skill-refactoring.smells.credentials-in-skill-directory
         title: Credentials in skill directory
@@ -88,34 +80,29 @@ standards:
           equals: python
         children:
           - {kind: definition, id: skill-refactoring.smells.monolithic-script.signal, term: Signal, meaning: "A single private runtime file under `_rtx/` handles multiple unrelated responsibilities, making it hard to invoke or test one part independently."}
-          - {kind: definition, id: skill-refactoring.smells.monolithic-script.analog, term: Analog, meaning: "Long Method."}
       - kind: family
         id: skill-refactoring.smells.god-skill
         title: God skill
         applies_when: *instruction-module
         children:
           - {kind: definition, id: skill-refactoring.smells.god-skill.signal, term: Signal, meaning: "The skill's trigger conditions cover several unrelated use cases that could each stand alone as independent skills."}
-          - {kind: definition, id: skill-refactoring.smells.god-skill.analog, term: Analog, meaning: "God Class."}
       - kind: family
         id: skill-refactoring.smells.thin-skill
         title: Thin skill
         applies_when: *instruction-module
         children:
           - {kind: definition, id: skill-refactoring.smells.thin-skill.signal, term: Signal, meaning: "The skill adds almost no logic on top of a sub-skill it invokes — it exists only as a pass-through with no real added convention or behavior."}
-          - {kind: definition, id: skill-refactoring.smells.thin-skill.analog, term: Analog, meaning: "Middle Man."}
       - kind: family
         id: skill-refactoring.smells.leaky-internals
         title: Leaky internals
         children:
           - {kind: definition, id: skill-refactoring.smells.leaky-internals.signal, term: Signal, meaning: "SKILL.md or a script references another skill's raw script path directly, or bypasses the dispatcher and calls a non-exported invocation form."}
-          - {kind: definition, id: skill-refactoring.smells.leaky-internals.analog, term: Analog, meaning: "Inappropriate Intimacy."}
       - kind: family
         id: skill-refactoring.smells.mixed-interface-responsibilities
         title: Mixed interface responsibilities
         applies_when: *instruction-module
         children:
           - {kind: definition, id: skill-refactoring.smells.mixed-interface-responsibilities.signal, term: Signal, meaning: "One instruction interface contains multiple substantial use cases with different inputs, effects, approval needs, or route-specific references."}
-          - {kind: definition, id: skill-refactoring.smells.mixed-interface-responsibilities.analog, term: Analog, meaning: "Divergent Change / multiple responsibilities."}
   - kind: family
     id: skill-refactoring.refactoring-moves
     title: Refactoring moves

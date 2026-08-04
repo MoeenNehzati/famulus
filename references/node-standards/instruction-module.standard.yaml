@@ -1,6 +1,6 @@
 schema_version: 6
 standard_version: 1.0.0
-revision: 10
+revision: 14
 id: node-standards.instruction-module
 canonical_path: references/node-standards/instruction-module.standard.yaml
 title: Instruction Module Standard
@@ -9,53 +9,31 @@ imports:
   module:
     standard_id: node-standards.module
     standard_version: 1.0.0
-    revision: 9
-    digest: sha256:1b412ae1d938994b9d70a7c45eb42c685b7e61acbbb4284ba2fee3310cd6433f
+    revision: 11
+    digest: sha256:b200e270cc3fa4c41e353043ebd45540d29c225735e996a25ae5114fafa2e81f
     artifact:
       kind: artifact
       ref: artifact.module-standard
   instruction-node:
     standard_id: node-standards.instruction-node
     standard_version: 1.0.0
-    revision: 9
-    digest: sha256:dc1f829e3ef6ea33515acbe38385178c7dc34386483a1ec5667b145b9170b5b0
+    revision: 12
+    digest: sha256:ea9b80e2cd9fd1dbb9fa70ec3d68dca7d15c7940d08dc6e2c042fddc4cd900c1
     artifact:
       kind: artifact
       ref: artifact.instruction-node-standard
 standards:
 - kind: family
-  id: skill-guidelines.module-boundary
-  title: A skill is a software module.
-  children:
-  - kind: guidance
-    id: skill-guidelines.module-boundary.guidance-001
-    statement: '# Skill Module Standards'
-  - kind: guidance
-    id: skill-guidelines.module-boundary.guidance-002
-    statement: '**A skill is a software module.** The standards below define the module
-
-      boundary: identity, interfaces, allowed dependencies, runtime ownership, and
-
-      import discipline. They are structural requirements, not style preferences.'
-- kind: family
   id: skill-guidelines.identity-contract
-  title: 1. Skill identity and contract come first
+  title: Skill identity and contract
   children:
-  - kind: guidance
-    id: skill-guidelines.identity-contract.guidance-001
-    statement: '**1. Skill identity and contract come first** — every skill has a stable
-
-      dash-separated name and declares its dependency and interface contract before
-
-      workflow instructions.'
   - kind: rule
     id: skill-guidelines.identity-contract.requirement-001
     assertions:
     - id: source-block
       modality: required
-      statement: 'The skill directory name and frontmatter `name:` must match exactly. Skill names
-
-        must be lower-case, dash-separated, and at least two words:'
+      statement: The skill directory name and frontmatter `name:` must match exactly; skill names are
+        lower-case, dash-separated, and contain at least two words.
       atomicity: pending
   - kind: guidance
     id: skill-guidelines.identity-contract.example-001
@@ -79,67 +57,30 @@ standards:
   id: skill-guidelines.injection-lifecycle
   title: Injection lifecycle
   children:
-  - kind: guidance
-    id: skill-guidelines.injection-lifecycle.guidance-001
-    statement: '**Injection lifecycle**'
-  - kind: guidance
-    id: skill-guidelines.injection-lifecycle.guidance-002
-    statement: '`../../skills/skill-maker/_rtx/_blueprint_syncer.py` injects and refreshes the
-
-      generated artifacts for autodiscoverable modules:'
-  - kind: guidance
-    id: skill-guidelines.injection-lifecycle.guidance-003
-    statement: "- the generated contract block placed immediately after the YAML frontmatter in\n  `SKILL.md`"
-  - kind: guidance
-    id: skill-guidelines.injection-lifecycle.guidance-004
-    statement: "- the generated owner-facing interface sections placed immediately after the\n  contract\
-      \ block"
-  - kind: guidance
-    id: skill-guidelines.injection-lifecycle.guidance-005
-    statement: "- repo-level manifests such as\n  `references/blueprint/runtime_dependencies.json`"
   - kind: rule
     id: skill-guidelines.injection-lifecycle.requirement-001
     assertions:
     - id: source-block
       modality: required
-      statement: 'That generated content is not user-authored. Do not edit it by hand. These
-
-        checks are enforced on every commit by `validators/runner.py` (called from
-
-        `.githooks/pre-commit`) via the skill-maker validators.'
+      statement: Generated contract blocks, interface sections, and repository manifests are derived;
+        do not edit them by hand.
       atomicity: pending
 - kind: family
   id: skill-guidelines.skill-taxonomy
-  title: 2. Skill taxonomy
+  title: Skill discovery catalog
   children:
   - kind: rule
     id: skill-guidelines.skill-taxonomy.requirement-001
     assertions:
     - id: source-block
       modality: required
-      statement: '**2. Skill catalog** — autodiscoverable parent modules declare
-
-        `discovery.catalog`, `discovery.activated_by`, and `discovery.persistent_modifier`
-
-        in `blueprint.yaml` using the configured fields in
-
-        `references/blueprint/module.schema.json`. These fields provide user-facing
-
-        discovery and documentation metadata; they do not grant authorization.'
+      statement: Autodiscoverable parent modules declare `discovery.catalog`, `discovery.activated_by`,
+        and `discovery.persistent_modifier` in `blueprint.yaml`. These fields provide discovery metadata;
+        they do not grant authorization.
       atomicity: pending
-  - kind: guidance
-    id: skill-guidelines.skill-taxonomy.guidance-001
-    applies_when:
-      fact: node.catalog.domain
-      equals: research
-    statement: 'For research-domain skills applied to `.tex` files: check whether a
-
-      top-of-document profile comment exists before proceeding; if not, use
-
-      `make-tex-docstring` first.'
 - kind: family
   id: skill-guidelines.personal-override-structure
-  title: 3. `my-X` naming and structure
+  title: Personal override naming and structure
   applies_when:
     fact: node.is-personal-override
     equals: true
@@ -149,9 +90,7 @@ standards:
     assertions:
     - id: source-block
       modality: required
-      statement: '**3. `my-X` naming and structure** — a personal override of upstream skill `X`
-
-        is named `my-X`. Every `my-X` skill must follow this layout:'
+      statement: A personal override of upstream skill `X` is named `my-X`.
       atomicity: pending
   - kind: guidance
     id: skill-guidelines.personal-override-structure.guidance-001
@@ -161,42 +100,20 @@ standards:
     assertions:
     - id: source-block
       modality: required
-      statement: "- Then a **REQUIRED — NON-NEGOTIABLE** instruction to invoke the original `X`\n  skill\
-        \ at the bottom."
+      statement: A personal override ends with a required instruction to invoke the original `X` skill.
       atomicity: pending
 - kind: family
   id: skill-guidelines.trigger-description
-  title: 5. Frontmatter `description:` is a trigger declaration, not a summary
+  title: Frontmatter description declares triggers
   children:
   - kind: rule
     id: skill-guidelines.trigger-description.requirement-001
     assertions:
     - id: source-block
       modality: required
-      statement: '**5. Frontmatter `description:` is a trigger declaration, not a summary** —
-
-        write it as "Use when..." followed by the triggering conditions and symptoms
-
-        that signal this skill applies. Never summarize the workflow, steps, or outputs
-
-        in the description.'
+      statement: Write frontmatter `description:` as "Use when..." plus triggering conditions or symptoms;
+        omit workflow steps and outputs.
       atomicity: pending
-- kind: family
-  id: skill-guidelines.change-publication-workflow
-  title: 8. Commit and push after every skill change
-  applies_when:
-    fact: task.kind
-    equals: publish-skill-change
-  children:
-  - kind: guidance
-    id: skill-guidelines.change-publication-workflow.guidance-001
-    statement: '**8. Commit and push after every skill change** — when a skill is created or
-
-      modified and the result is complete, show the user the diff and ask for
-
-      confirmation before committing. Once confirmed, stage the changed files,
-
-      commit, and push to `origin`.'
 - kind: procedure
   id: node-standards.remedies.migrate-instruction-module-identity
   title: Migrate an instruction module to a canonical identity

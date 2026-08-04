@@ -1,6 +1,6 @@
 schema_version: 6
 standard_version: 1.0.0
-revision: 9
+revision: 11
 id: node-standards.behavioral-source
 canonical_path: references/node-standards/behavioral-source.standard.yaml
 title: Behavioral Source Standard
@@ -9,8 +9,8 @@ imports:
   node:
     standard_id: node-standards.node
     standard_version: 1.0.0
-    revision: 9
-    digest: sha256:438a67a64ba97196547699e63ba3a66c3dc36979726f6b0818bd0c7e19423540
+    revision: 11
+    digest: sha256:8f496d1cd7ea867e2fd9c1b10875ab4d10eccb75b088b3acb6437854115208f0
     artifact:
       kind: artifact
       ref: artifact.node-standard
@@ -19,27 +19,20 @@ standards:
   id: skill-guidelines.canonical-interface-names
   title: Canonical interface names
   children:
-  - kind: guidance
-    id: skill-guidelines.canonical-interface-names.guidance-001
-    statement: '**Canonical interface names**'
-  - kind: guidance
-    id: skill-guidelines.canonical-interface-names.guidance-002
-    statement: 'Every blueprint interface has a canonical fully qualified name:'
-  - kind: guidance
-    id: skill-guidelines.canonical-interface-names.guidance-003
-    statement: '- module export: `<module>.interface.<name>`'
-  - kind: guidance
-    id: skill-guidelines.canonical-interface-names.guidance-004
-    statement: '- source-owned interface: `<module>.source.<source>.interface.<name>`'
   - kind: rule
     id: skill-guidelines.canonical-interface-names.requirement-001
     assertions:
+    - id: module-export-name
+      modality: required
+      statement: A module export's canonical ID is `<module>.interface.<name>`.
+    - id: source-interface-name
+      modality: required
+      statement: A source-owned interface's canonical ID is
+        `<module>.source.<source>.interface.<name>`.
     - id: source-block
       modality: required
-      statement: 'The local `<name>` is the final component of the interface ID.
-
-        It must be dash-separated and must **not** contain `.`.'
-      atomicity: pending
+      statement: The local `<name>` is the final component of the interface ID; it must be
+        dash-separated and contain no `.`.
   - kind: guidance
     id: skill-guidelines.canonical-interface-names.guidance-005
     statement: 'The host-facing compatibility invocation form for a process-bound
@@ -67,15 +60,19 @@ standards:
   id: node-standards.source-interface-ownership
   title: Source-interface field ownership
   children:
-  - kind: guidance
-    id: skill-guidelines.canonical-blueprint-ownership.guidance-001
-    statement: '- a source interface''s `description` describes what the interface does.'
-  - kind: guidance
-    id: skill-guidelines.canonical-blueprint-ownership.guidance-002
-    statement: "- its `usage` provides the complete invocation argument\n  template."
-  - kind: guidance
-    id: skill-guidelines.canonical-blueprint-ownership.guidance-003
-    statement: "- `patterns[*].notes` gives mode-specific detail where multiple calling modes\n  exist."
+  - kind: rule
+    id: node-standards.source-interface-ownership.requirement
+    assertions:
+    - id: description-owned
+      modality: required
+      statement: A source interface's `description` states what the interface does.
+    - id: usage-complete
+      modality: required
+      statement: A source interface's `usage` provides its complete invocation argument template.
+    - id: pattern-notes-specific
+      modality: required
+      statement: '`patterns[*].notes` contains only mode-specific detail needed when an interface has
+        multiple calling modes.'
 - kind: family
   id: node-standards.private-runtime-interface-binding
   title: Private runtime interface binding
@@ -205,4 +202,5 @@ domain_facts:
 links:
   interface-name-remedy: {source: {kind: family, ref: skill-guidelines.canonical-interface-names}, relation: remedied-by, target: {kind: procedure, ref: node-standards.remedies.migrate-interface-name}, lifecycle: active, resolution: {state: resolved}}
   source-blueprint-remedy: {source: {kind: family, ref: node-standards.behavioral-source-blueprint-authoring}, relation: remedied-by, target: {kind: procedure, ref: node-standards.remedies.restore-local-source-conformance}, lifecycle: active, resolution: {state: resolved}}
+  source-interface-ownership-remedy: {source: {kind: family, ref: node-standards.source-interface-ownership}, relation: remedied-by, target: {kind: procedure, ref: node-standards.remedies.restore-local-source-conformance}, lifecycle: active, resolution: {state: resolved}}
   private-binding-remedy: {source: {kind: family, ref: node-standards.private-runtime-interface-binding}, relation: remedied-by, target: {kind: procedure, ref: node-standards.remedies.restore-source-interface-binding}, lifecycle: active, resolution: {state: resolved}}

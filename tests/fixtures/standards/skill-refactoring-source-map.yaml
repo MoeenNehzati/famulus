@@ -44,6 +44,7 @@ units:
 - source: skill-smells.md
   line: 9
   text: '**Analog:** God Class / Long Method.'
+  retired: Analogy-only label did not affect diagnosis or remedy selection.
   targets:
   - target_ref: skill-refactoring.smells.bloated-skill
     field: /children/1/meaning
@@ -74,6 +75,7 @@ units:
 - source: skill-smells.md
   line: 14
   text: '**Analog:** Wrong layer of abstraction.'
+  retired: Analogy-only label did not affect diagnosis or remedy selection.
   targets:
   - target_ref: skill-refactoring.smells.executable-logic
     field: /children/1/meaning
@@ -102,6 +104,7 @@ units:
 - source: skill-smells.md
   line: 19
   text: '**Analog:** Missing interface declaration.'
+  retired: Analogy-only label did not affect diagnosis or remedy selection.
   targets:
   - target_ref: skill-refactoring.smells.missing-contract-artifacts
     field: /children/1/meaning
@@ -131,6 +134,7 @@ units:
 - source: skill-smells.md
   line: 24
   text: '**Analog:** Duplicated Code.'
+  retired: Analogy-only label did not affect diagnosis or remedy selection.
   targets:
   - target_ref: skill-refactoring.smells.duplicated-guidelines
     field: /children/1/meaning
@@ -160,6 +164,7 @@ units:
 - source: skill-smells.md
   line: 29
   text: '**Analog:** Mixed Levels of Abstraction.'
+  retired: Analogy-only label did not affect diagnosis or remedy selection.
   targets:
   - target_ref: skill-refactoring.smells.mixed-abstraction-levels
     field: /children/1/meaning
@@ -189,6 +194,7 @@ units:
 - source: skill-smells.md
   line: 34
   text: '**Analog:** Comments that restate the code.'
+  retired: Analogy-only label did not affect diagnosis or remedy selection.
   targets:
   - target_ref: skill-refactoring.smells.dead-content
     field: /children/1/meaning
@@ -217,6 +223,7 @@ units:
 - source: skill-smells.md
   line: 39
   text: '**Analog:** Undocumented public API.'
+  retired: Analogy-only label did not affect diagnosis or remedy selection.
   targets:
   - target_ref: skill-refactoring.smells.undeclared-interface
     field: /children/1/meaning
@@ -266,6 +273,7 @@ units:
 - source: skill-smells.md
   line: 48
   text: '**Analog:** Feature Envy / wrong module.'
+  retired: Analogy-only label did not affect diagnosis or remedy selection.
   targets:
   - target_ref: skill-refactoring.smells.state-in-wrong-location
     field: /children/1/meaning
@@ -315,6 +323,7 @@ units:
 - source: skill-smells.md
   line: 57
   text: '**Analog:** Long Method.'
+  retired: Analogy-only label did not affect diagnosis or remedy selection.
   targets:
   - target_ref: skill-refactoring.smells.monolithic-script
     field: /children/1/meaning
@@ -343,6 +352,7 @@ units:
 - source: skill-smells.md
   line: 62
   text: '**Analog:** God Class.'
+  retired: Analogy-only label did not affect diagnosis or remedy selection.
   targets:
   - target_ref: skill-refactoring.smells.god-skill
     field: /children/1/meaning
@@ -371,6 +381,7 @@ units:
 - source: skill-smells.md
   line: 67
   text: '**Analog:** Middle Man.'
+  retired: Analogy-only label did not affect diagnosis or remedy selection.
   targets:
   - target_ref: skill-refactoring.smells.thin-skill
     field: /children/1/meaning
@@ -399,6 +410,7 @@ units:
 - source: skill-smells.md
   line: 72
   text: '**Analog:** Inappropriate Intimacy.'
+  retired: Analogy-only label did not affect diagnosis or remedy selection.
   targets:
   - target_ref: skill-refactoring.smells.leaky-internals
     field: /children/1/meaning

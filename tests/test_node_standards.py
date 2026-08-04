@@ -4,6 +4,7 @@ from collections import Counter
 import hashlib
 import json
 from pathlib import Path
+import re
 
 import yaml
 
@@ -196,6 +197,7 @@ def _semantic_nodes(items: list[dict]) -> dict[str, dict]:
 def test_migration_manifest_proves_complete_unique_legacy_semantics() -> None:
     audit = _migration_audit()
     atomized = _atomized_assertions()
+    economy_retirements = set(audit["economy_retirements"])
     ownership = Counter(
         semantic_id
         for path in NODE_STANDARDS.glob("*.standard.yaml")
@@ -209,6 +211,7 @@ def test_migration_manifest_proves_complete_unique_legacy_semantics() -> None:
     for original, replacements in atomized.items():
         reconstructed.difference_update(replacements)
         reconstructed.add(original)
+    reconstructed.update(economy_retirements)
 
     payload = "\n".join(sorted(reconstructed)) + "\n"
     assert len(reconstructed) == audit["source_semantic_items"]
@@ -218,6 +221,7 @@ def test_migration_manifest_proves_complete_unique_legacy_semantics() -> None:
     assert all(ownership[item] == 1 for item in reconstructed if item in ownership)
     assert audit["duplicate_items"] == 0
     assert audit["unresolved_items"] == 0
+    assert all(ownership[item] == 0 for item in economy_retirements)
 
     rewritten = set(audit["rewritten_same_id_leaves"])
     replacements = {item for values in atomized.values() for item in values}
@@ -239,6 +243,85 @@ def test_migration_manifest_proves_complete_unique_legacy_semantics() -> None:
     ).hexdigest()
     assert len(exact_leaves) == audit["exact_unchanged_leaf_items"]
     assert digest == audit["exact_unchanged_leaf_digest"]
+
+
+def test_context_guidance_contains_no_formatting_only_headings() -> None:
+    headings: list[str] = []
+    for path in NODE_STANDARDS.glob("*.standard.yaml"):
+        for semantic_id, item in _semantic_nodes(_load(path)["standards"]).items():
+            if item.get("kind") != "guidance":
+                continue
+            statement = item["statement"].strip()
+            if statement.startswith("#") and statement.lstrip("#").startswith(" "):
+                headings.append(f"{path.name}:{semantic_id}")
+
+    assert headings == []
+
+
+def test_standard_prose_contains_no_legacy_presentation_scaffolding() -> None:
+    residue: list[str] = []
+    for path in NODE_STANDARDS.glob("*.standard.yaml"):
+        for semantic_id, item in _semantic_nodes(_load(path)["standards"]).items():
+            title = item.get("title", "").strip()
+            statement = item.get("statement", "").strip()
+            if title and re.match(r"^\d+\.\s", title):
+                residue.append(f"{path.name}:{semantic_id}:numbered-title")
+            if title and statement:
+                plain_title = re.sub(r"^\d+\.\s*", "", title).rstrip(". —-").lower()
+                plain_statement = re.sub(r"[`*_#]", "", statement)
+                plain_statement = re.sub(r"^\d+\.\s*", "", plain_statement)
+                plain_statement = plain_statement.rstrip(". —-").lower()
+                if plain_statement == plain_title:
+                    residue.append(f"{path.name}:{semantic_id}:repeated-title")
+
+    assert residue == []
+
+
+def test_node_standards_exclude_workflow_only_and_analogy_only_material() -> None:
+    semantic_ids = {
+        semantic_id
+        for path in NODE_STANDARDS.glob("*.standard.yaml")
+        for semantic_id in _semantic_ids(_load(path)["standards"])
+    }
+
+    assert "skill-guidelines.change-publication-workflow" not in semantic_ids
+    assert "skill-guidelines.skill-taxonomy.guidance-001" not in semantic_ids
+    assert not any(semantic_id.endswith(".analog") for semantic_id in semantic_ids)
+
+
+def test_normative_and_procedural_content_uses_operational_semantic_kinds() -> None:
+    behavioral = _semantic_nodes(
+        _load(NODE_STANDARDS / "behavioral-source.standard.yaml")["standards"]
+    )
+    instruction = _semantic_nodes(
+        _load(NODE_STANDARDS / "instruction-node.standard.yaml")["standards"]
+    )
+    python_module = _load(NODE_STANDARDS / "python-module.standard.yaml")
+    python_nodes = _semantic_nodes(python_module["standards"])
+
+    source_ownership = behavioral[
+        "node-standards.source-interface-ownership.requirement"
+    ]
+    assert source_ownership["kind"] == "rule"
+    assert {item["id"] for item in source_ownership["assertions"]} == {
+        "description-owned",
+        "usage-complete",
+        "pattern-notes-specific",
+    }
+    assert instruction["skill-guidelines.output-focused-writing.requirement"][
+        "kind"
+    ] == "rule"
+    assert python_nodes["node-standards.add-validator.requirement"]["kind"] == (
+        "rule"
+    )
+    assert python_nodes["node-standards.procedures.add-validator"]["kind"] == (
+        "procedure"
+    )
+    assert any(
+        link["source"]["ref"] == "skill-guidelines.adding-validator"
+        and link["target"]["ref"] == "node-standards.procedures.add-validator"
+        for link in python_module["links"].values()
+    )
 
 
 def test_atomized_assertions_have_exact_unique_replacements() -> None:
@@ -291,7 +374,7 @@ def test_remaining_mixed_families_are_split_by_structure_and_gateway() -> None:
 
     assert "skill-guidelines.canonical-blueprint-ownership.requirement-001" in node
     assert "skill-guidelines.canonical-blueprint-ownership.requirement-002" in node
-    assert "skill-guidelines.canonical-blueprint-ownership.guidance-001" in behavioral
+    assert "node-standards.source-interface-ownership.requirement" in behavioral
     assert "skill-guidelines.canonical-blueprint-ownership.requirement-003" in instruction_behavioral
     assert "skill-guidelines.canonical-blueprint-ownership.requirement-004" in instruction_behavioral
     assert "skill-guidelines.canonical-blueprint-ownership.requirement-005" in instruction_behavioral
@@ -315,8 +398,9 @@ def test_private_runtime_rules_are_split_between_python_and_instruction_sources(
     python_behavioral = _closure_ids("python-behavioral-source")
     instruction_behavioral = _closure_ids("instruction-behavioral-source")
 
-    for suffix in ("requirement-001", "requirement-002", "requirement-003", "requirement-004"):
+    for suffix in ("requirement-001", "requirement-002", "requirement-004"):
         assert f"skill-guidelines.private-runtime-files.{suffix}" in python_behavioral
+    assert "skill-guidelines.private-runtime-files.requirement-003" not in python_behavioral
     assert "skill-guidelines.private-runtime-files.requirement-005" not in python_behavioral
     assert "skill-guidelines.private-runtime-files.requirement-005" in instruction_behavioral
     assert "node-standards.public-runtime-doc-boundary.requirement" in instruction_behavioral
@@ -396,10 +480,6 @@ def test_conditional_policies_use_target_facts_in_the_narrowest_layer() -> None:
     assert predicates["skill-guidelines.personal-override-structure"] == {
         "fact": "node.is-personal-override",
         "equals": True,
-    }
-    assert predicates["skill-guidelines.change-publication-workflow"] == {
-        "fact": "task.kind",
-        "equals": "publish-skill-change",
     }
 
 
