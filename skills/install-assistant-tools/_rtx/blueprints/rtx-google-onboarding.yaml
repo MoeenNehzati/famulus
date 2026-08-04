@@ -1,0 +1,34 @@
+content:
+- _google_onboarding\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: install-assistant-tools-rtx.source.rtx-init
+  version: 1
+description: Self-contained Google onboarding step run after core install completes -- authorizes selected Google services through connect-google and binds the resulting shared credential to each granted service's owning skill, entirely through the dispatcher. Exposes no callable interface of its own; only _phase_entry.py imports it directly.
+gateway:
+  language: Python
+  path: _google_onboarding.py
+id: install-assistant-tools-rtx.source.rtx-google-onboarding
+interfaces: {}
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+schema_version: 5
+uses_interfaces:
+- interface: connect-google.interface.client-status
+  version: 1
+- interface: connect-google.interface.authorize-services
+  version: 1
+- interface: cloud-files.interface.use-google-credential
+  version: 1
+- interface: g-calendar.interface.use-google-credential
+  version: 1
+- interface: email-client.interface.accounts-use-google-credential
+  version: 1
+version: 1

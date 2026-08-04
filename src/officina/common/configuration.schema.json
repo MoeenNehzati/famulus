@@ -230,7 +230,14 @@
         "description": {"$ref": "#/definitions/nonEmptyString"},
         "command": {"$ref": "#/definitions/nonEmptyString"},
         "schedule": {"$ref": "#/definitions/nonEmptyString"},
-        "enabled": {"type": "boolean"}
+        "enabled": {"type": "boolean"},
+        "success": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "require_inner_status": {"$ref": "#/definitions/nonEmptyString"}
+          }
+        }
       }
     },
     "cloudFilesConfig": {
@@ -240,12 +247,14 @@
       "properties": {
         "remote_llm_root": {"type": "string"},
         "timeout_seconds": {"type": "integer", "minimum": 1},
-        "credentials_path": {"type": "string"}
+        "credentials_path": {"type": "string"},
+        "credential_id": {"$ref": "#/definitions/nonEmptyString"}
       },
       "anyOf": [
         {"required": ["remote_llm_root"]},
         {"required": ["timeout_seconds"]},
-        {"required": ["credentials_path"]}
+        {"required": ["credentials_path"]},
+        {"required": ["credential_id"]}
       ]
     }
   }

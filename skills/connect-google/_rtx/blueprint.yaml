@@ -2,25 +2,37 @@ authority:
   owns_filesystem:
   - allowed_readers:
     - cloud-files.interface.setup-oauth
+    - connect-google.interface.authorize-services
     - connect-google.interface.client-status
     - email-client.interface.accounts-setup-oauth
     - g-calendar.interface.setup-oauth
     match: exact
-    path: $HOME/.config/connect-google/client.json
+    path: platform Famulus config root (see common.interface.google-credentials) / connect-google/client.json
     reason: This interface is the only writer of the shared OAuth client; service
       setup interfaces may read it for authorization.
 children: {}
 content:
 - _client_config\.py
+- _loopback_oauth\.py
 - __init__\.py
 - tests/.*
 description: Code module for the connect-google skill.
 exports:
+  connect-google-rtx.interface.authorize-services:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - connect-google
+      - install-assistant-tools
+      - install-assistant-tools-rtx
+    source_interface: connect-google-rtx.source.rtx-authorize-services.interface.authorize-services
   connect-google-rtx.interface.client-status:
     access:
       allow_all_modules: false
       allowed_callers:
       - connect-google
+      - install-assistant-tools
+      - install-assistant-tools-rtx
     source_interface: connect-google-rtx.source.rtx-client-config.interface.client-status
   connect-google-rtx.interface.install-client:
     access:
@@ -36,6 +48,10 @@ namespace_exports: {}
 node_type: module
 schema_version: 5
 sources:
+  connect-google-rtx.source.rtx-authorize-services:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-authorize-services.yaml
   connect-google-rtx.source.rtx-client-config:
     blueprint:
       base: module-root

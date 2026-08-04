@@ -102,6 +102,8 @@ uses_interfaces:
   version: 1
 - interface: g-calendar.interface.setup-oauth
   version: 1
+- interface: g-calendar.interface.use-google-credential
+  version: 1
 - interface: g-calendar.interface.ensure-oauth
   version: 1
 - interface: g-calendar.interface.scripts-gcal

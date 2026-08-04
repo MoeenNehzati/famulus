@@ -96,6 +96,15 @@ exports:
     facade_interface:
       interface: cloud-files-rtx.interface.setup-oauth
       version: 1
+  cloud-files.interface.use-google-credential:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - install-assistant-tools
+      - install-assistant-tools-rtx
+    facade_interface:
+      interface: cloud-files-rtx.interface.use-google-credential
+      version: 1
   cloud-files.interface.write-config:
     access:
       allow_all_modules: false

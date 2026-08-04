@@ -21,8 +21,7 @@ dependencies:
   reason: Imports Python source from _rtx/_install_launcher/__init__.py.
   source: install-assistant-tools-rtx.source.rtx-install-launcher-init
   version: 1
-description: Installs selected assistant command launchers, profile configuration,
-  worker directories, and default-assistant configuration.
+description: Installs selected assistant command launchers, profile configuration, worker directories, and default-assistant configuration.
 gateway:
   language: Python
   path: _agent_launchers.py
@@ -32,30 +31,27 @@ interfaces:
     contract:
       arguments:
         agents:
-          description: Comma-separated assistant and collab and coauthor selection.
+          description: Comma-separated assistant and collab and coauthor selection. Only the listed agents are installed by direct invocation of this interface; the phase-entry orchestrator additionally forces assistant into every installation it runs regardless of this selection, because assistant is a required invoke-skill prerequisite.
           required: true
           sensitivity: public
           type:
             kind: string
         options:
-          description: Optional home and bin and host-config paths plus default LLM
-            and dry-run choice.
+          description: Optional home and bin and host-config paths plus default LLM and install mode and dry-run choice.
           required: false
           sensitivity: user-private
           type:
             kind: string
             sensitivity: user-private
         repo-root:
-          description: AI repository checkout containing launcher and agent profile
-            sources.
+          description: AI repository checkout containing launcher and agent profile sources.
           required: true
           sensitivity: user-private
           type:
             kind: string
             sensitivity: user-private
       caller_warnings:
-      - external-side-effect: Non-dry-run execution installs selected launchers and
-          profiles and may update the shell startup file.
+      - external-side-effect: Non-dry-run execution installs selected launchers and profiles and may update the shell startup file.
       direct_io:
         network: []
         reads:
@@ -73,8 +69,7 @@ interfaces:
           system: filesystem
         writes:
         - access: configure
-          content: launchers and profile configuration and worker directories and
-            shell default
+          content: launchers and profile configuration and worker directories and shell default
           formats:
           - python
           - shell
@@ -82,7 +77,7 @@ interfaces:
           - directory
           id: write-1
           medium: home-filesystem
-          path: caller-selected home and bin and assistant config paths
+          path: caller-selected home and bin and assistant config paths; worker directories default to the platform Famulus state dir in plugin mode and to <repo-root>/workers in development mode
           sensitivity: user-private
           system: filesystem
         - access: write
@@ -105,26 +100,22 @@ interfaces:
           may_occur_in_outcomes:
           - installed
           reversibility:
-            compensatable: Installed launchers and profiles can be removed by the
-              companion uninstaller.
+            compensatable: Installed launchers and profiles can be removed by the companion uninstaller.
           value_source:
             argument_ref: agents
             kind: argument
         lifecycle: finite
         mutation_safety:
           atomicity:
-            per_effect_only: Each launcher and profile and startup block is written
-              separately.
+            per_effect_only: Each launcher and profile and startup block is written separately.
           concurrent_invocations:
             unsafe: Concurrent installers are not serialized.
           idempotency:
-            idempotent: Repeating the same selection reconciles equivalent target
-              files and startup configuration.
+            idempotent: Repeating the same selection reconciles equivalent target files and startup configuration.
           on_uncertain_completion:
             verify_then_decide: Inspect reported targets before retrying.
           partial_effects_on_failure:
-            possible: Earlier selected launchers may be installed before a later target
-              fails.
+            possible: Earlier selected launchers may be installed before a later target fails.
           rollback_on_failure:
             unavailable: Completed earlier writes are not rolled back automatically.
         state_effect: mutating
@@ -135,8 +126,7 @@ interfaces:
       interaction:
         mode: unattended
       outcomes:
-      - caller_action: Verify the selected launcher commands from the reported bin
-          directory.
+      - caller_action: Verify the selected launcher commands from the reported bin directory.
         class: success
         effects:
         - launcher-state
@@ -157,7 +147,7 @@ interfaces:
       outputs:
       - audience: both
         cardinality:
-          maximum: null
+          maximum:
           minimum: 1
         description: Ordered installation actions or dry-run plan.
         direct_io_ref: write-2
@@ -172,8 +162,7 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Install per-agent bin launcher, profile config, worker dir, and ASSISTANT_DEFAULT
-      for the given agents.
+    description: Install per-agent bin launcher, profile config, worker dir, and ASSISTANT_DEFAULT for the given agents. Direct invocation of this interface installs exactly the --agents selection; when this launcher installation runs as part of the phase-entry orchestrator, assistant is additionally forced into the installed set regardless of selection, because it is a required invoke-skill prerequisite (feedback item 18) and is not user-selectable. Worker directories are created under the platform Famulus state dir in plugin mode (--mode plugin, the default plugin-cache checkout is a public/immutable tree) or under <repo-root>/workers in development mode (--mode development, an explicit live checkout).
     process_binding:
       entry: Interface
       kind: process
@@ -188,6 +177,7 @@ interfaces:
         - --shell-rc
         - --default-llm
         - --dry-run
+        - --mode
         flag_patterns:
           --agents: ^.*$
           --bin-dir: ^.+$
@@ -197,14 +187,14 @@ interfaces:
           --home: ^.+$
           --repo-root: ^.+$
           --shell-rc: ^.+$
+          --mode: ^(development|plugin)$
         max_positionals: 0
         min_positionals: 0
         name: owner
         required_flags:
         - --repo-root
-    usage: --repo-root DIR --agents LIST [--home DIR] [--bin-dir DIR] [--codex-home
-      DIR] [--claude-home DIR] [--shell-rc FILE] [--default-llm {claude,codex}] [--dry-run]
-    version: 2
+    usage: --repo-root DIR --agents LIST [--home DIR] [--bin-dir DIR] [--codex-home DIR] [--claude-home DIR] [--shell-rc FILE] [--default-llm {claude,codex}] [--mode {development,plugin}] [--dry-run]
+    version: 3
 node_type: behavioral_source
 platform_support:
   linux: true
@@ -214,5 +204,7 @@ runtime_dependencies: []
 schema_version: 5
 uses_interfaces:
 - interface: common.interface.toml-io
+  version: 1
+- interface: common.interface.famulus-paths
   version: 1
 version: 1

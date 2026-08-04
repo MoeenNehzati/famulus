@@ -122,6 +122,8 @@ interfaces:
 node_type: behavioral_source
 schema_version: 5
 uses_interfaces:
+- interface: connect-google.interface.authorize-services
+  version: 1
 - interface: connect-google.interface.client-status
   version: 1
 - interface: connect-google.interface.install-client

@@ -756,8 +756,10 @@ def test_v5_stale_certification_is_an_advisory_warning(
 
 def test_host_resolution_warns_for_unrelated_invalid_blueprint(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     root, _graph = _load_v5_dispatch_graph(tmp_path)
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     outsider_source = root / "modules" / "outsider" / "blueprints" / "caller.yaml"
     declaration = yaml.safe_load(outsider_source.read_text(encoding="utf-8"))
     declaration["uses_interfaces"] = [

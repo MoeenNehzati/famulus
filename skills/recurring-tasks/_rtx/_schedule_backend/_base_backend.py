@@ -2,9 +2,39 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import sys
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping, Protocol
+
+from officina.common.famulus_paths import resolve_famulus_paths
+
+
+def _default_famulus_paths():
+    return resolve_famulus_paths(platform=sys.platform, home=Path.home())
+
+
+def _default_runtime_resolver() -> Path:
+    """Fixed, release-independent launch-resolver path beneath runtime_root.
+
+    Mirrors the same ``bootstrap/resolvers/v1/launch.py`` relative path the
+    installer's generated dispatcher/invoke-skill launchers already invoke:
+    the file deployed there is ``officina.install.resolvers.launch``'s
+    source, which reads ``current.json`` and execs into the active
+    managed-runtime release's interpreter. Backends invoke this stable path
+    instead of embedding ``sys.executable`` -- the interpreter that happened
+    to run the sync script -- so scheduled jobs keep working across runtime
+    upgrades.
+    """
+    return _default_famulus_paths().runtime_root / "bootstrap" / "resolvers" / "v1" / "launch.py"
+
+
+def _default_config_root() -> Path:
+    return _default_famulus_paths().recurring_config_root
+
+
+def _default_state_root() -> Path:
+    return _default_famulus_paths().recurring_state_root
 
 
 @dataclass(frozen=True)
@@ -33,6 +63,16 @@ class ScheduleContext:
     log_dir: Path
     unit_dir: Path | None = None
     live: bool = True
+    # Backend-owned scheduler context (feedback items 7, 17): the stable
+    # launch resolver and config/state roots backends need to generate
+    # release-independent launch configs, plus the default assistant
+    # backend to select when a job doesn't override it. All default to the
+    # real host's resolution so existing call sites that construct
+    # ScheduleContext without these keep working unchanged.
+    runtime_resolver: Path = field(default_factory=_default_runtime_resolver)
+    config_root: Path = field(default_factory=_default_config_root)
+    state_root: Path = field(default_factory=_default_state_root)
+    assistant_default: str = "claude"
 
 
 class ScheduleBackendUnsupported(RuntimeError):

@@ -26,6 +26,9 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import Literal, Sequence
+
+InstallMode = Literal["development", "plugin"]
 
 REPO_SRC = Path(__file__).resolve().parents[3] / "src"
 if str(REPO_SRC) not in sys.path:
@@ -33,6 +36,7 @@ if str(REPO_SRC) not in sys.path:
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from officina.common import toml_io
+from officina.common.famulus_paths import resolve_famulus_paths
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 if __package__:
@@ -44,9 +48,9 @@ if __package__:
 else:
     from _state_record import Manifest, manifest_path
 if __package__:
-    from ._fs_links import log, make_link
+    from ._fs_links import log, make_link, default_bin_dir
 else:
-    from _fs_links import log, make_link
+    from _fs_links import log, make_link, default_bin_dir
 if __package__:
     from ._shell_block import ensure_rc_vars
 else:
@@ -59,6 +63,22 @@ ALL_AGENTS = ["assistant", "collab", "coauthor", "tw"]
 # tw is a bin-dir alias for tmux-workspace; it has no separate worker dir,
 # profile, or ASSISTANT_DEFAULT relevance (tmux-workspace isn't an LLM backend).
 WORKER_AGENTS = ["assistant", "collab", "coauthor"]
+
+
+def launcher_closure(selected_agents: Sequence[str], *, install_invoke_skill: bool) -> tuple[str, ...]:
+    """Expand a user's --agents selection to the set that must be installed.
+
+    `assistant` is a hard prerequisite for the invoke-skill implementation
+    (feedback item 18): when install_invoke_skill is set, it's guaranteed to
+    be present and moved to the front, regardless of whether the caller
+    explicitly selected it.
+    """
+    agents = list(dict.fromkeys(selected_agents))  # de-dupe, preserve order
+    if install_invoke_skill:
+        if "assistant" in agents:
+            agents.remove("assistant")
+        agents.insert(0, "assistant")
+    return tuple(agents)
 
 
 def install_agent_launcher_files(source_bin_dir: Path, bin_dir: Path, agent: str, dry_run: bool, manifest: Manifest | None) -> None:
@@ -74,14 +94,37 @@ def install_agent_launcher_files(source_bin_dir: Path, bin_dir: Path, agent: str
     )
 
 
-def install_worker_dir(repo_root: Path, agent: str, dry_run: bool) -> None:
+def worker_root_for_mode(mode: InstallMode, repo_root: Path, home: Path) -> Path:
+    """Resolve the parent dir workers are created under, by install mode.
+
+    Plugin-mode installs run from an immutable/public plugin-cache checkout,
+    so workers (which hold live session data) go under the FamulusPaths
+    state dir instead. Development-mode installs run against an explicit
+    live repo checkout the user supplied, so `repo_root / "workers"` is
+    correct there — it's a live checkout, not a public/immutable tree.
+    """
+    if mode == "plugin":
+        return resolve_famulus_paths(platform=sys.platform, home=home).worker_root
+    return repo_root / "workers"
+
+
+def install_worker_dir(
+    repo_root: Path,
+    agent: str,
+    dry_run: bool,
+    *,
+    mode: InstallMode = "development",
+    home: Path | None = None,
+) -> Path | None:
     if agent not in WORKER_AGENTS:
-        return
-    wdir = repo_root / "workers" / agent
+        return None
+    home = home or Path.home()
+    wdir = worker_root_for_mode(mode, repo_root, home) / agent
     if dry_run:
         log(f"Would create worker dir {wdir}")
     else:
         wdir.mkdir(parents=True, exist_ok=True)
+    return wdir
 
 
 def write_profile_config_with_absolute_agent_path(
@@ -246,13 +289,17 @@ def run(
     default_llm: str = "claude",
     dry_run: bool = False,
     manifest: Manifest | None = None,
+    mode: InstallMode = "development",
+    install_invoke_skill: bool = False,
 ) -> None:
     home = home or Path.home()
-    bin_dir = bin_dir or home / "Documents" / "_rtx" / "bin"
+    bin_dir = bin_dir or default_bin_dir(home=home)
     source_bin_dir = repo_root / "skills" / "install-assistant-tools" / "_rtx/assets/bin"
     profiles_dir = repo_root / "profiles"
     codex_home = codex_home or home / ".codex"
     claude_home = claude_home or home / ".claude"
+
+    agents = list(launcher_closure(agents, install_invoke_skill=install_invoke_skill))
 
     if manifest is None and not dry_run:
         manifest = Manifest(manifest_path(home))
@@ -261,7 +308,7 @@ def run(
 
     for agent in agents:
         install_agent_launcher_files(source_bin_dir, bin_dir, agent, dry_run, manifest)
-        install_worker_dir(repo_root, agent, dry_run)
+        install_worker_dir(repo_root, agent, dry_run, mode=mode, home=home)
         install_profile_for_agent(repo_root, profiles_dir, codex_home, claude_home, agent, dry_run, manifest)
 
     remove_legacy_coder_links(source_bin_dir, profiles_dir, bin_dir, codex_home, claude_home, dry_run)
@@ -311,6 +358,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--shell-rc", metavar="FILE")
     parser.add_argument("--default-llm", choices=["claude", "codex"], default="claude")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--mode", choices=["development", "plugin"], default="development",
+        help="development: worker dirs live under --repo-root/workers (live checkout). "
+             "plugin: worker dirs live under the platform Famulus state dir (default: development)")
     return parser.parse_args(argv)
 
 
@@ -329,6 +379,7 @@ def main(argv: list[str] | None = None) -> int:
         claude_home=Path(args.claude_home) if args.claude_home else None,
         shell_rc=Path(args.shell_rc) if args.shell_rc else None,
         default_llm=args.default_llm,
+        mode=args.mode,
         dry_run=args.dry_run,
     )
     return 0

@@ -90,6 +90,8 @@ uses_interfaces:
   version: 1
 - interface: email-triage.interface.scripts-filter-envelopes
   version: 1
+- interface: email-triage.interface.scripts-finalize-triage
+  version: 1
 - interface: email-triage.interface.scripts-get-cutoff
   version: 1
 - interface: email-triage.interface.scripts-log-decision

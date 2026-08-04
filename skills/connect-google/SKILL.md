@@ -17,6 +17,7 @@ Uses Interfaces:
 - `connect-google.source.instructions-create-client -> connect-google.source.instructions-connect-services.interface.connect-services@1`
 
 Public Interfaces:
+- `connect-google.interface.authorize-services`
 - `connect-google.interface.client-status`
 - `connect-google.interface.connect-services`
 - `connect-google.interface.create-client`
@@ -29,6 +30,8 @@ Public Interfaces:
 Dispatcher Interfaces:
 
 Use the installed `dispatcher` command for these process-bound interfaces:
+- `connect-google.interface.authorize-services` — Request one combined Google OAuth 2.0 PKCE grant across every selected service and store exactly the scopes Google actually granted.
+  - `dispatcher --caller-skill connect-google connect-google.interface.authorize-services --services <list> [--account-hint <email>] [--home <dir>]`
 - `connect-google.interface.client-status` — Report whether the canonical Google Desktop OAuth client is missing, valid, or invalid without exposing its secrets.
   - `dispatcher --caller-skill connect-google connect-google.interface.client-status [--home <dir>]`
 - `connect-google.interface.install-client` — Validate a Google Desktop OAuth client JSON and atomically install a private canonical copy.

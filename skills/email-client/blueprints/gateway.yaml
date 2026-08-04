@@ -98,6 +98,8 @@ uses_interfaces:
   version: 1
 - interface: email-client.interface.accounts-update
   version: 1
+- interface: email-client.interface.accounts-use-google-credential
+  version: 1
 - interface: email-client.interface.live-smoke
   version: 1
 - interface: email-client.interface.mail-attachments

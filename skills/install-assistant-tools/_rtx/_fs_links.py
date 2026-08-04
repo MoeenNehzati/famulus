@@ -9,7 +9,12 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+REPO_SRC = Path(__file__).resolve().parents[3] / "src"
+if str(REPO_SRC) not in sys.path:
+    sys.path.insert(0, str(REPO_SRC))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from officina.common.famulus_paths import resolve_famulus_paths
 
 if __package__:
     from ._state_record import Manifest
@@ -19,6 +24,15 @@ else:
 
 def log(msg: str = "") -> None:
     print(msg, flush=True)
+
+
+def default_bin_dir(*, home: Path) -> Path:
+    """Platform-correct default launcher bin dir.
+
+    Delegates to FamulusPaths.user_bin instead of the old
+    ~/Documents/_rtx/bin default, which was wrong on every platform.
+    """
+    return resolve_famulus_paths(platform=sys.platform, home=home).user_bin
 
 
 def make_link(src: Path, dst: Path, dry_run: bool, manifest: Manifest | None = None) -> None:

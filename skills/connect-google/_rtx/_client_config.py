@@ -9,14 +9,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from officina.common.oauth_json import OAuthJsonError, write_oauth_json
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 
 FORBIDDEN_KEYS = {"access_token", "refresh_token"}
 REQUIRED_INSTALLED_FIELDS = {
     "client_id",
-    "client_secret",
     "auth_uri",
     "token_uri",
     "redirect_uris",
@@ -28,7 +26,9 @@ class ClientConfigError(ValueError):
 
 
 def canonical_client_path(home: Path) -> Path:
-    return Path(home) / ".config" / "connect-google" / "client.json"
+    from officina.common.google_credentials import canonical_client_path as _canonical_client_path
+
+    return _canonical_client_path(home=Path(home), platform=sys.platform)
 
 
 def _contains_forbidden_key(value: object) -> bool:
@@ -49,6 +49,23 @@ def _require_nonempty_string(installed: dict[str, object], field: str) -> None:
         raise ClientConfigError(f"installed.{field} must be a non-empty string")
 
 
+def _require_client_secret_or_ref(installed: dict[str, object]) -> None:
+    # A freshly downloaded client (legacy discovery of cloud-files/g-calendar
+    # client.json, or a file the user is about to install) carries a plaintext
+    # client_secret. Once google_credentials.install_client has run, the
+    # canonical client.json instead carries client_secret_ref (the secret
+    # itself lives in the OS secret store). Re-validating the already-installed
+    # canonical file (client-status) must accept the ref form; validating a
+    # not-yet-installed source file must accept the plaintext form. Both forms
+    # are mutually exclusive: a payload should never carry both.
+    has_secret = isinstance(installed.get("client_secret"), str) and bool(installed["client_secret"].strip())
+    has_ref = isinstance(installed.get("client_secret_ref"), str) and bool(installed["client_secret_ref"].strip())
+    if has_secret and has_ref:
+        raise ClientConfigError("installed must not contain both client_secret and client_secret_ref")
+    if not has_secret and not has_ref:
+        raise ClientConfigError("installed.client_secret or installed.client_secret_ref must be a non-empty string")
+
+
 def validate_client_payload(payload: object) -> dict[str, object]:
     if not isinstance(payload, dict):
         raise ClientConfigError("client JSON must be an object")
@@ -64,8 +81,9 @@ def validate_client_payload(payload: object) -> dict[str, object]:
     if missing:
         fields = ", ".join(f"installed.{field}" for field in missing)
         raise ClientConfigError(f"required fields are missing: {fields}")
-    for field in ("client_id", "client_secret", "auth_uri", "token_uri"):
+    for field in ("client_id", "auth_uri", "token_uri"):
         _require_nonempty_string(installed, field)
+    _require_client_secret_or_ref(installed)
     redirect_uris = installed.get("redirect_uris")
     if not isinstance(redirect_uris, list) or not redirect_uris or not all(
         isinstance(uri, str) and uri.strip() for uri in redirect_uris
@@ -133,30 +151,18 @@ def client_status(home: Path) -> dict[str, object]:
     return result
 
 
-def install_client(source: Path, home: Path, replace: bool) -> dict[str, object]:
+def install_client(source: Path, home: Path, replace: bool, secret_backend=None) -> dict[str, object]:
+    from officina.common.google_credentials import GoogleCredentialError, install_client as _install_client
+
     payload = _load_client(Path(source))
-    destination = canonical_client_path(home)
-    existed = destination.exists() or destination.is_symlink()
-    current = None
-
-    if existed:
-        try:
-            current = _load_client(destination)
-        except ClientConfigError:
-            current = None
-        if current == payload:
-            return _result("unchanged", "desktop", destination)
-        if not replace:
-            raise ClientConfigError(
-                "a different or invalid canonical client already exists; use --replace"
-            )
-
     try:
-        write_oauth_json(destination, payload)
-    except OAuthJsonError as exc:
+        result = _install_client(
+            payload, home=Path(home), platform=sys.platform, replace=replace, secret_backend=secret_backend
+        )
+    except GoogleCredentialError as exc:
         raise ClientConfigError(str(exc)) from exc
-    status = "replaced" if existed else "installed"
-    return _result(status, "desktop", destination)
+    destination = canonical_client_path(home)
+    return _result(result["status"], "desktop", destination)
 
 
 def run_client_status(argv: list[str] | None = None) -> int:

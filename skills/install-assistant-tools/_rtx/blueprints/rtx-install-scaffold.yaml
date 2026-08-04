@@ -69,7 +69,9 @@ interfaces:
           - batch
           id: write-1
           medium: home-filesystem
-          path: caller-selected bin and shell startup paths
+          path: caller-selected bin and shell startup paths; the bin dir defaults
+            to the platform Famulus user-bin dir (never under Documents) when
+            --bin-dir is omitted
           sensitivity: user-private
           system: filesystem
         - access: write
@@ -125,8 +127,10 @@ interfaces:
         lifecycle: finite
         mutation_safety:
           atomicity:
-            per_effect_only: Package installation, certificate-key provisioning, launcher
-              writes, and shell configuration are separate effects.
+            per_effect_only: The declared Python package set installs in one atomic
+              batch call (via officina.install.managed-runtime) rather than
+              per-package; certificate-key provisioning, launcher writes, and
+              shell configuration remain separate effects.
           concurrent_invocations:
             unsafe: Concurrent scaffold installers are not serialized.
           idempotency:
@@ -219,5 +223,7 @@ runtime_dependencies: []
 schema_version: 5
 uses_interfaces:
 - interface: common.interface.certificate-records
+  version: 1
+- interface: install.interface.managed-runtime
   version: 1
 version: 1

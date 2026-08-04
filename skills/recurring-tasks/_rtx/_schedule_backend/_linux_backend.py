@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
-import sys
 from pathlib import Path, PurePosixPath
 
 from ._base_backend import ScheduleContext, ScheduleJob
@@ -66,14 +65,39 @@ def service_content(
     description: str,
     jobs_file: Path,
     executor: Path,
-    python_executable: Path | None = None,
+    runtime_resolver: Path,
     launcher_bin: Path | None = None,
 ) -> str:
-    """Generate systemd service unit for a job."""
-    python = python_executable or PurePosixPath(sys.executable)
+    """Generate systemd service unit for a job.
+
+    ``runtime_resolver`` is the stable, release-independent launch resolver
+    (``ScheduleContext.runtime_resolver``) -- the same mechanism the
+    dispatcher/invoke-skill shims use -- rather than ``sys.executable``,
+    which would pin the job to whatever interpreter happened to run the
+    sync script and break on the next managed-runtime upgrade.
+
+    ``DBUS_SESSION_BUS_ADDRESS`` is resolved by systemd itself at process
+    launch via the ``%t`` specifier (systemd.unit(5): "Runtime directory
+    root" -- ``$XDG_RUNTIME_DIR``, i.e. ``/run/user/<uid>`` for the user
+    manager), so it is correct for whichever UID this systemd --user
+    instance runs as instead of a hardcoded UID baked into jobs.yaml.
+    """
+    # This unit file always targets a systemd (Linux) host, regardless of
+    # which host OS actually generated it (the portability sentinel runs
+    # this same generator on all 3 CI platforms specifically to catch a
+    # host-OS-dependent leak here) -- every embedded path must render in
+    # clean POSIX form. ``Path.as_posix()`` (not ``PurePosixPath(other_path)``
+    # cross-flavour construction, which reconstructs from the *other* path's
+    # already-parsed native parts and can leave a mixed separator artifact
+    # behind, e.g. a drive anchor) is the documented, stable way to get a
+    # forward-slash string from any concrete Path regardless of the host
+    # that produced it.
+    resolver = PurePosixPath(runtime_resolver.as_posix())
+    executor_posix = executor.as_posix()
+    jobs_file_posix = jobs_file.as_posix()
     launcher_dir = launcher_bin or _launcher_bin_dir()
     path_value = (
-        f"{launcher_dir}:{python.parent}:%h/.npm-global/bin:"
+        f"{launcher_dir}:{resolver.parent}:%h/.npm-global/bin:"
         "%h/.local/bin:/usr/local/bin:/usr/bin:/bin"
     )
     return (
@@ -83,8 +107,9 @@ def service_content(
         "[Service]\n"
         "Type=oneshot\n"
         f"Environment={_systemd_quote(f'PATH={path_value}')}\n"
-        f"ExecStart={_systemd_quote(str(python))} {_systemd_quote(str(executor))} "
-        f"--jobs-file {_systemd_quote(str(jobs_file))} --job {job_name}\n"
+        f"Environment={_systemd_quote('DBUS_SESSION_BUS_ADDRESS=unix:path=%t/bus')}\n"
+        f"ExecStart={_systemd_quote(str(resolver))} {_systemd_quote(executor_posix)} "
+        f"--jobs-file {_systemd_quote(jobs_file_posix)} --job {job_name}\n"
     )
 
 
@@ -122,7 +147,13 @@ class LinuxScheduleBackend:
             executor = context.skill_dir / "_job_executor.py"
 
             (unit_dir / svc_name).write_text(
-                service_content(job.name, job.description, context.jobs_file, executor)
+                service_content(
+                    job.name,
+                    job.description,
+                    context.jobs_file,
+                    executor,
+                    context.runtime_resolver,
+                )
             )
             (unit_dir / f"{PREFIX}{job.name}.timer").write_text(
                 timer_content(job.description, calendar, svc_name)

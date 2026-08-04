@@ -30,8 +30,8 @@ Use the installed `dispatcher` command for these process-bound interfaces:
   - `dispatcher --caller-skill install-assistant-tools install-assistant-tools.interface.scripts-dev-link --repo-root DIR [--no-claude] [--no-codex] [--home DIR] [--claude-home DIR] [--codex-home DIR] [--shell-rc FILE] [--dry-run]`
 - `install-assistant-tools.interface.scripts-install` — Phase-1 orchestrator: asks the dev-mode question, then runs scaffold, optionally dev-link, then launchers.
   - `dispatcher --caller-skill install-assistant-tools install-assistant-tools.interface.scripts-install [--dry-run] [--non-interactive] [--dev-mode|--no-dev-mode] [--repo-path DIR] [--agents LIST] [--default-llm {claude,codex}] [--home DIR] [--bin-dir DIR] [--shell-rc FILE] [--codex-home DIR] [--claude-home DIR]`
-- `install-assistant-tools.interface.scripts-launchers` — Install per-agent bin launcher, profile config, worker dir, and ASSISTANT_DEFAULT for the given agents.
-  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools.interface.scripts-launchers --repo-root DIR --agents LIST [--home DIR] [--bin-dir DIR] [--codex-home DIR] [--claude-home DIR] [--shell-rc FILE] [--default-llm {claude,codex}] [--dry-run]`
+- `install-assistant-tools.interface.scripts-launchers` — Install per-agent bin launcher, profile config, worker dir, and ASSISTANT_DEFAULT for the given agents. Direct invocation of this interface installs exactly the --agents selection; when this launcher installation runs as part of the phase-entry orchestrator, assistant is additionally forced into the installed set regardless of selection, because it is a required invoke-skill prerequisite (feedback item 18) and is not user-selectable. Worker directories are created under the platform Famulus state dir in plugin mode (--mode plugin, the default plugin-cache checkout is a public/immutable tree) or under <repo-root>/workers in development mode (--mode development, an explicit live checkout).
+  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools.interface.scripts-launchers --repo-root DIR --agents LIST [--home DIR] [--bin-dir DIR] [--codex-home DIR] [--claude-home DIR] [--shell-rc FILE] [--default-llm {claude,codex}] [--mode {development,plugin}] [--dry-run]`
 - `install-assistant-tools.interface.scripts-scaffold` — Install the dispatcher + invoke-skill launchers and put the bin dir on PATH. Universal floor, mode-independent.
   - `dispatcher --caller-skill install-assistant-tools install-assistant-tools.interface.scripts-scaffold --repo-root DIR [--home DIR] [--bin-dir DIR] [--shell-rc FILE] [--dry-run]`
 
@@ -273,9 +273,9 @@ Do not modify scripts speculatively.
 |---|---|
 | User rc | `~/.zshrc` (zsh) or `~/.bashrc` (bash/other) — auto-detected; Windows uses registry |
 | System rc | `/etc/bash.bashrc` (skipped on Windows) |
-| Bin dir | `$HOME/Documents/scripts/bin` |
-| Repo root | Dev mode: the path the user supplied. Plugin mode: derived from wherever the plugin is running from. `$AI` itself is only exported by `dev-link` (dev-mode only) — plugin-mode installs never set it; the launcher runtime and dispatcher resolve their own repo root from their installed location instead. |
-| Workers | `<repo-root>/workers/{assistant,collab,coauthor}` |
+| Bin dir | Platform user-bin dir from `officina.common.famulus_paths` (e.g. `~/.local/bin` on Linux/macOS, `%LOCALAPPDATA%/Famulus/bin` on Windows) |
+| Repo root | Dev mode: the path the user supplied. Plugin mode: derived from wherever the plugin is running from. `$AI` itself is only exported by `dev-link` (dev-mode only) — plugin-mode installs never set it; `_agent_launch.py` and `dispatcher` resolve their own repo root from their own file location instead. |
+| Workers | Dev mode: `<repo-root>/workers/{assistant,collab,coauthor}` (live checkout). Plugin mode: FamulusPaths `worker_root`/`{assistant,collab,coauthor}` |
 | Codex home | `$CODEX_HOME`, or `$HOME/.codex` |
 | Claude home | `$CLAUDE_HOME`, or `$HOME/.claude` |
 | Git hooks | `<repo-root>/.githooks` |

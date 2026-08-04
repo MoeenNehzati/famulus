@@ -41,6 +41,19 @@ Each envelope is JSON: `id`, `flags` (IMAP flags — absence of `\Seen` means un
 
 **Never skip** if the subject suggests a message is waiting on a portal ("you have a message", "new message", "someone replied") — a human sent it; classify as Type 3 in Step 3.
 
+**Manual historical rescan (operator-invoked, not part of a normal triage run):**
+`email-triage.interface.fetch-filtered-envelopes` also accepts `--rescan-after
+<ISO cutoff>` and `--dedup-against <todo|triage>`, for backfilling after a bug or
+bootstrapping onto an account without editing the watermark file by hand.
+`--rescan-after` replaces the stored watermark for that one call only (the real
+watermark file is never read or written by a rescan). `--dedup-against` fetches the
+named destination list internally and drops any candidate envelope whose
+`message_id` already matches a `source.message_id` already present in that list —
+this only works for entries created after this feature shipped and carrying a
+`source` field (see Step 5); older entries have no `source` and cannot be deduped
+this way. An operator runs this directly (outside the normal Step 1–7 flow); do not
+invoke it automatically as part of a regular triage run.
+
 ---
 
 ## Step 3 — Read email bodies in batches
@@ -84,8 +97,48 @@ skill to infer title, optional description, and optional deadline. Do not
 manually format list storage lines here; pass the freeform action content and
 destination list to `list-manager.interface.default`.
 
-For every item added to `triage`, include the source email id in the description
-so the originating message can be found again later.
+**Concurrency:** `todo` and `triage` are each a single YAML file with no
+built-in locking — a concurrent write (a second triage run overlapping this
+one, or the user manually editing the list at the same time) can silently
+clobber this run's additions if two writers race to read-modify-write the
+same file. Guard against this:
+
+- Issue additions to a given destination list (`todo` or `triage`) **one at a
+  time, in sequence** — never fire multiple `list-manager.interface.default`
+  add calls at the same destination list in parallel, even though Steps 1 and
+  3 explicitly parallelize unrelated reads. Two lists (`todo` and `triage`)
+  are independent files, so calls to different lists don't need to serialize
+  against each other.
+- The underlying list-manager write path supports an optional
+  `--expected-revision <N>` guard: pass the `revision` value observed when
+  the list was last read (Step 4) and the write is rejected — loudly, with no
+  partial write — if another process has saved the file since. If the list
+  read in Step 4 has no `revision` field at all (it predates this field, or
+  has never had a mutating write since), pass `0` — that is the documented
+  convention for "no revision yet", not a sign the guard doesn't apply. On
+  rejection, re-read the list, re-check for a duplicate, and retry the single
+  item; never assume the write succeeded and never skip re-reading.
+- This is a per-write check, not a new batch-apply mechanism: the underlying
+  create path already accepts multiple entries for one target in a single
+  call, so multiple items destined for the *same* category can still be
+  added together where that's natural.
+
+Every entry created in `todo` or `triage` must carry a structured `source` in the
+`entries` YAML passed to `list-manager.interface.default`, alongside its other fields:
+
+```yaml
+- title: Reply to Bob re: proposal
+  deadline: 2026-08-05
+  source:
+    message_id: "<abc123@mail.example.com>"
+    mailbox: work
+```
+
+`source.message_id` is the envelope's `message_id` field from Step 1/3 (required);
+`mailbox` is the account nickname the email came from (optional but include it when
+known). This is what lets a later historical rescan (see "Manual historical rescan"
+near Step 1) deterministically skip messages already filed here instead of relying
+on fuzzy title matching.
 
 **Format by category:**
 - Bill: `Pay [Sender]; amount/context $[amount]; deadline [date]` → `todo`
@@ -122,9 +175,15 @@ Include these counts in your summary, then pass them to the metrics interface.
 
 ---
 
-## Step 7 — Record metrics, update watermark, and prune log
+## Step 7 — Finalize the run (metrics + watermark), then prune log
 
-If any `list-manager.interface.default` add/update in Step 5 failed (e.g. a validation error), invoke `email-triage.interface.scripts-mark-failure "<reason>"` and stop — do not call `email-triage.interface.scripts-update-watermark`. This keeps next run's lookback window covering the emails that didn't get filed, and surfaces the failure as a desktop notification via the scheduled health check.
+**Run id:** before doing anything else in this step, mint one run id for this
+triage run — any short unique token (e.g. a random hex string) is fine. Reuse
+the *same* run id for every finalize call attempted in this run, including
+retries. A fresh triage run (a new invocation of this skill) must mint a new
+run id.
+
+If any `list-manager.interface.default` add/update in Step 5 failed (e.g. a validation error), invoke `email-triage.interface.scripts-mark-failure "<reason>"` and stop — do not invoke the finalization interface below. This keeps next run's lookback window covering the emails that didn't get filed, and surfaces the failure as a desktop notification via the scheduled health check.
 
 After the failure's cause has been fixed, an operator may invoke
 `email-triage.interface.scripts-clear-failure "<recovery reason>"` before starting
@@ -132,10 +191,21 @@ a fresh triage run. This clears only the latched error; it never advances the
 watermark. Never clear a failure automatically in the same run that recorded
 it.
 
-Otherwise, after a successful run, invoke these interfaces in order:
+Otherwise, after a successful run, invoke:
 
-1. Record the counts from Step 6 (total scanned, added to todo, added to triage, skipped, deduped)
-2. Update watermark — advances the run timestamp so next scan only sees new emails
-3. Prune log — drops entries older than 30 days and prints a one-line summary
+1. `email-triage.interface.scripts-finalize-triage` with the run id from above
+   and the counts from Step 6 (total scanned, added to todo, added to triage,
+   skipped, deduped, accounts). This single call records the counters and then
+   advances the watermark, in that order, as one step — it refuses to advance
+   the watermark if recording the counters fails or if a failure is still
+   latched from an earlier run, and it is safe to call again with the same run
+   id if the caller is unsure whether the previous call actually landed (e.g.
+   after a network error): a repeat with the same run id is a no-op, it will
+   not double-advance the watermark or re-apply the counters. Only retry with
+   a *new* run id if this is genuinely a new run.
+2. Prune log — drops entries older than 30 days and prints a one-line summary
 
-These three steps in sequence ensure metrics are recorded, watermark is advanced, and old logs are cleaned up.
+Two lower-level interfaces this one composes internally still exist and work
+exactly as before for manual recovery, but normal triage runs should use
+`scripts-finalize-triage` instead of calling them separately — calling them
+apart no longer gives any ordering or replay-safety guarantee.

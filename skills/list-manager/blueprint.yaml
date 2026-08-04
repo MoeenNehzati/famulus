@@ -60,7 +60,9 @@ exports:
   list-manager.interface.cloud-read:
     access:
       allow_all_modules: false
-      allowed_callers: []
+      allowed_callers:
+      - email-triage
+      - email-triage-rtx
     facade_interface:
       interface: list-manager-rtx.interface.cloud-read
       version: 1

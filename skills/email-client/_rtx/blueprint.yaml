@@ -80,6 +80,14 @@ exports:
       allowed_callers:
       - email-client
     source_interface: email-client-rtx.source.rtx-email-accounts.interface.accounts-update
+  email-client-rtx.interface.accounts-use-google-credential:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - email-client
+      - install-assistant-tools
+      - install-assistant-tools-rtx
+    source_interface: email-client-rtx.source.rtx-email-accounts.interface.accounts-use-google-credential
   email-client-rtx.interface.live-smoke:
     access:
       allow_all_modules: false

@@ -16,6 +16,30 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[5]
 
 
+def _worker_dir(agent: str) -> Path:
+    """Resolve the working directory to cd into before launching `agent`.
+
+    Dev mode ($AI set by dev_link.py): the user pointed this at a live repo
+    checkout they own, so $AI/workers/{agent} is correct there.
+
+    Otherwise (plugin mode, $AI unset): this script is running from a
+    public/immutable plugin-cache checkout, so writing runtime session data
+    under it is wrong (the same bug the installer's own worker-dir bootstrap
+    had — see _agent_launchers.install_worker_dir). Use the platform Famulus
+    state dir instead, matching what a plugin-mode install actually creates.
+    """
+    ai_root = os.environ.get("AI")
+    if ai_root:
+        return Path(ai_root) / "workers" / agent
+
+    repo_src = _repo_root() / "src"
+    if str(repo_src) not in sys.path:
+        sys.path.insert(0, str(repo_src))
+    from officina.common.famulus_paths import resolve_famulus_paths
+
+    return resolve_famulus_paths(platform=sys.platform, home=Path.home()).worker_root / agent
+
+
 def _parse_agent_md(repo_root: Path, agent: str) -> tuple[str, str]:
     """Return (description, prompt) parsed from agents/<agent>.md.
 
@@ -84,7 +108,7 @@ Claude settings: $CLAUDE_HOME/{agent}_claude_setting.json""")
     ai_root = os.environ.get("AI") or str(_repo_root())
 
     if not use_local:
-        os.chdir(Path(ai_root) / "workers" / agent)
+        os.chdir(_worker_dir(agent))
 
     claude_home = os.environ.get("CLAUDE_HOME", str(Path.home() / ".claude"))
 

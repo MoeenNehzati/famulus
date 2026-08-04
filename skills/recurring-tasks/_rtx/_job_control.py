@@ -15,6 +15,7 @@ Usage:
 All operations sync scheduler entries after modifying jobs.yaml.
 """
 import sys
+import time
 from argparse import ArgumentParser
 from pathlib import Path
 
@@ -35,9 +36,20 @@ else:
     platform_schedule_backend,
     schedule_jobs_from_mappings,
 )
+from _run_record import read_latest_run_record  # noqa: E402
 
 JOBS_FILE = SKILL_DIR / "jobs.yaml"
 LOG_DIR = SKILL_DIR / "logs"
+
+# Bounded wait for a job's run record after triggering it via the OS
+# scheduler (feedback item 14). Some backends' `test()` blocks until the job
+# finishes (systemd's `start --wait`); others fire-and-forget (launchd's
+# `kickstart`, Windows' `schtasks /Run`), so backend.test() returning True
+# only means "the scheduler accepted the trigger," never "the job
+# succeeded." We poll for a fresh JobRunRecord instead of trusting that
+# return value, capped so a wedged job can't hang this call forever.
+TEST_JOB_TIMEOUT_SECONDS = 60.0
+TEST_JOB_POLL_INTERVAL_SECONDS = 0.5
 
 
 def schedule_context(jobs_file: Path = JOBS_FILE) -> ScheduleContext:
@@ -92,12 +104,53 @@ def disable_job(name: str, jobs_file: Path = JOBS_FILE, sync: bool = True) -> No
     raise ValueError(f"Job not found: {name}")
 
 
-def test_job(name: str) -> bool:
-    """Test a job immediately."""
-    if platform_schedule_backend().test(name, schedule_context()):
+def test_job(
+    name: str,
+    *,
+    timeout_seconds: float = TEST_JOB_TIMEOUT_SECONDS,
+    poll_interval: float = TEST_JOB_POLL_INTERVAL_SECONDS,
+) -> bool:
+    """Test a job immediately and report whether it actually succeeded.
+
+    Triggering the job through the host scheduler only tells us the
+    scheduler *accepted the trigger* -- not that the job's own task
+    succeeded (see the module docstring above `TEST_JOB_TIMEOUT_SECONDS`).
+    So after triggering, this waits (bounded by `timeout_seconds`) for a
+    fresh JobRunRecord to appear in logs/<name>/latest.json and reports
+    pass/fail from its `success` field instead.
+    """
+    baseline = read_latest_run_record(log_dir=LOG_DIR, job_name=name)
+    # Compare by run_id (a fresh uuid4 per run), not finished_at: finished_at
+    # has only second resolution, so a fast run (e.g. an instant
+    # spawn-failure) can share a timestamp with the baseline record and get
+    # mistaken for "no new run yet," which would make this poll out its
+    # full timeout on a run that actually completed immediately.
+    baseline_run_id = baseline.get("run_id") if baseline else None
+
+    if not platform_schedule_backend().test(name, schedule_context()):
+        print(f"FAIL: Test failed: {name} (scheduler did not accept the trigger)")
+        return False
+
+    deadline = time.monotonic() + timeout_seconds
+    record = None
+    while time.monotonic() < deadline:
+        candidate = read_latest_run_record(log_dir=LOG_DIR, job_name=name)
+        if candidate is not None and candidate.get("run_id") != baseline_run_id:
+            record = candidate
+            break
+        time.sleep(poll_interval)
+
+    if record is None:
+        print(
+            f"FAIL: Test failed: {name} "
+            f"(timed out after {timeout_seconds:.0f}s waiting for a run record)"
+        )
+        return False
+
+    if record.get("success"):
         print(f"OK: Test passed: {name}")
         return True
-    print(f"FAIL: Test failed: {name}")
+    print(f"FAIL: Test failed: {name} ({record.get('reason') or 'run did not succeed'})")
     return False
 
 
@@ -159,7 +212,8 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "disable":
             disable_job(args.name, jobs_file=args.jobs_file, sync=not args.no_sync)
         elif args.command == "test":
-            test_job(args.name)
+            if not test_job(args.name):
+                return 1
         elif args.command == "view-logs":
             view_logs(args.name, args.lines)
         elif args.command == "status":

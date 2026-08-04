@@ -1,9 +1,7 @@
 content:
 - jobs\.yaml
 dependencies: []
-description: Defines the named recurring jobs, their descriptions, shell-free command
-  strings, schedules, and enabled state consumed by recurring-task management and
-  execution sources.
+description: Defines the named recurring jobs, their descriptions, shell-free command strings, schedules, enabled state, and an optional success contract (e.g. require_inner_status) consumed by recurring-task management and execution sources.
 gateway:
   language: YAML
   path: jobs.yaml

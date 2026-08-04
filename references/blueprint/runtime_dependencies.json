@@ -41,51 +41,215 @@
       "interfaces": {
         "ensure-oauth": {
           "id": "cloud-files.interface.ensure-oauth",
-          "dependencies": []
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
         },
         "lists-delete": {
           "id": "cloud-files.interface.lists-delete",
-          "dependencies": []
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
         },
         "lists-read": {
           "id": "cloud-files.interface.lists-read",
-          "dependencies": []
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
         },
         "lists-write": {
           "id": "cloud-files.interface.lists-write",
-          "dependencies": []
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
         },
         "plans-delete": {
           "id": "cloud-files.interface.plans-delete",
-          "dependencies": []
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
         },
         "plans-read": {
           "id": "cloud-files.interface.plans-read",
-          "dependencies": []
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
         },
         "plans-write": {
           "id": "cloud-files.interface.plans-write",
-          "dependencies": []
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
         },
         "setup-oauth": {
           "id": "cloud-files.interface.setup-oauth",
-          "dependencies": []
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
+        },
+        "use-google-credential": {
+          "id": "cloud-files.interface.use-google-credential",
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
         },
         "write-config": {
           "id": "cloud-files.interface.write-config",
-          "dependencies": []
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
         }
       }
     },
     "connect-google": {
       "interfaces": {
+        "authorize-services": {
+          "id": "connect-google.interface.authorize-services",
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
+        },
         "client-status": {
           "id": "connect-google.interface.client-status",
-          "dependencies": []
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
         },
         "install-client": {
           "id": "connect-google.interface.install-client",
-          "dependencies": []
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
         }
       }
     },
@@ -94,17 +258,6 @@
         "mutate-plan": {
           "id": "daily-plan.interface.mutate-plan",
           "dependencies": [
-            {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": ">=6",
-              "platforms": {
-                "linux": true,
-                "macos": false,
-                "windows": false
-              },
-              "reason": "Reads and writes YAML plan/list data through plan_runtime."
-            },
             {
               "kind": "python-package",
               "name": "PyYAML",
@@ -181,6 +334,17 @@
                 "windows": true
               },
               "reason": "Reads and writes YAML list files."
+            },
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
+              "version": ">=6",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Reads and writes YAML plan/list data through plan_runtime."
             },
             {
               "kind": "python-package",
@@ -280,6 +444,17 @@
                 "windows": true
               },
               "reason": "Validates new entries before writing."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
             },
             {
               "kind": "python-package",
@@ -303,17 +478,6 @@
               "version": ">=6",
               "platforms": {
                 "linux": true,
-                "macos": false,
-                "windows": false
-              },
-              "reason": "Reads and writes YAML plan/list data through plan_runtime."
-            },
-            {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": ">=6",
-              "platforms": {
-                "linux": true,
                 "macos": true,
                 "windows": true
               },
@@ -384,6 +548,17 @@
                 "windows": true
               },
               "reason": "Reads and writes YAML list files."
+            },
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
+              "version": ">=6",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Reads and writes YAML plan/list data through plan_runtime."
             },
             {
               "kind": "python-package",
@@ -486,6 +661,17 @@
             },
             {
               "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            },
+            {
+              "kind": "python-package",
               "name": "rich",
               "version": "any",
               "platforms": {
@@ -506,8 +692,8 @@
               "version": "any",
               "platforms": {
                 "linux": true,
-                "macos": false,
-                "windows": false
+                "macos": true,
+                "windows": true
               },
               "reason": "Reads and writes plan files in the configured GDrive remote."
             },
@@ -686,6 +872,17 @@
                 "windows": true
               },
               "reason": "Validates new entries before writing."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
             },
             {
               "kind": "python-package",
@@ -878,6 +1075,17 @@
                 "windows": true
               },
               "reason": "Validates new entries before writing."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
             },
             {
               "kind": "python-package",
@@ -1143,6 +1351,55 @@
         },
         "accounts-update": {
           "id": "email-client.interface.accounts-update",
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Clears stored account credentials when requested."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Stores Gmail OAuth refresh tokens and client secrets in the host credential store."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Stores IMAP or SMTP credentials in the host credential store."
+            }
+          ]
+        },
+        "accounts-use-google-credential": {
+          "id": "email-client.interface.accounts-use-google-credential",
           "dependencies": [
             {
               "kind": "python-package",
@@ -1641,6 +1898,171 @@
           "dependencies": [
             {
               "kind": "python-package",
+              "name": "PyYAML",
+              "version": ">=6",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Parses the destination list YAML fetched via list-manager.interface.cloud-read for --dedup-against."
+            },
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
+              "version": ">=6",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Reads YAML list data downloaded from cloud storage."
+            },
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
+              "version": ">=6",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Reads YAML list files to avoid ID collisions."
+            },
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
+              "version": ">=6",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Reads YAML list files."
+            },
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
+              "version": ">=6",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Reads and writes YAML list data downloaded from cloud storage."
+            },
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
+              "version": ">=6",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Reads and writes YAML list files."
+            },
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
+              "version": ">=6",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Writes YAML list data for upload."
+            },
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
+              "version": ">=6",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Writes YAML list files."
+            },
+            {
+              "kind": "python-package",
+              "name": "jsonschema",
+              "version": ">=4",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Resolves and reports JSON Schema metadata for list entries."
+            },
+            {
+              "kind": "python-package",
+              "name": "jsonschema",
+              "version": ">=4",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Validates initialized list data before upload."
+            },
+            {
+              "kind": "python-package",
+              "name": "jsonschema",
+              "version": ">=4",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Validates initialized list data before writing."
+            },
+            {
+              "kind": "python-package",
+              "name": "jsonschema",
+              "version": ">=4",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Validates list mutations before upload."
+            },
+            {
+              "kind": "python-package",
+              "name": "jsonschema",
+              "version": ">=4",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Validates list mutations before writing."
+            },
+            {
+              "kind": "python-package",
+              "name": "jsonschema",
+              "version": ">=4",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Validates new entries before upload."
+            },
+            {
+              "kind": "python-package",
+              "name": "jsonschema",
+              "version": ">=4",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Validates new entries before writing."
+            },
+            {
+              "kind": "python-package",
               "name": "keyring",
               "version": "any",
               "platforms": {
@@ -1704,6 +2126,10 @@
           "id": "email-triage.interface.scripts-filter-envelopes",
           "dependencies": []
         },
+        "scripts-finalize-triage": {
+          "id": "email-triage.interface.scripts-finalize-triage",
+          "dependencies": []
+        },
         "scripts-get-cutoff": {
           "id": "email-triage.interface.scripts-get-cutoff",
           "dependencies": []
@@ -1746,15 +2172,55 @@
       "interfaces": {
         "ensure-oauth": {
           "id": "g-calendar.interface.ensure-oauth",
-          "dependencies": []
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
         },
         "scripts-gcal": {
           "id": "g-calendar.interface.scripts-gcal",
-          "dependencies": []
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
         },
         "setup-oauth": {
           "id": "g-calendar.interface.setup-oauth",
           "dependencies": []
+        },
+        "use-google-credential": {
+          "id": "g-calendar.interface.use-google-credential",
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
         }
       }
     },
@@ -1826,7 +2292,40 @@
                 "macos": true,
                 "windows": true
               },
+              "reason": "Clears stored account credentials when requested."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Provides the system credential-store API imported by secret_store.py."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Stores Gmail OAuth refresh tokens and client secrets in the host credential store."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Stores IMAP or SMTP credentials in the host credential store."
             }
           ]
         },
@@ -1878,6 +2377,17 @@
                 "windows": true
               },
               "reason": "Reads YAML list data from stdin."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
             },
             {
               "kind": "python-package",
@@ -2048,6 +2558,17 @@
                 "windows": true
               },
               "reason": "Validates new entries before writing."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -2207,6 +2728,17 @@
                 "windows": true
               },
               "reason": "Validates new entries before writing."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -2366,6 +2898,17 @@
                 "windows": true
               },
               "reason": "Validates new entries before writing."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -2382,6 +2925,17 @@
                 "windows": true
               },
               "reason": "Reads cloud list YAML and stores local category-cache YAML."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -2541,6 +3095,17 @@
                 "windows": true
               },
               "reason": "Validates new entries before writing."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -2725,6 +3290,17 @@
             },
             {
               "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            },
+            {
+              "kind": "python-package",
               "name": "rich",
               "version": "any",
               "platforms": {
@@ -2892,6 +3468,17 @@
                 "windows": true
               },
               "reason": "Validates new entries before writing."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -3051,6 +3638,17 @@
                 "windows": true
               },
               "reason": "Validates new entries before writing."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -3210,6 +3808,17 @@
                 "windows": true
               },
               "reason": "Validates new entries before writing."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -3369,6 +3978,17 @@
                 "windows": true
               },
               "reason": "Validates new entries before writing."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -3528,6 +4148,17 @@
                 "windows": true
               },
               "reason": "Validates new entries before writing."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -3566,6 +4197,17 @@
                 "windows": true
               },
               "reason": "Validates migrated entries before writing."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -3750,6 +4392,17 @@
             },
             {
               "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            },
+            {
+              "kind": "python-package",
               "name": "rich",
               "version": "any",
               "platforms": {
@@ -3917,6 +4570,17 @@
                 "windows": true
               },
               "reason": "Validates new entries before writing."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -4076,6 +4740,17 @@
                 "windows": true
               },
               "reason": "Validates new entries before writing."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
             }
           ]
         }

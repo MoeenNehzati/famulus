@@ -1,0 +1,326 @@
+from __future__ import annotations
+
+import json
+import os
+import shutil
+from pathlib import Path
+
+import pytest
+
+from conftest import FakeCompletedProcess, fake_uv_subprocess_run
+from officina.common import atomic_files
+from officina.install.managed_runtime import (
+    ManagedRuntimeError,
+    _venv_python_bin,
+    build_candidate_release,
+    declared_python_packages,
+)
+
+REAL_MANIFEST = Path(__file__).resolve().parents[1] / "references" / "blueprint" / "runtime_dependencies.json"
+UV_BIN = shutil.which("uv")
+# A real Path's str() renders with the host's native separators regardless
+# of the `platform=` string passed to build_candidate_release (that
+# parameter only selects *logical* branching inside the function, e.g.
+# venv layout -- it never changes how Python itself stringifies a Path
+# object on this interpreter). So every assertion below must compare
+# against str(FAKE_UV_BIN), not a hardcoded POSIX-style literal, to stay
+# correct on a real Windows test host.
+FAKE_UV_BIN = Path("/fake/uv")
+
+
+def test_declared_python_packages_matches_today_baseline():
+    packages = declared_python_packages(REAL_MANIFEST, platform="linux")
+    assert packages == (
+        "bibtexparser",
+        "cryptography>=44.0.1",
+        "dateparser",
+        "jsonschema>=4",
+        "keyring",
+        "marker-pdf",
+        "PyYAML>=6",
+        "rich",
+    )
+
+
+def test_declared_python_packages_filters_by_platform(tmp_path):
+    manifest = tmp_path / "runtime_dependencies.json"
+    manifest.write_text(json.dumps({
+        "version": 1,
+        "skills": {
+            "example": {
+                "interfaces": {
+                    "run": {
+                        "dependencies": [
+                            {"kind": "python-package", "name": "pywin32", "version": "1.0", "platforms": {"windows": True}},
+                            {"kind": "python-package", "name": "pyyaml", "version": "6.0", "platforms": {"linux": True, "macos": True, "windows": True}},
+                        ]
+                    }
+                }
+            }
+        },
+    }))
+    assert declared_python_packages(manifest, platform="linux") == ("pyyaml==6.0",)
+
+
+def test_declared_python_packages_rejects_unsupported_schema_version(tmp_path):
+    manifest = tmp_path / "runtime_dependencies.json"
+    manifest.write_text(json.dumps({"version": 2, "skills": {}}))
+    with pytest.raises(ManagedRuntimeError):
+        declared_python_packages(manifest, platform="linux")
+
+
+def test_venv_python_bin_posix_is_bin_python():
+    venv_dir = Path("/fake/release/venv")
+    for platform_name in ("linux", "macos"):
+        assert _venv_python_bin(venv_dir, platform=platform_name) == venv_dir / "bin" / "python"
+
+
+def test_venv_python_bin_windows_is_scripts_python_exe():
+    venv_dir = Path("/fake/release/venv")
+    assert _venv_python_bin(venv_dir, platform="windows") == venv_dir / "Scripts" / "python.exe"
+
+
+def test_build_candidate_release_on_windows_uses_scripts_python_exe(monkeypatch, tmp_path):
+    """Regression test for a real bug: build_candidate_release used to
+    hardcode `venv_dir / "bin" / "python"` with no platform branch, so on
+    Windows (where `uv venv` creates `Scripts\\python.exe`) python_bin never
+    existed. That made runtime_pointer.activate_release raise
+    RuntimePointerError -- not a ManagedRuntimeError -- which
+    _phase_entry.py's `except ManagedRuntimeError` didn't catch, crashing
+    the installer. This exercises build_candidate_release with
+    platform="windows" against a fake uv that lays out the venv the real
+    Windows uv would, and asserts the batch pip-install call and the
+    activated pointer both use the Windows interpreter path.
+    """
+    calls: list = []
+    monkeypatch.setattr(
+        "subprocess.run",
+        fake_uv_subprocess_run(calls, trusted_python_dir=tmp_path / "uv-python-store", windows=True),
+    )
+
+    pointer = build_candidate_release(
+        runtime_root=tmp_path / "runtime",
+        manifest_path=REAL_MANIFEST,
+        platform="windows",
+        uv_bin=FAKE_UV_BIN,
+        python_version="3.11",
+    )
+
+    assert pointer.python_bin == pointer.runtime_source / "venv" / "Scripts" / "python.exe"
+    assert pointer.python_bin.exists()
+    pip_call = calls[1]
+    assert pip_call[:4] == [str(FAKE_UV_BIN), "pip", "install", "--python"]
+    assert pip_call[4] == str(pointer.python_bin)
+
+
+def test_build_candidate_release_creates_venv_then_one_batch_pip_install(monkeypatch, tmp_path):
+    calls: list = []
+    monkeypatch.setattr(
+        "subprocess.run", fake_uv_subprocess_run(calls, trusted_python_dir=tmp_path / "uv-python-store")
+    )
+
+    pointer = build_candidate_release(
+        runtime_root=tmp_path / "runtime",
+        manifest_path=REAL_MANIFEST,
+        platform="linux",
+        uv_bin=FAKE_UV_BIN,
+        python_version="3.11",
+    )
+
+    assert len(calls) == 3  # uv venv, one batch pip-install call (not per-package), uv python dir
+    venv_call, pip_call, python_dir_call = calls
+    assert venv_call == [str(FAKE_UV_BIN), "venv", "--python", "3.11", str(pointer.runtime_source / "venv")]
+    assert pip_call[:4] == [str(FAKE_UV_BIN), "pip", "install", "--python"]
+    assert pip_call[4] == str(pointer.python_bin)
+    assert python_dir_call == [str(FAKE_UV_BIN), "python", "dir"]
+    assert pointer.python_bin.exists()
+
+
+def test_build_candidate_release_provisions_venv_before_installing_packages(monkeypatch, tmp_path):
+    """Dedicated sanity check for the uv-venv step's exact arguments and
+    ordering, independent of the batch-install call-count assertion above."""
+    calls: list = []
+    monkeypatch.setattr(
+        "subprocess.run", fake_uv_subprocess_run(calls, trusted_python_dir=tmp_path / "uv-python-store")
+    )
+
+    build_candidate_release(
+        runtime_root=tmp_path / "runtime",
+        manifest_path=REAL_MANIFEST,
+        platform="linux",
+        uv_bin=FAKE_UV_BIN,
+        python_version="3.11",
+    )
+
+    assert calls[0][:4] == [str(FAKE_UV_BIN), "venv", "--python", "3.11"]
+    assert calls[1][0] == str(FAKE_UV_BIN)
+
+
+def test_build_candidate_release_failure_writes_no_pointer(monkeypatch, tmp_path):
+    def fail(*a, **k):
+        raise ManagedRuntimeError("simulated failure")
+
+    monkeypatch.setattr("officina.install.managed_runtime._run_dependency_install", fail)
+    monkeypatch.setattr(
+        "officina.install.managed_runtime._create_release_venv",
+        lambda **kwargs: None,
+    )
+    runtime_root = tmp_path / "runtime"
+    with pytest.raises(ManagedRuntimeError):
+        build_candidate_release(
+            runtime_root=runtime_root,
+            manifest_path=REAL_MANIFEST,
+            platform="linux",
+            uv_bin=FAKE_UV_BIN,
+            python_version="3.11",
+        )
+    assert not (runtime_root / "current.json").exists()
+
+
+def test_build_candidate_release_venv_failure_writes_no_pointer(monkeypatch, tmp_path):
+    def fail(**kwargs):
+        raise ManagedRuntimeError("simulated venv creation failure")
+
+    monkeypatch.setattr("officina.install.managed_runtime._create_release_venv", fail)
+    runtime_root = tmp_path / "runtime"
+    with pytest.raises(ManagedRuntimeError):
+        build_candidate_release(
+            runtime_root=runtime_root,
+            manifest_path=REAL_MANIFEST,
+            platform="linux",
+            uv_bin=FAKE_UV_BIN,
+            python_version="3.11",
+        )
+    assert not (runtime_root / "current.json").exists()
+
+
+def test_build_candidate_release_resolver_deploy_failure_writes_no_pointer(monkeypatch, tmp_path):
+    """A failed resolver deployment (e.g. disk full, permissions, a
+    concurrent-install race) must behave exactly like every other
+    build_candidate_release failure: no release is activated (current.json
+    stays untouched) and the raised exception is a typed ManagedRuntimeError
+    the installer's `except ManagedRuntimeError` can catch cleanly -- not a
+    raw OSError propagating as an unhandled crash. This also guards against
+    regressing back to deploying the resolver *after* activate_release,
+    which would let a deployment failure leave a release activated with a
+    missing/broken resolver.
+    """
+    calls: list = []
+    monkeypatch.setattr(
+        "subprocess.run", fake_uv_subprocess_run(calls, trusted_python_dir=tmp_path / "uv-python-store")
+    )
+    monkeypatch.setattr(
+        "officina.install.managed_runtime.atomic_files.atomic_replace_bytes",
+        lambda *a, **k: (_ for _ in ()).throw(OSError("simulated disk full")),
+    )
+    runtime_root = tmp_path / "runtime"
+
+    with pytest.raises(ManagedRuntimeError):
+        build_candidate_release(
+            runtime_root=runtime_root,
+            manifest_path=REAL_MANIFEST,
+            platform="linux",
+            uv_bin=FAKE_UV_BIN,
+            python_version="3.11",
+        )
+
+    assert not (runtime_root / "current.json").exists()
+    # activate_release must never have run either: no release directory was
+    # promoted, so no bootstrap/resolvers path exists beyond what
+    # _deploy_resolver itself half-created before failing.
+    assert not (runtime_root / "bootstrap" / "resolvers" / "v1" / "launch.py").exists()
+
+
+def test_deploy_resolver_writes_through_atomic_replace_bytes_not_plain_copy(monkeypatch, tmp_path):
+    """Regression test for a real bug: _deploy_resolver used to write the
+    resolver with plain `shutil.copy2`, which is not atomic. The resolver
+    at `<runtime_root>/bootstrap/resolvers/v1/launch.py` is a fixed path
+    every generated launcher shim and every scheduled recurring-tasks job
+    execs into, and build_candidate_release genuinely runs a second time
+    against the same runtime_root during a normal install-then-update flow
+    -- a non-atomic overwrite risks a torn read by a job executing the file
+    at that exact moment. This asserts the real deployment goes through
+    officina.common.atomic_files.atomic_replace_bytes (like its sibling
+    uv_bootstrap.py/runtime_pointer.py writes) instead of shutil.copy2, and
+    that the deployed file is both correct and executable.
+    """
+    calls: list = []
+    monkeypatch.setattr(
+        "subprocess.run", fake_uv_subprocess_run(calls, trusted_python_dir=tmp_path / "uv-python-store")
+    )
+    atomic_calls: list = []
+    real_atomic_replace_bytes = atomic_files.atomic_replace_bytes
+
+    def spying_atomic_replace_bytes(*args, **kwargs):
+        atomic_calls.append((args, kwargs))
+        return real_atomic_replace_bytes(*args, **kwargs)
+
+    monkeypatch.setattr(
+        "officina.install.managed_runtime.atomic_files.atomic_replace_bytes",
+        spying_atomic_replace_bytes,
+    )
+    runtime_root = tmp_path / "runtime"
+
+    build_candidate_release(
+        runtime_root=runtime_root,
+        manifest_path=REAL_MANIFEST,
+        platform="linux",
+        uv_bin=FAKE_UV_BIN,
+        python_version="3.11",
+    )
+
+    assert len(atomic_calls) == 1
+    resolver_path = runtime_root / "bootstrap" / "resolvers" / "v1" / "launch.py"
+    args, kwargs = atomic_calls[0]
+    assert args[0] == resolver_path
+    assert kwargs["mode"] == 0o755
+    assert resolver_path.exists()
+    assert resolver_path.read_bytes() == (
+        Path(__file__).resolve().parents[1]
+        / "src" / "officina" / "install" / "resolvers" / "launch.py"
+    ).read_bytes()
+    assert os.access(resolver_path, os.X_OK)
+
+
+# famulus-skip: category=capability-unavailable; reason=requires a real uv binary on PATH; alternate=mocked tests above cover call shapes and ordering without uv installed
+@pytest.mark.skipif(UV_BIN is None, reason="uv is not installed on this machine")
+def test_build_candidate_release_end_to_end_with_real_uv(tmp_path):
+    """Integration test against the real uv binary (no mocking): proves the
+    venv-creation + batch-install + activation flow actually works, not just
+    that mocked call shapes look right."""
+    manifest = tmp_path / "runtime_dependencies.json"
+    manifest.write_text(json.dumps({
+        "version": 1,
+        "skills": {
+            "example": {
+                "interfaces": {
+                    "run": {
+                        "dependencies": [
+                            {
+                                "kind": "python-package",
+                                "name": "rich",
+                                "version": "any",
+                                "platforms": {"linux": True, "macos": True, "windows": True},
+                            },
+                        ]
+                    }
+                }
+            }
+        },
+    }))
+    runtime_root = tmp_path / "runtime"
+
+    pointer = build_candidate_release(
+        runtime_root=runtime_root,
+        manifest_path=manifest,
+        platform="linux",
+        uv_bin=Path(UV_BIN),
+        python_version="3.11",
+    )
+
+    assert pointer.python_bin.exists()
+    assert (runtime_root / "current.json").exists()
+    site_packages_has_rich = any(
+        p.name.startswith("rich") for p in (pointer.runtime_source / "venv").rglob("rich*")
+    )
+    assert site_packages_has_rich

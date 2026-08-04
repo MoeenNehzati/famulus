@@ -22,10 +22,38 @@ from typing import Any
 
 from officina.runtime.python_machine_interface import PythonMachineInterface
 
-CREDS_FILE = Path.home() / ".config" / "g-calendar" / "credentials.json"
+CONFIG_DIR_NAME = "g-calendar"
 API_BASE = "https://www.googleapis.com/calendar/v3"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 MAX_CALENDAR_WORKERS = 8
+
+
+def _credentials_path(home: Path) -> Path:
+    return home / ".config" / CONFIG_DIR_NAME / "credentials.json"
+
+
+def _config_path(home: Path) -> Path:
+    return home / ".config" / CONFIG_DIR_NAME / "config.json"
+
+
+def _load_credential_id(home: Path) -> str | None:
+    config_path = _config_path(home)
+    if not config_path.is_file():
+        return None
+    try:
+        payload = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        # Deliberately falls through to the legacy credentials.json flow
+        # rather than raising: an unreadable config.json should not by
+        # itself block calendar access when legacy credentials are still
+        # usable. But say so, so a corrupted config.json (that used to hold
+        # a working credential_id) doesn't surface only as a misleading
+        # "No credentials at .../credentials.json" from the legacy path.
+        print(f"Warning: could not read {config_path}: {exc}", file=sys.stderr)
+        return None
+    value = payload.get("credential_id")
+    text = str(value).strip() if value else ""
+    return text or None
 
 
 def die(msg: str) -> None:
@@ -69,11 +97,25 @@ def iso(dt: datetime) -> str:
     return dt.isoformat(timespec="seconds")
 
 
-def get_access_token() -> str:
-    if not CREDS_FILE.is_file():
-        die(f"No credentials at {CREDS_FILE}. Run the setup-oauth interface first.")
+def get_access_token(*, home: Path | None = None, platform: str = sys.platform) -> str:
+    home = home or Path.home()
 
-    creds = json.loads(CREDS_FILE.read_text(encoding="utf-8"))
+    credential_id = _load_credential_id(home)
+    if credential_id:
+        from officina.common.google_credentials import SERVICE_SCOPES, refresh_access_token
+
+        return refresh_access_token(
+            credential_id,
+            required_scopes=SERVICE_SCOPES["calendar"],
+            home=home,
+            platform=platform,
+        )
+
+    creds_file = _credentials_path(home)
+    if not creds_file.is_file():
+        die(f"No credentials at {creds_file}. Run the setup-oauth interface first.")
+
+    creds = json.loads(creds_file.read_text(encoding="utf-8"))
     data = urllib.parse.urlencode(
         {
             "client_id": creds["client_id"],

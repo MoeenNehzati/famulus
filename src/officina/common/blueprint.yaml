@@ -13,7 +13,9 @@ content:
 - certification_view\.py
 - codex_toml\.py
 - dates\.py
+- famulus_paths/__init__\.py
 - git_provenance\.py
+- google_credentials\.py
 - interface_injection_migration\.py
 - migration_candidate\.py
 - nested_module_migration\.py
@@ -31,6 +33,9 @@ exports:
     access:
       allow_all_modules: false
       allowed_callers:
+      - install
+      - recurring-tasks
+      - recurring-tasks-rtx
       - skill-certifier
       - skill-certifier-rtx
       - skill-maker
@@ -97,6 +102,17 @@ exports:
       - daily-plan
       - daily-plan-rtx
     source_interface: common.source.dates.interface.python-api
+  common.interface.famulus-paths:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - email-triage
+      - email-triage-rtx
+      - install-assistant-tools
+      - install-assistant-tools-rtx
+      - recurring-tasks
+      - recurring-tasks-rtx
+    source_interface: common.source.famulus-paths.interface.python-api
   common.interface.git-provenance:
     access:
       allow_all_modules: false
@@ -105,6 +121,19 @@ exports:
       - skill-certifier-rtx
       - skill-drift
     source_interface: common.source.git-provenance.interface.python-api
+  common.interface.google-credentials:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - cloud-files
+      - cloud-files-rtx
+      - connect-google
+      - connect-google-rtx
+      - email-client
+      - email-client-rtx
+      - g-calendar
+      - g-calendar-rtx
+    source_interface: common.source.google-credentials.interface.python-api
   common.interface.oauth-json:
     access:
       allow_all_modules: false
@@ -196,10 +225,18 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/dates.yaml
+  common.source.famulus-paths:
+    blueprint:
+      base: module-root
+      path: blueprints/famulus-paths.yaml
   common.source.git-provenance:
     blueprint:
       base: module-root
       path: blueprints/git-provenance.yaml
+  common.source.google-credentials:
+    blueprint:
+      base: module-root
+      path: blueprints/google-credentials.yaml
   common.source.nested-module-migration:
     blueprint:
       base: module-root

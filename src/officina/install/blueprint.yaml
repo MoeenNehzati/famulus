@@ -1,0 +1,86 @@
+authority:
+  owns_filesystem:
+  - allowed_readers:
+    - install-assistant-tools.interface.scripts-install
+    match: exact
+    path: <famulus-data-root>/runtime
+    reason: activate-release is the only writer of the managed-runtime current.json pointer and its release directories.
+children: {}
+content:
+- __init__\.py
+- install_info\.py
+- runtime_pointer\.py
+- managed_runtime\.py
+- launcher_entry\.py
+- resolvers/launch\.py
+- uv_bootstrap\.py
+description: Parses the pinned bootstrap/runtime versions in install-info.toml, manages the atomic current.json pointer for the installed, versioned Famulus runtime, builds new candidate releases by installing the real v1 runtime_dependencies.json manifest's Python dependencies in one atomic batch, provides the stable, path-fixed launch resolver that generated launcher shims exec into instead of embedding a release-specific repo/interpreter path, and bootstraps a machine-local managed uv binary from the real astral-sh/uv GitHub release when one is not already present.
+exports:
+  install.interface.install-info:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - install-assistant-tools
+      - install-assistant-tools-rtx
+    source_interface: install.source.install-info.interface.python-api
+  install.interface.runtime-pointer:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - install-assistant-tools
+      - install-assistant-tools-rtx
+    source_interface: install.source.runtime-pointer.interface.python-api
+  install.interface.managed-runtime:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - install-assistant-tools
+      - install-assistant-tools-rtx
+    source_interface: install.source.managed-runtime.interface.python-api
+  install.interface.launcher-entry:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - install-assistant-tools
+      - install-assistant-tools-rtx
+    source_interface: install.source.launcher-entry.interface.cli
+  install.interface.uv-bootstrap:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - install-assistant-tools
+      - install-assistant-tools-rtx
+    source_interface: install.source.uv-bootstrap.interface.python-api
+gateway:
+  language: Python
+  path: __init__.py
+id: install
+namespace_exports: {}
+node_type: module
+schema_version: 5
+sources:
+  install.source.init:
+    blueprint:
+      base: module-root
+      path: blueprints/init.yaml
+  install.source.install-info:
+    blueprint:
+      base: module-root
+      path: blueprints/install-info.yaml
+  install.source.runtime-pointer:
+    blueprint:
+      base: module-root
+      path: blueprints/runtime-pointer.yaml
+  install.source.managed-runtime:
+    blueprint:
+      base: module-root
+      path: blueprints/managed-runtime.yaml
+  install.source.launcher-entry:
+    blueprint:
+      base: module-root
+      path: blueprints/launcher-entry.yaml
+  install.source.uv-bootstrap:
+    blueprint:
+      base: module-root
+      path: blueprints/uv-bootstrap.yaml
+version: 1

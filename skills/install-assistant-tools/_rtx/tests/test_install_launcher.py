@@ -3,6 +3,9 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+from unittest import mock
+
+import pytest
 
 from test_support.runtime_module import load_runtime_module
 
@@ -17,6 +20,17 @@ platform_launcher_installer = _launchers.platform_launcher_installer
 LauncherBundleSpec = _base.LauncherBundleSpec
 LauncherFileSpec = _base.LauncherFileSpec
 LauncherInstallerBase = _base.LauncherInstallerBase
+
+from _install_launcher._linux_launcher import _unix_dispatcher_content
+from _install_launcher._windows_launcher import (
+    WindowsPythonNotFoundError,
+    _windows_dispatcher_content,
+)
+
+
+@pytest.fixture
+def tmp_repo_root(tmp_path: Path) -> Path:
+    return tmp_path / "repo"
 
 
 def test_generated_launcher_bundle_writes_file(tmp_path):
@@ -84,8 +98,9 @@ def test_linux_dispatcher_and_invoke_skill_are_extensionless(tmp_path):
     installer = platform_launcher_installer("linux")
     repo_root = tmp_path / "repo"
     bin_dir = tmp_path / "bin"
+    home = tmp_path / "home"
 
-    dispatcher = installer.install_dispatcher_launcher(repo_root, bin_dir, dry_run=False)
+    dispatcher = installer.install_dispatcher_launcher(repo_root, bin_dir, dry_run=False, home=home)
     invoke_skill = installer.install_invoke_skill_launcher(bin_dir, dry_run=False)
 
     assert dispatcher.status == "installed"
@@ -97,18 +112,37 @@ def test_linux_dispatcher_and_invoke_skill_are_extensionless(tmp_path):
     dispatcher_text = (bin_dir / "dispatcher").read_text(encoding="utf-8")
     invoke_text = (bin_dir / "invoke-skill").read_text(encoding="utf-8")
     assert dispatcher_text.startswith("#!/usr/bin/env python3")
-    assert "runpy.run_module('officina.dispatcher.cli'" in dispatcher_text
+    assert "bootstrap" in dispatcher_text and "resolvers" in dispatcher_text and "launch.py" in dispatcher_text
+    assert "os.execv(RESOLVER" in dispatcher_text
+    assert "'officina.dispatcher.cli'" in dispatcher_text
+    assert str(repo_root) not in dispatcher_text
+    assert sys.executable not in dispatcher_text
     assert invoke_text.startswith("#!/usr/bin/env python3")
     assert "os.execvp(command[0], command)" in invoke_text
     assert "_agent_invoker.sh" not in invoke_text
+    assert sys.executable not in invoke_text
+
+
+def test_generated_dispatcher_does_not_embed_repo_root_or_sys_executable(tmp_repo_root, tmp_path):
+    content = _unix_dispatcher_content(repo_root=tmp_repo_root, home=tmp_path / "unrelated-home")
+    assert str(tmp_repo_root) not in content
+    assert sys.executable not in content
+    assert "launcher_entry" in content or "resolvers/v1/launch.py" in content or "resolvers" in content
+
+
+def test_generated_launcher_content_has_no_legacy_vendor_paths(tmp_repo_root, tmp_path):
+    content = _unix_dispatcher_content(repo_root=tmp_repo_root, home=tmp_path / "unrelated-home")
+    for legacy_marker in ("openai-bundled", "release-2026-07"):
+        assert legacy_marker not in content
 
 
 def test_osx_uses_unix_launcher_contract(tmp_path):
     installer = platform_launcher_installer("darwin")
     repo_root = tmp_path / "repo"
     bin_dir = tmp_path / "bin"
+    home = tmp_path / "home"
 
-    dispatcher = installer.install_dispatcher_launcher(repo_root, bin_dir, dry_run=False)
+    dispatcher = installer.install_dispatcher_launcher(repo_root, bin_dir, dry_run=False, home=home)
 
     assert dispatcher.status == "installed"
     assert (bin_dir / "dispatcher").is_file()
@@ -119,22 +153,68 @@ def test_windows_dispatcher_and_invoke_skill_are_batch_launchers(tmp_path):
     installer = platform_launcher_installer("win32")
     repo_root = Path(r"C:\Users\tester\AI")
     bin_dir = tmp_path / "bin"
-    python = LauncherInstallerBase._batch_path(Path(sys.executable))
+    home = tmp_path / "home"
 
-    dispatcher = installer.install_dispatcher_launcher(repo_root, bin_dir, dry_run=False)
+    dispatcher = installer.install_dispatcher_launcher(repo_root, bin_dir, dry_run=False, home=home)
     invoke_skill = installer.install_invoke_skill_launcher(bin_dir, dry_run=False)
 
     content = (bin_dir / "dispatcher.bat").read_text(encoding="utf-8")
     invoke_content = (bin_dir / "invoke-skill.bat").read_text(encoding="utf-8")
     assert dispatcher.status == "installed"
-    assert f'"{python}" -m officina.dispatcher.cli %*' in content
+    assert "-m officina.dispatcher.cli %*" in content
+    assert "bootstrap" in content and "resolvers" in content and "launch.py" in content
     assert "py -3" not in content
-    assert r"C:\Users\tester\AI" in content
+    # No longer embeds the repo checkout or a specific interpreter path: the
+    # resolver (invoked here) reads current.json at launch time instead.
+    assert r"C:\Users\tester\AI" not in content
+    assert sys.executable not in content
     assert not (bin_dir / "dispatcher").exists()
     assert invoke_skill.status == "installed"
     assert "assistant --local --claude" in invoke_content
     assert "assistant --local --codex exec" in invoke_content
     assert not (bin_dir / "invoke-skill").exists()
+
+
+def test_windows_dispatcher_bakes_in_resolved_python_path(tmp_path):
+    """The generated dispatcher.bat must invoke a concrete, resolved
+    interpreter path (mirroring recurring-tasks' _resolve_python_interpreter
+    fix) instead of a bare, unqualified 'python' token that has no PATH
+    validation and no 'py'-launcher fallback."""
+    repo_root = Path(r"C:\Users\tester\AI")
+    with mock.patch(
+        "_install_launcher._windows_launcher.shutil.which"
+    ) as which:
+        which.side_effect = lambda name: r"C:\Python312\python.exe" if name == "python" else None
+        content = _windows_dispatcher_content(repo_root, home=tmp_path / "home")
+
+    assert r'"C:\Python312\python.exe"' in content
+    assert '"python" "' not in content
+    assert not content.split("\n")[2].startswith("python ")
+
+
+def test_windows_dispatcher_falls_back_to_py_launcher(tmp_path):
+    """When 'python' isn't on PATH but the 'py' launcher is, that resolved
+    absolute path is used instead."""
+    repo_root = Path(r"C:\Users\tester\AI")
+    with mock.patch(
+        "_install_launcher._windows_launcher.shutil.which"
+    ) as which:
+        which.side_effect = lambda name: r"C:\Windows\py.exe" if name == "py" else None
+        content = _windows_dispatcher_content(repo_root, home=tmp_path / "home")
+
+    assert r'"C:\Windows\py.exe"' in content
+
+
+def test_windows_dispatcher_raises_clear_error_when_no_interpreter_found(tmp_path):
+    """If neither 'python' nor 'py' resolves on PATH, fail loudly at
+    generation time instead of silently baking a broken bare token."""
+    repo_root = Path(r"C:\Users\tester\AI")
+    with mock.patch(
+        "_install_launcher._windows_launcher.shutil.which",
+        return_value=None,
+    ):
+        with pytest.raises(WindowsPythonNotFoundError):
+            _windows_dispatcher_content(repo_root, home=tmp_path / "home")
 
 
 def test_windows_agent_launcher_files_are_copied(tmp_path):

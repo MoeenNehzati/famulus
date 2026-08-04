@@ -98,34 +98,81 @@ def normalize_llm_root(root: str) -> str:
     return "/".join(parts) if parts else ""
 
 
-def write_config(home: Path, *, remote_llm_root: str, dry_run: bool) -> None:
+def _config_paths(home: Path) -> tuple[Path, Path]:
     config_dir = home / ".config" / CONFIG_DIR_NAME
-    config_path = config_dir / "config.json"
+    return config_dir, config_dir / "config.json"
 
-    existing: dict[str, object] = {}
-    if config_path.exists():
-        existing = load_configuration(config_path)
+
+def _read_existing_config(config_path: Path) -> dict[str, object]:
+    if not config_path.exists():
+        return {}
+    return load_configuration(config_path)
+
+
+def _merge_and_write_config(
+    home: Path, *, patch: dict[str, object], dry_run: bool = False, dry_run_message: str | None = None
+) -> None:
+    """Merge ``patch`` onto the existing config.json and write it back.
+
+    Starting from ``dict(existing)`` (rather than an explicit allow-list of
+    fields) means any field neither function currently knows about — such as
+    ``credential_id`` written by :func:`use_google_credential` — survives a
+    rewrite by :func:`write_config`, and vice versa. Both config-writing
+    functions in this module route through here so that invariant can't
+    silently regress as more fields get added.
+    """
+    config_dir, config_path = _config_paths(home)
+    existing = _read_existing_config(config_path)
+
+    payload = dict(existing)
+    payload.update(patch)
+    validate_configuration(payload, document_name=str(config_path))
+
+    if dry_run:
+        log(dry_run_message or f"Would write cloud-files config {config_path}")
+        return
+
+    config_dir.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def write_config(home: Path, *, remote_llm_root: str, dry_run: bool) -> None:
+    _, config_path = _config_paths(home)
+    existing = _read_existing_config(config_path)
 
     try:
         normalized_llm_root = normalize_llm_root(remote_llm_root)
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
 
-    payload: dict[str, object] = {
+    patch: dict[str, object] = {
         "remote_llm_root": normalized_llm_root,
         "timeout_seconds": int(existing.get("timeout_seconds", 45)),
     }
-    if "credentials_path" in existing:
-        payload["credentials_path"] = existing["credentials_path"]
 
-    validate_configuration(payload, document_name=str(config_path))
+    _merge_and_write_config(
+        home, patch=patch, dry_run=dry_run, dry_run_message=f"Would write cloud-files config {config_path}"
+    )
 
-    if dry_run:
-        log(f"Would write cloud-files config {config_path}")
-        return
 
-    config_dir.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+def use_google_credential(*, credential_id: str, home: Path, platform: str = sys.platform) -> None:
+    """Bind cloud-files to a shared connect-google credential.
+
+    Validates the credential grants Drive scope *before* writing anything, then
+    stores only the opaque ``credential_id`` in cloud-files' own config.json —
+    never the client secret or refresh token, which stay in
+    officina.common.google_credentials' registry/secret store.
+    """
+    from officina.common.google_credentials import SERVICE_SCOPES, GoogleCredentialError, load_credential
+
+    try:
+        ref = load_credential(credential_id, home=home, platform=platform)
+        if not SERVICE_SCOPES["drive"] <= ref.granted_scopes:
+            raise GoogleCredentialError(f"credential {credential_id} lacks Drive scope")
+    except GoogleCredentialError as exc:
+        raise SystemExit(str(exc)) from exc
+
+    _merge_and_write_config(home, patch={"credential_id": credential_id})
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -140,6 +187,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     config_p.add_argument("--home", metavar="DIR", required=True)
     config_p.add_argument("--remote-llm-root", default="assistant/")
     config_p.add_argument("--dry-run", action="store_true")
+
+    use_cred_p = sub.add_parser("use-google-credential")
+    use_cred_p.add_argument("--credential-id", metavar="ID", required=True)
+    use_cred_p.add_argument("--home", metavar="DIR", required=True)
 
     return parser.parse_args(argv)
 
@@ -158,6 +209,9 @@ def main(argv: list[str] | None = None) -> int:
         log(f"Status: {status}")
     elif args.command == "write-config":
         write_config(Path(args.home), remote_llm_root=args.remote_llm_root, dry_run=args.dry_run)
+    elif args.command == "use-google-credential":
+        use_google_credential(credential_id=args.credential_id, home=Path(args.home))
+        log("Status: configured")
     return 0
 
 

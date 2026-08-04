@@ -15,6 +15,12 @@ dependencies:
   version: 1
 - blueprint:
     base: module-root
+    path: blueprints/rtx-google-onboarding.yaml
+  reason: Imports Python source from _rtx/_google_onboarding.py.
+  source: install-assistant-tools-rtx.source.rtx-google-onboarding
+  version: 1
+- blueprint:
+    base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
   source: install-assistant-tools-rtx.source.rtx-init
@@ -185,5 +191,13 @@ runtime_dependencies:
   reason: Configures repository hook settings during development installs.
   version: any
 schema_version: 5
-uses_interfaces: []
+uses_interfaces:
+- interface: common.interface.famulus-paths
+  version: 1
+- interface: install.interface.install-info
+  version: 1
+- interface: install.interface.managed-runtime
+  version: 1
+- interface: install.interface.uv-bootstrap
+  version: 1
 version: 1

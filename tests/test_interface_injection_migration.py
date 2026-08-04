@@ -1268,7 +1268,9 @@ def _assert_pre_nested_parent_cutover_without_collisions() -> None:
         "common.interface.certification-view",
         "common.interface.codex-toml",
         "common.interface.dates",
+        "common.interface.famulus-paths",
         "common.interface.git-provenance",
+        "common.interface.google-credentials",
         "common.interface.oauth-json",
         "common.interface.pooled-blueprint",
         "common.interface.repository-paths",
@@ -1314,6 +1316,8 @@ def _assert_pre_nested_parent_cutover_without_collisions() -> None:
         "atomic-files",
         "codex-toml",
         "dates",
+        "famulus-paths",
+        "google-credentials",
         "oauth-json",
         "repository-paths",
         "secret-store",
@@ -1389,7 +1393,7 @@ def _assert_pre_nested_parent_cutover_without_collisions() -> None:
         Path("skills/connect-google/blueprints/rtx-client-config.yaml")
     ]
     assert {tuple(sorted(use.items())) for use in connect_google["uses_interfaces"]} >= {
-        tuple(sorted({"interface": "common.interface.oauth-json", "version": 1}.items()))
+        tuple(sorted({"interface": "common.interface.google-credentials", "version": 1}.items()))
     }
     reviewed_common_uses = {
         "regenerate-blueprints": {
@@ -1966,7 +1970,7 @@ def test_live_cutover_inventory_is_v5_only_and_has_unique_public_ids() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     graph = migration.load_repository_blueprint_graph(repo_root)
 
-    assert len(graph.nodes) == 205
+    assert len(graph.nodes) == 218
     assert all(node.declaration["schema_version"] == 5 for node in graph.nodes.values())
     assert len(graph.exports) == len(set(graph.exports))
 

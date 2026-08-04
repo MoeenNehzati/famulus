@@ -168,7 +168,7 @@ def authenticate_smtp(
     nickname: str,
     account: dict,
     password_resolver: Callable[[str, dict], str] = get_smtp_password,
-    access_token_resolver: Callable[[str, dict], str] = _oauth_tokens.refresh_google_access_token,
+    access_token_resolver: Callable[[str, dict], str] = _oauth_tokens.get_gmail_access_token,
 ) -> None:
     if _oauth_tokens.is_gmail_oauth(account):
         try:

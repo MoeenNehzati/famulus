@@ -262,8 +262,9 @@ def test_main_reports_success_when_no_problems():
         with mock.patch.object(mod, "check_systemd_manager", return_value=None), \
              mock.patch.object(mod, "check_environment", return_value=None), \
              mock.patch.object(mod, "notify_desktop") as notify:
-            mod.main()
+            exit_code = mod.main()
         notify.assert_called_once_with("Recurring Tasks", "All checks passed", urgency="low")
+        assert exit_code == 0
     print("PASS: main() reports success with urgency=low when nothing fails")
 
 
@@ -281,7 +282,7 @@ def test_main_aggregates_failure_reasons_into_body():
              mock.patch.object(mod, "check_environment", return_value=None), \
              mock.patch.object(mod, "check_job", return_value="job-a: no log file"), \
              mock.patch.object(mod, "notify_desktop") as notify:
-            mod.main()
+            exit_code = mod.main()
         notify.assert_called_once()
         title, body = notify.call_args[0]
         kwargs = notify.call_args[1]
@@ -290,6 +291,7 @@ def test_main_aggregates_failure_reasons_into_body():
         assert "2 health check problem(s):" in body
         assert "- systemd user manager: degraded" in body
         assert "- job-a: no log file" in body
+        assert exit_code != 0
     print("PASS: main() aggregates failure reasons from all checks into the notification body")
 
 
@@ -331,9 +333,10 @@ def test_main_skips_disabled_jobs():
              mock.patch.object(mod, "check_environment", return_value=None), \
              mock.patch.object(mod, "check_job") as check_job, \
              mock.patch.object(mod, "notify_desktop") as notify:
-            mod.main()
+            exit_code = mod.main()
         check_job.assert_not_called()
         notify.assert_called_once_with("Recurring Tasks", "All checks passed", urgency="low")
+        assert exit_code == 0
     print("PASS: main() skips disabled jobs entirely")
 
 
@@ -342,10 +345,51 @@ def test_main_handles_missing_jobs_file_gracefully():
         mod = _load(Path(d))
         # JOBS_FILE was never written -> open() raises, main() should log and return
         with mock.patch.object(mod, "notify_desktop") as notify:
-            mod.main()  # must not raise
+            exit_code = mod.main()  # must not raise
         notify.assert_not_called()
         assert "Failed to load jobs.yaml" in mod.HEALTHCHECK_LOG.read_text()
+        assert exit_code != 0
     print("PASS: main() handles a missing/unreadable jobs.yaml without crashing")
+
+
+def test_main_returns_nonzero_when_problems_found():
+    with tempfile.TemporaryDirectory() as d:
+        mod = _load(Path(d))
+        mod.JOBS_FILE.write_text(
+            "jobs:\n"
+            "  - name: job-a\n"
+            "    schedule: '0 * * * *'\n"
+            "    enabled: true\n"
+        )
+        with mock.patch.object(mod, "check_systemd_manager", return_value=None), \
+             mock.patch.object(mod, "check_environment", return_value=None), \
+             mock.patch.object(mod, "check_job", return_value="job-a: no log file"), \
+             mock.patch.object(mod, "notify_desktop"):
+            exit_code = mod.main()
+        assert exit_code != 0
+    print("PASS: main() returns a nonzero exit code when problems are found")
+
+
+def test_main_returns_zero_when_no_problems():
+    with tempfile.TemporaryDirectory() as d:
+        mod = _load(Path(d))
+        mod.JOBS_FILE.write_text("jobs: []\n")
+        with mock.patch.object(mod, "check_systemd_manager", return_value=None), \
+             mock.patch.object(mod, "check_environment", return_value=None), \
+             mock.patch.object(mod, "notify_desktop"):
+            exit_code = mod.main()
+        assert exit_code == 0
+    print("PASS: main() returns 0 when no problems are found")
+
+
+def test_main_returns_nonzero_on_load_failure():
+    with tempfile.TemporaryDirectory() as d:
+        mod = _load(Path(d))
+        mod.JOBS_FILE.write_text("not: valid: yaml: [")
+        with mock.patch.object(mod, "notify_desktop"):
+            exit_code = mod.main()
+        assert exit_code != 0
+    print("PASS: main() returns a nonzero exit code when jobs.yaml fails to load")
 
 
 if __name__ == "__main__":
@@ -373,4 +417,7 @@ if __name__ == "__main__":
     test_main_caps_listed_failures_at_five_with_overflow_note()
     test_main_skips_disabled_jobs()
     test_main_handles_missing_jobs_file_gracefully()
+    test_main_returns_nonzero_when_problems_found()
+    test_main_returns_zero_when_no_problems()
+    test_main_returns_nonzero_on_load_failure()
     print("\nAll tests passed.")

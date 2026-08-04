@@ -169,7 +169,7 @@ def main(argv: list[str] | None = None) -> int:
         jobs = load_jobs(JOBS_FILE)
     except Exception as e:
         log(f"FAIL: Failed to load jobs.yaml: {e}")
-        return 0
+        return 1
 
     failures: list[str] = []
 
@@ -206,7 +206,7 @@ def main(argv: list[str] | None = None) -> int:
         notify_desktop("Recurring Tasks", body, urgency="critical")
 
     log("=== healthcheck done ===\n")
-    return 0
+    return 1 if problems > 0 else 0
 
 
 if __name__ == "__main__":

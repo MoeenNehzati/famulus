@@ -33,6 +33,23 @@ def read_json(path: Path) -> object:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def assert_default_bin_dir_matches_famulus_paths(default_bin_dir, home: Path) -> None:
+    """Assert a module's `default_bin_dir(home=...)` matches FamulusPaths.user_bin.
+
+    Shared by test_scaffold.py, test_launchers.py, and test_uninstall.py,
+    each of which re-exports its own `default_bin_dir` (imported from
+    `_fs_links`) into its own module namespace — the per-module call still
+    confirms that re-export, this just centralizes the assertion itself.
+    """
+    from officina.common.famulus_paths import resolve_famulus_paths
+
+    expected = resolve_famulus_paths(platform=sys.platform, home=home).user_bin
+    result = default_bin_dir(home=home)
+
+    assert result == expected
+    assert "Documents" not in str(result)
+
+
 def github_owner_repo(repo_root: Path = REPO_ROOT) -> str:
     """`owner/repo` shorthand, read from the plugin manifest's `repository` URL."""
     repository = read_json(repo_root / ".claude-plugin" / "plugin.json")["repository"]
@@ -169,6 +186,94 @@ def install_minimum_scaffold(
         cmd.extend(["--shell-rc", str(tmp_root / "minimum-scaffold.bashrc")])
     run_command(cmd, env=env)
     return bin_dir
+
+
+def deploy_managed_uv(home: Path) -> Path | None:
+    """Copy the real system uv to the exact machine-local location
+    ``officina.common.famulus_paths.resolve_famulus_paths`` assumes for the
+    managed uv binary (``<data_root>/tools/uv``), simulating the separately
+    scoped uv-bootstrap step a real installer would already have run before
+    ``_phase_entry.py`` ever calls ``build_candidate_release``.
+
+    Returns None (deploying nothing) if no real uv is available on this
+    machine; callers should skip rather than fail in that case.
+    """
+    from officina.common.famulus_paths import resolve_famulus_paths
+
+    system_uv = managed_runtime_uv_bin()
+    if system_uv is None:
+        return None
+    paths = resolve_famulus_paths(platform=sys.platform, home=home)
+    paths.uv_bin.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(system_uv, paths.uv_bin)
+    paths.uv_bin.chmod(0o755)
+    return paths.uv_bin
+
+
+def managed_uv_python_install_dir() -> str | None:
+    """This machine's real, already-populated uv Python install directory
+    (e.g. ``~/.local/share/uv/python``), or None if uv is unavailable.
+
+    Tests that run ``_phase_entry.py`` (and therefore build_candidate_release)
+    as a real subprocess with an isolated, sandboxed ``HOME`` must still point
+    ``uv venv --python <version>`` at this real, pre-populated interpreter
+    store via ``UV_PYTHON_INSTALL_DIR`` -- otherwise uv resolves its Python
+    install dir under the isolated HOME and attempts a fresh network download
+    of the pinned Python version on every test run, which is slow at best and
+    hangs/times out in network-restricted sandboxes at worst.
+    """
+    system_uv = managed_runtime_uv_bin()
+    if system_uv is None:
+        return None
+    from officina.install.managed_runtime import uv_python_install_dir
+
+    return str(uv_python_install_dir(Path(system_uv)))
+
+
+def managed_runtime_uv_bin() -> str | None:
+    """Real `uv` binary on this machine's PATH, or None if unavailable.
+
+    Callers should skip (not fail) when this is None -- building a real
+    managed-runtime release needs a real uv, same as the mocked-vs-real-uv
+    split used throughout tests/test_officina_managed_runtime.py and
+    tests/test_officina_launcher_entry.py.
+    """
+    return shutil.which("uv")
+
+
+def build_minimal_managed_runtime_release(*, home: Path, tmp_root: Path) -> None:
+    """Build and activate a real managed-runtime candidate release (empty
+    dependency manifest -- no third-party packages needed) under ``home``,
+    deploying the dependency-free launcher resolver and its trust sidecar as
+    a side effect of build_candidate_release (see officina.install.
+    managed_runtime._deploy_resolver). This makes a generated dispatcher
+    shim's resolver hop succeed; the release venv still has no `officina`
+    package installed (that's a separate, deliberate scope decision -- see
+    _install_scaffold.install_python_packages's docstring), so `dispatcher
+    --help` still fails, but with a ModuleNotFoundError raised by the release
+    interpreter after control has already transferred there, never a
+    resolver-side "no such file" or containment error.
+
+    Callers must guard on managed_runtime_uv_bin() first and skip if it is
+    None.
+    """
+    from officina.common.famulus_paths import resolve_famulus_paths
+    from officina.install.managed_runtime import build_candidate_release
+
+    uv_bin = managed_runtime_uv_bin()
+    assert uv_bin is not None, "build_minimal_managed_runtime_release requires a real uv binary"
+
+    paths = resolve_famulus_paths(platform=sys.platform, home=home)
+    manifest = tmp_root / "managed-runtime-empty-manifest.json"
+    manifest.write_text(json.dumps({"version": 1, "skills": {}}), encoding="utf-8")
+    platform_name = {"darwin": "macos", "win32": "windows"}.get(sys.platform, "linux")
+    build_candidate_release(
+        runtime_root=paths.runtime_root,
+        manifest_path=manifest,
+        platform=platform_name,
+        uv_bin=Path(uv_bin),
+        python_version="3.11",
+    )
 
 
 def prepend_path(env: dict[str, str], path: Path) -> dict[str, str]:

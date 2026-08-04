@@ -49,6 +49,7 @@ content:
 - _config_bridge\.py
 - __init__\.py
 - _fs_links\.py
+- _google_onboarding\.py
 - _install_uninstall\.py
 - _shell_block\.py
 - _state_record\.py
@@ -102,6 +103,10 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/rtx-config-bridge.yaml
+  install-assistant-tools-rtx.source.rtx-google-onboarding:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-google-onboarding.yaml
   install-assistant-tools-rtx.source.rtx-init:
     blueprint:
       base: module-root
