@@ -3,13 +3,19 @@ from __future__ import annotations
 
 import re
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 
-import yaml
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+SRC_ROOT = REPO_ROOT / "src"
+for import_root in (REPO_ROOT, SRC_ROOT):
+    if str(import_root) not in sys.path:
+        sys.path.insert(0, str(import_root))
+
+from officina.common.blueprint_graph import (  # noqa: E402
+    BlueprintGraphError,
+    load_module_blueprint,
+)
 
 from validators.skill_runtime_files import (
     ALLOWED_RTX_SUFFIXES,
@@ -32,28 +38,51 @@ _OLD_RUNTIME_PATH_RE = re.compile(
 _PUBLIC_INTERFACE_NAME_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 
 
-def _declared_public_interface_ids(skill_dir: Path) -> frozenset[str]:
-    """Return canonical same-skill exports from a schema-v5 module blueprint."""
+def _is_same_skill_public_interface(skill_name: str, interface_id: object) -> bool:
+    """Return whether an interface ID is canonical and owned by this skill."""
+    if not isinstance(interface_id, str):
+        return False
+    prefix = f"{skill_name}.interface."
+    return (
+        interface_id.startswith(prefix)
+        and _PUBLIC_INTERFACE_NAME_RE.fullmatch(interface_id.removeprefix(prefix))
+        is not None
+    )
+
+
+def _declared_public_interface_ids(
+    repo_root: Path,
+    skill_dir: Path,
+) -> frozenset[str]:
+    """Return same-skill exports from one schema-validated module blueprint."""
     try:
-        blueprint_text = (skill_dir / "blueprint.yaml").read_text(encoding="utf-8")
-        document = yaml.safe_load(blueprint_text)
-    except (OSError, UnicodeDecodeError, yaml.YAMLError):
+        module = load_module_blueprint(
+            repo_root,
+            skill_dir,
+            expected_schema_version=5,
+        )
+    except (BlueprintGraphError, OSError, UnicodeError, ValueError):
         return frozenset()
-    if (
-        not isinstance(document, dict)
-        or document.get("schema_version") != 5
-        or document.get("node_type") != "module"
-        or document.get("id") != skill_dir.name
-        or not isinstance(document.get("exports"), dict)
-    ):
+    exports = module.declaration.get("exports")
+    if not isinstance(exports, Mapping):
         return frozenset()
-    prefix = f"{skill_dir.name}.interface."
     return frozenset(
-        key
-        for key in document["exports"]
-        if isinstance(key, str)
-        and key.startswith(prefix)
-        and _PUBLIC_INTERFACE_NAME_RE.fullmatch(key.removeprefix(prefix)) is not None
+        interface_id
+        for interface_id in exports
+        if _is_same_skill_public_interface(skill_dir.name, interface_id)
+    )
+
+
+def _graph_public_interface_ids(graph: object, skill_name: str) -> frozenset[str] | None:
+    """Return same-skill IDs from a validated graph, or None for legacy fakes."""
+    exports = getattr(graph, "exports", None)
+    if not isinstance(exports, Mapping):
+        return None
+    return frozenset(
+        interface_id
+        for interface_id, export in exports.items()
+        if getattr(export, "module_node_id", None) == skill_name
+        and _is_same_skill_public_interface(skill_name, interface_id)
     )
 
 
@@ -150,11 +179,20 @@ def _validate(repo_root: Path, graph: object | None) -> list[str]:
         for skill_dir in sorted(skills_root.iterdir())
         if skill_dir.is_dir() and skill_dir.name != ".system"
     }
-    public_interfaces_by_skill = {
-        skill_dir.name: _declared_public_interface_ids(skill_dir)
-        for skill_dir in sorted(skills_root.iterdir())
-        if skill_dir.is_dir() and skill_dir.name != ".system"
-    }
+    public_interfaces_by_skill: dict[str, frozenset[str]] = {}
+    for skill_dir in sorted(skills_root.iterdir()):
+        if not skill_dir.is_dir() or skill_dir.name == ".system":
+            continue
+        graph_ids = (
+            _graph_public_interface_ids(graph, skill_dir.name)
+            if graph is not None
+            else None
+        )
+        public_interfaces_by_skill[skill_dir.name] = (
+            graph_ids
+            if graph_ids is not None
+            else _declared_public_interface_ids(repo_root, skill_dir)
+        )
 
     for path, rel_path in _iter_skill_markdown(repo_root):
         skill_name = rel_path.parts[1]

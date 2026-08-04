@@ -156,6 +156,35 @@ def test_email_guidance_routes_shared_credential_and_legacy_fallback() -> None:
     assert "fallback" in legacy
 
 
+def test_cloud_guidance_routes_shared_credential_and_legacy_fallback() -> None:
+    text = authored_skill("cloud-files")
+    paragraphs = text.split("\n\n")
+    shared = next(
+        paragraph
+        for paragraph in paragraphs
+        if "cloud-files.interface.use-google-credential" in paragraph
+    )
+    assert "connect-google.interface.default" in shared
+    assert "credential_id" in shared
+    assert "same registry home" in shared
+
+    legacy = next(
+        paragraph
+        for paragraph in paragraphs
+        if "cloud-files.interface.setup-oauth" in paragraph
+    )
+    assert "legacy" in legacy
+    assert "fallback" in legacy
+
+
+def test_cloud_shared_credential_route_allows_owning_gateway() -> None:
+    root, _, _ = exported_interface(
+        "cloud-files", "cloud-files.interface.use-google-credential"
+    )
+    access = root["exports"]["cloud-files.interface.use-google-credential"]["access"]
+    assert "cloud-files" in access["allowed_callers"]
+
+
 def test_calendar_gateway_declares_complete_oauth_route_invariants() -> None:
     _, gateway, _ = exported_interface("g-calendar", "g-calendar.interface.default")
 
