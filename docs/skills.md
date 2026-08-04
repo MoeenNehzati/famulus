@@ -64,7 +64,7 @@ The graph gives a visual overview of the live skill set. The sections below are 
 
 ### Featured
 
-- `recurring-tasks` — Manage AI-driven recurring jobs as systemd user timers with health checks _(topics: task-automation, system-maintenance; activated by: user request, skill workflow, scheduled job)_
+- `recurring-tasks` — Manage recurring AI jobs through the host's native per-user scheduler _(topics: task-automation, system-maintenance; activated by: user request, skill workflow, scheduled job)_
 
 ### Listed
 

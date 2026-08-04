@@ -1596,7 +1596,7 @@ interfaces:
         allow_stdin: false
         min_positionals: 1
         notes: First positional is the local YAML file; remaining positionals are filters. Filtered output is a pruned tree (or pruned list, if the input itself was a bare list), not a flat list of matches -- do not assume flat-list shape.
-    usage: <file> [filters]
+    usage: <file> [filters] [--sort FIELD]
     version: 1
   list-manager-rtx.source.rtx-yaml-store.interface.update-list:
     contract:

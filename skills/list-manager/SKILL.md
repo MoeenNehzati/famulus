@@ -83,7 +83,7 @@ Use the installed `dispatcher` command for these process-bound interfaces:
   - `dispatcher --caller-skill list-manager list-manager.interface.read-beautify <file> [filters] [--sort FIELD] [-D|--no-descriptions] [--markdown|--table|--diff] [--no-ids] [-o FILE]`
   - Read a local YAML list file and immediately return pretty output. No allowed_flags restriction: --sort/-D/--markdown/--table/--diff/--no-ids/-o all pass through.
 - `list-manager.interface.read-list` — Read a local YAML list file, optionally filtered (raw YAML output). A filtered read preserves structure: it returns the same shape as the input (full doc with categories, or a bare list) pruned to only branches containing a match -- every ancestor category and parent entry of a match is kept for context, and a match is never duplicated as both a nested child and an independent top-level result.
-  - `dispatcher --caller-skill list-manager list-manager.interface.read-list <file> [filters]`
+  - `dispatcher --caller-skill list-manager list-manager.interface.read-list <file> [filters] [--sort FIELD]`
   - First positional is the local YAML file; remaining positionals are filters. Filtered output is a pruned tree (or pruned list, if the input itself was a bare list), not a flat list of matches -- do not assume flat-list shape.
 - `list-manager.interface.update-list` — Update entries in a local YAML list file using a YAML sequence of patch objects supplied by file or stdin.
   - `dispatcher --caller-skill list-manager list-manager.interface.update-list <file> --file /tmp/patch.yaml [--expected-revision N]`

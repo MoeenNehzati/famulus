@@ -83,7 +83,7 @@ SUMMARY_OVERRIDES = {
     "skill-maker": "Author new skills that conform to the repo's skill-writing guideline",
     "pdf-to-markdown": "Convert a research-paper PDF into LLM-readable text",
     "prepare-handoff": "Prepare a clean handoff with workflow and documentation updates",
-    "recurring-tasks": "Manage AI-driven recurring jobs as systemd user timers with health checks",
+    "recurring-tasks": "Manage recurring AI jobs through the host's native per-user scheduler",
     "refactor-node": "Refactor whole repository nodes or owned sub-scopes by gateway language",
     "tight-mode": "Rigorous, verified output mode with certainty over speed",
     "tool-applicability": "Check whether a theorem or framework achieves a target in the current setting",

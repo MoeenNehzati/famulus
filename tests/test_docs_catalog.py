@@ -85,6 +85,17 @@ def test_load_catalog_reads_configured_discovery_metadata(tmp_path: Path) -> Non
     assert skill.persistent_modifier is False
 
 
+def test_recurring_tasks_catalog_summary_is_platform_neutral() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    skill = next(
+        skill for skill in load_catalog(repo_root) if skill.name == "recurring-tasks"
+    )
+
+    assert skill.summary == (
+        "Manage recurring AI jobs through the host's native per-user scheduler"
+    )
+
+
 def test_domain_grouping_omits_hidden_skills_by_default(tmp_path: Path) -> None:
     _write_skill(
         tmp_path,

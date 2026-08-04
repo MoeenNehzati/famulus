@@ -5,7 +5,7 @@ children:
     base: module-root
     path: _rtx/blueprint.yaml
 content:
-- (?:\.gitignore|SKILL\.md|lessons/2026\-07\-06\.md|skill\.mmd)
+- (?:\.gitignore|SKILL\.md|lessons/2026\-07\-06\.md)
 description: Defines, installs, controls, and health-checks recurring assistant jobs
   through the host's native per-user scheduler.
 discovery:
