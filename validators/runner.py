@@ -40,18 +40,103 @@ _GIT_REPOSITORY_ENV = (
 
 
 class ValidatorRunnerError(RuntimeError):
-    """Raised when validators cannot run against one exact staged view."""
+    """Signal that validators cannot run against one exact staged view.
+
+    Intent
+    ------
+    Distinguish validator-runner contract failures from ordinary findings.
+
+    Rationale
+    ---------
+    Parent and child processes need one bounded failure type for malformed Git
+    state, validator protocols, and serialized results.
+
+    Pseudocode
+    ----------
+    - set runner_error = staged validation contract failure
+    - return runner_error
+
+    Wraps
+    -----
+    - none
+    """
 
 
 class _IndexEntry(NamedTuple):
+    """Record one mode, object, stage, and path from the captured Git index.
+
+    Intent
+    ------
+    Carry immutable index metadata between snapshot, mirror, and validation steps.
+
+    Rationale
+    ---------
+    Explicit fields prevent later steps from reparsing or reopening the live index.
+
+    Pseudocode
+    ----------
+    - set index_entry = mode object_id stage and relative_path
+    - return index_entry
+
+    Wraps
+    -----
+    - none
+    """
+
     mode: str
     object_id: str
     stage: str
     relative_path: str
 
 
+class _RepositorySnapshot(NamedTuple):
+    """Record the temporary Git state captured for one validator run.
+
+    Intent
+    ------
+    Keep the copied index, delta Git directory, and immutable HEAD baseline together.
+
+    Rationale
+    ---------
+    A single record ensures path selection and mirror materialization share one index.
+
+    Pseudocode
+    ----------
+    - set repository_snapshot = root git_dir index_path and head_commit
+    - return repository_snapshot
+
+    Wraps
+    -----
+    - none
+    """
+
+    root: Path
+    git_dir: Path
+    index_path: Path
+    head_commit: str | None
+
+
 def _source_git_environment() -> dict[str, str]:
-    """Return an environment whose Git repository comes only from cwd."""
+    """Return an environment whose Git repository comes only from cwd.
+
+    Intent
+    ------
+    Remove ambient Git routing variables before repository commands execute.
+
+    Rationale
+    ---------
+    Validator behavior must depend on the explicit repository, not a caller's
+    worktree, namespace, index, or object-store overrides.
+
+    Pseudocode
+    ----------
+    - set clean_environment = process environment without Git routing variables
+    - return clean_environment
+
+    Wraps
+    -----
+    - none
+    """
 
     env = os.environ.copy()
     for name in _GIT_REPOSITORY_ENV:
@@ -64,6 +149,38 @@ def _run_source_git(
     *args: str,
     input_bytes: bytes | None = None,
 ) -> subprocess.CompletedProcess[bytes]:
+    """Run one Git command against the explicit source repository.
+
+    Intent
+    ------
+    Centralize byte-preserving Git execution with ambient routing removed.
+
+    Rationale
+    ---------
+    Index paths may contain non-UTF-8 bytes, so callers need captured byte streams
+    and consistent OS-error conversion.
+
+    Pseudocode
+    ----------
+    - set git_result = Git args in repo_root with clean environment and input_bytes
+    - return git_result
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._source_git_environment:
+      why:
+        computes: "Builds the ambient-isolated environment used for the source Git subprocess."
+
+    InstantiationsFromRepo
+    ----------------------
+    .ValidatorRunnerError:
+      why:
+        raises: "Reports an operating-system failure to start the source Git subprocess."
+    """
     try:
         return subprocess.run(
             ["git", *args],
@@ -77,8 +194,109 @@ def _run_source_git(
         raise ValidatorRunnerError(f"cannot execute Git: {exc}") from exc
 
 
-def _index_entries(repo_root: Path) -> tuple[_IndexEntry, ...]:
-    result = _run_source_git(repo_root, "ls-files", "--stage", "-z")
+def _run_snapshot_git(
+    repo_root: Path,
+    snapshot: _RepositorySnapshot,
+    *args: str,
+) -> subprocess.CompletedProcess[bytes]:
+    """Run one Git command against the copied index snapshot.
+
+    Intent
+    ------
+    Query temporary Git metadata while retaining the source working-tree location.
+
+    Rationale
+    ---------
+    Delta discovery must ignore live index replacements after snapshot capture.
+
+    Pseudocode
+    ----------
+    - set snapshot_environment = clean environment plus snapshot Git locations
+    - set git_result = Git args with snapshot_environment
+    - return git_result
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._source_git_environment:
+      why:
+        constructs: "Builds the clean environment extended with captured Git locations."
+    .ValidatorRunnerError:
+      why:
+        raises: "Reports an operating-system failure to start the snapshot Git subprocess."
+    """
+    env = _source_git_environment()
+    env.update(
+        {
+            "GIT_DIR": str(snapshot.git_dir),
+            "GIT_WORK_TREE": str(repo_root),
+        }
+    )
+    try:
+        return subprocess.run(
+            ["git", *args],
+            cwd=repo_root,
+            env=env,
+            capture_output=True,
+            check=False,
+        )
+    except OSError as exc:
+        raise ValidatorRunnerError(f"cannot execute Git: {exc}") from exc
+
+
+def _index_entries(
+    repo_root: Path,
+    *,
+    snapshot: _RepositorySnapshot | None = None,
+) -> tuple[_IndexEntry, ...]:
+    """Parse all staged index records from live or snapshotted Git metadata.
+
+    Intent
+    ------
+    Convert NUL-delimited Git index output into validated immutable records.
+
+    Rationale
+    ---------
+    Mode, stage, duplicate, and path checks fail closed before filesystem writes.
+
+    Pseudocode
+    ----------
+    - set raw_records = staged index listing from live or snapshot Git
+    - set parsed_entries = validated mode object stage and path records
+    - return parsed_entries
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._run_source_git:
+      why:
+        constructs: "Builds the live index listing when no repository snapshot is supplied."
+    ._run_snapshot_git:
+      why:
+        constructs: "Builds the captured index listing when a repository snapshot is supplied."
+    ._IndexEntry:
+      why:
+        constructs: "Builds each immutable validated index record returned to later stages."
+    .ValidatorRunnerError:
+      why:
+        raises: "Reports malformed, duplicate, unsupported, or unreadable index records."
+    """
+    if snapshot is None:
+        result = _run_source_git(repo_root, "ls-files", "--stage", "-z")
+    else:
+        result = _run_snapshot_git(
+            repo_root,
+            snapshot,
+            "ls-files",
+            "--stage",
+            "-z",
+        )
     if result.returncode != 0:
         detail = result.stderr.decode("utf-8", errors="replace").strip()
         raise ValidatorRunnerError(f"cannot enumerate staged files: {detail}")
@@ -118,6 +336,33 @@ def _index_entries(repo_root: Path) -> tuple[_IndexEntry, ...]:
 
 
 def _safe_mirror_path(mirror_root: Path, relative_path: str) -> Path:
+    """Resolve one safe repository-relative path beneath a mirror root.
+
+    Intent
+    ------
+    Reject absolute and parent-traversing Git paths before materialization.
+
+    Rationale
+    ---------
+    Tracked filenames are untrusted inputs to temporary filesystem writes.
+
+    Pseudocode
+    ----------
+    - set logical_path = relative_path parsed as POSIX parts
+    - if logical_path is unsafe:
+      - raise validator runner error
+    - return mirror_root plus logical_path
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .ValidatorRunnerError:
+      why:
+        raises: "Rejects an absolute, empty, or parent-traversing staged repository path."
+    """
     logical = PurePosixPath(relative_path)
     if logical.is_absolute() or not logical.parts or ".." in logical.parts:
         raise ValidatorRunnerError(
@@ -130,6 +375,36 @@ def _read_regular_blobs(
     repo_root: Path,
     entries: Sequence[_IndexEntry],
 ) -> tuple[bytes, ...]:
+    """Read exact blob bytes for regular entries through one Git batch request.
+
+    Intent
+    ------
+    Materialize captured object IDs without consulting working-tree files.
+
+    Rationale
+    ---------
+    Batch reads preserve ordering and verify each object header, type, and size.
+
+    Pseudocode
+    ----------
+    - set object_request = ordered object ids from entries
+    - set batch_output = Git cat-file response for object_request
+    - set blob_bytes = validated blob payloads in entry order
+    - return blob_bytes
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._run_source_git:
+      why:
+        constructs: "Builds the ordered cat-file batch response for captured object IDs."
+    .ValidatorRunnerError:
+      why:
+        raises: "Reports Git failures or malformed, truncated, non-blob batch responses."
+    """
     if not entries:
         return ()
     request = b"".join(
@@ -178,12 +453,46 @@ def _read_regular_blobs(
 
 def _materialize_tracked_mirror(
     repo_root: Path,
+    entries: Sequence[_IndexEntry],
 ) -> tuple[Path, tuple[_IndexEntry, ...]]:
-    entries = _index_entries(repo_root)
+    """Write stage-zero regular blobs into a temporary repository mirror.
+
+    Intent
+    ------
+    Build the exact filesystem view consumed by isolated validators.
+
+    Rationale
+    ---------
+    Reading by captured object ID makes unstaged working-tree bytes irrelevant.
+
+    Pseudocode
+    ----------
+    - set frozen_entries = immutable copy of entries
+    - set regular_entries = stage-zero regular records
+    - set mirror_files = captured blobs at safe paths with captured modes
+    - return mirror_root and frozen_entries
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._read_regular_blobs:
+      why:
+        reads: "Reads exact captured blob bytes in the same order as regular index entries."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._safe_mirror_path:
+      why:
+        constructs: "Builds each bounded destination path before captured bytes are written."
+    """
+    frozen_entries = tuple(entries)
     mirror_root = Path(tempfile.mkdtemp(prefix="ai-repo-validator-mirror-"))
     regular = tuple(
         entry
-        for entry in entries
+        for entry in frozen_entries
         if entry.stage == "0" and entry.mode in _REGULAR_MODES
     )
     try:
@@ -197,28 +506,328 @@ def _materialize_tracked_mirror(
             destination.write_bytes(content)
             if os.name == "posix":
                 destination.chmod(0o755 if entry.mode == "100755" else 0o644)
-        return mirror_root, entries
+        return mirror_root, frozen_entries
     except BaseException:
         shutil.rmtree(mirror_root, ignore_errors=True)
         raise
 
 
 def _source_git_dir(repo_root: Path) -> Path:
+    """Resolve the source repository's absolute per-worktree Git directory.
+
+    Intent
+    ------
+    Locate the live index file that must be copied at snapshot capture.
+
+    Rationale
+    ---------
+    Linked worktrees may not store their index under the common Git directory.
+
+    Pseudocode
+    ----------
+    - set git_dir = absolute Git directory reported for repo_root
+    - return git_dir
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._run_source_git:
+      why:
+        constructs: "Builds the rev-parse response containing the per-worktree Git directory."
+    .ValidatorRunnerError:
+      why:
+        raises: "Reports an unavailable or non-UTF-8 per-worktree Git directory."
+    """
     result = _run_source_git(repo_root, "rev-parse", "--absolute-git-dir")
     if result.returncode != 0:
         detail = result.stderr.decode("utf-8", errors="replace").strip()
-        raise ValidatorRunnerError(f"cannot locate Git metadata: {detail}")
+        raise ValidatorRunnerError(f"cannot enumerate staged files: {detail}")
     try:
         return Path(result.stdout.decode("utf-8", errors="strict").strip())
     except UnicodeError as exc:
         raise ValidatorRunnerError("Git metadata path is not UTF-8") from exc
 
 
-def _build_isolated_git_dir(repo_root: Path, mirror_root: Path) -> Path:
+def _source_git_common_dir(repo_root: Path) -> Path:
+    """Resolve the source repository's common Git metadata directory.
+
+    Intent
+    ------
+    Locate the object store shared by ordinary and linked worktrees.
+
+    Rationale
+    ---------
+    Snapshot delta commands need read-only object access without copying history.
+
+    Pseudocode
+    ----------
+    - set common_dir = Git common directory resolved against repo_root
+    - return common_dir
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._run_source_git:
+      why:
+        constructs: "Builds the rev-parse response containing the common Git directory."
+    .ValidatorRunnerError:
+      why:
+        raises: "Reports an unavailable or non-UTF-8 common Git directory."
+    """
+    result = _run_source_git(repo_root, "rev-parse", "--git-common-dir")
+    if result.returncode != 0:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise ValidatorRunnerError(f"cannot locate common Git metadata: {detail}")
+    try:
+        raw = result.stdout.decode("utf-8", errors="strict").strip()
+    except UnicodeError as exc:
+        raise ValidatorRunnerError("common Git metadata path is not UTF-8") from exc
+    path = Path(raw)
+    if not path.is_absolute():
+        path = repo_root / path
+    return path.resolve()
+
+
+def _capture_repository_snapshot(repo_root: Path) -> _RepositorySnapshot:
+    """Copy index state and capture the immutable HEAD baseline for one run.
+
+    Intent
+    ------
+    Create temporary Git metadata used by both delta selection and mirror creation.
+
+    Rationale
+    ---------
+    Copying the index once prevents concurrent live-index changes from mixing paths
+    and bytes. Bracketing that copy with HEAD reads rejects a concurrent commit
+    that would pair the copied index with the wrong baseline, while object
+    alternates avoid mutating or duplicating source history.
+
+    Pseudocode
+    ----------
+    - set source_metadata = worktree index common objects and current HEAD
+    - set head_before = current commit or unborn state
+    - set snapshot_index = source index and shared-index bytes
+    - set head_after = current commit or unborn state
+    - if head_before differs from head_after:
+      - raise concurrent HEAD transition error
+    - set snapshot_head = stable captured commit or isolated unborn branch
+    - return repository snapshot
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._source_git_common_dir:
+      why:
+        reads: "Locates the immutable source object store exposed to temporary Git metadata."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._source_git_dir:
+      why:
+        constructs: "Builds the source index path copied into the temporary snapshot."
+    ._run_source_git:
+      why:
+        constructs: "Builds the immutable current-HEAD response recorded in temporary metadata."
+    ._RepositorySnapshot:
+      why:
+        constructs: "Builds the snapshot record shared by delta and mirror construction."
+    .ValidatorRunnerError:
+      why:
+        raises: "Reports missing index state or an unreadable current HEAD baseline."
+    """
     source_git_dir = _source_git_dir(repo_root)
     source_index = source_git_dir / "index"
     if not source_index.is_file():
         raise ValidatorRunnerError("source Git index is unavailable")
+    snapshot_root = Path(tempfile.mkdtemp(prefix="ai-repo-validator-index-"))
+    snapshot_git_dir = snapshot_root / "git"
+    try:
+        head_before_result = _run_source_git(
+            repo_root,
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            "HEAD^{commit}",
+        )
+        if head_before_result.returncode == 0:
+            head_before = head_before_result.stdout.decode("ascii").strip()
+        elif head_before_result.returncode == 1:
+            head_before = None
+        else:
+            detail = head_before_result.stderr.decode(
+                "utf-8",
+                errors="replace",
+            ).strip()
+            raise ValidatorRunnerError(f"cannot capture HEAD: {detail}")
+
+        (snapshot_git_dir / "objects" / "info").mkdir(parents=True)
+        (snapshot_git_dir / "refs" / "heads").mkdir(parents=True)
+        (snapshot_git_dir / "refs" / "tags").mkdir(parents=True)
+        snapshot_index = snapshot_git_dir / "index"
+        shutil.copy2(source_index, snapshot_index)
+        for shared_index in source_git_dir.glob("sharedindex.*"):
+            if shared_index.is_file():
+                shutil.copy2(shared_index, snapshot_git_dir / shared_index.name)
+        (snapshot_git_dir / "config").write_text(
+            "[core]\n"
+            "\trepositoryformatversion = 0\n"
+            "\tfilemode = true\n"
+            "\tbare = false\n"
+            "\tlogallrefupdates = false\n",
+            encoding="utf-8",
+        )
+        common_objects = _source_git_common_dir(repo_root) / "objects"
+        (snapshot_git_dir / "objects" / "info" / "alternates").write_text(
+            f"{common_objects}\n",
+            encoding="utf-8",
+        )
+        head_after_result = _run_source_git(
+            repo_root,
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            "HEAD^{commit}",
+        )
+        if head_after_result.returncode == 0:
+            head_commit = head_after_result.stdout.decode("ascii").strip()
+        elif head_after_result.returncode == 1:
+            head_commit = None
+        else:
+            detail = head_after_result.stderr.decode(
+                "utf-8",
+                errors="replace",
+            ).strip()
+            raise ValidatorRunnerError(f"cannot capture HEAD: {detail}")
+        if head_before != head_commit:
+            raise ValidatorRunnerError(
+                "HEAD changed while capturing repository snapshot"
+            )
+        if head_commit is not None:
+            (snapshot_git_dir / "HEAD").write_text(
+                f"{head_commit}\n",
+                encoding="ascii",
+            )
+        else:
+            (snapshot_git_dir / "HEAD").write_text(
+                "ref: refs/heads/validator-unborn\n",
+                encoding="ascii",
+            )
+        return _RepositorySnapshot(
+            snapshot_root,
+            snapshot_git_dir,
+            snapshot_index,
+            head_commit,
+        )
+    except BaseException:
+        shutil.rmtree(snapshot_root, ignore_errors=True)
+        raise
+
+
+def _changed_regular_paths(
+    repo_root: Path,
+    snapshot: _RepositorySnapshot,
+    entries: Sequence[_IndexEntry],
+) -> tuple[str, ...]:
+    """Return changed stage-zero regular paths from the captured index.
+
+    Intent
+    ------
+    Select the bounded path set supplied to staged-aware validators.
+
+    Rationale
+    ---------
+    Git diff semantics exclude intent-to-add and deletion entries; intersecting
+    regular records excludes symlinks and unresolved conflict-only paths.
+
+    Pseudocode
+    ----------
+    - set changed_names = snapshot index diff with intent-to-add hidden
+    - set eligible_names = stage-zero regular entry paths
+    - return sorted intersection of changed_names and eligible_names
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._run_snapshot_git:
+      why:
+        constructs: "Builds the intent-to-add-aware index-versus-HEAD changed-path stream."
+    .ValidatorRunnerError:
+      why:
+        raises: "Reports failure to derive changed paths from captured Git metadata."
+    """
+    result = _run_snapshot_git(
+        repo_root,
+        snapshot,
+        "diff",
+        "--cached",
+        "--name-only",
+        "-z",
+        "--ita-invisible-in-index",
+        "--diff-filter=ACMRT",
+        "--no-renames",
+        "--",
+    )
+    if result.returncode != 0:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise ValidatorRunnerError(f"cannot identify staged changes: {detail}")
+    eligible = {
+        entry.relative_path
+        for entry in entries
+        if entry.stage == "0" and entry.mode in _REGULAR_MODES
+    }
+    changed: set[str] = set()
+    for raw_path in result.stdout.split(b"\0"):
+        if not raw_path:
+            continue
+        path = raw_path.decode("utf-8", errors="surrogateescape")
+        if path in eligible:
+            changed.add(path)
+    return tuple(sorted(changed))
+
+
+def _build_isolated_git_dir(
+    snapshot: _RepositorySnapshot,
+    mirror_root: Path,
+) -> Path:
+    """Construct child Git metadata from the same copied index snapshot.
+
+    Intent
+    ------
+    Give validators writable isolated Git state paired with staged mirror bytes.
+
+    Rationale
+    ---------
+    Copying snapshot metadata rather than live metadata preserves one run boundary
+    and prevents validator Git mutations from reaching the source repository.
+
+    Pseudocode
+    ----------
+    - set isolated_metadata = Git directories and unborn validator HEAD
+    - set isolated_index = captured index and shared-index bytes
+    - return isolated Git directory
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .ValidatorRunnerError:
+      why:
+        raises: "Reports filesystem failure while constructing isolated child Git metadata after substantial local directory and index setup."
+    """
     isolated_git_dir = mirror_root / ".git"
     try:
         (isolated_git_dir / "objects").mkdir(parents=True)
@@ -236,8 +845,8 @@ def _build_isolated_git_dir(repo_root: Path, mirror_root: Path) -> Path:
             "\tlogallrefupdates = false\n",
             encoding="utf-8",
         )
-        shutil.copy2(source_index, isolated_git_dir / "index")
-        for shared_index in source_git_dir.glob("sharedindex.*"):
+        shutil.copy2(snapshot.index_path, isolated_git_dir / "index")
+        for shared_index in snapshot.git_dir.glob("sharedindex.*"):
             if shared_index.is_file():
                 shutil.copy2(shared_index, isolated_git_dir / shared_index.name)
     except OSError as exc:
@@ -250,6 +859,32 @@ def _build_isolated_git_dir(repo_root: Path, mirror_root: Path) -> Path:
 def _validator_paths(
     repo_root: Path,
 ) -> dict[str, Path]:
+    """Discover canonical validator IDs and source paths in supported layouts.
+
+    Intent
+    ------
+    Build the deterministic validator catalog for the staged repository view.
+
+    Rationale
+    ---------
+    Explicit package IDs and layout ambiguity checks prevent silent shadowing.
+
+    Pseudocode
+    ----------
+    - set validator_packages = repository and one supported skill layout
+    - set validator_paths = discovered Python validators excluding helpers
+    - return validator_paths keyed by canonical id
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .ValidatorRunnerError:
+      why:
+        raises: "Reports ambiguous skill layouts or duplicate canonical validator identifiers."
+    """
     current_skill_dir = repo_root / _CURRENT_SKILL_VALIDATOR_PACKAGE[1]
     future_skill_dir = repo_root / _FUTURE_SKILL_VALIDATOR_PACKAGE[1]
     if current_skill_dir.is_dir() and future_skill_dir.is_dir():
@@ -291,6 +926,35 @@ def _selected_validator_paths(
     repo_root: Path,
     validator_ids: Sequence[str] | None,
 ) -> tuple[tuple[str, Path], ...]:
+    """Resolve an optional validator-ID selection against the staged catalog.
+
+    Intent
+    ------
+    Return a sorted, duplicate-free validator execution list.
+
+    Rationale
+    ---------
+    Unknown or duplicate selections indicate caller mistakes and must fail closed.
+
+    Pseudocode
+    ----------
+    - set available_validators = discovered canonical validator paths
+    - set selected_ids = validated requested ids or all available ids
+    - return selected id and path pairs in lexical order
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._validator_paths:
+      why:
+        constructs: "Builds the available canonical validator catalog used for selection."
+    .ValidatorRunnerError:
+      why:
+        raises: "Reports duplicate requested identifiers or identifiers absent from the catalog."
+    """
     available = _validator_paths(repo_root)
     if validator_ids is None:
         selected = tuple(sorted(available))
@@ -310,6 +974,34 @@ def _load_validator(
     validator_id: str,
     path: Path,
 ) -> tuple[ModuleType, Callable[[Path], list[str]]]:
+    """Import one staged validator module and resolve its compatibility entry point.
+
+    Intent
+    ------
+    Load validator code exclusively from the materialized staged mirror.
+
+    Rationale
+    ---------
+    Requiring callable `validate` preserves the established root-validator contract
+    while optional protocols are inspected after import.
+
+    Pseudocode
+    ----------
+    - set module_spec = import specification for validator path
+    - set validator_module = module executed from module_spec
+    - set validate_function = callable validate attribute
+    - return validator_module and validate_function
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .ValidatorRunnerError:
+      why:
+        raises: "Reports unavailable import machinery, import failure, or a missing validate entry point."
+    """
     module_name = "_validator_" + validator_id.replace("/", "_").replace("-", "_")
     spec = importlib.util.spec_from_file_location(module_name, path)
     if spec is None or spec.loader is None:
@@ -331,13 +1023,40 @@ def _load_validator(
 
 def _validated_errors(
     validator_id: str,
+    entry_point: str,
     errors: object,
 ) -> list[str]:
+    """Validate and return one validator entry point's finding list.
+
+    Intent
+    ------
+    Enforce the shared `list[str]` result boundary for every validator protocol.
+
+    Rationale
+    ---------
+    Protocol-neutral validation keeps malformed returns from corrupting result JSON.
+
+    Pseudocode
+    ----------
+    - if errors is not a list of strings:
+      - raise entry-point-specific validator runner error
+    - return errors
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .ValidatorRunnerError:
+      why:
+        raises: "Reports a validator entry point that returned anything other than list[str]."
+    """
     if not isinstance(errors, list) or not all(
         isinstance(error, str) for error in errors
     ):
         raise ValidatorRunnerError(
-            f"{validator_id}: validate must return list[str]"
+            f"{validator_id}: {entry_point} must return list[str]"
         )
     return errors
 
@@ -346,7 +1065,50 @@ def _run_tracked_validators(
     tracked_root: Path,
     display_root: Path,
     validator_ids: Sequence[str] | None,
+    staged_paths: Sequence[str],
 ) -> dict[str, list[str]]:
+    """Execute selected validators inside one isolated staged repository view.
+
+    Intent
+    ------
+    Orchestrate ordinary, staged-aware, and blueprint-graph validators with their
+    exact protocol boundaries.
+
+    Rationale
+    ---------
+    Central dispatch prevents duplicate graph loading, rejects protocol overlap,
+    protects shared graph state, and normalizes displayed mirror paths.
+
+    Pseudocode
+    ----------
+    - set loaded_validators = selected staged validator modules
+    - set protocol_errors = staged and graph overlap findings
+    - set shared_graph = one optional blueprint preflight result
+    - set validator_findings = results from each selected entry point
+    - return nonempty findings keyed by canonical validator id
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._selected_validator_paths:
+      why:
+        constructs: "Builds the deterministic validator execution list for this child run."
+    ._load_validator:
+      why:
+        constructs: "Builds each imported staged validator module and compatibility entry point."
+    ._validator_paths:
+      why:
+        constructs: "Builds the catalog consulted when an unselected graph owner is required."
+    ._validated_errors:
+      why:
+        constructs: "Builds validated finding lists from preflight and validator entry points."
+    .ValidatorRunnerError:
+      why:
+        raises: "Reports protocol overlap, graph contract failure, execution failure, or graph mutation."
+    """
     mirror_paths = [str(tracked_root), str(tracked_root / "src")]
     sys.path[:] = mirror_paths + [
         entry
@@ -363,6 +1125,21 @@ def _run_tracked_validators(
         validator_id: _load_validator(validator_id, path)
         for validator_id, path in selected_paths
     }
+    for validator_id, (module, _validate_fn) in loaded.items():
+        validate_staged = getattr(module, "validate_staged", None)
+        if not callable(validate_staged):
+            continue
+        graph_hooks = []
+        if getattr(module, "REQUIRES_BLUEPRINT_GRAPH", False) is True:
+            graph_hooks.append("REQUIRES_BLUEPRINT_GRAPH")
+        for name in ("preflight", "validate_with_graph"):
+            if callable(getattr(module, name, None)):
+                graph_hooks.append(name)
+        if graph_hooks:
+            raise ValidatorRunnerError(
+                f"{validator_id}: validate_staged cannot be combined with "
+                + ", ".join(graph_hooks)
+            )
     graph_consumers = {
         validator_id
         for validator_id, (module, _validate_fn) in loaded.items()
@@ -438,6 +1215,7 @@ def _run_tracked_validators(
             )
         preflight_errors = _validated_errors(
             preflight_owner_id,
+            "preflight",
             preflight_result[0],
         )
         preflight_graph = preflight_result[1]
@@ -451,6 +1229,7 @@ def _run_tracked_validators(
         ]
     for validator_id, _path in selected_paths:
         module, validate_fn = loaded[validator_id]
+        entry_point = "validate"
         graph_view: object | None = None
         pristine_graph_view: object | None = None
         if validator_id in graph_consumers:
@@ -468,6 +1247,7 @@ def _run_tracked_validators(
                 root,
                 graph_view,
             )
+            entry_point = "validate_with_graph"
         elif validator_id == preflight_owner_id:
             if preflight_errors or preflight_graph is None:
                 continue
@@ -479,9 +1259,19 @@ def _run_tracked_validators(
                     root,
                     graph_view,
                 )
+                entry_point = "validate_with_graph"
+        else:
+            validate_staged = getattr(module, "validate_staged", None)
+            if callable(validate_staged):
+                validate_fn = lambda root, fn=validate_staged: fn(
+                    root,
+                    staged_paths,
+                )
+                entry_point = "validate_staged"
         try:
             errors = _validated_errors(
                 validator_id,
+                entry_point,
                 validate_fn(tracked_root),
             )
         except ValidatorRunnerError:
@@ -507,6 +1297,33 @@ def _tracked_child_environment(
     mirror_root: Path,
     isolated_git_dir: Path,
 ) -> dict[str, str]:
+    """Build the isolated process environment for the tracked child runner.
+
+    Intent
+    ------
+    Route imports, Git commands, and text encoding to staged mirror resources.
+
+    Rationale
+    ---------
+    Explicit paths prevent source-tree imports, user-site packages, and live Git
+    metadata from affecting validator execution.
+
+    Pseudocode
+    ----------
+    - set child_environment = clean process environment
+    - set child_environment = child_environment plus mirror paths and UTF-8 settings
+    - return child_environment
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._source_git_environment:
+      why:
+        constructs: "Builds the ambient-isolated base extended with staged child locations."
+    """
     env = _source_git_environment()
     env.update(
         {
@@ -522,36 +1339,151 @@ def _tracked_child_environment(
     return env
 
 
+def _load_staged_paths(
+    tracked_root: Path,
+    staged_paths_file: Path,
+) -> tuple[str, ...]:
+    """Load and validate the parent's serialized changed-path selection.
+
+    Intent
+    ------
+    Reconstruct the staged-aware validator path tuple inside the child process.
+
+    Rationale
+    ---------
+    Type, duplicate, traversal, and index-membership checks keep the private file
+    channel fail closed and preserve surrogateescaped Git path strings.
+
+    Pseudocode
+    ----------
+    - set path_payload = decoded JSON from staged_paths_file
+    - set validated_payload = unique safe relative path strings
+    - set validated_payload = validated_payload intersect stage-zero regular paths
+    - return staged path tuple
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._index_entries:
+      why:
+        reads: "Reads the isolated copied index used to validate regular-file membership."
+    ._safe_mirror_path:
+      why:
+        validates: "Rejects absolute and parent-traversing paths in the private payload."
+
+    InstantiationsFromRepo
+    ----------------------
+    .ValidatorRunnerError:
+      why:
+        raises: "Reports malformed JSON, invalid list structure, duplicates, or ineligible paths."
+    """
+    try:
+        payload = json.loads(staged_paths_file.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValidatorRunnerError("staged paths payload is invalid") from exc
+    if not isinstance(payload, list) or not all(
+        isinstance(path, str) for path in payload
+    ):
+        raise ValidatorRunnerError("staged paths payload must be list[str]")
+    if len(set(payload)) != len(payload):
+        raise ValidatorRunnerError("staged paths payload contains duplicates")
+    eligible = {
+        entry.relative_path
+        for entry in _index_entries(tracked_root)
+        if entry.stage == "0" and entry.mode in _REGULAR_MODES
+    }
+    for relative_path in payload:
+        _safe_mirror_path(tracked_root, relative_path)
+        if relative_path not in eligible:
+            raise ValidatorRunnerError(
+                f"{relative_path}: staged path is not a regular index entry"
+            )
+    return tuple(payload)
+
+
 def _run_tracked_child(
     repo_root: Path,
     mirror_root: Path,
     isolated_git_dir: Path,
     validator_ids: Sequence[str] | None,
+    staged_paths: Sequence[str],
 ) -> dict[str, list[str]]:
+    """Run the staged validator runner in a separate isolated Python process.
+
+    Intent
+    ------
+    Execute staged code and return validated structured findings to the parent.
+
+    Rationale
+    ---------
+    Process isolation resets imports and environment state while temporary JSON
+    files avoid command-length limits for findings and changed paths.
+
+    Pseudocode
+    ----------
+    - set staged_path_payload = changed paths as private JSON
+    - set child_result = staged runner process result in mirror environment
+    - set findings = validated result JSON mapping
+    - set cleanup_state = temporary JSON files deleted
+    - return validator findings
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._tracked_child_environment:
+      why:
+        computes: "Supplies the staged import, Git, and encoding environment for the child process."
+
+    InstantiationsFromRepo
+    ----------------------
+    .ValidatorRunnerError:
+      why:
+        raises: "Reports child failure or malformed, missing, or structurally invalid result JSON."
+    """
     runner_path = mirror_root / "validators" / "runner.py"
     if not runner_path.is_file():
         raise ValidatorRunnerError(
             "staged repository does not contain validators/runner.py"
         )
-    descriptor, raw_result_path = tempfile.mkstemp(
-        prefix="ai-repo-validator-result-",
-        suffix=".json",
-    )
-    os.close(descriptor)
-    result_path = Path(raw_result_path)
-    command = [
-        sys.executable,
-        str(runner_path),
-        "--tracked-root",
-        str(mirror_root),
-        "--display-root",
-        str(repo_root),
-        "--result-path",
-        str(result_path),
-    ]
-    for validator_id in validator_ids or ():
-        command.extend(("--validator", validator_id))
+    result_path: Path | None = None
+    staged_paths_file: Path | None = None
     try:
+        descriptor, raw_result_path = tempfile.mkstemp(
+            prefix="ai-repo-validator-result-",
+            suffix=".json",
+        )
+        os.close(descriptor)
+        result_path = Path(raw_result_path)
+        staged_descriptor, raw_staged_paths_file = tempfile.mkstemp(
+            prefix="ai-repo-validator-staged-paths-",
+            suffix=".json",
+        )
+        os.close(staged_descriptor)
+        staged_paths_file = Path(raw_staged_paths_file)
+        staged_paths_file.write_text(
+            json.dumps(list(staged_paths), ensure_ascii=True),
+            encoding="utf-8",
+        )
+        command = [
+            sys.executable,
+            str(runner_path),
+            "--tracked-root",
+            str(mirror_root),
+            "--display-root",
+            str(repo_root),
+            "--result-path",
+            str(result_path),
+            "--staged-paths-file",
+            str(staged_paths_file),
+        ]
+        for validator_id in validator_ids or ():
+            command.extend(("--validator", validator_id))
         completed = subprocess.run(
             command,
             cwd=mirror_root,
@@ -589,27 +1521,82 @@ def _run_tracked_child(
             )
         return results
     finally:
-        result_path.unlink(missing_ok=True)
+        if result_path is not None:
+            result_path.unlink(missing_ok=True)
+        if staged_paths_file is not None:
+            staged_paths_file.unlink(missing_ok=True)
 
 
 def run_all(
     repo_root: Path = REPO_ROOT,
     validator_ids: Sequence[str] | None = None,
 ) -> dict[str, list[str]]:
-    """Run validators from and against the exact staged repository view."""
+    """Run validators from and against the exact staged repository view.
+
+    Intent
+    ------
+    Coordinate one captured index, changed-path set, staged mirror, and child run.
+
+    Rationale
+    ---------
+    A single lifecycle guarantees validators see staged bytes and bounded path
+    metadata while cleanup runs after success or failure.
+
+    Pseudocode
+    ----------
+    - set snapshot = copied index and captured HEAD baseline
+    - set entries = parsed snapshot index records
+    - set staged_paths = changed regular paths from snapshot
+    - set mirror = materialized blobs and isolated Git metadata
+    - set findings = tracked child validator results
+    - set cleanup_state = mirror and snapshot resources deleted
+    - return findings
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._capture_repository_snapshot:
+      why:
+        constructs: "Builds the immutable index and HEAD state shared by every step in the run."
+    ._index_entries:
+      why:
+        constructs: "Builds validated index records from the captured snapshot."
+    ._changed_regular_paths:
+      why:
+        constructs: "Builds the bounded changed-path tuple supplied to staged-aware validators."
+    ._materialize_tracked_mirror:
+      why:
+        constructs: "Builds the staged filesystem mirror from captured blob object IDs."
+    ._build_isolated_git_dir:
+      why:
+        constructs: "Builds writable child Git metadata from the copied snapshot index."
+    ._run_tracked_child:
+      why:
+        constructs: "Builds the canonical validator finding mapping returned to the caller."
+    """
 
     root = Path(repo_root).resolve()
-    mirror_root, _entries = _materialize_tracked_mirror(root)
+    snapshot = _capture_repository_snapshot(root)
+    mirror_root: Path | None = None
     try:
-        isolated_git_dir = _build_isolated_git_dir(root, mirror_root)
+        entries = _index_entries(root, snapshot=snapshot)
+        staged_paths = _changed_regular_paths(root, snapshot, entries)
+        mirror_root, _entries = _materialize_tracked_mirror(root, entries)
+        isolated_git_dir = _build_isolated_git_dir(snapshot, mirror_root)
         return _run_tracked_child(
             root,
             mirror_root,
             isolated_git_dir,
             validator_ids,
+            staged_paths,
         )
     finally:
-        shutil.rmtree(mirror_root, ignore_errors=True)
+        if mirror_root is not None:
+            shutil.rmtree(mirror_root, ignore_errors=True)
+        shutil.rmtree(snapshot.root, ignore_errors=True)
 
 
 def _write_tracked_result(
@@ -617,12 +1604,46 @@ def _write_tracked_result(
     display_root: Path,
     result_path: Path,
     validator_ids: Sequence[str] | None,
+    staged_paths_file: Path,
 ) -> int:
+    """Execute child validators and serialize their result for the parent.
+
+    Intent
+    ------
+    Provide the private child-process command boundary used by `run_all`.
+
+    Rationale
+    ---------
+    Writing one validated JSON object separates expected findings from process
+    failures and keeps stdout free of transport data.
+
+    Pseudocode
+    ----------
+    - set staged_paths = validated private path payload
+    - set findings = isolated tracked validator results
+    - set result_payload = findings as sorted JSON at result_path
+    - return success or bounded runner-error status
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._load_staged_paths:
+      why:
+        constructs: "Builds the validated changed-path tuple supplied to staged-aware validators."
+    ._run_tracked_validators:
+      why:
+        constructs: "Builds the canonical finding mapping serialized for the parent process."
+    """
     try:
+        staged_paths = _load_staged_paths(tracked_root, staged_paths_file)
         results = _run_tracked_validators(
             tracked_root,
             display_root,
             validator_ids,
+            staged_paths,
         )
         result_path.write_text(
             json.dumps({"results": results}, sort_keys=True),
@@ -635,6 +1656,28 @@ def _write_tracked_result(
 
 
 def _render_findings(results: dict[str, list[str]]) -> int:
+    """Render validator findings to stderr and return the hook exit status.
+
+    Intent
+    ------
+    Present grouped root-validator failures to command-line callers.
+
+    Rationale
+    ---------
+    A stable summary distinguishes a clean run from policy findings without
+    conflating either state with runner execution errors.
+
+    Pseudocode
+    ----------
+    - if results is empty:
+      - return success
+    - set stderr_report = each validator id count and finding
+    - return findings-present status
+
+    Wraps
+    -----
+    - none
+    """
     if not results:
         return 0
     for name, errors in results.items():
@@ -645,27 +1688,77 @@ def _render_findings(results: dict[str, list[str]]) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Parse parent or private child arguments and run the selected boundary.
+
+    Intent
+    ------
+    Expose the root validator runner as the pre-commit and child-process CLI.
+
+    Rationale
+    ---------
+    One parser keeps private transport options paired and converts runner errors
+    into deterministic exit status two while findings use status one.
+
+    Pseudocode
+    ----------
+    - set parsed_arguments = validator runner command-line options
+    - if tracked child options are present:
+      - return serialized child execution status
+    - set argument_error = partial private child options
+    - set findings = parent run for requested validator ids
+    - return rendered findings status
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._write_tracked_result:
+      why:
+        constructs: "Builds the private child result file and child-process exit status."
+    .run_all:
+      why:
+        constructs: "Builds the parent validator finding mapping from one captured staged view."
+    ._render_findings:
+      why:
+        constructs: "Builds the human-facing stderr report and findings exit status."
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo-root", type=Path, default=REPO_ROOT)
     parser.add_argument("--validator", action="append", dest="validator_ids")
     parser.add_argument("--tracked-root", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--display-root", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--result-path", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--staged-paths-file", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
 
     if args.tracked_root is not None:
-        if args.display_root is None or args.result_path is None:
+        if (
+            args.display_root is None
+            or args.result_path is None
+            or args.staged_paths_file is None
+        ):
             parser.error(
-                "--tracked-root requires --display-root and --result-path"
+                "--tracked-root requires --display-root, --result-path, and "
+                "--staged-paths-file"
             )
         return _write_tracked_result(
             args.tracked_root.resolve(),
             args.display_root.resolve(),
             args.result_path,
             args.validator_ids,
+            args.staged_paths_file,
         )
-    if args.display_root is not None or args.result_path is not None:
-        parser.error("--display-root and --result-path are private child options")
+    if (
+        args.display_root is not None
+        or args.result_path is not None
+        or args.staged_paths_file is not None
+    ):
+        parser.error(
+            "--display-root, --result-path, and --staged-paths-file are private "
+            "child options"
+        )
     try:
         results = run_all(
             repo_root=args.repo_root,

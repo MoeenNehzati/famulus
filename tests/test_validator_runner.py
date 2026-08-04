@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import shutil
 import subprocess
@@ -349,6 +350,311 @@ def test_run_all_imports_staged_transitive_dependencies(tmp_path: Path) -> None:
         repo,
         validator_ids=["repo/dependency_probe"],
     ) == {}
+
+
+def test_staged_validator_receives_eligible_paths_with_unborn_head(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    validators = _initialize_runner_repository(repo)
+    observation = tmp_path / "staged-paths.json"
+    (repo / "module.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (repo / "notes.txt").write_text("tracked\n", encoding="utf-8")
+    (validators / "staged_probe.py").write_text(
+        "import json\n"
+        "from pathlib import Path\n"
+        f"OBSERVATION = Path({str(observation)!r})\n"
+        "def validate_staged(repo_root, staged_paths):\n"
+        "    OBSERVATION.write_text(json.dumps(list(staged_paths)), encoding='utf-8')\n"
+        "    return []\n"
+        "def validate(repo_root): return ['ordinary entry point ran']\n",
+        encoding="utf-8",
+    )
+    _require_git_ok(GitTestRepository(repo).git("add", "."))
+
+    results = _RUNNER.run_all(repo, validator_ids=["repo/staged_probe"])
+
+    assert results == {}
+    assert json.loads(observation.read_text(encoding="utf-8")) == [
+        "module.py",
+        "notes.txt",
+        "validators/runner.py",
+        "validators/staged_probe.py",
+    ]
+
+
+def test_staged_validator_receives_only_changed_regular_index_paths(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    validators = _initialize_runner_repository(repo)
+    repository = GitTestRepository(repo)
+    observation = tmp_path / "changed-paths.json"
+    for name in (
+        "deleted.py",
+        "modified.py",
+        "old.py",
+        "unchanged.py",
+        "unstaged.py",
+    ):
+        (repo / name).write_text(f"NAME = {name!r}\n", encoding="utf-8")
+    (validators / "staged_probe.py").write_text(
+        "import json\n"
+        "from pathlib import Path\n"
+        f"OBSERVATION = Path({str(observation)!r})\n"
+        "def validate_staged(repo_root, staged_paths):\n"
+        "    OBSERVATION.write_text(json.dumps(list(staged_paths)), encoding='utf-8')\n"
+        "    return []\n"
+        "def validate(repo_root): return ['ordinary entry point ran']\n",
+        encoding="utf-8",
+    )
+    _require_git_ok(repository.git("add", "."))
+    _require_git_ok(repository.git("commit", "-qm", "baseline"))
+
+    (repo / "modified.py").write_text("NAME = 'modified'\n", encoding="utf-8")
+    (repo / "new.py").write_text("NAME = 'new'\n", encoding="utf-8")
+    shutil.copy2(repo / "unchanged.py", repo / "copied.py")
+    (repo / "deleted.py").unlink()
+    _require_git_ok(repository.git("mv", "old.py", "renamed.py"))
+    _require_git_ok(
+        repository.git(
+            "add",
+            "modified.py",
+            "new.py",
+            "copied.py",
+            "deleted.py",
+        )
+    )
+    (repo / "unstaged.py").write_text("NAME = 'working tree'\n", encoding="utf-8")
+    (repo / "intent.py").write_text("NAME = 'intent only'\n", encoding="utf-8")
+    _require_git_ok(repository.git("add", "-N", "intent.py"))
+
+    results = _RUNNER.run_all(repo, validator_ids=["repo/staged_probe"])
+
+    assert results == {}
+    assert json.loads(observation.read_text(encoding="utf-8")) == [
+        "copied.py",
+        "modified.py",
+        "new.py",
+        "renamed.py",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("graph_source", "expected_hook"),
+    [
+        ("REQUIRES_BLUEPRINT_GRAPH = True\n", "REQUIRES_BLUEPRINT_GRAPH"),
+        ("def preflight(repo_root): return [], None\n", "preflight"),
+        ("def validate_with_graph(repo_root, graph): return []\n", "validate_with_graph"),
+    ],
+)
+def test_staged_validator_rejects_graph_protocol_overlap(
+    tmp_path: Path,
+    graph_source: str,
+    expected_hook: str,
+) -> None:
+    repo = tmp_path / "repo"
+    validators = _initialize_runner_repository(repo)
+    (validators / "staged_probe.py").write_text(
+        graph_source
+        + "def validate_staged(repo_root, staged_paths): return []\n"
+        + "def validate(repo_root): return []\n",
+        encoding="utf-8",
+    )
+    _require_git_ok(GitTestRepository(repo).git("add", "."))
+
+    with pytest.raises(
+        _RUNNER.ValidatorRunnerError,
+        match=rf"validate_staged cannot be combined with .*{expected_hook}",
+    ):
+        _RUNNER.run_all(repo, validator_ids=["repo/staged_probe"])
+
+
+def test_captured_index_drives_both_paths_and_mirrored_bytes(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    _initialize_runner_repository(repo)
+    repository = GitTestRepository(repo)
+    module = repo / "module.py"
+    module.write_text("VALUE = 'baseline'\n", encoding="utf-8")
+    _require_git_ok(repository.git("add", "."))
+    _require_git_ok(repository.git("commit", "-qm", "baseline"))
+    module.write_text("VALUE = 'captured'\n", encoding="utf-8")
+    _require_git_ok(repository.git("add", "module.py"))
+
+    snapshot = _RUNNER._capture_repository_snapshot(repo)
+    mirror_root: Path | None = None
+    try:
+        module.write_text("VALUE = 'later'\n", encoding="utf-8")
+        _require_git_ok(repository.git("add", "module.py"))
+
+        entries = _RUNNER._index_entries(repo, snapshot=snapshot)
+        changed = _RUNNER._changed_regular_paths(repo, snapshot, entries)
+        mirror_root, _ = _RUNNER._materialize_tracked_mirror(repo, entries)
+
+        assert changed == ("module.py",)
+        assert (mirror_root / "module.py").read_text(encoding="utf-8") == (
+            "VALUE = 'captured'\n"
+        )
+    finally:
+        if mirror_root is not None:
+            shutil.rmtree(mirror_root)
+        shutil.rmtree(snapshot.root)
+
+
+def test_snapshot_capture_fails_if_head_changes_while_index_is_copied(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = tmp_path / "repo"
+    _initialize_runner_repository(repo)
+    repository = GitTestRepository(repo)
+    module = repo / "module.py"
+    module.write_text("VALUE = 'baseline'\n", encoding="utf-8")
+    _require_git_ok(repository.git("add", "."))
+    _require_git_ok(repository.git("commit", "-qm", "baseline"))
+    module.write_text("VALUE = 'staged'\n", encoding="utf-8")
+    _require_git_ok(repository.git("add", "module.py"))
+
+    source_index = _RUNNER._source_git_dir(repo) / "index"
+    original_copy = _RUNNER.shutil.copy2
+
+    def copy_and_advance_head(source: Path, destination: Path) -> Path:
+        copied = original_copy(source, destination)
+        if Path(source) == source_index:
+            _require_git_ok(repository.git("commit", "-qm", "concurrent commit"))
+        return copied
+
+    monkeypatch.setattr(_RUNNER.shutil, "copy2", copy_and_advance_head)
+
+    with pytest.raises(
+        _RUNNER.ValidatorRunnerError,
+        match="HEAD changed while capturing repository snapshot",
+    ):
+        _RUNNER._capture_repository_snapshot(repo)
+
+
+# famulus-skip: category=platform-contract; reason=POSIX preserves arbitrary filename bytes while Windows paths are Unicode; alternate=test_staged_validator_receives_eligible_paths_with_unborn_head
+@pytest.mark.skipif(os.name != "posix", reason="POSIX filename bytes")
+def test_staged_path_transport_preserves_non_utf8_filename_bytes(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    validators = _initialize_runner_repository(repo)
+    observation = tmp_path / "non-utf8-paths.json"
+    relative_path = os.fsdecode(b"module-\xff.py")
+    (repo / relative_path).write_text("VALUE = 1\n", encoding="utf-8")
+    (validators / "staged_probe.py").write_text(
+        "import json\n"
+        "from pathlib import Path\n"
+        f"OBSERVATION = Path({str(observation)!r})\n"
+        "def validate_staged(repo_root, staged_paths):\n"
+        "    OBSERVATION.write_text(json.dumps(list(staged_paths)), encoding='utf-8')\n"
+        "    return []\n"
+        "def validate(repo_root): return ['ordinary entry point ran']\n",
+        encoding="utf-8",
+    )
+    _require_git_ok(GitTestRepository(repo).git("add", "."))
+
+    results = _RUNNER.run_all(repo, validator_ids=["repo/staged_probe"])
+
+    assert results == {}
+    assert relative_path in json.loads(observation.read_text(encoding="utf-8"))
+
+
+# famulus-skip: category=platform-contract; reason=POSIX symlink index modes are not supported on Windows; alternate=test_staged_validator_receives_only_changed_regular_index_paths
+@pytest.mark.skipif(os.name != "posix", reason="POSIX symlink mode")
+def test_staged_validator_excludes_changed_symlinks(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    validators = _initialize_runner_repository(repo)
+    observation = tmp_path / "symlink-paths.json"
+    (repo / "target.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (repo / "link.py").symlink_to("target.py")
+    (validators / "staged_probe.py").write_text(
+        "import json\n"
+        "from pathlib import Path\n"
+        f"OBSERVATION = Path({str(observation)!r})\n"
+        "def validate_staged(repo_root, staged_paths):\n"
+        "    OBSERVATION.write_text(json.dumps(list(staged_paths)), encoding='utf-8')\n"
+        "    return []\n"
+        "def validate(repo_root): return ['ordinary entry point ran']\n",
+        encoding="utf-8",
+    )
+    _require_git_ok(GitTestRepository(repo).git("add", "."))
+
+    results = _RUNNER.run_all(repo, validator_ids=["repo/staged_probe"])
+
+    assert results == {}
+    paths = json.loads(observation.read_text(encoding="utf-8"))
+    assert "target.py" in paths
+    assert "link.py" not in paths
+
+
+def test_staged_validator_supports_split_index_snapshot(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    validators = _initialize_runner_repository(repo)
+    repository = GitTestRepository(repo)
+    observation = tmp_path / "split-index-paths.json"
+    (repo / "module.py").write_text("VALUE = 'baseline'\n", encoding="utf-8")
+    (validators / "staged_probe.py").write_text(
+        "import json\n"
+        "from pathlib import Path\n"
+        f"OBSERVATION = Path({str(observation)!r})\n"
+        "def validate_staged(repo_root, staged_paths):\n"
+        "    OBSERVATION.write_text(json.dumps(list(staged_paths)), encoding='utf-8')\n"
+        "    return []\n"
+        "def validate(repo_root): return ['ordinary entry point ran']\n",
+        encoding="utf-8",
+    )
+    _require_git_ok(repository.git("add", "."))
+    _require_git_ok(repository.git("commit", "-qm", "baseline"))
+    _require_git_ok(repository.git("update-index", "--split-index"))
+    (repo / "module.py").write_text("VALUE = 'staged'\n", encoding="utf-8")
+    _require_git_ok(repository.git("add", "module.py"))
+
+    results = _RUNNER.run_all(repo, validator_ids=["repo/staged_probe"])
+
+    assert results == {}
+    assert json.loads(observation.read_text(encoding="utf-8")) == ["module.py"]
+
+
+def test_staged_validator_supports_linked_worktree_index(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    validators = _initialize_runner_repository(repo)
+    repository = GitTestRepository(repo)
+    observation = tmp_path / "linked-worktree-paths.json"
+    (repo / "module.py").write_text("VALUE = 'baseline'\n", encoding="utf-8")
+    (validators / "staged_probe.py").write_text(
+        "import json\n"
+        "from pathlib import Path\n"
+        f"OBSERVATION = Path({str(observation)!r})\n"
+        "def validate_staged(repo_root, staged_paths):\n"
+        "    OBSERVATION.write_text(json.dumps(list(staged_paths)), encoding='utf-8')\n"
+        "    return []\n"
+        "def validate(repo_root): return ['ordinary entry point ran']\n",
+        encoding="utf-8",
+    )
+    _require_git_ok(repository.git("add", "."))
+    _require_git_ok(repository.git("commit", "-qm", "baseline"))
+    linked = tmp_path / "linked"
+    _require_git_ok(
+        repository.git(
+            "worktree",
+            "add",
+            "--quiet",
+            "-b",
+            "validator-linked",
+            str(linked),
+        )
+    )
+    (linked / "module.py").write_text("VALUE = 'staged'\n", encoding="utf-8")
+    _require_git_ok(GitTestRepository(linked).git("add", "module.py"))
+
+    results = _RUNNER.run_all(linked, validator_ids=["repo/staged_probe"])
+
+    assert results == {}
+    assert json.loads(observation.read_text(encoding="utf-8")) == ["module.py"]
 
 
 # famulus-skip: category=platform-contract; reason=POSIX executable bits are not meaningful on Windows; alternate=the isolated Git index mode tests cover the cross-platform source of truth
