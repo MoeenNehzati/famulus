@@ -114,6 +114,7 @@ def test_query_uses_the_common_standard_extractor_interface() -> None:
         ).read_text(encoding="utf-8")
     )
     assert "src/officina/common/configured_schema.py" in certification_basis
+    assert "src/officina/dispatcher/catalog.py" in certification_basis
 
 
 def test_query_contract_exposes_compact_and_on_demand_views() -> None:

@@ -36,6 +36,7 @@
   "src/officina/common/repository_paths.py",
   "src/officina/common/secret_store.py",
   "src/officina/dispatcher/__init__.py",
+  "src/officina/dispatcher/catalog.py",
   "src/officina/dispatcher/cli.py",
   "src/officina/dispatcher/core.py",
   "src/officina/dispatcher/platforms/__init__.py",
