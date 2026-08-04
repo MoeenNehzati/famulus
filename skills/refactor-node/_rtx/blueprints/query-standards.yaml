@@ -1,5 +1,6 @@
 content:
 - _closure_engine\.py
+- schemas/query-result\.schema\.json
 dependencies:
 - blueprint:
     base: repository-root
@@ -7,9 +8,8 @@ dependencies:
   reason: Supplies the layered canonical standards materialized by this query interface.
   source: node-standards.source.standards
   version: 1
-description: Resolves effective direct ownership for registered modules and behavioral sources,
-  validates pinned standard closures, evaluates applicability, and emits deduplicated standards,
-  evidence, remedies, and structured unsupported partitions as JSON.
+description: Resolves effective ownership, validates pinned standard closures, evaluates applicability,
+  and emits compact or ref-scoped projections plus structured unsupported partitions as JSON.
 gateway:
   language: Python
   path: _closure_engine.py
@@ -26,6 +26,13 @@ interfaces:
           type:
             kind: string
             sensitivity: user-private
+        query-json:
+          description: Optional generic standard-record filter and projection; mutually exclusive with scoped views.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
         repo-root:
           description: Repository whose registered node and standards graph will be queried.
           direct_io_ref: repository
@@ -37,9 +44,17 @@ interfaces:
             must_exist: true
             relative_to: caller-cwd
             syntax: literal
+        refs-json:
+          default: '[]'
+          description: Exact document and ref pairs used to scope context, evidence, or remedies.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
         view:
           default: requirements
-          description: Select compact requirements, evidence, remedies, or the complete diagnostic projection.
+          description: Select compact requirements, scoped context, evidence, remedies, or the complete diagnostic projection.
           required: false
           sensitivity: public
           type:
@@ -95,8 +110,7 @@ interfaces:
       interaction:
         mode: unattended
       outcomes:
-      - caller_action: Use the returned partitions, applicability buckets, evidence, and remedies as the
-          refactoring specification.
+      - caller_action: Use the returned partitions and requested projection for the current decision.
         class: success
         effects: []
         id: resolved
@@ -109,18 +123,15 @@ interfaces:
       outputs:
       - audience: machine
         cardinality: {minimum: 1, maximum: 1}
-        description: One JSON document containing effective owner scopes and the requested requirements,
-          evidence, remedies, or full standards projection.
+        description: One JSON document containing effective owner scopes, a shared record catalog,
+          partition-specific applicability overlays, and the requested standards projection.
         direct_io_ref: query-result
         empty: Never empty on success.
         id: query-result
         ordering: stable
         pagination: {kind: none}
         truncation: {kind: none}
-        type:
-          format: {named: json}
-          kind: string
-          sensitivity: derived-private
+        schema: {path: schemas/query-result.schema.json, fragment: '#'}
       - audience: human
         cardinality: {minimum: 0, maximum: 1}
         description: Invalid target, graph, standard, fact, or query diagnostic.
@@ -143,13 +154,15 @@ interfaces:
         min_positionals: 1
         max_positionals: 1
         allow_stdin: false
-        allowed_flags: [--repo-root, --facts-json, --view]
+        allowed_flags: [--repo-root, --facts-json, --view, --refs-json, --query-json]
         flag_patterns:
           --repo-root: .+
           --facts-json: .+
-          --view: (?:requirements|evidence|remedies|full)
-    usage: <target> [--repo-root PATH] [--facts-json JSON] [--view requirements|evidence|remedies|full]
-    version: 2
+          --refs-json: .+
+          --query-json: .+
+          --view: (?:requirements|context|evidence|remedies|full)
+    usage: <target> [--repo-root PATH] [--facts-json JSON] [--view requirements|context|evidence|remedies|full] [--refs-json JSON] [--query-json JSON]
+    version: 4
 node_type: behavioral_source
 platform_support: {linux: true, macos: true, windows: true}
 runtime_dependencies: []
@@ -157,4 +170,4 @@ schema_version: 5
 uses_interfaces:
 - interface: common.interface.standard-extractor
   version: 1
-version: 2
+version: 4

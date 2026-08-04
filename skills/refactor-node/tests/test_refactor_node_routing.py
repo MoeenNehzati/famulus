@@ -62,7 +62,7 @@ def test_gateway_routes_to_both_language_sources() -> None:
             "interface": (
                 "refactor-node.interface.query-standards"
             ),
-            "version": 2,
+            "version": 4,
         },
         {
             "interface": (
@@ -129,13 +129,23 @@ def test_query_contract_exposes_compact_and_on_demand_views() -> None:
         "refactor-node-rtx.source.query-standards.interface.query-standards"
     ]
 
-    assert facade["facade_interface"]["version"] == 2
-    assert interface["version"] == 2
+    assert facade["facade_interface"]["version"] == 4
+    assert interface["version"] == 4
     assert interface["contract"]["arguments"]["view"]["default"] == "requirements"
-    assert "--view" in interface["process_binding"]["patterns"][0]["allowed_flags"]
+    output = interface["contract"]["outputs"][0]
+    assert output["schema"] == {
+        "path": "schemas/query-result.schema.json",
+        "fragment": "#",
+    }
+    assert "type" not in output
+    assert r"schemas/query-result\.schema\.json" in query_source["content"]
+    flags = interface["process_binding"]["patterns"][0]["allowed_flags"]
+    assert {"--view", "--refs-json", "--query-json"}.issubset(flags)
     skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
-    for view in ("requirements", "evidence", "remedies", "full"):
+    for view in ("requirements", "context", "evidence", "remedies", "full"):
         assert f"--view {view}" in skill
+    assert "--refs-json" in skill
+    assert "--query-json" in skill
 
 
 def test_router_and_python_export_have_distinct_owned_gateways() -> None:

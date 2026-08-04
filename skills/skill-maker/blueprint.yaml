@@ -48,4 +48,4 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml
-version: 3
+version: 5

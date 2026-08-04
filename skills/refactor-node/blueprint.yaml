@@ -37,7 +37,7 @@ exports:
       allowed_callers: []
     facade_interface:
       interface: refactor-node-rtx.interface.query-standards
-      version: 2
+      version: 4
   refactor-node.interface.refactor-instructions:
     access:
       allow_all_modules: true
@@ -68,4 +68,4 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/instructions-python-refactoring.yaml
-version: 3
+version: 5

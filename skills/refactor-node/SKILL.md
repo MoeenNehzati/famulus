@@ -9,7 +9,7 @@ description: Use when auditing or refactoring a whole registered skill-system no
 Catalog: assistant-development; topics: assistant-authoring, assistant-architecture, assistant-assurance, repository-workflow; visibility: featured
 Activation: user-request, skill-workflow; persistent modifier: no
 
-Skill Version: 3
+Skill Version: 5
 
 Uses Interfaces:
 - `refactor-node.source.gateway -> refactor-node.source.instruction-refactoring.interface.refactor-instructions@1`
@@ -28,7 +28,7 @@ Dispatcher Interfaces:
 
 Use the installed `dispatcher` command for these process-bound interfaces:
 - `refactor-node.interface.query-standards` — Query effective node standards for a registered node or owned sub-scope.
-  - `dispatcher --caller-skill refactor-node refactor-node.interface.query-standards <target> [--repo-root PATH] [--facts-json JSON] [--view requirements|evidence|remedies|full]`
+  - `dispatcher --caller-skill refactor-node refactor-node.interface.query-standards <target> [--repo-root PATH] [--facts-json JSON] [--view requirements|context|evidence|remedies|full] [--refs-json JSON] [--query-json JSON]`
 
 Instruction Interfaces:
 
@@ -39,70 +39,36 @@ These interfaces are documented prompt surfaces. They are not executed through `
 <!-- END BLUEPRINT INTERFACES -->
 # Refactor Node
 
-Use the deterministic standards query as the sole repository-specific
-refactoring knowledge source. The LLM supplies semantic comparison and applies
-approved moves; it does not reconstruct ownership, routing, applicability, or
-remedies from memory.
+Use `refactor-node.interface.query-standards` as the sole repository-policy
+source. It resolves ownership and validates every pinned import; never read one
+standard file as the effective policy.
 
-The query is backed by the common standard extractor. It validates the selected
-leaf and every pinned import before returning records; never treat a leaf file
-read in isolation as the applicable policy.
+## Standards retrieval
 
-## Query
+Query the target with `task.kind=refactor` and `--view requirements`. Preserve
+each returned owner, selected scope, exclusions, gateway family, and
+`standard_ref`; report unsupported partitions.
 
-1. Invoke `refactor-node.interface.query-standards` through its generated public
-   interface contract, with the target positional first, the repository root,
-   `task.kind=refactor`, and the `requirements` view.
+For normal views, dereference each partition overlay index through the top-level
+shared catalog. Use the catalog entry's exact `document` and `ref` in follow-up
+queries; applicability and missing facts belong to the overlay.
 
-   The target may be a requested node ID or path. Add inspected target facts to
-   the JSON object when they are known.
-2. Treat each partition's owner, direct content, declaration files, exclusions,
-   gateway family, and `standard_ref` into the shared standards catalog as the routing
-   authority. Report an `unsupported` partition; do not drop it or invent a
-   language route.
-3. For every `unknown` item whose outcome matters, inspect the named fact and
-   rerun the query. Never silently discard an unknown item. Do not apply `false`
-   items.
-4. Rerun the same target and facts with `--view evidence` when assessing
-   verification or semantic-review coverage, and with `--view remedies` only
-   after diagnosing a violation. Use `--view full` only to debug the projection
-   itself. Keep `--view requirements` as the normal first pass.
-5. Retain an explicitly selected class, function, method, or instruction section
-   as the sub-scope inside the returned owner. Read the current diff and scoped
-   repository instructions, then characterize observable behavior before
-   proposing changes.
+| Current decision | Request | Use |
+|---|---|---|
+| Diagnose | `--view requirements` | Apply `requirements.true`. Inspect the missing facts in `requirements.unknown` and rerun. Never silently discard a material unknown. |
+| Interpret or apply indexed context | `--view context --refs-json JSON` | Request a relevant `context_index` entry or requirement; read only returned families, definitions, guidance, and examples. |
+| Plan or assess verification | `--view evidence --refs-json JSON` | Map returned checks, tests, and assurances to the selected refs; perform `semantic_reviews` and open only returned artifacts. Preserve limitations. |
+| Repair a proven violation | `--view remedies --refs-json JSON` | Follow only returned `remedied-by` links and procedures, including preconditions, order, invariants, completion conditions, and risk. |
+| Unusual extraction | `--query-json JSON` | Apply the generic record filter/projection described by `--help`. |
+| Debug extraction | `--view full` | Inspect the complete projection only. |
 
-## Refactoring brief
+`--refs-json` is a list of exact pairs such as
+`[{"document":"node-standards.python-ood","ref":"python-ood.behavioral-contract#preserve-observables"}]`.
+Request follow-up information only for refs that affect the current decision.
 
-For every supported partition, resolve its `standard_ref` and build this working
-set before diagnosis:
-
-- Conformance: collect every applicable rule and its rule assertions from
-  `items.true`, plus true guidance. Families, definitions, and examples supply
-  interpretation, not additional requirements.
-- Unresolved: inspect the missing facts named by `items.unknown` and rerun the
-  query. Do not proceed past a material unknown.
-- Excluded: do not apply `items.false`.
-- Evidence: query `--view evidence`, associate returned checks, tests, and
-  assurances with the assertions they cover, and preserve all limitations.
-- Judgment: use the evidence view to perform returned `semantic_reviews`; distinguish their findings from
-  mechanically proven violations.
-- Resources: open artifacts returned by the evidence view only when an applicable item, evidence
-  mechanism, or review references them. Artifacts are not independent policy.
-- Repair: after proving a violation, query `--view remedies`, resolve its exact entry, and
-  use the referenced procedure, preconditions, ordering, invariants, and
-  completion conditions.
-
-Treat `true` normative items as desired behavior. Use returned checks, tests,
-assurances, semantic reviews, and limitations as evidence boundaries. For a
-violation, form its assertion reference as `rule-id#assertion-id`. Match the
-returned `remedied-by` relation by `(source.document, source.ref)`: try the assertion, then its
-rule, then walk the rule's returned `ancestors` from nearest to farthest. Resolve
-the target by `(target.document, target.ref)` and use only that procedure. If
-multiple procedures remain applicable, choose the lowest-risk one whose stated
-preconditions fit; otherwise present the alternatives and stop for direction.
-If none is declared, report the missing remedy instead of inventing repository
-policy.
+Retain a selected class, function, method, or instruction section as a sub-scope
+of its returned owner. Read scoped repository instructions and the current diff,
+then characterize observable behavior before proposing changes.
 
 ## Route
 
@@ -114,9 +80,7 @@ policy.
 
 ## Shared change contract
 
-Refactoring preserves behavior. Separate feature work, bug fixes, and public API
-redesign. Report owner, scope and exclusions, applicable and unresolved items,
-behavioral contract, evidence, ordered declared remedies, invariants, and
-verification before mutation. Require explicit approval, apply one move at a
-time, inspect the exact diff, and stop on failed verification. Never cross an
-ownership boundary silently.
+Preserve behavior; separate features, bug fixes, and public-API redesign. Before
+mutation, report scope, relevant requirements, unresolved facts, evidence, and
+the selected remedy. Require approval, apply one move at a time, inspect the
+exact diff, and stop on failed verification or an ownership boundary.

@@ -157,9 +157,9 @@ node_type: behavioral_source
 schema_version: 5
 uses_interfaces:
 - interface: refactor-node.interface.query-standards
-  version: 2
+  version: 4
 - interface: refactor-node.source.instruction-refactoring.interface.refactor-instructions
   version: 1
 - interface: refactor-node.source.python-refactoring.interface.refactor-python
   version: 1
-version: 2
+version: 4

@@ -32,49 +32,65 @@ def test_skill_maker_queries_standards_and_builds_an_authoring_brief() -> None:
         for use in gateway["uses_interfaces"]
         if use["interface"] == "refactor-node.interface.query-standards"
     )
-    assert query_use["version"] == 2
+    assert query_use["version"] == 4
     assert "references/node-standards" not in str(gateway["interfaces"])
 
     skill = _normalized("skills/skill-maker/SKILL.md")
     for required in (
-        "Authoring brief",
+        "Standards retrieval",
         "refactor-node.interface.query-standards",
         "task.kind=author-skill",
         "--view requirements",
+        "--view context",
         "--view evidence",
         "--view remedies",
         "--view full",
-        "items.true",
-        "rule assertions",
-        "items.unknown",
+        "--refs-json",
+        "--query-json",
+        "requirements.true",
+        "requirements.unknown",
+        "context_index",
+        "shared catalog",
+        "partition overlay",
         "missing facts",
-        "items.false",
         "checks, tests, and assurances",
         "semantic_reviews",
         "artifacts",
         "remedies",
     ):
         assert required in skill
+    assert "items.true" not in skill
+    assert len(skill.split()) < 700
 
 
 def test_refactor_node_builds_a_refactoring_brief_from_each_partition() -> None:
     skill = _normalized("skills/refactor-node/SKILL.md")
 
     for required in (
-        "Refactoring brief",
+        "Standards retrieval",
         "refactor-node.interface.query-standards",
         "task.kind=refactor",
-        "items.true",
-        "rule assertions",
-        "items.unknown",
+        "--view requirements",
+        "--view context",
+        "--view evidence",
+        "--view remedies",
+        "--view full",
+        "--refs-json",
+        "--query-json",
+        "requirements.true",
+        "requirements.unknown",
+        "context_index",
+        "shared catalog",
+        "partition overlay",
         "missing facts",
-        "items.false",
         "checks, tests, and assurances",
         "semantic_reviews",
         "artifacts",
         "remedies",
     ):
         assert required in skill
+    assert "items.true" not in skill
+    assert len(skill.split()) < 700
 
 
 def test_language_routes_use_the_whole_applicable_closure() -> None:

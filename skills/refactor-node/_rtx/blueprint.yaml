@@ -14,6 +14,7 @@ children: {}
 content:
 - __init__\.py
 - _closure_engine\.py
+- schemas/query-result\.schema\.json
 description: Private read-only standards-query module for refactor-node.
 exports:
   refactor-node-rtx.interface.query-standards:
@@ -33,4 +34,4 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/query-standards.yaml
-version: 2
+version: 4

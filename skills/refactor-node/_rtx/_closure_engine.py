@@ -12,7 +12,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
-from typing import Any, NamedTuple
+from typing import Any, Iterator, Mapping, NamedTuple, Sequence
 
 from officina.common.standard_extractor import extract_standard
 from officina.runtime.python_machine_interface import PythonMachineInterface
@@ -30,7 +30,15 @@ REFACTOR_RECORD_SECTIONS = (
     r"^(standards|imports|links|artifacts|checks|tests|assurances|"
     r"semantic_reviews|evidence_claims)$"
 )
-STANDARD_VIEWS = ("requirements", "evidence", "remedies", "full")
+STANDARD_VIEWS = ("requirements", "context", "evidence", "remedies", "full")
+CONTEXT_KINDS = {"family", "definition", "guidance", "example"}
+EVIDENCE_SECTIONS = {
+    "checks",
+    "tests",
+    "assurances",
+    "semantic_reviews",
+    "evidence_claims",
+}
 
 
 class Partition(NamedTuple):
@@ -405,6 +413,9 @@ def materialize_standard(
     *,
     facts: dict[str, Any] | None = None,
     view: str = "requirements",
+    refs: Sequence[Mapping[str, str]] | None = None,
+    record_query: Mapping[str, Any] | None = None,
+    scope_refs_by_document: bool = False,
 ) -> dict[str, Any]:
     """Project generic extracted records into the refactoring query contract."""
 
@@ -413,6 +424,30 @@ def materialize_standard(
             f"unsupported standards view {view!r}; choose one of: "
             + ", ".join(STANDARD_VIEWS)
         )
+
+    if record_query is not None:
+        if refs:
+            raise ValueError("record queries cannot be combined with standard refs")
+        extracted = extract_standard(
+            Path(repo_root),
+            Path("references") / "node-standards" / leaf,
+            facts=facts,
+            query=record_query,
+        )
+        return {
+            "leaf": leaf,
+            "view": "query",
+            "available_views": list(STANDARD_VIEWS),
+            "facts": extracted["facts"],
+            "documents": extracted["documents"],
+            "records": extracted["records"],
+        }
+
+    selected_refs = _normalize_standard_refs(refs)
+    if view in {"context", "evidence", "remedies"} and not selected_refs:
+        raise ValueError(f"{view} view requires at least one standard ref")
+    if view in {"requirements", "full"} and selected_refs:
+        raise ValueError(f"{view} view does not accept standard refs")
 
     extracted = extract_standard(
         Path(repo_root),
@@ -428,6 +463,11 @@ def materialize_standard(
         },
     )
     records = extracted["records"]
+    if scope_refs_by_document:
+        closure_documents = {document["id"] for document in extracted["documents"]}
+        selected_refs = {
+            ref for ref in selected_refs if ref[0] in closure_documents
+        }
     semantic = [record for record in records if record["section"] == "standards"]
     states = {
         (record["document"], record["id"]): record["applicability"]
@@ -500,15 +540,8 @@ def materialize_standard(
         )
 
     evidence: dict[str, dict[str, dict[str, Any]]] = {}
-    evidence_sections = {
-        "checks",
-        "tests",
-        "assurances",
-        "semantic_reviews",
-        "evidence_claims",
-    }
     for record in records:
-        if record["section"] in evidence_sections:
+        if record["section"] in EVIDENCE_SECTIONS:
             evidence.setdefault(record["document"], {}).setdefault(
                 record["section"], {}
             )[record["id"]] = record["data"]
@@ -543,24 +576,483 @@ def materialize_standard(
             "documents",
         )
     }
+    semantic_by_ref = {
+        (record["document"], record["id"]): record for record in semantic
+    }
     if view == "requirements":
-        common["items"] = {
-            state: [item for item in items if item["kind"] != "procedure"]
-            for state, items in item_buckets.items()
-        }
+        common["requirements"] = _compact_requirements(semantic)
+        common["context_index"] = _compact_context_index(semantic)
+        return common
+    selected_lineage = _selected_semantic_lineage(semantic_by_ref, selected_refs)
+    if view == "context":
+        common["context"] = _select_context(semantic, semantic_by_ref, selected_refs)
         return common
     if view == "evidence":
-        common["evidence"] = evidence
-        common["artifacts"] = artifacts
+        selected_evidence, selected_artifacts = _select_evidence(
+            records,
+            aliases,
+            selected_lineage,
+        )
+        common["evidence"] = selected_evidence
+        common["artifacts"] = selected_artifacts
         return common
-    common["remedies"] = remedies
+    selected_remedies = [
+        remedy
+        for remedy in remedies
+        if (remedy["source"]["document"], remedy["source"]["ref"])
+        in selected_lineage
+    ]
+    procedure_refs = {
+        (remedy["target"]["document"], remedy["target"]["ref"])
+        for remedy in selected_remedies
+    }
+    common["remedies"] = selected_remedies
     common["procedures"] = [
         item
         for state in ("true", "unknown")
         for item in item_buckets[state]
         if item["kind"] == "procedure"
+        and (item["document"], item["id"]) in procedure_refs
     ]
     return common
+
+
+def _normalize_standard_refs(
+    refs: Sequence[Mapping[str, str]] | None,
+) -> set[tuple[str, str]]:
+    """Validate exact document/ref pairs supplied by a standards consumer."""
+
+    normalized: set[tuple[str, str]] = set()
+    for index, ref in enumerate(refs or ()):
+        if not isinstance(ref, Mapping):
+            raise ValueError(f"standard ref {index} must be an object")
+        if set(ref) != {"document", "ref"}:
+            raise ValueError(
+                f"standard ref {index} must contain only document and ref"
+            )
+        document = ref.get("document")
+        record_ref = ref.get("ref")
+        if not isinstance(document, str) or not document:
+            raise ValueError(f"standard ref {index}.document must be a non-empty string")
+        if not isinstance(record_ref, str) or not record_ref:
+            raise ValueError(f"standard ref {index}.ref must be a non-empty string")
+        normalized.add((document, record_ref))
+    return normalized
+
+
+def _compact_requirements(
+    semantic: Sequence[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    """Return only applicable or unresolved normative assertions."""
+
+    buckets: dict[str, list[dict[str, Any]]] = {"true": [], "unknown": []}
+    for record in semantic:
+        state = record["applicability"]
+        if record["kind"] != "assertion" or state not in buckets:
+            continue
+        requirement = {
+            key: record[key]
+            for key in ("document", "id", "ancestors", "applicability")
+        }
+        data = record["data"]
+        requirement["modality"] = data["modality"]
+        requirement["statement"] = data["statement"]
+        if state == "unknown":
+            requirement["missing_facts"] = record["missing_facts"]
+        buckets[state].append(requirement)
+    return buckets
+
+
+def _compact_context_index(
+    semantic: Sequence[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    """Index applicable context families without loading their contents."""
+
+    contextual_ancestors = {
+        (record["document"], ancestor)
+        for record in semantic
+        if record["kind"] in CONTEXT_KINDS - {"family"}
+        for ancestor in record["ancestors"]
+    }
+    buckets: dict[str, list[dict[str, Any]]] = {"true": [], "unknown": []}
+    for record in semantic:
+        state = record["applicability"]
+        if (
+            record["kind"] != "family"
+            or state not in buckets
+            or (record["document"], record["id"]) not in contextual_ancestors
+        ):
+            continue
+        item = {
+            key: record[key]
+            for key in ("document", "id", "applicability")
+        }
+        for key in ("title", "summary"):
+            if key in record["data"]:
+                item[key] = record["data"][key]
+        if state == "unknown":
+            item["missing_facts"] = record["missing_facts"]
+        buckets[state].append(item)
+    return buckets
+
+
+def _selected_semantic_lineage(
+    semantic_by_ref: Mapping[tuple[str, str], dict[str, Any]],
+    selected_refs: set[tuple[str, str]],
+) -> set[tuple[str, str]]:
+    """Expand selected semantic refs through their declared ancestors."""
+
+    missing = sorted(selected_refs - set(semantic_by_ref))
+    if missing:
+        rendered = ", ".join(f"{document}:{ref}" for document, ref in missing)
+        raise ValueError(f"unknown standard refs: {rendered}")
+    lineage = set(selected_refs)
+    for document, record_ref in selected_refs:
+        lineage.update(
+            (document, ancestor)
+            for ancestor in semantic_by_ref[(document, record_ref)]["ancestors"]
+        )
+    return lineage
+
+
+def _select_context(
+    semantic: Sequence[dict[str, Any]],
+    semantic_by_ref: Mapping[tuple[str, str], dict[str, Any]],
+    selected_refs: set[tuple[str, str]],
+) -> list[dict[str, Any]]:
+    """Return interpretive records from only the selected records' nearest families."""
+
+    _selected_semantic_lineage(semantic_by_ref, selected_refs)
+    roots: set[tuple[str, str]] = set()
+    for document, record_ref in selected_refs:
+        record = semantic_by_ref[(document, record_ref)]
+        root = record_ref
+        for ancestor in reversed(record["ancestors"]):
+            candidate = semantic_by_ref[(document, ancestor)]
+            if candidate["kind"] == "family":
+                root = ancestor
+                break
+        roots.add((document, root))
+
+    context = []
+    for record in semantic:
+        if record["kind"] not in CONTEXT_KINDS or record["applicability"] == "false":
+            continue
+        if not any(
+            record["document"] == document
+            and (record["id"] == root or root in record["ancestors"])
+            for document, root in roots
+        ):
+            continue
+        item = {
+            key: record[key]
+            for key in ("document", "kind", "id", "ancestors", "applicability")
+        }
+        content = {
+            key: value
+            for key, value in record["data"].items()
+            if key in {"title", "summary", "term", "meaning", "statement"}
+        }
+        if content:
+            item["content"] = content
+        if record["applicability"] == "unknown":
+            item["missing_facts"] = record["missing_facts"]
+        context.append(item)
+    return context
+
+
+def _iter_reference_objects(value: Any) -> Iterator[Mapping[str, Any]]:
+    """Yield nested typed reference mappings without interpreting their relation."""
+
+    if isinstance(value, Mapping):
+        if isinstance(value.get("kind"), str) and isinstance(value.get("ref"), str):
+            yield value
+        for child in value.values():
+            yield from _iter_reference_objects(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _iter_reference_objects(child)
+
+
+def _resolve_pointer(
+    owner_document: str,
+    pointer: Mapping[str, Any],
+    aliases: Mapping[str, Mapping[str, str]],
+) -> tuple[str, str, str]:
+    alias = pointer.get("document")
+    document = (
+        aliases.get(owner_document, {}).get(alias, owner_document)
+        if isinstance(alias, str)
+        else owner_document
+    )
+    return document, str(pointer["kind"]), str(pointer["ref"])
+
+
+def _select_evidence(
+    records: Sequence[dict[str, Any]],
+    aliases: Mapping[str, Mapping[str, str]],
+    selected_lineage: set[tuple[str, str]],
+) -> tuple[dict[str, dict[str, dict[str, Any]]], dict[str, dict[str, Any]]]:
+    """Return evidence connected to selected semantic refs and only its artifacts."""
+
+    evidence_records = [
+        record for record in records if record["section"] in EVIDENCE_SECTIONS
+    ]
+    evidence_keys = {
+        (record["document"], record["kind"], record["id"]): record
+        for record in evidence_records
+    }
+    pointers = {
+        key: [
+            _resolve_pointer(record["document"], pointer, aliases)
+            for pointer in _iter_reference_objects(record["data"])
+        ]
+        for key, record in evidence_keys.items()
+    }
+    selected = {
+        key
+        for key, values in pointers.items()
+        if any((document, record_ref) in selected_lineage for document, _, record_ref in values)
+    }
+    changed = True
+    while changed:
+        changed = False
+        for key, values in pointers.items():
+            if key in selected:
+                for pointer in values:
+                    if pointer in evidence_keys and pointer not in selected:
+                        selected.add(pointer)
+                        changed = True
+            elif any(pointer in selected for pointer in values):
+                selected.add(key)
+                changed = True
+
+    selected_artifact_refs = {
+        (document, record_ref)
+        for key in selected
+        for document, kind, record_ref in pointers[key]
+        if kind == "artifact"
+    }
+    for key, record in evidence_keys.items():
+        if record["section"] != "evidence_claims":
+            continue
+        if any(
+            (document, record_ref) in selected_artifact_refs
+            for document, kind, record_ref in pointers[key]
+            if kind == "artifact"
+        ):
+            selected.add(key)
+
+    evidence: dict[str, dict[str, dict[str, Any]]] = {}
+    for key in sorted(selected):
+        record = evidence_keys[key]
+        evidence.setdefault(record["document"], {}).setdefault(
+            record["section"], {}
+        )[record["id"]] = record["data"]
+
+    artifacts: dict[str, dict[str, Any]] = {}
+    artifact_records = {
+        (record["document"], record["id"]): record
+        for record in records
+        if record["section"] == "artifacts"
+    }
+    for key in selected:
+        for document, kind, record_ref in pointers[key]:
+            if kind != "artifact":
+                continue
+            artifact = artifact_records.get((document, record_ref))
+            if artifact is not None:
+                artifacts.setdefault(document, {})[record_ref] = artifact["data"]
+    return evidence, artifacts
+
+
+def _intern_catalog_record(
+    catalog: dict[str, list[dict[str, Any]]],
+    indexes: dict[str, dict[str, int]],
+    bucket: str,
+    key: str,
+    value: dict[str, Any],
+) -> int:
+    """Store immutable record content once and fail on conflicting projections."""
+
+    records = catalog.setdefault(bucket, [])
+    bucket_indexes = indexes.setdefault(bucket, {})
+    existing = bucket_indexes.get(key)
+    if existing is not None and records[existing] != value:
+        raise ValueError(f"conflicting catalog projections for {key}")
+    if existing is not None:
+        return existing
+    index = len(records)
+    records.append(value)
+    bucket_indexes[key] = index
+    return index
+
+
+def _overlay_ref(item: Mapping[str, Any], index: int) -> int | dict[str, Any]:
+    """Represent true applicability by a ref and unknown applicability by a small overlay."""
+
+    if item.get("applicability") != "unknown":
+        return index
+    return {"index": index, "missing_facts": item.get("missing_facts", [])}
+
+
+def _intern_materialization(
+    materialized: Mapping[str, Any],
+    *,
+    catalog: dict[str, list[dict[str, Any]]],
+    indexes: dict[str, dict[str, int]],
+    documents: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    """Preserve a layered result as shared content plus a fact-specific overlay."""
+
+    for document in materialized["documents"]:
+        document_id = document["id"]
+        value = {key: document[key] for key in ("path", "digest")}
+        previous = documents.get(document_id)
+        if previous is not None and previous != value:
+            raise ValueError(f"conflicting document metadata for {document_id}")
+        documents[document_id] = value
+
+    overlay: dict[str, Any] = {
+        "leaf": materialized["leaf"],
+        "facts": materialized["facts"],
+        "documents": [document["id"] for document in materialized["documents"]],
+    }
+    view = materialized["view"]
+    if view == "requirements":
+        requirement_overlay: dict[str, list[Any]] = {"true": [], "unknown": []}
+        for state, items in materialized["requirements"].items():
+            for item in items:
+                key = f'{item["document"]}::{item["id"]}'
+                index = _intern_catalog_record(
+                    catalog,
+                    indexes,
+                    "requirements",
+                    key,
+                    {
+                        "document": item["document"],
+                        "ref": item["id"],
+                        "modality": item["modality"],
+                        "statement": item["statement"],
+                    },
+                )
+                requirement_overlay[state].append(_overlay_ref(item, index))
+        context_overlay: dict[str, list[Any]] = {"true": [], "unknown": []}
+        for state, items in materialized["context_index"].items():
+            for item in items:
+                key = f'{item["document"]}::{item["id"]}'
+                value = {
+                    field: item[field]
+                    for field in ("title", "summary")
+                    if field in item
+                }
+                value = {
+                    "document": item["document"],
+                    "ref": item["id"],
+                    **value,
+                }
+                index = _intern_catalog_record(
+                    catalog, indexes, "context_index", key, value
+                )
+                context_overlay[state].append(_overlay_ref(item, index))
+        overlay["requirements"] = requirement_overlay
+        overlay["context_index"] = context_overlay
+        return overlay
+
+    if view == "context":
+        context_overlay = {"true": [], "unknown": []}
+        for item in materialized["context"]:
+            key = f'{item["document"]}::{item["id"]}'
+            value = {"kind": item["kind"]}
+            if "content" in item:
+                value["content"] = item["content"]
+            value = {
+                "document": item["document"],
+                "ref": item["id"],
+                **value,
+            }
+            index = _intern_catalog_record(
+                catalog, indexes, "context", key, value
+            )
+            state = "unknown" if item["applicability"] == "unknown" else "true"
+            context_overlay[state].append(_overlay_ref(item, index))
+        overlay["context"] = context_overlay
+        return overlay
+
+    if view == "evidence":
+        evidence_refs = []
+        for document, sections in materialized["evidence"].items():
+            for section, records in sections.items():
+                for record_id, content in records.items():
+                    key = f"{document}::{section}::{record_id}"
+                    index = _intern_catalog_record(
+                        catalog,
+                        indexes,
+                        "evidence",
+                        key,
+                        {
+                            "document": document,
+                            "ref": record_id,
+                            "section": section,
+                            "content": content,
+                        },
+                    )
+                    evidence_refs.append(index)
+        artifact_refs = []
+        for document, records in materialized["artifacts"].items():
+            for record_id, content in records.items():
+                key = f"{document}::{record_id}"
+                index = _intern_catalog_record(
+                    catalog,
+                    indexes,
+                    "artifacts",
+                    key,
+                    {"document": document, "ref": record_id, "content": content},
+                )
+                artifact_refs.append(index)
+        overlay["evidence"] = evidence_refs
+        overlay["artifacts"] = artifact_refs
+        return overlay
+
+    if view == "remedies":
+        remedy_overlay = {"true": [], "unknown": []}
+        for item in materialized["remedies"]:
+            key = f'{item["document"]}::{item["id"]}'
+            index = _intern_catalog_record(
+                catalog,
+                indexes,
+                "remedies",
+                key,
+                {
+                    "document": item["document"],
+                    "ref": item["id"],
+                    "source": item["source"],
+                    "target": item["target"],
+                },
+            )
+            state = "unknown" if item["applicability"] == "unknown" else "true"
+            remedy_overlay[state].append(_overlay_ref(item, index))
+        procedure_overlay = {"true": [], "unknown": []}
+        for item in materialized["procedures"]:
+            key = f'{item["document"]}::{item["id"]}'
+            index = _intern_catalog_record(
+                catalog,
+                indexes,
+                "procedures",
+                key,
+                {
+                    "document": item["document"],
+                    "ref": item["id"],
+                    "content": item["content"],
+                },
+            )
+            state = "unknown" if item["applicability"] == "unknown" else "true"
+            procedure_overlay[state].append(_overlay_ref(item, index))
+        overlay["remedies"] = remedy_overlay
+        overlay["procedures"] = procedure_overlay
+        return overlay
+
+    raise ValueError(f"cannot intern standards view {view!r}")
 
 
 def _combine_applicability(left: str, right: str) -> str:
@@ -579,12 +1071,19 @@ def query(
     *,
     facts: dict[str, Any] | None = None,
     view: str = "requirements",
+    refs: Sequence[Mapping[str, str]] | None = None,
+    record_query: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return owner partitions and their materialized authoritative standards."""
 
     repo_root = Path(repo_root).resolve()
+    requested_refs = _normalize_standard_refs(refs)
     partitions = []
     standards: dict[str, dict[str, Any]] = {}
+    catalog: dict[str, list[dict[str, Any]]] = {}
+    catalog_indexes: dict[str, dict[str, int]] = {}
+    documents: dict[str, dict[str, Any]] = {}
+    intern_results = record_query is None and view != "full"
     for partition in resolve_partitions(repo_root, target):
         partition_facts = dict(partition.target_facts)
         for name, value in (facts or {}).items():
@@ -616,11 +1115,24 @@ def query(
             ).hexdigest()[:12]
             standard_ref = f"{partition.leaf}#{fact_fingerprint}"
             if standard_ref not in standards:
-                standards[standard_ref] = materialize_standard(
+                materialized = materialize_standard(
                     repo_root,
                     partition.leaf,
                     facts=partition_facts,
                     view=view,
+                    refs=refs,
+                    record_query=record_query,
+                    scope_refs_by_document=True,
+                )
+                standards[standard_ref] = (
+                    _intern_materialization(
+                        materialized,
+                        catalog=catalog,
+                        indexes=catalog_indexes,
+                        documents=documents,
+                    )
+                    if intern_results
+                    else materialized
                 )
             result_partition["standard_ref"] = standard_ref
         else:
@@ -629,13 +1141,37 @@ def query(
                 "gateway_language": partition.declared_gateway_language,
             }
         partitions.append(result_partition)
-    return {
+    closure_documents = (
+        set(documents)
+        if intern_results
+        else {
+            document["id"]
+            for standard in standards.values()
+            for document in standard["documents"]
+        }
+    )
+    outside = sorted(
+        (document, record_ref)
+        for document, record_ref in requested_refs
+        if document not in closure_documents
+    )
+    if outside:
+        rendered = ", ".join(f"{document}:{record_ref}" for document, record_ref in outside)
+        raise ValueError(
+            "standard refs are outside every selected standard closure: " + rendered
+        )
+    result = {
         "repository_root": str(repo_root),
         "target": target,
-        "view": view,
+        "view": "query" if record_query is not None else view,
         "partitions": partitions,
         "standards": standards,
     }
+    if intern_results:
+        result["available_views"] = list(STANDARD_VIEWS)
+        result["documents"] = documents
+        result["catalog"] = catalog
+    return result
 
 
 class Interface(PythonMachineInterface):
@@ -650,6 +1186,8 @@ class Interface(PythonMachineInterface):
         parser.add_argument("--repo-root", default=".")
         parser.add_argument("--facts-json", default="{}")
         parser.add_argument("--view", choices=STANDARD_VIEWS, default="requirements")
+        parser.add_argument("--refs-json", default="[]")
+        parser.add_argument("--query-json")
         return parser
 
     def run(self, args: argparse.Namespace) -> int:
@@ -659,6 +1197,22 @@ class Interface(PythonMachineInterface):
             raise ValueError(f"--facts-json must be valid JSON: {exc}") from exc
         if not isinstance(facts, dict):
             raise ValueError("--facts-json must decode to an object")
+        try:
+            refs = json.loads(args.refs_json)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"--refs-json must be valid JSON: {exc}") from exc
+        if not isinstance(refs, list):
+            raise ValueError("--refs-json must decode to a list")
+        record_query = None
+        if args.query_json is not None:
+            try:
+                record_query = json.loads(args.query_json)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"--query-json must be valid JSON: {exc}") from exc
+            if not isinstance(record_query, dict):
+                raise ValueError("--query-json must decode to an object")
+            if args.view != "requirements":
+                raise ValueError("--query-json cannot be combined with --view")
         print(
             json.dumps(
                 query(
@@ -666,6 +1220,8 @@ class Interface(PythonMachineInterface):
                     args.target,
                     facts=facts,
                     view=args.view,
+                    refs=refs,
+                    record_query=record_query,
                 ),
                 separators=(",", ":"),
                 sort_keys=True,
