@@ -1,22 +1,9 @@
 ---
 name: formal-prose-review
-description: |
-  Review technical prose for grammar, typos, wording, concision, and formal professional tone without changing mathematical or substantive content.
-
-  Use when:
-  - the user wants grammar, punctuation, wording, clarity, or tone polished in a paragraph, section, or document
-  - the goal is a more formal or professional presentation without changing the math or argument
-  - awkward or informal phrasing should be cleaned up while preserving substance
-
-  Do not use when:
-  - the main task is proof verification, notation review, or document-level structure or flow review
-  - the user wants substantive rewriting of claims, assumptions, or argument structure
-
-  Success criteria:
-  - identify grammar, typo, punctuation, wording, and tone issues
-  - improve clarity and concision without changing mathematical substance
-  - preserve notation, claims, assumptions, and proof structure unless explicitly asked otherwise
-  - respect field conventions and user-approved wording unless they create real error or ambiguity
+description: Use when technical prose needs grammar, typos, punctuation, wording,
+  clarity, concision, or formal-tone editing while preserving mathematical and
+  substantive content; not for proof verification, notation review, document-level
+  flow, or substantive rewriting.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->
