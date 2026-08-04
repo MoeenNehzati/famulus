@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "schema.json",
+  "title": "Famulus Direct-Routing Blueprint Schema",
+  "description": "Migration schema for version-6 modules and behavioral sources.",
+  "oneOf": [
+    {"$ref": "module.schema.json"},
+    {"$ref": "behavioral-source.schema.json"}
+  ],
+  "x-famulus": {
+    "authoring": "Prepare schema version 6 with dotted path-derived module IDs and explicit child routes before the live cutover."
+  }
+}

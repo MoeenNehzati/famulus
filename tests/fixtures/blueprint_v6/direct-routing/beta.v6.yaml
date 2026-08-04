@@ -1,0 +1,21 @@
+schema_version: 6
+node_type: module
+id: root.beta
+version: 1
+gateway:
+  path: __init__.py
+  language: Python
+content:
+- __init__\.py
+authority:
+  owns_filesystem: []
+sources: {}
+children: {}
+namespace_exports: {}
+exports:
+  root.beta.interface.inspect:
+    source_interface: root.beta.source.inspector.interface.inspect
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - ..alpha

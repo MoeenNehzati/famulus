@@ -1,0 +1,15 @@
+schema_version: 6
+node_type: module
+id: unrelated
+version: 1
+gateway:
+  path: SKILL.md
+  language: Markdown
+content:
+- SKILL\.md
+authority:
+  owns_filesystem: []
+sources: {}
+children: {}
+namespace_exports: {}
+exports: {}

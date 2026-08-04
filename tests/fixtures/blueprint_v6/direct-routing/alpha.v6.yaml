@@ -1,0 +1,26 @@
+schema_version: 6
+node_type: module
+id: root.alpha
+version: 1
+gateway:
+  path: __init__.py
+  language: Python
+content:
+- __init__\.py
+authority:
+  owns_filesystem: []
+sources: {}
+children:
+  leaf: {}
+namespace_exports:
+  leaf:
+    version: 1
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - root
+      - ..beta
+    surface:
+      only:
+        root.alpha.leaf.interface.execute: 3
+exports: {}
