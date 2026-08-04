@@ -1,18 +1,9 @@
 ---
 name: proof-audit
 description: |
-  Audit a mathematical proof, proof sketch, argument, lemma, proposition, or theorem statement for soundness, coherence, redundancy, hidden assumptions, invalid theorem use, quantifier or domain mistakes, corner cases, and missing hypotheses.
-
-  Use when the user asks to check, verify, audit, validate, stress-test, or debug a proof or claimed mathematical implication; wants diagnosis before rewriting; or asks whether an argument actually proves its stated conclusion.
+  Use when the user asks to audit a mathematical proof, proof sketch, argument, lemma, proposition, or theorem statement for soundness, coherence, redundancy, hidden assumptions, invalid theorem use, quantifier or domain mistakes, corner cases, or missing hypotheses; asks to check, verify, validate, stress-test, or debug a proof or claimed mathematical implication; wants diagnosis before rewriting; or asks whether an argument actually proves its stated conclusion.
 
   Do not use when the main task is brainstorming, notation cleanup, prose polishing, writing a proof from scratch, computation, code, or LaTeX formatting.
-
-  Success criteria:
-  - separate soundness, coherence, and redundancy
-  - check standing assumptions and earlier local results before external theorems
-  - isolate the first real gap or main blocker
-  - flag unused branches, irrelevant detours, repeated claims, over-strong methods, or heavier-than-needed machinery
-  - suggest a repair direction without rewriting unless asked
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->
