@@ -64,7 +64,7 @@ calendar mismatches.
 
 ## Output contract
 
-The script returns one JSON object with:
+The interface returns one JSON object with:
 - `start_date`, `end_date`, `location_query`, `timezone`
 - `hourly.time`
 - `hourly.temperature_2m`
