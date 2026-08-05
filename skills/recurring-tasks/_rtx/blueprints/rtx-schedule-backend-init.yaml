@@ -2,6 +2,7 @@ content:
 - _schedule_backend/__init__\.py
 - _schedule_backend/_base_backend\.py
 - _schedule_backend/_linux_backend\.py
+- _schedule_backend/_linux_registration_check\.py
 - _schedule_backend/_osx_backend\.py
 - _schedule_backend/_windows_backend\.py
 dependencies:
@@ -12,8 +13,8 @@ dependencies:
     process interface.
   source: recurring-tasks-rtx.source.rtx-job-executor
   version: 1
-description: Selects and implements the Linux, macOS, or Windows native per-user scheduling
-  backend.
+description: Selects and implements native per-user scheduling backends, including
+  registration-drift checks where supported.
 gateway:
   language: Python
   path: _schedule_backend/__init__.py

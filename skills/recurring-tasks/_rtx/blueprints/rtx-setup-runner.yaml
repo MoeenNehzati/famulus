@@ -10,7 +10,8 @@ dependencies:
 - blueprint:
     base: module-root
     path: blueprints/rtx-healthcheck-probe.yaml
-  reason: Installs a cron entry that executes the healthcheck probe gateway.
+  reason: Registers an independent periodic invocation of the public healthcheck
+    interface.
   source: recurring-tasks-rtx.source.rtx-healthcheck-probe
   version: 1
 - blueprint:
@@ -32,7 +33,7 @@ dependencies:
   source: recurring-tasks-rtx.source.rtx-unit-writer
   version: 1
 description: Performs host setup by ensuring agent environment, syncing scheduler
-  entries, installing the healthcheck cron entry, and reporting status.
+  entries, installing an independent healthcheck sentinel, and reporting status.
 gateway:
   language: Python
   path: _setup_runner.py
@@ -65,7 +66,7 @@ interfaces:
             kind: string
       caller_warnings:
       - external-side-effect: Configures the agent environment native scheduler entries
-          and a recurring healthcheck cron line.
+          and an independent recurring healthcheck sentinel.
       direct_io:
         network: []
         reads:
@@ -176,7 +177,7 @@ interfaces:
               content.
           idempotency:
             idempotent: Repeating with unchanged inputs converges to one healthcheck
-              entry and matching scheduler state.
+              entry with a failure-popup fallback and matching scheduler state.
           on_uncertain_completion:
             verify_then_decide: Inspect environment scheduler and crontab state before
               retrying.
@@ -250,6 +251,14 @@ runtime_dependencies:
     macos: false
     windows: false
   reason: Installs the recurring healthcheck cron entry.
+  version: any
+- kind: binary
+  name: notify-send
+  platforms:
+    linux: true
+    macos: false
+    windows: false
+  reason: Delivers the independent sentinel's failure popup.
   version: any
 - kind: binary
   name: launchctl
