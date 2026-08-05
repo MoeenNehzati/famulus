@@ -186,14 +186,14 @@ dispatcher standards queries, Git.
       requires an approved correction, focused tests, exact staging, staged
       validation, cached diff check, correction commit, and re-review before the
       completion record is updated and committed separately.
-- [ ] Re-run exact-HEAD validation after the documentation commit and leave the
+- [x] Re-run exact-HEAD validation after the documentation commit and leave the
       branch clean and unpushed, proven by `git status --short --branch`.
 
 ## Completion record
 
 Implementation and independent review covered base
 `0bea7c6b09e446e2256fb480cb85d44653f61516` through committed HEAD
-`cc1dfdef1d5ec629abf94458b8f200837014fcd6`:
+`cac5ba9e1fce351121fa9ba908df71b7da870f02`:
 
 - Task 1 committed `66e2b4c6fcc1ac9aa7029c3c551a1debc096fc18`
   (`refactor(refactor-node): verify query provenance and evidence`). The router
@@ -260,7 +260,11 @@ certificate-signing-material setup with
 changed-path assertion failed, and this correction did not broaden scope to
 repair the host/session failure.
 
-The branch remains unpushed and has no configured upstream. The router/test
-correction is committed and independently re-reviewed. Only the completion-
-record commit and its post-commit exact-HEAD validation and final clean-status
-proof remain, so the last Task 7 checkbox stays open.
+The completion record was committed as
+`cac5ba9e1fce351121fa9ba908df71b7da870f02`
+(`docs(plan): record refactor calibration findings`), and its full commit hook
+completed green. Post-commit `python3 validators/runner.py` and
+`git diff --check 0bea7c6b09e446e2256fb480cb85d44653f61516..HEAD`
+both exited 0. The resulting status was exactly `## codex/deferred-fixes`; the
+branch was unpushed and had no configured upstream. All plan tasks are complete.
+Only the closure commit that records this final checkbox and evidence remains.
