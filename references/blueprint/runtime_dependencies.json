@@ -5575,6 +5575,17 @@
             },
             {
               "kind": "binary",
+              "name": "notify-send",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": false,
+                "windows": false
+              },
+              "reason": "Delivers the independent sentinel's failure popup."
+            },
+            {
+              "kind": "binary",
               "name": "schtasks",
               "version": "any",
               "platforms": {
@@ -6973,6 +6984,7 @@
       "git",
       "journalctl",
       "launchctl",
+      "notify-send",
       "rclone",
       "schtasks",
       "systemctl"
