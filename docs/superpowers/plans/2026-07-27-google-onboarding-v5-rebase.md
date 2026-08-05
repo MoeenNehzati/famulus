@@ -1,5 +1,10 @@
 # Shared Google Onboarding (v5 Rebase) Implementation Plan
 
+> **Version-6 note:** The onboarding requirements remain historical planning
+> context, but all v5 facade and `-rtx` blueprint instructions are obsolete.
+> Current exports use dotted child IDs and explicit namespace routes; see
+> `docs/skill-blueprints.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Fix feedback item 6 from `docs/plans/osx_feedback_fix/README.md` — one canonical Google client discovery, one combined OAuth grant covering Drive/Calendar/Gmail, and the client secret stored in the OS secret store instead of plaintext — superseding `docs/plans/osx_feedback_fix/03-google-onboarding.md`.

@@ -1,5 +1,9 @@
 # Closure-Scoped Dispatch and Immediate-Caller Authorization Implementation Plan
 
+> **Historical architecture:** Version 6 retained hop-local authorization but
+> replaced this scoped-graph/facade runtime with direct route-local blueprint
+> lookup. See `docs/dispatcher.md` for current behavior.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Implement immediate-module authorization, validate declared caller ownership repository-wide, and allow valid dispatch closures to run despite unrelated blueprint or certification defects.

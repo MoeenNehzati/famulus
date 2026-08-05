@@ -96,6 +96,8 @@ class DirectBlueprintRepository:
 
     @staticmethod
     def _candidate_path(root: Path, parts: tuple[str, ...]) -> Path:
+        """Derive one exact blueprint path without directory discovery."""
+
         return root.joinpath(*parts, "blueprint.yaml")
 
     @staticmethod
@@ -131,6 +133,8 @@ class DirectBlueprintRepository:
             ) from exc
 
     def _root_for(self, top_level_id: str) -> Path:
+        """Find the unique configured root containing one top-level module."""
+
         cached = self._top_level_roots.get(top_level_id)
         if cached is not None:
             return cached
@@ -156,6 +160,13 @@ class DirectBlueprintRepository:
 
     @staticmethod
     def _parse_declaration(path: Path, *, module_id: str) -> Mapping[str, object]:
+        """Parse the small live subset of a v6 module blueprint.
+
+        Complete schema validation remains offline. The dispatcher validates
+        only fields required to route safely and rejects malformed relevant
+        state before authorization proceeds.
+        """
+
         try:
             with path.open("rb") as stream:
                 if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
@@ -223,6 +234,8 @@ class DirectBlueprintRepository:
         return declaration
 
     def _load_at(self, root: Path, parts: tuple[str, ...]) -> DirectModule:
+        """Load one derived module path once per invocation repository object."""
+
         module_id = ".".join(parts)
         cached = self._modules.get(module_id)
         if cached is not None:

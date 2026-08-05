@@ -61,8 +61,8 @@ dispatcher --caller-skill <caller-module> \
 
 The dispatcher:
 
-1. loads the dispatch-relevant module/source closure, treating unrelated
-   blueprint defects as warnings;
+1. loads only the exact repository configuration, caller/target ancestry, and
+   selected source blueprint; unrelated blueprint defects are not read;
 2. resolves the module export to its contained source interface;
 3. checks the immediately calling module against each target-side access
    policy; source identity and `uses_interfaces` do not grant permission;
@@ -78,7 +78,7 @@ file; repository validation checks this against the deepest registered module.
 
 Validation has three layers:
 
-- the v4 schemas validate closed document shapes;
+- the v6 schemas validate closed document shapes;
 - repository validators check identities, ownership, exports, dependencies,
   access, process bindings, and generated views;
 - `skill-certifier` performs semantic review and issues append-only signed
@@ -110,6 +110,7 @@ When changing the architecture or schema:
 ## Canonical references
 
 - [Architecture](../architecture.md)
+- [Dispatcher](../dispatcher.md)
 - [Skill blueprints](../skill-blueprints.md)
 - [Certification and drift](../certification_and_drift.md)
 - [Blueprint search](../blueprint_search.md)

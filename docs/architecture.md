@@ -309,6 +309,9 @@ module authority or expose the target source as a public Famulus interface.
 
 ### Direct dispatcher resolution
 
+The operational contract and examples are collected in
+[`docs/dispatcher.md`](dispatcher.md).
+
 The launcher supplies the exact repository configuration path. That file owns
 the ordered module roots. The dispatcher derives caller and target paths from
 their dotted module IDs, opens only their registered ancestry and the selected

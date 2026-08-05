@@ -72,15 +72,15 @@ Runs in every install, regardless of mode or which agents you want. Installs:
   invoke a skill by name without hardcoding an absolute path. This is generated
   as `<bin-dir>/invoke-skill` on Unix-like hosts and
   `<bin-dir>/invoke-skill.bat` on Windows.
-- Required third-party Python packages from
+- The versioned first-party Officina wheel and required third-party Python packages from
   `references/blueprint/runtime_dependencies.json`, generated from executable
-  behavioral-source runtime dependency declarations. First-party code (`officina`
-  itself) is deliberately **not** pip-installed — it runs straight from the
-  repo via a path baked into the `dispatcher` launcher at generation time, so
-  there's never a second copy to drift out of sync. Unix launchers re-exec the
-  Python runtime used by the installer, keeping those packages and dispatcher
-  execution on the same interpreter. Linux recurring units use that runtime
-  and capture the installed launcher directory ahead of other PATH entries.
+  behavioral-source runtime dependency declarations. Candidate construction
+  installs and verifies the Officina wheel in the managed release before
+  activation. The stable launcher reads `current.json`, injects its exact
+  repository `officina.toml`, and enters that release's interpreter; it does
+  not embed a checkout path or use ambient `PYTHONPATH`. Linux recurring units
+  use that runtime and capture the installed launcher directory ahead of other
+  PATH entries.
 - `PATH` — adds `<bin-dir>` to your shell rc (or the Windows registry) so
   `dispatcher` and the agent launchers resolve as bare commands.
 

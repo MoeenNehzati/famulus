@@ -1,5 +1,10 @@
 # Downstream Workflow Repairs (v5 Rebase) Implementation Plan
 
+> **Version-6 note:** The workflow requirements remain historical planning
+> context, but all v5 facade and `-rtx` blueprint instructions are obsolete.
+> Current exports use dotted child IDs and explicit namespace routes; see
+> `docs/skill-blueprints.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Fix feedback items 12 (shared with the dispatcher-contracts rebase), 23, 24, 25, 27, 28 from `docs/plans/osx_feedback_fix/README.md` — usable list initialization, transactional triage finalization, source-identity tracking, and safe historical rescan — superseding `docs/plans/osx_feedback_fix/05-downstream-workflows.md`. Item 26 (missing-Subject crash) is already fixed in current code and is dropped from this plan.

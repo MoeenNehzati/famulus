@@ -1,6 +1,11 @@
 # Nested modules: version 5 design and cutover
 
-Status: implemented in the canonical v5 cutover and merged to `master`.
+Status: historical version-5 cutover record. Superseded for live architecture
+and runtime behavior by version 6; see `docs/architecture.md`,
+`docs/dispatcher.md`, and `docs/skill-blueprints.md`. In particular, version 6
+uses dotted child IDs, removes facades, and requires explicit
+`namespace_exports.surface.only` routes. The body below is not executable
+guidance and remains unchanged as a record of the v5 design.
 
 Closure: the implementation plan was closed by `9da6a38` and the follow-up
 certification-currentness correction was committed as `a1dcb5a`. Future changes

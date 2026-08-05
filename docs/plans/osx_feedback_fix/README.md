@@ -8,6 +8,10 @@
 > against the current v5 tree found real, still-open bugs behind most of the
 > 28 feedback items below, but every proposed mechanism, file path, and
 > blueprint shape here predates two structural rewrites of the codebase.
+> Version 6 subsequently replaced the dispatcher, child IDs, facade routes,
+> and managed-runtime packaging described by those rebased plans. For current
+> runtime architecture use `docs/dispatcher.md`, `docs/architecture.md`, and
+> `docs/installation.md`; retain this package only as historical context.
 >
 > The rebased, currently-authoritative plans are:
 > - [01 installer runtime -> 2026-07-27-osx-installer-runtime-v5-rebase.md](../../superpowers/plans/2026-07-27-osx-installer-runtime-v5-rebase.md)

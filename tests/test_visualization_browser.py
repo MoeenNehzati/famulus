@@ -459,7 +459,11 @@ def test_filter_interactions_keep_layout_and_explain_projection():
                 "--disable-dev-shm-usage",
                 "--disable-crash-reporter",
                 f"--user-data-dir={profile}",
-                "--virtual-time-budget=5000",
+                # The interaction script deliberately schedules more than
+                # three seconds of waits around several ELK layouts. Five
+                # seconds is insufficient when this test follows the full
+                # shared suite, even though it usually passes in isolation.
+                "--virtual-time-budget=10000",
                 "--dump-dom",
                 path.as_uri(),
             ],

@@ -1,5 +1,9 @@
 # Direct-Blueprint Dispatcher Implementation Plan
 
+> **Status:** Implemented in `d24ce0d`. The unchecked boxes below preserve the
+> approved execution plan; current behavior is documented in
+> `docs/dispatcher.md` and the version-6 architecture documents.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace snapshot/catalog dispatch with direct, route-local blueprint lookup and authorization using canonical dotted module IDs and repository-owned `officina.toml` roots.

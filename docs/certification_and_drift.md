@@ -184,11 +184,11 @@ no separate dependency-certificate hash.
 
 Containment and route topology are certificate dependencies in version 6:
 module certificates depend on contained sources, parent namespace routes
-depend on the routed child module. A `uses-export` dependency targets the
-exact behavioral source implementing the export. Runtime admission separately
-requires the current exporting-module certificate, so boundary identity and
-access remain protected without making every consumer depend on every source in
-that module.
+depend on the routed child module. A `uses-export` dependency targets the exact
+behavioral source implementing the export. The exporting-module certificate
+separately records boundary identity and access without making every consumer
+depend on every source in that module. Live dispatcher authorization reads the
+relevant blueprints directly and treats certificate currentness as advisory.
 
 The certifier identity contains its exported interface and version, its node
 hash, and its source commit. `certification_basis_hash` is the single digest
@@ -285,17 +285,19 @@ Secure atomic writes are the default. A caller may explicitly opt into the
 existing non-atomic fallback when the host cannot provide the secure primitive;
 the certifier never selects that fallback silently.
 
-The dispatcher derives one repository-backed certification view. In ordinary
-operation it admits only exports whose module and implementing source have
-current certificates. The same view admits exact self-certification of
-`skill-certifier` when its certification closure has no history or has
-appendable history: every existing log in the closure must be canonical,
-schema-valid, signature-valid, and unbroken, although its final signing key may
-be inactive, and existing logs must form a dependency-first prefix of the exact
-closure. An empty closure history or a valid partial prefix may resume through
-this path. Corrupt history, a non-prefix gap, a wrong-subject entry, or missing
-verification material fails closed. The only uncertified mechanical subcall
-admitted is the existing read-only blueprint synchronization check.
+Dispatcher authorization is independent of certificate currentness. If a
+preverified in-memory status view is available, dispatcher consults only the
+caller ancestry, crossed target namespaces, terminal module, and implementing
+source and emits bounded diagnostics. Missing, stale, expired, malformed, or
+unavailable status is warning-only: it cannot grant authority, deny an
+otherwise valid route, trigger certification work, or cause repository reads.
+
+Certification workflows retain their own fail-closed rules. In particular,
+self-certification may resume only from empty history or a canonical,
+signature-valid, unbroken dependency-first prefix of the exact closure.
+Corrupt history, a non-prefix gap, a wrong-subject entry, or missing
+verification material blocks certification even though it does not block an
+otherwise authorized dispatcher route.
 
 This is a cooperative same-user contract, not filesystem isolation between
 same-UID processes. A malicious process running as the same OS user may access

@@ -41,7 +41,7 @@ The canonical identities are:
 
 ```text
 skill module:       <skill-id>
-code module:        <skill-id>-rtx
+code module:        <skill-id>._rtx
 behavioral source:  <module-id>.source.<local-source-id>
 source interface:   <source-id>.interface.<local-interface-name>
 module export:      <module-id>.interface.<export-name>
@@ -101,8 +101,9 @@ from `exports`. Version 6 does not rename child exports through facades.
 `children` registers a namespace; it does not expose that namespace outside
 the parent. `namespace_exports` optionally routes a registered child's own
 interface IDs across the parent boundary. Routes preserve descendant IDs and
-may expose `all` reviewed exports or an exact `only` surface. They do not copy
-contracts or flatten names.
+must name an explicit, nonempty `surface.only` mapping. Version 6 has no
+`surface.all` form: adding a child export never expands a reviewed parent route
+implicitly. Routes do not copy contracts or flatten names.
 
 ## Behavioral-source blueprint
 
@@ -158,8 +159,8 @@ Cross-module uses must target an authorized module export.
 Caller allowlists accept a globally unique module ID or a Python-style
 leading-dot reference relative to the declaring module. `._rtx` names a skill
 parent's code child; `..parser` names the owner's sibling `parser`. These
-references resolve to one exact ID through the registered tree and never grant
-all descendants implicitly.
+references resolve to one exact registered module. Naming a module admits that
+module and its registered descendants, but never its parent or siblings.
 
 Namespace-route filters and the child export filter intersect. A parent cannot
 widen the child's access or export a private child interface. A parent or
@@ -192,6 +193,7 @@ relationships.
 ## Related documentation
 
 - [Architecture](architecture.md)
+- [Dispatcher](dispatcher.md)
 - [Certification and drift](certification_and_drift.md)
 - [Blueprint search](blueprint_search.md)
 - [Scaffolding](scaffolding/README.md)

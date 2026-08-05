@@ -23,7 +23,12 @@ class RepositoryConfigurationError(ValueError):
 
 @dataclass(frozen=True)
 class RepositoryConfiguration:
-    """Validated repository location and its ordered blueprint lookup roots."""
+    """Validated repository location and ordered blueprint lookup roots.
+
+    ``config_path`` is the exact launcher-supplied file. ``repository_root`` is
+    its parent, and ``module_roots`` contains only confined, existing,
+    non-symlink directories in authored lookup order.
+    """
 
     schema_version: int
     config_path: Path

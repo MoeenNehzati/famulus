@@ -1,5 +1,9 @@
 # Nested Modules Version 5 Implementation Plan
 
+> **Historical architecture:** Version 6 superseded the live v5 child-ID,
+> facade, and namespace-surface design. See `docs/dispatcher.md` and
+> `docs/skill-blueprints.md`; retain this body only as the v5 cutover record.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Status:** Implementation closed. The canonical v5 cutover was merged to

@@ -150,6 +150,7 @@ def test_dispatcher_module_cli_help_is_available(tmp_path: Path) -> None:
     result = _run_dispatcher(["--help"], cwd=tmp_path)
 
     assert result.returncode == 0
+    assert result.stdout.startswith("usage: dispatcher ")
     assert "Invoke a skill machine interface declared in blueprint.yaml." in result.stdout
     assert "--caller-skill" in result.stdout
     assert "--error-format" in result.stdout

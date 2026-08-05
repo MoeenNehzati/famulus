@@ -1,4 +1,10 @@
-"""CLI entrypoint for the shared skill dispatcher."""
+"""User-facing CLI for direct version-6 dispatch.
+
+The stable resolver injects ``--repository-config`` before this module starts.
+The option is hidden because it is trusted launcher state, not a user choice.
+This layer formats results and warnings; routing, authorization, and execution
+remain in :mod:`officina.dispatcher.direct_runtime`.
+"""
 
 from __future__ import annotations
 
@@ -16,6 +22,8 @@ from .direct_runtime import (
 
 
 def _print_warning(diagnostic: InvocationDiagnostic) -> None:
+    """Render one advisory diagnostic without changing the route outcome."""
+
     subject = f" [{diagnostic.subject}]" if diagnostic.subject is not None else ""
     print(
         f"warning: {diagnostic.code}: {diagnostic.message}{subject}",
@@ -24,7 +32,10 @@ def _print_warning(diagnostic: InvocationDiagnostic) -> None:
 
 
 def parse_cli() -> argparse.Namespace:
+    """Parse the public dispatcher command while retaining opaque target argv."""
+
     parser = argparse.ArgumentParser(
+        prog="dispatcher",
         description="Invoke a skill machine interface declared in blueprint.yaml.",
         epilog=(
             "Examples:\n"
@@ -71,6 +82,8 @@ def parse_cli() -> argparse.Namespace:
 
 
 def main() -> int:
+    """Run a dry resolution or execute one interface and preserve its exit code."""
+
     args = parse_cli()
     script_args = list(args.rest)
     target = args.target_or_skill

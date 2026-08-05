@@ -1,4 +1,11 @@
-"""Direct v6 authorization and deterministic process-binding compilation."""
+"""Authorize and compile one route from only its relevant v6 blueprints.
+
+The functions here implement hop-local namespace authorization. They load the
+caller and target ancestry, evaluate only crossed target-side gates, enforce
+the terminal export as an authority ceiling, load one implementing source, and
+compile its process binding. Certification contributes warnings only. No
+function in this module inventories the repository or mutates authored state.
+"""
 
 from __future__ import annotations
 
@@ -45,11 +52,15 @@ from officina.runtime.python_machine_interface import (
 
 
 def _ancestry_ids(module_id: str) -> tuple[str, ...]:
+    """Expand a dotted module ID from top-level owner through terminal child."""
+
     parts = module_id.split(".")
     return tuple(".".join(parts[:index]) for index in range(1, len(parts) + 1))
 
 
 def _lca(left: tuple[str, ...], right: tuple[str, ...]) -> str | None:
+    """Return the deepest shared module ID in two ordered ancestry chains."""
+
     common = None
     for left_id, right_id in zip(left, right, strict=False):
         if left_id != right_id:
@@ -59,6 +70,8 @@ def _lca(left: tuple[str, ...], right: tuple[str, ...]) -> str | None:
 
 
 def _resolve_relative_module_id(owner_module_id: str, reference: str) -> str:
+    """Resolve one leading-dot caller reference against its policy owner."""
+
     level = len(reference) - len(reference.lstrip("."))
     suffix = reference[level:]
     if not suffix:
@@ -87,6 +100,14 @@ def _evaluate_access(
     kind: str,
     access: object,
 ) -> tuple[EffectiveAuthorizationFilter, tuple[ResolvedCallerReference, ...]]:
+    """Evaluate one owner-local access predicate and retain audit metadata.
+
+    Every named caller is resolved through the direct repository first, so an
+    allowlist cannot grant authority to a nonexistent or unregistered module.
+    A named ancestor admits its registered descendants; self-access is always
+    admitted by the owner-local predicate.
+    """
+
     if not isinstance(access, Mapping):
         raise DirectBlueprintError(
             f"missing access declaration for {kind} {interface_id}",
@@ -131,6 +152,8 @@ def _evaluate_access(
 
 
 def _safe_relative_path(raw_path: object, *, context: str) -> PurePosixPath:
+    """Validate an authored module-relative path without touching the filesystem."""
+
     if not isinstance(raw_path, str) or not raw_path or "\\" in raw_path:
         raise DirectBlueprintError(context, code="dispatcher.unsafe_blueprint_path")
     path = PurePosixPath(raw_path)
@@ -140,6 +163,8 @@ def _safe_relative_path(raw_path: object, *, context: str) -> PurePosixPath:
 
 
 def _require_regular_without_symlinks(path: Path, *, module_id: str) -> None:
+    """Require every relevant source-path component to be non-symlinked."""
+
     current = Path(path.anchor)
     for part in path.parts[1:]:
         current /= part
@@ -170,6 +195,8 @@ def _load_source(
     source_id: str,
     locator: object,
 ) -> tuple[DirectBlueprintNode, Mapping[str, object]]:
+    """Load and minimally validate the one behavioral source selected by an export."""
+
     if not isinstance(locator, Mapping) or not isinstance(locator.get("blueprint"), Mapping):
         raise DirectBlueprintError(
             f"invalid source locator: {source_id}",
@@ -253,6 +280,8 @@ def _certification_diagnostics(
     node_ids: tuple[str, ...],
     status: Mapping[str, object] | None,
 ) -> tuple[InvocationDiagnostic, ...]:
+    """Return bounded warning-only certification status for the selected route."""
+
     if status is None:
         return (
             InvocationDiagnostic(

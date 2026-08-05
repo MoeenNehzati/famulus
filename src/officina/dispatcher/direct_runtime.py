@@ -1,4 +1,12 @@
-"""Lean live dispatcher path for direct v6 blueprint routing."""
+"""Materialize and execute one already-bounded version-6 dispatch request.
+
+This module is the live boundary between authorization metadata and subprocess
+execution. It accepts an exact repository configuration path, delegates
+route-local lookup and authorization to :mod:`direct_authorization`, constructs
+the confined Python runner command, and launches it. It deliberately contains
+no repository discovery, graph construction, certification work, route cache,
+repair, synchronization, or routing-state writes.
+"""
 
 from __future__ import annotations
 
@@ -28,12 +36,20 @@ from officina.dispatcher.errors import (
 
 
 def _target_module_id(target: str) -> str:
+    """Return the module prefix used to identify malformed-request failures."""
+
     return target.split(".interface.", 1)[0] if ".interface." in target else target
 
 
 @dataclass(frozen=True)
 class ResolvedInvocation:
-    """One authorized direct route materialized for subprocess execution."""
+    """One authorized route materialized for subprocess execution.
+
+    ``metadata_value`` is the immutable authorization/compilation result.
+    ``command`` and ``env`` are the only launch inputs added here. The object
+    owns no descriptors, snapshots, locks, or generated state; ``close`` exists
+    solely for compatibility with the earlier context-manager API.
+    """
 
     metadata_value: ResolvedInvocationMetadata
     command: list[str]
@@ -130,6 +146,13 @@ def _materialize(
     target_version: int | None,
     host_caller: bool,
 ) -> ResolvedInvocation:
+    """Authorize one route and construct its confined Python runner command.
+
+    The selected source must produce a complete logical Python target. Missing
+    runner metadata is reported as authored runtime misconfiguration before a
+    subprocess exists. No gateway module is imported in the dispatcher.
+    """
+
     configuration = _load_configuration(
         repository_config,
         caller_module_id=caller_module_id,
@@ -198,6 +221,8 @@ def _config_path(
     caller_module_id: str,
     target: str,
 ) -> Path:
+    """Require the launcher's exact config path; never derive one from a root."""
+
     if repository_config is not None:
         return Path(repository_config)
     raise RuntimeMisconfiguredError(
@@ -237,6 +262,13 @@ def _resolve_dispatch(
     host_caller: bool = False,
     **_legacy: object,
 ) -> ResolvedInvocation:
+    """Internal resolver shared by host and trusted nested callers.
+
+    ``host_caller`` selects the stricter top-level discovery check. Legacy
+    keyword arguments remain accepted only to keep old Python call sites from
+    failing at import boundaries; they do not restore graph-based routing.
+    """
+
     caller = caller_skill.strip()
     if not caller:
         raise InvalidRequestError("caller_skill must be a non-empty string")
@@ -267,6 +299,8 @@ def _resolve_host_dispatch_metadata(
     repository_config: Path | None = None,
     **_legacy: object,
 ) -> ResolvedInvocationMetadata:
+    """Authorize and compile a host call without materializing a subprocess."""
+
     configuration = _load_configuration(
         _config_path(
             repository_config,
@@ -297,6 +331,8 @@ def resolve_dispatch(
     target_version: int | None = None,
     repository_config: Path | None = None,
 ) -> ResolvedInvocation:
+    """Resolve a public host request using one exact repository config path."""
+
     return _resolve_dispatch(
         caller_skill=caller_skill,
         target=target,
@@ -309,6 +345,8 @@ def resolve_dispatch(
 
 
 def resolve_dispatch_metadata(**kwargs: Any) -> ResolvedInvocationMetadata:
+    """Return the descriptor-free metadata for a public host request."""
+
     with resolve_dispatch(**kwargs) as resolved:
         return resolved.metadata()
 
@@ -322,6 +360,14 @@ def _run_resolved_invocation(
     check: bool = False,
     text: bool | None = None,
 ) -> subprocess.CompletedProcess[Any]:
+    """Launch one resolved command and preserve subprocess I/O semantics.
+
+    The target module root becomes cwd and the precomputed confined environment
+    replaces ambient repository import exposure. Python launch failures are
+    translated to the structured dispatcher contract; target exit failures are
+    returned or raised according to ``check`` exactly as in ``subprocess.run``.
+    """
+
     run_kwargs: dict[str, Any] = {
         "cwd": resolved.cwd,
         "env": resolved.env,
@@ -367,6 +413,8 @@ def _dispatch_host(
     warning_handler: Callable[[InvocationDiagnostic], None] | None = None,
     repository_config: Path | None = None,
 ) -> subprocess.CompletedProcess[Any]:
+    """Resolve, report advisory warnings, and execute one public host call."""
+
     resolved = _resolve_dispatch(
         caller_skill=caller_skill,
         target=target,
@@ -391,6 +439,8 @@ def _dispatch_host(
 
 
 def dispatch(**kwargs: Any) -> subprocess.CompletedProcess[Any]:
+    """Public convenience API for host dispatch."""
+
     return _dispatch_host(**kwargs)
 
 
