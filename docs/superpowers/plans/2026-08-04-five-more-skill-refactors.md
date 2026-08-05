@@ -48,11 +48,11 @@ dispatcher standards queries, pytest, Git.
 - Test: target-owned tests plus returned standards/blueprint validators
 - Report: task-owned SDD report
 
-- [ ] Query the complete registered node and resolve every material unknown.
-- [ ] Record the preservation map and current-skill baseline deficiency.
-- [ ] Apply one smallest standards-backed instruction or implementation move.
-- [ ] Run all relevant validators until green.
-- [ ] Obtain independent approval, fix/re-review findings, and commit only this
+- [x] Query the complete registered node and resolve every material unknown.
+- [x] Record the preservation map and current-skill baseline deficiency.
+- [x] Apply one smallest standards-backed instruction or implementation move.
+- [x] Run all relevant validators until green.
+- [x] Obtain independent approval, fix/re-review findings, and commit only this
       iteration plus this plan document.
 
 ### Task 2: Refactor `wrap-up`
@@ -62,12 +62,12 @@ dispatcher standards queries, pytest, Git.
 - Test: target-owned tests plus returned standards/blueprint validators
 - Report: task-owned SDD report
 
-- [ ] Query the complete registered node and resolve every material unknown.
-- [ ] Map each affected cross-skill producer, authorized consumer, branch outcome,
+- [x] Query the complete registered node and resolve every material unknown.
+- [x] Map each affected cross-skill producer, authorized consumer, branch outcome,
       and verification owner before compressing instructions.
-- [ ] Demonstrate the baseline deficiency and apply one smallest justified move.
-- [ ] Run all relevant validators until green.
-- [ ] Obtain independent approval, fix/re-review findings, and commit only this
+- [x] Demonstrate the baseline deficiency and apply one smallest justified move.
+- [x] Run all relevant validators until green.
+- [x] Obtain independent approval, fix/re-review findings, and commit only this
       iteration.
 
 ### Task 3: Refactor `skill-maker`
@@ -77,12 +77,12 @@ dispatcher standards queries, pytest, Git.
 - Test: target-owned tests plus returned standards/blueprint validators
 - Report: task-owned SDD report
 
-- [ ] Query the complete registered node and resolve every material unknown.
-- [ ] Preserve standards-query, authoring, generated-view, and validation
+- [x] Query the complete registered node and resolve every material unknown.
+- [x] Preserve standards-query, authoring, generated-view, and validation
       boundaries in the preservation map.
-- [ ] Demonstrate the baseline deficiency and apply one smallest justified move.
-- [ ] Run all relevant validators until green.
-- [ ] Obtain independent approval, fix/re-review findings, and commit only this
+- [x] Demonstrate the baseline deficiency and apply one smallest justified move.
+- [x] Run all relevant validators until green.
+- [x] Obtain independent approval, fix/re-review findings, and commit only this
       iteration.
 
 ### Task 4: Refactor `llm-wakeup`
@@ -92,13 +92,13 @@ dispatcher standards queries, pytest, Git.
 - Test: target-owned tests plus returned standards/blueprint validators
 - Report: task-owned SDD report
 
-- [ ] Query both instruction and Python partitions and resolve every material
+- [x] Query both instruction and Python partitions and resolve every material
       unknown.
-- [ ] Preserve session identity, scheduling outcomes, machine-visible plans,
+- [x] Preserve session identity, scheduling outcomes, machine-visible plans,
       platform branches, errors, and reverse callers in the preservation map.
-- [ ] Demonstrate the baseline deficiency and apply one smallest justified move.
-- [ ] Run all relevant validators until green.
-- [ ] Obtain independent approval, fix/re-review findings, and commit only this
+- [x] Demonstrate the baseline deficiency and apply one smallest justified move.
+- [x] Run all relevant validators until green.
+- [x] Obtain independent approval, fix/re-review findings, and commit only this
       iteration.
 
 ### Task 5: Refactor `skill-certifier`
@@ -108,18 +108,32 @@ dispatcher standards queries, pytest, Git.
 - Test: target-owned tests plus returned standards/blueprint validators
 - Report: task-owned SDD report
 
-- [ ] Confirm the formerly blocked standards route now returns a valid complete
+- [x] Confirm the formerly blocked standards route now returns a valid complete
       closure and resolve every material unknown.
-- [ ] Map certification results/errors, graph and hash evidence, signing effects,
+- [x] Map certification results/errors, graph and hash evidence, signing effects,
       route-smoke behavior, callers, and reverse tests before selecting a move.
-- [ ] Demonstrate the baseline deficiency and apply one smallest justified move.
-- [ ] Run all relevant validators until green.
-- [ ] Obtain independent approval, fix/re-review findings, and commit only this
+- [x] Demonstrate the baseline deficiency and apply one smallest justified move.
+- [x] Run all relevant validators until green.
+- [x] Obtain independent approval, fix/re-review findings, and commit only this
       iteration.
 
 ### Final Review
 
-- [ ] Audit all five commits together for behavior preservation, scope, validation
+- [x] Audit all five commits together for behavior preservation, scope, validation
       completeness, standards inflation, and any unrecorded repeated failure.
-- [ ] Run repository precommit verification and leave the branch clean and
+- [x] Run repository precommit verification and leave the branch clean and
       unpushed.
+
+## Completion Record
+
+- Refactored and committed `prepare-handoff`, `wrap-up`, and `skill-maker`.
+- Independently validated no-churn outcomes for `llm-wakeup` and
+  `skill-certifier` after complete owned-source audits.
+- Patched `refactor-node` so whole-node audits query registered implementation
+  children and inspect every returned supported source before move selection.
+- Fixed the `wakeup` status path to honor its no-effect contract and corrected
+  canonical ownership resolution to exclude Python cache artifacts.
+- Canonical standards were not expanded. Changed skill bodies are 75 words
+  shorter in aggregate; `refactor-node` grew by 11 necessary words.
+- Final independent audit and exact-HEAD validators are green. The branch was
+  not pushed; live certification/recertification was not performed.
