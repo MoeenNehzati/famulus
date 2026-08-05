@@ -83,7 +83,8 @@ artifact, equivalent repository roots, and isolated index stages.
 4. Regenerate `_build/README-preview.html`.
 5. Run `gitleaks protect --staged --redact`.
 6. Run `python3 validators/runner.py`.
-7. Run `python3 scripts/run-python-tests.py --suite precommit`.
+7. Run `python3 scripts/run-python-tests.py --suite precommit --keep-going` and
+   record every discovered pytest execution group.
 
 Two execution details matter:
 
@@ -91,6 +92,14 @@ Two execution details matter:
 - `validators/runner.py` evaluates a git-tracked mirror, so validators see staged content without being confused by untracked scratch files.
 
 The Python tests run from the working tree, not from a staged mirror.
+
+Ordinary phase failures are accumulated: a failed generator, secret scan, or
+validator does not prevent later phases from running. The hook returns failure
+only after every configured phase finishes. User interrupts and Git/repository
+infrastructure failures stop immediately and mark the gate report incomplete.
+Optional generators that are absent are reported as `not-configured`, rather
+than as successful executions. The gate writes its phase report and the Python
+group report under `_build/`.
 
 ## GitHub Actions
 

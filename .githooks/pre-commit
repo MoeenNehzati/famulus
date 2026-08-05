@@ -8,41 +8,4 @@ if ! git symbolic-ref HEAD >/dev/null 2>&1; then
     exit 1
 fi
 
-REPO_ROOT="$(git rev-parse --show-toplevel)"
-
-# Regenerate PROFILES.md if config files changed
-if [ -f "$REPO_ROOT/scripts/generate-settings-table.sh" ]; then
-    bash "$REPO_ROOT/scripts/generate-settings-table.sh" >/dev/null 2>&1
-    if ! git diff --quiet "$REPO_ROOT/PROFILES.md" 2>/dev/null; then
-        echo "✓ Updated PROFILES.md based on latest config files"
-        git add "$REPO_ROOT/PROFILES.md"
-    fi
-fi
-
-# Regenerate generated documentation artifacts and embedded coverage blocks
-if [ -f "$REPO_ROOT/scripts/generate-doc-artifacts.py" ]; then
-    python3 "$REPO_ROOT/scripts/generate-doc-artifacts.py" >/dev/null
-    git add \
-        "$REPO_ROOT/docs/skills.md" \
-        "$REPO_ROOT/docs/user/general.md" \
-        "$REPO_ROOT/docs/user/research.md" \
-        "$REPO_ROOT/docs/user/system.md" \
-        "$REPO_ROOT/docs/contributors/README.md"
-fi
-
-# Regenerate the README HTML preview from the latest README.md
-if [ -f "$REPO_ROOT/scripts/generate-previews.py" ]; then
-    python3 "$REPO_ROOT/scripts/generate-previews.py" --target readme >/dev/null
-    echo "✓ Regenerated local README preview in _build/README-preview.html"
-fi
-
-# Secret scan on staged changes
-if command -v gitleaks >/dev/null 2>&1; then
-    gitleaks protect --staged --redact
-else
-    echo "error: gitleaks not installed; refusing to commit without secret scan." >&2
-    exit 1
-fi
-
-python3 "$REPO_ROOT/validators/runner.py"
-python3 "$REPO_ROOT/scripts/run-python-tests.py" --suite precommit
+exec python3 "$(git rev-parse --show-toplevel)/scripts/run-precommit-gate.py"

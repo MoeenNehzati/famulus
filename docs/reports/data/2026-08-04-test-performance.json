@@ -1,0 +1,170 @@
+{
+  "schema_version": 1,
+  "date": "2026-08-04",
+  "baseline": {
+    "commit": "5d4fdfc40afab80c3102b333015d217554913a4c",
+    "worktree": "detached clean worktree",
+    "host": {
+      "cpu": "13th Gen Intel(R) Core(TM) i7-1365U",
+      "physical_cores": 10,
+      "logical_cpus": 12,
+      "platform": "Linux"
+    },
+    "sampling_interval_seconds": 0.02
+  },
+  "immutable_runs": [
+    {
+      "name": "precommit",
+      "command": ["python3", "scripts/run-python-tests.py", "--suite", "precommit"],
+      "wall_seconds": 187.9595,
+      "cpu_seconds": 186.2700,
+      "average_effective_cores": 0.9910,
+      "peak_effective_cores": 1.4751,
+      "fraction_intervals_over_one_core": 0.0679,
+      "peak_processes": 8,
+      "peak_threads": 9,
+      "peak_sampled_tree_rss_kb": 372868,
+      "sampled_unique_processes": 711,
+      "completeness": "shared pytest group only; runner returned before nested runtime groups",
+      "outcome": "35 failed, 1405 passed, 15 skipped, 1 deselected",
+      "environment_limited_failures": 35
+    },
+    {
+      "name": "full",
+      "command": ["python3", "scripts/run-python-tests.py", "--suite", "full"],
+      "wall_seconds": 189.3592,
+      "cpu_seconds": 188.7168,
+      "average_effective_cores": 0.9966,
+      "peak_effective_cores": 5.8194,
+      "fraction_intervals_over_one_core": 0.0676,
+      "peak_processes": 7,
+      "peak_threads": 20,
+      "peak_sampled_tree_rss_kb": 436980,
+      "sampled_unique_processes": 862,
+      "completeness": "shared pytest group only; runner returned before nested runtime and installer groups",
+      "outcome": "36 failed, 1405 passed, 15 skipped",
+      "environment_limited_failures": 35,
+      "repository_contract_failures": 1
+    },
+    {
+      "name": "core_without_browser",
+      "wall_seconds": 122.2732,
+      "cpu_seconds": 123.5635,
+      "average_effective_cores": 1.0106,
+      "peak_processes": 6,
+      "peak_threads": 19,
+      "peak_sampled_tree_rss_kb": 309496
+    },
+    {
+      "name": "refactor_node",
+      "wall_seconds": 68.2341,
+      "cpu_seconds": 68.2243,
+      "average_effective_cores": 0.9999,
+      "peak_processes": 2,
+      "peak_threads": 4,
+      "peak_sampled_tree_rss_kb": 105868
+    },
+    {
+      "name": "validators",
+      "wall_seconds": 43.1594,
+      "cpu_seconds": 43.1352,
+      "average_effective_cores": 0.9994,
+      "peak_processes": 3,
+      "peak_threads": 3,
+      "peak_sampled_tree_rss_kb": 192976,
+      "outcome": "passed"
+    },
+    {
+      "name": "portability",
+      "wall_seconds": 1.0643,
+      "cpu_seconds": 1.0516,
+      "average_effective_cores": 0.9881,
+      "peak_processes": 3,
+      "peak_threads": 3,
+      "peak_sampled_tree_rss_kb": 88140,
+      "outcome": "7 passed"
+    }
+  ],
+  "parallel_frontier": [
+    {
+      "workload": "refactor_node_live_worktree",
+      "workers": 1,
+      "wall_seconds": 97.174,
+      "cpu_seconds": 97.062,
+      "average_effective_cores": 0.999,
+      "peak_sampled_tree_rss_kb": 95000
+    },
+    {
+      "workload": "refactor_node_live_worktree",
+      "workers": 2,
+      "wall_seconds": 70.515,
+      "cpu_seconds": 139.333,
+      "average_effective_cores": 1.976,
+      "peak_sampled_tree_rss_kb": 215940
+    },
+    {
+      "workload": "refactor_node_live_worktree",
+      "workers": 4,
+      "wall_seconds": 45.136,
+      "cpu_seconds": 162.616,
+      "average_effective_cores": 3.603,
+      "peak_sampled_tree_rss_kb": 376252
+    },
+    {
+      "workload": "refactor_node_plus_certifier_plus_list_manager_live_worktree",
+      "workers": 3,
+      "wall_seconds": 103.634,
+      "cpu_seconds": 147.584,
+      "average_effective_cores": 1.424,
+      "peak_sampled_tree_rss_kb": 307848
+    }
+  ],
+  "live_expensive_suites": [
+    {"name": "refactor_node", "wall_seconds": 97.174, "cpu_seconds": 97.062},
+    {"name": "install_assistant_tools", "wall_seconds": 29.078, "cpu_seconds": 32.711},
+    {"name": "skill_certifier", "wall_seconds": 25.011, "cpu_seconds": 25.705},
+    {"name": "list_manager", "wall_seconds": 15.350, "cpu_seconds": 13.184}
+  ],
+  "validator_wall_seconds": {
+    "standard_documents": 14.1615,
+    "user_docs_cover_blueprints": 8.2600,
+    "platform_neutral": 4.5226,
+    "contributor_docs_contract": 3.2934,
+    "cross_platform": 3.1510,
+    "skill_runtime_doc_references": 2.2703,
+    "generated_skill_docs": 2.0543,
+    "skill_runtime_files": 1.8982,
+    "duplicate_subcommand_tokens": 1.6960,
+    "personal_info": 1.0324,
+    "toml_io_boundary": 0.9713,
+    "subprocess_text_encoding": 0.7343,
+    "portable_dates": 0.6612,
+    "skip_hygiene": 0.5300,
+    "docstrings": 0.4300,
+    "readme_user_contract": 0.2303
+  },
+  "static_inventory": {
+    "test_code_lines": 59510,
+    "static_test_functions": 2052,
+    "assert_statements": 4634,
+    "raises_contexts": 347,
+    "parametrize_decorators": 64,
+    "skip_sites": 77,
+    "xfail_sites": 0,
+    "subprocess_call_sites": 75,
+    "network_like_sites": 17,
+    "parallel_primitive_sites": 9,
+    "real_sleep_sites": 3,
+    "tests_over_100_lines": 18,
+    "exact_duplicate_body_clusters": 7
+  },
+  "limitations": [
+    "The named-suite observations are incomplete lower bounds because the shared pytest group failed and the runner returned before later execution groups.",
+    "The complete pre-commit hook, including generators, gitleaks, validators, and every test group, was not measured as one transaction.",
+    "Linux perf counters and strace were unavailable under the host security policy.",
+    "Chrome exited with SIGTRAP in the sandbox, so browser timings represent failed startup rather than real browser execution.",
+    "Real uv and installer network paths were unavailable, so full-suite cost is understated.",
+    "Parallel-frontier runs used the changing live worktree and are valid only as within-workload latency versus compute comparisons.",
+    "Static test-function counts do not expand parametrized cases or unittest methods generated dynamically."
+  ]
+}

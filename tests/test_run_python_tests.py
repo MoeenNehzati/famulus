@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import sys
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "scripts" / "run-python-tests.py"
@@ -9,6 +14,7 @@ SPEC = importlib.util.spec_from_file_location("run_python_tests", MODULE_PATH)
 assert SPEC is not None
 runner = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
+sys.modules[SPEC.name] = runner
 SPEC.loader.exec_module(runner)
 
 
@@ -131,3 +137,116 @@ def test_ci_runs_portability_between_validators_and_full_suite() -> None:
     )
 
     assert validator < portability < full
+
+
+def fake_runs(returncodes: list[int], calls: list[list[str]]):
+    """Return a subprocess fake that makes each configured group observable."""
+
+    def run(command: list[str], **_kwargs: object) -> SimpleNamespace:
+        calls.append(command)
+        return SimpleNamespace(returncode=returncodes.pop(0))
+
+    return run
+
+
+def load_report(path: Path) -> dict[str, object]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_keep_going_runs_every_group_after_failure(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A failed group must not keep a later configured group unreachable."""
+    groups = [["pytest", "first"], ["pytest", "second"]]
+    calls: list[list[str]] = []
+    report = tmp_path / "groups.json"
+    monkeypatch.setattr(
+        runner.subprocess, "run", fake_runs([1, 0], calls)
+    )
+
+    assert runner.run_groups(groups, keep_going=True, report_path=report) == 1
+    assert calls == groups
+    loaded = load_report(report)
+    assert loaded["complete"] is True
+    assert [row["group_id"] for row in loaded["groups"]] == [
+        "group-1",
+        "group-2",
+    ]
+    assert [row["command"] for row in loaded["groups"]] == groups
+    assert [row["returncode"] for row in loaded["groups"]] == [1, 0]
+    assert all(
+        isinstance(row["wall_seconds"], float)
+        and row["wall_seconds"] >= 0
+        for row in loaded["groups"]
+    )
+
+
+def test_fail_fast_stops_after_the_first_failed_group(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Reusable non-hook callers retain the runner's explicit fail-fast mode."""
+    groups = [["pytest", "first"], ["pytest", "second"]]
+    calls: list[list[str]] = []
+    monkeypatch.setattr(
+        runner.subprocess, "run", fake_runs([1, 0], calls)
+    )
+
+    assert (
+        runner.run_groups(
+            groups, keep_going=False, report_path=tmp_path / "report.json"
+        )
+        == 1
+    )
+    assert calls == [groups[0]]
+
+
+def test_exhaustive_precommit_pytest_args_continue_after_collection_errors() -> None:
+    """A collection failure must not suppress collectible tests in its group."""
+    args = runner._suite_pytest_args(
+        "precommit", verbose=False, keep_going=True
+    )
+
+    assert "--continue-on-collection-errors" in args
+    assert "--maxfail" not in args
+
+
+def test_interrupted_group_marks_report_incomplete(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """An interrupt while launching pytest is not an ordinary test failure."""
+    report = tmp_path / "groups.json"
+
+    def interrupt(_command: list[str], **_kwargs: object) -> SimpleNamespace:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(runner.subprocess, "run", interrupt)
+
+    with pytest.raises(KeyboardInterrupt):
+        runner.run_groups(
+            [["pytest", "first"]], keep_going=True, report_path=report
+        )
+
+    loaded = load_report(report)
+    assert loaded["complete"] is False
+    assert loaded["groups"] == []
+
+
+def test_group_launch_error_marks_report_incomplete(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A process-launch error is infrastructure failure, not pytest failure."""
+    report = tmp_path / "groups.json"
+
+    def launch_error(_command: list[str], **_kwargs: object) -> SimpleNamespace:
+        raise OSError("pytest launcher unavailable")
+
+    monkeypatch.setattr(runner.subprocess, "run", launch_error)
+
+    with pytest.raises(OSError, match="pytest launcher unavailable"):
+        runner.run_groups(
+            [["pytest", "first"]], keep_going=True, report_path=report
+        )
+
+    loaded = load_report(report)
+    assert loaded["complete"] is False
+    assert loaded["groups"] == []
