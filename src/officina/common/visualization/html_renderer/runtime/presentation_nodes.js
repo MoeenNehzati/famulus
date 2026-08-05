@@ -589,11 +589,13 @@
       section.innerHTML = `
         <div class="drag-handle" draggable="true" title="Drag to reorder">⠿</div>
         <h2 class="section-heading">${escapeHtml(control.label || control.id)}</h2>
-        <div class="filter-search-row detail-level-row">
-          <label for="${escapeHtml(selectId)}">${escapeHtml(control.selector_label || "View by")}</label>
-          <select id="${escapeHtml(selectId)}" class="filter-mode"></select>
-        </div>
-        <div id="${escapeHtml(valuesId)}" class="filter-facet" hidden></div>`;
+        <details class="presentation-node-control-disclosure" open>
+          <summary>${escapeHtml(control.selector_label || "View by")}</summary>
+          <div class="filter-search-row detail-level-row">
+            <select id="${escapeHtml(selectId)}" class="filter-mode" aria-label="${escapeHtml(control.selector_label || "View by")}"></select>
+          </div>
+          <div id="${escapeHtml(valuesId)}" class="filter-facet" hidden></div>
+        </details>`;
       panelContent.insertBefore(section, filterSection);
       const select = section.querySelector("select");
       const values = section.querySelector(".filter-facet");

@@ -379,6 +379,13 @@
     details[open] > summary::before {
       content: "▼ ";
     }
+    .presentation-node-control-disclosure > .filter-search-row {
+      margin-top: 0.25rem;
+    }
+    .presentation-node-control-disclosure > .filter-search-row .filter-mode {
+      flex: 1;
+      min-width: 0;
+    }
     .legend {
       --legend-column-min-width: 190px;
       display: block;

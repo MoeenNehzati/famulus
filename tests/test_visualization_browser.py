@@ -116,6 +116,16 @@ def test_filter_interactions_keep_layout_and_explain_projection():
             if (!alpha || !beta || !root) throw new Error("initial nodes missing");
             const presentationFacet = document.getElementById("presentation-node-control-dimension");
             if (!presentationFacet || presentationFacet.value !== "") throw new Error("grouping did not default off");
+            const groupingDisclosure = document.querySelector('.presentation-node-control-disclosure');
+            const groupingSummary = groupingDisclosure?.querySelector('summary');
+            if (!groupingDisclosure || !groupingDisclosure.open || groupingSummary?.textContent.trim() !== "Group skills by") throw new Error("grouping disclosure missing or not initially expanded");
+            for (let cycle = 0; cycle < 3; cycle += 1) {
+              groupingSummary.click();
+              if (groupingDisclosure.open) throw new Error("grouping disclosure did not close");
+              if (!groupingDisclosure.contains(presentationFacet)) throw new Error("collapsed grouping disclosure removed its controls");
+              groupingSummary.click();
+              if (!groupingDisclosure.open) throw new Error("grouping disclosure did not reopen");
+            }
             const groupingOptions = Array.from(presentationFacet.options).map(option => option.value);
             if (JSON.stringify(groupingOptions) !== JSON.stringify(["", "discovery.domain", "discovery.topics", "discovery.activated_by", "discovery.persistent_modifier", "discovery.visibility"])) throw new Error("grouping dimension menu is incomplete or out of order");
             setNodeSelection(["alpha", "beta"], "beta", "explicit");
@@ -697,7 +707,12 @@ def test_filter_interactions_keep_layout_and_explain_projection():
           try {
             const selector = document.getElementById("presentation-node-control-dimension");
             if (!selector || selector.value !== "") throw new Error("mobile presentation control missing or active by default");
-            if (!document.querySelector('.presentation-node-control-panel')) throw new Error("mobile presentation panel missing");
+            const disclosure = document.querySelector('.presentation-node-control-disclosure');
+            if (!document.querySelector('.presentation-node-control-panel') || !disclosure?.open) throw new Error("mobile presentation panel or expanded disclosure missing");
+            disclosure.querySelector('summary').click();
+            if (disclosure.open || !disclosure.contains(selector)) throw new Error("mobile grouping disclosure did not collapse safely");
+            disclosure.querySelector('summary').click();
+            if (!disclosure.open) throw new Error("mobile grouping disclosure did not reopen");
             if (!document.querySelector('.layout').classList.contains('narrow-layout')) throw new Error("mobile viewport did not use narrow layout");
             if (document.documentElement.scrollWidth > document.documentElement.clientWidth) throw new Error("mobile page has horizontal overflow");
             document.body.dataset.testStatus = "PASS";
