@@ -24,7 +24,7 @@ PRECOMMIT_EXCLUDED_TEST_DIRS = {
 PRECOMMIT_EXCLUDED_TESTS = {
     "tests/test_nested_module_migration.py::"
     "TestNestedModuleMigrationContract::"
-    "test_repository_inventory_matches_reviewed_v5_cutover_surface",
+    "test_repository_inventory_matches_reviewed_v6_cutover_surface",
 }
 
 PORTABILITY_TESTS = (

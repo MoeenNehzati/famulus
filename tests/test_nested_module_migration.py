@@ -221,7 +221,7 @@ def test_nested_migration_contract_documents_v4_or_v5_noop_input() -> None:
 
 
 class TestNestedModuleMigrationContract:
-    def test_repository_inventory_matches_reviewed_v5_cutover_surface(
+    def test_repository_inventory_matches_reviewed_v6_cutover_surface(
         self,
         tmp_path: Path,
     ) -> None:
@@ -249,16 +249,7 @@ class TestNestedModuleMigrationContract:
             ],
             check=True,
         )
-        plan = _api().build_nested_module_migration(repository_root)
-        manifest = plan.to_manifest()
-        child_modules = {
-            operation.path.parts[1]
-            for operation in plan.operations
-            if (
-                operation.path.parts[:1] == ("skills",)
-                and operation.path.parts[2:] == ("_rtx", "blueprint.yaml")
-            )
-        }
+        graph = load_repository_blueprint_graph(repository_root)
         existing_children = {
             path.parent.name
             for path in repository_root.glob("skills/*/_rtx")
@@ -301,10 +292,24 @@ class TestNestedModuleMigrationContract:
             "update-standards",
             "wrap-up",
         }
-        assert plan.is_noop
-        assert child_modules == set()
-        assert plan.unclassified_files == ()
-        assert manifest["operations"] == []
+        child_module_ids = {f"{skill_id}._rtx" for skill_id in existing_children}
+
+        assert graph.schema_version == 6
+        assert all(
+            node.declaration["schema_version"] == 6
+            for node in graph.nodes.values()
+        )
+        assert child_module_ids <= set(graph.nodes)
+        assert all(
+            graph.module_parents[child_id] == child_id.removesuffix("._rtx")
+            for child_id in child_module_ids
+        )
+        assert not any(
+            edge.relation.startswith("facades-") for edge in graph.node_edges
+        )
+        assert not any(
+            node_id.endswith("-rtx") for node_id in graph.nodes
+        )
 
     def test_cli_dry_run_is_byte_identical_and_pure(
         self, tmp_path: Path
