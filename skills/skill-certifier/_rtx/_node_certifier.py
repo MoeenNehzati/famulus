@@ -1580,10 +1580,10 @@ def _verify_executing_candidate_certifier(
         raise CertificationError("executing certifier bytes have no unique candidate owner")
     if (
         graph.schema_version == 5
-        and graph.source_modules.get(owners[0]) != "skill-certifier-rtx"
+        and graph.source_modules.get(owners[0]) != "skill-certifier._rtx"
     ):
         raise CertificationError(
-            "executing v5 certifier source must belong to skill-certifier-rtx"
+            "executing v5 certifier source must belong to skill-certifier._rtx"
         )
     executing_digest = "sha256:" + hashlib.sha256(executing.read_bytes()).hexdigest()
     owner_state = states.get(owners[0])
@@ -1608,7 +1608,7 @@ def _certify_v4_repository(
     allow_non_atomic: bool = False,
     require_candidate_execution: bool = False,
     require_migration_review: bool = False,
-    expected_schema_version: int = 5,
+    expected_schema_version: int = 6,
     schema_root: Path | None = None,
 ) -> V4CertificationResult:
     """_certify_v4_repository issues signed certificates for selected v4 or v5 nodes.
@@ -1770,7 +1770,7 @@ def _certify_v4_repository(
     """
 
     root = Path(repo_root).resolve()
-    if expected_schema_version not in {4, 5}:
+    if expected_schema_version not in {4, 5, 6}:
         raise CertificationError(
             f"unsupported certification schema version: {expected_schema_version}"
         )
@@ -2497,7 +2497,8 @@ officina.common.git_provenance.run_git:
     for node_id in written:
         if not final_report.nodes[node_id].current:
             raise CertificationError(
-                f"post-write certificate verification failed for {node_id}"
+                f"post-write certificate verification failed for {node_id}: "
+                + ", ".join(final_report.nodes[node_id].concerns)
             )
     pooled_view = CertificateCurrentnessView(final_report)
     for module_id in sorted(
@@ -3479,7 +3480,7 @@ def certify(
     graph = load_repository_blueprint_graph(
         repository,
         schema_root=repository / "references" / "blueprint",
-        expected_schema_version=5,
+        expected_schema_version=6,
     )
     if any(
         node.declaration.get("schema_version") != 5
@@ -3516,7 +3517,7 @@ def certify(
         allow_non_atomic=allow_non_atomic,
         require_candidate_execution=True,
         require_migration_review=False,
-        expected_schema_version=5,
+        expected_schema_version=6,
         schema_root=repository / "references" / "blueprint",
     )
     written = set(result.node_ids)

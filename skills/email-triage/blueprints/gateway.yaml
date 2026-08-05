@@ -80,28 +80,28 @@ interfaces:
     description: Primary LLM-facing skill instructions.
     version: 2
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces:
 - interface: email-triage.source.instructions-triage.interface.triage
   version: 2
-- interface: email-triage.interface.fetch-filtered-envelopes
+- interface: email-triage._rtx.interface.fetch-filtered-envelopes
   version: 1
-- interface: email-triage.interface.scripts-clear-failure
+- interface: email-triage._rtx.interface.scripts-clear-failure
   version: 1
-- interface: email-triage.interface.scripts-filter-envelopes
+- interface: email-triage._rtx.interface.scripts-filter-envelopes
   version: 1
-- interface: email-triage.interface.scripts-finalize-triage
+- interface: email-triage._rtx.interface.scripts-finalize-triage
   version: 1
-- interface: email-triage.interface.scripts-get-cutoff
+- interface: email-triage._rtx.interface.scripts-get-cutoff
   version: 1
-- interface: email-triage.interface.scripts-log-decision
+- interface: email-triage._rtx.interface.scripts-log-decision
   version: 1
-- interface: email-triage.interface.scripts-mark-failure
+- interface: email-triage._rtx.interface.scripts-mark-failure
   version: 1
-- interface: email-triage.interface.scripts-prune-log
+- interface: email-triage._rtx.interface.scripts-prune-log
   version: 1
-- interface: email-triage.interface.scripts-update-watermark
+- interface: email-triage._rtx.interface.scripts-update-watermark
   version: 1
-- interface: email-triage.interface.scripts-write-metrics
+- interface: email-triage._rtx.interface.scripts-write-metrics
   version: 1
 version: 2

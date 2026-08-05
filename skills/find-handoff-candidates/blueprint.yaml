@@ -1,9 +1,7 @@
 authority:
   owns_filesystem: []
 children:
-  find-handoff-candidates-rtx:
-    base: module-root
-    path: _rtx/blueprint.yaml
+  _rtx: {}
 content:
 - SKILL\.md
 description: Mechanically identifies session transcripts with substantial work since
@@ -20,32 +18,34 @@ discovery:
   - skill-workflow
   persistent_modifier: false
 exports:
-  find-handoff-candidates.interface.calibrate:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: find-handoff-candidates-rtx.interface.calibrate
-      version: 1
   find-handoff-candidates.interface.default:
     access:
       allow_all_modules: true
       allowed_callers: []
     source_interface: find-handoff-candidates.source.gateway.interface.default
-  find-handoff-candidates.interface.scan:
-    access:
-      allow_all_modules: true
-      allowed_callers: []
-    facade_interface:
-      interface: find-handoff-candidates-rtx.interface.scan
-      version: 1
 gateway:
   language: Markdown
   path: SKILL.md
 id: find-handoff-candidates
-namespace_exports: {}
+namespace_exports:
+  _rtx:
+    version: 1
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    surface:
+      only:
+        find-handoff-candidates._rtx.interface.calibrate: 1
+        find-handoff-candidates._rtx.interface.scan: 1
+    interface_access:
+      find-handoff-candidates._rtx.interface.calibrate:
+        allow_all_modules: false
+        allowed_callers: []
+      find-handoff-candidates._rtx.interface.scan:
+        allow_all_modules: true
+        allowed_callers: []
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
   find-handoff-candidates.source.gateway:
     blueprint:

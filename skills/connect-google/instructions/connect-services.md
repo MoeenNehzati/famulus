@@ -5,17 +5,17 @@ services—Drive, Calendar, and Gmail—and tell the user that any subset is val
 
 ## Client preparation
 
-Check `connect-google.interface.client-status`. If it is valid, reuse it. If it is
+Check `connect-google._rtx.interface.client-status`. If it is valid, reuse it. If it is
 missing or invalid and reports legacy candidates, ask before importing one with
-`connect-google.interface.install-client`. If multiple candidates differ, ask the
+`connect-google._rtx.interface.install-client`. If multiple candidates differ, ask the
 user which one to import. Otherwise obtain a local Desktop client JSON path and
-use `connect-google.interface.install-client`. Replacing a different canonical
+use `connect-google._rtx.interface.install-client`. Replacing a different canonical
 client requires explicit confirmation. Never expose file contents or tokens.
 
 ## Combined authorization, then service-owned handoff
 
 After the canonical client is ready, request one combined grant for every
-selected service with `connect-google.interface.authorize-services`, passing
+selected service with `connect-google._rtx.interface.authorize-services`, passing
 all selected services together. This opens a single consent screen covering
 the full scope union instead of a separate OAuth round trip per service, and
 returns one opaque `credential_id` plus which services were actually granted

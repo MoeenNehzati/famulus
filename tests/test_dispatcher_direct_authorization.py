@@ -9,7 +9,11 @@ import yaml
 
 from officina.common.repository_configuration import RepositoryConfiguration
 from officina.dispatcher.direct_authorization import resolve_direct_invocation
-from officina.dispatcher.core import _dispatch_host, _resolve_host_dispatch_metadata
+from officina.dispatcher.direct_runtime import (
+    _dispatch_host,
+    _resolve_host_dispatch_metadata,
+    resolve_dispatch_metadata,
+)
 from officina.dispatcher.errors import (
     DirectBlueprintError,
     UnauthorizedCallerError,
@@ -47,7 +51,7 @@ def _module(
             "source_interface": SOURCE_INTERFACE_ID,
             "access": export_access,
         }
-    return {
+    declaration = {
         "schema_version": 6,
         "node_type": "module",
         "id": module_id,
@@ -60,6 +64,9 @@ def _module(
         "namespace_exports": routes or {},
         "exports": exports,
     }
+    if "." not in module_id:
+        declaration["discovery"] = {"mechanism": "skill"}
+    return declaration
 
 
 def _route(access: dict[str, object]) -> dict[str, object]:
@@ -283,6 +290,71 @@ def test_namespace_surface_and_version_are_enforced(tmp_path: Path) -> None:
     assert caught.value.code == "dispatcher.namespace_surface_excludes_interface"
 
 
+def test_namespace_version_must_match_registered_child(tmp_path: Path) -> None:
+    configuration = _repository(tmp_path, terminal_access=_access(public=True))
+    root_path = configuration.module_roots[0] / "root" / "blueprint.yaml"
+    root = yaml.safe_load(root_path.read_text())
+    root["namespace_exports"]["alpha"]["version"] = 2
+    _write_yaml(root_path, root)
+
+    with pytest.raises(DirectBlueprintError) as caught:
+        resolve_direct_invocation(
+            configuration=configuration,
+            caller_module_id="outsider",
+            interface_id=INTERFACE_ID,
+            interface_version=3,
+            argv=[],
+            stdin_requested=False,
+        )
+    assert caught.value.code == "dispatcher.namespace_version_mismatch"
+
+
+def test_namespace_version_rejects_boolean_integer_alias(tmp_path: Path) -> None:
+    configuration = _repository(tmp_path, terminal_access=_access(public=True))
+    root_path = configuration.module_roots[0] / "root" / "blueprint.yaml"
+    root = yaml.safe_load(root_path.read_text())
+    root["namespace_exports"]["alpha"]["version"] = True
+    _write_yaml(root_path, root)
+
+    with pytest.raises(DirectBlueprintError) as caught:
+        resolve_direct_invocation(
+            configuration=configuration,
+            caller_module_id="outsider",
+            interface_id=INTERFACE_ID,
+            interface_version=3,
+            argv=[],
+            stdin_requested=False,
+        )
+    assert caught.value.code == "dispatcher.namespace_version_mismatch"
+
+
+def test_namespace_surface_version_rejects_boolean_integer_alias(tmp_path: Path) -> None:
+    configuration = _repository(tmp_path, terminal_access=_access(public=True))
+    modules = configuration.module_roots[0]
+    source_path = modules / "root" / "alpha" / "leaf" / "blueprints" / "runtime.yaml"
+    source = yaml.safe_load(source_path.read_text())
+    source["interfaces"][SOURCE_INTERFACE_ID]["version"] = 1
+    _write_yaml(source_path, source)
+    for route_path, child in (
+        (modules / "root" / "blueprint.yaml", "alpha"),
+        (modules / "root" / "alpha" / "blueprint.yaml", "leaf"),
+    ):
+        route = yaml.safe_load(route_path.read_text())
+        route["namespace_exports"][child]["surface"]["only"][INTERFACE_ID] = True
+        _write_yaml(route_path, route)
+
+    with pytest.raises(DirectBlueprintError) as caught:
+        resolve_direct_invocation(
+            configuration=configuration,
+            caller_module_id="outsider",
+            interface_id=INTERFACE_ID,
+            interface_version=1,
+            argv=[],
+            stdin_requested=False,
+        )
+    assert caught.value.code == "dispatcher.namespace_surface_excludes_interface"
+
+
 def test_namespace_interface_access_can_narrow_route_access(tmp_path: Path) -> None:
     configuration = _repository(
         tmp_path,
@@ -308,6 +380,25 @@ def test_namespace_interface_access_can_narrow_route_access(tmp_path: Path) -> N
         )
 
 
+def test_malformed_namespace_interface_access_fails_closed(tmp_path: Path) -> None:
+    configuration = _repository(tmp_path, terminal_access=_access(public=True))
+    root_path = configuration.module_roots[0] / "root" / "blueprint.yaml"
+    root = yaml.safe_load(root_path.read_text())
+    root["namespace_exports"]["alpha"]["interface_access"] = [INTERFACE_ID]
+    _write_yaml(root_path, root)
+
+    with pytest.raises(DirectBlueprintError) as caught:
+        resolve_direct_invocation(
+            configuration=configuration,
+            caller_module_id="outsider",
+            interface_id=INTERFACE_ID,
+            interface_version=3,
+            argv=[],
+            stdin_requested=False,
+        )
+    assert caught.value.code == "dispatcher.access_invalid"
+
+
 def test_source_interface_version_mismatch_is_rejected(tmp_path: Path) -> None:
     configuration = _repository(tmp_path, terminal_access=_access(public=True))
     with pytest.raises(DirectBlueprintError) as caught:
@@ -316,6 +407,94 @@ def test_source_interface_version_mismatch_is_rejected(tmp_path: Path) -> None:
             caller_module_id="root.alpha.leaf",
             interface_id=INTERFACE_ID,
             interface_version=4,
+            argv=[],
+            stdin_requested=False,
+        )
+    assert caught.value.code == "dispatcher.interface_version_mismatch"
+
+
+@pytest.mark.parametrize("invalid_version", [0, -1])
+def test_source_version_must_be_positive(
+    tmp_path: Path,
+    invalid_version: int,
+) -> None:
+    configuration = _repository(tmp_path, terminal_access=_access(public=True))
+    source_path = (
+        configuration.module_roots[0]
+        / "root"
+        / "alpha"
+        / "leaf"
+        / "blueprints"
+        / "runtime.yaml"
+    )
+    source = yaml.safe_load(source_path.read_text())
+    source["version"] = invalid_version
+    _write_yaml(source_path, source)
+
+    with pytest.raises(DirectBlueprintError) as caught:
+        resolve_direct_invocation(
+            configuration=configuration,
+            caller_module_id="root.alpha.leaf",
+            interface_id=INTERFACE_ID,
+            interface_version=None,
+            argv=[],
+            stdin_requested=False,
+        )
+    assert caught.value.code == "dispatcher.blueprint_malformed"
+
+
+@pytest.mark.parametrize("invalid_version", [0, -1])
+def test_source_interface_version_must_be_positive(
+    tmp_path: Path,
+    invalid_version: int,
+) -> None:
+    configuration = _repository(tmp_path, terminal_access=_access(public=True))
+    source_path = (
+        configuration.module_roots[0]
+        / "root"
+        / "alpha"
+        / "leaf"
+        / "blueprints"
+        / "runtime.yaml"
+    )
+    source = yaml.safe_load(source_path.read_text())
+    source["interfaces"][SOURCE_INTERFACE_ID]["version"] = invalid_version
+    _write_yaml(source_path, source)
+
+    with pytest.raises(DirectBlueprintError) as caught:
+        resolve_direct_invocation(
+            configuration=configuration,
+            caller_module_id="root.alpha.leaf",
+            interface_id=INTERFACE_ID,
+            interface_version=None,
+            argv=[],
+            stdin_requested=False,
+        )
+    assert caught.value.code == "dispatcher.source_interface_invalid"
+
+
+def test_requested_interface_version_rejects_boolean_integer_alias(
+    tmp_path: Path,
+) -> None:
+    configuration = _repository(tmp_path, terminal_access=_access(public=True))
+    source_path = (
+        configuration.module_roots[0]
+        / "root"
+        / "alpha"
+        / "leaf"
+        / "blueprints"
+        / "runtime.yaml"
+    )
+    source = yaml.safe_load(source_path.read_text())
+    source["interfaces"][SOURCE_INTERFACE_ID]["version"] = 1
+    _write_yaml(source_path, source)
+
+    with pytest.raises(DirectBlueprintError) as caught:
+        resolve_direct_invocation(
+            configuration=configuration,
+            caller_module_id="root.alpha.leaf",
+            interface_id=INTERFACE_ID,
+            interface_version=True,
             argv=[],
             stdin_requested=False,
         )
@@ -338,19 +517,11 @@ def test_certification_status_is_warning_only(tmp_path: Path) -> None:
 
 def test_host_metadata_uses_explicit_config_without_legacy_routing(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     configuration = _repository(tmp_path, terminal_access=_access(public=True))
 
-    def forbidden(*_args: object, **_kwargs: object) -> object:
-        raise AssertionError("legacy routing reached")
-
-    monkeypatch.setattr("officina.dispatcher.core.load_snapshot_route", forbidden)
-    monkeypatch.setattr("officina.dispatcher.core.lookup_route_graph", forbidden)
-    monkeypatch.setattr("officina.dispatcher.core.load_repository_blueprint_graph", forbidden)
-
     resolved = _resolve_host_dispatch_metadata(
-        caller_skill="root.alpha.leaf",
+        caller_skill="root",
         target=INTERFACE_ID,
         args=[],
         target_version=None,
@@ -361,6 +532,19 @@ def test_host_metadata_uses_explicit_config_without_legacy_routing(
     assert resolved.python_target is not None
 
 
+def test_public_metadata_api_accepts_exact_repository_config(tmp_path: Path) -> None:
+    configuration = _repository(tmp_path, terminal_access=_access(public=True))
+
+    resolved = resolve_dispatch_metadata(
+        caller_skill="root",
+        target=INTERFACE_ID,
+        args=[],
+        repository_config=configuration.config_path,
+    )
+
+    assert resolved.target == INTERFACE_ID
+
+
 def test_host_executes_direct_route_with_explicit_config(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -368,14 +552,8 @@ def test_host_executes_direct_route_with_explicit_config(
     configuration = _repository(tmp_path, terminal_access=_access(public=True))
     monkeypatch.setenv("PYTHONPATH", str(Path(__file__).resolve().parents[1] / "src"))
 
-    def forbidden(*_args: object, **_kwargs: object) -> object:
-        raise AssertionError("eager package scan reached")
-
-    monkeypatch.setattr("officina.dispatcher.core.open_runtime_python_package", forbidden)
-    monkeypatch.setattr("officina.dispatcher.core.snapshot_runtime_python_package", forbidden)
-
     completed = _dispatch_host(
-        caller_skill="root.alpha.leaf",
+        caller_skill="root",
         target=INTERFACE_ID,
         args=[],
         repository_config=configuration.config_path,
@@ -386,3 +564,45 @@ def test_host_executes_direct_route_with_explicit_config(
     assert completed.returncode == 0
     assert completed.stdout == "direct-ok\n"
     assert completed.stderr == ""
+
+
+def test_host_execution_cannot_import_sibling_from_ambient_pythonpath(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configuration = _repository(tmp_path, terminal_access=_access(public=True))
+    modules = configuration.module_roots[0]
+    sibling = modules / "root" / "beta"
+    (sibling / "secret.py").write_text("message = 'leaked-sibling'\n")
+    gateway = modules / "root" / "alpha" / "leaf" / "runtime.py"
+    gateway.write_text(
+        gateway.read_text().replace("from .helper import message", "from secret import message")
+    )
+    source_root = Path(__file__).resolve().parents[1] / "src"
+    monkeypatch.setenv("PYTHONPATH", f"{sibling}:{source_root}")
+
+    completed = _dispatch_host(
+        caller_skill="root",
+        target=INTERFACE_ID,
+        args=[],
+        repository_config=configuration.config_path,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode != 0
+    assert "leaked-sibling" not in completed.stdout
+
+
+def test_host_rejects_private_child_caller_identity(tmp_path: Path) -> None:
+    configuration = _repository(tmp_path, terminal_access=_access(public=True))
+
+    with pytest.raises(DirectBlueprintError) as caught:
+        _resolve_host_dispatch_metadata(
+            caller_skill="root.alpha.leaf",
+            target=INTERFACE_ID,
+            args=[],
+            repository_config=configuration.config_path,
+        )
+
+    assert caught.value.code == "dispatcher.host_caller_invalid"

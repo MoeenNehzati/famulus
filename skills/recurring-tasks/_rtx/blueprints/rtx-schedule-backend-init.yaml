@@ -10,17 +10,17 @@ dependencies:
     path: blueprints/rtx-job-executor.yaml
   reason: Generates native scheduler commands that execute the private job-executor
     process interface.
-  source: recurring-tasks-rtx.source.rtx-job-executor
+  source: recurring-tasks._rtx.source.rtx-job-executor
   version: 1
 description: Selects and implements the Linux, macOS, or Windows native per-user scheduling
   backend.
 gateway:
   language: Python
   path: _schedule_backend/__init__.py
-id: recurring-tasks-rtx.source.rtx-schedule-backend-init
+id: recurring-tasks._rtx.source.rtx-schedule-backend-init
 interfaces: {}
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces:
 - interface: common.interface.famulus-paths
   version: 1

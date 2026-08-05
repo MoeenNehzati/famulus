@@ -1,8 +1,8 @@
 content:
 - repository_configuration\.py
 dependencies: []
-description: Loads the exact root-level officina.toml supplied by a launcher and
-  returns confined repository module roots without ambient discovery.
+description: Loads the exact root-level officina.toml supplied by a launcher and returns
+  confined repository module roots without ambient discovery.
 gateway:
   language: Python
   path: repository_configuration.py
@@ -98,7 +98,7 @@ interfaces:
     description: Loads one exact repository configuration for Python callers.
     version: 1
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces:
 - interface: common.interface.toml-io
   version: 1

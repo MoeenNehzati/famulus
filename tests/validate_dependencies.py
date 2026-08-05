@@ -168,6 +168,24 @@ def test_undeclared_interface_mention_is_rejected(tmp_path: Path) -> None:
     assert any("canonical interface" in error and "is not declared" in error for error in errors)
 
 
+def test_undeclared_dotted_child_interface_mention_is_rejected(
+    tmp_path: Path,
+) -> None:
+    _copy_schemas(tmp_path)
+    _module(tmp_path, "other-skill")
+    _module(
+        tmp_path,
+        "my-skill",
+        body="Use other-skill._rtx.interface.default.\n",
+    )
+    errors = _mod.validate(tmp_path)
+    assert any(
+        "canonical interface" in error
+        and "other-skill._rtx.interface.default" in error
+        for error in errors
+    )
+
+
 def test_undeclared_bare_module_mention_is_rejected(tmp_path: Path) -> None:
     _copy_schemas(tmp_path)
     _module(tmp_path, "other-skill")
@@ -228,6 +246,36 @@ def test_parent_dependency_accounting_includes_registered_child_sources() -> Non
         exports={
             "other-skill.interface.default": SimpleNamespace(
                 module_node_id="other-skill",
+            ),
+        },
+        node_edges=(),
+    )
+
+    assert _mod._used_module_ids(graph, "my-skill") == {"other-skill"}
+
+
+def test_dependency_on_dotted_child_export_accounts_for_top_level_module() -> None:
+    source = SimpleNamespace(
+        declaration={
+            "uses_interfaces": [
+                {"interface": "other-skill._rtx.interface.default"},
+            ],
+        }
+    )
+    graph = SimpleNamespace(
+        module_sources={
+            "my-skill": ("my-skill.source.gateway",),
+            "other-skill._rtx": ("other-skill._rtx.source.runtime",),
+        },
+        module_ancestry={
+            "my-skill": ("my-skill",),
+            "other-skill._rtx": ("other-skill", "other-skill._rtx"),
+        },
+        nodes={"my-skill.source.gateway": source},
+        exports={
+            "other-skill._rtx.interface.default": SimpleNamespace(
+                module_node_id="other-skill._rtx",
+                source_interface_id="other-skill._rtx.source.runtime.interface.default",
             ),
         },
         node_edges=(),

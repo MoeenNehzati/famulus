@@ -1,9 +1,7 @@
 authority:
   owns_filesystem: []
 children:
-  connect-google-rtx:
-    base: module-root
-    path: _rtx/blueprint.yaml
+  _rtx: {}
 content:
 - (?:SKILL\.md|instructions/connect\-services\.md|instructions/create\-client\.md|personal\-preferences/connect\-services\.md|personal\-preferences/create\-client\.md|personal\-preferences/default\.md)
 description: Prepares a shared Google Desktop OAuth client and routes service-specific
@@ -20,26 +18,6 @@ discovery:
   - skill-workflow
   persistent_modifier: false
 exports:
-  connect-google.interface.authorize-services:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - connect-google
-      - install-assistant-tools
-      - install-assistant-tools-rtx
-    facade_interface:
-      interface: connect-google-rtx.interface.authorize-services
-      version: 1
-  connect-google.interface.client-status:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - connect-google
-      - install-assistant-tools
-      - install-assistant-tools-rtx
-    facade_interface:
-      interface: connect-google-rtx.interface.client-status
-      version: 1
   connect-google.interface.connect-services:
     access:
       allow_all_modules: false
@@ -57,21 +35,40 @@ exports:
       allow_all_modules: true
       allowed_callers: []
     source_interface: connect-google.source.gateway.interface.default
-  connect-google.interface.install-client:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - connect-google
-    facade_interface:
-      interface: connect-google-rtx.interface.install-client
-      version: 1
 gateway:
   language: Markdown
   path: SKILL.md
 id: connect-google
-namespace_exports: {}
+namespace_exports:
+  _rtx:
+    version: 1
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    surface:
+      only:
+        connect-google._rtx.interface.authorize-services: 1
+        connect-google._rtx.interface.client-status: 1
+        connect-google._rtx.interface.install-client: 1
+    interface_access:
+      connect-google._rtx.interface.authorize-services:
+        allow_all_modules: false
+        allowed_callers:
+        - connect-google
+        - install-assistant-tools
+        - install-assistant-tools._rtx
+      connect-google._rtx.interface.client-status:
+        allow_all_modules: false
+        allowed_callers:
+        - connect-google
+        - install-assistant-tools
+        - install-assistant-tools._rtx
+      connect-google._rtx.interface.install-client:
+        allow_all_modules: false
+        allowed_callers:
+        - connect-google
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
   connect-google.source.gateway:
     blueprint:

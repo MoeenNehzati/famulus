@@ -93,7 +93,7 @@ def _dispatcher_env() -> dict[str, str]:
 def _runner_interfaces(
     repo_root: Path = REPO_ROOT,
     *,
-    expected_schema_version: int = 5,
+    expected_schema_version: int = 6,
     schema_root: Path | None = None,
 ) -> list[RouteSmokeCase]:
     graph = load_repository_blueprint_graph(
@@ -120,7 +120,7 @@ def _runner_interfaces(
 def _route_smoke_cases(
     repo_root: Path = REPO_ROOT,
     *,
-    expected_schema_version: int = 5,
+    expected_schema_version: int = 6,
     schema_root: Path | None = None,
 ) -> list[RouteSmokeCase]:
     return _runner_interfaces(
@@ -155,7 +155,7 @@ def test_dispatcher_module_cli_help_is_available(tmp_path: Path) -> None:
     assert "--error-format" in result.stdout
 
 
-def test_dispatcher_cli_text_reports_missing_active_snapshot(tmp_path: Path) -> None:
+def test_dispatcher_cli_text_requires_exact_repository_config(tmp_path: Path) -> None:
     result = _run_dispatcher(
         [
             "--caller-skill",
@@ -167,8 +167,29 @@ def test_dispatcher_cli_text_reports_missing_active_snapshot(tmp_path: Path) -> 
 
     assert result.returncode == 2
     assert result.stdout == ""
-    assert result.stderr.startswith("error: active dispatcher snapshot is missing")
-    assert "officina.install.dispatch_snapshot_builder" in result.stderr
+    assert result.stderr == "error: dispatcher requires the exact repository configuration path\n"
+
+
+def test_dispatcher_cli_reports_invalid_repository_config_without_traceback(
+    tmp_path: Path,
+) -> None:
+    config = tmp_path / "officina.toml"
+    config.write_text("not valid = [")
+    result = _run_dispatcher(
+        [
+            "--repository-config",
+            str(config),
+            "--caller-skill",
+            "demo-caller",
+            "nonexistent-module.interface.does-not-exist",
+        ],
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert result.stderr.startswith("error: ")
+    assert "Traceback" not in result.stderr
 
 
 def test_dispatcher_cli_error_format_json_emits_structured_payload(
@@ -189,7 +210,7 @@ def test_dispatcher_cli_error_format_json_emits_structured_payload(
     assert result.stdout == ""
     payload = json.loads(result.stderr)
     assert payload["schema_version"] == 1
-    assert payload["code"] == "dispatcher.snapshot_missing"
+    assert payload["code"] == "dispatcher.runtime_misconfigured"
     assert payload["caller_module_id"] == "demo-caller"
     assert payload["target_module_id"] == "nonexistent-module"
     assert "token" not in result.stderr.lower()

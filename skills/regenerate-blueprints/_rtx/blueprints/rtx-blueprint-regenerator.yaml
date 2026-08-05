@@ -13,9 +13,9 @@ description: Loads one existing skill root blueprint, selects its authoring sche
 gateway:
   language: Python
   path: _blueprint_regenerator.py
-id: regenerate-blueprints-rtx.source.rtx-blueprint-regenerator
+id: regenerate-blueprints._rtx.source.rtx-blueprint-regenerator
 interfaces:
-  regenerate-blueprints-rtx.source.rtx-blueprint-regenerator.interface.regenerate-blueprint:
+  regenerate-blueprints._rtx.source.rtx-blueprint-regenerator.interface.regenerate-blueprint:
     contract:
       arguments:
         skill-name:
@@ -224,7 +224,7 @@ runtime_dependencies:
     windows: true
   reason: Validates regenerated blueprints before writing output.
   version: any
-schema_version: 5
+schema_version: 6
 uses_interfaces:
 - interface: common.interface.blueprint-template
   version: 1

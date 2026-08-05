@@ -5,7 +5,7 @@ dependencies:
     base: module-root
     path: blueprints/rtx-skill-sources-init.yaml
   reason: Imports installed-source discovery from _rtx/_skill_sources/__init__.py.
-  source: skill-drift-rtx.source.rtx-skill-sources-init
+  source: skill-drift._rtx.source.rtx-skill-sources-init
   version: 1
 description: Resolves exact or installed v5 modules, derives canonical node hashes
   and certificate currentness through the shared certification view, and optionally
@@ -13,9 +13,9 @@ description: Resolves exact or installed v5 modules, derives canonical node hash
 gateway:
   language: Python
   path: _check_drift_state.py
-id: skill-drift-rtx.source.rtx-check-drift-state
+id: skill-drift._rtx.source.rtx-check-drift-state
 interfaces:
-  skill-drift-rtx.source.rtx-check-drift-state.interface.compute-hashes:
+  skill-drift._rtx.source.rtx-check-drift-state.interface.compute-hashes:
     contract:
       arguments:
         json:
@@ -204,7 +204,7 @@ interfaces:
           '0': ^compute-hashes$
     usage: compute-hashes [target ...] [--skill-root ROOT] [--json]
     version: 1
-  skill-drift-rtx.source.rtx-check-drift-state.interface.drift-status:
+  skill-drift._rtx.source.rtx-check-drift-state.interface.drift-status:
     contract:
       arguments:
         all:
@@ -454,7 +454,7 @@ platform_support:
   macos: true
   windows: true
 runtime_dependencies: []
-schema_version: 5
+schema_version: 6
 uses_interfaces:
 - interface: common.interface.certification-hashing
   version: 1

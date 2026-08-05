@@ -23,28 +23,19 @@ Activation: user-request, skill-workflow; persistent modifier: no
 
 Skill Version: 3
 
-Uses Interfaces: none
+Uses Interfaces:
+- `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph@1`
+- `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-extract-mathjax-macros@1`
+- `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-serve-graph@1`
+- `math-dependency-graph.source.gateway -> math-dependency-graph.interface.extract@1`
 
 Public Interfaces:
 - `math-dependency-graph.interface.default`
 - `math-dependency-graph.interface.extract`
-- `math-dependency-graph.interface.scripts-build-math-dependency-graph`
-- `math-dependency-graph.interface.scripts-extract-mathjax-macros`
-- `math-dependency-graph.interface.scripts-serve-graph`
 <!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Dispatcher Interfaces:
-
-Use the installed `dispatcher` command for these process-bound interfaces:
-- `math-dependency-graph.interface.scripts-build-math-dependency-graph` — Render an interactive HTML math dependency graph from canonical JSON; the saved document loads ELK and MathJax from jsDelivr when opened.
-  - `dispatcher --caller-skill math-dependency-graph math-dependency-graph.interface.scripts-build-math-dependency-graph <source.json> [--tex-entry <entrypoint.tex>] [--html-out <path>] [--macro-file <path>] [--refresh-macros] [--reduce-transitive-edges]`
-- `math-dependency-graph.interface.scripts-extract-mathjax-macros` — Extract MathJax macro definitions from a TeX entrypoint, recursively following \input/\include.
-  - `dispatcher --caller-skill math-dependency-graph math-dependency-graph.interface.scripts-extract-mathjax-macros <entrypoint.tex> [--out <path>]`
-- `math-dependency-graph.interface.scripts-serve-graph` — Serve graph HTML from a local directory with no-cache headers for repeated browser inspection.
-  - `dispatcher --caller-skill math-dependency-graph math-dependency-graph.interface.scripts-serve-graph [--directory <path>] [--host <host>] [--port <port>]`
 
 Instruction Interfaces:
 
@@ -62,9 +53,9 @@ Use this skill to extract the direct mathematical dependency structure of a sour
 1. Resolve the requested document and scope.
 2. Invoke `math-dependency-graph.interface.extract` with the source, scope, and required canonical JSON destination.
 3. Receive the completed canonical JSON path and any reported evidence gaps.
-4. When the document defines custom TeX commands, invoke `math-dependency-graph.interface.scripts-extract-mathjax-macros` and retain the resulting macro artifact.
-5. Invoke `math-dependency-graph.interface.scripts-build-math-dependency-graph` with the canonical JSON and requested HTML output path.
-6. If interactive inspection is requested, invoke `math-dependency-graph.interface.scripts-serve-graph`.
+4. When the document defines custom TeX commands, invoke `math-dependency-graph._rtx.interface.scripts-extract-mathjax-macros` and retain the resulting macro artifact.
+5. Invoke `math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph` with the canonical JSON and requested HTML output path.
+6. If interactive inspection is requested, invoke `math-dependency-graph._rtx.interface.scripts-serve-graph`.
 7. Report the JSON and HTML artifact paths, the scope represented, and unresolved extraction gaps.
 
 ## Responsibility boundary

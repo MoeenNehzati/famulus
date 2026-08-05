@@ -116,7 +116,12 @@ def load_current_pointer(
     path = _pointer_path(runtime_root)
     if not path.exists():
         raise RuntimePointerError(f"no current.json at {path}")
-    payload = json.loads(path.read_text())
+    try:
+        payload = json.loads(path.read_text())
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise RuntimePointerError(f"cannot read current.json: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise RuntimePointerError("current.json must contain a JSON object")
     schema_version = payload.get("schema_version")
     if schema_version not in {1, 2}:
         raise RuntimePointerError(

@@ -11,20 +11,14 @@ Activation: user-request, skill-workflow; persistent modifier: no
 
 Skill Version: 2
 
-Uses Interfaces: none
+Uses Interfaces:
+- `skill-certifier.source.gateway -> skill-certifier._rtx.interface.certify@1`
 
 Public Interfaces:
-- `skill-certifier.interface.certify`
 - `skill-certifier.interface.default`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Dispatcher Interfaces:
-
-Use the installed `dispatcher` command for these process-bound interfaces:
-- `skill-certifier.interface.certify` — Certify exact v5 module closures by appending signed certificate histories for an explicit reviewed repository commit.
-  - `dispatcher --caller-skill skill-certifier skill-certifier.interface.certify certify [target ...] --reviewed-repository ROOT --reviewed-commit COMMIT [--json] [--allow-non-atomic]`
 
 Instruction Interfaces:
 
@@ -52,7 +46,7 @@ The review must establish:
   direct ownership, a declared interface use, or the certification basis.
 
 Mechanical certification runs only through
-`skill-certifier.interface.certify`. It invokes the repository validator runner
+`skill-certifier._rtx.interface.certify`. It invokes the repository validator runner
 once, then owns hash computation, signing, append-only certificate writes, and
 post-write drift verification. It reconstructs every payload field internally
 and accepts only the exact reviewed repository and commit; it never signs

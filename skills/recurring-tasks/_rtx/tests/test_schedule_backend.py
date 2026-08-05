@@ -763,7 +763,7 @@ def test_deploy_test_resolver_produces_a_resolvable_current_json(tmp_path):
     resolved = _load_current_pointer(
         runtime_root, trusted_roots=tuple(Path(entry) for entry in trusted_roots)
     )
-    assert resolved == Path(sys.executable).resolve()
+    assert resolved == python_bin
 
 
 def _import_live_smoke_module():

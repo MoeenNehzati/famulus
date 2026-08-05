@@ -5,28 +5,28 @@ dependencies:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
-  source: list-manager-rtx.source.rtx-init
+  source: list-manager._rtx.source.rtx-init
   version: 1
 - blueprint:
     base: module-root
     path: blueprints/rtx-list-beautify.yaml
   reason: Executes the list beautifier gateway to render YAML as Markdown.
-  source: list-manager-rtx.source.rtx-list-beautify
+  source: list-manager._rtx.source.rtx-list-beautify
   version: 1
 - blueprint:
     base: module-root
     path: blueprints/rtx-yaml-store.yaml
   reason: Executes the YAML store gateway to read list content.
-  source: list-manager-rtx.source.rtx-yaml-store
+  source: list-manager._rtx.source.rtx-yaml-store
   version: 1
 description: Python orchestration source that reads a local or cloud-backed YAML list
   and passes it through the list renderer.
 gateway:
   language: Python
   path: _render_bridge.py
-id: list-manager-rtx.source.rtx-render-bridge
+id: list-manager._rtx.source.rtx-render-bridge
 interfaces:
-  list-manager-rtx.source.rtx-render-bridge.interface.cloud-read-beautify:
+  list-manager._rtx.source.rtx-render-bridge.interface.cloud-read-beautify:
     contract:
       arguments:
         filters:
@@ -232,7 +232,7 @@ interfaces:
         - --cloud
     usage: <name> [filters] --cloud [-o FILE]
     version: 1
-  list-manager-rtx.source.rtx-render-bridge.interface.read-beautify:
+  list-manager._rtx.source.rtx-render-bridge.interface.read-beautify:
     contract:
       arguments:
         file:
@@ -480,10 +480,10 @@ runtime_dependencies:
     windows: true
   reason: Renders nested list output for terminal display.
   version: any
-schema_version: 5
+schema_version: 6
 uses_interfaces:
-- interface: cloud-files.interface.lists-read
+- interface: cloud-files._rtx.interface.lists-read
   version: 1
-- interface: cloud-files.interface.lists-write
+- interface: cloud-files._rtx.interface.lists-write
   version: 1
 version: 1

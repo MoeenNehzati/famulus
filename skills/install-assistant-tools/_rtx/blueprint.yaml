@@ -63,63 +63,63 @@ content:
 - tests/.*
 description: Code module for the install-assistant-tools skill.
 exports:
-  install-assistant-tools-rtx.interface.scripts-dev-link:
+  install-assistant-tools._rtx.interface.scripts-dev-link:
     access:
       allow_all_modules: false
       allowed_callers:
       - install-assistant-tools
-    source_interface: install-assistant-tools-rtx.source.rtx-config-bridge.interface.scripts-dev-link
-  install-assistant-tools-rtx.interface.scripts-install:
+    source_interface: install-assistant-tools._rtx.source.rtx-config-bridge.interface.scripts-dev-link
+  install-assistant-tools._rtx.interface.scripts-install:
     access:
       allow_all_modules: false
       allowed_callers:
       - install-assistant-tools
-    source_interface: install-assistant-tools-rtx.source.rtx-phase-entry.interface.scripts-install
-  install-assistant-tools-rtx.interface.scripts-launchers:
+    source_interface: install-assistant-tools._rtx.source.rtx-phase-entry.interface.scripts-install
+  install-assistant-tools._rtx.interface.scripts-launchers:
     access:
       allow_all_modules: false
       allowed_callers:
       - install-assistant-tools
-    source_interface: install-assistant-tools-rtx.source.rtx-agent-launchers.interface.scripts-launchers
-  install-assistant-tools-rtx.interface.scripts-scaffold:
+    source_interface: install-assistant-tools._rtx.source.rtx-agent-launchers.interface.scripts-launchers
+  install-assistant-tools._rtx.interface.scripts-scaffold:
     access:
       allow_all_modules: false
       allowed_callers:
       - install-assistant-tools
-    source_interface: install-assistant-tools-rtx.source.rtx-install-scaffold.interface.scripts-scaffold
+    source_interface: install-assistant-tools._rtx.source.rtx-install-scaffold.interface.scripts-scaffold
 gateway:
   language: Python>=3.11
   path: __init__.py
-id: install-assistant-tools-rtx
+id: install-assistant-tools._rtx
 namespace_exports: {}
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
-  install-assistant-tools-rtx.source.rtx-agent-launchers:
+  install-assistant-tools._rtx.source.rtx-agent-launchers:
     blueprint:
       base: module-root
       path: blueprints/rtx-agent-launchers.yaml
-  install-assistant-tools-rtx.source.rtx-config-bridge:
+  install-assistant-tools._rtx.source.rtx-config-bridge:
     blueprint:
       base: module-root
       path: blueprints/rtx-config-bridge.yaml
-  install-assistant-tools-rtx.source.rtx-google-onboarding:
+  install-assistant-tools._rtx.source.rtx-google-onboarding:
     blueprint:
       base: module-root
       path: blueprints/rtx-google-onboarding.yaml
-  install-assistant-tools-rtx.source.rtx-init:
+  install-assistant-tools._rtx.source.rtx-init:
     blueprint:
       base: module-root
       path: blueprints/rtx-init.yaml
-  install-assistant-tools-rtx.source.rtx-install-launcher-init:
+  install-assistant-tools._rtx.source.rtx-install-launcher-init:
     blueprint:
       base: module-root
       path: blueprints/rtx-install-launcher-init.yaml
-  install-assistant-tools-rtx.source.rtx-install-scaffold:
+  install-assistant-tools._rtx.source.rtx-install-scaffold:
     blueprint:
       base: module-root
       path: blueprints/rtx-install-scaffold.yaml
-  install-assistant-tools-rtx.source.rtx-phase-entry:
+  install-assistant-tools._rtx.source.rtx-phase-entry:
     blueprint:
       base: module-root
       path: blueprints/rtx-phase-entry.yaml

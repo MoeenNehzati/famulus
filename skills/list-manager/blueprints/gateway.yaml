@@ -79,38 +79,38 @@ interfaces:
     description: Primary LLM-facing skill instructions.
     version: 1
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces:
-- interface: list-manager.interface.beautify-list
+- interface: list-manager._rtx.interface.beautify-list
   version: 1
-- interface: list-manager.interface.cloud-create-entry
+- interface: list-manager._rtx.interface.cloud-create-entry
   version: 1
-- interface: list-manager.interface.cloud-delete
+- interface: list-manager._rtx.interface.cloud-delete
   version: 1
-- interface: list-manager.interface.cloud-init
+- interface: list-manager._rtx.interface.cloud-init
   version: 1
-- interface: list-manager.interface.cloud-list-categories
+- interface: list-manager._rtx.interface.cloud-list-categories
   version: 1
-- interface: list-manager.interface.cloud-read
+- interface: list-manager._rtx.interface.cloud-read
   version: 1
-- interface: list-manager.interface.cloud-read-beautify
+- interface: list-manager._rtx.interface.cloud-read-beautify
   version: 1
-- interface: list-manager.interface.cloud-update
+- interface: list-manager._rtx.interface.cloud-update
   version: 1
-- interface: list-manager.interface.create-entry
+- interface: list-manager._rtx.interface.create-entry
   version: 1
-- interface: list-manager.interface.describe-schema
+- interface: list-manager._rtx.interface.describe-schema
   version: 1
-- interface: list-manager.interface.generate-id
+- interface: list-manager._rtx.interface.generate-id
   version: 1
-- interface: list-manager.interface.init-list
+- interface: list-manager._rtx.interface.init-list
   version: 1
-- interface: list-manager.interface.migrate-markdown
+- interface: list-manager._rtx.interface.migrate-markdown
   version: 1
-- interface: list-manager.interface.read-beautify
+- interface: list-manager._rtx.interface.read-beautify
   version: 1
-- interface: list-manager.interface.read-list
+- interface: list-manager._rtx.interface.read-list
   version: 1
-- interface: list-manager.interface.update-list
+- interface: list-manager._rtx.interface.update-list
   version: 1
 version: 1

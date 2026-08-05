@@ -85,14 +85,14 @@ interfaces:
     description: Primary LLM-facing skill instructions.
     version: 2
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces:
 - interface: math-dependency-graph.interface.extract
   version: 1
-- interface: math-dependency-graph.interface.scripts-build-math-dependency-graph
+- interface: math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph
   version: 1
-- interface: math-dependency-graph.interface.scripts-extract-mathjax-macros
+- interface: math-dependency-graph._rtx.interface.scripts-extract-mathjax-macros
   version: 1
-- interface: math-dependency-graph.interface.scripts-serve-graph
+- interface: math-dependency-graph._rtx.interface.scripts-serve-graph
   version: 1
 version: 2

@@ -326,13 +326,13 @@ def trace_python_route_smoke_dependencies_batch(
     repo_root: Path,
     specifications: Iterable[tuple[Path, PythonProcessTarget]],
     *,
-    expected_schema_version: int = 5,
+    expected_schema_version: int = 6,
     schema_root: Path | None = None,
 ) -> dict[tuple[Path, PythonProcessTarget], tuple[Path, ...]]:
     """Return isolated loaded-path traces from one Python child process."""
 
-    if expected_schema_version not in {4, 5}:
-        raise ValueError("expected_schema_version must be 4 or 5")
+    if expected_schema_version not in {4, 5, 6}:
+        raise ValueError("expected_schema_version must be 4, 5, or 6")
     repository_root = repo_root.resolve()
     normalized = _normalize_route_smoke_trace_specifications(
         repository_root,
@@ -351,9 +351,17 @@ def trace_python_route_smoke_dependencies_batch(
         package_schema_root = (
             Path(__file__).resolve().parents[3] / "references" / "blueprint"
         )
-        if expected_schema_version == 4:
-            candidate_schema_root /= "migrations" / "v4"
-            package_schema_root /= "migrations" / "v4"
+        if expected_schema_version in {4, 5}:
+            candidate_schema_root = (
+                candidate_schema_root
+                / "migrations"
+                / f"v{expected_schema_version}"
+            )
+            package_schema_root = (
+                package_schema_root
+                / "migrations"
+                / f"v{expected_schema_version}"
+            )
         selected_schema_root = (
             candidate_schema_root
             if (candidate_schema_root / "module.schema.json").is_file()
@@ -762,7 +770,7 @@ def trace_python_route_smoke_dependencies(
     repo_root: Path,
     python_target: PythonProcessTarget,
     *,
-    expected_schema_version: int = 5,
+    expected_schema_version: int = 6,
     schema_root: Path | None = None,
 ) -> tuple[Path, ...]:
     """Return Python files loaded by one route-smoke dependency traversal."""

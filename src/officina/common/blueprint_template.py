@@ -178,7 +178,7 @@ def write_repository_managed_skill_blueprints(
     schema_root: str | Path | None = None,
     include_code_child: bool = False,
 ) -> tuple[Path, ...]:
-    """Create a v5 skill blueprint and, when requested, its `_rtx` child."""
+    """Create a v6 skill blueprint and, when requested, its `_rtx` child."""
 
     if not skill_name or "/" in skill_name or "\\" in skill_name:
         raise ValueError(f"invalid skill name: {skill_name!r}")
@@ -223,9 +223,9 @@ def write_repository_managed_skill_blueprints(
             / "blueprint"
         )
     schema = load_schema(selected_schema_root / "module.schema.json")
-    child_id = f"{skill_name}-rtx"
+    child_id = f"{skill_name}._rtx"
     parent = {
-        "schema_version": 5,
+        "schema_version": 6,
         "node_type": "module",
         "id": skill_name,
         "version": 1,
@@ -244,12 +244,7 @@ def write_repository_managed_skill_blueprints(
         "authority": {"owns_filesystem": []},
         "sources": {},
         "children": (
-            {
-                child_id: {
-                    "base": "module-root",
-                    "path": "_rtx/blueprint.yaml",
-                }
-            }
+            {"_rtx": {}}
             if include_code_child
             else {}
         ),
@@ -257,7 +252,7 @@ def write_repository_managed_skill_blueprints(
         "exports": {},
     }
     child = {
-        "schema_version": 5,
+        "schema_version": 6,
         "node_type": "module",
         "id": child_id,
         "version": 1,
@@ -331,13 +326,13 @@ def render_blueprint_template(schema: JsonMapping, *, doc_mode: DocMode = "full"
 
 
 def _default_schema_path(repo_root: Path, blueprint: object | None = None) -> Path:
-    if isinstance(blueprint, dict) and blueprint.get("schema_version") == 5:
+    if isinstance(blueprint, dict) and blueprint.get("schema_version") in {5, 6}:
         node_type = blueprint.get("node_type")
         schema_name = _AUTHORING_SCHEMA_BY_TYPE.get(node_type)
         if schema_name is not None:
             return repo_root / "references" / "blueprint" / schema_name
     raise ValueError(
-        "blueprint authoring requires schema_version 5 and node_type "
+        "blueprint authoring requires schema_version 5 or 6 and node_type "
         "module or behavioral_source"
     )
 

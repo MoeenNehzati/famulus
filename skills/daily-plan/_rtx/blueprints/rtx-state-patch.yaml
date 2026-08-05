@@ -5,16 +5,16 @@ dependencies:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
-  source: daily-plan-rtx.source.rtx-init
+  source: daily-plan._rtx.source.rtx-init
   version: 1
 description: Applies one supported dated-plan mutation, propagates master-list changes
   where required, and prints the refreshed plan.
 gateway:
   language: Python
   path: _state_patch.py
-id: daily-plan-rtx.source.rtx-state-patch
+id: daily-plan._rtx.source.rtx-state-patch
 interfaces:
-  daily-plan-rtx.source.rtx-state-patch.interface.mutate-plan:
+  daily-plan._rtx.source.rtx-state-patch.interface.mutate-plan:
     contract:
       arguments:
         command:
@@ -320,24 +320,24 @@ runtime_dependencies:
     windows: true
   reason: Reads and writes YAML plan/list data through plan_runtime.
   version: '>=6'
-schema_version: 5
+schema_version: 6
 uses_interfaces:
-- interface: cloud-files.interface.lists-read
+- interface: cloud-files._rtx.interface.lists-read
   version: 1
-- interface: cloud-files.interface.lists-write
+- interface: cloud-files._rtx.interface.lists-write
   version: 1
-- interface: cloud-files.interface.plans-read
+- interface: cloud-files._rtx.interface.plans-read
   version: 1
-- interface: cloud-files.interface.plans-write
+- interface: cloud-files._rtx.interface.plans-write
   version: 1
 - interface: common.interface.dates
   version: 1
-- interface: g-calendar.interface.scripts-gcal
+- interface: g-calendar._rtx.interface.scripts-gcal
   version: 1
-- interface: get-weather.interface.scripts-weather
+- interface: get-weather._rtx.interface.scripts-weather
   version: 1
-- interface: list-manager.interface.read-beautify
+- interface: list-manager._rtx.interface.read-beautify
   version: 1
-- interface: list-manager.interface.update-list
+- interface: list-manager._rtx.interface.update-list
   version: 1
 version: 1

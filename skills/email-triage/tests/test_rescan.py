@@ -7,7 +7,7 @@
   candidates already present in a destination list, by source.message_id.
 - `--rescan-after`/`--dedup-against` on the fetch-filtered-envelopes runtime
   fetch from an explicit cutoff and exclude already-triaged message_ids,
-  via a declared dispatch to list-manager.interface.cloud-read (never a
+  via a declared dispatch to list-manager._rtx.interface.cloud-read (never a
   direct import of list-manager's _rtx internals).
 """
 from __future__ import annotations
@@ -379,9 +379,9 @@ def test_dedup_against_reports_malformed_yaml_from_cloud_read(tmp_path, capsys):
 def test_declares_dispatch_to_list_manager_cloud_read():
     module = _load_runtime()
     call = module.Interface.dispatches["list-read"]
-    assert call.caller_skill in {"email-triage", "email-triage-rtx"}
+    assert call.caller_skill in {"email-triage", "email-triage._rtx"}
     assert (call.target_skill, call.interface) == (
-        "list-manager",
+        "list-manager._rtx",
         "cloud-read",
     )
 
@@ -389,15 +389,15 @@ def test_declares_dispatch_to_list_manager_cloud_read():
 def test_blueprint_declares_new_flags_and_uses_interfaces():
     blueprint_path = SKILL_ROOT / "_rtx" / "blueprints" / "rtx-mail-envelope-stream.yaml"
     source = yaml.safe_load(blueprint_path.read_text(encoding="utf-8"))
-    assert {"interface": "list-manager.interface.cloud-read", "version": 1} in source[
+    assert {"interface": "list-manager._rtx.interface.cloud-read", "version": 1} in source[
         "uses_interfaces"
     ]
 
     list_manager_blueprint = yaml.safe_load(
-        (REPO_ROOT / "skills" / "list-manager" / "blueprint.yaml").read_text(
+        (REPO_ROOT / "skills" / "list-manager" / "_rtx" / "blueprint.yaml").read_text(
             encoding="utf-8"
         )
     )
     assert "email-triage" in list_manager_blueprint["exports"][
-        "list-manager.interface.cloud-read"
+        "list-manager._rtx.interface.cloud-read"
     ]["access"]["allowed_callers"]

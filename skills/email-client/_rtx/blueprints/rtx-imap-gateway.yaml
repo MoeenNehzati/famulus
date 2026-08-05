@@ -5,22 +5,22 @@ dependencies:
     base: module-root
     path: blueprints/rtx-email-accounts.yaml
   reason: Executes the sibling account gateway to resolve the selected account.
-  source: email-client-rtx.source.rtx-email-accounts
+  source: email-client._rtx.source.rtx-email-accounts
   version: 1
 - blueprint:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
-  source: email-client-rtx.source.rtx-init
+  source: email-client._rtx.source.rtx-init
   version: 1
 description: Python IMAP source for listing folders and envelopes, reading messages,
   inspecting attachment metadata, and saving selected attachments.
 gateway:
   language: Python
   path: _imap_gateway.py
-id: email-client-rtx.source.rtx-imap-gateway
+id: email-client._rtx.source.rtx-imap-gateway
 interfaces:
-  email-client-rtx.source.rtx-imap-gateway.interface.mail-attachments:
+  email-client._rtx.source.rtx-imap-gateway.interface.mail-attachments:
     contract:
       arguments:
         account:
@@ -195,7 +195,7 @@ interfaces:
     usage: -a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] <uid> [<uid>
       ...]
     version: 1
-  email-client-rtx.source.rtx-imap-gateway.interface.mail-folders:
+  email-client._rtx.source.rtx-imap-gateway.interface.mail-folders:
     contract:
       arguments:
         account:
@@ -338,7 +338,7 @@ interfaces:
         - --account
     usage: -a <nickname>
     version: 1
-  email-client-rtx.source.rtx-imap-gateway.interface.mail-list:
+  email-client._rtx.source.rtx-imap-gateway.interface.mail-list:
     contract:
       arguments:
         account:
@@ -539,7 +539,7 @@ interfaces:
     usage: -a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] [--after
       YYYY-MM-DD] [key=value|key~=value ...] [--limit N]
     version: 1
-  email-client-rtx.source.rtx-imap-gateway.interface.mail-read:
+  email-client._rtx.source.rtx-imap-gateway.interface.mail-read:
     contract:
       arguments:
         account:
@@ -711,7 +711,7 @@ interfaces:
         - --account
     usage: -a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] <uid>
     version: 1
-  email-client-rtx.source.rtx-imap-gateway.interface.mail-save-attachments:
+  email-client._rtx.source.rtx-imap-gateway.interface.mail-save-attachments:
     contract:
       arguments:
         account:
@@ -1029,7 +1029,7 @@ runtime_dependencies:
     windows: true
   reason: Retrieves the IMAP credential from the host credential store.
   version: any
-schema_version: 5
+schema_version: 6
 uses_interfaces:
 - interface: common.interface.secret-store
   version: 1

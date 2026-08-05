@@ -24,13 +24,13 @@ def test_skill_maker_queries_standards_and_builds_an_authoring_brief() -> None:
     assert {
         use["interface"] for use in gateway["uses_interfaces"]
     } == {
-        "refactor-node.interface.query-standards",
-        "skill-maker.interface.sync-blueprints",
+        "refactor-node._rtx.interface.query-standards",
+        "skill-maker._rtx.interface.sync-blueprints",
     }
     query_use = next(
         use
         for use in gateway["uses_interfaces"]
-        if use["interface"] == "refactor-node.interface.query-standards"
+        if use["interface"] == "refactor-node._rtx.interface.query-standards"
     )
     assert query_use["version"] == 4
     assert "references/node-standards" not in str(gateway["interfaces"])
@@ -38,7 +38,7 @@ def test_skill_maker_queries_standards_and_builds_an_authoring_brief() -> None:
     skill = _normalized("skills/skill-maker/SKILL.md")
     for required in (
         "Standards retrieval",
-        "refactor-node.interface.query-standards",
+        "refactor-node._rtx.interface.query-standards",
         "task.kind=author-skill",
         "--view requirements",
         "--view context",
@@ -68,7 +68,7 @@ def test_refactor_node_builds_a_refactoring_brief_from_each_partition() -> None:
 
     for required in (
         "Standards retrieval",
-        "refactor-node.interface.query-standards",
+        "refactor-node._rtx.interface.query-standards",
         "task.kind=refactor",
         "--view requirements",
         "--view context",

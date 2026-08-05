@@ -139,7 +139,12 @@ def _ownership_index(repo_root: Path, target: str) -> OwnershipIndex:
             source_modules[source_id] = module_id
         module_sources[module_id] = tuple(registered_sources)
         roots = []
-        for child_id, locator in sorted(module.declaration.get("children", {}).items()):
+        for child_namespace, locator in sorted(module.declaration.get("children", {}).items()):
+            child_id = (
+                child_namespace
+                if child_namespace.startswith(f"{module_id}.")
+                else f"{module_id}.{child_namespace}"
+            )
             child = nodes.get(child_id)
             if child is None or child.node_type != "module":
                 raise ValueError(f"{module_id}: missing registered child {child_id}")
@@ -237,11 +242,16 @@ def _partition(
     module = module_declaration or declaration
     child_roots: list[str] = []
     for child_id, locator in sorted(module.get("children", {}).items()):
-        if not isinstance(locator, dict) or locator.get("base") != "module-root":
-            raise ValueError(f"{child_id}: invalid registered-child locator")
-        relative = locator.get("path")
-        if not isinstance(relative, str):
-            raise ValueError(f"{child_id}: registered-child path is missing")
+        if module.get("schema_version") == 6:
+            if locator != {}:
+                raise ValueError(f"{child_id}: invalid registered-child locator")
+            relative = f"{child_id}/blueprint.yaml"
+        else:
+            if not isinstance(locator, dict) or locator.get("base") != "module-root":
+                raise ValueError(f"{child_id}: invalid registered-child locator")
+            relative = locator.get("path")
+            if not isinstance(relative, str):
+                raise ValueError(f"{child_id}: registered-child path is missing")
         child_marker = (module_root / relative).resolve()
         if not child_marker.is_relative_to(module_root.resolve()):
             raise ValueError(f"{child_id}: registered-child locator escapes its module")

@@ -7,7 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+if not __package__:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 if __package__ and __package__.count('.') >= 1:
     from .._fs_links import make_link

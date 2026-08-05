@@ -182,7 +182,7 @@ intentionally user-owned after this plan close.
 - Produces a shadow/version-selected v5 basis manifest, installed at the canonical unversioned path only in Task 10.
 
 - [x] **Step 1: Write failing tests** for route/facade/topology proof edges, materialized `all` surfaces, local-hash stability, mixed v1/v2 histories, v1-stale-under-v5, v5 check registry, and validator-file basis coverage.
-- [x] **Step 2: Write failing bootstrap tests** for the exact certifier route exception, recursive `certification_target_postorder`, migrated empty-prefix history, corrupt-history rejection, stable parent-level keys and secret namespace, sole `skill-certifier-rtx` mutation authority, and the read-only skill-maker synchronization fallback through its v5 facade.
+- [x] **Step 2: Write failing bootstrap tests** for the exact certifier route exception, recursive `certification_target_postorder`, migrated empty-prefix history, corrupt-history rejection, stable parent-level keys and secret namespace, sole `skill-certifier._rtx` mutation authority, and the read-only skill-maker synchronization fallback through its v5 facade.
 - [x] **Step 3: Run focused certification tests** and confirm failures are limited to the absent v5 relations, payload, registry, basis, and bootstrap behavior.
 - [x] **Step 4: Implement the v5 certificate/currentness delta** without changing v1 historical validation or ordinary append-only semantics.
 - [x] **Step 5: Build the shadow basis manifest and cover every new enforcement input**, retaining the existing coverage test as the owner of completeness.

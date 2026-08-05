@@ -4,9 +4,7 @@ authority:
     bash: []
     network: []
 children:
-  refactor-node-rtx:
-    base: module-root
-    path: _rtx/blueprint.yaml
+  _rtx: {}
 content:
 - (?:SKILL\.md|instructions/(?:instruction|python)\-refactoring\.md|tests/test_(?:refactor_node_routing|query_standards)\.py)
 description: Resolves repository nodes and selected sub-scopes to language-specific,
@@ -31,13 +29,6 @@ exports:
       allow_all_modules: true
       allowed_callers: []
     source_interface: refactor-node.source.gateway.interface.default
-  refactor-node.interface.query-standards:
-    access:
-      allow_all_modules: true
-      allowed_callers: []
-    facade_interface:
-      interface: refactor-node-rtx.interface.query-standards
-      version: 4
   refactor-node.interface.refactor-instructions:
     access:
       allow_all_modules: true
@@ -52,9 +43,21 @@ gateway:
   language: Markdown
   path: SKILL.md
 id: refactor-node
-namespace_exports: {}
+namespace_exports:
+  _rtx:
+    version: 4
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    surface:
+      only:
+        refactor-node._rtx.interface.query-standards: 4
+    interface_access:
+      refactor-node._rtx.interface.query-standards:
+        allow_all_modules: true
+        allowed_callers: []
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
   refactor-node.source.gateway:
     blueprint:

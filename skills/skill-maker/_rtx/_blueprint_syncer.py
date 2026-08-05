@@ -21,7 +21,6 @@ import json
 import re
 import stat
 import sys
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -30,10 +29,6 @@ import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SRC_ROOT = REPO_ROOT / "src"
-if str(SRC_ROOT) not in sys.path:
-    sys.path.insert(0, str(SRC_ROOT))
-
 from officina.runtime.python_machine_interface import PythonMachineInterface
 from officina.runtime.python_machine_interface_runner import run_python_machine_interface
 from officina.common.blueprint_graph import (
@@ -44,7 +39,6 @@ from officina.common.blueprint_graph import (
 from officina.common.atomic_files import atomic_replace_bytes
 from officina.common.certification_view import CertificationView
 from officina.common.interface_projection import project_consumer_interfaces
-from officina.install.dispatch_snapshot_builder import build_dispatch_snapshot
 
 SKILLS_ROOT = REPO_ROOT / "skills"
 CONTRACT_START = "<!-- BEGIN BLUEPRINT CONTRACT -->"
@@ -108,7 +102,7 @@ def module_discovery(data: dict[str, Any], context: str) -> dict[str, Any]:
 
 def load_blueprints(
     *,
-    schema_version: int = 5,
+    schema_version: int = 6,
     schema_root: Path | None = None,
 ) -> dict[str, ModuleBlueprint]:
     blueprints: dict[str, ModuleBlueprint] = {}
@@ -118,8 +112,8 @@ def load_blueprints(
         if schema_root is not None
         else (
             BLUEPRINT_SCHEMA_ROOT
-            if schema_version == 5
-            else BLUEPRINT_SCHEMA_ROOT / "migrations" / "v4"
+            if schema_version == 6
+            else BLUEPRINT_SCHEMA_ROOT / "migrations" / f"v{schema_version}"
         )
     )
     try:
@@ -777,8 +771,8 @@ class Interface(PythonMachineInterface):
         parser.add_argument(
             "--schema-version",
             type=int,
-            choices=(4, 5),
-            default=5,
+            choices=(4, 5, 6),
+            default=6,
             help="Select the explicit repository blueprint generation.",
         )
         return parser
@@ -790,7 +784,7 @@ class Interface(PythonMachineInterface):
         )
 
 
-def run_sync(*, check_only: bool, schema_version: int = 5) -> int:
+def run_sync(*, check_only: bool, schema_version: int = 6) -> int:
     try:
         blueprints = load_blueprints(schema_version=schema_version)
     except BlueprintError as exc:
@@ -801,21 +795,6 @@ def run_sync(*, check_only: bool, schema_version: int = 5) -> int:
     for blueprint in blueprints.values():
         errors.extend(sync_module(blueprint, check_only=check_only))
     errors.extend(sync_runtime_dependencies_manifest(blueprints, check_only=check_only))
-
-    if not errors:
-        try:
-            if check_only:
-                with tempfile.TemporaryDirectory(
-                    prefix="famulus-dispatch-snapshot-check-"
-                ) as temporary_root:
-                    build_dispatch_snapshot(
-                        REPO_ROOT,
-                        snapshot_root=Path(temporary_root),
-                    )
-            else:
-                build_dispatch_snapshot(REPO_ROOT)
-        except Exception as exc:
-            errors.append(f"dispatcher snapshot generation failed: {exc}")
 
     if errors:
         print("error: invalid or out-of-sync skill blueprints.", file=sys.stderr)

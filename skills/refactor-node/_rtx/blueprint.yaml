@@ -8,7 +8,8 @@ authority:
       - officina.runtime.python_machine_interface_runner
       - _closure_engine.py
       - Interface
-      reason: Resolve node ownership and materialize standards without modifying the repository.
+      reason: Resolve node ownership and materialize standards without modifying the
+        repository.
     network: []
 children: {}
 content:
@@ -17,20 +18,20 @@ content:
 - schemas/query-result\.schema\.json
 description: Private read-only standards-query module for refactor-node.
 exports:
-  refactor-node-rtx.interface.query-standards:
+  refactor-node._rtx.interface.query-standards:
     access:
       allow_all_modules: true
       allowed_callers: []
-    source_interface: refactor-node-rtx.source.query-standards.interface.query-standards
+    source_interface: refactor-node._rtx.source.query-standards.interface.query-standards
 gateway:
   language: Python>=3.11
   path: __init__.py
-id: refactor-node-rtx
+id: refactor-node._rtx
 namespace_exports: {}
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
-  refactor-node-rtx.source.query-standards:
+  refactor-node._rtx.source.query-standards:
     blueprint:
       base: module-root
       path: blueprints/query-standards.yaml

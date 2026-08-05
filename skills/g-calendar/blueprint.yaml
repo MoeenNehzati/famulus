@@ -1,9 +1,7 @@
 authority:
   owns_filesystem: []
 children:
-  g-calendar-rtx:
-    base: module-root
-    path: _rtx/blueprint.yaml
+  _rtx: {}
 content:
 - SKILL\.md
 description: Reads and modifies Google Calendar events and owns the service-specific
@@ -27,45 +25,41 @@ exports:
       allow_all_modules: true
       allowed_callers: []
     source_interface: g-calendar.source.gateway.interface.default
-  g-calendar.interface.ensure-oauth:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: g-calendar-rtx.interface.ensure-oauth
-      version: 1
-  g-calendar.interface.scripts-gcal:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - daily-plan
-      - daily-plan-rtx
-    facade_interface:
-      interface: g-calendar-rtx.interface.scripts-gcal
-      version: 1
-  g-calendar.interface.setup-oauth:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: g-calendar-rtx.interface.setup-oauth
-      version: 1
-  g-calendar.interface.use-google-credential:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - install-assistant-tools
-      - install-assistant-tools-rtx
-    facade_interface:
-      interface: g-calendar-rtx.interface.use-google-credential
-      version: 1
 gateway:
   language: Markdown
   path: SKILL.md
 id: g-calendar
-namespace_exports: {}
+namespace_exports:
+  _rtx:
+    version: 1
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    surface:
+      only:
+        g-calendar._rtx.interface.ensure-oauth: 1
+        g-calendar._rtx.interface.scripts-gcal: 1
+        g-calendar._rtx.interface.setup-oauth: 1
+        g-calendar._rtx.interface.use-google-credential: 1
+    interface_access:
+      g-calendar._rtx.interface.ensure-oauth:
+        allow_all_modules: false
+        allowed_callers: []
+      g-calendar._rtx.interface.scripts-gcal:
+        allow_all_modules: false
+        allowed_callers:
+        - daily-plan
+        - daily-plan._rtx
+      g-calendar._rtx.interface.setup-oauth:
+        allow_all_modules: false
+        allowed_callers: []
+      g-calendar._rtx.interface.use-google-credential:
+        allow_all_modules: false
+        allowed_callers:
+        - install-assistant-tools
+        - install-assistant-tools._rtx
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
   g-calendar.source.gateway:
     blueprint:

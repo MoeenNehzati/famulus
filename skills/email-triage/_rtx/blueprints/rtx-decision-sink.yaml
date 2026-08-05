@@ -5,16 +5,16 @@ dependencies:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
-  source: email-triage-rtx.source.rtx-init
+  source: email-triage._rtx.source.rtx-init
   version: 1
 description: Appends one timestamped email-classification decision to the skill-local
   triage log.
 gateway:
   language: Python
   path: _decision_sink.py
-id: email-triage-rtx.source.rtx-decision-sink
+id: email-triage._rtx.source.rtx-decision-sink
 interfaces:
-  email-triage-rtx.source.rtx-decision-sink.interface.scripts-log-decision:
+  email-triage._rtx.source.rtx-decision-sink.interface.scripts-log-decision:
     contract:
       arguments:
         account:
@@ -147,6 +147,6 @@ platform_support:
   macos: true
   windows: true
 runtime_dependencies: []
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

@@ -69,13 +69,14 @@ def test_default_interface_routes_to_triage_and_declares_generated_dispatches() 
         2,
     )
 
-    assert set(generated_dispatch_ids) == {
-        entry["interface"]
-        for entry in default["uses_interfaces"]
-        if entry["interface"].startswith("email-triage.interface.")
-    }
+    assert generated_dispatch_ids == set()
     assert generated_dispatches <= declared
-    assert declared - generated_dispatches == {triage_route}
+    assert triage_route in declared - generated_dispatches
+    assert all(
+        interface_id == triage_route[0]
+        or ".source." not in interface_id
+        for interface_id, _version in declared - generated_dispatches
+    )
 
     authored = body.split("<!-- END BLUEPRINT INTERFACES -->", 1)[1]
     assert "email-triage.interface.triage" in authored
@@ -136,11 +137,11 @@ def test_canonical_triage_workflow_is_retained() -> None:
         "## Step 5",
         "## Step 6",
         "## Step 7",
-        "email-triage.interface.fetch-filtered-envelopes",
+        "email-triage._rtx.interface.fetch-filtered-envelopes",
         "email-client.interface.default`'s `mail-read` interface",
-        "email-triage.interface.scripts-log-decision",
-        "email-triage.interface.scripts-mark-failure",
-        "email-triage.interface.scripts-finalize-triage",
+        "email-triage._rtx.interface.scripts-log-decision",
+        "email-triage._rtx.interface.scripts-mark-failure",
+        "email-triage._rtx.interface.scripts-finalize-triage",
     ):
         assert marker in body
 

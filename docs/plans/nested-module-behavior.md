@@ -303,13 +303,13 @@ basis-covered.
 The certifier route exception remains limited to the exact certifier
 caller/interface/target. Issuance uses the existing
 `certification_target_postorder` rooted at `skill-certifier`,
-`skill-certifier-rtx`, and its implementing sources, including transitive and
+`skill-certifier._rtx`, and its implementing sources, including transitive and
 external dependencies. The existing read-only skill-maker synchronization
 fallback is adapted through its v5 facade.
 
 Verification keys and the secret namespace remain stable parent-level
 certification-bootstrap infrastructure. They preserve every historical public
-key and grant `skill-certifier-rtx` the sole supported mutation authority.
+key and grant `skill-certifier._rtx` the sole supported mutation authority.
 Per-node certificate logs remain reserved certification outputs rather than
 ordinary module content or runtime state.
 
@@ -481,10 +481,10 @@ supported.
 
 Representative end-to-end fixtures are:
 
-- `get-weather-rtx`: small code child;
-- `list-manager-rtx`: multiple facades and outgoing dependencies;
-- `recurring-tasks-rtx`: multiple sources with internal imports; and
-- `skill-certifier-rtx`: bootstrap, history, and authority boundaries.
+- `get-weather._rtx`: small code child;
+- `list-manager._rtx`: multiple facades and outgoing dependencies;
+- `recurring-tasks._rtx`: multiple sources with internal imports; and
+- `skill-certifier._rtx`: bootstrap, history, and authority boundaries.
 
 ## 7. Repository application
 

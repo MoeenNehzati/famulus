@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from .core import (
+from .direct_runtime import (
     InvocationDiagnostic,
     InvocationError,
     _dispatch_host,
@@ -29,8 +29,8 @@ def parse_cli() -> argparse.Namespace:
         epilog=(
             "Examples:\n"
             "  dispatcher --dry-run --caller-skill daily-plan "
-            "list-manager.interface.read-list /tmp/todo.yaml state=incomplete\n"
-            "  dispatcher --caller-skill daily-plan list-manager.interface.update-list "
+            "list-manager._rtx.interface.read-list /tmp/todo.yaml state=incomplete\n"
+            "  dispatcher --caller-skill daily-plan list-manager._rtx.interface.update-list "
             "/tmp/todo.yaml --file /tmp/todo-updates.yaml"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,

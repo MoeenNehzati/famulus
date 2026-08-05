@@ -38,7 +38,7 @@ gateway:
 id: latex-workshop
 namespace_exports: {}
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
   latex-workshop.source.gateway:
     blueprint:

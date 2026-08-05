@@ -124,6 +124,6 @@ worktree failures recorded under Verification below.
   stale skill graph data, and an unrelated browser projection test.
 - Validator runner: pre-existing stale generated docs and the ungenerated
   `llm-wakeup` blueprint contract remain.
-- Live `list-manager.interface.cloud-read-beautify` cloud read: exit 0 with the
+- Live `list-manager._rtx.interface.cloud-read-beautify` cloud read: exit 0 with the
   intended unrelated-blueprint and certification warnings.
 - Scoped `git diff --check` and `schema-meta.json` parsing: pass.

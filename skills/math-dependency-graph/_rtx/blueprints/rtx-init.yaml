@@ -6,9 +6,9 @@ description: Marks the graph runtime directory as a Python package and exposes n
 gateway:
   language: Python
   path: __init__.py
-id: math-dependency-graph-rtx.source.rtx-init
+id: math-dependency-graph._rtx.source.rtx-init
 interfaces: {}
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

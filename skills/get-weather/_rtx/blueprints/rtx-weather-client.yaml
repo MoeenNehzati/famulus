@@ -6,9 +6,9 @@ description: Resolves a named place or the caller's current IP location and requ
 gateway:
   language: Python
   path: _weather_client.py
-id: get-weather-rtx.source.rtx-weather-client
+id: get-weather._rtx.source.rtx-weather-client
 interfaces:
-  get-weather-rtx.source.rtx-weather-client.interface.scripts-weather:
+  get-weather._rtx.source.rtx-weather-client.interface.scripts-weather:
     contract:
       arguments:
         date:
@@ -186,6 +186,6 @@ platform_support:
   macos: true
   windows: true
 runtime_dependencies: []
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

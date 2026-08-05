@@ -1,13 +1,14 @@
 authority:
   owns_filesystem:
   - allowed_readers:
-    - cloud-files.interface.setup-oauth
-    - connect-google.interface.authorize-services
-    - connect-google.interface.client-status
-    - email-client.interface.accounts-setup-oauth
-    - g-calendar.interface.setup-oauth
+    - cloud-files._rtx.interface.setup-oauth
+    - connect-google._rtx.interface.authorize-services
+    - connect-google._rtx.interface.client-status
+    - email-client._rtx.interface.accounts-setup-oauth
+    - g-calendar._rtx.interface.setup-oauth
     match: exact
-    path: platform Famulus config root (see common.interface.google-credentials) / connect-google/client.json
+    path: platform Famulus config root (see common.interface.google-credentials) /
+      connect-google/client.json
     reason: This interface is the only writer of the shared OAuth client; service
       setup interfaces may read it for authorization.
 children: {}
@@ -18,45 +19,45 @@ content:
 - tests/.*
 description: Code module for the connect-google skill.
 exports:
-  connect-google-rtx.interface.authorize-services:
+  connect-google._rtx.interface.authorize-services:
     access:
       allow_all_modules: false
       allowed_callers:
       - connect-google
       - install-assistant-tools
-      - install-assistant-tools-rtx
-    source_interface: connect-google-rtx.source.rtx-authorize-services.interface.authorize-services
-  connect-google-rtx.interface.client-status:
+      - install-assistant-tools._rtx
+    source_interface: connect-google._rtx.source.rtx-authorize-services.interface.authorize-services
+  connect-google._rtx.interface.client-status:
     access:
       allow_all_modules: false
       allowed_callers:
       - connect-google
       - install-assistant-tools
-      - install-assistant-tools-rtx
-    source_interface: connect-google-rtx.source.rtx-client-config.interface.client-status
-  connect-google-rtx.interface.install-client:
+      - install-assistant-tools._rtx
+    source_interface: connect-google._rtx.source.rtx-client-config.interface.client-status
+  connect-google._rtx.interface.install-client:
     access:
       allow_all_modules: false
       allowed_callers:
       - connect-google
-    source_interface: connect-google-rtx.source.rtx-client-config.interface.install-client
+    source_interface: connect-google._rtx.source.rtx-client-config.interface.install-client
 gateway:
   language: Python>=3.11
   path: __init__.py
-id: connect-google-rtx
+id: connect-google._rtx
 namespace_exports: {}
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
-  connect-google-rtx.source.rtx-authorize-services:
+  connect-google._rtx.source.rtx-authorize-services:
     blueprint:
       base: module-root
       path: blueprints/rtx-authorize-services.yaml
-  connect-google-rtx.source.rtx-client-config:
+  connect-google._rtx.source.rtx-client-config:
     blueprint:
       base: module-root
       path: blueprints/rtx-client-config.yaml
-  connect-google-rtx.source.rtx-init:
+  connect-google._rtx.source.rtx-init:
     blueprint:
       base: module-root
       path: blueprints/rtx-init.yaml

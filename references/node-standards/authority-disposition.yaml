@@ -1,6 +1,6 @@
 schema_version: 1
 runtime_authority: pinned import closures rooted at references/node-standards/*.standard.yaml
-query_interface: refactor-node.interface.query-standards
+query_interface: refactor-node._rtx.interface.query-standards
 source_authorities:
   skill-guidelines:
     former_path: references/skill-standards/skill-guidelines.standard.yaml
@@ -54,9 +54,9 @@ migration_audit:
     audited_on: 2026-08-03
     source_semantic_items: 238
     same_id_items: 164
-    source_semantic_id_digest: sha256:54059558b8150329ea0de5abf35c1d4dd5a6e8012fc8fd3512ab59200776be84
+    source_semantic_id_digest: sha256:b0f433bec1cf657e7d3a469be2f59be7467fec0a2a0428103dd4d5d67f053432
     exact_unchanged_leaf_items: 46
-    exact_unchanged_leaf_digest: sha256:015b6d0e1a968751f8388eabeefea6c1a15779236bca4754758a5ed07b569a8a
+    exact_unchanged_leaf_digest: sha256:b4d1245ec2f98e558c5d7c1bf38da68539472c5298ea1afbb769dbcc2c68f48f
     duplicate_items: 0
     unresolved_items: 0
     economy_retirements:

@@ -17,14 +17,19 @@ from officina.common.blueprint_authorization import (
     EffectiveAuthorizationFilter,
     ResolvedCallerReference,
 )
-from officina.common.blueprint_graph import BlueprintNode, InterfaceExport
 from officina.common.process_binding_compiler import (
     ProcessBindingError,
     compile_gateway_invocation,
+    compile_route_smoke_invocation,
     parse_caller_invocation,
 )
 from officina.common.repository_configuration import RepositoryConfiguration
-from officina.dispatcher.core import InvocationDiagnostic, ResolvedInvocationMetadata
+from officina.dispatcher.direct_models import (
+    DirectBlueprintNode,
+    DirectInterfaceExport,
+    InvocationDiagnostic,
+    ResolvedInvocationMetadata,
+)
 from officina.dispatcher.direct_blueprints import (
     DirectBlueprintError,
     DirectBlueprintRepository,
@@ -164,7 +169,7 @@ def _load_source(
     terminal: DirectModule,
     source_id: str,
     locator: object,
-) -> tuple[BlueprintNode, Mapping[str, object]]:
+) -> tuple[DirectBlueprintNode, Mapping[str, object]]:
     if not isinstance(locator, Mapping) or not isinstance(locator.get("blueprint"), Mapping):
         raise DirectBlueprintError(
             f"invalid source locator: {source_id}",
@@ -224,14 +229,14 @@ def _load_source(
     gateway_path = module_root.joinpath(*gateway_relative.parts)
     _require_regular_without_symlinks(gateway_path, module_id=terminal.module_id)
     version = declaration.get("version")
-    if type(version) is not int:
+    if type(version) is not int or version < 1:
         raise DirectBlueprintError(
             f"source version is invalid: {source_id}",
             code="dispatcher.blueprint_malformed",
             target_module_id=terminal.module_id,
         )
     return (
-        BlueprintNode(
+        DirectBlueprintNode(
             node_id=source_id,
             node_type="behavioral_source",
             version=version,
@@ -281,12 +286,26 @@ def resolve_direct_invocation(
     argv: list[str],
     stdin_requested: bool,
     certification_status: Mapping[str, object] | None = None,
+    host_caller: bool = False,
 ) -> ResolvedInvocationMetadata:
     """Authorize and compile one direct route using only relevant blueprints."""
 
     target_module_id, _local_name = parse_interface_id(interface_id)
     repository = DirectBlueprintRepository(configuration)
     caller_modules = repository.load_ancestry(caller_module_id)
+    if host_caller:
+        caller = caller_modules[-1]
+        discovery = caller.declaration.get("discovery")
+        if (
+            len(caller_modules) != 1
+            or not isinstance(discovery, Mapping)
+            or discovery.get("mechanism") != "skill"
+        ):
+            raise DirectBlueprintError(
+                f"host caller must be a discoverable top-level skill: {caller_module_id}",
+                code="dispatcher.host_caller_invalid",
+                target_module_id=caller_module_id,
+            )
     target_modules = repository.load_ancestry(target_module_id)
     caller_ancestry = tuple(module.module_id for module in caller_modules)
     target_ancestry = tuple(module.module_id for module in target_modules)
@@ -326,7 +345,7 @@ def resolve_direct_invocation(
             target_module_id=target_module_id,
         )
     available_version = raw_source_interface.get("version")
-    if type(available_version) is not int:
+    if type(available_version) is not int or available_version < 1:
         raise DirectBlueprintError(
             f"source interface version is invalid: {source_interface_id}",
             code="dispatcher.source_interface_invalid",
@@ -334,7 +353,11 @@ def resolve_direct_invocation(
         )
     if interface_version is None:
         interface_version = available_version
-    elif available_version != interface_version:
+    elif (
+        type(interface_version) is not int
+        or interface_version < 1
+        or available_version != interface_version
+    ):
         raise DirectBlueprintError(
             f"version mismatch for {interface_id}: requested {interface_version}, available {available_version}",
             code="dispatcher.interface_version_mismatch",
@@ -356,9 +379,28 @@ def resolve_direct_invocation(
                 code="dispatcher.namespace_route_missing",
                 target_module_id=target_module_id,
             )
+        route_version = route.get("version")
+        child_version = child.declaration.get("version")
+        if (
+            type(route_version) is not int
+            or type(child_version) is not int
+            or route_version < 1
+            or child_version < 1
+            or route_version != child_version
+        ):
+            raise DirectBlueprintError(
+                f"namespace version does not match child {child.module_id}",
+                code="dispatcher.namespace_version_mismatch",
+                target_module_id=target_module_id,
+            )
         surface = route.get("surface")
         only = surface.get("only") if isinstance(surface, Mapping) else None
-        if not isinstance(only, Mapping) or only.get(interface_id) != interface_version:
+        surface_version = only.get(interface_id) if isinstance(only, Mapping) else None
+        if (
+            type(surface_version) is not int
+            or surface_version < 1
+            or surface_version != interface_version
+        ):
             raise DirectBlueprintError(
                 f"namespace surface excludes {interface_id}@{interface_version}",
                 code="dispatcher.namespace_surface_excludes_interface",
@@ -382,6 +424,12 @@ def resolve_direct_invocation(
                 diagnostic=f"caller-filtered:namespace-route:{route_owner.module_id}",
             )
         interface_access = route.get("interface_access")
+        if interface_access is not None and not isinstance(interface_access, Mapping):
+            raise DirectBlueprintError(
+                f"invalid interface_access for namespace route {route_owner.module_id}",
+                code="dispatcher.access_invalid",
+                target_module_id=target_module_id,
+            )
         if isinstance(interface_access, Mapping) and interface_id in interface_access:
             narrow_filter, narrow_callers = _evaluate_access(
                 repository,
@@ -429,7 +477,7 @@ def resolve_direct_invocation(
             diagnostic=f"caller-filtered:terminal-export:{interface_id}",
         )
 
-    export = InterfaceExport(
+    export = DirectInterfaceExport(
         interface_id=interface_id,
         version=interface_version,
         local_name=source_local_name,
@@ -442,8 +490,15 @@ def resolve_direct_invocation(
         terminal_module_node_id=target_module_id,
     )
     try:
-        parsed = parse_caller_invocation(export, argv, stdin_requested=stdin_requested)
-        plan = compile_gateway_invocation(source, export, parsed)
+        if argv == ["--route-smoke"] and not stdin_requested:
+            plan = compile_route_smoke_invocation(source, export)
+        else:
+            parsed = parse_caller_invocation(
+                export,
+                argv,
+                stdin_requested=stdin_requested,
+            )
+            plan = compile_gateway_invocation(source, export, parsed)
     except ProcessBindingError as exc:
         raise ResolutionFailedError(
             f"cannot compile {interface_id}: {exc}",

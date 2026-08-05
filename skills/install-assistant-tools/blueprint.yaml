@@ -1,9 +1,7 @@
 authority:
   owns_filesystem: []
 children:
-  install-assistant-tools-rtx:
-    base: module-root
-    path: _rtx/blueprint.yaml
+  _rtx: {}
 content:
 - (?:SKILL\.md|agents/openai\.yaml)
 description: Installs or refreshes assistant launchers, shared dispatcher tooling,
@@ -25,41 +23,37 @@ exports:
       allow_all_modules: true
       allowed_callers: []
     source_interface: install-assistant-tools.source.gateway.interface.default
-  install-assistant-tools.interface.scripts-dev-link:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: install-assistant-tools-rtx.interface.scripts-dev-link
-      version: 2
-  install-assistant-tools.interface.scripts-install:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: install-assistant-tools-rtx.interface.scripts-install
-      version: 2
-  install-assistant-tools.interface.scripts-launchers:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: install-assistant-tools-rtx.interface.scripts-launchers
-      version: 3
-  install-assistant-tools.interface.scripts-scaffold:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: install-assistant-tools-rtx.interface.scripts-scaffold
-      version: 2
 gateway:
   language: Markdown
   path: SKILL.md
 id: install-assistant-tools
-namespace_exports: {}
+namespace_exports:
+  _rtx:
+    version: 1
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    surface:
+      only:
+        install-assistant-tools._rtx.interface.scripts-dev-link: 2
+        install-assistant-tools._rtx.interface.scripts-install: 2
+        install-assistant-tools._rtx.interface.scripts-launchers: 3
+        install-assistant-tools._rtx.interface.scripts-scaffold: 2
+    interface_access:
+      install-assistant-tools._rtx.interface.scripts-dev-link:
+        allow_all_modules: false
+        allowed_callers: []
+      install-assistant-tools._rtx.interface.scripts-install:
+        allow_all_modules: false
+        allowed_callers: []
+      install-assistant-tools._rtx.interface.scripts-launchers:
+        allow_all_modules: false
+        allowed_callers: []
+      install-assistant-tools._rtx.interface.scripts-scaffold:
+        allow_all_modules: false
+        allowed_callers: []
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
   install-assistant-tools.source.gateway:
     blueprint:

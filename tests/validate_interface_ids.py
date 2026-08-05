@@ -83,7 +83,7 @@ def test_module_id_must_match_directory(tmp_path: Path) -> None:
 
     errors = MOD.validate(tmp_path)
 
-    assert any("must match its directory" in error for error in errors)
+    assert any("must match direct identity" in error for error in errors)
 
 
 def test_malformed_inventory_is_returned_as_a_finding(tmp_path: Path) -> None:

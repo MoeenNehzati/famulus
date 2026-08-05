@@ -5,13 +5,13 @@ dependencies:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
-  source: install-assistant-tools-rtx.source.rtx-init
+  source: install-assistant-tools._rtx.source.rtx-init
   version: 1
 - blueprint:
     base: module-root
     path: blueprints/rtx-install-launcher-init.yaml
   reason: Imports Python source from _rtx/_install_launcher/__init__.py.
-  source: install-assistant-tools-rtx.source.rtx-install-launcher-init
+  source: install-assistant-tools._rtx.source.rtx-install-launcher-init
   version: 1
 description: Installs dispatcher and invoke-skill launchers, provisions the shared
   certifier signing material, and ensures the installation bin directory is present
@@ -19,9 +19,9 @@ description: Installs dispatcher and invoke-skill launchers, provisions the shar
 gateway:
   language: Python
   path: _install_scaffold.py
-id: install-assistant-tools-rtx.source.rtx-install-scaffold
+id: install-assistant-tools._rtx.source.rtx-install-scaffold
 interfaces:
-  install-assistant-tools-rtx.source.rtx-install-scaffold.interface.scripts-scaffold:
+  install-assistant-tools._rtx.source.rtx-install-scaffold.interface.scripts-scaffold:
     contract:
       arguments:
         options:
@@ -70,8 +70,8 @@ interfaces:
           id: write-1
           medium: home-filesystem
           path: caller-selected bin and shell startup paths; the bin dir defaults
-            to the platform Famulus user-bin dir (never under Documents) when
-            --bin-dir is omitted
+            to the platform Famulus user-bin dir (never under Documents) when --bin-dir
+            is omitted
           sensitivity: user-private
           system: filesystem
         - access: write
@@ -128,9 +128,9 @@ interfaces:
         mutation_safety:
           atomicity:
             per_effect_only: The declared Python package set installs in one atomic
-              batch call (via officina.install.managed-runtime) rather than
-              per-package; certificate-key provisioning, launcher writes, and
-              shell configuration remain separate effects.
+              batch call (via officina.install.managed-runtime) rather than per-package;
+              certificate-key provisioning, launcher writes, and shell configuration
+              remain separate effects.
           concurrent_invocations:
             unsafe: Concurrent scaffold installers are not serialized.
           idempotency:
@@ -220,7 +220,7 @@ platform_support:
   macos: true
   windows: true
 runtime_dependencies: []
-schema_version: 5
+schema_version: 6
 uses_interfaces:
 - interface: common.interface.certificate-records
   version: 1

@@ -11,20 +11,14 @@ Activation: user-request, skill-workflow; persistent modifier: no
 
 Skill Version: 2
 
-Uses Interfaces: none
+Uses Interfaces:
+- `regenerate-blueprints.source.gateway -> regenerate-blueprints._rtx.interface.regenerate-blueprint@1`
 
 Public Interfaces:
 - `regenerate-blueprints.interface.default`
-- `regenerate-blueprints.interface.regenerate-blueprint`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Dispatcher Interfaces:
-
-Use the installed `dispatcher` command for these process-bound interfaces:
-- `regenerate-blueprints.interface.regenerate-blueprint` — Generate a refreshed blueprint YAML for one existing skill under /tmp.
-  - `dispatcher --caller-skill regenerate-blueprints regenerate-blueprints.interface.regenerate-blueprint <skill-name>`
 
 Instruction Interfaces:
 

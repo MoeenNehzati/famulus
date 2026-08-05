@@ -29,7 +29,7 @@ If absent: stop and land `docs/superpowers/plans/2026-07-27-osx-installer-runtim
 **Files:**
 - Create: `src/officina/common/google_credentials.py`
 - Create: `src/officina/common/blueprints/google-credentials.yaml`
-- Modify (via `skill-maker`): `src/officina/common/blueprint.yaml` (add `common.source.google-credentials`; export `common.interface.google-credentials`, `access.allow_all_modules: false`, `allowed_callers: [connect-google, connect-google-rtx]`)
+- Modify (via `skill-maker`): `src/officina/common/blueprint.yaml` (add `common.source.google-credentials`; export `common.interface.google-credentials`, `access.allow_all_modules: false`, `allowed_callers: [connect-google, connect-google._rtx]`)
 - Modify: `skills/connect-google/_rtx/_client_config.py` (`canonical_client_path` currently hardcodes `Path.home()/".config"/"connect-google"/"client.json"` at lines 30-31; `install_client()` at lines 136-159 currently writes plaintext `client_secret` via `write_oauth_json`)
 - Modify (via `skill-maker`): `skills/connect-google/_rtx/blueprints/rtx-client-config.yaml` (`direct_io` paths at lines 38, 190 currently reference the old `$HOME/.config/connect-google/client.json`; `uses_interfaces` at lines 312-314 currently only lists `common.interface.oauth-json`)
 - Modify: `skills/connect-google/_rtx/tests/test_client_config.py`
@@ -346,7 +346,7 @@ git commit -m "feat(officina.common): canonical Google client discovery, client 
 **Files:**
 - Create: `skills/connect-google/_rtx/_authorize_services.py`
 - Create: `skills/connect-google/_rtx/blueprints/rtx-authorize-services.yaml`
-- Modify (via `skill-maker`): `skills/connect-google/_rtx/blueprint.yaml` (register source), `skills/connect-google/blueprint.yaml` (add facade export `connect-google.interface.authorize-services`, mirroring the existing `connect-google.interface.install-client` facade at lines 40-47)
+- Modify (via `skill-maker`): `skills/connect-google/_rtx/blueprint.yaml` (register source), `skills/connect-google/blueprint.yaml` (add facade export `connect-google._rtx.interface.authorize-services`, mirroring the existing `connect-google._rtx.interface.install-client` facade at lines 40-47)
 - Modify: `skills/connect-google/instructions/connect-services.md` (real v5 path — not `llm_interfaces/`, which no longer exists)
 - Create: `skills/connect-google/_rtx/tests/test_authorize_services.py`
 - Modify: `skills/connect-google/_rtx/tests/test_connect_google_llm_routing.py`, `test_service_delegation.py`
@@ -455,7 +455,7 @@ Expected: PASS, all cases (unknown service, duplicate service, state mismatch, p
 
 - [ ] **Step 5: Update `instructions/connect-services.md`**
 
-Rewrite the "Service-owned handoff" section to describe: call `connect-google.interface.authorize-services` once for the selected services, then have each service call its own `use-google-credential` interface with the returned `credential_id` — not independent per-service OAuth.
+Rewrite the "Service-owned handoff" section to describe: call `connect-google._rtx.interface.authorize-services` once for the selected services, then have each service call its own `use-google-credential` interface with the returned `credential_id` — not independent per-service OAuth.
 
 - [ ] **Step 6: Run routing/delegation tests**
 
@@ -464,7 +464,7 @@ Expected: PASS after updating any assertions that referenced the old three-indep
 
 - [ ] **Step 7: Blueprint updates through `skill-maker`**
 
-Register `connect-google-rtx.source.rtx-authorize-services`; export `connect-google-rtx.interface.authorize-services`; add facade `connect-google.interface.authorize-services` on the parent module.
+Register `connect-google._rtx.source.rtx-authorize-services`; export `connect-google._rtx.interface.authorize-services`; add facade `connect-google._rtx.interface.authorize-services` on the parent module.
 
 - [ ] **Step 8: Commit**
 
@@ -487,7 +487,7 @@ git commit -m "feat(connect-google): one combined OAuth grant across Drive/Calen
 - Modify: `skills/email-client/_rtx/_email_accounts.py`, `skills/email-client/_rtx/_oauth_tokens.py`
 - Modify (via `skill-maker`): `skills/email-client/_rtx/blueprint.yaml`, `skills/email-client/blueprint.yaml`
 - Modify: `skills/email-client/tests/test_accounts.py`, `test_oauth_tokens.py`
-- Modify (via `skill-maker`): `src/officina/common/blueprint.yaml` (widen `common.interface.google-credentials.allowed_callers` to add `cloud-files-rtx`, `g-calendar-rtx`, `email-client-rtx`)
+- Modify (via `skill-maker`): `src/officina/common/blueprint.yaml` (widen `common.interface.google-credentials.allowed_callers` to add `cloud-files._rtx`, `g-calendar._rtx`, `email-client._rtx`)
 
 - [ ] **Step 1: Write failing tests for one service (cloud-files) first**
 
@@ -565,7 +565,7 @@ Expected: PASS, full suites, zero regressions.
 
 - [ ] **Step 6: Blueprint updates through `skill-maker`**
 
-Add `cloud-files-rtx.interface.use-google-credential`, `g-calendar-rtx.interface.use-google-credential`, `email-client-rtx.interface.accounts-use-google-credential` (plus matching facades on each parent module blueprint). Widen `common.interface.google-credentials`'s `allowed_callers` in `src/officina/common/blueprint.yaml` to include all three `-rtx` modules.
+Add `cloud-files._rtx.interface.use-google-credential`, `g-calendar._rtx.interface.use-google-credential`, `email-client._rtx.interface.accounts-use-google-credential` (plus matching facades on each parent module blueprint). Widen `common.interface.google-credentials`'s `allowed_callers` in `src/officina/common/blueprint.yaml` to include all three `-rtx` modules.
 
 - [ ] **Step 7: Commit**
 
@@ -732,7 +732,7 @@ Expected: PASS.
 
 - [ ] **Step 7: Blueprint updates through `skill-maker`**
 
-Register `install-assistant-tools-rtx.source.rtx-google-onboarding`; add `uses_interfaces: [{interface: common.interface.famulus-paths, version: 1}]` (the dispatcher calls to `connect-google.machine.*` are cross-process, not direct Python imports, so they don't need a `uses_interfaces` declaration — only the direct `famulus_paths` import does).
+Register `install-assistant-tools._rtx.source.rtx-google-onboarding`; add `uses_interfaces: [{interface: common.interface.famulus-paths, version: 1}]` (the dispatcher calls to `connect-google.machine.*` are cross-process, not direct Python imports, so they don't need a `uses_interfaces` declaration — only the direct `famulus_paths` import does).
 
 - [ ] **Step 8: Commit**
 

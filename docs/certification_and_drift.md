@@ -1,8 +1,8 @@
 # Certification and Drift
 
-This document defines the live version-5 certification contract. Version-4
-schemas remain only as immutable converter input under
-`references/blueprint/migrations/v4/`.
+This document defines the live version-6 certification contract. Version-4 and
+version-5 schemas remain immutable migration and regression inputs under
+`references/blueprint/migrations/`.
 
 Certification is repository-bound. The public certifier requires an explicit
 reviewed repository and commit and derives the complete certifiable graph from
@@ -12,7 +12,7 @@ graph.
 
 ## Nodes and dependencies
 
-Version 5 has two authored node types:
+Version 6 has two authored node types:
 
 - A `module` owns discovery, filesystem authority, contained behavioral
   sources, and exported interfaces.
@@ -20,7 +20,7 @@ Version 5 has two authored node types:
   intrinsic interface contracts, source dependencies, and interface uses.
 
 The blueprint graph derives certification dependencies from source use,
-private-interface use, module-export use, namespace routing, facades, topology
+private-interface use, module-export use, namespace routing, topology
 proofs, and cross-owner contract references. Containment assigns ownership but
 adds no certification edge. An edge records the target node and its exact
 version. A node's local hash does not recursively include dependency bytes;
@@ -34,7 +34,7 @@ never add graph edges.
 
 ## Structural validity and certifiability
 
-A version-5 blueprint may be structurally valid before it is certifiable.
+A version-6 blueprint may be structurally valid before it is certifiable.
 Structural validation requires canonical identity, a resolvable whole-file
 gateway, containment and relationship shape, safe paths, and closed shapes for
 every semantic value that is present. It does not manufacture semantic facts
@@ -144,7 +144,7 @@ dependency hash without changing the dependent's local node hash.
 payload:
   certificate_schema_version: 2
   subject:
-    id: example-skill-rtx.source.runtime
+    id: example-skill._rtx.source.runtime
     node_type: behavioral_source
     version: 1
     blueprint_path: skills/example-skill/_rtx/blueprints/runtime.yaml
@@ -158,7 +158,7 @@ payload:
   dependencies: []
   certification_basis_hash: sha256:...
   certifier:
-    interface: skill-certifier.interface.certify
+    interface: skill-certifier._rtx.interface.certify
     version: 1
     node_hash: sha256:...
     source_commit: ...
@@ -177,16 +177,14 @@ value is valid base64. `certified_at` is informational and never establishes
 currentness.
 
 Each dependency entry contains `relation`, `target`, `version`, and
-`node_hash`. V5 dependency relations are `uses-source`,
+`node_hash`. Version-6 dependency relations are `uses-source`,
 `uses-private-interface`, `uses-export`, `references-cross-owner-contract`,
-`contains-source`, `routes-child-namespace`, `routes-terminal-module`,
-`facades-child-export`, and `facades-implementing-source`. The payload contains
+`contains-source`, `routes-child-namespace`, and `routes-terminal-module`. The payload contains
 no separate dependency-certificate hash.
 
-Containment and route/facade topology are certificate dependencies in v5:
+Containment and route topology are certificate dependencies in version 6:
 module certificates depend on contained sources, parent namespace routes
-depend on the routed child module, and facades depend on both the child export
-and the implementing terminal source. A `uses-export` dependency targets the
+depend on the routed child module. A `uses-export` dependency targets the
 exact behavioral source implementing the export. Runtime admission separately
 requires the current exporting-module certificate, so boundary identity and
 access remain protected without making every consumer depend on every source in

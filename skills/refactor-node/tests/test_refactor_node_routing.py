@@ -34,15 +34,9 @@ def test_module_identity_and_public_interfaces() -> None:
     root = _load_yaml(SKILL_ROOT / "blueprint.yaml")
 
     assert root["id"] == "refactor-node"
-    assert root["children"] == {
-        "refactor-node-rtx": {
-            "base": "module-root",
-            "path": "_rtx/blueprint.yaml",
-        }
-    }
+    assert root["children"] == {"_rtx": {}}
     assert set(root["exports"]) == {
         "refactor-node.interface.default",
-        "refactor-node.interface.query-standards",
         "refactor-node.interface.refactor-instructions",
         "refactor-node.interface.refactor-python",
     }
@@ -60,7 +54,7 @@ def test_gateway_routes_to_both_language_sources() -> None:
     assert gateway["uses_interfaces"] == [
         {
             "interface": (
-                "refactor-node.interface.query-standards"
+                "refactor-node._rtx.interface.query-standards"
             ),
             "version": 4,
         },
@@ -83,10 +77,9 @@ def test_gateway_routes_to_both_language_sources() -> None:
 
 def test_query_uses_the_common_standard_extractor_interface() -> None:
     root = _load_yaml(SKILL_ROOT / "blueprint.yaml")
-    runtime_locator = root["children"]["refactor-node-rtx"]
-    runtime_root = _load_yaml(SKILL_ROOT / runtime_locator["path"])
+    runtime_root = _load_yaml(SKILL_ROOT / "_rtx" / "blueprint.yaml")
     source_locator = runtime_root["sources"][
-        "refactor-node-rtx.source.query-standards"
+        "refactor-node._rtx.source.query-standards"
     ]["blueprint"]
     query_source = _load_yaml(
         SKILL_ROOT / "_rtx" / source_locator["path"]
@@ -103,7 +96,7 @@ def test_query_uses_the_common_standard_extractor_interface() -> None:
     assert exported["source_interface"] == (
         "common.source.standard-extractor.interface.python-api"
     )
-    assert "refactor-node-rtx" in exported["access"]["allowed_callers"]
+    assert "refactor-node._rtx" in exported["access"]["allowed_callers"]
 
     certification_basis = json.loads(
         (
@@ -114,22 +107,25 @@ def test_query_uses_the_common_standard_extractor_interface() -> None:
         ).read_text(encoding="utf-8")
     )
     assert "src/officina/common/configured_schema.py" in certification_basis
-    assert "src/officina/dispatcher/catalog.py" in certification_basis
+    assert "src/officina/dispatcher/direct_runtime.py" in certification_basis
+    assert "src/officina/dispatcher/catalog.py" not in certification_basis
 
 
 def test_query_contract_exposes_compact_and_on_demand_views() -> None:
     root = _load_yaml(SKILL_ROOT / "blueprint.yaml")
-    facade = root["exports"]["refactor-node.interface.query-standards"]
     runtime_root = _load_yaml(SKILL_ROOT / "_rtx" / "blueprint.yaml")
     source_locator = runtime_root["sources"][
-        "refactor-node-rtx.source.query-standards"
+        "refactor-node._rtx.source.query-standards"
     ]["blueprint"]
     query_source = _load_yaml(SKILL_ROOT / "_rtx" / source_locator["path"])
     interface = query_source["interfaces"][
-        "refactor-node-rtx.source.query-standards.interface.query-standards"
+        "refactor-node._rtx.source.query-standards.interface.query-standards"
     ]
 
-    assert facade["facade_interface"]["version"] == 4
+    exported = runtime_root["exports"]["refactor-node._rtx.interface.query-standards"]
+    assert exported["source_interface"] == (
+        "refactor-node._rtx.source.query-standards.interface.query-standards"
+    )
     assert interface["version"] == 4
     assert interface["contract"]["arguments"]["view"]["default"] == "requirements"
     output = interface["contract"]["outputs"][0]

@@ -6,9 +6,9 @@ description: Parses a BibTeX or natbib bibliography and reports syntax, required
 gateway:
   language: Python
   path: _syntax_checker.py
-id: bib-audit-rtx.source.rtx-syntax-checker
+id: bib-audit._rtx.source.rtx-syntax-checker
 interfaces:
-  bib-audit-rtx.source.rtx-syntax-checker.interface.scripts-bib-validate-bibtex:
+  bib-audit._rtx.source.rtx-syntax-checker.interface.scripts-bib-validate-bibtex:
     contract:
       arguments:
         bibfile:
@@ -119,6 +119,6 @@ runtime_dependencies:
     windows: true
   reason: Parses BibTeX entries more accurately than the fallback parser.
   version: any
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

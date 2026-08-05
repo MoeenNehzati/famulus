@@ -22,21 +22,21 @@ content:
 - __init__\.py
 description: Code module for the initialize-tdd skill.
 exports:
-  initialize-tdd-rtx.interface.setup-compat-aliases:
+  initialize-tdd._rtx.interface.setup-compat-aliases:
     access:
       allow_all_modules: false
       allowed_callers:
       - initialize-tdd
-    source_interface: initialize-tdd-rtx.source.rtx-host-links.interface.setup-compat-aliases
+    source_interface: initialize-tdd._rtx.source.rtx-host-links.interface.setup-compat-aliases
 gateway:
   language: Python>=3.11
   path: __init__.py
-id: initialize-tdd-rtx
+id: initialize-tdd._rtx
 namespace_exports: {}
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
-  initialize-tdd-rtx.source.rtx-host-links:
+  initialize-tdd._rtx.source.rtx-host-links:
     blueprint:
       base: module-root
       path: blueprints/rtx-host-links.yaml

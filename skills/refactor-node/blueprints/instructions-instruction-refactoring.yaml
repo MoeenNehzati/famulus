@@ -1,7 +1,8 @@
 content:
 - instructions/instruction\-refactoring\.md
 dependencies: []
-description: Refactors an owned Markdown instruction source from its applicable standard closure.
+description: Refactors an owned Markdown instruction source from its applicable standard
+  closure.
 gateway:
   language: Markdown
   path: instructions/instruction-refactoring.md
@@ -11,16 +12,16 @@ interfaces:
     contract:
       arguments:
         request:
-          description: Resolved owner, selected instruction scope, applicable standard closure, objective,
-            constraints, and any approval to apply a proposal.
+          description: Resolved owner, selected instruction scope, applicable standard
+            closure, objective, constraints, and any approval to apply a proposal.
           required: true
           sensitivity: user-private
           type:
             kind: string
             sensitivity: user-private
       caller_warnings:
-      - external-side-effect: Approved moves may edit instruction and declaration files within the selected
-          ownership boundary.
+      - external-side-effect: Approved moves may edit instruction and declaration
+          files within the selected ownership boundary.
       direct_io:
         network: []
         reads:
@@ -33,8 +34,9 @@ interfaces:
           sensitivity: user-private
           system: agent-runtime
         - access: read
-          content: Selected instruction source, generated boundaries, repository instructions, callers,
-            tests, query-resolved ownership metadata, current diff, and validated standard closure.
+          content: Selected instruction source, generated boundaries, repository instructions,
+            callers, tests, query-resolved ownership metadata, current diff, and validated
+            standard closure.
           formats:
           - markdown
           - yaml
@@ -43,12 +45,13 @@ interfaces:
           - text
           id: repository-state
           medium: repository-filesystem
-          reason: Compare the selected source with applicable desired behavior and evidence.
+          reason: Compare the selected source with applicable desired behavior and
+            evidence.
           sensitivity: user-private
         writes:
         - access: write
-          content: Standard-backed diagnosis, proposal, approval request, exact diff, verification result,
-            and stop reason.
+          content: Standard-backed diagnosis, proposal, approval request, exact diff,
+            verification result, and stop reason.
           formats:
           - markdown
           id: response
@@ -56,7 +59,8 @@ interfaces:
           sensitivity: derived-private
           system: agent-runtime
         - access: write
-          content: Approved behavior-preserving instruction and declaration changes within the selected scope.
+          content: Approved behavior-preserving instruction and declaration changes
+            within the selected scope.
           formats:
           - markdown
           - yaml
@@ -67,7 +71,8 @@ interfaces:
           reason: Apply one approved standards-backed repair at a time.
           sensitivity: user-private
         - access: execute
-          content: Focused tests, generators, validators, and diff inspection required by the selected standards.
+          content: Focused tests, generators, validators, and diff inspection required
+            by the selected standards.
           formats:
           - argv
           - text
@@ -78,7 +83,8 @@ interfaces:
           system: repository tools
       execution:
         consistency:
-          per_source: Re-check the selected scope and applicable assertions after every move.
+          per_source: Re-check the selected scope and applicable assertions after
+            every move.
         effects:
         - action: update
           confirmation_evidence:
@@ -90,24 +96,29 @@ interfaces:
           - refactored
           - partial
           reversibility:
-            reversible: Restore only the failed move after checking the exact diff and unrelated work.
+            reversible: Restore only the failed move after checking the exact diff
+              and unrelated work.
           value_source:
             argument_ref: request
             kind: argument
         lifecycle: finite
         mutation_safety:
           atomicity:
-            per_effect_only: Each repair and its generated consequences are verified before another repair.
+            per_effect_only: Each repair and its generated consequences are verified
+              before another repair.
           concurrent_invocations:
             unsafe: Concurrent edits can invalidate scope, standards, or verification.
           idempotency:
-            non_idempotent: Repeating a repair can duplicate or further alter repository state.
+            non_idempotent: Repeating a repair can duplicate or further alter repository
+              state.
           on_uncertain_completion:
-            verify_then_decide: Re-read the exact diff and rerun selected verification before proceeding.
+            verify_then_decide: Re-read the exact diff and rerun selected verification
+              before proceeding.
           partial_effects_on_failure:
             possible: Earlier verified repairs may remain when a later repair fails.
           rollback_on_failure:
-            available: Revert only the failed current move without disturbing unrelated work.
+            available: Revert only the failed current move without disturbing unrelated
+              work.
         state_effect: mutating
         verification:
         - method: output-schema
@@ -139,14 +150,16 @@ interfaces:
         id: refactored
         outputs:
         - response
-      - caller_action: Preserve verified repairs and resolve or revert only the failed move.
+      - caller_action: Preserve verified repairs and resolve or revert only the failed
+          move.
         class: partial
         effects:
         - repository-change
         id: partial
         outputs:
         - response
-      - caller_action: Resolve the reported scope, standard, baseline, or verification failure.
+      - caller_action: Resolve the reported scope, standard, baseline, or verification
+          failure.
         class: error
         effects: []
         id: failed
@@ -157,7 +170,8 @@ interfaces:
         cardinality:
           maximum: 1
           minimum: 1
-        description: Scope, applicable assertions, evidence, proposal, approval gate, diff, and verification result.
+        description: Scope, applicable assertions, evidence, proposal, approval gate,
+          diff, and verification result.
         direct_io_ref: response
         empty: Never empty.
         id: response
@@ -170,9 +184,10 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Diagnose and repair an owned instruction source from its applicable standards.
+    description: Diagnose and repair an owned instruction source from its applicable
+      standards.
     version: 1
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

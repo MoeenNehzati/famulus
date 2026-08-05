@@ -5,40 +5,40 @@ dependencies:
     base: module-root
     path: blueprints/rtx-ensure-agent-env.yaml
   reason: Imports Python source from _rtx/_ensure_agent_env.py.
-  source: recurring-tasks-rtx.source.rtx-ensure-agent-env
+  source: recurring-tasks._rtx.source.rtx-ensure-agent-env
   version: 1
 - blueprint:
     base: module-root
     path: blueprints/rtx-healthcheck-probe.yaml
   reason: Installs a cron entry that executes the healthcheck probe gateway.
-  source: recurring-tasks-rtx.source.rtx-healthcheck-probe
+  source: recurring-tasks._rtx.source.rtx-healthcheck-probe
   version: 1
 - blueprint:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
-  source: recurring-tasks-rtx.source.rtx-init
+  source: recurring-tasks._rtx.source.rtx-init
   version: 1
 - blueprint:
     base: module-root
     path: blueprints/rtx-schedule-backend-init.yaml
   reason: Imports Python source from _rtx/_schedule_backend/__init__.py.
-  source: recurring-tasks-rtx.source.rtx-schedule-backend-init
+  source: recurring-tasks._rtx.source.rtx-schedule-backend-init
   version: 1
 - blueprint:
     base: module-root
     path: blueprints/rtx-unit-writer.yaml
   reason: Imports Python source from _rtx/_unit_writer.py.
-  source: recurring-tasks-rtx.source.rtx-unit-writer
+  source: recurring-tasks._rtx.source.rtx-unit-writer
   version: 1
 description: Performs host setup by ensuring agent environment, syncing scheduler
   entries, installing the healthcheck cron entry, and reporting status.
 gateway:
   language: Python
   path: _setup_runner.py
-id: recurring-tasks-rtx.source.rtx-setup-runner
+id: recurring-tasks._rtx.source.rtx-setup-runner
 interfaces:
-  recurring-tasks-rtx.source.rtx-setup-runner.interface.scripts-setup:
+  recurring-tasks._rtx.source.rtx-setup-runner.interface.scripts-setup:
     contract:
       arguments:
         jobs-file:
@@ -307,6 +307,6 @@ runtime_dependencies:
     windows: true
   reason: Provides the per-user scheduler configured during setup.
   version: any
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

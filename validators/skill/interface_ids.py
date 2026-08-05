@@ -45,7 +45,7 @@ def validate(repo_root: Path) -> list[str]:
                 if (schema_root / "module.schema.json").is_file()
                 else None
             ),
-            expected_schema_version=5,
+            expected_schema_version=6,
         )
     except (
         BlueprintGraphError,

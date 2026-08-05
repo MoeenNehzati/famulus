@@ -36,7 +36,7 @@ def _validator():
 
 def _module() -> dict:
     return {
-        "schema_version": 5,
+        "schema_version": 6,
         "node_type": "module",
         "id": "demo-skill",
         "version": 1,
@@ -158,7 +158,7 @@ def test_graph_schema_loading_fails_closed_without_configuration(
             tmp_path,
             module_root,
             schema_root=schema_root,
-            expected_schema_version=5,
+            expected_schema_version=6,
         )
 
 
@@ -223,7 +223,7 @@ def test_repository_graph_preserves_validated_discovery_metadata(
     graph = load_repository_blueprint_graph(
         tmp_path,
         schema_root=BLUEPRINT_ROOT,
-        expected_schema_version=5,
+        expected_schema_version=6,
     )
 
     assert graph.nodes["demo-skill"].declaration["discovery"] == declaration["discovery"]

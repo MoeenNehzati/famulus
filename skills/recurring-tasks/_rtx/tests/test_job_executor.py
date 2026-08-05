@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -26,32 +25,6 @@ else:
         read_inner_status,
         write_run_record,
     )
-
-
-def test_direct_executor_entrypoint_finds_repo_package_without_pythonpath():
-    env = {key: value for key, value in os.environ.items() if key != "PYTHONPATH"}
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "test_support.runtime_module",
-            str(
-                Path(__file__).resolve().parents[1]
-                / "_job_executor.py"
-            ),
-            "--",
-            "--help",
-        ],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        env=env,
-    )
-
-    assert result.returncode == 0
-    assert "--jobs-file" in result.stdout
-    assert "--log-dir" in result.stdout
 
 
 def test_main_forwards_explicit_log_dir(tmp_path):

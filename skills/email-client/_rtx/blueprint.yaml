@@ -44,119 +44,119 @@ content:
 - tests/.*
 description: Code module for the email-client skill.
 exports:
-  email-client-rtx.interface.accounts-add:
+  email-client._rtx.interface.accounts-add:
     access:
       allow_all_modules: false
       allowed_callers:
       - email-client
-    source_interface: email-client-rtx.source.rtx-email-accounts.interface.accounts-add
-  email-client-rtx.interface.accounts-list:
+    source_interface: email-client._rtx.source.rtx-email-accounts.interface.accounts-add
+  email-client._rtx.interface.accounts-list:
     access:
       allow_all_modules: false
       allowed_callers:
       - email-client
-    source_interface: email-client-rtx.source.rtx-email-accounts.interface.accounts-list
-  email-client-rtx.interface.accounts-remove:
+    source_interface: email-client._rtx.source.rtx-email-accounts.interface.accounts-list
+  email-client._rtx.interface.accounts-remove:
     access:
       allow_all_modules: false
       allowed_callers:
       - email-client
-    source_interface: email-client-rtx.source.rtx-email-accounts.interface.accounts-remove
-  email-client-rtx.interface.accounts-set-password:
+    source_interface: email-client._rtx.source.rtx-email-accounts.interface.accounts-remove
+  email-client._rtx.interface.accounts-set-password:
     access:
       allow_all_modules: false
       allowed_callers:
       - email-client
-    source_interface: email-client-rtx.source.rtx-email-accounts.interface.accounts-set-password
-  email-client-rtx.interface.accounts-setup-oauth:
+    source_interface: email-client._rtx.source.rtx-email-accounts.interface.accounts-set-password
+  email-client._rtx.interface.accounts-setup-oauth:
     access:
       allow_all_modules: false
       allowed_callers:
       - email-client
-    source_interface: email-client-rtx.source.rtx-email-accounts.interface.accounts-setup-oauth
-  email-client-rtx.interface.accounts-update:
+    source_interface: email-client._rtx.source.rtx-email-accounts.interface.accounts-setup-oauth
+  email-client._rtx.interface.accounts-update:
     access:
       allow_all_modules: false
       allowed_callers:
       - email-client
-    source_interface: email-client-rtx.source.rtx-email-accounts.interface.accounts-update
-  email-client-rtx.interface.accounts-use-google-credential:
+    source_interface: email-client._rtx.source.rtx-email-accounts.interface.accounts-update
+  email-client._rtx.interface.accounts-use-google-credential:
     access:
       allow_all_modules: false
       allowed_callers:
       - email-client
       - install-assistant-tools
-      - install-assistant-tools-rtx
-    source_interface: email-client-rtx.source.rtx-email-accounts.interface.accounts-use-google-credential
-  email-client-rtx.interface.live-smoke:
+      - install-assistant-tools._rtx
+    source_interface: email-client._rtx.source.rtx-email-accounts.interface.accounts-use-google-credential
+  email-client._rtx.interface.live-smoke:
     access:
       allow_all_modules: false
       allowed_callers:
       - email-client
-    source_interface: email-client-rtx.source.rtx-email-smoke.interface.live-smoke
-  email-client-rtx.interface.mail-attachments:
+    source_interface: email-client._rtx.source.rtx-email-smoke.interface.live-smoke
+  email-client._rtx.interface.mail-attachments:
     access:
       allow_all_modules: false
       allowed_callers:
       - email-client
-    source_interface: email-client-rtx.source.rtx-imap-gateway.interface.mail-attachments
-  email-client-rtx.interface.mail-folders:
+    source_interface: email-client._rtx.source.rtx-imap-gateway.interface.mail-attachments
+  email-client._rtx.interface.mail-folders:
     access:
       allow_all_modules: false
       allowed_callers:
       - email-client
-    source_interface: email-client-rtx.source.rtx-imap-gateway.interface.mail-folders
-  email-client-rtx.interface.mail-list:
+    source_interface: email-client._rtx.source.rtx-imap-gateway.interface.mail-folders
+  email-client._rtx.interface.mail-list:
     access:
       allow_all_modules: false
       allowed_callers:
       - email-client
       - email-triage
-      - email-triage-rtx
-    source_interface: email-client-rtx.source.rtx-imap-gateway.interface.mail-list
-  email-client-rtx.interface.mail-read:
+      - email-triage._rtx
+    source_interface: email-client._rtx.source.rtx-imap-gateway.interface.mail-list
+  email-client._rtx.interface.mail-read:
     access:
       allow_all_modules: false
       allowed_callers:
       - email-client
-    source_interface: email-client-rtx.source.rtx-imap-gateway.interface.mail-read
-  email-client-rtx.interface.mail-save-attachments:
+    source_interface: email-client._rtx.source.rtx-imap-gateway.interface.mail-read
+  email-client._rtx.interface.mail-save-attachments:
     access:
       allow_all_modules: false
       allowed_callers:
       - email-client
-    source_interface: email-client-rtx.source.rtx-imap-gateway.interface.mail-save-attachments
-  email-client-rtx.interface.send-email:
+    source_interface: email-client._rtx.source.rtx-imap-gateway.interface.mail-save-attachments
+  email-client._rtx.interface.send-email:
     access:
       allow_all_modules: false
       allowed_callers:
       - email-client
-    source_interface: email-client-rtx.source.rtx-smtp-transport.interface.send-email
+    source_interface: email-client._rtx.source.rtx-smtp-transport.interface.send-email
 gateway:
   language: Python>=3.11
   path: __init__.py
-id: email-client-rtx
+id: email-client._rtx
 namespace_exports: {}
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
-  email-client-rtx.source.rtx-email-accounts:
+  email-client._rtx.source.rtx-email-accounts:
     blueprint:
       base: module-root
       path: blueprints/rtx-email-accounts.yaml
-  email-client-rtx.source.rtx-email-smoke:
+  email-client._rtx.source.rtx-email-smoke:
     blueprint:
       base: module-root
       path: blueprints/rtx-email-smoke.yaml
-  email-client-rtx.source.rtx-imap-gateway:
+  email-client._rtx.source.rtx-imap-gateway:
     blueprint:
       base: module-root
       path: blueprints/rtx-imap-gateway.yaml
-  email-client-rtx.source.rtx-init:
+  email-client._rtx.source.rtx-init:
     blueprint:
       base: module-root
       path: blueprints/rtx-init.yaml
-  email-client-rtx.source.rtx-smtp-transport:
+  email-client._rtx.source.rtx-smtp-transport:
     blueprint:
       base: module-root
       path: blueprints/rtx-smtp-transport.yaml

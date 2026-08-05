@@ -6,9 +6,9 @@ description: Checks the Marker model-cache directory for the five Surya checkpoi
 gateway:
   language: Python
   path: _marker_probe.py
-id: pdf-to-markdown-rtx.source.rtx-marker-probe
+id: pdf-to-markdown._rtx.source.rtx-marker-probe
 interfaces:
-  pdf-to-markdown-rtx.source.rtx-marker-probe.interface.scripts-check-marker-models:
+  pdf-to-markdown._rtx.source.rtx-marker-probe.interface.scripts-check-marker-models:
     contract:
       arguments: {}
       caller_warnings: []
@@ -129,6 +129,6 @@ runtime_dependencies:
     windows: false
   reason: Provides the Surya settings module used to locate Marker model checkpoints.
   version: any
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

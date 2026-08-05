@@ -154,7 +154,7 @@ Expected: PASS
 
 - [ ] **Step 5: Add the `cloud-apply-batch` interface through `skill-maker`**
 
-Add `list-manager.interface.cloud-apply-batch` to `skills/list-manager/blueprint.yaml` following the exact structure of the existing `cloud-create-entry` entry (facade_interface pointing at a matching `list-manager-rtx.interface.cloud-apply-batch`).
+Add `list-manager.interface.cloud-apply-batch` to `skills/list-manager/blueprint.yaml` following the exact structure of the existing `cloud-create-entry` entry (facade_interface pointing at a matching `list-manager._rtx.interface.cloud-apply-batch`).
 
 - [ ] **Step 6: Update the triage instructions to use batch mutation (item 25)**
 

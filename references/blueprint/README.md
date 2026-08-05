@@ -4,11 +4,11 @@ The concrete schemas in this directory are the canonical source for blueprint
 shape and field-level authoring rules. See
 [`docs/skill-blueprints.md`](../../docs/skill-blueprints.md) for the current
 contributor overview and [`docs/certification_and_drift.md`](../../docs/certification_and_drift.md)
-for the version-5 input and certificate contract.
+for the version-6 input and certificate contract.
 
-## Live version-5 contracts
+## Live version-6 contracts
 
-Version 5 is the live blueprint family. Validate each document against its
+Version 6 is the live blueprint family. Validate each document against its
 concrete schema:
 
 - `module.schema.json`: discovery, filesystem authority, contained behavioral
@@ -26,8 +26,8 @@ concrete schema:
 - `common.schema.json`: shared identifiers, locators, gateways, requirements,
   ownership, and relationship shapes
 
-`schema.json` is the live dispatcher and accepts only version-5 modules,
-behavioral sources, child topology, namespace exports, and facade routes.
+`schema.json` is the live dispatcher and accepts only version-6 modules,
+behavioral sources, direct child registration, and namespace exports.
 `schema.annotated-draft.json` is the matching authoring
 entry point; it delegates field-level guidance to those same two concrete
 schemas. Earlier schema families have been retired; their conversion behavior
@@ -40,9 +40,9 @@ family directly.
 the live module root and ordinary behavioral-source blueprints under
 `blueprints/`; `generated_outputs` names the derived `SKILL.md` blocks.
 
-## Version-5 authoring contract
+## Version-6 authoring contract
 
-Every module or behavioral source uses `schema_version: 5` and its exact
+Every module or behavioral source uses `schema_version: 6` and its exact
 `node_type`. A gateway is one whole existing file described by `path`,
 `language`, and optional alternative `machines`. Language and machine
 requirements use a name, an exact version, or a comma-separated intersection,
@@ -56,15 +56,14 @@ A module owns:
 - optional discovery, currently `{mechanism: skill}`;
 - filesystem authority and suggested permissions;
 - a map of contained behavioral sources to blueprint locators;
-- explicitly registered child modules under module-root-relative paths;
+- explicitly registered child modules keyed by their local path segment;
 - namespace exports that expose all or a selected subset of a direct child; and
-- exported interface IDs, each resolving either to one intrinsic source
-  interface or to an allowed direct-child facade.
+- exported interface IDs, each resolving to one intrinsic source interface.
 
 An access policy admits the owning module, every module when
 `allow_all_modules` is true, or a caller whose registered ancestry contains an
 entry in `allowed_callers`. An empty false allowlist is therefore private to
-the owner. At a namespace or facade hop, the accepting owner becomes the
+the owner. At a namespace hop, the accepting owner becomes the
 immediate caller of the next hop; upstream caller and source identities are not
 propagated as permission. `uses_interfaces` is static relationship and
 certification metadata, not a runtime grant.

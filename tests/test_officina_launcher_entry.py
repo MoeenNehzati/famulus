@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
+import venv
 from pathlib import Path
 
 import pytest
@@ -15,6 +17,7 @@ from officina.install.managed_runtime import build_candidate_release, uv_python_
 from officina.install.runtime_pointer import RuntimePointerError, activate_release
 
 SRC_DIR = Path(__file__).resolve().parents[1] / "src"
+REPO_ROOT = SRC_DIR.parent
 RESOLVER_SOURCE = SRC_DIR / "officina" / "install" / "resolvers" / "launch.py"
 UV_BIN = shutil.which("uv")
 
@@ -63,6 +66,23 @@ def test_main_rejects_missing_current_json(tmp_path, capsys):
     assert "famulus launcher" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("payload", ["{", "[]", "null"])
+def test_main_rejects_malformed_current_json_without_traceback(
+    tmp_path, capsys, payload
+):
+    runtime_root = tmp_path / "runtime"
+    runtime_root.mkdir()
+    (runtime_root / "current.json").write_text(payload)
+
+    exit_code = main(_resolver_argv(runtime_root))
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.out == ""
+    assert captured.err.startswith("famulus launcher: ")
+    assert "Traceback" not in captured.err
+
+
 def test_main_execs_into_pointer_python_bin(tmp_path, monkeypatch):
     runtime_root = tmp_path / "runtime"
     release_dir = runtime_root / "releases" / "good-release"
@@ -83,6 +103,33 @@ def test_main_execs_into_pointer_python_bin(tmp_path, monkeypatch):
     assert recorded["path"] == str(python_bin)
     assert recorded["argv"] == [str(python_bin), "-c", "print(1)"]
     assert exit_code == 1  # unreachable in a real exec; fake stand-in returns None -> main returns 1
+
+
+def test_main_preserves_validated_venv_python_symlink_path(tmp_path, monkeypatch):
+    runtime_root = tmp_path / "runtime"
+    release_dir = runtime_root / "releases" / "good-release"
+    real_python = release_dir / "interpreter" / "python3"
+    real_python.parent.mkdir(parents=True)
+    real_python.write_text("#!/bin/sh\n")
+    python_bin = release_dir / "venv" / "bin" / "python"
+    python_bin.parent.mkdir(parents=True)
+    python_bin.symlink_to(real_python)
+    activate_release(
+        runtime_root=runtime_root,
+        release_dir=release_dir,
+        python_bin=python_bin,
+    )
+    recorded = {}
+
+    def fake_execv(path, argv):
+        recorded["path"] = path
+        recorded["argv"] = argv
+
+    monkeypatch.setattr("os.execv", fake_execv)
+    main(_resolver_argv(runtime_root, "-c", "print(1)"))
+
+    assert recorded["path"] == str(python_bin)
+    assert recorded["argv"][0] == str(python_bin)
 
 
 def test_main_injects_repository_config_from_v2_pointer(tmp_path, monkeypatch):
@@ -118,6 +165,86 @@ def test_main_injects_repository_config_from_v2_pointer(tmp_path, monkeypatch):
         str(config),
         "--dry-run",
     ]
+
+
+def test_deployed_stable_launcher_runs_an_installed_dispatcher_without_pythonpath(
+    tmp_path,
+):
+    sys.path.insert(
+        0,
+        str(REPO_ROOT / "skills" / "install-assistant-tools" / "_rtx"),
+    )
+    from _install_launcher._linux_launcher import _unix_dispatcher_content
+
+    home = tmp_path / "home"
+    runtime_root = home / ".local" / "share" / "famulus" / "runtime"
+    release_dir = runtime_root / "releases" / "installed"
+    environment = release_dir / "venv"
+    venv.EnvBuilder(with_pip=False, system_site_packages=True).create(environment)
+    python_bin = environment / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
+    purelib_result = subprocess.run(
+        [
+            str(python_bin),
+            "-c",
+            "import sysconfig; print(sysconfig.get_paths()['purelib'])",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    installed_package = Path(purelib_result.stdout.strip()) / "officina"
+    shutil.copytree(SRC_DIR / "officina", installed_package)
+    config = REPO_ROOT / "officina.toml"
+    activate_release(
+        runtime_root=runtime_root,
+        release_dir=release_dir,
+        python_bin=python_bin,
+        repository_config=config,
+    )
+    _deploy_resolver(runtime_root)
+    dispatcher = tmp_path / "bin" / "dispatcher"
+    dispatcher.parent.mkdir()
+    dispatcher.write_text(_unix_dispatcher_content(repo_root=REPO_ROOT, home=home))
+    dispatcher.chmod(0o755)
+    env = dict(os.environ)
+    env.pop("PYTHONPATH", None)
+
+    completed = subprocess.run(
+        [
+            str(dispatcher),
+            "--caller-skill",
+            "daily-plan",
+            "--dry-run",
+            "daily-plan._rtx.interface.plan-storage",
+            "--route-smoke",
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(completed.stdout)
+    assert payload["caller_module_id"] == "daily-plan"
+    assert payload["target_module_id"] == "daily-plan._rtx"
+    assert payload["command"] == ["--route-smoke"]
+    assert completed.stderr == ""
+
+    executed = subprocess.run(
+        [
+            str(dispatcher),
+            "--caller-skill",
+            "daily-plan",
+            "daily-plan._rtx.interface.plan-storage",
+            "--route-smoke",
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert executed.returncode == 0, executed.stderr
+    assert executed.stdout == "route-smoke ok\n"
+    assert "certification-status-unavailable" in executed.stderr
 
 
 def test_trusted_interpreter_roots_reads_sidecar_file(tmp_path, monkeypatch):
@@ -368,10 +495,9 @@ def test_resolver_end_to_end_execs_into_real_uv_managed_interpreter_with_clean_e
 
     assert result.returncode == 0, result.stderr
     assert "ModuleNotFoundError" not in result.stderr
-    # The resolver execs into the fully resolved interpreter target (real
-    # uv-store path), not the venv's symlink path, so sys.executable in the
-    # launched process reports the resolved target.
-    assert result.stdout.strip() == str(pointer.python_bin.resolve())
+    # Validation follows the symlink to check trust, but execution preserves
+    # the venv path so Python retains the release's site-packages.
+    assert result.stdout.strip() == str(pointer.python_bin)
 
 
 # famulus-skip: category=capability-unavailable; reason=requires a real uv binary on PATH; alternate=mocked tests above cover main()'s pointer-resolution and trusted-roots logic without uv installed
@@ -419,7 +545,7 @@ def test_build_candidate_release_auto_deploys_resolver_with_clean_env(tmp_path):
 
     assert result.returncode == 0, result.stderr
     assert "ModuleNotFoundError" not in result.stderr
-    assert result.stdout.strip() == str(pointer.python_bin.resolve())
+    assert result.stdout.strip() == str(pointer.python_bin)
 
 
 # famulus-skip: category=capability-unavailable; reason=requires a real uv binary on PATH; alternate=mocked tests above cover main()'s pointer-resolution and trusted-roots logic without uv installed

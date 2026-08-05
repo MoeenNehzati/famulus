@@ -196,7 +196,7 @@ Use `skill-maker` (per `skills/skill-maker/SKILL.md`) to:
 1. Add `famulus_paths\.py` to `src/officina/common/blueprint.yaml`'s `content:` list.
 2. Add a `common.source.famulus-paths` entry under `sources:` pointing at `blueprints/famulus-paths.yaml`.
 3. Create `src/officina/common/blueprints/famulus-paths.yaml` as a `behavioral_source`, `schema_version: 5`, with one interface (e.g. `python-api`) whose contract documents `resolve_famulus_paths(platform, home) -> FamulusPaths`, `direct_io` declaring env reads (`XDG_DATA_HOME`, `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, `LOCALAPPDATA`) and no filesystem writes.
-4. Export `common.interface.famulus-paths` with `access.allow_all_modules: false` and `allowed_callers` limited to `install-assistant-tools-rtx` (extend the allowlist in later tasks as other modules need it — do not grant broad access up front).
+4. Export `common.interface.famulus-paths` with `access.allow_all_modules: false` and `allowed_callers` limited to `install-assistant-tools._rtx` (extend the allowlist in later tasks as other modules need it — do not grant broad access up front).
 
 Do **not** hand-edit `src/officina/common/blueprint.yaml` directly — regenerate it through the `skill-maker` workflow so the generated contract blocks stay byte-identical to what the tooling produces.
 
@@ -567,7 +567,7 @@ Expected: PASS
 
 - [ ] **Step 9: Scaffold the `officina.install` v5 module blueprint through `skill-maker`**
 
-Create `src/officina/install/blueprint.yaml` (`schema_version: 5`, `node_type: module`, `authority.owns_filesystem` declaring `<famulus-data-root>/runtime` as `readwrite`), `blueprints/install-info.yaml` and `blueprints/runtime-pointer.yaml` as behavioral sources with `python-api` interfaces matching the functions above, and export `officina-install.interface.runtime-pointer` / `officina-install.interface.install-info` with `allowed_callers: [install-assistant-tools-rtx]`. Follow the exact structure already used by `src/officina/common/blueprint.yaml` as the template — don't invent new blueprint conventions.
+Create `src/officina/install/blueprint.yaml` (`schema_version: 5`, `node_type: module`, `authority.owns_filesystem` declaring `<famulus-data-root>/runtime` as `readwrite`), `blueprints/install-info.yaml` and `blueprints/runtime-pointer.yaml` as behavioral sources with `python-api` interfaces matching the functions above, and export `officina-install.interface.runtime-pointer` / `officina-install.interface.install-info` with `allowed_callers: [install-assistant-tools._rtx]`. Follow the exact structure already used by `src/officina/common/blueprint.yaml` as the template — don't invent new blueprint conventions.
 
 - [ ] **Step 10: Validate blueprint**
 
@@ -741,7 +741,7 @@ Expected: PASS; old per-package tests in `test_scaffold.py` that asserted WARN-a
 
 - [ ] **Step 6: Blueprint updates through `skill-maker`**
 
-Create `blueprints/managed-runtime.yaml` under `officina.install`, export `officina-install.interface.build-candidate-release` with `allowed_callers: [install-assistant-tools-rtx]`. Update `blueprints/rtx-install-scaffold.yaml` to remove the now-deleted per-package dependency-install contract and reference the new cross-module call via `uses_interfaces`.
+Create `blueprints/managed-runtime.yaml` under `officina.install`, export `officina-install.interface.build-candidate-release` with `allowed_callers: [install-assistant-tools._rtx]`. Update `blueprints/rtx-install-scaffold.yaml` to remove the now-deleted per-package dependency-install contract and reference the new cross-module call via `uses_interfaces`.
 
 - [ ] **Step 7: Commit**
 
@@ -1029,7 +1029,7 @@ Expected: zero schema errors, zero orphaned exports, zero dangling `uses_interfa
 
 - [ ] **Step 2: Run certification**
 
-Run `skill-certifier` (confirm exact invocation from `docs/certification_and_drift.md`) for `officina-common`, `officina-install`, `install-assistant-tools`, `install-assistant-tools-rtx`.
+Run `skill-certifier` (confirm exact invocation from `docs/certification_and_drift.md`) for `officina-common`, `officina-install`, `install-assistant-tools`, `install-assistant-tools._rtx`.
 Expected: fresh, current certificates for all four nodes.
 
 - [ ] **Step 3: Run the full focused test suite for this plan's scope**

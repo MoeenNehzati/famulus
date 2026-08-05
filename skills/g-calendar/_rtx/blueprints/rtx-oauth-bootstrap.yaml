@@ -5,16 +5,16 @@ dependencies:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
-  source: g-calendar-rtx.source.rtx-init
+  source: g-calendar._rtx.source.rtx-init
   version: 1
 description: Runs the installed-app OAuth browser flow and writes regenerated Google
   Calendar credentials to the canonical private file.
 gateway:
   language: Python
   path: _oauth_bootstrap.py
-id: g-calendar-rtx.source.rtx-oauth-bootstrap
+id: g-calendar._rtx.source.rtx-oauth-bootstrap
 interfaces:
-  g-calendar-rtx.source.rtx-oauth-bootstrap.interface.setup-oauth:
+  g-calendar._rtx.source.rtx-oauth-bootstrap.interface.setup-oauth:
     contract:
       arguments:
         client-id:
@@ -251,7 +251,7 @@ platform_support:
   macos: true
   windows: true
 runtime_dependencies: []
-schema_version: 5
+schema_version: 6
 uses_interfaces:
 - interface: common.interface.oauth-json
   version: 1

@@ -563,18 +563,18 @@ declarations:
     reviewed_source_facts:
       - source: daily-plan.source.rtx-init
         uses_interfaces:
-          - {interface: cloud-files.interface.lists-read, version: 1}
-          - {interface: cloud-files.interface.lists-write, version: 1}
-          - {interface: cloud-files.interface.plans-read, version: 1}
-          - {interface: cloud-files.interface.plans-write, version: 1}
-          - {interface: g-calendar.interface.scripts-gcal, version: 1}
-          - {interface: get-weather.interface.scripts-weather, version: 1}
-          - {interface: list-manager.interface.read-beautify, version: 1}
-          - {interface: list-manager.interface.update-list, version: 1}
+          - {interface: cloud-files._rtx.interface.lists-read, version: 1}
+          - {interface: cloud-files._rtx.interface.lists-write, version: 1}
+          - {interface: cloud-files._rtx.interface.plans-read, version: 1}
+          - {interface: cloud-files._rtx.interface.plans-write, version: 1}
+          - {interface: g-calendar._rtx.interface.scripts-gcal, version: 1}
+          - {interface: get-weather._rtx.interface.scripts-weather, version: 1}
+          - {interface: list-manager._rtx.interface.read-beautify, version: 1}
+          - {interface: list-manager._rtx.interface.update-list, version: 1}
       - source: list-manager.source.rtx-init
         uses_interfaces:
-          - {interface: cloud-files.interface.lists-read, version: 1}
-          - {interface: cloud-files.interface.lists-write, version: 1}
+          - {interface: cloud-files._rtx.interface.lists-read, version: 1}
+          - {interface: cloud-files._rtx.interface.lists-write, version: 1}
       - source: cloud-files.source.rtx-ensure-oauth
         dependencies:
           - {source: cloud-files.source.rtx-oauth-bootstrap, version: 1, reason: Executes the sibling OAuth bootstrap gateway when credentials are absent.}
@@ -1273,15 +1273,15 @@ callers:
     - file: skills/email-triage/_rtx/_mail_envelope_stream.py
       caller: email-triage
       old_targets: [email-client.machine.mail-list]
-      target: [email-client.interface.mail-list]
+      target: [email-client._rtx.interface.mail-list]
     - file: skills/list-manager/_rtx/_cloud_transport.py
       caller: list-manager
       old_targets: [cloud-files.machine.lists-read, cloud-files.machine.lists-write]
-      target: [cloud-files.interface.lists-read, cloud-files.interface.lists-write]
+      target: [cloud-files._rtx.interface.lists-read, cloud-files._rtx.interface.lists-write]
     - file: skills/skill-audit/_rtx/_audit_certifier.py
       caller: skill-audit
       old_targets: [skill-drift.machine.compute-hashes, skill-drift.machine.drift-status, skill-maker.machine.sync-blueprints]
-      target: [skill-drift.interface.compute-hashes, skill-drift.interface.drift-status, skill-maker.interface.sync-blueprints]
+      target: [skill-drift._rtx.interface.compute-hashes, skill-drift._rtx.interface.drift-status, skill-maker._rtx.interface.sync-blueprints]
       caller_target: skill-certifier
   generated_and_documented_calls:
     current_owner: [skills/*/SKILL.md, skills/skill-maker/_rtx/_blueprint_syncer.py, docs/audit_and_drift.md, docs/certification_and_drift.md, docs/installation.md, llmhooks/inject_dispatcher_context.py]

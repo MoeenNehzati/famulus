@@ -17,14 +17,22 @@ def exported_interface(
     skill: str, canonical_id: str
 ) -> tuple[dict[str, object], dict[str, object], dict[str, object]]:
     module_root = SKILLS / skill
-    root = load(module_root / "blueprint.yaml")
-    assert root["schema_version"] == 5
+    module = load(module_root / "blueprint.yaml")
+    module_id = canonical_id.split(".interface.", 1)[0]
+    current_id = skill
+    for segment in module_id.split(".")[1:]:
+        assert segment in module["children"]
+        module_root /= segment
+        module = load(module_root / "blueprint.yaml")
+        current_id = f"{current_id}.{segment}"
+        assert module["id"] == current_id
+    assert module["schema_version"] == 6
     source, interface = _resolve_export(
         module_root,
-        root,
+        module,
         canonical_id,
     )
-    return root, source, interface
+    return module, source, interface
 
 
 def _resolve_export(
@@ -33,16 +41,6 @@ def _resolve_export(
     canonical_id: str,
 ) -> tuple[dict[str, object], dict[str, object]]:
     export = module["exports"][canonical_id]
-    facade = export.get("facade_interface")
-    if facade is not None:
-        child_id = facade["interface"].split(".interface.", 1)[0]
-        child_marker = module_root / module["children"][child_id]["path"]
-        child = load(child_marker)
-        return _resolve_export(
-            child_marker.parent,
-            child,
-            facade["interface"],
-        )
     source_interface = export["source_interface"]
     source_id, _, _ = source_interface.rpartition(".interface.")
     locator = module["sources"][source_id]["blueprint"]
@@ -73,7 +71,7 @@ def test_email_interfaces_are_not_exposed_to_connect_google() -> None:
         "accounts-setup-oauth",
         "live-smoke",
     ):
-        canonical_id = f"email-client.interface.{interface}"
+        canonical_id = f"email-client._rtx.interface.{interface}"
         root, _, _ = exported_interface("email-client", canonical_id)
         access = root["exports"][canonical_id]["access"]
         assert access["allow_all_modules"] is False
@@ -82,9 +80,9 @@ def test_email_interfaces_are_not_exposed_to_connect_google() -> None:
 
 def test_google_service_gateways_delegate_to_connect_google() -> None:
     setup_interfaces = {
-        "cloud-files": "cloud-files.interface.setup-oauth",
-        "g-calendar": "g-calendar.interface.setup-oauth",
-        "email-client": "email-client.interface.accounts-setup-oauth",
+        "cloud-files": "cloud-files._rtx.interface.setup-oauth",
+        "g-calendar": "g-calendar._rtx.interface.setup-oauth",
+        "email-client": "email-client._rtx.interface.accounts-setup-oauth",
     }
     for skill, setup_interface in setup_interfaces.items():
         root, gateway, _ = exported_interface(skill, f"{skill}.interface.default")
@@ -112,15 +110,15 @@ def test_service_guidance_has_one_google_onboarding_owner() -> None:
 def test_service_guidance_hands_canonical_client_to_owned_setup_interface() -> None:
     expected = {
         "cloud-files": (
-            "cloud-files.interface.setup-oauth",
+            "cloud-files._rtx.interface.setup-oauth",
             "--from-json ~/.config/connect-google/client.json",
         ),
         "g-calendar": (
-            "g-calendar.interface.setup-oauth",
+            "g-calendar._rtx.interface.setup-oauth",
             "--from-json ~/.config/connect-google/client.json",
         ),
         "email-client": (
-            "email-client.interface.accounts-setup-oauth",
+            "email-client._rtx.interface.accounts-setup-oauth",
             "--client-config ~/.config/connect-google/client.json",
         ),
     }
@@ -138,9 +136,9 @@ def test_installer_does_not_depend_on_connect_google() -> None:
 
 def test_service_setup_exports_still_exist() -> None:
     expected = {
-        "cloud-files": "cloud-files.interface.setup-oauth",
-        "g-calendar": "g-calendar.interface.setup-oauth",
-        "email-client": "email-client.interface.accounts-setup-oauth",
+        "cloud-files": "cloud-files._rtx.interface.setup-oauth",
+        "g-calendar": "g-calendar._rtx.interface.setup-oauth",
+        "email-client": "email-client._rtx.interface.accounts-setup-oauth",
     }
     for skill, interface in expected.items():
         root, source, contract = exported_interface(skill, interface)

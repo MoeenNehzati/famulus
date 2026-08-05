@@ -228,7 +228,7 @@ def load_catalog(repo_root: Path) -> list[SkillInfo]:
             repo_root,
             skill_dir,
             schema_root=repo_root / "references" / "blueprint",
-            expected_schema_version=5,
+            expected_schema_version=6,
         )
         description = str(_frontmatter(skill_md).get("description", "")).strip()
         summary = SUMMARY_OVERRIDES.get(skill_dir.name) or _summary(description)

@@ -5,16 +5,16 @@ dependencies:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
-  source: daily-plan-rtx.source.rtx-init
+  source: daily-plan._rtx.source.rtx-init
   version: 1
 description: Implements read, write, existence, and delete operations for dated plan
   Markdown on the configured Google Drive remote.
 gateway:
   language: Python
   path: _plan_storage.py
-id: daily-plan-rtx.source.rtx-plan-storage
+id: daily-plan._rtx.source.rtx-plan-storage
 interfaces:
-  daily-plan-rtx.source.rtx-plan-storage.interface.plan-storage:
+  daily-plan._rtx.source.rtx-plan-storage.interface.plan-storage:
     contract:
       arguments:
         content:
@@ -279,6 +279,6 @@ runtime_dependencies:
     windows: true
   reason: Reads and writes plan files in the configured GDrive remote.
   version: any
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

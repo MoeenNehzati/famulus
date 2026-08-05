@@ -414,7 +414,7 @@ def test_build_candidate_release_end_to_end_with_real_uv(tmp_path):
 
 # famulus-skip: category=capability-unavailable; reason=requires a real uv binary on PATH; alternate=mocked artifact/probe tests above cover ordering and rollback
 @pytest.mark.skipif(UV_BIN is None, reason="uv is not installed on this machine")
-def test_repo_candidate_real_uv_runs_installed_dispatcher_without_checkout_pythonpath(tmp_path):
+def test_repo_candidate_real_uv_runs_installed_dispatcher_through_stable_launcher(tmp_path):
     repo_root = Path(__file__).resolve().parents[1]
     manifest = tmp_path / "runtime_dependencies.json"
     manifest.write_text('{"version": 2, "skills": {}}', encoding="utf-8")
@@ -430,8 +430,9 @@ def test_repo_candidate_real_uv_runs_installed_dispatcher_without_checkout_pytho
 
     env = dict(os.environ)
     env.pop("PYTHONPATH", None)
+    resolver = tmp_path / "runtime" / "bootstrap" / "resolvers" / "v1" / "launch.py"
     result = subprocess.run(
-        [str(pointer.python_bin), "-I", "-m", "officina.dispatcher.cli", "--help"],
+        [str(resolver), "-m", "officina.dispatcher.cli", "--help"],
         capture_output=True,
         text=True,
         env=env,

@@ -72,6 +72,19 @@ def test_v2_pointer_rejects_missing_repository_configuration(tmp_path: Path) -> 
         load_current_pointer(runtime_root=runtime_root)
 
 
+@pytest.mark.parametrize("payload", ["{", "[]", "null"])
+def test_load_current_pointer_translates_malformed_payloads(
+    tmp_path: Path,
+    payload: str,
+) -> None:
+    runtime_root = tmp_path / "runtime"
+    runtime_root.mkdir()
+    (runtime_root / "current.json").write_text(payload)
+
+    with pytest.raises(RuntimePointerError):
+        load_current_pointer(runtime_root=runtime_root)
+
+
 def test_load_current_pointer_rejects_path_outside_runtime_root(tmp_path: Path) -> None:
     runtime_root = tmp_path / "runtime"
     runtime_root.mkdir(parents=True)

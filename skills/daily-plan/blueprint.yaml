@@ -1,9 +1,7 @@
 authority:
   owns_filesystem: []
 children:
-  daily-plan-rtx:
-    base: module-root
-    path: _rtx/blueprint.yaml
+  _rtx: {}
 content:
 - SKILL\.md
 description: Builds, persists, refreshes, renders, and mutates a daily plan from calendar,
@@ -26,41 +24,37 @@ exports:
       allow_all_modules: true
       allowed_callers: []
     source_interface: daily-plan.source.gateway.interface.default
-  daily-plan.interface.mutate-plan:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: daily-plan-rtx.interface.mutate-plan
-      version: 1
-  daily-plan.interface.orchestrate:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: daily-plan-rtx.interface.orchestrate
-      version: 1
-  daily-plan.interface.plan-storage:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: daily-plan-rtx.interface.plan-storage
-      version: 1
-  daily-plan.interface.render-plan:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: daily-plan-rtx.interface.render-plan
-      version: 1
 gateway:
   language: Markdown
   path: SKILL.md
 id: daily-plan
-namespace_exports: {}
+namespace_exports:
+  _rtx:
+    version: 1
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    surface:
+      only:
+        daily-plan._rtx.interface.mutate-plan: 1
+        daily-plan._rtx.interface.orchestrate: 1
+        daily-plan._rtx.interface.plan-storage: 1
+        daily-plan._rtx.interface.render-plan: 1
+    interface_access:
+      daily-plan._rtx.interface.mutate-plan:
+        allow_all_modules: false
+        allowed_callers: []
+      daily-plan._rtx.interface.orchestrate:
+        allow_all_modules: false
+        allowed_callers: []
+      daily-plan._rtx.interface.plan-storage:
+        allow_all_modules: false
+        allowed_callers: []
+      daily-plan._rtx.interface.render-plan:
+        allow_all_modules: false
+        allowed_callers: []
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
   daily-plan.source.gateway:
     blueprint:

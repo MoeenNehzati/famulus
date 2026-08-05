@@ -1,9 +1,7 @@
 authority:
   owns_filesystem: []
 children:
-  pdf-to-markdown-rtx:
-    base: module-root
-    path: _rtx/blueprint.yaml
+  _rtx: {}
 content:
 - SKILL\.md
 description: Obtains readable research-paper source by preferring extracted LaTeX
@@ -25,27 +23,29 @@ exports:
       allow_all_modules: true
       allowed_callers: []
     source_interface: pdf-to-markdown.source.gateway.interface.default
-  pdf-to-markdown.interface.scripts-check-marker-models:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: pdf-to-markdown-rtx.interface.scripts-check-marker-models
-      version: 1
-  pdf-to-markdown.interface.scripts-fetch-arxiv-source:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: pdf-to-markdown-rtx.interface.scripts-fetch-arxiv-source
-      version: 1
 gateway:
   language: Markdown
   path: SKILL.md
 id: pdf-to-markdown
-namespace_exports: {}
+namespace_exports:
+  _rtx:
+    version: 1
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    surface:
+      only:
+        pdf-to-markdown._rtx.interface.scripts-check-marker-models: 1
+        pdf-to-markdown._rtx.interface.scripts-fetch-arxiv-source: 1
+    interface_access:
+      pdf-to-markdown._rtx.interface.scripts-check-marker-models:
+        allow_all_modules: false
+        allowed_callers: []
+      pdf-to-markdown._rtx.interface.scripts-fetch-arxiv-source:
+        allow_all_modules: false
+        allowed_callers: []
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
   pdf-to-markdown.source.gateway:
     blueprint:

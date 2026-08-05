@@ -5,16 +5,16 @@ dependencies:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
-  source: list-manager-rtx.source.rtx-init
+  source: list-manager._rtx.source.rtx-init
   version: 1
 description: Python source that renders YAML list data from stdin as human-readable
   Markdown, a table, a diff fence, or terminal-rich output.
 gateway:
   language: Python
   path: _list_beautify.py
-id: list-manager-rtx.source.rtx-list-beautify
+id: list-manager._rtx.source.rtx-list-beautify
 interfaces:
-  list-manager-rtx.source.rtx-list-beautify.interface.beautify-list:
+  list-manager._rtx.source.rtx-list-beautify.interface.beautify-list:
     contract:
       arguments:
         diff:
@@ -168,6 +168,6 @@ runtime_dependencies:
     windows: true
   reason: Renders nested list output for terminal display.
   version: any
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

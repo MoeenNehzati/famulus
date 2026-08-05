@@ -26,7 +26,7 @@ def write_runtime_dependencies_manifest(repo_root: Path, python_packages: list[s
     manifest.write_text(
         json.dumps(
             {
-                "version": 1,
+                "version": 2,
                 "skills": {
                     "fixture": {
                         "interfaces": {
@@ -241,7 +241,7 @@ def test_required_python_packages_preserve_declared_versions(tmp_path):
     manifest.write_text(
         json.dumps(
             {
-                "version": 1,
+                "version": 2,
                 "skills": {
                     "skill-certifier": {
                         "interfaces": {
@@ -292,7 +292,7 @@ def test_required_python_packages_uses_first_declared_version_per_platform(
     manifest.write_text(
         json.dumps(
             {
-                "version": 1,
+                "version": 2,
                 "skills": {
                     "fixture": {
                         "interfaces": {
@@ -343,14 +343,16 @@ def test_required_python_packages_uses_first_declared_version_per_platform(
     assert scaffold.required_python_packages(repo_root) == expected
 
 
-def test_runtime_dependencies_manifest_is_still_schema_v1():
+def test_runtime_dependencies_manifest_uses_direct_route_schema_v2():
     repo_root = Path(__file__).resolve().parents[4]
     manifest_path = repo_root / scaffold.RUNTIME_DEPENDENCIES_MANIFEST
     payload = json.loads(manifest_path.read_text())
-    assert payload["version"] == 1
+    assert payload["version"] == 2
     assert "skills" in payload
     # Spot check a known live entry keeps the documented shape.
-    entry = payload["skills"]["install-assistant-tools"]["interfaces"]["scripts-install"]
+    entry = payload["skills"]["install-assistant-tools"]["interfaces"][
+        "install-assistant-tools._rtx.interface.scripts-install"
+    ]
     dep = entry["dependencies"][0]
     assert set(dep) >= {"kind", "name", "platforms"}
     assert set(dep["platforms"]) <= {"linux", "macos", "windows"}

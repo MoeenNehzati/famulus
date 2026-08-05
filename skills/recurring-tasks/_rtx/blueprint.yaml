@@ -73,115 +73,115 @@ content:
 - tests/.*
 description: Code module for the recurring-tasks skill.
 exports:
-  recurring-tasks-rtx.interface.scripts-disable:
+  recurring-tasks._rtx.interface.scripts-disable:
     access:
       allow_all_modules: false
       allowed_callers:
       - recurring-tasks
-    source_interface: recurring-tasks-rtx.source.rtx-job-control.interface.scripts-disable
-  recurring-tasks-rtx.interface.scripts-enable:
+    source_interface: recurring-tasks._rtx.source.rtx-job-control.interface.scripts-disable
+  recurring-tasks._rtx.interface.scripts-enable:
     access:
       allow_all_modules: false
       allowed_callers:
       - recurring-tasks
-    source_interface: recurring-tasks-rtx.source.rtx-job-control.interface.scripts-enable
-  recurring-tasks-rtx.interface.scripts-ensure-agent-env:
+    source_interface: recurring-tasks._rtx.source.rtx-job-control.interface.scripts-enable
+  recurring-tasks._rtx.interface.scripts-ensure-agent-env:
     access:
       allow_all_modules: false
       allowed_callers:
       - recurring-tasks
-    source_interface: recurring-tasks-rtx.source.rtx-ensure-agent-env.interface.scripts-ensure-agent-env
-  recurring-tasks-rtx.interface.scripts-healthcheck:
+    source_interface: recurring-tasks._rtx.source.rtx-ensure-agent-env.interface.scripts-ensure-agent-env
+  recurring-tasks._rtx.interface.scripts-healthcheck:
     access:
       allow_all_modules: false
       allowed_callers:
       - recurring-tasks
-    source_interface: recurring-tasks-rtx.source.rtx-healthcheck-probe.interface.scripts-healthcheck
-  recurring-tasks-rtx.interface.scripts-job-utils:
+    source_interface: recurring-tasks._rtx.source.rtx-healthcheck-probe.interface.scripts-healthcheck
+  recurring-tasks._rtx.interface.scripts-job-utils:
     access:
       allow_all_modules: false
       allowed_callers:
       - recurring-tasks
-    source_interface: recurring-tasks-rtx.source.rtx-job-utils.interface.scripts-job-utils
-  recurring-tasks-rtx.interface.scripts-setup:
+    source_interface: recurring-tasks._rtx.source.rtx-job-utils.interface.scripts-job-utils
+  recurring-tasks._rtx.interface.scripts-setup:
     access:
       allow_all_modules: false
       allowed_callers:
       - recurring-tasks
-    source_interface: recurring-tasks-rtx.source.rtx-setup-runner.interface.scripts-setup
-  recurring-tasks-rtx.interface.scripts-status:
+    source_interface: recurring-tasks._rtx.source.rtx-setup-runner.interface.scripts-setup
+  recurring-tasks._rtx.interface.scripts-status:
     access:
       allow_all_modules: false
       allowed_callers:
       - recurring-tasks
-    source_interface: recurring-tasks-rtx.source.rtx-job-control.interface.scripts-status
-  recurring-tasks-rtx.interface.scripts-sync:
+    source_interface: recurring-tasks._rtx.source.rtx-job-control.interface.scripts-status
+  recurring-tasks._rtx.interface.scripts-sync:
     access:
       allow_all_modules: false
       allowed_callers:
       - recurring-tasks
-    source_interface: recurring-tasks-rtx.source.rtx-unit-writer.interface.scripts-sync
-  recurring-tasks-rtx.interface.scripts-test:
+    source_interface: recurring-tasks._rtx.source.rtx-unit-writer.interface.scripts-sync
+  recurring-tasks._rtx.interface.scripts-test:
     access:
       allow_all_modules: false
       allowed_callers:
       - recurring-tasks
-    source_interface: recurring-tasks-rtx.source.rtx-job-control.interface.scripts-test
-  recurring-tasks-rtx.interface.scripts-view-logs:
+    source_interface: recurring-tasks._rtx.source.rtx-job-control.interface.scripts-test
+  recurring-tasks._rtx.interface.scripts-view-logs:
     access:
       allow_all_modules: false
       allowed_callers:
       - recurring-tasks
-    source_interface: recurring-tasks-rtx.source.rtx-job-control.interface.scripts-view-logs
+    source_interface: recurring-tasks._rtx.source.rtx-job-control.interface.scripts-view-logs
 gateway:
   language: Python>=3.11
   path: __init__.py
-id: recurring-tasks-rtx
+id: recurring-tasks._rtx
 namespace_exports: {}
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
-  recurring-tasks-rtx.source.jobs-config:
+  recurring-tasks._rtx.source.jobs-config:
     blueprint:
       base: module-root
       path: blueprints/jobs-config.yaml
-  recurring-tasks-rtx.source.rtx-ensure-agent-env:
+  recurring-tasks._rtx.source.rtx-ensure-agent-env:
     blueprint:
       base: module-root
       path: blueprints/rtx-ensure-agent-env.yaml
-  recurring-tasks-rtx.source.rtx-healthcheck-probe:
+  recurring-tasks._rtx.source.rtx-healthcheck-probe:
     blueprint:
       base: module-root
       path: blueprints/rtx-healthcheck-probe.yaml
-  recurring-tasks-rtx.source.rtx-init:
+  recurring-tasks._rtx.source.rtx-init:
     blueprint:
       base: module-root
       path: blueprints/rtx-init.yaml
-  recurring-tasks-rtx.source.rtx-job-control:
+  recurring-tasks._rtx.source.rtx-job-control:
     blueprint:
       base: module-root
       path: blueprints/rtx-job-control.yaml
-  recurring-tasks-rtx.source.rtx-job-executor:
+  recurring-tasks._rtx.source.rtx-job-executor:
     blueprint:
       base: module-root
       path: blueprints/rtx-job-executor.yaml
-  recurring-tasks-rtx.source.rtx-job-utils:
+  recurring-tasks._rtx.source.rtx-job-utils:
     blueprint:
       base: module-root
       path: blueprints/rtx-job-utils.yaml
-  recurring-tasks-rtx.source.rtx-run-record:
+  recurring-tasks._rtx.source.rtx-run-record:
     blueprint:
       base: module-root
       path: blueprints/rtx-run-record.yaml
-  recurring-tasks-rtx.source.rtx-schedule-backend-init:
+  recurring-tasks._rtx.source.rtx-schedule-backend-init:
     blueprint:
       base: module-root
       path: blueprints/rtx-schedule-backend-init.yaml
-  recurring-tasks-rtx.source.rtx-setup-runner:
+  recurring-tasks._rtx.source.rtx-setup-runner:
     blueprint:
       base: module-root
       path: blueprints/rtx-setup-runner.yaml
-  recurring-tasks-rtx.source.rtx-unit-writer:
+  recurring-tasks._rtx.source.rtx-unit-writer:
     blueprint:
       base: module-root
       path: blueprints/rtx-unit-writer.yaml

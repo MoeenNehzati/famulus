@@ -35,8 +35,8 @@ interfaces:
           system: agent-runtime
         - access: read
           content: Target standard, pinned imports and direct dependents, schema,
-            validation and rendering policy, generated views, declared evidence,
-            current diff, and relevant enforcement artifacts.
+            validation and rendering policy, generated views, declared evidence, current
+            diff, and relevant enforcement artifacts.
           formats:
           - yaml
           - markdown
@@ -69,7 +69,8 @@ interfaces:
           - text
           id: repository-write
           medium: repository-filesystem
-          reason: Apply the requested semantic change and keep its declared closure aligned.
+          reason: Apply the requested semantic change and keep its declared closure
+            aligned.
           sensitivity: user-private
         - access: execute
           content: Focused standard validation, registered view rendering, enforcement
@@ -79,13 +80,15 @@ interfaces:
           - text
           id: validation-command
           medium: subprocess
-          reason: Prove that the changed closure, views, and declared evidence remain current.
+          reason: Prove that the changed closure, views, and declared evidence remain
+            current.
           sensitivity: derived-private
           system: bash git and repository validators
       execution:
         consistency:
-          live: The report reflects the target closure, registered views, declared evidence,
-            affected enforcement, and validation results observed during this invocation.
+          live: The report reflects the target closure, registered views, declared
+            evidence, affected enforcement, and validation results observed during
+            this invocation.
         effects:
         - action: update
           confirmation_evidence:
@@ -97,8 +100,8 @@ interfaces:
           - updated
           - partial
           reversibility:
-            reversible: Restore only the reviewed standard-maintenance change set after
-              checking generated and dependent overlap.
+            reversible: Restore only the reviewed standard-maintenance change set
+              after checking generated and dependent overlap.
           value_source:
             argument_ref: request
             kind: argument
@@ -136,7 +139,8 @@ interfaces:
             possible: Standard, dependent, generated-view, or enforcement edits may
               remain when a later check fails.
           rollback_on_failure:
-            available: Restore only this invocation's files after checking overlapping changes.
+            available: Restore only this invocation's files after checking overlapping
+              changes.
         state_effect: mutating
         verification:
         - method: output-schema
@@ -209,6 +213,6 @@ interfaces:
       views, and declared evidence aligned.
     version: 1
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

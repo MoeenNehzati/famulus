@@ -24,7 +24,7 @@ from v5_blueprint_fixtures import copy_v5_fixture_tree
 
 SYNCER_PATH = REPO_ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py"
 BLUEPRINT_TEMPLATE = REPO_ROOT / "references" / "blueprint" / "template.yaml"
-V5_SCHEMA_ROOT = REPO_ROOT / "references" / "blueprint"
+V5_SCHEMA_ROOT = REPO_ROOT / "references" / "blueprint" / "migrations" / "v5"
 V5_AUTHORIZATION_FIXTURE = (
     REPO_ROOT / "tests" / "fixtures" / "blueprint_v5" / "authorization"
 )
@@ -91,10 +91,10 @@ def _copy_v5_managed_skill(repo_root: Path) -> tuple[Path, dict[str, object]]:
     return root, dependency
 
 
-def test_blueprint_template_is_canonical_v5_module() -> None:
+def test_blueprint_template_is_canonical_v6_module() -> None:
     manifest = yaml.safe_load(BLUEPRINT_TEMPLATE.read_text(encoding="utf-8"))
 
-    assert manifest["schema_version"] == 5
+    assert manifest["schema_version"] == 6
     assert manifest["node_type"] == "module"
     assert manifest["children"] == {}
     assert manifest["namespace_exports"] == {}
@@ -487,13 +487,11 @@ def test_generated_used_interface_block_is_deterministic(syncer) -> None:
     assert first.endswith(f"{syncer.USED_INTERFACES_END}\n")
 
 
-def test_sync_activates_snapshot_and_check_does_not_replace_it(
+def test_sync_does_not_create_dispatch_routing_state(
     tmp_path: Path,
     syncer,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from officina.install.dispatch_snapshot import repository_snapshot_root
-
     repo_root, _dependency = _copy_v5_managed_skill(tmp_path / "repo")
     skill_file = repo_root / "skills" / "demo" / "SKILL.md"
     skill_file.write_text(
@@ -505,14 +503,9 @@ def test_sync_activates_snapshot_and_check_does_not_replace_it(
     monkeypatch.setattr(syncer, "REPO_ROOT", repo_root)
     monkeypatch.setattr(syncer, "SKILLS_ROOT", repo_root / "skills")
     monkeypatch.setattr(syncer, "RUNTIME_DEPENDENCIES_PATH", manifest)
-    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    data_home = tmp_path / "data"
+    monkeypatch.setenv("XDG_DATA_HOME", str(data_home))
 
     assert syncer.run_sync(check_only=False, schema_version=5) == 0
-    active_root = repository_snapshot_root(repo_root)
-    pointer = active_root / "current.json"
-    before_pointer = pointer.read_bytes()
-    before_generations = sorted((active_root / "generations").iterdir())
-
     assert syncer.run_sync(check_only=True, schema_version=5) == 0
-    assert pointer.read_bytes() == before_pointer
-    assert sorted((active_root / "generations").iterdir()) == before_generations
+    assert not data_home.exists()

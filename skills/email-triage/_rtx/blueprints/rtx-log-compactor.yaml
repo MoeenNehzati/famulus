@@ -5,16 +5,16 @@ dependencies:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
-  source: email-triage-rtx.source.rtx-init
+  source: email-triage._rtx.source.rtx-init
   version: 1
 description: Rewrites the skill-local triage log after retaining recent and unparseable
   entries.
 gateway:
   language: Python
   path: _log_compactor.py
-id: email-triage-rtx.source.rtx-log-compactor
+id: email-triage._rtx.source.rtx-log-compactor
 interfaces:
-  email-triage-rtx.source.rtx-log-compactor.interface.scripts-prune-log:
+  email-triage._rtx.source.rtx-log-compactor.interface.scripts-prune-log:
     contract:
       arguments: {}
       caller_warnings:
@@ -141,6 +141,6 @@ platform_support:
   macos: true
   windows: true
 runtime_dependencies: []
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

@@ -191,6 +191,15 @@ class DirectBlueprintRepository:
                 code="dispatcher.blueprint_identity_mismatch",
                 target_module_id=module_id,
             )
+        if (
+            type(declaration.get("version")) is not int
+            or declaration["version"] < 1
+        ):
+            raise DirectBlueprintError(
+                f"blueprint version must be an integer for {module_id}: {path}",
+                code="dispatcher.blueprint_malformed",
+                target_module_id=module_id,
+            )
         for field in ("children", "namespace_exports", "sources", "exports"):
             if not isinstance(declaration.get(field), Mapping):
                 raise DirectBlueprintError(

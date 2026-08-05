@@ -12,23 +12,15 @@ Activation: user-request, skill-workflow; persistent modifier: no
 Skill Version: 5
 
 Uses Interfaces:
-- `skill-maker.source.gateway -> refactor-node.interface.query-standards@4`
+- `skill-maker.source.gateway -> refactor-node._rtx.interface.query-standards@4`
+- `skill-maker.source.gateway -> skill-maker._rtx.interface.sync-blueprints@1`
 
 Public Interfaces:
 - `skill-maker.interface.default`
-- `skill-maker.interface.sync-blueprints`
 <!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Dispatcher Interfaces:
-
-Use the installed `dispatcher` command for these process-bound interfaces:
-- `skill-maker.interface.sync-blueprints` — Validate every skill blueprint, check or refresh generated artifacts, and directly validate or activate dispatcher routing state.
-  - `dispatcher --caller-skill skill-maker skill-maker.interface.sync-blueprints [--check]`
-  - sync: Refresh generated files from blueprint.yaml.
-  - check: Validate blueprints and fail if generated files are out of sync.
 
 Instruction Interfaces:
 
@@ -50,7 +42,7 @@ but catching this before editing avoids doing work that can't land.
 
 ## Standards retrieval
 
-Before authoring, query `refactor-node.interface.query-standards` with the target,
+Before authoring, query `refactor-node._rtx.interface.query-standards` with the target,
 `task.kind=author-skill`, and `--view requirements`. For a new skill, create only
 the schema-minimum registration first. Treat each owner and `standard_ref` as a
 scope boundary; never read one standard file as the complete policy.

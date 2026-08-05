@@ -8,9 +8,9 @@ description: Aggregates the configured host-specific transcript parsers and thei
 gateway:
   language: Python
   path: __init__.py
-id: find-handoff-candidates-rtx.source.rtx-init
+id: find-handoff-candidates._rtx.source.rtx-init
 interfaces: {}
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

@@ -10,10 +10,10 @@ description: Marks the installer runtime directory as a Python package and expos
 gateway:
   language: Python
   path: __init__.py
-id: install-assistant-tools-rtx.source.rtx-init
+id: install-assistant-tools._rtx.source.rtx-init
 interfaces: {}
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces:
 - interface: common.interface.famulus-paths
   version: 1

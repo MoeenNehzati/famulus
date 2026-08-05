@@ -127,6 +127,23 @@ def test_relevant_blueprint_failures_have_stable_codes(
     assert caught.value.code == code
 
 
+@pytest.mark.parametrize("invalid_version", ["true", "0", "-1"])
+def test_module_version_must_be_a_positive_integer(
+    tmp_path: Path,
+    invalid_version: str,
+) -> None:
+    configuration = _configuration(tmp_path, "skills")
+    path = _write_module(configuration.module_roots[0], "root")
+    path.write_text(
+        _module_document("root").replace("version: 1", f"version: {invalid_version}")
+    )
+
+    with pytest.raises(DirectBlueprintError) as caught:
+        DirectBlueprintRepository(configuration).load_module("root")
+
+    assert caught.value.code == "dispatcher.blueprint_malformed"
+
+
 def test_unrelated_malformed_blueprint_is_never_read(tmp_path: Path) -> None:
     configuration = _configuration(tmp_path, "skills")
     root = configuration.module_roots[0]
@@ -168,4 +185,3 @@ def test_symlinked_module_path_is_rejected(tmp_path: Path) -> None:
     with pytest.raises(DirectBlueprintError) as caught:
         DirectBlueprintRepository(configuration).load_module("child")
     assert caught.value.code == "dispatcher.unsafe_blueprint_path"
-

@@ -1,22 +1,15 @@
 content:
 - _blueprint_syncer\.py
 - tests/test_blueprint_tools\.py
-dependencies:
-- blueprint:
-    base: repository-root
-    path: src/officina/install/blueprints/managed-runtime.yaml
-  reason: Supplies the direct, non-dispatched dispatcher snapshot builder used after successful blueprint validation.
-  source: install.source.managed-runtime
-  version: 1
+dependencies: []
 description: Loads every skill blueprint, validates cross-skill interface and runtime
-  declarations, checks or refreshes generated artifacts, and directly builds an
-  immutable dispatcher snapshot without routing through dispatcher.
+  declarations, and checks or refreshes generated artifacts without creating dispatcher routing state.
 gateway:
   language: Python
   path: _blueprint_syncer.py
-id: skill-maker-rtx.source.rtx-blueprint-syncer
+id: skill-maker._rtx.source.rtx-blueprint-syncer
 interfaces:
-  skill-maker-rtx.source.rtx-blueprint-syncer.interface.sync-blueprints:
+  skill-maker._rtx.source.rtx-blueprint-syncer.interface.sync-blueprints:
     contract:
       arguments:
         check:
@@ -30,7 +23,7 @@ interfaces:
       caller_warnings:
       - external-side-effect: Without --check, generated contract/interface blocks
           in every skill SKILL.md and the repository runtime-dependency manifest may
-          be replaced, and a validated dispatcher snapshot is atomically activated.
+          be replaced.
       direct_io:
         network: []
         reads:
@@ -56,7 +49,8 @@ interfaces:
           medium: repository-filesystem
           path: $repo/src/**
           path_match: glob
-          reason: Build the complete dispatcher authorization projection from every registered module.
+          reason: Build the complete dispatcher authorization projection from every
+            registered module.
           sensitivity: public
           system: filesystem
         - access: read
@@ -104,18 +98,6 @@ interfaces:
           reason: Report invalid blueprints or out-of-sync generated artifacts.
           sensitivity: derived-private
           system: agent-runtime
-        - access: write
-          content: immutable dispatcher route records, manifest, and active pointer
-          formats:
-          - json
-          - binary
-          id: write-4
-          medium: local-filesystem
-          path: <famulus-data-root>/dispatcher/snapshots/**
-          path_match: glob
-          reason: Atomically activate routing state after successful synchronization.
-          sensitivity: user-private
-          system: filesystem
       execution:
         consistency:
           snapshot: Validation and generated content are derived from the blueprint
@@ -132,19 +114,6 @@ interfaces:
           reversibility:
             irreversible: Previous generated blocks are replaced in place without
               separate backups.
-          value_source:
-            direct_io_ref: read-1
-            kind: direct-io
-        - action: update
-          confirmation_evidence:
-            direct_io_ref: write-4
-            kind: direct-io
-          direct_io_ref: write-4
-          id: dispatcher-snapshot
-          may_occur_in_outcomes:
-          - synchronized
-          reversibility:
-            compensatable: A later successful sync atomically activates a replacement generation.
           value_source:
             direct_io_ref: read-1
             kind: direct-io
@@ -203,7 +172,6 @@ interfaces:
         effects:
         - skill-contracts
         - runtime-manifest
-        - dispatcher-snapshot
         id: synchronized
         outputs: []
       - caller_action: Correct every reported blueprint or synchronization error before
@@ -233,7 +201,7 @@ interfaces:
           sensitivity: derived-private
       preconditions: []
     description: Validate every skill blueprint, check or refresh generated artifacts,
-      and directly validate or activate dispatcher routing state.
+      without creating or activating dispatcher routing state.
     process_binding:
       entry: Interface
       kind: process
@@ -270,7 +238,7 @@ runtime_dependencies:
     windows: true
   reason: Parses skill blueprint YAML files.
   version: any
-schema_version: 5
+schema_version: 6
 uses_interfaces:
 - interface: common.interface.atomic-files
   version: 1

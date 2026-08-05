@@ -12,23 +12,17 @@ Activation: user-request, skill-workflow; persistent modifier: no
 Skill Version: 5
 
 Uses Interfaces:
+- `refactor-node.source.gateway -> refactor-node._rtx.interface.query-standards@4`
 - `refactor-node.source.gateway -> refactor-node.source.instruction-refactoring.interface.refactor-instructions@1`
 - `refactor-node.source.gateway -> refactor-node.source.python-refactoring.interface.refactor-python@1`
 
 Public Interfaces:
 - `refactor-node.interface.default`
-- `refactor-node.interface.query-standards`
 - `refactor-node.interface.refactor-instructions`
 - `refactor-node.interface.refactor-python`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Dispatcher Interfaces:
-
-Use the installed `dispatcher` command for these process-bound interfaces:
-- `refactor-node.interface.query-standards` — Query effective node standards for a registered node or owned sub-scope.
-  - `dispatcher --caller-skill refactor-node refactor-node.interface.query-standards <target> [--repo-root PATH] [--facts-json JSON] [--view requirements|context|evidence|remedies|full] [--refs-json JSON] [--query-json JSON]`
 
 Instruction Interfaces:
 
@@ -39,7 +33,7 @@ These interfaces are documented prompt surfaces. They are not executed through `
 <!-- END BLUEPRINT INTERFACES -->
 # Refactor Node
 
-Use `refactor-node.interface.query-standards` as the sole repository-policy
+Use `refactor-node._rtx.interface.query-standards` as the sole repository-policy
 source. It resolves ownership and validates every pinned import; never read one
 standard file as the effective policy.
 

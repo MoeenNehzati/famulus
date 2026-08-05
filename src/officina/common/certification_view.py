@@ -510,22 +510,22 @@ def derive_repository_certification_state(
     repo_root: Path,
     *,
     public_key_root: Path | None = None,
-    expected_schema_version: int = 5,
+    expected_schema_version: int = 6,
     schema_root: Path | None = None,
     allow_non_atomic: bool = False,
 ) -> RepositoryCertificationState:
     """Derive the sole repository-backed certification state used by readers."""
 
     root = Path(repo_root).resolve()
-    if expected_schema_version not in {4, 5}:
-        raise ValueError("expected_schema_version must be 4 or 5")
+    if expected_schema_version not in {4, 5, 6}:
+        raise ValueError("expected_schema_version must be 4, 5, or 6")
     selected_schema_root = (
         Path(schema_root)
         if schema_root is not None
         else (
             root / "references" / "blueprint"
-            if expected_schema_version == 5
-            else root / "references" / "blueprint" / "migrations" / "v4"
+            if expected_schema_version == 6
+            else root / "references" / "blueprint" / "migrations" / f"v{expected_schema_version}"
         )
     )
     try:
@@ -756,11 +756,11 @@ class RepositoryCertificationView(CertificateCurrentnessView):
         repo_root: Path,
         source_commit: str,
         bootstrap_allowed: bool,
-        schema_version: int = 5,
+        schema_version: int = 6,
     ) -> None:
         super().__init__(report)
-        if schema_version not in {4, 5}:
-            raise ValueError("schema_version must be 4 or 5")
+        if schema_version not in {4, 5, 6}:
+            raise ValueError("schema_version must be 4, 5, or 6")
         self.repo_root = Path(repo_root).resolve()
         self.source_commit = source_commit
         self.bootstrap_allowed = bootstrap_allowed
@@ -786,7 +786,12 @@ class RepositoryCertificationView(CertificateCurrentnessView):
         if not self.bootstrap_allowed or caller_module_id != CERTIFIER_NODE_ID:
             return rejected
         tokens = tuple(argv)
-        if interface_id == "skill-maker.interface.sync-blueprints":
+        expected_sync_interface = (
+            "skill-maker._rtx.interface.sync-blueprints"
+            if self.schema_version == 6
+            else "skill-maker.interface.sync-blueprints"
+        )
+        if interface_id == expected_sync_interface:
             if (
                 target_module_id == "skill-maker"
                 and terminal_module_id
@@ -812,7 +817,12 @@ class RepositoryCertificationView(CertificateCurrentnessView):
                 if self.schema_version == 5
                 else CERTIFIER_NODE_ID
             )
-            or interface_id != "skill-certifier.interface.certify"
+            or interface_id
+            != (
+                "skill-certifier._rtx.interface.certify"
+                if self.schema_version == 6
+                else "skill-certifier.interface.certify"
+            )
         ):
             return rejected
         if not tokens or tokens[0] != "certify":
@@ -850,7 +860,7 @@ class RepositoryCertificationView(CertificateCurrentnessView):
 def repository_certification_view(
     repo_root: Path,
     *,
-    expected_schema_version: int = 5,
+    expected_schema_version: int = 6,
     schema_root: Path | None = None,
     allow_non_atomic: bool = False,
 ) -> RepositoryCertificationView:

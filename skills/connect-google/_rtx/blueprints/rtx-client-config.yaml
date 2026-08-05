@@ -5,16 +5,16 @@ dependencies:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
-  source: connect-google-rtx.source.rtx-init
+  source: connect-google._rtx.source.rtx-init
   version: 1
 description: Validates, reports, and atomically installs the canonical Google Desktop
   OAuth client configuration without printing credential values.
 gateway:
   language: Python
   path: _client_config.py
-id: connect-google-rtx.source.rtx-client-config
+id: connect-google._rtx.source.rtx-client-config
 interfaces:
-  connect-google-rtx.source.rtx-client-config.interface.client-status:
+  connect-google._rtx.source.rtx-client-config.interface.client-status:
     contract:
       arguments:
         home:
@@ -35,7 +35,8 @@ interfaces:
           - json
           id: read-1
           medium: local-filesystem
-          path: platform Famulus config root (see common.interface.google-credentials) / connect-google/client.json
+          path: platform Famulus config root (see common.interface.google-credentials)
+            / connect-google/client.json
           reason: Validate the installed OAuth client without returning its contents.
           sensitivity: secret
           system: filesystem
@@ -127,7 +128,7 @@ interfaces:
         min_positionals: 0
     usage: '[--home <dir>]'
     version: 1
-  connect-google-rtx.source.rtx-client-config.interface.install-client:
+  connect-google._rtx.source.rtx-client-config.interface.install-client:
     contract:
       arguments:
         from-json:
@@ -186,8 +187,11 @@ interfaces:
           - json
           id: write-1
           medium: local-filesystem
-          path: platform Famulus config root (see common.interface.google-credentials) / connect-google/client.json
-          reason: Install the canonical private client atomically. The client secret is stored via common.interface.google-credentials in the host secret store, not written to this file.
+          path: platform Famulus config root (see common.interface.google-credentials)
+            / connect-google/client.json
+          reason: Install the canonical private client atomically. The client secret
+            is stored via common.interface.google-credentials in the host secret store,
+            not written to this file.
           sensitivity: secret
           system: filesystem
         - access: write
@@ -306,7 +310,7 @@ platform_support:
   macos: true
   windows: true
 runtime_dependencies: []
-schema_version: 5
+schema_version: 6
 uses_interfaces:
 - interface: common.interface.google-credentials
   version: 1

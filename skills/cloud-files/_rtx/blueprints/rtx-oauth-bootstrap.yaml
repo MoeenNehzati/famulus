@@ -5,16 +5,16 @@ dependencies:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
-  source: cloud-files-rtx.source.rtx-init
+  source: cloud-files._rtx.source.rtx-init
   version: 1
 description: Runs the interactive Google Drive OAuth authorization-code flow, verifies
   access, and stores refresh credentials.
 gateway:
   language: Python
   path: _oauth_bootstrap.py
-id: cloud-files-rtx.source.rtx-oauth-bootstrap
+id: cloud-files._rtx.source.rtx-oauth-bootstrap
 interfaces:
-  cloud-files-rtx.source.rtx-oauth-bootstrap.interface.setup-oauth:
+  cloud-files._rtx.source.rtx-oauth-bootstrap.interface.setup-oauth:
     contract:
       arguments:
         client-id:
@@ -236,7 +236,7 @@ platform_support:
   macos: true
   windows: true
 runtime_dependencies: []
-schema_version: 5
+schema_version: 6
 uses_interfaces:
 - interface: common.interface.oauth-json
   version: 1

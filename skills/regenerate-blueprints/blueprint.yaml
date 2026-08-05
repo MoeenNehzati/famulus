@@ -1,9 +1,7 @@
 authority:
   owns_filesystem: []
 children:
-  regenerate-blueprints-rtx:
-    base: module-root
-    path: _rtx/blueprint.yaml
+  _rtx: {}
 content:
 - SKILL\.md
 description: Regenerates schema-documented YAML comments for an existing skill blueprint
@@ -27,20 +25,25 @@ exports:
       allow_all_modules: true
       allowed_callers: []
     source_interface: regenerate-blueprints.source.gateway.interface.default
-  regenerate-blueprints.interface.regenerate-blueprint:
-    access:
-      allow_all_modules: true
-      allowed_callers: []
-    facade_interface:
-      interface: regenerate-blueprints-rtx.interface.regenerate-blueprint
-      version: 1
 gateway:
   language: Markdown
   path: SKILL.md
 id: regenerate-blueprints
-namespace_exports: {}
+namespace_exports:
+  _rtx:
+    version: 1
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    surface:
+      only:
+        regenerate-blueprints._rtx.interface.regenerate-blueprint: 1
+    interface_access:
+      regenerate-blueprints._rtx.interface.regenerate-blueprint:
+        allow_all_modules: true
+        allowed_callers: []
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
   regenerate-blueprints.source.gateway:
     blueprint:

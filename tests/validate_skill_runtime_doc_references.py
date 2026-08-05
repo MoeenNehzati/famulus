@@ -35,6 +35,18 @@ def test_private_runtime_directory_name_is_rejected(tmp_path: Path) -> None:
     assert any("must not mention `_rtx`" in error for error in errors)
 
 
+def test_dotted_child_interface_id_is_not_a_runtime_path_reference(
+    tmp_path: Path,
+) -> None:
+    skill = _skill(tmp_path)
+    (skill / "SKILL.md").write_text(
+        "Use `demo-skill._rtx.interface.read-calendar@1`.\n",
+        encoding="utf-8",
+    )
+
+    assert _mod.validate(tmp_path) == []
+
+
 def test_suffix_qualified_runtime_file_is_rejected(tmp_path: Path) -> None:
     skill = _skill(tmp_path)
     (skill / "SKILL.md").write_text("Run _Calendar_Gateway.py.\n", encoding="utf-8")

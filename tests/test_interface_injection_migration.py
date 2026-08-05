@@ -301,17 +301,17 @@ def test_live_repository_uses_parent_and_code_child_cutover() -> None:
     )
 
     expected_uses = [
-        {"interface": "cloud-files.interface.lists-read", "version": 1},
-        {"interface": "cloud-files.interface.lists-write", "version": 1},
-        {"interface": "cloud-files.interface.plans-read", "version": 1},
-        {"interface": "cloud-files.interface.plans-write", "version": 1},
+        {"interface": "cloud-files._rtx.interface.lists-read", "version": 1},
+        {"interface": "cloud-files._rtx.interface.lists-write", "version": 1},
+        {"interface": "cloud-files._rtx.interface.plans-read", "version": 1},
+        {"interface": "cloud-files._rtx.interface.plans-write", "version": 1},
         {"interface": "common.interface.dates", "version": 1},
-        {"interface": "g-calendar.interface.scripts-gcal", "version": 1},
-        {"interface": "get-weather.interface.scripts-weather", "version": 1},
-        {"interface": "list-manager.interface.read-beautify", "version": 1},
-        {"interface": "list-manager.interface.update-list", "version": 1},
+        {"interface": "g-calendar._rtx.interface.scripts-gcal", "version": 1},
+        {"interface": "get-weather._rtx.interface.scripts-weather", "version": 1},
+        {"interface": "list-manager._rtx.interface.read-beautify", "version": 1},
+        {"interface": "list-manager._rtx.interface.update-list", "version": 1},
     ]
-    assert (module["schema_version"], module["node_type"]) == (5, "module")
+    assert (module["schema_version"], module["node_type"]) == (6, "module")
     assert daily_init["uses_interfaces"] == expected_uses
     for source_name in ("rtx-plan-orchestrate", "rtx-state-patch"):
         source = yaml.safe_load(
@@ -1966,12 +1966,12 @@ def test_post_adoption_cli_checks_map_and_references_without_materializing_candi
     ]
 
 
-def test_live_cutover_inventory_is_v5_only_and_has_unique_public_ids() -> None:
+def test_live_cutover_inventory_is_v6_only_and_has_unique_public_ids() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     graph = migration.load_repository_blueprint_graph(repo_root)
 
     assert len(graph.nodes) == 219
-    assert all(node.declaration["schema_version"] == 5 for node in graph.nodes.values())
+    assert all(node.declaration["schema_version"] == 6 for node in graph.nodes.values())
     assert len(graph.exports) == len(set(graph.exports))
 
 
@@ -1993,7 +1993,7 @@ def test_live_skill_drift_retires_drift_hash_helper_and_keeps_package_dependency
         repo_root / "skills" / "skill-drift" / "_rtx" / "_drift_hashes.py"
     ).exists()
     assert any(
-        dependency["source"] == "skill-drift-rtx.source.rtx-skill-sources-init"
+        dependency["source"] == "skill-drift._rtx.source.rtx-skill-sources-init"
         for dependency in source["dependencies"]
     )
 

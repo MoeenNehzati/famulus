@@ -30,7 +30,7 @@ gateway:
 id: llm-wakeup
 namespace_exports: {}
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
   llm-wakeup.source.gateway:
     blueprint:

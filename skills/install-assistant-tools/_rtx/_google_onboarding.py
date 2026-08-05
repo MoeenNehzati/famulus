@@ -7,11 +7,11 @@ This step never imports connect-google/cloud-files/g-calendar/email-client
 Python directly: every cross-skill call goes through the shared dispatcher
 launcher (``dispatcher --caller-skill install-assistant-tools <interface>
 ...``), exactly like every other skill-to-skill call in this repo. That
-means the interfaces it calls (``connect-google.interface.client-status``,
-``connect-google.interface.authorize-services``,
-``cloud-files.interface.use-google-credential``,
-``g-calendar.interface.use-google-credential``,
-``email-client.interface.accounts-use-google-credential``) must list
+means the interfaces it calls (``connect-google._rtx.interface.client-status``,
+``connect-google._rtx.interface.authorize-services``,
+``cloud-files._rtx.interface.use-google-credential``,
+``g-calendar._rtx.interface.use-google-credential``,
+``email-client._rtx.interface.accounts-use-google-credential``) must list
 ``install-assistant-tools`` in their export's ``allowed_callers`` and this
 skill's source blueprint must declare ``uses_interfaces`` for each of them
 -- both sides of the dispatcher's access-control check in
@@ -25,7 +25,7 @@ already used by cloud-files/_rtx/_ensure_oauth.py.
 
 Design note -- gmail deferral: email-client is multi-account, so binding a
 Gmail credential requires an account nickname
-(``email-client.interface.accounts-use-google-credential --nickname ...``).
+(``email-client._rtx.interface.accounts-use-google-credential --nickname ...``).
 At fresh-install time there is normally no email account configured yet to
 bind to. Rather than block the whole onboarding step (the credential is
 still valid and useful once an account exists) or invent a nickname, gmail
@@ -136,7 +136,7 @@ def run_google_onboarding(
     if dry_run:
         return OnboardingCapabilityResult(status="skipped", detail="dry-run")
 
-    status = _dispatch(dispatcher_path, "connect-google.interface.client-status", home=home)
+    status = _dispatch(dispatcher_path, "connect-google._rtx.interface.client-status", home=home)
     if status.get("status") != "valid":
         # No canonical OAuth client configured yet. This is the expected
         # state on a fresh machine before the user (or a future wizard) has
@@ -146,7 +146,7 @@ def run_google_onboarding(
 
     auth_result = _dispatch(
         dispatcher_path,
-        "connect-google.interface.authorize-services",
+        "connect-google._rtx.interface.authorize-services",
         "--services", ",".join(services),
         home=home,
     )
@@ -167,7 +167,7 @@ def run_google_onboarding(
                     continue
                 _dispatch(
                     dispatcher_path,
-                    "email-client.interface.accounts-use-google-credential",
+                    "email-client._rtx.interface.accounts-use-google-credential",
                     "--nickname", gmail_nickname,
                     "--credential-id", credential_id,
                     home=home,
@@ -176,7 +176,7 @@ def run_google_onboarding(
                 module = _SERVICE_MODULES[service]
                 _dispatch(
                     dispatcher_path,
-                    f"{module}.interface.use-google-credential",
+                    f"{module}._rtx.interface.use-google-credential",
                     "--credential-id", credential_id,
                     home=home,
                 )

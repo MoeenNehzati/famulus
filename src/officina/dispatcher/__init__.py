@@ -24,6 +24,6 @@ def __getattr__(name: str) -> Any:
         from .direct_authorization import resolve_direct_invocation
 
         return resolve_direct_invocation
-    from . import core
+    from . import direct_runtime as core
 
     return getattr(core, name)

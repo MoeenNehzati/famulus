@@ -8,33 +8,37 @@ dependencies:
   reason: Supplies the layered canonical standards materialized by this query interface.
   source: node-standards.source.standards
   version: 1
-description: Resolves effective ownership, validates pinned standard closures, evaluates applicability,
-  and emits compact or ref-scoped projections plus structured unsupported partitions as JSON.
+description: Resolves effective ownership, validates pinned standard closures, evaluates
+  applicability, and emits compact or ref-scoped projections plus structured unsupported
+  partitions as JSON.
 gateway:
   language: Python
   path: _closure_engine.py
-id: refactor-node-rtx.source.query-standards
+id: refactor-node._rtx.source.query-standards
 interfaces:
-  refactor-node-rtx.source.query-standards.interface.query-standards:
+  refactor-node._rtx.source.query-standards.interface.query-standards:
     contract:
       arguments:
         facts-json:
           default: '{}'
-          description: Optional JSON object of inspected target facts used by applies_when predicates.
+          description: Optional JSON object of inspected target facts used by applies_when
+            predicates.
           required: false
           sensitivity: user-private
           type:
             kind: string
             sensitivity: user-private
         query-json:
-          description: Optional generic standard-record filter and projection; mutually exclusive with scoped views.
+          description: Optional generic standard-record filter and projection; mutually
+            exclusive with scoped views.
           required: false
           sensitivity: user-private
           type:
             kind: string
             sensitivity: user-private
         repo-root:
-          description: Repository whose registered node and standards graph will be queried.
+          description: Repository whose registered node and standards graph will be
+            queried.
           direct_io_ref: repository
           required: false
           sensitivity: user-private
@@ -46,7 +50,8 @@ interfaces:
             syntax: literal
         refs-json:
           default: '[]'
-          description: Exact document and ref pairs used to scope context, evidence, or remedies.
+          description: Exact document and ref pairs used to scope context, evidence,
+            or remedies.
           required: false
           sensitivity: user-private
           type:
@@ -54,14 +59,16 @@ interfaces:
             sensitivity: user-private
         view:
           default: requirements
-          description: Select compact requirements, scoped context, evidence, remedies, or the complete diagnostic projection.
+          description: Select compact requirements, scoped context, evidence, remedies,
+            or the complete diagnostic projection.
           required: false
           sensitivity: public
           type:
             kind: string
             sensitivity: public
         target:
-          description: Registered node ID or repository-relative or absolute owned path.
+          description: Registered node ID or repository-relative or absolute owned
+            path.
           required: true
           sensitivity: user-private
           type:
@@ -72,26 +79,35 @@ interfaces:
         network: []
         reads:
         - access: read
-          content: Blueprint graph, selected owned files, standard closures, and standard validator.
-          formats: [yaml, json, markdown, python, text]
+          content: Blueprint graph, selected owned files, standard closures, and standard
+            validator.
+          formats:
+          - yaml
+          - json
+          - markdown
+          - python
+          - text
           id: repository
           medium: local-filesystem
           path: <repo-root>/**
           path_match: glob
-          reason: Resolve ownership and materialize authoritative standards from current repository state.
+          reason: Resolve ownership and materialize authoritative standards from current
+            repository state.
           sensitivity: user-private
           system: filesystem
         writes:
         - access: write
           content: Owner partitions and materialized standard query result.
-          formats: [json]
+          formats:
+          - json
           id: query-result
           medium: stdout
           sensitivity: derived-private
           system: agent-runtime
         - access: write
           content: Invalid target, graph, standard, fact, or query diagnostics.
-          formats: [text]
+          formats:
+          - text
           id: error
           medium: stderr
           sensitivity: derived-private
@@ -110,37 +126,52 @@ interfaces:
       interaction:
         mode: unattended
       outcomes:
-      - caller_action: Use the returned partitions and requested projection for the current decision.
+      - caller_action: Use the returned partitions and requested projection for the
+          current decision.
         class: success
         effects: []
         id: resolved
-        outputs: [query-result]
-      - caller_action: Correct the target, repository graph, standard closure, or target facts before retrying.
+        outputs:
+        - query-result
+      - caller_action: Correct the target, repository graph, standard closure, or
+          target facts before retrying.
         class: error
         effects: []
         id: failed
-        outputs: [error]
+        outputs:
+        - error
       outputs:
       - audience: machine
-        cardinality: {minimum: 1, maximum: 1}
-        description: One JSON document containing effective owner scopes, a shared record catalog,
-          partition-specific applicability overlays, and the requested standards projection.
+        cardinality:
+          minimum: 1
+          maximum: 1
+        description: One JSON document containing effective owner scopes, a shared
+          record catalog, partition-specific applicability overlays, and the requested
+          standards projection.
         direct_io_ref: query-result
         empty: Never empty on success.
         id: query-result
         ordering: stable
-        pagination: {kind: none}
-        truncation: {kind: none}
-        schema: {path: schemas/query-result.schema.json, fragment: '#'}
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        schema:
+          path: schemas/query-result.schema.json
+          fragment: '#'
       - audience: human
-        cardinality: {minimum: 0, maximum: 1}
+        cardinality:
+          minimum: 0
+          maximum: 1
         description: Invalid target, graph, standard, fact, or query diagnostic.
         direct_io_ref: error
         empty: Empty on success.
         id: error
         ordering: stable
-        pagination: {kind: none}
-        truncation: {kind: none}
+        pagination:
+          kind: none
+        truncation:
+          kind: none
         type:
           kind: string
           sensitivity: derived-private
@@ -154,19 +185,28 @@ interfaces:
         min_positionals: 1
         max_positionals: 1
         allow_stdin: false
-        allowed_flags: [--repo-root, --facts-json, --view, --refs-json, --query-json]
+        allowed_flags:
+        - --repo-root
+        - --facts-json
+        - --view
+        - --refs-json
+        - --query-json
         flag_patterns:
           --repo-root: .+
           --facts-json: .+
           --refs-json: .+
           --query-json: .+
           --view: (?:requirements|context|evidence|remedies|full)
-    usage: <target> [--repo-root PATH] [--facts-json JSON] [--view requirements|context|evidence|remedies|full] [--refs-json JSON] [--query-json JSON]
+    usage: <target> [--repo-root PATH] [--facts-json JSON] [--view requirements|context|evidence|remedies|full]
+      [--refs-json JSON] [--query-json JSON]
     version: 4
 node_type: behavioral_source
-platform_support: {linux: true, macos: true, windows: true}
+platform_support:
+  linux: true
+  macos: true
+  windows: true
 runtime_dependencies: []
-schema_version: 5
+schema_version: 6
 uses_interfaces:
 - interface: common.interface.standard-extractor
   version: 1

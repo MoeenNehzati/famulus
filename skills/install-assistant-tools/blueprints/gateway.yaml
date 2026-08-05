@@ -94,14 +94,14 @@ interfaces:
     description: Primary LLM-facing skill instructions.
     version: 2
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces:
-- interface: install-assistant-tools.interface.scripts-dev-link
+- interface: install-assistant-tools._rtx.interface.scripts-dev-link
   version: 2
-- interface: install-assistant-tools.interface.scripts-install
+- interface: install-assistant-tools._rtx.interface.scripts-install
   version: 2
-- interface: install-assistant-tools.interface.scripts-launchers
+- interface: install-assistant-tools._rtx.interface.scripts-launchers
   version: 3
-- interface: install-assistant-tools.interface.scripts-scaffold
+- interface: install-assistant-tools._rtx.interface.scripts-scaffold
   version: 2
 version: 1

@@ -27,9 +27,10 @@ import sys
 from pathlib import Path
 
 REPO_SRC = Path(__file__).resolve().parents[3] / "src"
-if str(REPO_SRC) not in sys.path:
+if not __package__ and str(REPO_SRC) not in sys.path:
     sys.path.insert(0, str(REPO_SRC))
-sys.path.insert(0, str(Path(__file__).parent))
+if not __package__:
+    sys.path.insert(0, str(Path(__file__).parent))
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 from officina.common.famulus_paths import resolve_famulus_paths

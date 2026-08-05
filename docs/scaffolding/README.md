@@ -45,7 +45,7 @@ Do not edit generated blocks by hand. Run the exported check:
 
 ```bash
 dispatcher --caller-skill skill-certifier \
-  skill-maker.interface.sync-blueprints --check
+  skill-maker._rtx.interface.sync-blueprints --check
 ```
 
 Run without `--check` only when intentionally refreshing generated artifacts.

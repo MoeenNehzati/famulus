@@ -1,0 +1,285 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "module.schema.json",
+  "title": "Module Blueprint",
+  "description": "Closed version 5 contract for one module ownership, authority, explicit child topology, routing, and export boundary.",
+  "type": "object",
+  "required": ["schema_version", "node_type", "id", "version", "gateway", "content", "authority", "sources", "children", "namespace_exports", "exports"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 5,
+      "x-famulus": {"field_status": "required", "template": {"include": true, "example": 5}, "doc": {"authoring": ["Use unified blueprint schema version 5."]}, "related_validation_rules": ["schema-shape"]}
+    },
+    "node_type": {
+      "const": "module",
+      "x-famulus": {"field_status": "required", "template": {"include": true, "example": "module"}, "doc": {"authoring": ["Identify this root as a module boundary."]}, "related_validation_rules": ["schema-shape"]}
+    },
+    "id": {
+      "$ref": "common.schema.json#/definitions/moduleId",
+      "x-famulus": {"field_status": "required", "template": {"include": true, "example": "example-skill"}, "doc": {"authoring": ["Use the globally unique module ID."]}, "related_validation_rules": ["canonical-id", "root-directory-id"]}
+    },
+    "version": {
+      "$ref": "common.schema.json#/definitions/interfaceVersion",
+      "x-famulus": {"field_status": "required", "template": {"include": true, "example": 1}, "doc": {"authoring": ["Increment when the module boundary contract changes."]}, "related_validation_rules": ["version-pin"]}
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "x-famulus": {"field_status": "optional", "template": {"include": true, "example": "Provides an example skill."}, "doc": {"authoring": ["Describe the module's external role; certification requires this field."]}, "related_validation_rules": ["schema-shape"]}
+    },
+    "gateway": {
+      "$ref": "common.schema.json#/definitions/gateway",
+      "x-famulus": {"field_status": "required", "template": {"include": true, "example": {"path": "SKILL.md", "language": "Markdown"}}, "doc": {"authoring": ["Name the module's whole-file operational gateway."]}, "related_validation_rules": ["gateway-file", "content-files"]}
+    },
+    "content": {
+      "$ref": "common.schema.json#/definitions/contentPatterns",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "x-famulus": {"field_status": "required", "template": {"include": true, "example": ["SKILL\\.md"]}, "doc": {"authoring": ["Match the module's containment scope; direct ownership is resolved against contained sources. The project node-input policy selects hash inputs from that ownership scope."]}, "related_validation_rules": ["content-files", "content-exclusive"]}
+    },
+    "discovery": {
+      "$ref": "#/definitions/discovery",
+      "description": "Optional discovery convention. Absence means the module is found only through an explicit dependency.",
+      "x-famulus": {"field_status": "optional", "template": {"include": true, "example": {"mechanism": "skill", "catalog": {"domain": "research", "topics": ["mathematical-reasoning"], "visibility": "featured"}, "activated_by": ["user-request"], "persistent_modifier": false}}, "doc": {"authoring": ["Use this block only for host-discoverable skill modules. Classify the direct user outcome, list every directly served topic, declare supported activation paths, and state whether invocation persistently modifies later assistant behavior."]}, "related_validation_rules": ["schema-shape"]}
+    },
+    "authority": {
+      "$ref": "#/definitions/authority",
+      "x-famulus": {"field_status": "required", "template": {"include": true, "example": {"owns_filesystem": []}}, "doc": {"authoring": ["Declare module-level filesystem authority and optional host permission suggestions."]}, "related_validation_rules": ["filesystem-ownership"]}
+    },
+    "sources": {
+      "type": "object",
+      "propertyNames": {"$ref": "common.schema.json#/definitions/behavioralSourceId"},
+      "additionalProperties": {"$ref": "common.schema.json#/definitions/sourceContainment"},
+      "x-famulus": {"field_status": "required", "template": {"include": true, "example": {}}, "doc": {"authoring": ["Contain behavioral sources by canonical ID and blueprint only; source versions remain source-owned."]}, "related_validation_rules": ["relationship-edge"]}
+    },
+    "children": {
+      "type": "object",
+      "propertyNames": {"$ref": "common.schema.json#/definitions/moduleId"},
+      "additionalProperties": {"$ref": "common.schema.json#/definitions/childBlueprintLocator"},
+      "x-famulus": {"field_status": "required", "template": {"include": true, "example": {}}, "doc": {"authoring": ["Register every direct child by global module ID and its module-root-relative canonical blueprint.yaml marker. Use an explicit empty mapping when there are no children."]}, "related_validation_rules": ["nested-topology"]}
+    },
+    "namespace_exports": {
+      "type": "object",
+      "propertyNames": {"$ref": "common.schema.json#/definitions/moduleId"},
+      "additionalProperties": {"$ref": "#/definitions/namespaceExport"},
+      "x-famulus": {"field_status": "required", "template": {"include": true, "example": {}}, "doc": {"authoring": ["Route selected exports of registered direct children without widening child authority. Use an explicit empty mapping when there are no routes."]}, "related_validation_rules": ["namespace-export"]}
+    },
+    "exports": {
+      "type": "object",
+      "propertyNames": {"$ref": "common.schema.json#/definitions/exportInterfaceId"},
+      "additionalProperties": {"$ref": "#/definitions/export"},
+      "x-famulus": {"field_status": "required", "template": {"include": true, "example": {}}, "doc": {"authoring": ["Expose source interfaces by canonical export ID without duplicating their versions or contracts."]}, "related_validation_rules": ["canonical-id", "relationship-edge", "access-control"]}
+    }
+  },
+  "definitions": {
+    "catalogDomain": {
+      "type": "string",
+      "description": "The single configured documentation domain matching the module's primary direct user outcome.",
+      "x-officina-config": {"operation": "values-to-enum", "source": "/blueprint_catalog/domains"}
+    },
+    "catalogTopic": {
+      "type": "string",
+      "description": "A configured cross-cutting subject directly served by the module, not merely used as an implementation dependency.",
+      "x-officina-config": {"operation": "values-to-enum", "source": "/blueprint_catalog/topics"}
+    },
+    "catalogVisibility": {
+      "type": "string",
+      "description": "The configured generated-documentation prominence of this discoverable module.",
+      "x-officina-config": {"operation": "values-to-enum", "source": "/blueprint_catalog/visibility"}
+    },
+    "activationSource": {
+      "type": "string",
+      "description": "A configured mechanism that can actually initiate this module, not a merely possible caller.",
+      "x-officina-config": {"operation": "values-to-enum", "source": "/blueprint_catalog/activated_by"}
+    },
+    "catalog": {
+      "type": "object",
+      "required": ["domain", "topics", "visibility"],
+      "additionalProperties": false,
+      "properties": {
+        "domain": {"$ref": "#/definitions/catalogDomain"},
+        "topics": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/definitions/catalogTopic"}
+        },
+        "visibility": {"$ref": "#/definitions/catalogVisibility"}
+      }
+    },
+    "suggestedPermissions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "bash": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["command", "reason"],
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "array",
+                "minItems": 1,
+                "items": {"type": "string", "minLength": 1}
+              },
+              "args_prefix": {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1}
+              },
+              "reason": {"type": "string", "minLength": 1}
+            }
+          }
+        },
+        "network": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["kind", "reason"],
+            "additionalProperties": false,
+            "properties": {
+              "kind": {"enum": ["web_search", "web_fetch"]},
+              "domains": {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1}
+              },
+              "reason": {"type": "string", "minLength": 1}
+            }
+          }
+        }
+      }
+    },
+    "discovery": {
+      "type": "object",
+      "required": ["mechanism", "catalog", "activated_by", "persistent_modifier"],
+      "additionalProperties": false,
+      "properties": {
+        "mechanism": {"const": "skill", "description": "The host discovery convention used to find this module."},
+        "catalog": {"$ref": "#/definitions/catalog"},
+        "activated_by": {
+          "type": "array",
+          "description": "Every supported class of initiator that can directly activate this skill.",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/definitions/activationSource"}
+        },
+        "persistent_modifier": {
+          "type": "boolean",
+          "description": "Whether invocation intentionally changes assistant behavior beyond the activating invocation; true requires the reasoning-control topic."
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"persistent_modifier": {"const": true}}},
+          "then": {
+            "properties": {
+              "catalog": {
+                "properties": {
+                  "topics": {"contains": {"const": "reasoning-control"}}
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "authority": {
+      "type": "object",
+      "required": ["owns_filesystem"],
+      "additionalProperties": false,
+      "properties": {
+        "owns_filesystem": {"$ref": "common.schema.json#/definitions/v4FilesystemOwnershipList"},
+        "suggested_permissions": {"$ref": "#/definitions/suggestedPermissions"}
+      }
+    },
+    "access": {
+      "type": "object",
+      "required": ["allow_all_modules", "allowed_callers"],
+      "additionalProperties": false,
+      "properties": {
+        "allow_all_modules": {"type": "boolean"},
+        "allowed_callers": {"type": "array", "uniqueItems": true, "items": {"$ref": "common.schema.json#/definitions/callerReference"}}
+      },
+      "allOf": [
+        {"if": {"properties": {"allow_all_modules": {"const": true}}}, "then": {"properties": {"allowed_callers": {"maxItems": 0}}}}
+      ]
+    },
+    "sourceExport": {
+      "type": "object",
+      "required": ["source_interface", "access"],
+      "additionalProperties": false,
+      "properties": {
+        "source_interface": {"$ref": "common.schema.json#/definitions/sourceInterfaceId"},
+        "access": {"$ref": "#/definitions/access"}
+      }
+    },
+    "facadeTarget": {
+      "type": "object",
+      "required": ["interface", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "interface": {"$ref": "common.schema.json#/definitions/exportInterfaceId"},
+        "version": {"$ref": "common.schema.json#/definitions/interfaceVersion"}
+      }
+    },
+    "facadeExport": {
+      "type": "object",
+      "required": ["facade_interface", "access"],
+      "additionalProperties": false,
+      "properties": {
+        "facade_interface": {"$ref": "#/definitions/facadeTarget"},
+        "access": {"$ref": "#/definitions/access"}
+      }
+    },
+    "export": {
+      "oneOf": [
+        {"$ref": "#/definitions/sourceExport"},
+        {"$ref": "#/definitions/facadeExport"}
+      ]
+    },
+    "namespaceSurface": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["all"],
+          "additionalProperties": false,
+          "properties": {"all": {"const": true}}
+        },
+        {
+          "type": "object",
+          "required": ["only"],
+          "additionalProperties": false,
+          "properties": {
+            "only": {
+              "type": "object",
+              "minProperties": 1,
+              "propertyNames": {"$ref": "common.schema.json#/definitions/exportInterfaceId"},
+              "additionalProperties": {"$ref": "common.schema.json#/definitions/interfaceVersion"}
+            }
+          }
+        }
+      ]
+    },
+    "namespaceExport": {
+      "type": "object",
+      "required": ["version", "access", "surface"],
+      "additionalProperties": false,
+      "properties": {
+        "version": {"$ref": "common.schema.json#/definitions/interfaceVersion"},
+        "access": {"$ref": "#/definitions/access"},
+        "surface": {"$ref": "#/definitions/namespaceSurface"},
+        "interface_access": {
+          "type": "object",
+          "propertyNames": {"$ref": "common.schema.json#/definitions/exportInterfaceId"},
+          "additionalProperties": {"$ref": "#/definitions/access"}
+        }
+      }
+    }
+  },
+  "x-famulus": {
+    "gateway_policy": "whole-file",
+    "export_version": "derived-from-source-interface"
+  }
+}

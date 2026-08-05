@@ -89,7 +89,7 @@ interfaces:
     description: Primary LLM-facing wakeup routing instructions.
     version: 1
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces:
 - interface: wakeup.interface.auto-policy
   version: 1

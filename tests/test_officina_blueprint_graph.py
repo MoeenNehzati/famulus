@@ -25,7 +25,7 @@ CANONICAL_SCHEMA_ROOT = (
     Path(__file__).resolve().parents[1] / "references" / "blueprint"
 )
 SCHEMA_ROOT = CANONICAL_SCHEMA_ROOT / "migrations" / "v4"
-V5_SCHEMA_ROOT = CANONICAL_SCHEMA_ROOT
+V5_SCHEMA_ROOT = CANONICAL_SCHEMA_ROOT / "migrations" / "v5"
 V5_AUTHORIZATION_FIXTURE = (
     Path(__file__).parent / "fixtures" / "blueprint_v5" / "authorization"
 )

@@ -82,36 +82,36 @@ interfaces:
     description: Primary LLM-facing skill instructions.
     version: 3
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces:
 - interface: connect-google.interface.default
   version: 1
-- interface: email-client.interface.accounts-setup-oauth
+- interface: email-client._rtx.interface.accounts-setup-oauth
   version: 1
-- interface: email-client.interface.accounts-add
+- interface: email-client._rtx.interface.accounts-add
   version: 1
-- interface: email-client.interface.accounts-list
+- interface: email-client._rtx.interface.accounts-list
   version: 1
-- interface: email-client.interface.accounts-remove
+- interface: email-client._rtx.interface.accounts-remove
   version: 1
-- interface: email-client.interface.accounts-set-password
+- interface: email-client._rtx.interface.accounts-set-password
   version: 1
-- interface: email-client.interface.accounts-update
+- interface: email-client._rtx.interface.accounts-update
   version: 1
-- interface: email-client.interface.accounts-use-google-credential
+- interface: email-client._rtx.interface.accounts-use-google-credential
   version: 1
-- interface: email-client.interface.live-smoke
+- interface: email-client._rtx.interface.live-smoke
   version: 1
-- interface: email-client.interface.mail-attachments
+- interface: email-client._rtx.interface.mail-attachments
   version: 1
-- interface: email-client.interface.mail-folders
+- interface: email-client._rtx.interface.mail-folders
   version: 1
-- interface: email-client.interface.mail-list
+- interface: email-client._rtx.interface.mail-list
   version: 1
-- interface: email-client.interface.mail-read
+- interface: email-client._rtx.interface.mail-read
   version: 1
-- interface: email-client.interface.mail-save-attachments
+- interface: email-client._rtx.interface.mail-save-attachments
   version: 1
-- interface: email-client.interface.send-email
+- interface: email-client._rtx.interface.send-email
   version: 1
 version: 2

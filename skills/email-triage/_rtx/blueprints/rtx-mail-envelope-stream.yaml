@@ -6,21 +6,22 @@ dependencies:
     base: module-root
     path: blueprints/rtx-envelope-gate.yaml
   reason: Imports Python source from _rtx/_envelope_gate.py.
-  source: email-triage-rtx.source.rtx-envelope-gate
+  source: email-triage._rtx.source.rtx-envelope-gate
   version: 1
 - blueprint:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
-  source: email-triage-rtx.source.rtx-init
+  source: email-triage._rtx.source.rtx-init
   version: 1
-description: Calls email-client for account envelopes and emits only records newer than the exact triage watermark.
+description: Calls email-client for account envelopes and emits only records newer
+  than the exact triage watermark.
 gateway:
   language: Python
   path: _mail_envelope_stream.py
-id: email-triage-rtx.source.rtx-mail-envelope-stream
+id: email-triage._rtx.source.rtx-mail-envelope-stream
 interfaces:
-  email-triage-rtx.source.rtx-mail-envelope-stream.interface.fetch-filtered-envelopes:
+  email-triage._rtx.source.rtx-mail-envelope-stream.interface.fetch-filtered-envelopes:
     contract:
       arguments:
         account:
@@ -38,13 +39,15 @@ interfaces:
             - YYYY-MM-DD
             kind: date
         rescan-after:
-          description: Explicit ISO cutoff overriding the stored watermark for this call only, used for a manual historical rescan.
+          description: Explicit ISO cutoff overriding the stored watermark for this
+            call only, used for a manual historical rescan.
           required: false
           sensitivity: derived-private
           type:
             kind: string
         dedup-against:
-          description: Destination list name to filter results against by source.message_id via list-manager.interface.cloud-read before returning them.
+          description: Destination list name to filter results against by source.message_id
+            via list-manager._rtx.interface.cloud-read before returning them.
           required: false
           sensitivity: user-private
           type:
@@ -55,7 +58,8 @@ interfaces:
             - value: triage
               description: Filter against the triage list.
       caller_warnings:
-      - rate-limited: The delegated email-client mail-list request may be subject to provider limits.
+      - rate-limited: The delegated email-client mail-list request may be subject
+          to provider limits.
       direct_io:
         network: []
         reads:
@@ -107,7 +111,8 @@ interfaces:
           sensitivity: derived-private
       execution:
         consistency:
-          live: Delegates a live envelope listing and filters it against the current exact watermark.
+          live: Delegates a live envelope listing and filters it against the current
+            exact watermark.
         effects:
         - action: update
           confirmation_evidence:
@@ -118,7 +123,8 @@ interfaces:
           may_occur_in_outcomes:
           - fetched
           reversibility:
-            reversible: A later successful run may replace warning or stale-error status.
+            reversible: A later successful run may replace warning or stale-error
+              status.
           value_source:
             direct_io_ref: write-2
             kind: direct-io
@@ -129,11 +135,13 @@ interfaces:
           concurrent_invocations:
             unsafe: Concurrent triage runs can overwrite shared status state.
           idempotency:
-            non_idempotent: Delegated mailbox state and fallback time can change between calls.
+            non_idempotent: Delegated mailbox state and fallback time can change between
+              calls.
           on_uncertain_completion:
             verify_then_decide: Inspect status and preserve the watermark before retrying.
           partial_effects_on_failure:
-            possible: Status may change after a successful delegated fetch but before output completes.
+            possible: Status may change after a successful delegated fetch but before
+              output completes.
           rollback_on_failure:
             unavailable: The prior status document is not retained.
         state_effect: mutating
@@ -169,7 +177,8 @@ interfaces:
         outputs:
         - diagnostic
         effects: []
-        caller_action: Report the delegated list-manager cloud-read failure; retry the rescan once the destination list is readable.
+        caller_action: Report the delegated list-manager cloud-read failure; retry
+          the rescan once the destination list is readable.
       outputs:
       - audience: machine
         cardinality:
@@ -203,7 +212,8 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Fetch email envelopes for one account through email-client and emit only envelopes strictly after the triage watermark.
+    description: Fetch email envelopes for one account through email-client and emit
+      only envelopes strictly after the triage watermark.
     process_binding:
       entry: Interface
       kind: process
@@ -244,7 +254,8 @@ interfaces:
         required_flags:
         - --account
         - --after
-    usage: -a <account> --after YYYY-MM-DD [--rescan-after ISO_CUTOFF] [--dedup-against todo|triage]
+    usage: -a <account> --after YYYY-MM-DD [--rescan-after ISO_CUTOFF] [--dedup-against
+      todo|triage]
     version: 1
 node_type: behavioral_source
 platform_support:
@@ -258,12 +269,13 @@ runtime_dependencies:
     linux: true
     macos: true
     windows: true
-  reason: Parses the destination list YAML fetched via list-manager.interface.cloud-read for --dedup-against.
+  reason: Parses the destination list YAML fetched via list-manager._rtx.interface.cloud-read
+    for --dedup-against.
   version: '>=6'
-schema_version: 5
+schema_version: 6
 uses_interfaces:
-- interface: email-client.interface.mail-list
+- interface: email-client._rtx.interface.mail-list
   version: 1
-- interface: list-manager.interface.cloud-read
+- interface: list-manager._rtx.interface.cloud-read
   version: 1
 version: 1

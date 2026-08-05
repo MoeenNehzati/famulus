@@ -17,8 +17,8 @@ imports:
   module:
     standard_id: node-standards.module
     standard_version: 1.0.0
-    revision: 11
-    digest: sha256:b200e270cc3fa4c41e353043ebd45540d29c225735e996a25ae5114fafa2e81f
+    revision: 12
+    digest: sha256:feb141c8204cbf457b41d054029c21133d52ba9f3a5e0eac8bcb358530eefabf
     artifact:
       kind: artifact
       ref: artifact.module-standard

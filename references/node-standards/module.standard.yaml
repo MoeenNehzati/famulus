@@ -1,6 +1,6 @@
 schema_version: 6
 standard_version: 1.0.0
-revision: 11
+revision: 12
 id: node-standards.module
 canonical_path: references/node-standards/module.standard.yaml
 title: Module Standard
@@ -20,52 +20,53 @@ standards:
   title: Module topology and authorization
   children:
   - kind: rule
-    id: skill-guidelines.module-behavioral-source-v5.topology
+    id: skill-guidelines.module-behavioral-source-v6.topology
     assertions:
     - id: explicit-registration
       modality: required
       statement: 'Every module declares explicit `children` and `namespace_exports` mappings, including
-        empty mappings. `children` registers each direct child by global ID and canonical `base: module-root`
-        `blueprint.yaml` locator. Containment chooses ownership; declarations choose authority.'
+        empty mappings. `children` registers each direct child by its local directory segment with an empty
+        record. The child canonical ID is the parent ID plus that segment; physical nesting and identity
+        choose ownership, while namespace declarations choose outward authority.'
       atomicity: pending
   - kind: rule
-    id: skill-guidelines.module-behavioral-source-v5.exports
+    id: skill-guidelines.module-behavioral-source-v6.exports
     assertions:
     - id: closed-export-forms
       modality: required
-      statement: 'Each `exports` value is exactly one closed form: a source export has `source_interface`
-        and `access`; a facade export has one exact `facade_interface` target and version plus `access`.
-        A facade derives the child contract and binding. Facades preserve names, not permissions.'
+      statement: 'Each `exports` value binds one interface owned by that module directly to one contained
+        `source_interface` and one `access` policy. Facades and export aliases across module ownership
+        boundaries are forbidden; callers address a descendant export by its canonical descendant ID.'
       atomicity: pending
   - kind: rule
-    id: skill-guidelines.module-behavioral-source-v5.namespace-routing
+    id: skill-guidelines.module-behavioral-source-v6.namespace-routing
     assertions:
     - id: child-authority-ceiling
       modality: required
       statement: A `namespace_exports` route pins one registered direct-child version, an access filter,
-        and exactly one `all` or nonempty exact-interface `only` surface. Child exports are the authority
+        and one nonempty exact-interface `only` surface. Child exports are the authority
         ceiling. Registration reveals internally; namespace export routes outward.
       atomicity: pending
   - kind: rule
-    id: skill-guidelines.module-behavioral-source-v5.callers
+    id: skill-guidelines.module-behavioral-source-v6.callers
     assertions:
     - id: exact-callers
       modality: required
       statement: Caller allowlists contain exact global module IDs or leading-dot relative references
         with nonempty suffixes. `._rtx` names a skill's code child and `..parser` names the owner's sibling
-        parser. Relative references resolve through the certified registration tree and are never globs.
+        parser. Relative references resolve through the validated registration tree and are never globs.
       atomicity: pending
   - kind: rule
-    id: skill-guidelines.module-behavioral-source-v5.authorization
+    id: skill-guidelines.module-behavioral-source-v6.authorization
     assertions:
     - id: one-resolver
       modality: required
-      statement: Source/facade access, namespace filters, and interface-specific filters intersect and
+      statement: Terminal source-export access, hop-local namespace filters, and interface-specific filters intersect and
         never widen authority. Graph validation, projection, dispatch, tracing, and currentness consume
         one authorization result. Resolve once; enforce everywhere.
       atomicity: pending
   - kind: rule
-    id: skill-guidelines.module-behavioral-source-v5.runtime-identities
+    id: skill-guidelines.module-behavioral-source-v6.runtime-identities
     assertions:
     - id: module-identities
       modality: required
@@ -123,7 +124,7 @@ standards:
     requires: [apply-one-declaration-repair]
   invariants:
   - id: authority-never-widens
-    statement: Registration, exports, namespace routing, facade access, and permission suggestions never
+    statement: Registration, direct exports, namespace routing, terminal access, and permission suggestions never
       grant broader authority as a side effect of repair.
   completion_conditions:
   - id: module-assertion-restored
@@ -139,7 +140,7 @@ standards:
   steps:
   - kind: step
     id: resolve-effective-authority
-    instruction: Resolve direct children, sources, exports, namespace routes, callers, facade targets,
+    instruction: Resolve direct children, sources, canonical exports, namespace routes, callers,
       access filters, runtime identities, and the single effective authorization result.
   - kind: step
     id: identify-invalid-edge
@@ -148,7 +149,7 @@ standards:
     requires: [resolve-effective-authority]
   - kind: step
     id: repair-without-widening
-    instruction: Correct one registration, export, namespace route, caller reference, facade, or resolver
+    instruction: Correct one registration, direct export, namespace route, caller reference, or resolver
       edge while preserving names and intersecting authority ceilings.
     requires: [identify-invalid-edge]
   - kind: step
@@ -158,7 +159,7 @@ standards:
     requires: [repair-without-widening]
   invariants:
   - id: child-authority-ceiling
-    statement: No parent facade, namespace route, compatibility caller, or permission path exceeds the
+    statement: No namespace route, compatibility caller, or permission path exceeds the
       canonical child export authority.
   completion_conditions:
   - id: graph-contract-restored

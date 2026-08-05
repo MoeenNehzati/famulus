@@ -105,10 +105,10 @@ interfaces:
     description: Primary LLM-facing skill instructions.
     version: 1
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces:
-- interface: pdf-to-markdown.interface.scripts-check-marker-models
+- interface: pdf-to-markdown._rtx.interface.scripts-check-marker-models
   version: 1
-- interface: pdf-to-markdown.interface.scripts-fetch-arxiv-source
+- interface: pdf-to-markdown._rtx.interface.scripts-fetch-arxiv-source
   version: 1
 version: 1

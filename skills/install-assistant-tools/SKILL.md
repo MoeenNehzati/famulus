@@ -11,29 +11,17 @@ Activation: user-request; persistent modifier: no
 
 Skill Version: 3
 
-Uses Interfaces: none
+Uses Interfaces:
+- `install-assistant-tools.source.gateway -> install-assistant-tools._rtx.interface.scripts-dev-link@2`
+- `install-assistant-tools.source.gateway -> install-assistant-tools._rtx.interface.scripts-install@2`
+- `install-assistant-tools.source.gateway -> install-assistant-tools._rtx.interface.scripts-launchers@3`
+- `install-assistant-tools.source.gateway -> install-assistant-tools._rtx.interface.scripts-scaffold@2`
 
 Public Interfaces:
 - `install-assistant-tools.interface.default`
-- `install-assistant-tools.interface.scripts-dev-link`
-- `install-assistant-tools.interface.scripts-install`
-- `install-assistant-tools.interface.scripts-launchers`
-- `install-assistant-tools.interface.scripts-scaffold`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Dispatcher Interfaces:
-
-Use the installed `dispatcher` command for these process-bound interfaces:
-- `install-assistant-tools.interface.scripts-dev-link` — Symlink Claude/Codex config dirs to a live repo checkout, register dev-mode hooks, set git hooksPath, export $AI. Requires an explicit repo path.
-  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools.interface.scripts-dev-link --repo-root DIR [--no-claude] [--no-codex] [--home DIR] [--claude-home DIR] [--codex-home DIR] [--shell-rc FILE] [--dry-run]`
-- `install-assistant-tools.interface.scripts-install` — Phase-1 orchestrator: asks the dev-mode question, then runs scaffold, optionally dev-link, then launchers.
-  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools.interface.scripts-install [--dry-run] [--non-interactive] [--dev-mode|--no-dev-mode] [--repo-path DIR] [--agents LIST] [--default-llm {claude,codex}] [--home DIR] [--bin-dir DIR] [--shell-rc FILE] [--codex-home DIR] [--claude-home DIR]`
-- `install-assistant-tools.interface.scripts-launchers` — Install per-agent bin launcher, profile config, worker dir, and ASSISTANT_DEFAULT for the given agents. Direct invocation of this interface installs exactly the --agents selection; when this launcher installation runs as part of the phase-entry orchestrator, assistant is additionally forced into the installed set regardless of selection, because it is a required invoke-skill prerequisite (feedback item 18) and is not user-selectable. Worker directories are created under the platform Famulus state dir in plugin mode (--mode plugin, the default plugin-cache checkout is a public/immutable tree) or under <repo-root>/workers in development mode (--mode development, an explicit live checkout).
-  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools.interface.scripts-launchers --repo-root DIR --agents LIST [--home DIR] [--bin-dir DIR] [--codex-home DIR] [--claude-home DIR] [--shell-rc FILE] [--default-llm {claude,codex}] [--mode {development,plugin}] [--dry-run]`
-- `install-assistant-tools.interface.scripts-scaffold` — Install the dispatcher + invoke-skill launchers and put the bin dir on PATH. Universal floor, mode-independent.
-  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools.interface.scripts-scaffold --repo-root DIR [--home DIR] [--bin-dir DIR] [--shell-rc FILE] [--dry-run]`
 
 Instruction Interfaces:
 

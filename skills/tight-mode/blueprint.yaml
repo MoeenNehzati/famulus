@@ -30,7 +30,7 @@ gateway:
 id: tight-mode
 namespace_exports: {}
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
   tight-mode.source.gateway:
     blueprint:

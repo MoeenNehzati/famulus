@@ -12,7 +12,7 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
-V5_ROOT = ROOT / "references" / "blueprint"
+V5_ROOT = ROOT / "references" / "blueprint" / "migrations" / "v5"
 V4_ROOT = ROOT / "references" / "blueprint" / "migrations" / "v4"
 FIXTURES = ROOT / "tests" / "fixtures" / "blueprint_v5"
 
@@ -152,8 +152,7 @@ def test_v5_bundle_is_closed_and_every_schema_is_draft7_valid() -> None:
         for path in V5_ROOT.iterdir()
         if path.is_file() and not path.name.startswith(".")
     } == (
-        SCHEMA_BUNDLE
-        | {"README.md", "blueprint.yaml", "config.yaml", "runtime_dependencies.json", "template.yaml"}
+        SCHEMA_BUNDLE | {"config.yaml", "template.yaml"}
     )
 
     for name in SCHEMA_BUNDLE:

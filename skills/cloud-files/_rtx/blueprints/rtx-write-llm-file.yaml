@@ -5,16 +5,16 @@ dependencies:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
-  source: cloud-files-rtx.source.rtx-init
+  source: cloud-files._rtx.source.rtx-init
   version: 1
 description: Reads text from standard input and uploads it to a caller-authorized
   list or plan file beneath the configured Google Drive root.
 gateway:
   language: Python
   path: _write_llm_file.py
-id: cloud-files-rtx.source.rtx-write-llm-file
+id: cloud-files._rtx.source.rtx-write-llm-file
 interfaces:
-  cloud-files-rtx.source.rtx-write-llm-file.interface.lists-write:
+  cloud-files._rtx.source.rtx-write-llm-file.interface.lists-write:
     contract:
       arguments:
         content:
@@ -156,7 +156,7 @@ interfaces:
           '0': ^lists/.*
     usage: lists/<path>
     version: 1
-  cloud-files-rtx.source.rtx-write-llm-file.interface.plans-write:
+  cloud-files._rtx.source.rtx-write-llm-file.interface.plans-write:
     contract:
       arguments:
         content:
@@ -304,6 +304,6 @@ platform_support:
   macos: true
   windows: true
 runtime_dependencies: []
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

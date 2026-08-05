@@ -38,8 +38,9 @@ _BLUEPRINT_BLOCK_RE = re.compile(
     r"<!-- END BLUEPRINT (?:CONTRACT|INTERFACES) -->",
     re.DOTALL,
 )
+_MODULE_ID = r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:\.[a-z_][a-z0-9_-]*)*"
 _CANONICAL_INTERFACE_RE = re.compile(
-    r"\b[a-z][a-z0-9]*(?:-[a-z0-9]+)*\."
+    rf"\b{_MODULE_ID}\."
     r"(?:"
     r"interface\.[a-z][a-z0-9]*(?:-[a-z0-9]+)*"
     r"|source\.[a-z][a-z0-9]*(?:-[a-z0-9]+)*"
@@ -95,6 +96,15 @@ def _declared_interface_ids(source: BlueprintNode) -> set[str]:
     }
 
 
+def _top_level_module_id(
+    graph: RepositoryBlueprintGraph,
+    module_id: str,
+) -> str:
+    """Return the public skill module that owns ``module_id``."""
+
+    return graph.module_ancestry.get(module_id, (module_id,))[0]
+
+
 def _used_module_ids(
     graph: RepositoryBlueprintGraph,
     module_id: str,
@@ -121,13 +131,13 @@ def _used_module_ids(
         for interface_id in _declared_interface_ids(source):
             export = graph.exports.get(interface_id)
             if export is not None and export.module_node_id != module_id:
-                used.add(export.module_node_id)
+                used.add(_top_level_module_id(graph, export.module_node_id))
     for edge in graph.node_edges:
         if edge.relation != "uses-source" or edge.source_id not in local_sources:
             continue
         target_module = source_modules.get(edge.target_id)
         if target_module is not None and target_module != module_id:
-            used.add(target_module)
+            used.add(_top_level_module_id(graph, target_module))
     return used
 
 

@@ -18,31 +18,16 @@ Skill Version: 2
 
 Uses Interfaces:
 - `g-calendar.source.gateway -> connect-google.interface.default@1`
+- `g-calendar.source.gateway -> g-calendar._rtx.interface.ensure-oauth@1`
+- `g-calendar.source.gateway -> g-calendar._rtx.interface.scripts-gcal@1`
+- `g-calendar.source.gateway -> g-calendar._rtx.interface.setup-oauth@1`
+- `g-calendar.source.gateway -> g-calendar._rtx.interface.use-google-credential@1`
 
 Public Interfaces:
 - `g-calendar.interface.default`
-- `g-calendar.interface.ensure-oauth`
-- `g-calendar.interface.scripts-gcal`
-- `g-calendar.interface.setup-oauth`
-- `g-calendar.interface.use-google-credential`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Dispatcher Interfaces:
-
-Use the installed `dispatcher` command for these process-bound interfaces:
-- `g-calendar.interface.ensure-oauth` — Check g-calendar OAuth status; print setup guidance or launch browser authorization as needed. Relocated from install-assistant-tools — invoke directly (caller-skill g-calendar) as part of connecting remotes.
-  - `dispatcher --caller-skill g-calendar g-calendar.interface.ensure-oauth --home <dir> [--dry-run]`
-  - Check OAuth status and guide setup for g-calendar.
-- `g-calendar.interface.scripts-gcal` — Query or modify Google Calendar events via the Python calendar CLI (agenda, search, create, update, delete, etc.).
-  - `dispatcher --caller-skill g-calendar g-calendar.interface.scripts-gcal <command> [options]`
-- `g-calendar.interface.setup-oauth` — Run the OAuth setup flow to generate or refresh Google Calendar credentials.
-  - `dispatcher --caller-skill g-calendar g-calendar.interface.setup-oauth [--from-json /path/to/client.json]`
-  - OAuth setup for Google Calendar access.
-- `g-calendar.interface.use-google-credential` — Bind g-calendar to a shared connect-google credential_id after validating it carries Calendar scope, storing only the opaque identifier (never the client secret or refresh token) in g-calendar's own config.json. The pre-existing per-service OAuth path (ensure-oauth) remains the unchanged fallback for callers who have not adopted the shared credential.
-  - `dispatcher --caller-skill g-calendar g-calendar.interface.use-google-credential --credential-id <id> --home <dir>`
-  - Bind g-calendar to a shared Google credential_id.
 
 Instruction Interfaces:
 
@@ -202,7 +187,7 @@ a non-mutating Calendar request succeeds.
 For initial Google setup or reauthorization after `invalid_grant` or
 `invalid_client`, use `connect-google.interface.default` to prepare the shared Desktop
 client, then return here for Calendar authorization. This skill invokes its own
-`g-calendar.interface.setup-oauth` interface with
+`g-calendar._rtx.interface.setup-oauth` interface with
 `--from-json ~/.config/connect-google/client.json` and owns Calendar credentials
 and verification. Do not
 duplicate the Cloud Console procedure here.

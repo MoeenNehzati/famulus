@@ -6,7 +6,7 @@ can safely re-run without creating duplicate `todo`/`triage` entries.
 Pure functions only -- no dispatch, no network, no filesystem access. The
 destination list's already-parsed YAML document is supplied by the caller
 (e.g. `_mail_envelope_stream.py`, which fetches it via a declared dispatch
-to `list-manager.interface.cloud-read` and passes the parsed result in).
+to `list-manager._rtx.interface.cloud-read` and passes the parsed result in).
 This keeps the cross-skill boundary explicit: this module never imports
 list-manager's `_rtx` internals directly.
 """

@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Preserve every public interface, caller-visible behavior, node identifier, ownership boundary, and generated-artifact contract unless the current effective standards explicitly prove a repair is required.
-- Use `dispatcher --caller-skill refactor-node refactor-node.interface.query-standards <target> --repo-root <worktree> --facts-json '{"task":{"kind":"refactor"}}' --view requirements` as the sole repository-policy source.
+- Use `dispatcher --caller-skill refactor-node refactor-node._rtx.interface.query-standards <target> --repo-root <worktree> --facts-json '{"task":{"kind":"refactor"}}' --view requirements` as the sole repository-policy source.
 - Resolve every material `requirements.unknown` fact before mutation; query only relevant indexed context, evidence, and remedies.
 - Make one coherent, behavior-preserving refactoring move per skill. Do not bundle features, bug fixes, public-API redesign, certification, or unrelated cleanup.
 - Prefer deletion, consolidation, sharper boundaries, and clearer control flow over added prose or abstraction. Do not increase length without a concrete information or correctness gain.

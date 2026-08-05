@@ -56,6 +56,8 @@ from .migration_candidate import (
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _FROZEN_V4_ROOT = _PROJECT_ROOT / "references" / "blueprint" / "migrations" / "v4"
+_FROZEN_V5_ROOT = _PROJECT_ROOT / "references" / "blueprint" / "migrations" / "v5"
+_FROZEN_V5_NODE_ROOT = _FROZEN_V5_ROOT / "legacy-reference-nodes"
 _SKILL_VALIDATOR_ROOT = Path("skills/skill-maker/validators")
 _NEW_VALIDATOR_ROOT = Path("validators/skill")
 _SUPERSEDED_V5_PATHS = frozenset(
@@ -2767,12 +2769,29 @@ def _overlay_canonical_cutover_references(
     ]
     for source in sorted(set(reference_paths)):
         relative = source.relative_to(project_root)
+        frozen_node_name = {
+            Path("references/blueprint/blueprint.yaml"): "blueprint.v5.yaml",
+            Path("references/blueprint/blueprints/schema-annotated-draft.yaml"): "schema-annotated-draft.v5.yaml",
+            Path("references/node-standards/blueprint.yaml"): "node-standards.v5.yaml",
+            Path("references/node-standards/blueprints/standards.yaml"): "node-standards-source.v5.yaml",
+        }.get(relative)
+        frozen_schema = _FROZEN_V5_ROOT / source.name
+        if frozen_node_name is not None:
+            selected_source = _FROZEN_V5_NODE_ROOT / frozen_node_name
+        elif (
+            relative.parent == Path("references/blueprint")
+            and frozen_schema.is_file()
+        ):
+            selected_source = frozen_schema
+        else:
+            selected_source = source
+        selected_relative = selected_source.relative_to(project_root)
         _put(
             planned,
             relative,
             _read_confined_regular(
                 project_root,
-                relative,
+                selected_relative,
                 context="canonical cutover reference",
             ),
         )

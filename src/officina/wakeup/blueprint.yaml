@@ -22,10 +22,10 @@ content:
 - resources/llm-wakeup\.service\.in
 - resources/llm-wakeup\.timer
 - resources/command-aliases\.json
-description: Dependency-free Python infrastructure for monitoring local Claude
-  and Codex quota signals and scheduling guarded continuation messages after
-  usage limits reset, with persistent JSON jobs, transcript-progress suppression,
-  provider-log inference, retry handling, and journald-oriented worker events.
+description: Dependency-free Python infrastructure for monitoring local Claude and
+  Codex quota signals and scheduling guarded continuation messages after usage limits
+  reset, with persistent JSON jobs, transcript-progress suppression, provider-log
+  inference, retry handling, and journald-oriented worker events.
 exports:
   wakeup.interface.auto-policy:
     access:
@@ -48,7 +48,7 @@ gateway:
 id: wakeup
 namespace_exports: {}
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
   wakeup.source.session-data:
     blueprint:

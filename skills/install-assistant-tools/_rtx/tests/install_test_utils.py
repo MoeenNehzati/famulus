@@ -265,7 +265,7 @@ def build_minimal_managed_runtime_release(*, home: Path, tmp_root: Path) -> None
 
     paths = resolve_famulus_paths(platform=sys.platform, home=home)
     manifest = tmp_root / "managed-runtime-empty-manifest.json"
-    manifest.write_text(json.dumps({"version": 1, "skills": {}}), encoding="utf-8")
+    manifest.write_text(json.dumps({"version": 2, "skills": {}}), encoding="utf-8")
     platform_name = {"darwin": "macos", "win32": "windows"}.get(sys.platform, "linux")
     build_candidate_release(
         runtime_root=paths.runtime_root,

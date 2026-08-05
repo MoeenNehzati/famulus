@@ -27,6 +27,15 @@ _OLD_RUNTIME_PATH_RE = re.compile(
     rf"(?<!/)scripts/[\w.-]+(?:{_SUFFIX_ALT})(?![{_WORD}])",
     re.IGNORECASE,
 )
+_MODULE_ID = r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:\.[a-z_][a-z0-9_-]*)*"
+_CANONICAL_INTERFACE_RE = re.compile(
+    rf"\b{_MODULE_ID}\."
+    r"(?:"
+    r"interface\.[a-z][a-z0-9]*(?:-[a-z0-9]+)*"
+    r"|source\.[a-z][a-z0-9]*(?:-[a-z0-9]+)*"
+    r"\.interface\.[a-z][a-z0-9]*(?:-[a-z0-9]+)*"
+    r")(?:@[1-9][0-9]*)?\b"
+)
 
 def _iter_skill_markdown(repo_root: Path):
     skills_root = repo_root / "skills"
@@ -124,7 +133,8 @@ def _validate(repo_root: Path, graph: object | None) -> list[str]:
             continue
         lines = _public_markdown_text(path, text).splitlines()
         for lineno, line in enumerate(lines, start=1):
-            if RTX_DIR_NAME in line:
+            prose_without_interface_ids = _CANONICAL_INTERFACE_RE.sub("", line)
+            if RTX_DIR_NAME in prose_without_interface_ids:
                 errors.append(f"{rel_path}:{lineno}: skill-facing Markdown must not mention `{RTX_DIR_NAME}`")
             old_path = _OLD_RUNTIME_PATH_RE.search(line)
             if old_path:

@@ -724,14 +724,104 @@ def _reconcile_v5_topology(
             )
 
 
+def _reconcile_v6_topology(
+    repo_root: Path,
+    module_roots: tuple[Path, ...],
+    marker_documents: Mapping[Path, BlueprintDocument],
+    issues: list[BlueprintInventoryIssue],
+) -> None:
+    """Validate direct-identity topology from physical nesting plus registration."""
+
+    physical_parents = {
+        root: _nearest_module_parent(root, module_roots)
+        for root in module_roots
+    }
+    valid = {
+        root: document
+        for root, document in marker_documents.items()
+        if document.declaration.get("schema_version") == 6
+        and document.declaration.get("node_type") == "module"
+    }
+    registered: set[Path] = set()
+    for module_root, document in sorted(valid.items()):
+        parent_root = physical_parents[module_root]
+        expected_id = (
+            module_root.name
+            if parent_root is None
+            else f"{valid[parent_root].node_id}.{module_root.name}"
+            if parent_root in valid and valid[parent_root].node_id is not None
+            else None
+        )
+        if expected_id is not None and document.node_id != expected_id:
+            issues.append(
+                BlueprintInventoryIssue(
+                    document.relative_path,
+                    f"module id {document.node_id!r} must match direct identity {expected_id!r}",
+                )
+            )
+        children = document.declaration.get("children")
+        if not isinstance(children, dict):
+            issues.append(
+                BlueprintInventoryIssue(
+                    document.relative_path,
+                    "version 6 module children must be an explicit mapping",
+                )
+            )
+            continue
+        for segment, registration in children.items():
+            if not isinstance(segment, str) or registration != {}:
+                issues.append(
+                    BlueprintInventoryIssue(
+                        document.relative_path,
+                        f"child {segment!r} must be an empty local-segment registration",
+                    )
+                )
+                continue
+            child_root = module_root / segment
+            child = valid.get(child_root)
+            expected_child_id = f"{document.node_id}.{segment}"
+            if child is None or child.node_id != expected_child_id:
+                issues.append(
+                    BlueprintInventoryIssue(
+                        document.relative_path,
+                        f"child segment {segment!r} does not identify {expected_child_id!r}",
+                    )
+                )
+                continue
+            if physical_parents.get(child_root) != module_root:
+                issues.append(
+                    BlueprintInventoryIssue(
+                        child.relative_path,
+                        "registration must come from the nearest physical parent",
+                    )
+                )
+                continue
+            if child_root in registered:
+                issues.append(
+                    BlueprintInventoryIssue(
+                        child.relative_path,
+                        "nested module is registered more than once",
+                    )
+                )
+            registered.add(child_root)
+    for module_root, parent_root in sorted(physical_parents.items()):
+        if parent_root is not None and module_root not in registered:
+            issues.append(
+                BlueprintInventoryIssue(
+                    module_root.relative_to(repo_root) / "blueprint.yaml",
+                    "unregistered nested module marker was not consumed exactly once",
+                )
+            )
+
+
 def collect_blueprints(
     repo_root: Path,
     *,
-    expected_schema_version: int = 5,
+    expected_schema_version: int = 6,
     skip_parse_errors: bool = False,
 ) -> BlueprintInventoryResult:
-    if expected_schema_version not in {4, 5}:
-        raise ValueError("expected_schema_version must be 4 or 5")
+    if expected_schema_version not in {4, 5, 6}:
+        raise ValueError("expected_schema_version must be 4, 5, or 6")
     repo_root = Path(repo_root).resolve()
     documents: list[BlueprintDocument] = []
     issues: list[BlueprintInventoryIssue] = []
@@ -740,8 +830,8 @@ def collect_blueprints(
         repo_root,
         ignored_paths,
         issues=issues,
-        reject_nested_repositories=expected_schema_version == 5,
-        exclude_host_system_skills=expected_schema_version == 5,
+        reject_nested_repositories=expected_schema_version in {5, 6},
+        exclude_host_system_skills=expected_schema_version in {5, 6},
     )
     if expected_schema_version == 4:
         for index, root in enumerate(module_roots):
@@ -846,6 +936,16 @@ def collect_blueprints(
             ignored_paths,
             issues,
         )
+    if expected_schema_version == 6:
+        _reconcile_v6_topology(
+            repo_root,
+            module_roots,
+            {
+                document.module_root: document
+                for document in marker_documents
+            },
+            issues,
+        )
     issues.sort(key=lambda issue: (issue.relative_path.as_posix(), issue.message))
     documents.sort(key=lambda document: document.relative_path.as_posix())
     result = BlueprintInventoryResult(tuple(documents), tuple(issues))
@@ -857,7 +957,7 @@ def collect_blueprints(
 def iter_blueprints(
     repo_root: Path,
     *,
-    expected_schema_version: int = 5,
+    expected_schema_version: int = 6,
 ) -> Iterator[BlueprintDocument]:
     return iter(
         collect_blueprints(

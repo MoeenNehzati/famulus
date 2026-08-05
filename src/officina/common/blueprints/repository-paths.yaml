@@ -112,6 +112,6 @@ interfaces:
     description: Provides canonical root-relative path conversion to Python callers.
     version: 1
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

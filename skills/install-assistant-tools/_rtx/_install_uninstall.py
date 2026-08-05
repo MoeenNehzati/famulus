@@ -33,7 +33,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+if not __package__:
+    sys.path.insert(0, str(Path(__file__).parent))
 
 if __package__:
     from ._state_record import Manifest, manifest_path
@@ -46,7 +47,10 @@ else:
     BLOCK_BEGIN,
     BLOCK_END,
 )
-from _fs_links import default_bin_dir  # noqa: E402
+if __package__:
+    from ._fs_links import default_bin_dir
+else:
+    from _fs_links import default_bin_dir  # noqa: E402
 
 REPO_ROOT_DEFAULT = Path(__file__).resolve().parents[3]
 

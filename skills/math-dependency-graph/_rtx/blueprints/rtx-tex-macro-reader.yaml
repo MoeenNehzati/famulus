@@ -5,16 +5,16 @@ dependencies:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
-  source: math-dependency-graph-rtx.source.rtx-init
+  source: math-dependency-graph._rtx.source.rtx-init
   version: 1
 description: Recursively reads the TeX entrypoint's local input and class closure
   and prints extracted MathJax macro definitions as JSON.
 gateway:
   language: Python
   path: _tex_macro_reader.py
-id: math-dependency-graph-rtx.source.rtx-tex-macro-reader
+id: math-dependency-graph._rtx.source.rtx-tex-macro-reader
 interfaces:
-  math-dependency-graph-rtx.source.rtx-tex-macro-reader.interface.scripts-extract-mathjax-macros:
+  math-dependency-graph._rtx.source.rtx-tex-macro-reader.interface.scripts-extract-mathjax-macros:
     contract:
       arguments:
         entrypoint:
@@ -180,6 +180,6 @@ platform_support:
   macos: true
   windows: true
 runtime_dependencies: []
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

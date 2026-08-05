@@ -1,9 +1,7 @@
 authority:
   owns_filesystem: []
 children:
-  list-manager-rtx:
-    base: module-root
-    path: _rtx/blueprint.yaml
+  _rtx: {}
 content:
 - (?:SKILL\.md|lessons\.md|references/action\-structure\.md|references/list\-structure\.md)
 description: Manage schema-validated local and cloud-backed personal lists through
@@ -22,137 +20,97 @@ discovery:
   - skill-workflow
   persistent_modifier: false
 exports:
-  list-manager.interface.beautify-list:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: list-manager-rtx.interface.beautify-list
-      version: 1
-  list-manager.interface.cloud-create-entry:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: list-manager-rtx.interface.cloud-create-entry
-      version: 1
-  list-manager.interface.cloud-delete:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: list-manager-rtx.interface.cloud-delete
-      version: 1
-  list-manager.interface.cloud-init:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: list-manager-rtx.interface.cloud-init
-      version: 1
-  list-manager.interface.cloud-list-categories:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: list-manager-rtx.interface.cloud-list-categories
-      version: 1
-  list-manager.interface.cloud-read:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - email-triage
-      - email-triage-rtx
-    facade_interface:
-      interface: list-manager-rtx.interface.cloud-read
-      version: 1
-  list-manager.interface.cloud-read-beautify:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: list-manager-rtx.interface.cloud-read-beautify
-      version: 1
-  list-manager.interface.cloud-update:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: list-manager-rtx.interface.cloud-update
-      version: 1
-  list-manager.interface.create-entry:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: list-manager-rtx.interface.create-entry
-      version: 1
   list-manager.interface.default:
     access:
       allow_all_modules: true
       allowed_callers: []
     source_interface: list-manager.source.gateway.interface.default
-  list-manager.interface.describe-schema:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: list-manager-rtx.interface.describe-schema
-      version: 1
-  list-manager.interface.generate-id:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: list-manager-rtx.interface.generate-id
-      version: 1
-  list-manager.interface.init-list:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: list-manager-rtx.interface.init-list
-      version: 1
-  list-manager.interface.migrate-markdown:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: list-manager-rtx.interface.migrate-markdown
-      version: 1
-  list-manager.interface.read-beautify:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - daily-plan
-      - daily-plan-rtx
-    facade_interface:
-      interface: list-manager-rtx.interface.read-beautify
-      version: 1
-  list-manager.interface.read-list:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - daily-plan
-    facade_interface:
-      interface: list-manager-rtx.interface.read-list
-      version: 1
-  list-manager.interface.update-list:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - daily-plan
-      - daily-plan-rtx
-    facade_interface:
-      interface: list-manager-rtx.interface.update-list
-      version: 1
 gateway:
   language: Markdown
   path: SKILL.md
 id: list-manager
-namespace_exports: {}
+namespace_exports:
+  _rtx:
+    version: 1
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    surface:
+      only:
+        list-manager._rtx.interface.beautify-list: 1
+        list-manager._rtx.interface.cloud-create-entry: 1
+        list-manager._rtx.interface.cloud-delete: 1
+        list-manager._rtx.interface.cloud-init: 1
+        list-manager._rtx.interface.cloud-list-categories: 1
+        list-manager._rtx.interface.cloud-read: 1
+        list-manager._rtx.interface.cloud-read-beautify: 1
+        list-manager._rtx.interface.cloud-update: 1
+        list-manager._rtx.interface.create-entry: 1
+        list-manager._rtx.interface.describe-schema: 1
+        list-manager._rtx.interface.generate-id: 1
+        list-manager._rtx.interface.init-list: 1
+        list-manager._rtx.interface.migrate-markdown: 1
+        list-manager._rtx.interface.read-beautify: 1
+        list-manager._rtx.interface.read-list: 1
+        list-manager._rtx.interface.update-list: 1
+    interface_access:
+      list-manager._rtx.interface.beautify-list:
+        allow_all_modules: false
+        allowed_callers: []
+      list-manager._rtx.interface.cloud-create-entry:
+        allow_all_modules: false
+        allowed_callers: []
+      list-manager._rtx.interface.cloud-delete:
+        allow_all_modules: false
+        allowed_callers: []
+      list-manager._rtx.interface.cloud-init:
+        allow_all_modules: false
+        allowed_callers: []
+      list-manager._rtx.interface.cloud-list-categories:
+        allow_all_modules: false
+        allowed_callers: []
+      list-manager._rtx.interface.cloud-read:
+        allow_all_modules: false
+        allowed_callers:
+        - email-triage
+        - email-triage._rtx
+      list-manager._rtx.interface.cloud-read-beautify:
+        allow_all_modules: false
+        allowed_callers: []
+      list-manager._rtx.interface.cloud-update:
+        allow_all_modules: false
+        allowed_callers: []
+      list-manager._rtx.interface.create-entry:
+        allow_all_modules: false
+        allowed_callers: []
+      list-manager._rtx.interface.describe-schema:
+        allow_all_modules: false
+        allowed_callers: []
+      list-manager._rtx.interface.generate-id:
+        allow_all_modules: false
+        allowed_callers: []
+      list-manager._rtx.interface.init-list:
+        allow_all_modules: false
+        allowed_callers: []
+      list-manager._rtx.interface.migrate-markdown:
+        allow_all_modules: false
+        allowed_callers: []
+      list-manager._rtx.interface.read-beautify:
+        allow_all_modules: false
+        allowed_callers:
+        - daily-plan
+        - daily-plan._rtx
+      list-manager._rtx.interface.read-list:
+        allow_all_modules: false
+        allowed_callers:
+        - daily-plan
+      list-manager._rtx.interface.update-list:
+        allow_all_modules: false
+        allowed_callers:
+        - daily-plan
+        - daily-plan._rtx
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
   list-manager.source.gateway:
     blueprint:

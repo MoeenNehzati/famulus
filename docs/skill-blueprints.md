@@ -54,7 +54,7 @@ invalid. Directly contained source blueprints are
 sidecars or directory conventions.
 
 Every repository-managed skill registers exactly one non-discoverable code
-child at `_rtx/`, with global ID `<skill-id>-rtx`. The skill parent owns
+child at `_rtx/`, with global ID `<skill-id>._rtx`. The skill parent owns
 instruction behavior, discovery, and parent-facing interfaces. The child owns
 executable behavior, machine interfaces, runtime assets, and its tests.
 
@@ -70,7 +70,7 @@ A module blueprint owns:
 For example:
 
 ```yaml
-schema_version: 5
+schema_version: 6
 node_type: module
 id: example-skill
 version: 2
@@ -80,28 +80,23 @@ content: [SKILL\.md]
 authority: {owns_filesystem: []}
 discovery: {mechanism: skill}
 children:
-  example-skill-rtx:
-    base: module-root
-    path: _rtx/blueprint.yaml
+  _rtx: {}
 sources:
   example-skill.source.gateway:
     blueprint: {base: module-root, path: blueprints/gateway.yaml}
-namespace_exports: {}
-exports:
-  example-skill.interface.run:
-    facade_interface:
-      interface: example-skill-rtx.interface.run
-      version: 1
-    access:
-      allow_all_modules: false
-      allowed_callers: [approved-caller]
+namespace_exports:
+  _rtx:
+    version: 1
+    access: {allow_all_modules: false, allowed_callers: [approved-caller]}
+    surface:
+      only: {example-skill._rtx.interface.run: 1}
+exports: {}
 ```
 
 The `schema_version` field is explicit because mixed-version repositories are
 invalid. Only exports cross module boundaries.
 Restricted exports are still exports; private source interfaces are omitted
-from `exports`. A facade may target only an exported child interface and can
-only restrict its caller policy further.
+from `exports`. Version 6 does not rename child exports through facades.
 
 `children` registers a namespace; it does not expose that namespace outside
 the parent. `namespace_exports` optionally routes a registered child's own
@@ -120,9 +115,9 @@ A behavioral-source blueprint owns:
   dependencies.
 
 ```yaml
-schema_version: 5
+schema_version: 6
 node_type: behavioral_source
-id: example-skill-rtx.source.runner
+id: example-skill._rtx.source.runner
 version: 1
 description: Implements the run operation.
 gateway: {path: runner.py, language: Python>=3.11}
@@ -130,7 +125,7 @@ content: [runner\.py]
 dependencies: []
 uses_interfaces: []
 interfaces:
-  example-skill-rtx.source.runner.interface.run:
+  example-skill._rtx.source.runner.interface.run:
     version: 1
     description: Run one operation.
     contract: {}
@@ -144,7 +139,7 @@ The abbreviated empty contract and patterns above illustrate ownership only;
 real callable interfaces must satisfy the complete schemas.
 
 The code module separately exports the source interface as
-`example-skill-rtx.interface.run`. For a typical skill, `SKILL.md` is both the
+`example-skill._rtx.interface.run`. For a typical skill, `SKILL.md` is both the
 parent module gateway and the gateway of `<skill-id>.source.gateway`; the
 source directly owns the file.
 
@@ -166,11 +161,10 @@ parent's code child; `..parser` names the owner's sibling `parser`. These
 references resolve to one exact ID through the registered tree and never grant
 all descendants implicitly.
 
-Parent facade filters and child export filters intersect; a parent cannot widen
-the child's access or export a private child interface. A direct request to a
-child export does not use the parent's facade. A parent or sibling inside the
-same registered subtree therefore bypasses the common parent's outward
-namespace route, but still must satisfy the child's own export policy.
+Namespace-route filters and the child export filter intersect. A parent cannot
+widen the child's access or export a private child interface. A parent or
+sibling inside the same registered subtree bypasses only namespace boundaries
+it does not cross and must still satisfy the child's export policy.
 
 Blueprints reference facts owned elsewhere instead of copying them. In
 particular, modules do not duplicate source contracts, and consumers do not
@@ -183,13 +177,13 @@ duplicate provider contracts.
 2. Define each source interface and its complete contract.
 3. Export only the interfaces intended to cross each module boundary; add a
    namespace route only when descendant IDs must be outwardly discoverable.
-4. Add parent facades only for intentional parent-owned APIs, and keep their
-   access no broader than the child export.
+4. Add an explicit namespace route when callers outside the parent subtree need
+   the child's fully qualified interface ID.
 5. Declare source and interface dependencies at the source that uses them.
-6. Run the `skill-maker.interface.sync-blueprints` check and repository
+6. Run the `skill-maker._rtx.interface.sync-blueprints` check and repository
    validators.
 7. Review blueprints against actual gateways and content, then certify the
-   exact committed state through `skill-certifier.interface.certify`.
+   exact committed state through `skill-certifier._rtx.interface.certify`.
 
 Generated `SKILL.md` blocks and runtime-dependency indexes are derived views.
 Certificate logs are certification state. None of them add nodes or graph

@@ -7,8 +7,9 @@ import jsonschema
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-V5_SCHEMA_ROOT = REPO_ROOT / "references" / "blueprint"
-SCHEMA_ROOT = V5_SCHEMA_ROOT / "migrations" / "v4"
+LIVE_SCHEMA_ROOT = REPO_ROOT / "references" / "blueprint"
+V5_SCHEMA_ROOT = LIVE_SCHEMA_ROOT / "migrations" / "v5"
+SCHEMA_ROOT = LIVE_SCHEMA_ROOT / "migrations" / "v4"
 V4_TYPED_SCHEMAS = ("module.schema.json", "behavioral-source.schema.json")
 REQUIRED_RULES = {
     "access-control",

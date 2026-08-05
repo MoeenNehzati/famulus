@@ -5,22 +5,22 @@ dependencies:
     base: module-root
     path: blueprints/rtx-email-accounts.yaml
   reason: Imports Python source from _rtx/_email_accounts.py.
-  source: email-client-rtx.source.rtx-email-accounts
+  source: email-client._rtx.source.rtx-email-accounts
   version: 1
 - blueprint:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
-  source: email-client-rtx.source.rtx-init
+  source: email-client._rtx.source.rtx-init
   version: 1
 description: Python SMTP source that composes an RFC 822 message from caller arguments
   and stdin, attaches local files, authenticates, and sends the message.
 gateway:
   language: Python
   path: _smtp_transport.py
-id: email-client-rtx.source.rtx-smtp-transport
+id: email-client._rtx.source.rtx-smtp-transport
 interfaces:
-  email-client-rtx.source.rtx-smtp-transport.interface.send-email:
+  email-client._rtx.source.rtx-smtp-transport.interface.send-email:
     contract:
       arguments:
         attachments:
@@ -242,7 +242,7 @@ runtime_dependencies:
     windows: true
   reason: Retrieves the SMTP credential from the host credential store.
   version: any
-schema_version: 5
+schema_version: 6
 uses_interfaces:
 - interface: common.interface.secret-store
   version: 1

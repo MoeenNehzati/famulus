@@ -2154,7 +2154,12 @@ class TestNestedModuleMigrationContract:
         assert (
             candidate / "references" / "blueprint" / "module.schema.json"
         ).read_bytes() == (
-            PROJECT_ROOT / "references" / "blueprint" / "module.schema.json"
+            PROJECT_ROOT
+            / "references"
+            / "blueprint"
+            / "migrations"
+            / "v5"
+            / "module.schema.json"
         ).read_bytes()
 
     @pytest.mark.parametrize("index_flag", ["--assume-unchanged", "--skip-worktree"])

@@ -58,7 +58,7 @@ def _module(
     content: list[str] | None = None,
 ) -> dict:
     document = {
-        "schema_version": 5,
+        "schema_version": 6,
         "node_type": "module",
         "id": module_id,
         "version": 1,
@@ -83,7 +83,7 @@ def _source(
     content: list[str] | None = None,
 ) -> dict:
     return {
-        "schema_version": 5,
+        "schema_version": 6,
         "node_type": "behavioral_source",
         "id": source_id,
         "version": 1,
@@ -117,12 +117,7 @@ def test_resolves_whole_module_and_owned_source_partitions(tmp_path: Path) -> No
                     "blueprint": {"base": "module-root", "path": "blueprints/worker.yaml"}
                 }
             },
-            children={
-                "demo-child": {
-                    "base": "module-root",
-                    "path": "demo-child/blueprint.yaml",
-                }
-            },
+            children={"demo-child": {}},
             content=[r"SKILL\.md", r"worker\.py"],
         ),
     )
@@ -130,7 +125,7 @@ def test_resolves_whole_module_and_owned_source_partitions(tmp_path: Path) -> No
     _write_yaml(
         child_root / "blueprint.yaml",
         _module(
-            "demo-child",
+            "demo.demo-child",
             language="Python>=3.11",
             gateway_path="__init__.py",
         ),
@@ -500,7 +495,7 @@ def test_whole_node_requirement_payloads_stay_within_transport_budgets() -> None
     )
     python = runtime.query(
         REPO_ROOT,
-        "refactor-node-rtx",
+        "refactor-node._rtx",
         facts={"task.kind": "refactor"},
     )
 
@@ -511,7 +506,7 @@ def test_whole_node_requirement_payloads_stay_within_transport_budgets() -> None
 def test_every_public_query_view_conforms_to_the_declared_wire_schema() -> None:
     runtime = _load_runtime()
     facts = {"task.kind": "refactor"}
-    target = "refactor-node-rtx"
+    target = "refactor-node._rtx"
     cases = [
         runtime.query(REPO_ROOT, target, facts=facts),
         runtime.query(

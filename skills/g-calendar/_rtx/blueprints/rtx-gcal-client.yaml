@@ -5,18 +5,18 @@ dependencies:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
-  source: g-calendar-rtx.source.rtx-init
+  source: g-calendar._rtx.source.rtx-init
   version: 1
 description: Implements the agenda, search, list, create, update, and delete operations
-  of the Google Calendar command interface. Mints access tokens via the shared
-  connect-google credential when config.json carries a credential_id, falling
-  back unchanged to the legacy per-service credentials.json refresh flow otherwise.
+  of the Google Calendar command interface. Mints access tokens via the shared connect-google
+  credential when config.json carries a credential_id, falling back unchanged to the
+  legacy per-service credentials.json refresh flow otherwise.
 gateway:
   language: Python
   path: _gcal_client.py
-id: g-calendar-rtx.source.rtx-gcal-client
+id: g-calendar._rtx.source.rtx-gcal-client
 interfaces:
-  g-calendar-rtx.source.rtx-gcal-client.interface.scripts-gcal:
+  g-calendar._rtx.source.rtx-gcal-client.interface.scripts-gcal:
     contract:
       arguments:
         command:
@@ -431,7 +431,7 @@ platform_support:
   macos: true
   windows: true
 runtime_dependencies: []
-schema_version: 5
+schema_version: 6
 uses_interfaces:
 - interface: common.interface.google-credentials
   version: 1

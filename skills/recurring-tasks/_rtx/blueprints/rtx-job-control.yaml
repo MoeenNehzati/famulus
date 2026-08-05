@@ -5,34 +5,35 @@ dependencies:
     base: module-root
     path: blueprints/jobs-config.yaml
   reason: Reads and mutates the shared jobs configuration.
-  source: recurring-tasks-rtx.source.jobs-config
+  source: recurring-tasks._rtx.source.jobs-config
   version: 1
 - blueprint:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
-  source: recurring-tasks-rtx.source.rtx-init
+  source: recurring-tasks._rtx.source.rtx-init
   version: 1
 - blueprint:
     base: module-root
     path: blueprints/rtx-schedule-backend-init.yaml
   reason: Imports Python source from _rtx/_schedule_backend/__init__.py.
-  source: recurring-tasks-rtx.source.rtx-schedule-backend-init
+  source: recurring-tasks._rtx.source.rtx-schedule-backend-init
   version: 1
 - blueprint:
     base: module-root
     path: blueprints/rtx-run-record.yaml
-  reason: Reads the run record a triggered job's executor writes, to report the job's actual outcome instead of only the scheduler's trigger-acceptance result.
-  source: recurring-tasks-rtx.source.rtx-run-record
+  reason: Reads the run record a triggered job's executor writes, to report the job's
+    actual outcome instead of only the scheduler's trigger-acceptance result.
+  source: recurring-tasks._rtx.source.rtx-run-record
   version: 1
 description: Implements enable, disable, immediate-run, status, and log-view operations
   for configured recurring jobs.
 gateway:
   language: Python
   path: _job_control.py
-id: recurring-tasks-rtx.source.rtx-job-control
+id: recurring-tasks._rtx.source.rtx-job-control
 interfaces:
-  recurring-tasks-rtx.source.rtx-job-control.interface.scripts-disable:
+  recurring-tasks._rtx.source.rtx-job-control.interface.scripts-disable:
     contract:
       arguments:
         jobs-file:
@@ -232,7 +233,7 @@ interfaces:
         name: owner
     usage: <name>
     version: 1
-  recurring-tasks-rtx.source.rtx-job-control.interface.scripts-enable:
+  recurring-tasks._rtx.source.rtx-job-control.interface.scripts-enable:
     contract:
       arguments:
         jobs-file:
@@ -432,7 +433,7 @@ interfaces:
         name: owner
     usage: <name>
     version: 1
-  recurring-tasks-rtx.source.rtx-job-control.interface.scripts-status:
+  recurring-tasks._rtx.source.rtx-job-control.interface.scripts-status:
     contract:
       arguments: {}
       caller_warnings: []
@@ -532,7 +533,7 @@ interfaces:
         name: owner
     usage: ''
     version: 1
-  recurring-tasks-rtx.source.rtx-job-control.interface.scripts-test:
+  recurring-tasks._rtx.source.rtx-job-control.interface.scripts-test:
     contract:
       arguments:
         name:
@@ -544,7 +545,10 @@ interfaces:
       caller_warnings:
       - external-side-effect: Starts the configured job immediately through the native
           scheduler.
-      - external-side-effect: Polls logs/<name>/latest.json for up to a bounded timeout after triggering, rather than trusting the scheduler's own trigger-acceptance result, since some native scheduler backends return immediately without waiting for the job to finish.
+      - external-side-effect: Polls logs/<name>/latest.json for up to a bounded timeout
+          after triggering, rather than trusting the scheduler's own trigger-acceptance
+          result, since some native scheduler backends return immediately without
+          waiting for the job to finish.
       direct_io:
         network: []
         reads:
@@ -583,7 +587,8 @@ interfaces:
           sensitivity: derived-private
       execution:
         consistency:
-          live: Requests an immediate native scheduler run, then polls the job's run-record file until a fresh record appears or the bounded timeout elapses.
+          live: Requests an immediate native scheduler run, then polls the job's run-record
+            file until a fresh record appears or the bounded timeout elapses.
         effects:
         - action: execute
           confirmation_evidence:
@@ -633,14 +638,16 @@ interfaces:
         id: passed
         outputs:
         - result
-      - caller_action: Inspect service and run logs; the trigger may have been accepted even though the job's own success contract was not met.
+      - caller_action: Inspect service and run logs; the trigger may have been accepted
+          even though the job's own success contract was not met.
         class: error
         effects:
         - start-job
         id: failed
         outputs:
         - result
-      - caller_action: Inspect service and run logs; no fresh run record appeared within the bounded wait.
+      - caller_action: Inspect service and run logs; no fresh run record appeared
+          within the bounded wait.
         class: error
         effects:
         - start-job
@@ -660,7 +667,9 @@ interfaces:
         cardinality:
           maximum: null
           minimum: 1
-        description: Pass or fail message reflecting the triggered job's run record (its declared success contract), not merely whether the scheduler accepted the trigger.
+        description: Pass or fail message reflecting the triggered job's run record
+          (its declared success contract), not merely whether the scheduler accepted
+          the trigger.
         direct_io_ref: write-2
         empty: A pass or fail line is always printed.
         id: result
@@ -688,7 +697,8 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Trigger a job immediately through the native scheduler, then wait (bounded) for its run record and report whether the job actually succeeded.
+    description: Trigger a job immediately through the native scheduler, then wait
+      (bounded) for its run record and report whether the job actually succeeded.
     process_binding:
       args_prefix:
       - test
@@ -700,7 +710,7 @@ interfaces:
         name: owner
     usage: <name>
     version: 1
-  recurring-tasks-rtx.source.rtx-job-control.interface.scripts-view-logs:
+  recurring-tasks._rtx.source.rtx-job-control.interface.scripts-view-logs:
     contract:
       arguments:
         job-name:
@@ -1033,6 +1043,6 @@ runtime_dependencies:
     windows: true
   reason: Provides the per-user scheduler used to trigger jobs.
   version: any
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

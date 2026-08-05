@@ -427,9 +427,9 @@ references/blueprint/schema-meta.json: relationship matrix is out of sync
 
 ```bash
 dispatcher --caller-skill skill-maker \
-  skill-maker.interface.sync-blueprints
+  skill-maker._rtx.interface.sync-blueprints
 dispatcher --caller-skill skill-maker \
-  skill-maker.interface.sync-blueprints --check
+  skill-maker._rtx.interface.sync-blueprints --check
 ```
 
 - [ ] **Step 9: Run the policy, graph, hashing, metadata, and syncer tests.**
@@ -603,9 +603,9 @@ pytest -q -o pythonpath=src \
 
 ```bash
 dispatcher --caller-skill skill-maker \
-  skill-maker.interface.sync-blueprints
+  skill-maker._rtx.interface.sync-blueprints
 dispatcher --caller-skill skill-maker \
-  skill-maker.interface.sync-blueprints --check
+  skill-maker._rtx.interface.sync-blueprints --check
 pytest -q -o pythonpath=src \
   tests/test_typed_blueprint_schemas.py \
   tests/test_officina_blueprint_graph.py \
@@ -663,7 +663,7 @@ pytest -q -o pythonpath=src \
 
 ```bash
 dispatcher --caller-skill skill-maker \
-  skill-maker.interface.sync-blueprints --check
+  skill-maker._rtx.interface.sync-blueprints --check
 python3 validators/runner.py
 git diff --check
 ```

@@ -33,31 +33,31 @@ content:
 - __init__\.py
 description: Code module for the pdf-to-markdown skill.
 exports:
-  pdf-to-markdown-rtx.interface.scripts-check-marker-models:
+  pdf-to-markdown._rtx.interface.scripts-check-marker-models:
     access:
       allow_all_modules: false
       allowed_callers:
       - pdf-to-markdown
-    source_interface: pdf-to-markdown-rtx.source.rtx-marker-probe.interface.scripts-check-marker-models
-  pdf-to-markdown-rtx.interface.scripts-fetch-arxiv-source:
+    source_interface: pdf-to-markdown._rtx.source.rtx-marker-probe.interface.scripts-check-marker-models
+  pdf-to-markdown._rtx.interface.scripts-fetch-arxiv-source:
     access:
       allow_all_modules: false
       allowed_callers:
       - pdf-to-markdown
-    source_interface: pdf-to-markdown-rtx.source.rtx-source-fetcher.interface.scripts-fetch-arxiv-source
+    source_interface: pdf-to-markdown._rtx.source.rtx-source-fetcher.interface.scripts-fetch-arxiv-source
 gateway:
   language: Python>=3.11
   path: __init__.py
-id: pdf-to-markdown-rtx
+id: pdf-to-markdown._rtx
 namespace_exports: {}
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
-  pdf-to-markdown-rtx.source.rtx-marker-probe:
+  pdf-to-markdown._rtx.source.rtx-marker-probe:
     blueprint:
       base: module-root
       path: blueprints/rtx-marker-probe.yaml
-  pdf-to-markdown-rtx.source.rtx-source-fetcher:
+  pdf-to-markdown._rtx.source.rtx-source-fetcher:
     blueprint:
       base: module-root
       path: blueprints/rtx-source-fetcher.yaml

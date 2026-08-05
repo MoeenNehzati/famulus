@@ -299,8 +299,8 @@ interfaces:
       commit it.
     version: 1
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces:
-- interface: initialize-tdd.interface.setup-compat-aliases
+- interface: initialize-tdd._rtx.interface.setup-compat-aliases
   version: 1
 version: 1

@@ -5,27 +5,32 @@ dependencies:
     base: module-root
     path: blueprints/jobs-config.yaml
   reason: Loads the recurring job definition selected from the shared jobs configuration.
-  source: recurring-tasks-rtx.source.jobs-config
+  source: recurring-tasks._rtx.source.jobs-config
   version: 1
 - blueprint:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
-  source: recurring-tasks-rtx.source.rtx-init
+  source: recurring-tasks._rtx.source.rtx-init
   version: 1
 - blueprint:
     base: module-root
     path: blueprints/rtx-run-record.yaml
-  reason: Evaluates the job's success contract from its exit code and self-reported inner status, and persists the resulting run record.
-  source: recurring-tasks-rtx.source.rtx-run-record
+  reason: Evaluates the job's success contract from its exit code and self-reported
+    inner status, and persists the resulting run record.
+  source: recurring-tasks._rtx.source.rtx-run-record
   version: 1
-description: Loads one named recurring-job definition, parses its command into environment assignments and argv, executes it without a shell between run-boundary markers, appends combined output to the job's run log, and writes a run record recording whether the job's declared success contract (not just its exit code) was actually met.
+description: Loads one named recurring-job definition, parses its command into environment
+  assignments and argv, executes it without a shell between run-boundary markers,
+  appends combined output to the job's run log, and writes a run record recording
+  whether the job's declared success contract (not just its exit code) was actually
+  met.
 gateway:
   language: Python
   path: _job_executor.py
-id: recurring-tasks-rtx.source.rtx-job-executor
+id: recurring-tasks._rtx.source.rtx-job-executor
 interfaces:
-  recurring-tasks-rtx.source.rtx-job-executor.interface.execute-job:
+  recurring-tasks._rtx.source.rtx-job-executor.interface.execute-job:
     contract:
       arguments:
         job:
@@ -51,9 +56,13 @@ interfaces:
             relative_to: caller-cwd
             syntax: literal
       caller_warnings:
-      - external-side-effect: Executes the command authored in the selected job definition with inherited process environment plus its leading environment assignments.
-      - external-side-effect: Creates the per-job log directory when absent and appends run-boundary markers plus combined child stdout and stderr to run.log.
-      - external-side-effect: Replaces the per-job logs/<job>/latest.json run record with the outcome of evaluating the job's success contract against its exit code and self-reported inner status.
+      - external-side-effect: Executes the command authored in the selected job definition
+          with inherited process environment plus its leading environment assignments.
+      - external-side-effect: Creates the per-job log directory when absent and appends
+          run-boundary markers plus combined child stdout and stderr to run.log.
+      - external-side-effect: Replaces the per-job logs/<job>/latest.json run record
+          with the outcome of evaluating the job's success contract against its exit
+          code and self-reported inner status.
       direct_io:
         network: []
         reads:
@@ -107,7 +116,8 @@ interfaces:
         - id: run-record-file
           medium: local-filesystem
           access: write
-          content: job run record with process exit code, inner status, and evaluated success
+          content: job run record with process exit code, inner status, and evaluated
+            success
           formats:
           - json
           sensitivity: derived-private
@@ -123,7 +133,8 @@ interfaces:
           sensitivity: derived-private
       execution:
         consistency:
-          snapshot: Loads the selected job once, then executes the resulting argv with one environment snapshot.
+          snapshot: Loads the selected job once, then executes the resulting argv
+            with one environment snapshot.
         effects:
         - action: execute
           confirmation_evidence:
@@ -135,7 +146,8 @@ interfaces:
           - completed
           - child-failed
           reversibility:
-            irreversible: Effects performed by the configured child command are outside this executor's rollback control.
+            irreversible: Effects performed by the configured child command are outside
+              this executor's rollback control.
           value_source:
             argument_ref: job
             kind: argument
@@ -149,7 +161,8 @@ interfaces:
           - completed
           - child-failed
           reversibility:
-            compensatable: Remove the appended run segment manually if its retention is not wanted.
+            compensatable: Remove the appended run segment manually if its retention
+              is not wanted.
           value_source:
             direct_io_ref: child-process
             kind: direct-io
@@ -170,17 +183,24 @@ interfaces:
         lifecycle: finite
         mutation_safety:
           atomicity:
-            non_atomic: Child execution, log appends, and the run-record write are not one atomic transaction.
+            non_atomic: Child execution, log appends, and the run-record write are
+              not one atomic transaction.
           concurrent_invocations:
-            unsafe: Concurrent runs of the same job can interleave bytes in the shared append-only log, duplicate child effects, and race the shared run-record file.
+            unsafe: Concurrent runs of the same job can interleave bytes in the shared
+              append-only log, duplicate child effects, and race the shared run-record
+              file.
           idempotency:
-            non_idempotent: Repeating a call executes the configured command again, appends another log segment, and replaces the run record.
+            non_idempotent: Repeating a call executes the configured command again,
+              appends another log segment, and replaces the run record.
           on_uncertain_completion:
-            verify_then_decide: Inspect the per-job log and run record, and the invoked job's own state, before retrying.
+            verify_then_decide: Inspect the per-job log and run record, and the invoked
+              job's own state, before retrying.
           partial_effects_on_failure:
-            possible: The child can perform effects or write partial output before exiting nonzero or being interrupted.
+            possible: The child can perform effects or write partial output before
+              exiting nonzero or being interrupted.
           rollback_on_failure:
-            unavailable: The executor neither reverses child effects nor truncates the log or run record.
+            unavailable: The executor neither reverses child effects nor truncates
+              the log or run record.
         state_effect: mutating
         verification:
         - direct_io_ref: job-log
@@ -193,7 +213,10 @@ interfaces:
       interaction:
         mode: unattended
       outcomes:
-      - caller_action: Treat the child process as launched and completed; check the written run record's success field before treating the underlying task as successful, since a zero exit code alone does not guarantee the job's declared success contract was met.
+      - caller_action: Treat the child process as launched and completed; check the
+          written run record's success field before treating the underlying task as
+          successful, since a zero exit code alone does not guarantee the job's declared
+          success contract was met.
         class: success
         effects:
         - execute-job
@@ -201,7 +224,8 @@ interfaces:
         - write-run-record
         id: completed
         outputs: []
-      - caller_action: Inspect the per-job run log and the returned child exit status before retrying.
+      - caller_action: Inspect the per-job run log and the returned child exit status
+          before retrying.
         class: error
         effects:
         - execute-job
@@ -209,7 +233,8 @@ interfaces:
         - write-run-record
         id: child-failed
         outputs: []
-      - caller_action: Correct the jobs file, requested name, command, executable resolution, or log path and retry.
+      - caller_action: Correct the jobs file, requested name, command, executable
+          resolution, or log path and retry.
         class: error
         effects: []
         id: config-error
@@ -220,9 +245,11 @@ interfaces:
         cardinality:
           maximum: 1
           minimum: 0
-        description: Wrapper error describing a missing job, invalid command, unreadable configuration, or failed launch.
+        description: Wrapper error describing a missing job, invalid command, unreadable
+          configuration, or failed launch.
         direct_io_ref: stderr
-        empty: No diagnostic is emitted after a child process is successfully launched, including when that child exits nonzero.
+        empty: No diagnostic is emitted after a child process is successfully launched,
+          including when that child exits nonzero.
         id: diagnostic
         ordering: stable
         pagination:
@@ -246,10 +273,12 @@ interfaces:
           argument_ref: job
           kind: argument
           predicate: present
-        description: The jobs file must contain the requested name with a nonempty command.
+        description: The jobs file must contain the requested name with a nonempty
+          command.
         id: job-present
         unmet_outcome: config-error
-    description: Execute one named recurring job from an explicit jobs file without invoking a shell.
+    description: Execute one named recurring job from an explicit jobs file without
+      invoking a shell.
     process_binding:
       entry: Interface
       kind: process
@@ -282,6 +311,6 @@ runtime_dependencies:
     windows: true
   reason: Loads the selected recurring job from jobs.yaml.
   version: '>=6'
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

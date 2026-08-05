@@ -16,57 +16,23 @@ Activation: user-request, skill-workflow; persistent modifier: no
 Skill Version: 2
 
 Uses Interfaces:
+- `cloud-files.source.gateway -> cloud-files._rtx.interface.ensure-oauth@1`
+- `cloud-files.source.gateway -> cloud-files._rtx.interface.lists-delete@1`
+- `cloud-files.source.gateway -> cloud-files._rtx.interface.lists-read@1`
+- `cloud-files.source.gateway -> cloud-files._rtx.interface.lists-write@1`
+- `cloud-files.source.gateway -> cloud-files._rtx.interface.plans-delete@1`
+- `cloud-files.source.gateway -> cloud-files._rtx.interface.plans-read@1`
+- `cloud-files.source.gateway -> cloud-files._rtx.interface.plans-write@1`
+- `cloud-files.source.gateway -> cloud-files._rtx.interface.setup-oauth@1`
+- `cloud-files.source.gateway -> cloud-files._rtx.interface.use-google-credential@1`
+- `cloud-files.source.gateway -> cloud-files._rtx.interface.write-config@1`
 - `cloud-files.source.gateway -> connect-google.interface.default@1`
 
 Public Interfaces:
 - `cloud-files.interface.default`
-- `cloud-files.interface.ensure-oauth`
-- `cloud-files.interface.lists-delete`
-- `cloud-files.interface.lists-read`
-- `cloud-files.interface.lists-write`
-- `cloud-files.interface.plans-delete`
-- `cloud-files.interface.plans-read`
-- `cloud-files.interface.plans-write`
-- `cloud-files.interface.setup-oauth`
-- `cloud-files.interface.use-google-credential`
-- `cloud-files.interface.write-config`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Dispatcher Interfaces:
-
-Use the installed `dispatcher` command for these process-bound interfaces:
-- `cloud-files.interface.ensure-oauth` — Check cloud-files OAuth status; print setup guidance or launch browser authorization as needed. Relocated from install-assistant-tools — invoke directly (caller-skill cloud-files) as part of connecting remotes.
-  - `dispatcher --caller-skill cloud-files cloud-files.interface.ensure-oauth --home <dir> [--dry-run]`
-  - Check OAuth status and guide setup for cloud-files.
-- `cloud-files.interface.lists-delete` — Delete a file from cloud storage under the lists/ directory.
-  - `dispatcher --caller-skill cloud-files cloud-files.interface.lists-delete lists/<path>`
-  - Delete list files from cloud storage. Restricted to lists/ directory.
-- `cloud-files.interface.lists-read` — Read a file from cloud storage under the lists/ directory.
-  - `dispatcher --caller-skill cloud-files cloud-files.interface.lists-read lists/<path>`
-  - Read list files from cloud storage. Restricted to lists/ directory.
-- `cloud-files.interface.lists-write` — Write content (from stdin) to a file in cloud storage under the lists/ directory.
-  - `dispatcher --caller-skill cloud-files cloud-files.interface.lists-write lists/<path>`
-  - Write list files to cloud storage. Restricted to lists/ directory.
-- `cloud-files.interface.plans-delete` — Delete a file from cloud storage under the plans/ directory.
-  - `dispatcher --caller-skill cloud-files cloud-files.interface.plans-delete plans/<path>`
-  - Delete plan files from cloud storage. Restricted to plans/ directory.
-- `cloud-files.interface.plans-read` — Read a file from cloud storage under the plans/ directory.
-  - `dispatcher --caller-skill cloud-files cloud-files.interface.plans-read plans/<path>`
-  - Read plan files from cloud storage. Restricted to plans/ directory.
-- `cloud-files.interface.plans-write` — Write content (from stdin) to a file in cloud storage under the plans/ directory.
-  - `dispatcher --caller-skill cloud-files cloud-files.interface.plans-write plans/<path>`
-  - Write plan files to cloud storage. Restricted to plans/ directory.
-- `cloud-files.interface.setup-oauth` — Run one-time OAuth2 setup for Google Drive access.
-  - `dispatcher --caller-skill cloud-files cloud-files.interface.setup-oauth [--from-json <client_json_path>] [--client-id <id> --client-secret <secret>] [--port <port>]`
-  - OAuth setup for Google Drive access.
-- `cloud-files.interface.use-google-credential` — Bind cloud-files to a shared connect-google credential_id after validating it carries Drive scope, storing only the opaque identifier (never the client secret or refresh token) in cloud-files' own config.json. The pre-existing per-service OAuth path (ensure-oauth/write-config) remains the unchanged fallback for callers who have not adopted the shared credential.
-  - `dispatcher --caller-skill cloud-files cloud-files.interface.use-google-credential --credential-id <id> --home <dir>`
-  - Bind cloud-files to a shared Google credential_id.
-- `cloud-files.interface.write-config` — Write ~/.config/cloud-files/config.json with the given remote LLM root. Relocated from install-assistant-tools.
-  - `dispatcher --caller-skill cloud-files cloud-files.interface.write-config --home <dir> [--remote-llm-root <path>] [--dry-run]`
-  - Write cloud-files config.json.
 
 Instruction Interfaces:
 
@@ -88,7 +54,7 @@ OAuth credentials live at `~/.config/cloud-files/credentials.json`.
 For initial Google setup or reauthorization, use
 `connect-google.interface.default` to install or reuse the shared Desktop OAuth
 client, then return here for Drive authorization. This skill invokes its own
-`cloud-files.interface.setup-oauth` interface with
+`cloud-files._rtx.interface.setup-oauth` interface with
 `--from-json ~/.config/connect-google/client.json` and owns Drive credentials,
 verification, and failures.
 

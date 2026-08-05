@@ -94,7 +94,12 @@ def _load_current_pointer(
     pointer_path = runtime_root / "current.json"
     if not pointer_path.exists():
         raise ResolverError(f"no current.json at {pointer_path}")
-    payload = json.loads(pointer_path.read_text())
+    try:
+        payload = json.loads(pointer_path.read_text())
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise ResolverError(f"cannot read current.json: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise ResolverError("current.json must contain a JSON object")
     schema_version = payload.get("schema_version")
     if schema_version not in {1, 2}:
         raise ResolverError(
@@ -103,12 +108,12 @@ def _load_current_pointer(
     try:
         python_bin = Path(payload["python_bin"])
         runtime_source = Path(payload["runtime_source"])
-    except KeyError as exc:
+    except (KeyError, TypeError) as exc:
         raise ResolverError(f"current.json missing required key: {exc}") from exc
     # runtime_source is never allowed to resolve outside runtime_root -- only
     # python_bin may land in a trusted interpreter store.
     _require_contained_or_trusted(runtime_source, root=runtime_root, trusted_roots=(), label="runtime_source")
-    validated_python = _require_contained_or_trusted(
+    _require_contained_or_trusted(
         python_bin, root=runtime_root, trusted_roots=trusted_roots, label="python_bin"
     )
     repository_config = None
@@ -117,11 +122,11 @@ def _load_current_pointer(
             repository_config = _require_repository_config(
                 Path(payload["repository_config"])
             )
-        except KeyError as exc:
+        except (KeyError, TypeError) as exc:
             raise ResolverError(f"current.json missing required key: {exc}") from exc
     if repository_config is None:
-        return validated_python
-    return validated_python, repository_config
+        return python_bin
+    return python_bin, repository_config
 
 
 def _trusted_interpreter_roots() -> tuple[Path, ...]:

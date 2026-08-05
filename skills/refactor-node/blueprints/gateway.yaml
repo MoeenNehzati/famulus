@@ -12,8 +12,8 @@ interfaces:
     contract:
       arguments:
         request:
-          description: Refactoring request naming a node or repository artifact,
-            optional narrower scope, objective, and constraints.
+          description: Refactoring request naming a node or repository artifact, optional
+            narrower scope, objective, and constraints.
           required: true
           sensitivity: user-private
           type:
@@ -50,7 +50,12 @@ interfaces:
         writes:
         - access: write
           content: Approved behavior-preserving changes within returned owner scopes.
-          formats: [markdown, yaml, json, python, text]
+          formats:
+          - markdown
+          - yaml
+          - json
+          - python
+          - text
           id: repository-write
           medium: repository-filesystem
           reason: Apply only a proposal approved through the selected language route.
@@ -75,9 +80,11 @@ interfaces:
             output_ref: response
           direct_io_ref: repository-write
           id: routed-repository-change
-          may_occur_in_outcomes: [routed]
+          may_occur_in_outcomes:
+          - routed
           reversibility:
-            reversible: Restore only the failed current move after inspecting the exact diff.
+            reversible: Restore only the failed current move after inspecting the
+              exact diff.
           value_source:
             argument_ref: request
             kind: argument
@@ -88,13 +95,16 @@ interfaces:
           concurrent_invocations:
             unsafe: Concurrent edits can invalidate scope, characterization, or verification.
           idempotency:
-            non_idempotent: Repeating a routed refactoring can duplicate or further alter state.
+            non_idempotent: Repeating a routed refactoring can duplicate or further
+              alter state.
           on_uncertain_completion:
-            verify_then_decide: Inspect the exact diff and verification evidence before proceeding.
+            verify_then_decide: Inspect the exact diff and verification evidence before
+              proceeding.
           partial_effects_on_failure:
             possible: Earlier verified moves may remain when a later move fails.
           rollback_on_failure:
-            available: Revert only the failed current move without disturbing unrelated work.
+            available: Revert only the failed current move without disturbing unrelated
+              work.
         state_effect: mutating
         verification:
         - method: output-schema
@@ -109,7 +119,8 @@ interfaces:
       outcomes:
       - caller_action: Review the resolved scope and routed proposal.
         class: success
-        effects: [routed-repository-change]
+        effects:
+        - routed-repository-change
         id: routed
         outputs:
         - response
@@ -154,9 +165,9 @@ interfaces:
       refactoring route without crossing scope boundaries.
     version: 1
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces:
-- interface: refactor-node.interface.query-standards
+- interface: refactor-node._rtx.interface.query-standards
   version: 4
 - interface: refactor-node.source.instruction-refactoring.interface.refactor-instructions
   version: 1

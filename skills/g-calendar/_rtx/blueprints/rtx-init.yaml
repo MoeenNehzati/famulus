@@ -6,9 +6,9 @@ description: Marks the g-calendar runtime directory as a Python package and expo
 gateway:
   language: Python
   path: __init__.py
-id: g-calendar-rtx.source.rtx-init
+id: g-calendar._rtx.source.rtx-init
 interfaces: {}
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

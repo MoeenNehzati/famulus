@@ -20,7 +20,7 @@ SPEC.loader.exec_module(MOD)
 
 DISPATCH = (
     "dispatcher --caller-skill get-weather "
-    "get-weather.interface.scripts-weather"
+    "get-weather._rtx.interface.scripts-weather"
 )
 
 
@@ -74,23 +74,20 @@ def test_missing_interface_block_is_rejected(tmp_path: Path) -> None:
     assert any("missing generated blueprint interface block" in error for error in errors)
 
 
-def test_process_export_requires_canonical_dispatcher_command(
+def test_child_process_export_is_not_exposed_in_parent_skill_block(
     tmp_path: Path,
 ) -> None:
     skill = _copy_weather_module(tmp_path)
-    _replace(
-        skill / "SKILL.md",
-        "get-weather.interface.scripts-weather",
-        "get-weather.interface.wrong",
-    )
+    skill_text = (skill / "SKILL.md").read_text(encoding="utf-8")
+    interface_block = skill_text.split("<!-- BEGIN BLUEPRINT INTERFACES -->", 1)[
+        1
+    ].split("<!-- END BLUEPRINT INTERFACES -->", 1)[0]
 
     errors = MOD.validate(tmp_path)
 
-    assert any(
-        "get-weather.interface.scripts-weather" in error
-        and "missing dispatcher command" in error
-        for error in errors
-    )
+    assert "get-weather._rtx.interface.scripts-weather" not in interface_block
+    assert "dispatcher --caller-skill" not in interface_block
+    assert errors == []
 
 
 def test_generated_block_rejects_raw_runtime_path(tmp_path: Path) -> None:

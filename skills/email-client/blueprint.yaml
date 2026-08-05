@@ -1,9 +1,7 @@
 authority:
   owns_filesystem: []
 children:
-  email-client-rtx:
-    base: module-root
-    path: _rtx/blueprint.yaml
+  _rtx: {}
 content:
 - SKILL\.md
 description: Read, search, download from, configure, verify, and send email through
@@ -22,120 +20,86 @@ discovery:
   - skill-workflow
   persistent_modifier: false
 exports:
-  email-client.interface.accounts-add:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: email-client-rtx.interface.accounts-add
-      version: 1
-  email-client.interface.accounts-list:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: email-client-rtx.interface.accounts-list
-      version: 1
-  email-client.interface.accounts-remove:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: email-client-rtx.interface.accounts-remove
-      version: 1
-  email-client.interface.accounts-set-password:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: email-client-rtx.interface.accounts-set-password
-      version: 1
-  email-client.interface.accounts-setup-oauth:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: email-client-rtx.interface.accounts-setup-oauth
-      version: 1
-  email-client.interface.accounts-update:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: email-client-rtx.interface.accounts-update
-      version: 1
-  email-client.interface.accounts-use-google-credential:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - install-assistant-tools
-      - install-assistant-tools-rtx
-    facade_interface:
-      interface: email-client-rtx.interface.accounts-use-google-credential
-      version: 1
   email-client.interface.default:
     access:
       allow_all_modules: true
       allowed_callers: []
     source_interface: email-client.source.gateway.interface.default
-  email-client.interface.live-smoke:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: email-client-rtx.interface.live-smoke
-      version: 1
-  email-client.interface.mail-attachments:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: email-client-rtx.interface.mail-attachments
-      version: 1
-  email-client.interface.mail-folders:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: email-client-rtx.interface.mail-folders
-      version: 1
-  email-client.interface.mail-list:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - email-triage
-      - email-triage-rtx
-    facade_interface:
-      interface: email-client-rtx.interface.mail-list
-      version: 1
-  email-client.interface.mail-read:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: email-client-rtx.interface.mail-read
-      version: 1
-  email-client.interface.mail-save-attachments:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: email-client-rtx.interface.mail-save-attachments
-      version: 1
-  email-client.interface.send-email:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: email-client-rtx.interface.send-email
-      version: 1
 gateway:
   language: Markdown
   path: SKILL.md
 id: email-client
-namespace_exports: {}
+namespace_exports:
+  _rtx:
+    version: 1
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    surface:
+      only:
+        email-client._rtx.interface.accounts-add: 1
+        email-client._rtx.interface.accounts-list: 1
+        email-client._rtx.interface.accounts-remove: 1
+        email-client._rtx.interface.accounts-set-password: 1
+        email-client._rtx.interface.accounts-setup-oauth: 1
+        email-client._rtx.interface.accounts-update: 1
+        email-client._rtx.interface.accounts-use-google-credential: 1
+        email-client._rtx.interface.live-smoke: 1
+        email-client._rtx.interface.mail-attachments: 1
+        email-client._rtx.interface.mail-folders: 1
+        email-client._rtx.interface.mail-list: 1
+        email-client._rtx.interface.mail-read: 1
+        email-client._rtx.interface.mail-save-attachments: 1
+        email-client._rtx.interface.send-email: 1
+    interface_access:
+      email-client._rtx.interface.accounts-add:
+        allow_all_modules: false
+        allowed_callers: []
+      email-client._rtx.interface.accounts-list:
+        allow_all_modules: false
+        allowed_callers: []
+      email-client._rtx.interface.accounts-remove:
+        allow_all_modules: false
+        allowed_callers: []
+      email-client._rtx.interface.accounts-set-password:
+        allow_all_modules: false
+        allowed_callers: []
+      email-client._rtx.interface.accounts-setup-oauth:
+        allow_all_modules: false
+        allowed_callers: []
+      email-client._rtx.interface.accounts-update:
+        allow_all_modules: false
+        allowed_callers: []
+      email-client._rtx.interface.accounts-use-google-credential:
+        allow_all_modules: false
+        allowed_callers:
+        - install-assistant-tools
+        - install-assistant-tools._rtx
+      email-client._rtx.interface.live-smoke:
+        allow_all_modules: false
+        allowed_callers: []
+      email-client._rtx.interface.mail-attachments:
+        allow_all_modules: false
+        allowed_callers: []
+      email-client._rtx.interface.mail-folders:
+        allow_all_modules: false
+        allowed_callers: []
+      email-client._rtx.interface.mail-list:
+        allow_all_modules: false
+        allowed_callers:
+        - email-triage
+        - email-triage._rtx
+      email-client._rtx.interface.mail-read:
+        allow_all_modules: false
+        allowed_callers: []
+      email-client._rtx.interface.mail-save-attachments:
+        allow_all_modules: false
+        allowed_callers: []
+      email-client._rtx.interface.send-email:
+        allow_all_modules: false
+        allowed_callers: []
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
   email-client.source.gateway:
     blueprint:

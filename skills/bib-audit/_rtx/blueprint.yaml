@@ -14,7 +14,7 @@ authority:
     - args_prefix:
       - --caller-skill
       - bib-audit
-      - bib-audit.interface.scripts-bib-similarity
+      - bib-audit._rtx.interface.scripts-bib-similarity
       command:
       - dispatcher
       reason: Runs the local bib-audit duplicate/version candidate detector through
@@ -22,7 +22,7 @@ authority:
     - args_prefix:
       - --caller-skill
       - bib-audit
-      - bib-audit.interface.scripts-bib-validate-bibtex
+      - bib-audit._rtx.interface.scripts-bib-validate-bibtex
       command:
       - dispatcher
       reason: Runs the local bib-audit BibTeX/natbib validator through the shared
@@ -35,31 +35,31 @@ content:
 - __init__\.py
 description: Code module for the bib-audit skill.
 exports:
-  bib-audit-rtx.interface.scripts-bib-similarity:
+  bib-audit._rtx.interface.scripts-bib-similarity:
     access:
       allow_all_modules: false
       allowed_callers:
       - bib-audit
-    source_interface: bib-audit-rtx.source.rtx-reference-pairs.interface.scripts-bib-similarity
-  bib-audit-rtx.interface.scripts-bib-validate-bibtex:
+    source_interface: bib-audit._rtx.source.rtx-reference-pairs.interface.scripts-bib-similarity
+  bib-audit._rtx.interface.scripts-bib-validate-bibtex:
     access:
       allow_all_modules: false
       allowed_callers:
       - bib-audit
-    source_interface: bib-audit-rtx.source.rtx-syntax-checker.interface.scripts-bib-validate-bibtex
+    source_interface: bib-audit._rtx.source.rtx-syntax-checker.interface.scripts-bib-validate-bibtex
 gateway:
   language: Python>=3.11
   path: __init__.py
-id: bib-audit-rtx
+id: bib-audit._rtx
 namespace_exports: {}
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
-  bib-audit-rtx.source.rtx-reference-pairs:
+  bib-audit._rtx.source.rtx-reference-pairs:
     blueprint:
       base: module-root
       path: blueprints/rtx-reference-pairs.yaml
-  bib-audit-rtx.source.rtx-syntax-checker:
+  bib-audit._rtx.source.rtx-syntax-checker:
     blueprint:
       base: module-root
       path: blueprints/rtx-syntax-checker.yaml

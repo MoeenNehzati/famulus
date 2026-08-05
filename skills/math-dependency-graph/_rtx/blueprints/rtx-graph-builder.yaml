@@ -5,22 +5,22 @@ dependencies:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
-  source: math-dependency-graph-rtx.source.rtx-init
+  source: math-dependency-graph._rtx.source.rtx-init
   version: 1
 - blueprint:
     base: module-root
     path: blueprints/rtx-tex-macro-reader.yaml
   reason: Imports Python source from _rtx/_tex_macro_reader.py.
-  source: math-dependency-graph-rtx.source.rtx-tex-macro-reader
+  source: math-dependency-graph._rtx.source.rtx-tex-macro-reader
   version: 1
 description: Validates canonical graph JSON and writes an interactive HTML dependency
   graph that loads ELK and MathJax from jsDelivr when opened.
 gateway:
   language: Python
   path: _graph_builder.py
-id: math-dependency-graph-rtx.source.rtx-graph-builder
+id: math-dependency-graph._rtx.source.rtx-graph-builder
 interfaces:
-  math-dependency-graph-rtx.source.rtx-graph-builder.interface.scripts-build-math-dependency-graph:
+  math-dependency-graph._rtx.source.rtx-graph-builder.interface.scripts-build-math-dependency-graph:
     contract:
       arguments:
         html-out:
@@ -291,6 +291,6 @@ platform_support:
   macos: true
   windows: true
 runtime_dependencies: []
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

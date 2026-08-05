@@ -604,7 +604,7 @@ def test_active_v4_plugin_is_rejected_after_canonical_v5_cutover(
     captured = capsys.readouterr()
     assert exit_code == 2
     assert captured.out == ""
-    assert "schema_version 5" in captured.err
+    assert "schema_version 6" in captured.err
     assert "stale-skill" not in captured.err
 
 

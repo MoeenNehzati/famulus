@@ -197,6 +197,6 @@ interfaces:
       authorized and exactly scoped Git mutations.
     version: 1
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

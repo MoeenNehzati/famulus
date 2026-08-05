@@ -11,22 +11,15 @@ Activation: user-request; persistent modifier: no
 
 Skill Version: 2
 
-Uses Interfaces: none
+Uses Interfaces:
+- `initialize-tdd.source.gateway -> initialize-tdd._rtx.interface.setup-compat-aliases@1`
 
 Public Interfaces:
 - `initialize-tdd.interface.default`
-- `initialize-tdd.interface.setup-compat-aliases`
 <!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Dispatcher Interfaces:
-
-Use the installed `dispatcher` command for these process-bound interfaces:
-- `initialize-tdd.interface.setup-compat-aliases` — Create every host compatibility alias symlink (e.g. a legacy filename some host looks for specifically) in a freshly scaffolded project directory.
-  - `dispatcher --caller-skill initialize-tdd initialize-tdd.interface.setup-compat-aliases <project-dir>`
-  - First positional is the scaffolded project's directory path. Discovers and runs every compat-alias helper next to this script; adding a new host's alias later needs no change here.
 
 Instruction Interfaces:
 

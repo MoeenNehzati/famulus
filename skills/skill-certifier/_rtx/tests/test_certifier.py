@@ -47,7 +47,7 @@ assert SPEC.loader is not None
 sys.modules[SPEC.name] = certifier
 SPEC.loader.exec_module(certifier)
 
-V5_SCHEMA_ROOT = MODULE_PATH.parents[3] / "references" / "blueprint"
+V5_SCHEMA_ROOT = MODULE_PATH.parents[3] / "references" / "blueprint" / "migrations" / "v5"
 V5_AUTHORIZATION_FIXTURE = (
     MODULE_PATH.parents[3]
     / "tests"
@@ -131,7 +131,7 @@ def test_payload_issuance_is_v1_for_frozen_v4_and_v2_for_v5(
         "key_id": "sha256:" + "a" * 64,
         "previous_entry_hash": None,
         "certifier_identity": {
-            "interface": "skill-certifier.interface.certify",
+            "interface": "skill-certifier._rtx.interface.certify",
             "version": 1,
             "node_hash": "sha256:" + "b" * 64,
             "source_commit": commit,
@@ -196,7 +196,7 @@ def test_v5_executing_certifier_must_be_owned_by_runtime_child() -> None:
     )
     with pytest.raises(
         certifier.CertificationError,
-        match="skill-certifier-rtx",
+        match="skill-certifier._rtx",
     ):
         certifier._verify_executing_candidate_certifier(
             root,
@@ -207,7 +207,7 @@ def test_v5_executing_certifier_must_be_owned_by_runtime_child() -> None:
     child_owned = SimpleNamespace(
         schema_version=5,
         nodes={source_id: node},
-        source_modules={source_id: "skill-certifier-rtx"},
+        source_modules={source_id: "skill-certifier._rtx"},
     )
     certifier._verify_executing_candidate_certifier(
         root,
@@ -393,7 +393,7 @@ def test_selected_v5_writer_issues_only_payload_v2(
         certifier,
         "derive_certifier_identity",
         lambda *_args, **_kwargs: {
-            "interface": "skill-certifier.interface.certify",
+            "interface": "skill-certifier-rtx.interface.certify",
             "version": 1,
             "node_hash": "sha256:" + "d" * 64,
             "source_commit": commit,

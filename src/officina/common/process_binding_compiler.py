@@ -6,13 +6,22 @@ from dataclasses import dataclass
 import datetime as dt
 import json
 import re
-from typing import Any, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Mapping, Protocol, Sequence
 from urllib.parse import urlparse
 import uuid
 
 import yaml
 
-from .blueprint_graph import BlueprintNode, InterfaceExport
+if TYPE_CHECKING:
+    from .blueprint_graph import BlueprintNode, InterfaceExport
+else:
+    class BlueprintNode(Protocol):
+        declaration: Mapping[str, Any]
+
+    class InterfaceExport(Protocol):
+        interface_id: str
+        local_name: str
+        declaration: Mapping[str, Any]
 
 
 class ProcessBindingError(ValueError):
