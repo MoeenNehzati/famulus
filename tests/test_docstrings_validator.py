@@ -4,7 +4,6 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 import shutil
-import subprocess
 
 import pytest
 
@@ -148,10 +147,12 @@ def test_root_runner_executes_docstring_adapter_against_staged_bytes(
     tmp_path: Path,
 ) -> None:
     repo = tmp_path / "repo"
-    # famulus-raw-git: category=validator-isolation; reason=the integration test needs a tracked repository baseline before staging the live runner and adapter
-    cloned = subprocess.run(
-        ["git", "clone", "--quiet", "--shared", str(_REPO_ROOT), str(repo)],
-        capture_output=True,
+    cloned = GitTestRepository(_REPO_ROOT).git(
+        "clone",
+        "--quiet",
+        "--shared",
+        str(_REPO_ROOT),
+        str(repo),
         check=False,
     )
     assert cloned.returncode == 0, cloned.stderr.decode(errors="replace")
