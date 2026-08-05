@@ -56,12 +56,14 @@ canonical standard or new interface is added.
 
 ## Installer test correction
 
-These corrections enter scope only if their failures reproduce on the clean
-merged baseline, and they land in a separate test-only commit. Subprocess
-packaging tests that run scaffold then use a test-owned keyring stored with
-private permissions inside each temporary home. It persists across subprocesses
-and ignores ambient desktop-secret-service routing. The separate strict native
-keyring test continues to exercise the real host backend.
+The observed DBus failure proves an irrelevant host dependency even when the
+transient host fault does not recur. A controlled clean-baseline run with
+ambient DBus/keyring access disabled supplies deterministic RED evidence. The
+correction lands in a separate test-only commit: subprocess packaging tests that
+run scaffold use a test-owned keyring stored with private permissions inside
+each temporary home. It persists across subprocesses and ignores ambient
+desktop-secret-service routing. The separate strict native keyring test
+continues to exercise the real host backend.
 
 The live GitHub packaging test adopts the resolver setup already used by the
 local v5 packaging test: create the minimum scaffold, build a minimal managed
