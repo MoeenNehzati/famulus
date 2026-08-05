@@ -45,8 +45,7 @@ first; if no, use only the conversation and repository context.
 
 Before editing any skill file, verify the repo containing that file is on a
 named branch (`git symbolic-ref HEAD` from the repo root). If it fails, check
-out a named branch first. The pre-commit hook will block the eventual commit,
-but catching this before editing avoids doing work that can't land.
+out a named branch first.
 
 ## Standards retrieval
 
