@@ -275,22 +275,7 @@ class TestNestedModuleMigrationContract:
             "skill-certifier",
             "skill-drift",
             "skill-maker",
-            "fix-bisync",
-            "formal-prose-review",
-            "git-workflow",
-            "hook-maker",
-            "latex-workshop",
-            "loose-mode",
-            "make-tex-docstring",
-            "notation-review",
-            "prepare-handoff",
-            "proof-audit",
             "refactor-node",
-            "technical-flow-review",
-            "tight-mode",
-            "tool-applicability",
-            "update-standards",
-            "wrap-up",
         }
         child_module_ids = {f"{skill_id}._rtx" for skill_id in existing_children}
 
