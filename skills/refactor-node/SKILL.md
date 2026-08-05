@@ -47,16 +47,20 @@ standard file as the effective policy.
 
 ### 1. Resolve
 
-Query the target with `task.kind=refactor` and `--view requirements`. Record each
-returned owner, selected scope, exclusion, gateway family, and `standard_ref`;
-report unsupported partitions. Resolve every material `requirements.unknown`
-before proposing a move. Never silently discard one.
+Query target with `task.kind=refactor` and `--view requirements`. Whole-node
+audits query the target module and every registered implementation child.
+Resolve every material `requirements.unknown` for target module and
+each child. Record returned owners/scopes/exclusions/gateways/`standard_ref`;
+report unsupported partitions. Never silently discard.
 
 ### 2. Characterize
 
-Read scoped repository instructions, the selected source, its current diff, and
-the directly affected declarations and consumers. Before selecting follow-up
-standard material, record a preservation map with only the affected rows:
+After these queries, read every returned supported behavioral source;
+declarations/tests/contracts never replace owned implementation. If current
+runtime policy requires private-source approval, obtain it before reading;
+denied/unavailable means partial, never exclusion/completion. Explicitly owned
+sub-scope: only selected source and directly affected
+declarations/consumers. Read instructions/diff; map affected rows:
 
 - observable behavior and branch outcomes;
 - ownership and the canonical source of each fact being changed;
@@ -87,11 +91,11 @@ Request follow-up information only for refs that affect the current decision.
 
 ### 4. Route
 
-- Invoke `refactor-node.interface.refactor-python` for Python partitions.
-- Invoke `refactor-node.interface.refactor-instructions` for Markdown gateway
-  partitions.
-- For a mixed whole module, invoke both routes as needed and combine their
-  proposals without crossing ownership boundaries.
+Characterize every supported partition before choosing the smallest justified
+move; mutate one at a time; no-churn is valid.
+
+- Route Python through `refactor-node.interface.refactor-python`; Markdown
+  through `refactor-node.interface.refactor-instructions`.
 
 ### 5. Propose and change
 

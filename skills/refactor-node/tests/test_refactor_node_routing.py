@@ -230,3 +230,37 @@ def test_router_declares_exact_standard_leaf_mapping_and_closure_rules() -> None
     assert "unknown" in normalized
     assert "Never silently discard" in normalized
     assert "remedied-by" in normalized
+
+
+def test_whole_node_characterization_covers_every_behavioral_source() -> None:
+    skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+    normalized = " ".join(skill.split())
+
+    for required_clause in (
+        "Query target with",
+        (
+            "Whole-node audits query the target module and every registered "
+            "implementation child"
+        ),
+        (
+            "Resolve every material `requirements.unknown` for target module "
+            "and each child"
+        ),
+        (
+            "After these queries, read every returned supported "
+            "behavioral source"
+        ),
+        "declarations/tests/contracts never replace owned implementation",
+        (
+            "If current runtime policy requires private-source approval, "
+            "obtain it before reading"
+        ),
+        "denied/unavailable means partial, never exclusion/completion",
+        "Explicitly owned sub-scope",
+        "only selected source and directly affected declarations/consumers",
+        "Characterize every supported partition before choosing",
+        "smallest justified move",
+        "mutate one at a time",
+        "no-churn is valid",
+    ):
+        assert required_clause in normalized
