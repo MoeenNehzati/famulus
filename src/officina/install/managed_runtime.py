@@ -23,6 +23,7 @@ from pathlib import Path
 
 from officina.common import atomic_files
 from officina.common import toml_io
+from officina.common.git_provenance import run_git
 from officina.install.runtime_pointer import RuntimePointer, activate_release
 
 _VERSION_OPERATOR_RE = re.compile(r"^(==|>=|<=|!=|~=|>|<)")
@@ -167,21 +168,96 @@ def _run_dependency_install(*, uv_bin: Path, python_bin: Path, packages: tuple[s
         )
 
 
-def _source_revision(repo_root: Path) -> str:
-    result = subprocess.run(
-        ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="strict",
-        timeout=30,
-    )
-    revision = result.stdout.strip()
-    if result.returncode != 0 or not re.fullmatch(r"[0-9a-f]{40}", revision):
+def _packaged_source_revision(repo_root: Path) -> str:
+    """Fingerprint the source inputs used to build the Officina wheel.
+
+    Plugin managers install a copied source tree without its ``.git``
+    directory.  In that environment there is no commit ID to record, so the
+    managed-runtime artifact records a stable 160-bit prefix of a SHA-256
+    digest instead.  The digest covers the build configuration and every
+    non-generated regular file beneath the configured ``officina`` package,
+    with repository-relative POSIX paths separating otherwise-identical
+    bytes. Python bytecode caches are excluded because importing the copied
+    plugin may create them before the wheel build and their bytes are
+    machine-specific, not source identity.
+
+    Symlinks and special files are rejected rather than followed: a packaged
+    runtime must be reproducible from self-contained, regular wheel inputs.
+    The wheel's separate SHA-256 remains the authoritative identity of the
+    exact built artifact.
+    """
+    pyproject_access = toml_io.open(repo_root, "pyproject.toml")
+    pyproject = pyproject_access.path
+    source_root = repo_root / "src" / "officina"
+    if pyproject.is_symlink() or not pyproject.is_file():
         raise ManagedRuntimeError(
-            f"could not identify Officina source revision: {result.stderr.strip()}"
+            f"could not identify Officina packaged source: not a regular file: {pyproject}"
         )
-    return revision
+    if source_root.is_symlink() or not source_root.is_dir():
+        raise ManagedRuntimeError(
+            f"could not identify Officina packaged source: not a directory: {source_root}"
+        )
+    with pyproject_access as stream:
+        pyproject_bytes = stream.read().encode("utf-8")
+
+    source_files: list[Path] = []
+    for path in source_root.rglob("*"):
+        if path.is_symlink():
+            raise ManagedRuntimeError(
+                f"could not identify Officina packaged source: symlink is forbidden: {path}"
+            )
+        if path.is_dir():
+            continue
+        if not path.is_file():
+            raise ManagedRuntimeError(
+                f"could not identify Officina packaged source: not a regular file: {path}"
+            )
+        relative_to_source = path.relative_to(source_root)
+        if "__pycache__" in relative_to_source.parts or path.suffix in {
+            ".pyc",
+            ".pyo",
+        }:
+            continue
+        source_files.append(path)
+    if not source_files:
+        raise ManagedRuntimeError(
+            f"could not identify Officina packaged source: no package files under {source_root}"
+        )
+
+    digest = hashlib.sha256()
+    for path in (pyproject, *sorted(source_files)):
+        relative_path = path.relative_to(repo_root).as_posix().encode("utf-8")
+        content = pyproject_bytes if path == pyproject else path.read_bytes()
+        content_digest = hashlib.sha256(content).digest()
+        digest.update(len(relative_path).to_bytes(8, "big"))
+        digest.update(relative_path)
+        digest.update(content_digest)
+    return digest.hexdigest()[:40]
+
+
+def _source_revision(repo_root: Path) -> str:
+    """Return the Git commit or a deterministic packaged-source fingerprint."""
+    try:
+        result = run_git(
+            repo_root,
+            "rev-parse",
+            "--show-toplevel",
+            "HEAD",
+            check=False,
+            timeout=30,
+        )
+        output_lines = result.stdout.decode("utf-8", errors="strict").splitlines()
+    except (OSError, subprocess.TimeoutExpired, UnicodeError):
+        return _packaged_source_revision(repo_root)
+    if result.returncode == 0 and len(output_lines) == 2:
+        reported_root, revision = output_lines
+        try:
+            owns_source = Path(reported_root).resolve() == repo_root.resolve()
+        except OSError:
+            owns_source = False
+        if owns_source and re.fullmatch(r"[0-9a-f]{40}", revision):
+            return revision
+    return _packaged_source_revision(repo_root)
 
 
 def _build_officina_wheel(

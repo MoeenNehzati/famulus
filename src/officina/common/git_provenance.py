@@ -48,8 +48,14 @@ def run_git(
     *args: str,
     check: bool = True,
     input_bytes: bytes | None = None,
+    timeout: float | None = None,
 ) -> subprocess.CompletedProcess[bytes]:
-    """Run Git at ``repo_root`` without ambient routing, config, or hooks."""
+    """Run Git at ``repo_root`` without ambient routing, config, or hooks.
+
+    ``timeout`` is forwarded to ``subprocess.run`` so latency-sensitive
+    callers can bound even local Git inspection without duplicating this
+    environment-isolation boundary.
+    """
 
     environment = os.environ.copy()
     for name in tuple(environment):
@@ -80,6 +86,7 @@ def run_git(
         capture_output=True,
         input=input_bytes,
         env=environment,
+        timeout=timeout,
     )
 
 

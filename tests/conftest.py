@@ -15,7 +15,12 @@ from pathlib import Path
 
 
 class FakeCompletedProcess:
-    def __init__(self, returncode: int = 0, stdout: str = "", stderr: str = "") -> None:
+    def __init__(
+        self,
+        returncode: int = 0,
+        stdout: str | bytes = "",
+        stderr: str | bytes = "",
+    ) -> None:
         self.returncode = returncode
         self.stdout = stdout
         self.stderr = stderr
@@ -46,7 +51,10 @@ def fake_uv_subprocess_run(calls: list, *, trusted_python_dir: Path, windows: bo
     def fake_run(cmd, **kwargs):
         calls.append(list(cmd))
         if cmd[0] == "git":
-            return FakeCompletedProcess(stdout="a" * 40 + "\n")
+            repo_root = Path(cmd[cmd.index("-C") + 1]).resolve()
+            return FakeCompletedProcess(
+                stdout=f"{repo_root}\n{'a' * 40}\n".encode("utf-8")
+            )
         if cmd[1] == "venv":
             venv_dir = Path(cmd[-1])
             if windows:

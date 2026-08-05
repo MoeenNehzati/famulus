@@ -476,12 +476,14 @@ child-only dependency is retained after its parent facade is removed.
 
 The dispatcher itself is a separate first-party runtime artifact, not an
 interface dependency. Candidate construction builds a versioned Officina wheel
-from the selected source revision and installs it, together with pinned core
-dependencies such as PyYAML/LibYAML, before installing v2 manifest-derived
-module dependencies. Activation verifies the wheel identity, source revision,
-and importability in the clean candidate environment, then updates the managed
-runtime pointer. A candidate that cannot execute `officina.dispatcher.cli`
-never activates.
+from the selected source and installs it, together with pinned core dependencies
+such as PyYAML/LibYAML, before installing v2 manifest-derived module
+dependencies. Source identity is the exact Git commit when Git metadata is
+available; copied plugin sources without `.git` use a deterministic fingerprint
+of the wheel's build configuration and package source files. Activation verifies
+that source identity, the exact wheel digest, and importability in the clean
+candidate environment, then updates the managed runtime pointer. A candidate
+that cannot execute `officina.dispatcher.cli` never activates.
 
 There is no warm-up route. First and repeated invocations use the same direct
 algorithm, with only ordinary operating-system file caching differing between

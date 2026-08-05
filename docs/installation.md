@@ -76,10 +76,13 @@ Runs in every install, regardless of mode or which agents you want. Installs:
   `references/blueprint/runtime_dependencies.json`, generated from executable
   behavioral-source runtime dependency declarations. Candidate construction
   installs and verifies the Officina wheel in the managed release before
-  activation. The stable launcher reads `current.json`, injects its exact
-  repository `officina.toml`, and enters that release's interpreter; it does
-  not embed a checkout path or use ambient `PYTHONPATH`. Linux recurring units
-  use that runtime and capture the installed launcher directory ahead of other
+  activation. Artifact metadata records the exact wheel SHA-256 and a source
+  identity: the Git commit in a checkout, or a deterministic fingerprint of
+  `pyproject.toml` and `src/officina/**` when a plugin manager has copied the
+  package without `.git`. The stable launcher reads `current.json`, injects
+  its exact repository `officina.toml`, and enters that release's interpreter;
+  it does not embed a checkout path or use ambient `PYTHONPATH`. Linux recurring
+  units use that runtime and capture the installed launcher directory ahead of other
   PATH entries.
 - `PATH` — adds `<bin-dir>` to your shell rc (or the Windows registry) so
   `dispatcher` and the agent launchers resolve as bare commands.

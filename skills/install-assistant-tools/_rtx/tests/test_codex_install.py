@@ -435,23 +435,18 @@ class CodexInstallTests(unittest.TestCase):
             # activates a managed-runtime candidate release (deploying the
             # resolver and its trusted-roots.json sidecar as part of that
             # activation) before scaffold ever runs, so the resolver hop now
-            # succeeds. The release venv still has no `officina` package
-            # installed (a separate, deliberate scope decision -- see
-            # _install_scaffold.install_python_packages's docstring), so the
-            # only expected failure is ModuleNotFoundError for officina.
-            # dispatcher.cli, raised by the release interpreter after control
-            # has already transferred there -- never a resolver-side error.
+            # succeeds. Unlike the deliberately minimal resolver-only fixtures,
+            # this real installer path supplies repo_root, builds and installs
+            # the Officina wheel, and must expose a working dispatcher CLI.
             dispatcher_result = run_command(
                 platform_shell_command("dispatcher", ["--help"]),
                 env=launcher_env,
                 cwd=workdir,
                 check=False,
             )
-            self.assertNotEqual(dispatcher_result.returncode, 0)
-            self.assertNotIn("No such file or directory", dispatcher_result.stderr)
-            self.assertNotIn("famulus launcher:", dispatcher_result.stderr)
-            self.assertIn("ModuleNotFoundError", dispatcher_result.stderr)
-            self.assertIn("officina", dispatcher_result.stderr)
+            self.assertEqual(dispatcher_result.returncode, 0, dispatcher_result.stderr)
+            self.assertIn("usage: dispatcher", dispatcher_result.stdout)
+            self.assertIn("Invoke a skill machine interface", dispatcher_result.stdout)
             for agent in ("assistant", "collab", "coauthor"):
                 command = platform_shell_command(
                     agent,
