@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 import yaml
@@ -11,6 +12,17 @@ def _load_yaml(path: Path) -> dict:
     loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
     assert isinstance(loaded, dict)
     return loaded
+
+
+def _authored_section(skill: str, heading: str) -> str:
+    marker = f"### {heading}"
+    _, separator, remainder = skill.partition(marker)
+    assert separator
+    return remainder.partition("\n### ")[0]
+
+
+def _concept_tokens(text: str) -> set[str]:
+    return set(re.findall(r"[a-z]+(?:[-_/][a-z]+)*|--[a-z-]+", text.lower()))
 
 
 def _source_for_interface(
@@ -230,6 +242,94 @@ def test_router_declares_exact_standard_leaf_mapping_and_closure_rules() -> None
     assert "unknown" in normalized
     assert "Never silently discard" in normalized
     assert "remedied-by" in normalized
+
+
+def test_router_preflights_exact_dry_run_and_rejects_checkout_mismatch() -> None:
+    skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+    preflight = _authored_section(skill, "Preflight")
+    concepts = _concept_tokens(preflight)
+
+    assert {
+        "exact",
+        "retain",
+        "mismatch",
+        "reject",
+        "registered",
+        "gateway",
+    } <= concepts
+    assert "--dry-run" in preflight
+    assert "cwd/python_target.gateway_path" in preflight
+    assert "AI=<reviewed-root>" in preflight
+    assert "_rtx" not in skill
+    assert "_closure_engine.py" not in skill
+
+
+def test_router_checks_every_exact_request_field_before_execution() -> None:
+    skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+    preflight = _authored_section(skill, "Preflight")
+    request_clause = next(
+        sentence for sentence in preflight.split(".") if "rendered command" in sentence
+    )
+
+    assert {"target", "repository", "root", "facts", "view", "refs"} <= _concept_tokens(
+        request_clause
+    )
+
+
+def test_router_selects_complete_affected_ref_evidence_in_three_classes() -> None:
+    skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+    selection = _authored_section(skill, "Select and retrieve")
+    selection_tokens = _concept_tokens(selection)
+
+    assert {
+        "every",
+        "affected",
+        "normative",
+        "owner",
+        "partition",
+        "diagnose",
+        "remedy",
+    } <= selection_tokens
+    _, separator, classification = selection.partition("Report disjointly:")
+    assert separator
+    groups = [group.strip() for group in classification.split(";")]
+    assert len(groups) == 3
+    assert {"canonical", "returned"} <= _concept_tokens(groups[0])
+    assert {"supplemental", "owner", "limitations"} <= _concept_tokens(groups[1])
+    assert {"requested", "normative", "no", "mapped", "evidence"} <= _concept_tokens(
+        groups[2]
+    )
+
+
+def test_router_distinguishes_defect_red_from_structural_green() -> None:
+    skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+    change = _authored_section(skill, "Propose and change")
+    sentences = change.split(".")
+    defect_red = next(sentence for sentence in sentences if "RED" in sentence)
+    structural_green = next(
+        sentence for sentence in sentences if "structural" in sentence
+    )
+    defect_stop = next(sentence for sentence in sentences if "defect" in sentence)
+
+    assert {"behavior", "repair", "genuine", "red", "evidence"} <= _concept_tokens(
+        defect_red
+    )
+    assert {
+        "behavior-preserving",
+        "structural",
+        "standards-backed",
+        "green",
+        "before",
+        "after",
+    } <= _concept_tokens(structural_green)
+    assert {
+        "defect",
+        "report",
+        "stop",
+        "separately",
+        "approved",
+        "scope",
+    } <= _concept_tokens(defect_stop)
 
 
 def test_whole_node_characterization_covers_every_behavioral_source() -> None:

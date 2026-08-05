@@ -39,57 +39,64 @@ These interfaces are documented prompt surfaces. They are not executed through `
 <!-- END BLUEPRINT INTERFACES -->
 # Refactor Node
 
-Use `refactor-node.interface.query-standards` as the sole repository-policy
-source. It resolves ownership and validates every pinned import; never read one
-standard file as the effective policy.
+`refactor-node.interface.query-standards` alone supplies repository policy: it
+resolves ownership and validates pinned imports; no file alone is effective.
 
 ## Standards retrieval workflow
 
-### 1. Resolve
+### Preflight
+
+Before every standards query, run and retain its exact dispatcher `--dry-run`.
+Resolve `cwd/python_target.gateway_path` against the reviewed root's registered
+implementation child and gateway. A match selects the gateway but does not prove
+the full imported runtime closure. On mismatch, reject the result, select the
+checkout with the installed wrapper's `AI=<reviewed-root>`, and repeat. Execute
+only a match after verifying the rendered command's target, repository root,
+facts, view, and refs; retain it for exact replay.
+
+### Resolve
 
 Query target with `task.kind=refactor` and `--view requirements`. Whole-node
 audits query the target module and every registered implementation child.
-Resolve every material `requirements.unknown` for target module and
-each child. Record returned owners/scopes/exclusions/gateways/`standard_ref`;
-report unsupported partitions. Never silently discard.
+Resolve every material `requirements.unknown` for target module and each child.
+Preserve returned owners/scopes/exclusions/gateways/`standard_ref`; report
+unsupported partitions. Never silently discard unknowns.
 
-### 2. Characterize
+### Characterize
 
 After these queries, read every returned supported behavioral source;
 declarations/tests/contracts never replace owned implementation. If current
 runtime policy requires private-source approval, obtain it before reading;
 denied/unavailable means partial, never exclusion/completion. Explicitly owned
-sub-scope: only selected source and directly affected
-declarations/consumers. Read instructions/diff; map affected rows:
+sub-scope: only selected source and directly affected declarations/consumers.
+Read instructions/diff. Map affected observables/outcomes, fact ownership,
+dependency/authorization/reverse-consumer edges, and evidence owner/limitations.
+Mark unresolved edges. Separate refactoring from features, bug fixes, public-API
+changes, and ownership expansion.
 
-- observable behavior and branch outcomes;
-- ownership and the canonical source of each fact being changed;
-- dependency and authorization edges, including affected reverse consumers;
-- verification evidence, its owner, and its declared limitations.
+### Select and retrieve
 
-Mark unresolved edges rather than silently excluding them. Separate a refactor
-from any feature, bug fix, public-API change, or ownership expansion.
-
-### 3. Select and retrieve
-
-For normal views, dereference each partition overlay index through the top-level
-shared catalog. Use the catalog entry's exact `document` and `ref` in follow-up
-queries; applicability and missing facts belong to the overlay.
+Normally, dereference each partition overlay through the shared catalog;
+use exact `document`/`ref`. Apply `requirements.true`; select `context_index`
+entries; evidence maps checks, tests, and assurances, `semantic_reviews`, and
+artifacts. The overlay owns applicability/missing facts.
 
 | Current decision | Request | Use |
 |---|---|---|
-| Resolve applicability | `--view requirements` | Apply `requirements.true`; supply missing facts and rerun for material unknowns. |
-| Interpret or apply indexed context | `--view context --refs-json JSON` | Request a relevant `context_index` entry or requirement; read only returned families, definitions, guidance, and examples. |
-| Plan or assess verification | `--view evidence --refs-json JSON` | Map returned checks, tests, and assurances to the selected refs; perform `semantic_reviews` and open only returned artifacts. Preserve limitations. |
-| Repair a proven violation | `--view remedies --refs-json JSON` | Follow only returned `remedied-by` links and procedures, including preconditions, order, invariants, completion conditions, and risk. |
-| Unusual extraction | `--query-json JSON` | Apply the generic record filter/projection described by `--help`. |
-| Debug extraction | `--view full` | Inspect the complete projection only. |
+| Resolve applicability | `--view requirements` | Resolve material unknowns and rerun. |
+| Interpret indexed context | `--view context --refs-json JSON` | Read only returned context. |
+| Assess verification | `--view evidence --refs-json JSON` | Preserve returned limitations. |
+| Repair a violation | `--view remedies --refs-json JSON` | Follow only returned `remedied-by` procedures and their conditions/order/invariants/risk. |
 
-`--refs-json` is a list of exact pairs such as
-`[{"document":"node-standards.python-ood","ref":"python-ood.behavioral-contract#preserve-observables"}]`.
-Request follow-up information only for refs that affect the current decision.
+Request follow-ups only for decision-relevant refs. Use `--view full` or
+`--query-json` only via `--help`.
+For verification, query every affected normative ref in every owner partition,
+plus refs used to diagnose and remedy the pressure. Report disjointly:
+canonical evidence returned by the query; supplemental change-relevant checks,
+naming their actual owner and limitations, including directly affected consumer
+checks; and requested normative refs with no mapped evidence.
 
-### 4. Route
+### Route
 
 Characterize every supported partition before choosing the smallest justified
 move; mutate one at a time; no-churn is valid.
@@ -97,12 +104,13 @@ move; mutate one at a time; no-churn is valid.
 - Route Python through `refactor-node.interface.refactor-python`; Markdown
   through `refactor-node.interface.refactor-instructions`.
 
-### 5. Propose and change
+### Propose and change
 
-Before mutation, report the scope, preservation map, relevant requirements,
-unresolved facts, selected evidence with limitations, and returned remedy.
-Require approval, apply one move at a time, inspect the exact diff against the
-map, and run every relevant returned validator. A failure keeps the result
-partial: fix it within the approved move and rerun, or revert and stop if the fix
-needs new scope. Never treat, hand off, or consume the changed skill as final
-output until those validators pass.
+Before mutation, report scope, preservation map, requirements, unresolved facts,
+classified evidence, and remedy; require approval. A behavior repair requires
+genuine RED evidence. A behavior-preserving structural move requires
+standards-backed design pressure and green characterization before and after.
+If diagnosis reveals a behavioral defect, report and stop: its fix needs
+separately approved scope. Apply one move, inspect its diff, and run every
+relevant returned validator. Fix failures within the approved move and rerun;
+otherwise revert and stop. Never consume the result until validation passes.
