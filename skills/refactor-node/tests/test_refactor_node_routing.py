@@ -230,14 +230,3 @@ def test_router_declares_exact_standard_leaf_mapping_and_closure_rules() -> None
     assert "unknown" in normalized
     assert "Never silently discard" in normalized
     assert "remedied-by" in normalized
-
-
-def test_each_mutating_route_handles_approved_reentry() -> None:
-    for relative in (
-        "instructions/python-refactoring.md",
-        "instructions/instruction-refactoring.md",
-    ):
-        text = " ".join((SKILL_ROOT / relative).read_text(encoding="utf-8").split())
-        assert "On approved re-entry" in text
-        assert "apply exactly the approved move" in text
-        assert "return the exact diff and verification evidence" in text

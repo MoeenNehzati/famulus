@@ -1,6 +1,6 @@
 schema_version: 6
 standard_version: 1.0.0
-revision: 11
+revision: 12
 id: node-standards.node
 canonical_path: references/node-standards/node.standard.yaml
 title: Node Standard
@@ -9,8 +9,8 @@ imports:
   refactoring:
     standard_id: node-standards.refactoring
     standard_version: 2.0.0
-    revision: 3
-    digest: sha256:f20606020255d3c6e638aff8ff345befd3783b7163a8e51b0b40a65e91304a37
+    revision: 4
+    digest: sha256:240335e9b175213680145e815e9526c1d68700ea14090b944404f51246bbbb34
     artifact:
       kind: artifact
       ref: artifact.refactoring-standard

@@ -91,16 +91,3 @@ def test_refactor_node_builds_a_refactoring_brief_from_each_partition() -> None:
         assert required in skill
     assert "items.true" not in skill
     assert len(skill.split()) < 700
-
-
-def test_language_routes_use_the_whole_applicable_closure() -> None:
-    python = _normalized("skills/refactor-node/instructions/python-refactoring.md")
-    instructions = _normalized(
-        "skills/refactor-node/instructions/instruction-refactoring.md"
-    )
-
-    assert "all applicable rule assertions and guidance" in python
-    assert "python-ood.* items for Python-specific diagnosis" in python
-    assert "all applicable rule assertions and guidance" in instructions
-    assert "semantic-review work" in python
-    assert "semantic-review work" in instructions

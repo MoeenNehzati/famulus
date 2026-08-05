@@ -1,6 +1,6 @@
 schema_version: 6
 standard_version: 2.0.0
-revision: 3
+revision: 4
 id: node-standards.refactoring
 canonical_path: references/node-standards/refactoring.standard.yaml
 title: Node Refactoring Standard
@@ -317,10 +317,10 @@ standards:
     id: skill-refactoring.ordering-rules
     title: Ordering rules
     assertions:
-      - {id: characterize-first, modality: required, statement: "Always characterize before starting."}
+      - {id: characterize-first, modality: required, statement: "Map affected behavior, ownership, dependency, authorization, and verification edges."}
       - {id: risk-order, modality: required, statement: "Apply all safe moves first, verify, then medium, then structural."}
-      - {id: isolate-structural, modality: prohibited, statement: "Never apply two structural moves in the same pass without verifying between them."}
-      - {id: revert-breakage, modality: required, statement: "If any move breaks behavior, revert immediately — don't patch forward."}
+      - {id: isolate-structural, modality: prohibited, statement: "Verify between structural moves; never batch them."}
+      - {id: revert-breakage, modality: required, statement: "An unvalidated move is non-final; fix and rerun within scope or revert."}
 artifacts: {}
 domain_facts:
   node.present: true

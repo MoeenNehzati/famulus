@@ -1,6 +1,6 @@
 schema_version: 6
 standard_version: 1.0.0
-revision: 16
+revision: 17
 id: node-standards.python-module
 canonical_path: references/node-standards/python-module.standard.yaml
 title: Python Module Standard
@@ -9,16 +9,16 @@ imports:
   module:
     standard_id: node-standards.module
     standard_version: 1.0.0
-    revision: 11
-    digest: sha256:b200e270cc3fa4c41e353043ebd45540d29c225735e996a25ae5114fafa2e81f
+    revision: 12
+    digest: sha256:c2db81a8621540f6d5e5d4ec2a2230432fe29e4ee4fb7bf0557f7b0e47adf048
     artifact:
       kind: artifact
       ref: artifact.module-standard
   python-node:
     standard_id: node-standards.python-node
     standard_version: 1.0.0
-    revision: 15
-    digest: sha256:662662de8c0cb47e4491c1705110a3c528ed64624c5f6348cb91b3a47a2e0569
+    revision: 16
+    digest: sha256:ed7a85545ff10e778329679ac1e4a557fc80c7f97812edbdc8df8f94464d68f8
     artifact:
       kind: artifact
       ref: artifact.python-node-standard
