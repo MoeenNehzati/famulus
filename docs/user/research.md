@@ -34,7 +34,7 @@ Example prompts:
 
 - `bib-audit` — Audit a `.bib` file for validity, style, external metadata, and duplicates
 - `formal-prose-review` — Polish grammar, tone, and concision in technical prose without touching the math
-- `latex-workshop` — Follow VS Code LaTeX Workshop build behavior for TeX/LaTeX documents
+- `latex-workshop` — A user wants to compile, rebuild, or troubleshoot a TeX/LaTeX document and the build should match VS Code LaTeX Workshop settings, recipes, and output-directory conventions
 - `make-tex-docstring` — Create or propose a top-of-document TeX comment block that records the document profile and intended use
 - `math-dependency-graph` — Extract an assumptions-to-results dependency graph from a LaTeX document
 - `notation-review` — Mathematical notation needs review for lightness, unification, reuse across scopes, or semantic transparency

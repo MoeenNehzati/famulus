@@ -1,6 +1,6 @@
 ---
 name: latex-workshop
-description: Follow VS Code LaTeX Workshop build behavior for TeX/LaTeX documents. Use when a user wants to compile, rebuild, or troubleshoot a LaTeX document and the build should match LaTeX Workshop settings, recipes, and output-directory conventions. Prefer workspace-level VS Code LaTeX Workshop config and fall back to user-level config only when the workspace does not override it. If direct reconstruction of the LaTeX Workshop build is not possible, fall back to a manual latexmk command consistent with the discovered settings.
+description: Use when a user wants to compile, rebuild, or troubleshoot a TeX/LaTeX document and the build should match VS Code LaTeX Workshop settings, recipes, and output-directory conventions.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->
