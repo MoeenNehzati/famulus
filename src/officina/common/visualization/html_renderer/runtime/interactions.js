@@ -152,6 +152,10 @@
       // Node drag (mousedown)
       nodeEl.addEventListener("mousedown", event => {
         if (event.button !== 0) return;
+        if (activePresentationNodes().length && presentationGroupedNodeIds.has(entity.id)) {
+          event.stopPropagation();
+          return;
+        }
         draggingNodeId = entity.id;
         draggingNodeIds = [entity.id, ...gatherDescendantIds(entity.id)];
         draggingNodeOffsets = new Map();

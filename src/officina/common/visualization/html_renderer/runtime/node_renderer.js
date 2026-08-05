@@ -26,6 +26,41 @@
       return `url(#${nodeGradientIds.get(key)})`;
     }
 
+    function applyContainerShellStyle(shapeEl, style, tone = "subtle") {
+      shapeEl.setAttribute("class", "node-shape");
+      shapeEl.setAttribute("fill", nodeFill(style));
+      shapeEl.setAttribute("fill-opacity", tone === "strong" ? "0.16" : "0.055");
+      shapeEl.setAttribute("stroke", style.color);
+      shapeEl.setAttribute("stroke-width", tone === "strong" ? "2.25" : "3");
+    }
+
+    function renderContainerShell({layer, id, label, subtitle, position, style, tone = "subtle", className = ""}) {
+      const group = createSvgElement("g");
+      group.setAttribute("class", className);
+      group.dataset.shellId = String(id);
+      group.setAttribute("aria-hidden", "true");
+      group.setAttribute("pointer-events", "none");
+      const shape = createSvgElement("rect");
+      shape.setAttribute("x", position.x);
+      shape.setAttribute("y", position.y);
+      shape.setAttribute("width", position.width);
+      shape.setAttribute("height", position.height);
+      applyContainerShellStyle(shape, style, tone);
+      group.appendChild(shape);
+      const foreignObject = createSvgElement("foreignObject");
+      foreignObject.setAttribute("x", position.x);
+      foreignObject.setAttribute("y", position.y);
+      foreignObject.setAttribute("width", position.width);
+      foreignObject.setAttribute("height", Math.min(position.height, 58));
+      const body = document.createElementNS("http://www.w3.org/1999/xhtml", "div");
+      body.setAttribute("class", "node-fo-body container-node");
+      body.innerHTML = `<div class="node-label">${escapeHtml(label)}</div><div class="node-subtitle">${escapeHtml(subtitle || "")}</div>`;
+      foreignObject.appendChild(body);
+      group.appendChild(foreignObject);
+      layer.appendChild(group);
+      return group;
+    }
+
     function expandSelectionRing(ring, x, y, w, h, shape) {
       const gap = SELECTION_RING_GAP;
       const tag = ring.tagName.toLowerCase();
@@ -226,16 +261,14 @@
       }
 
       if (shapeEl) {
-        shapeEl.setAttribute("class", "node-shape");
-        shapeEl.setAttribute("fill", nodeFill(style));
         if (isContainer) {
-          shapeEl.setAttribute("fill-opacity", containerTone === "strong" ? "0.16" : "0.055");
+          applyContainerShellStyle(shapeEl, style, containerTone);
+        } else {
+          shapeEl.setAttribute("class", "node-shape");
+          shapeEl.setAttribute("fill", nodeFill(style));
+          shapeEl.setAttribute("stroke", stroke);
+          shapeEl.setAttribute("stroke-width", "2");
         }
-        shapeEl.setAttribute("stroke", isContainer ? style.color : stroke);
-        shapeEl.setAttribute(
-          "stroke-width",
-          isContainer ? (containerTone === "strong" ? "2.25" : "3") : "2"
-        );
         if (isInferred) shapeEl.setAttribute("stroke-dasharray", "6 3");
         group.appendChild(shapeEl);
       }

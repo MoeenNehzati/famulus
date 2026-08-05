@@ -754,6 +754,20 @@
       color: #1f2933;
       text-shadow: none;
     }
+    #presentation-node-layer {
+      pointer-events: none;
+    }
+    .presentation-node-component {
+      cursor: pointer;
+      pointer-events: all;
+    }
+    .presentation-node-component.selected .node-shape {
+      stroke-width: 5;
+      filter: drop-shadow(0 0 4px rgba(37, 99, 235, 0.45));
+    }
+    .presentation-node-component.collapsed {
+      cursor: zoom-in;
+    }
     #tooltip {
       position: fixed;
       display: none;
@@ -927,6 +941,7 @@
       margin: 0 0.12em;
     }
     @media (max-width: 720px) {
+      .layout.narrow-layout { overflow-x: clip; }
       .layout,
       .layout.panel-collapsed {
         grid-template-columns: 44px minmax(0, 1fr) 44px;

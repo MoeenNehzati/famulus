@@ -94,6 +94,9 @@
         ? String(primaryId)
         : normalized[normalized.length - 1] || null;
       selectionSource = source === "search" ? "search" : "explicit";
+      if (normalized.length && typeof clearPresentationNodeSelection === "function") {
+        clearPresentationNodeSelection();
+      }
     }
 
     function setNodeSelection(

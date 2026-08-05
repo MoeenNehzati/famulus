@@ -1,15 +1,18 @@
     // ── Full ELK-based layout/render ─────────────────────────────────────────
 
-    async function updateVisibilityFull() {
+    async function updateVisibilityFull({preserveManualPositions = false} = {}) {
       renderHiddenNodes();
       const renderedEntities = docData.entities.filter(e => !isHiddenNode(e.id));
       const allEntities = docData.entities;
       const visibleEdges = computeVisibleEdges();
       const currentVersion = ++renderVersion;
+      const previousNodePositions = lastNodePositions;
+      const previousPresentationRenderState = snapshotPresentationNodesRenderState();
       containerIndex = rebuildContainerIndex(allEntities);
 
       if (renderedEntities.length === 0) {
         clearMathBeforeMutation(containerLayer);
+        presentationNodeLayer.replaceChildren();
         clearMathBeforeMutation(nodeLayer);
         containerLayer.innerHTML = "";
         edgeLayer.innerHTML = "";
@@ -18,20 +21,15 @@
         elkStatus.textContent = "No visible nodes.";
         svgEl.setAttribute("width", "800"); svgEl.setAttribute("height", "200");
         svgEl.setAttribute("viewBox", "0 0 800 200");
-        return;
+        commitPresentationNodesState();
+        return true;
       }
 
       try {
         elkStatus.textContent = "Rendering graph layout...";
         const graph = await computeLayout(renderedEntities, visibleEdges);
-        if (currentVersion !== renderVersion) return;
-        clearMathBeforeMutation(containerLayer);
-        clearMathBeforeMutation(nodeLayer);
-        containerLayer.innerHTML = "";
-        edgeLayer.innerHTML = "";
-        nodeLayer.innerHTML = "";
-        lastRenderedEdges = [];
-        elkStatus.textContent = "";
+        if (currentVersion !== renderVersion) return null;
+        lastNodePositions = new Map(lastNodePositions);
         const layoutNodes = [];
         flattenLayoutNodes(graph.children || [], 0, 0, layoutNodes);
         const layoutById = new Map(layoutNodes.map((node) => [node.id, node]));
@@ -99,25 +97,42 @@
             height: fallbackDimensions.height,
           });
         });
+        applyPresentationNodesLayout(renderedEntities);
         renderedEntities.forEach((entity) => {
           const isChildNode = typeof entity.container === "string" && entity.container.trim().length > 0;
-          if (isChildNode || isContainerNode(entity.id)) {
+          if (
+            (isChildNode || isContainerNode(entity.id)) &&
+            !presentationGroupedNodeIds.has(entity.id) &&
+            !presentationRestoringManualPositions &&
+            !preserveManualPositions
+          ) {
             manualPositions.delete(entity.id);
           }
         });
         hasFullLayout = true;
 
-        const graphWidth = Math.max(
-          900,
-          ...Array.from(lastNodePositions.values()).map(pos => pos.x + pos.width + 80)
-        );
-        const graphHeight = Math.max(
-          500,
-          ...Array.from(lastNodePositions.values()).map(pos => pos.y + pos.height + 80)
-        );
+        const visibleShellBounds = presentationNodeComponents
+          .filter(component => !hiddenPresentationNodes.has(component.presentationNodeId))
+          .map(presentationComponentDisplayBounds);
+        const committedBounds = [...Array.from(lastNodePositions.values()), ...visibleShellBounds];
+        const graphMinX = Math.min(0, ...committedBounds.map(pos => pos.x - 40));
+        const graphMinY = Math.min(0, ...committedBounds.map(pos => pos.y - 40));
+        const graphMaxX = Math.max(900, ...committedBounds.map(pos => pos.x + pos.width + 80));
+        const graphMaxY = Math.max(500, ...committedBounds.map(pos => pos.y + pos.height + 80));
+        const graphWidth = graphMaxX - graphMinX;
+        const graphHeight = graphMaxY - graphMinY;
+        clearMathBeforeMutation(containerLayer);
+        clearMathBeforeMutation(nodeLayer);
+        presentationNodeLayer.replaceChildren();
+        containerLayer.innerHTML = "";
+        edgeLayer.innerHTML = "";
+        nodeLayer.innerHTML = "";
+        lastRenderedEdges = [];
+        elkStatus.textContent = "";
+        renderPresentationNodes();
         svgEl.setAttribute("width", String(graphWidth));
         svgEl.setAttribute("height", String(graphHeight));
-        svgEl.setAttribute("viewBox", `0 0 ${graphWidth} ${graphHeight}`);
+        svgEl.setAttribute("viewBox", `${graphMinX} ${graphMinY} ${graphWidth} ${graphHeight}`);
         fitGraph();
         hasFittedOnce = true;
 
@@ -164,7 +179,7 @@
           const nodeEl = renderNode(entity, positioned);
           // Restore manual position as transform offset
           const manual = manualPositions.get(entityId);
-          if (manual) {
+          if (manual && !presentationGroupedNodeIds.has(entityId)) {
             const dx = manual.x - positioned.x;
             const dy = manual.y - positioned.y;
             if (dx !== 0 || dy !== 0) nodeEl.setAttribute("transform", `translate(${dx},${dy})`);
@@ -184,7 +199,9 @@
         typesetElement(nodeLayer);
 
         // Restore selection highlight and details
-        if (selectedNodeIds.size) {
+        if (selectedPresentationNodeId) {
+          showPresentationNodeDetails(selectedPresentationNodeId);
+        } else if (selectedNodeIds.size) {
           syncSelectionPresentation();
           showSelectionDetails();
         } else {
@@ -192,12 +209,20 @@
           rawJsonCodeEl.textContent = JSON.stringify(docData, null, 2);
         }
         const renderedNodeCount = svgEl.querySelectorAll(".graph-node").length;
+        presentationRestoringManualPositions = false;
         if (renderedNodeCount === 0) {
           elkStatus.textContent = "No nodes were rendered.";
         } else {
           elkStatus.textContent = "";
         }
+        commitPresentationNodesState();
+        return true;
       } catch (error) {
+        lastNodePositions = previousNodePositions;
+        restorePresentationNodesRenderState(previousPresentationRenderState);
+        rollbackPresentationNodesState();
+        saveViewerState();
         elkStatus.textContent = `ELK layout failed: ${error.message || error}`;
+        return false;
       }
     }

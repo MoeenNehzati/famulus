@@ -17,6 +17,9 @@ from officina.common.visualization.from_blueprint.extractor import (
 from officina.common.visualization.graph import Graph
 
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
 def _entity(entity_id: str, *, container: str | None = None) -> dict[str, object]:
     entity: dict[str, object] = {
         "id": entity_id,
@@ -94,7 +97,9 @@ def test_selected_skill_scope_summarizes_crossing_relationships() -> None:
         schema_version=5,
     )
 
-    payload = build_payload_from_repository_graph(graph, repo_root=root, skills=(skill.node_id,))
+    payload = build_payload_from_repository_graph(
+        graph, repo_root=REPO_ROOT, skills=(skill.node_id,)
+    )
     entities = {entity["id"]: entity for entity in payload["entities"]}
 
     assert source.node_id in entities
@@ -129,3 +134,147 @@ def test_selected_skill_scope_summarizes_crossing_relationships() -> None:
         "relation": "depends-on-source",
         "required_version": 5,
     }
+
+
+def _discovery(
+    *,
+    domain: str,
+    topics: list[str],
+    visibility: str,
+    activated_by: list[str],
+    persistent_modifier: bool,
+) -> dict[str, object]:
+    return {
+        "mechanism": "skill",
+        "catalog": {
+            "domain": domain,
+            "topics": topics,
+            "visibility": visibility,
+        },
+        "activated_by": activated_by,
+        "persistent_modifier": persistent_modifier,
+    }
+
+
+def _presentation_node_graph() -> RepositoryBlueprintGraph:
+    declarations = {
+        "alpha": {
+            "discovery": _discovery(
+                domain="research",
+                topics=["mathematical-reasoning", "visualization"],
+                visibility="featured",
+                activated_by=["user-request"],
+                persistent_modifier=False,
+            )
+        },
+        "alpha.runtime": {},
+        "beta": {
+            "discovery": _discovery(
+                domain="research",
+                topics=["visualization"],
+                visibility="hidden",
+                activated_by=["user-request", "scheduled-job"],
+                persistent_modifier=True,
+            )
+        },
+    }
+    nodes = {
+        node_id: BlueprintNode(
+            node_id,
+            "module",
+            5,
+            REPO_ROOT,
+            REPO_ROOT / "skills" / node_id / "blueprint.yaml",
+            None,
+            declaration,
+        )
+        for node_id, declaration in declarations.items()
+    }
+    return RepositoryBlueprintGraph(
+        nodes=nodes,
+        node_edges=(),
+        exports={},
+        export_edges=(),
+        helper_edges=(),
+        certification_edges=(),
+        module_sources={node_id: () for node_id in nodes},
+        module_parents={"alpha": None, "alpha.runtime": "alpha", "beta": None},
+        module_children={"alpha": ("alpha.runtime",), "alpha.runtime": (), "beta": ()},
+        schema_version=5,
+    )
+
+
+def test_blueprint_payload_emits_first_class_presentation_nodes() -> None:
+    payload = build_payload_from_repository_graph(
+        _presentation_node_graph(), repo_root=REPO_ROOT
+    )
+
+    control = payload["ui"]["presentation_node_controls"][0]
+    assert control["id"] == "skill-grouping"
+    assert control["label"] == "Skill grouping"
+    assert control["selector_label"] == "Group skills by"
+    assert control["default_facet"] is None
+    assert [item["id"] for item in control["facets"]] == [
+        "discovery.domain",
+        "discovery.topics",
+        "discovery.activated_by",
+        "discovery.persistent_modifier",
+        "discovery.visibility",
+    ]
+    facets = {item["id"]: item for item in control["facets"]}
+    assert facets["discovery.topics"]["activation"] == "multiple"
+    assert all(
+        facet["activation"] == "all"
+        for facet_id, facet in facets.items()
+        if facet_id != "discovery.topics"
+    )
+    nodes = {node["id"]: node for node in payload["presentation_nodes"]}
+    assert nodes["discovery.domain.research"]["member_ids"] == ["alpha", "beta"]
+    assert nodes["discovery.activated_by.user-request"]["member_ids"] == [
+        "alpha",
+        "beta",
+    ]
+    assert nodes["discovery.activated_by.scheduled-job"]["member_ids"] == ["beta"]
+    assert nodes["discovery.visibility.hidden"]["member_ids"] == ["beta"]
+    assert nodes["discovery.persistent_modifier.persistent"]["member_ids"] == [
+        "beta"
+    ]
+    assert nodes["discovery.persistent_modifier.not-persistent"]["member_ids"] == [
+        "alpha"
+    ]
+    assert all(
+        node["presentation"]
+        == {
+            "form": "supernode",
+            "tone": "subtle",
+            "default_visibility": "hidden",
+        }
+        and node["interaction"]
+        == {
+            "selectable": True,
+            "inspectable": True,
+            "draggable": "members",
+            "collapse_effect": "self",
+        }
+        for node in nodes.values()
+    )
+    assert all(
+        "alpha.runtime" not in node["member_ids"] for node in nodes.values()
+    )
+    assert set(facets["discovery.domain"]["node_ids"]) == {
+        "discovery.domain.research"
+    }
+
+
+def test_blueprint_presentation_nodes_respect_selected_skill_scope() -> None:
+    payload = build_payload_from_repository_graph(
+        _presentation_node_graph(), repo_root=REPO_ROOT, skills=("alpha",)
+    )
+
+    members = {
+        member
+        for node in payload["presentation_nodes"]
+        for member in node["member_ids"]
+    }
+    assert members == {"alpha"}
+    assert not any(member.startswith("boundary:") for member in members)

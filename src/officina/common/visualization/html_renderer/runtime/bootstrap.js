@@ -281,6 +281,7 @@
       return {...dimensions};
     }
     const canvasWrapEl = document.getElementById("canvas-wrap");
+    const presentationNodeLayer = document.getElementById("presentation-node-layer");
     const containerLayer = document.getElementById("container-layer");
     const edgeLayer = document.getElementById("edge-layer");
     const nodeLayer = document.getElementById("node-layer");

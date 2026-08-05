@@ -144,7 +144,12 @@
     }
 
     function showEdgeDetails(edge) {
-      setNodeSelection([], null, "explicit", {persist: false});
+      runGraphAction(() => {
+        if (typeof clearPresentationNodeSelection === "function") {
+          clearPresentationNodeSelection();
+        }
+        replaceNodeSelectionState([], null, "explicit");
+      }, {renderMode: "selection"});
       clearMathBeforeMutation(details);
       details.innerHTML = edge.bundle
         ? formatBundledEdge(edge)
@@ -155,9 +160,14 @@
     }
 
     function deselect() {
-      setNodeSelection([], null, "explicit");
+      runGraphAction(() => {
+        if (typeof clearPresentationNodeSelection === "function") {
+          clearPresentationNodeSelection();
+        }
+        replaceNodeSelectionState([], null, "explicit");
+      }, {renderMode: "selection"});
       const activeElement = document.activeElement;
-      if (activeElement?.matches?.(".graph-node, .edge-path")) activeElement.blur();
+      if (activeElement?.matches?.(".graph-node, .edge-path, .presentation-node-component")) activeElement.blur();
     }
 
     function clearSelectionDetails() {

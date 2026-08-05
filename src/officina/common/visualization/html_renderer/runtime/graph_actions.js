@@ -22,6 +22,7 @@
         excludedKinds: sortedGraphSet(filterState.excludedKinds),
         excludedCategories: sortedGraphSet(filterState.excludedCategories),
         excludedEdgeTypes: sortedGraphSet(filterState.excludedEdgeTypes),
+        presentationNodes: serializePresentationNodesState(),
       };
     }
 
@@ -71,12 +72,12 @@
       }
     }
 
-    function renderGraphStateChange(renderMode) {
+    function renderGraphStateChange(renderMode, {preserveManualPositions = false} = {}) {
       rebuildRetainedOwners();
       syncSelectionPresentation();
       showSelectionDetails();
       if (renderMode === "full") {
-        manualPositions.clear();
+        if (!preserveManualPositions) manualPositions.clear();
         hasFittedOnce = false;
         updateVisibilityFull();
       } else if (renderMode === "visibility") {
@@ -165,8 +166,18 @@
     }
 
     function restoreGraphSnapshot(snapshot) {
+      const groupingBefore = serializePresentationNodesState();
+      const groupingAfter = snapshot.presentationNodes || groupingBefore;
+      const groupingLayoutKey = state => JSON.stringify({
+        activeFacets: state.activeFacets || {},
+        selectedNodeIds: state.selectedNodeIds || {},
+        offsets: state.offsets || [],
+        selfOffsets: state.selfOffsets || [],
+      });
+      const groupingLayoutChanged = groupingLayoutKey(groupingBefore) !== groupingLayoutKey(groupingAfter);
       const requiresLayout = (
         filterState.detailLevel !== snapshot.detailLevel ||
+        groupingLayoutChanged ||
         graphStateKey({collapsed: sortedGraphSet(collapsedContainers)}) !==
           graphStateKey({collapsed: snapshot.collapsedContainers || []})
       );
@@ -181,6 +192,8 @@
       replaceGraphSet(filterState.excludedKinds, snapshot.excludedKinds);
       replaceGraphSet(filterState.excludedCategories, snapshot.excludedCategories);
       replaceGraphSet(filterState.excludedEdgeTypes, snapshot.excludedEdgeTypes);
+      restorePresentationNodesState(snapshot.presentationNodes);
+      refreshPresentationNodesControls();
       replaceNodeSelectionState(
         (snapshot.selectedNodeIds || []).filter(nodeId => entityMap.has(String(nodeId))),
         snapshot.selectedNodeId,
@@ -192,7 +205,11 @@
       reconcileGraphState();
       refreshFilterControls();
       syncLegendRows();
-      renderGraphStateChange(requiresLayout ? "full" : "visibility");
+      renderGraphStateChange(
+        requiresLayout ? "full" : "visibility",
+        {preserveManualPositions: groupingLayoutChanged}
+      );
+      if (!requiresLayout) renderPresentationNodes();
       saveViewerState();
       restoringGraphHistory = false;
       syncGraphHistoryButtons();

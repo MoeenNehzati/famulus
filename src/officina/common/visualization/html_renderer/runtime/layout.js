@@ -442,6 +442,13 @@
 
     function updateVisibilityFast() {
       if (!hasFullLayout) { updateVisibilityFull(); return; }
+      const missingVisibleNode = docData.entities.some(entity => (
+        !isHiddenNode(entity.id) && !nodeElement(entity.id)
+      ));
+      if (missingVisibleNode) {
+        updateVisibilityFull({preserveManualPositions: true});
+        return;
+      }
       renderHiddenNodes();
 
       // Toggle node elements

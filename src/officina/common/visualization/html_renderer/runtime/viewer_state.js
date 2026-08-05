@@ -3,7 +3,7 @@
     function saveViewerState() {
       try {
         const payload = {
-          version: 5,
+          version: 7,
           hiddenTypes: Array.from(hiddenTypes),
           hiddenEdgeTypes: Array.from(hiddenEdgeTypes),
           hiddenNodes: Array.from(hiddenNodes),
@@ -19,6 +19,7 @@
           manualPositions: Array.from(manualPositions.entries()),
           routingConfig,
           filterState: serializeFilterState(),
+          presentationNodes: serializePresentationNodesState(),
           panX, panY, zoomLevel
         };
         window.localStorage.setItem(viewerStateKey, JSON.stringify(payload));
@@ -30,7 +31,7 @@
         const raw = window.localStorage.getItem(viewerStateKey);
         if (!raw) return;
         const payload = JSON.parse(raw);
-        if (!payload || ![3, 4, 5].includes(payload.version)) throw new Error("unsupported viewer state");
+        if (!payload || ![3, 4, 5, 6, 7].includes(payload.version)) throw new Error("unsupported viewer state");
         const arrays = ["hiddenTypes", "hiddenEdgeTypes", "hiddenNodes", "dimmedNodes", "selectedNodeIds", "collapsedContainers", "manualPositions"];
         if (arrays.some(key => payload[key] !== undefined && !Array.isArray(payload[key]))) {
           throw new Error("invalid viewer state collection");
@@ -50,7 +51,7 @@
         collapsedContainers.clear(); nextCollapsed.forEach(value => collapsedContainers.add(value));
         if (payload.routingConfig) applyRoutingPatch(payload.routingConfig);
         selectedNodeIds.clear();
-        const restoredSelection = payload.version === 5
+        const restoredSelection = payload.version >= 5
           ? payload.selectedNodeIds || []
           : payload.selectedNodeId ? [payload.selectedNodeId] : [];
         restoredSelection.filter(id => entityMap.has(String(id)) && !hiddenNodes.has(String(id))).forEach(id => selectedNodeIds.add(String(id)));
@@ -59,6 +60,12 @@
           : Array.from(selectedNodeIds).at(-1) || null;
         selectionSource = payload.selectionSource === "search" ? "search" : "explicit";
         if (payload.filterState) restoreFilterState(payload.filterState);
+        restorePresentationNodesState(
+          payload.version === 7
+            ? payload.presentationNodes
+            : payload.version === 6 ? payload.metadataGrouping : null
+        );
+        refreshPresentationNodesControls();
         nextHiddenTypes.forEach(value => filterState.excludedCategories.add(value));
         nextHiddenEdgeTypes.forEach(value => filterState.excludedEdgeTypes.add(value));
         refreshFilterControls();
@@ -117,6 +124,7 @@
         .filter(entity => !isHiddenNode(entity.id))
         .map(entity => getEffectivePos(entity.id))
         .filter(Boolean);
+      positions.push(...(presentationNodeBounds || []));
       if (!positions.length) return null;
       const left = Math.min(...positions.map(position => position.x));
       const top = Math.min(...positions.map(position => position.y));

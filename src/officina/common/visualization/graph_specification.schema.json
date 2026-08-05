@@ -46,6 +46,13 @@
     "ui": {
       "$ref": "#/definitions/uiConfig"
     },
+    "presentation_nodes": {
+      "type": "array",
+      "description": "First-class presentation-only nodes that reference canonical root entities without changing graph semantics.",
+      "items": {
+        "$ref": "#/definitions/presentationNode"
+      }
+    },
     "renderer_dependencies": {
       "type": "array",
       "description": "Ordered optional renderer capabilities resolved through the renderer-owned trusted dependency registry.",
@@ -191,11 +198,94 @@
         }
       }
     },
+    "presentationNodeInteraction": {
+      "type": "object",
+      "required": ["selectable", "inspectable", "draggable", "collapse_effect"],
+      "additionalProperties": false,
+      "properties": {
+        "selectable": {"type": "boolean"},
+        "inspectable": {"type": "boolean"},
+        "draggable": {"enum": ["none", "self", "members"]},
+        "collapse_effect": {"enum": ["none", "self"]}
+      },
+      "allOf": [{
+        "if": {"properties": {"inspectable": {"const": true}}},
+        "then": {"properties": {"selectable": {"const": true}}}
+      }]
+    },
+    "presentationNode": {
+      "type": "object",
+      "required": ["id", "type", "short_title", "position", "member_ids", "presentation", "interaction"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "type": {"type": "string", "minLength": 1},
+        "short_title": {"type": "string", "minLength": 1},
+        "position": {"type": "integer", "minimum": 0},
+        "description": {"type": "string", "minLength": 1},
+        "ref": {"type": "string"},
+        "details": {"type": "object", "additionalProperties": true},
+        "member_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "presentation": {
+          "type": "object",
+          "required": ["form", "tone", "default_visibility"],
+          "additionalProperties": false,
+          "properties": {
+            "form": {"const": "supernode"},
+            "tone": {"enum": ["subtle", "strong"]},
+            "default_visibility": {"enum": ["visible", "hidden"]}
+          }
+        },
+        "interaction": {
+          "$ref": "#/definitions/presentationNodeInteraction"
+        }
+      }
+    },
+    "presentationNodeFacet": {
+      "type": "object",
+      "required": ["id", "label", "activation", "node_ids"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "label": {"type": "string", "minLength": 1},
+        "activation": {"enum": ["all", "multiple"]},
+        "node_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "presentationNodeControl": {
+      "type": "object",
+      "required": ["id", "label", "selector_label", "default_facet", "facets"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "label": {"type": "string", "minLength": 1},
+        "selector_label": {"type": "string", "minLength": 1},
+        "default_facet": {"type": ["string", "null"]},
+        "facets": {
+          "type": "array",
+          "items": {"$ref": "#/definitions/presentationNodeFacet"}
+        }
+      }
+    },
     "uiConfig": {
       "type": "object",
       "description": "Optional renderer-level preferences. Missing fields fall back to renderer defaults.",
       "additionalProperties": true,
       "properties": {
+        "presentation_node_controls": {
+          "type": "array",
+          "items": {"$ref": "#/definitions/presentationNodeControl"}
+        },
         "layout": {
           "type": "object",
           "properties": {

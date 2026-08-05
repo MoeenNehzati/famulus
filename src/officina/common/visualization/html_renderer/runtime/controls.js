@@ -117,6 +117,7 @@
 
     function resetViewState({includeCategories = false} = {}) {
       if (includeCategories) resetFilteringState();
+      clearPresentationNodesState();
       hiddenNodes.clear();
       dimmedNodes.clear();
       collapsedContainers.clear();

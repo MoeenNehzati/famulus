@@ -86,6 +86,9 @@ The renderer must not branch on adapter-specific names.
   selection plus the persistent user-dimmed set and multi-selection inspector.
 - `runtime/filtering.js` owns search, facets, history, retained context, and
   source-relation visibility summaries.
+- `runtime/presentation_nodes.js` parses generic presentation-node instances and
+  controls, lays out overlapping memberships, and owns their independent
+  selection, inspection, drag, hide, collapse, persistence, and migration state.
 - `runtime/math_typesetter.js` owns optional MathJax detection, invalidation, and
   serialized dynamic typesetting.
 - `runtime/geometry.js` owns SVG geometry and edge rerouting from current positions.

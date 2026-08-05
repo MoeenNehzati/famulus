@@ -20,6 +20,7 @@ _RUNTIME_ASSETS = (
     "runtime/core.js",
     "runtime/selection.js",
     "runtime/filtering.js",
+    "runtime/presentation_nodes.js",
     "runtime/graph_actions.js",
     "runtime/math_typesetter.js",
     "runtime/geometry.js",
@@ -38,16 +39,56 @@ _RUNTIME_ASSETS = (
 
 @lru_cache(maxsize=None)
 def _read_asset(name: str) -> str:
-    """Read one immutable renderer asset once per Python process."""
+    """Read one immutable renderer asset once per Python process.
+
+    Intent
+    ------
+    Load a UTF-8 renderer asset relative to the owned asset directory.
+
+    Rationale
+    ---------
+    Cached reads avoid repeated filesystem work while assembling documents.
+
+    Pseudocode
+    ----------
+    - set asset = asset name resolved beneath the owned directory
+    - return asset UTF-8 text
+
+    Wraps
+    -----
+    - none
+    """
     return (_ASSET_DIRECTORY / name).read_text(encoding="utf-8")
 
 
 def render_document(**values: str) -> str:
     """Return a standalone HTML document populated with serialized graph data.
 
-    ``values`` are already serialized or escaped by the public renderer. Keeping
-    serialization at that boundary makes this assembler deliberately unaware of
-    the graph schema and prevents accidental double encoding.
+    Intent
+    ------
+    Inline all renderer assets and replace serialized graph placeholders.
+
+    Rationale
+    ---------
+    Values are serialized by the public renderer, so this schema-neutral
+    assembler avoids double encoding and produces a portable single file.
+
+    Pseudocode
+    ----------
+    - set runtime = runtime modules concatenated in declared order
+    - set document = page with inline styles vendor assets and runtime
+    - set document = caller-provided placeholder replacements
+    - return document after unresolved-placeholder validation
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._read_asset:
+      why:
+        reads: "Loads the template, styles, vendor scripts, and runtime modules assembled locally."
     """
     runtime = "\n".join(_read_asset(name) for name in _RUNTIME_ASSETS)
     document = _read_asset("page.html").replace(

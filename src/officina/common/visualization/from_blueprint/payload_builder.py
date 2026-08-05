@@ -21,6 +21,7 @@ from .details import (
     build_blueprint_edge_annotation,
     build_out_of_scope_details,
 )
+from .presentation_nodes import build_presentation_nodes
 from .scope import owning_module, resolve_blueprint_scope, top_module
 
 Entity = dict[str, Any]
@@ -30,9 +31,24 @@ EdgeRecord = tuple[str, str, str, str, dict[str, Any]]
 def _scope_detail_references(details: object, visible_ids: set[str]) -> None:
     """Keep inspector navigation honest after scope projection.
 
-    References to rendered entities remain navigable. Logical ids represented
-    only by an out-of-scope boundary stay visible as copyable code or list data
-    rather than becoming dead inspector buttons.
+    Intent
+    ------
+    Downgrade out-of-scope inspector references while preserving their values.
+
+    Rationale
+    ---------
+    References to rendered entities remain navigable, while boundary-only ids
+    remain copyable data instead of becoming dead inspector buttons.
+
+    Pseudocode
+    ----------
+    - set fields = structured detail fields
+    - set fields = visible links plus plain out-of-scope values
+    - return scoped details
+
+    Wraps
+    -----
+    - none
     """
     if not isinstance(details, dict):
         return
@@ -75,7 +91,26 @@ def _scope_detail_references(details: object, visible_ids: set[str]) -> None:
         section["fields"] = scoped_fields
 
 def _normalize_gateway_language(value: object) -> str:
-    """Return an open-ended stable kind token from a gateway language value."""
+    """Return an open-ended stable kind token from a gateway language value.
+
+    Intent
+    ------
+    Normalize a loose gateway-language declaration into a category-safe token.
+
+    Rationale
+    ---------
+    Visualization kinds need stable ids even for missing or novel languages.
+
+    Pseudocode
+    ----------
+    - return unspecified for missing or blank strings
+    - set normalized = lowercase token with unsupported runs replaced
+    - return the normalized token or unspecified
+
+    Wraps
+    -----
+    - none
+    """
     if not isinstance(value, str) or not value.strip():
         return "unspecified"
     normalized = re.sub(r"[^a-z0-9.+_-]+", "-", value.strip().lower()).strip("-")
@@ -86,6 +121,33 @@ def _source_gateway_language(
     graph: RepositoryBlueprintGraph,
     source_id: str | None,
 ) -> tuple[str, str | None]:
+    """Return normalized and raw gateway language for one source node.
+
+    Intent
+    ------
+    Resolve a behavioral source's declared gateway language.
+
+    Rationale
+    ---------
+    Callers need both a stable category kind and the original inspector value.
+
+    Pseudocode
+    ----------
+    - return unspecified when the source is unavailable
+    - set raw = source gateway language declaration
+    - set kind = normalized raw language
+    - return kind and raw string
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._normalize_gateway_language:
+      why:
+        constructs: "Builds the stable visualization kind from the raw source declaration."
+    """
     if source_id is None or source_id not in graph.nodes:
         return "unspecified", None
     declaration = graph.nodes[source_id].declaration
@@ -98,6 +160,32 @@ def _module_gateway_language(
     graph: RepositoryBlueprintGraph,
     module_id: str,
 ) -> tuple[str, list[str]]:
+    """Return aggregate gateway kinds and labels for one module.
+
+    Intent
+    ------
+    Summarize the gateway languages of a module's owned behavioral sources.
+
+    Rationale
+    ---------
+    Structural modules need deterministic kinds without inventing one language.
+
+    Pseudocode
+    ----------
+    - set languages = normalized and raw languages of owned sources
+    - return structural for an empty module
+    - return sorted aggregate values otherwise
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._source_gateway_language:
+      why:
+        constructs: "Builds normalized and raw language values for each owned source."
+    """
     raw_languages: set[str] = set()
     kinds: set[str] = set()
     for source_id in graph.module_sources.get(module_id, ()):
@@ -111,6 +199,27 @@ def _module_gateway_language(
 
 
 def _relationship_records(graph: RepositoryBlueprintGraph) -> list[EdgeRecord]:
+    """Collect canonical visualization edge records from blueprint relations.
+
+    Intent
+    ------
+    Merge architectural, interface, helper, certification, and routing edges.
+
+    Rationale
+    ---------
+    One record stream preserves provenance and reconciles certification evidence
+    before scope projection creates renderer edges.
+
+    Pseudocode
+    ----------
+    - set records = non-containment architectural and interface edges
+    - set records = records plus helper routing and certification evidence
+    - return ordered edge records
+
+    Wraps
+    -----
+    - none
+    """
     records: list[EdgeRecord] = []
     architectural_records: dict[tuple[str, str, str], dict[str, Any]] = {}
     resolved_interface_uses: dict[
@@ -229,6 +338,27 @@ def _relationship_records(graph: RepositoryBlueprintGraph) -> list[EdgeRecord]:
 
 
 def _add_edge(entity: Entity, target: str, relation: str, **payload: Any) -> None:
+    """Append one canonical edge unless an equivalent edge already exists.
+
+    Intent
+    ------
+    Deduplicate entity dependencies by target, relation, and metadata.
+
+    Rationale
+    ---------
+    Multiple blueprint evidence routes may describe the same rendered edge.
+
+    Pseudocode
+    ----------
+    - set candidate = dependency record and identity key
+    - set existing = current dependency identity keys
+    - set updated = existing plus candidate when absent
+    - return updated entity
+
+    Wraps
+    -----
+    - none
+    """
     edge = {"to": target, "type": relation, **payload}
     key = (target, relation, str(edge.get("metadata", {})))
     existing = {
@@ -245,7 +375,82 @@ def build_payload_from_repository_graph(
     repo_root: Path,
     skills: Iterable[str] | None = None,
 ) -> dict[str, Any]:
-    """Map one loaded repository graph into a scoped hierarchical payload."""
+    """Map one loaded repository graph into a scoped hierarchical payload.
+
+    Intent
+    ------
+    Adapt repository blueprint semantics to the generic visualization schema.
+
+    Rationale
+    ---------
+    The adapter owns blueprint vocabulary, scope, evidence, and metadata while
+    the renderer receives only canonical graph and presentation instances.
+
+    Pseudocode
+    ----------
+    - set entities = scoped module source interface and boundary instances
+    - set edges = projected blueprint relation records
+    - set presentation_nodes = metadata view instances and controls
+    - return the complete validated renderer payload
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .scope.top_module:
+      why:
+        computes: "Finds canonical root ownership while projecting relation endpoints."
+    ._add_edge:
+      why:
+        transforms: "Adds deduplicated canonical and boundary edges to rendered entities."
+    ._scope_detail_references:
+      why:
+        transforms: "Downgrades inspector links whose targets are outside the selected scope."
+
+    InstantiationsFromRepo
+    ----------------------
+    .catalog.build_edge_categories:
+      why:
+        constructs: "Builds the edge-category catalog for emitted relation types."
+    .catalog.build_node_categories:
+      why:
+        constructs: "Builds the node-category hierarchy for emitted entity kinds."
+    .catalog.build_relation_semantics:
+      why:
+        constructs: "Builds renderer projection rules for emitted relations."
+    .catalog.category_id:
+      why:
+        constructs: "Builds stable category ids for blueprint roles and gateway kinds."
+    .details.build_blueprint_details:
+      why:
+        constructs: "Builds structured inspector details for in-scope blueprint entities."
+    .details.build_blueprint_edge_annotation:
+      why:
+        constructs: "Builds provenance annotations for rendered blueprint edges."
+    .details.build_out_of_scope_details:
+      why:
+        constructs: "Builds inspector details for projected boundary entities."
+    .presentation_nodes.build_presentation_nodes:
+      why:
+        constructs: "Builds generic metadata presentation-node and control instances."
+    .scope.owning_module:
+      why:
+        constructs: "Builds ownership context used when projecting scoped endpoints."
+    .scope.resolve_blueprint_scope:
+      why:
+        constructs: "Builds the selected module and entity scope for the payload."
+    ._module_gateway_language:
+      why:
+        constructs: "Builds aggregate language metadata for module entities."
+    ._relationship_records:
+      why:
+        constructs: "Builds the unified blueprint relation stream used for projection."
+    ._source_gateway_language:
+      why:
+        constructs: "Builds language metadata for behavioral source and interface entities."
+    """
     root = Path(repo_root).resolve()
     scope = resolve_blueprint_scope(graph, skills)
     requested = scope.requested
@@ -532,6 +737,11 @@ def build_payload_from_repository_graph(
         if isinstance(edge, Mapping) and "type" in edge
     }
     relation_semantics = build_relation_semantics(canonical_edge_types)
+    presentation_nodes, presentation_node_controls = build_presentation_nodes(
+        graph,
+        repo_root=root,
+        included_module_ids=included_modules,
+    )
     return {
         "schema_version": 2,
         "graph_kind": "repository_blueprint",
@@ -553,6 +763,7 @@ def build_payload_from_repository_graph(
         "ui": {
             "edge_styles": EDGE_STYLES,
             "layout": {"rankdir": "LR"},
+            "presentation_node_controls": presentation_node_controls,
             "visibility": {
                 "detail_level": "module",
                 "collapsed_containers": collapsed,
@@ -560,6 +771,7 @@ def build_payload_from_repository_graph(
             },
         },
         "entities": ordered,
+        "presentation_nodes": presentation_nodes,
     }
 
 

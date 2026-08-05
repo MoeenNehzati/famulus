@@ -93,6 +93,26 @@ roll their relationships up to visible owners, and containers whose children are
 hidden can use larger centered labels. The selected level is part of persisted
 viewer state and filter history.
 
+Payloads may declare first-class `presentation_nodes` plus generic
+`ui.presentation_node_controls`. Each presentation node references canonical
+root entities through many-to-many `member_ids` and declares its visual form,
+tone, default visibility, and bounded interaction capabilities in JSON. A
+control supplies ordered facets; an `all` facet enables every referenced node,
+while a `multiple` facet lets the user select several nodes.
+
+Presentation nodes use the existing supernode shell style but remain outside
+canonical graph semantics. Activating a facet moves each member root and its
+containment subtree as one rigid block. Overlapping memberships use signature
+compartments, so a logical presentation node may render as several components
+without cloning a canonical entity or falsely enclosing a nonmember.
+
+Presentation nodes can be selected, inspected, dragged, hidden, restored, and
+self-collapsed according to their JSON capabilities. Hiding or collapsing one
+never hides its members, descendants, or edges. Their state is persisted under
+viewer-state version 7; version-6 metadata-grouping state is migrated when its
+stable facet and value IDs still resolve. Reset restores JSON defaults without
+changing canonical nodes, edges, or containment.
+
 Node interaction and Find use one generic selection set. Ctrl/Cmd-click builds
 an explicit multi-selection, while Find selects matching nodes and the endpoints
 of matching relations. The renderer applies Hide or persistent, layout-preserving
@@ -134,7 +154,9 @@ nodes. It never traverses or parses blueprint files independently.
 
 The adapter is decomposed by policy: `scope.py` selects repository entities,
 `catalog.py` declares blueprint categories, detail levels, and omission
-composition semantics, and the payload builder maps canonical blueprint records.
+composition semantics, `presentation_nodes.py` projects configured discovery
+metadata into generic in-scope presentation-node instances, and the payload
+builder maps canonical blueprint records.
 The extraction facade and visualizer only coordinate these components and the
 parent module's generic payload, renderer, and artifact services.
 

@@ -19,10 +19,48 @@ GraphPayload = dict[str, Any]
 
 
 class Graph:
-    """Analyze graph JSON payload structure independently of renderer output."""
+    """Analyze graph JSON payload structure independently of renderer output.
+
+    Intent
+    ------
+    Provide schema-aware validation and graph operations for renderer payloads.
+
+    Rationale
+    ---------
+    Keeping graph semantics outside the HTML renderer makes them reusable and
+    testable without a browser.
+
+    Pseudocode
+    ----------
+    - set operations = validation traversal and reduction behavior
+    - return operations
+
+    Wraps
+    -----
+    - none
+    """
 
     def validate_graph(self, graph_json: GraphPayload) -> None:
-        """Validate that a payload has the minimal shape required by renderers."""
+        """Validate that a payload has the shape required by renderers.
+
+        Intent
+        ------
+        Reject malformed canonical graph, presentation, relation, and UI data.
+
+        Rationale
+        ---------
+        Renderers can stay simple when invalid cross-references and unsupported
+        values fail at the Python boundary.
+
+        Pseudocode
+        ----------
+        - set validated_graph = catalogs entities containment edges views and UI
+        - return validated_graph
+
+        Wraps
+        -----
+        - none
+        """
         if not isinstance(graph_json, dict):
             raise ValueError("Top-level JSON must be an object.")
         if "entities" not in graph_json or not isinstance(graph_json["entities"], list):
@@ -122,6 +160,12 @@ class Graph:
                 seen_chain.add(current)
                 current = containers[current]
 
+        presentation_node_ids = self._validate_presentation_nodes(
+            graph_json,
+            entity_ids=seen_ids,
+            contained_ids=set(containers),
+        )
+
         for entity in graph_json["entities"]:
             source_id = str(entity["id"])
             for dep in entity.get("connects_to", []):
@@ -131,6 +175,11 @@ class Graph:
                     raise ValueError(f"Dependency entry on '{source_id}' is missing 'to'.")
                 if "type" not in dep:
                     raise ValueError(f"Dependency entry on '{source_id}' is missing 'type'.")
+                if str(dep["to"]) in presentation_node_ids:
+                    raise ValueError(
+                        "canonical edge cannot target presentation node: "
+                        f"{dep['to']!r}"
+                    )
                 if str(dep["to"]) not in seen_ids:
                     raise ValueError(
                         f"Dependency '{dep['to']}' referenced by '{source_id}' is not defined."
@@ -176,8 +225,220 @@ class Graph:
                 f"ui.visibility.detail_level references unknown level {selected_level!r}."
             )
 
+    def _validate_presentation_nodes(
+        self,
+        graph_json: GraphPayload,
+        *,
+        entity_ids: set[str],
+        contained_ids: set[str],
+    ) -> set[str]:
+        """Validate first-class view nodes without assigning graph semantics.
+
+        Intent
+        ------
+        Enforce presentation-node identity, membership, rendering, and controls.
+
+        Rationale
+        ---------
+        View nodes may overlap but must never become canonical graph owners or
+        edge targets.
+
+        Pseudocode
+        ----------
+        - set presentation_ids = validated view nodes and controls
+        - return all presentation node ids
+
+        Wraps
+        -----
+        - none
+        """
+        raw_nodes = graph_json.get("presentation_nodes", [])
+        if not isinstance(raw_nodes, list):
+            raise ValueError("'presentation_nodes' must be a list when present.")
+
+        presentation_ids: set[str] = set()
+        for index, node in enumerate(raw_nodes, start=1):
+            if not isinstance(node, dict):
+                raise ValueError(f"Presentation node {index} must be an object.")
+            for key in (
+                "id",
+                "type",
+                "short_title",
+                "position",
+                "member_ids",
+                "presentation",
+                "interaction",
+            ):
+                if key not in node:
+                    raise ValueError(
+                        f"Presentation node {index} is missing required key {key!r}."
+                    )
+            node_id = node["id"]
+            if not isinstance(node_id, str) or not node_id:
+                raise ValueError(f"Presentation node {index} has invalid id.")
+            if node_id in presentation_ids:
+                raise ValueError(f"duplicate presentation node id: {node_id!r}")
+            if node_id in entity_ids:
+                raise ValueError(
+                    "presentation node id conflicts with canonical entity: "
+                    f"{node_id!r}"
+                )
+            presentation_ids.add(node_id)
+
+            members = node["member_ids"]
+            if not isinstance(members, list) or not members:
+                raise ValueError(
+                    f"Presentation node {node_id!r} requires nonempty member_ids."
+                )
+            seen_members: set[str] = set()
+            for member in members:
+                member_id = str(member)
+                if member_id in seen_members:
+                    raise ValueError(
+                        f"duplicate member {member_id!r} in presentation node {node_id!r}"
+                    )
+                seen_members.add(member_id)
+                if member_id not in entity_ids:
+                    raise ValueError(
+                        f"unknown presentation node member: {member_id!r}"
+                    )
+                if member_id in contained_ids:
+                    raise ValueError(
+                        "presentation node member must be a root entity: "
+                        f"{member_id!r}"
+                    )
+
+            presentation = node["presentation"]
+            if not isinstance(presentation, dict):
+                raise ValueError(
+                    f"Presentation node {node_id!r} has invalid presentation."
+                )
+            if presentation.get("form") != "supernode":
+                raise ValueError(
+                    f"Presentation node {node_id!r} has unsupported form."
+                )
+            if presentation.get("tone") not in {"subtle", "strong"}:
+                raise ValueError(
+                    f"Presentation node {node_id!r} has unsupported tone."
+                )
+            if presentation.get("default_visibility") not in {"visible", "hidden"}:
+                raise ValueError(
+                    f"Presentation node {node_id!r} has invalid default visibility."
+                )
+
+            interaction = node["interaction"]
+            if not isinstance(interaction, dict):
+                raise ValueError(
+                    f"Presentation node {node_id!r} has invalid interaction."
+                )
+            if not isinstance(interaction.get("selectable"), bool):
+                raise ValueError(
+                    f"Presentation node {node_id!r} has invalid selectable setting."
+                )
+            if not isinstance(interaction.get("inspectable"), bool):
+                raise ValueError(
+                    f"Presentation node {node_id!r} has invalid inspectable setting."
+                )
+            if interaction.get("inspectable") and not interaction.get("selectable"):
+                raise ValueError(
+                    "inspectable presentation node must be selectable: "
+                    f"{node_id!r}"
+                )
+            if interaction.get("draggable") not in {"none", "self", "members"}:
+                raise ValueError(
+                    f"Presentation node {node_id!r} has unsupported draggable effect."
+                )
+            if interaction.get("collapse_effect") not in {"none", "self"}:
+                raise ValueError(
+                    f"Presentation node {node_id!r} has unsupported collapse effect."
+                )
+
+        ui = graph_json.get("ui", {}) or {}
+        if not isinstance(ui, dict):
+            return presentation_ids
+        controls = ui.get("presentation_node_controls", [])
+        if not isinstance(controls, list):
+            raise ValueError("ui.presentation_node_controls must be a list.")
+
+        control_ids: set[str] = set()
+        global_facet_ids: set[str] = set()
+        owner_by_node: dict[str, str] = {}
+        for control in controls:
+            if not isinstance(control, dict) or not isinstance(control.get("id"), str):
+                raise ValueError("Each presentation node control requires a string id.")
+            control_id = control["id"]
+            if not control_id or control_id in control_ids:
+                raise ValueError(
+                    f"duplicate presentation node control id: {control_id!r}"
+                )
+            control_ids.add(control_id)
+            facets = control.get("facets", [])
+            if not isinstance(facets, list):
+                raise ValueError(
+                    f"Presentation node control {control_id!r} has non-list facets."
+                )
+            facet_ids: set[str] = set()
+            for facet in facets:
+                if not isinstance(facet, dict) or not isinstance(facet.get("id"), str):
+                    raise ValueError("Each presentation node facet requires a string id.")
+                facet_id = facet["id"]
+                if not facet_id or facet_id in global_facet_ids:
+                    raise ValueError(
+                        f"duplicate presentation node facet id: {facet_id!r}"
+                    )
+                facet_ids.add(facet_id)
+                global_facet_ids.add(facet_id)
+                if facet.get("activation") not in {"all", "multiple"}:
+                    raise ValueError(
+                        f"Presentation node facet {facet_id!r} has invalid activation."
+                    )
+                node_ids = facet.get("node_ids", [])
+                if not isinstance(node_ids, list):
+                    raise ValueError(
+                        f"Presentation node facet {facet_id!r} has non-list node_ids."
+                    )
+                for raw_node_id in node_ids:
+                    node_id = str(raw_node_id)
+                    if node_id not in presentation_ids:
+                        raise ValueError(
+                            f"unknown presentation node reference: {node_id!r}"
+                        )
+                    previous_owner = owner_by_node.get(node_id)
+                    if previous_owner is not None and previous_owner != control_id:
+                        raise ValueError(
+                            "presentation node has multiple control owners: "
+                            f"{node_id!r}"
+                        )
+                    owner_by_node[node_id] = control_id
+            default_facet = control.get("default_facet")
+            if default_facet is not None and str(default_facet) not in facet_ids:
+                raise ValueError(
+                    f"unknown default presentation node facet: {default_facet!r}"
+                )
+
+        return presentation_ids
+
     def _validate_relation_semantics(self, raw: object, edge_types: set[str]) -> None:
-        """Validate the finite relation transducer declared by an adapter."""
+        """Validate the finite relation transducer declared by an adapter.
+
+        Intent
+        ------
+        Check omission transformations and relation-subsumption declarations.
+
+        Rationale
+        ---------
+        Projection behavior must be finite, deterministic, typed, and acyclic.
+
+        Pseudocode
+        ----------
+        - set transformations = validated matcher cells and outcomes
+        - set subsumptions = validated typed acyclic relation ordering
+        - return validated relation semantics
+
+        Wraps
+        -----
+        - none
+        """
         if raw is None:
             return
         if not isinstance(raw, dict):
@@ -267,6 +528,27 @@ class Graph:
                 weaker_by_type.setdefault(stronger, set()).add(weaker_type)
 
         def reaches(start: str, target: str) -> bool:
+            """Return whether one relation type transitively subsumes another.
+
+            Intent
+            ------
+            Detect reachability in the local subsumption declaration.
+
+            Rationale
+            ---------
+            A bounded traversal detects cycles without exposing helper state.
+
+            Pseudocode
+            ----------
+            - set pending = directly weaker relation types
+            - while pending contains a relation type:
+              - set current = next pending relation type
+            - return true on the target or false after exhaustion
+
+            Wraps
+            -----
+            - none
+            """
             pending = list(weaker_by_type.get(start, ()))
             seen: set[str] = set()
             while pending:
@@ -284,7 +566,26 @@ class Graph:
     def _validate_category_catalog(
         self, raw: object, field: str, label: str
     ) -> set[str]:
-        """Validate one category hierarchy and return its identifiers."""
+        """Validate one category hierarchy and return its identifiers.
+
+        Intent
+        ------
+        Check category records, uniqueness, parent references, and acyclicity.
+
+        Rationale
+        ---------
+        Validated identifiers support later entity and UI reference checks.
+
+        Pseudocode
+        ----------
+        - set identifiers = unique validated category ids
+        - set parents = validated acyclic parent links
+        - return the identifier set
+
+        Wraps
+        -----
+        - none
+        """
         if not isinstance(raw, list):
             raise ValueError(f"'{field}' must be a list when present.")
         parents: dict[str, str] = {}
@@ -324,7 +625,27 @@ class Graph:
         category_ids: set[str],
         edge_type_ids: set[str],
     ) -> None:
-        """Reject initial UI state that cannot be represented by this graph."""
+        """Reject initial UI state that cannot be represented by this graph.
+
+        Intent
+        ------
+        Validate visibility and focus references against available graph ids.
+
+        Rationale
+        ---------
+        Initial UI state must not point to entities, containers, or types that
+        the renderer cannot represent.
+
+        Pseudocode
+        ----------
+        - set visibility = validated visibility references
+        - set selected = validated optional focus entity
+        - return validated UI state
+
+        Wraps
+        -----
+        - none
+        """
         ui = graph_json.get("ui", {}) or {}
         visibility = ui.get("visibility", {}) or {}
         for field, allowed in (
@@ -343,7 +664,26 @@ class Graph:
     def _validate_detail_references(
         self, entities: list[GraphPayload], entity_ids: set[str]
     ) -> None:
-        """Validate structured inspector references as internal graph references."""
+        """Validate structured inspector references as internal graph references.
+
+        Intent
+        ------
+        Ensure inspector reference fields target canonical entities.
+
+        Rationale
+        ---------
+        Reference controls should never render dead navigation targets.
+
+        Pseudocode
+        ----------
+        - set targets = scalar and list references from structured details
+        - set references = targets validated against entity ids
+        - return validated inspector details
+
+        Wraps
+        -----
+        - none
+        """
         for entity in entities:
             details = entity.get("details") or {}
             for section in details.get("sections", []) if isinstance(details, dict) else []:
@@ -366,14 +706,52 @@ class Graph:
                             )
 
     def iter_entities(self, graph_json: GraphPayload) -> list[GraphPayload]:
-        """Return payload entities as a list."""
+        """Return well-formed payload entities as a list.
+
+        Intent
+        ------
+        Normalize the entity collection for graph operations.
+
+        Rationale
+        ---------
+        Traversals should ignore malformed loose entries defensively.
+
+        Pseudocode
+        ----------
+        - set entities = graph entities value
+        - return empty when it is not a list
+        - return dictionary entities
+
+        Wraps
+        -----
+        - none
+        """
         entities = graph_json.get("entities", [])
         if not isinstance(entities, list):
             return []
         return [entity for entity in entities if isinstance(entity, dict)]
 
     def build_adjacency(self, graph_json: GraphPayload) -> dict[str, set[str]]:
-        """Build source→target adjacency for the given graph."""
+        """Build source-to-target adjacency for the given graph.
+
+        Intent
+        ------
+        Index valid canonical edges by source id.
+
+        Rationale
+        ---------
+        Reachability and reduction need a compact target lookup.
+
+        Pseudocode
+        ----------
+        - set adjacency = nonempty dependency targets grouped by source
+        - return an ordinary dictionary
+
+        Wraps
+        -----
+        - none
+
+        """
         adjacency: dict[str, set[str]] = defaultdict(set)
         for entity in self.iter_entities(graph_json):
             source = str(entity["id"])
@@ -394,7 +772,28 @@ class Graph:
         *,
         edge_type: str | None = None,
     ) -> bool:
-        """Check directed reachability in O(E+V), optionally within one edge type."""
+        """Check directed reachability, optionally within one edge type.
+
+        Intent
+        ------
+        Determine whether a directed path connects two canonical entity ids.
+
+        Rationale
+        ---------
+        Iterative traversal avoids recursion limits and supports typed queries.
+
+        Pseudocode
+        ----------
+        - return true for identical endpoints
+        - set adjacency = typed or untyped adjacency for the request
+        - set reachable = iterative traversal result
+        - return reachable
+
+        Wraps
+        -----
+        - none
+
+        """
         if source == target:
             return True
         adjacency = self.build_adjacency_by_type(graph_json).get(edge_type, {}) if edge_type else self.build_adjacency(graph_json)
@@ -412,7 +811,26 @@ class Graph:
         return False
 
     def build_adjacency_by_type(self, graph_json: GraphPayload) -> dict[str, dict[str, set[str]]]:
-        """Build edge-type-indexed source→target adjacency for the given graph."""
+        """Build edge-type-indexed source-to-target adjacency for the graph.
+
+        Intent
+        ------
+        Index valid canonical edges first by relation type and then source id.
+
+        Rationale
+        ---------
+        Transitive reduction must compare paths only within one relation type.
+
+        Pseudocode
+        ----------
+        - set adjacency_by_type = nonempty targets grouped by type and source
+        - return ordinary nested dictionaries
+
+        Wraps
+        -----
+        - none
+
+        """
         adjacency_by_type: dict[str, dict[str, set[str]]] = defaultdict(lambda: defaultdict(set))
         for entity in self.iter_entities(graph_json):
             source = str(entity["id"])
@@ -430,7 +848,28 @@ class Graph:
         }
 
     def reduce_transitive_edges(self, graph_json: GraphPayload) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-        """Apply transitive-reduction-like cleanup on the rendered graph view."""
+        """Apply transitive-reduction-like cleanup on the rendered graph view.
+
+        Intent
+        ------
+        Remove typed edges that have an alternate path of the same type.
+
+        Rationale
+        ---------
+        A deep-copied reduced view can simplify rendering without mutating or
+        losing the source payload and removed-edge evidence.
+
+        Pseudocode
+        ----------
+        - set reduced = deep copy of the payload
+        - set removed = edges having alternate same-type paths
+        - return the reduced payload and removal records
+
+        Wraps
+        -----
+        - none
+
+        """
         reduced = copy.deepcopy(graph_json)
         entities = reduced.get("entities")
         if not isinstance(entities, list):
@@ -442,6 +881,27 @@ class Graph:
         adjacency_by_type = self.build_adjacency_by_type(reduced)
 
         def has_alternate_path(source_id: str, target_id: str, edge_type: str) -> bool:
+            """Return whether a same-type path exists without the direct edge.
+
+            Intent
+            ------
+            Test one candidate edge for typed transitive redundancy.
+
+            Rationale
+            ---------
+            Excluding the direct target from the initial frontier tests only
+            genuine alternate paths.
+
+            Pseudocode
+            ----------
+            - set pending = successors other than the direct target
+            - set reachable = iterative traversal result
+            - return reachable
+
+            Wraps
+            -----
+            - none
+            """
             if source_id == target_id:
                 return False
             adjacency = adjacency_by_type.get(edge_type, {})

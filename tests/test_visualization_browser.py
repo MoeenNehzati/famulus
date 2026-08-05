@@ -46,6 +46,17 @@ def test_filter_interactions_keep_layout_and_explain_projection():
         ],
         "ui": {
             "layout": {"rankdir": "LR", "aspect_ratio": 1.7},
+            "presentation_node_controls": [{
+                "id": "skill-grouping", "label": "Skill grouping",
+                "selector_label": "Group skills by", "default_facet": None,
+                "facets": [
+                    {"id": "discovery.domain", "label": "Domain", "activation": "all", "node_ids": ["discovery.domain.research", "discovery.domain.software-development"]},
+                    {"id": "discovery.topics", "label": "Topics", "activation": "multiple", "node_ids": ["discovery.topics.visualization", "discovery.topics.repository-workflow", "discovery.topics.planning", "discovery.topics.task-automation"]},
+                    {"id": "discovery.activated_by", "label": "Activated by", "activation": "all", "node_ids": ["discovery.activated_by.user-request"]},
+                    {"id": "discovery.persistent_modifier", "label": "Persistent modifier", "activation": "all", "node_ids": ["discovery.persistent_modifier.not-persistent"]},
+                    {"id": "discovery.visibility", "label": "Catalog visibility", "activation": "all", "node_ids": ["discovery.visibility.listed"]},
+                ],
+            }],
             "edge_styles": {
                 "dependency": {"color": "#b45309"},
                 "uses": {"color": "#2563eb", "dash": "10 5"},
@@ -59,6 +70,17 @@ def test_filter_interactions_keep_layout_and_explain_projection():
                 },
             },
         },
+        "presentation_nodes": [
+            {"id": "discovery.domain.research", "type": "group", "short_title": "Research", "position": 0, "member_ids": ["root", "gamma"], "presentation": {"form": "supernode", "tone": "subtle", "default_visibility": "hidden"}, "interaction": {"selectable": True, "inspectable": True, "draggable": "members", "collapse_effect": "self"}},
+            {"id": "discovery.domain.software-development", "type": "group", "short_title": "Software development", "position": 1, "member_ids": ["delta"], "presentation": {"form": "supernode", "tone": "subtle", "default_visibility": "hidden"}, "interaction": {"selectable": True, "inspectable": True, "draggable": "members", "collapse_effect": "self"}},
+            {"id": "discovery.topics.visualization", "type": "group", "short_title": "Visualization", "position": 2, "member_ids": ["root", "gamma"], "presentation": {"form": "supernode", "tone": "subtle", "default_visibility": "hidden"}, "interaction": {"selectable": True, "inspectable": True, "draggable": "members", "collapse_effect": "self"}},
+            {"id": "discovery.topics.repository-workflow", "type": "group", "short_title": "Repository workflow", "position": 3, "member_ids": ["root", "delta"], "presentation": {"form": "supernode", "tone": "subtle", "default_visibility": "hidden"}, "interaction": {"selectable": True, "inspectable": True, "draggable": "members", "collapse_effect": "self"}},
+            {"id": "discovery.topics.planning", "type": "group", "short_title": "Planning", "position": 4, "member_ids": ["gamma"], "presentation": {"form": "supernode", "tone": "subtle", "default_visibility": "hidden"}, "interaction": {"selectable": True, "inspectable": True, "draggable": "members", "collapse_effect": "self"}},
+            {"id": "discovery.topics.task-automation", "type": "group", "short_title": "Task automation", "position": 5, "member_ids": ["delta"], "presentation": {"form": "supernode", "tone": "subtle", "default_visibility": "hidden"}, "interaction": {"selectable": True, "inspectable": True, "draggable": "members", "collapse_effect": "self"}},
+            {"id": "discovery.activated_by.user-request", "type": "group", "short_title": "User request", "position": 6, "member_ids": ["root"], "presentation": {"form": "supernode", "tone": "subtle", "default_visibility": "hidden"}, "interaction": {"selectable": True, "inspectable": True, "draggable": "members", "collapse_effect": "self"}},
+            {"id": "discovery.persistent_modifier.not-persistent", "type": "group", "short_title": "Not a persistent modifier", "position": 7, "member_ids": ["root"], "presentation": {"form": "supernode", "tone": "subtle", "default_visibility": "hidden"}, "interaction": {"selectable": True, "inspectable": True, "draggable": "members", "collapse_effect": "self"}},
+            {"id": "discovery.visibility.listed", "type": "group", "short_title": "Listed", "position": 8, "member_ids": ["root"], "presentation": {"form": "supernode", "tone": "subtle", "default_visibility": "hidden"}, "interaction": {"selectable": True, "inspectable": True, "draggable": "members", "collapse_effect": "self"}},
+        ],
         "entities": [
             {"id": "root", "type": "group", "detail_level": "overview", "kind": "composite", "category": "element", "short_title": "Root", "position": 0, "connects_to": [{"to": "alpha", "type": "dependency", "description": "owns execution"}]},
             {"id": "nested", "type": "group", "detail_level": "overview", "kind": "composite", "category": "element", "short_title": "Nested", "container": "root", "position": 1, "connects_to": []},
@@ -66,10 +88,13 @@ def test_filter_interactions_keep_layout_and_explain_projection():
             {"id": "beta", "type": "record", "detail_level": "component", "kind": "data", "category": "artifact", "short_title": "Beta Source", "container": "nested", "position": 3, "connects_to": []},
             {"id": "odd\"node", "type": "record", "detail_level": "component", "kind": "service", "category": "artifact", "short_title": "Odd Node", "container": "nested", "position": 4, "connects_to": []},
             {"id": "zeta", "type": "record", "detail_level": "item", "kind": "service", "category": "artifact", "short_title": "Zeta Source", "container": "nested", "position": 5, "connects_to": [{"to": "alpha", "type": "dependency", "description": "feeds alpha", "confidence": "Likely"}, {"to": "alpha", "type": "dependency", "description": "validates alpha", "confidence": "Likely"}]},
+            {"id": "gamma", "type": "group", "detail_level": "item", "kind": "service", "category": "artifact", "short_title": "Gamma skill", "position": 6, "connects_to": [{"to": "delta", "type": "dependency", "description": "cross-skill dependency"}]},
+            {"id": "delta", "type": "group", "detail_level": "item", "kind": "data", "category": "artifact", "short_title": "Delta skill", "position": 7, "connects_to": []},
+            {"id": "boundary", "type": "group", "detail_level": "item", "kind": "composite", "category": "element", "short_title": "Boundary proxy", "position": 8, "connects_to": []},
         ],
     }
-    html = build_html_with_elk(doc)
-    html = html.replace(
+    base_html = build_html_with_elk(doc)
+    html = base_html.replace(
         "</body>",
         """<script>
         const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -84,10 +109,198 @@ def test_filter_interactions_keep_layout_and_explain_projection():
         const pass = () => { document.body.dataset.testStatus = "PASS"; document.title = "PASS"; };
         window.addEventListener("load", () => setTimeout(async () => {
           try {
-            const alpha = document.querySelector('[data-node-id="alpha"]');
-            const beta = document.querySelector('[data-node-id="beta"]');
-            const root = document.querySelector('[data-node-id="root"]');
+            await waitForLayout();
+            let alpha = document.querySelector('[data-node-id="alpha"]');
+            let beta = document.querySelector('[data-node-id="beta"]');
+            let root = document.querySelector('[data-node-id="root"]');
             if (!alpha || !beta || !root) throw new Error("initial nodes missing");
+            const presentationFacet = document.getElementById("presentation-node-control-dimension");
+            if (!presentationFacet || presentationFacet.value !== "") throw new Error("grouping did not default off");
+            const groupingOptions = Array.from(presentationFacet.options).map(option => option.value);
+            if (JSON.stringify(groupingOptions) !== JSON.stringify(["", "discovery.domain", "discovery.topics", "discovery.activated_by", "discovery.persistent_modifier", "discovery.visibility"])) throw new Error("grouping dimension menu is incomplete or out of order");
+            setNodeSelection(["alpha", "beta"], "beta", "explicit");
+            saveViewerState();
+            selectedNodeIds.clear(); selectedNodeId = null;
+            restoreViewerState();
+            if (selectedNodeIds.size !== 2 || selectedNodeId !== "beta") throw new Error("version-7 viewer state lost multi-selection");
+            deselect();
+            const canonicalNodeCount = document.querySelectorAll(".graph-node").length;
+            const canonicalEdgeCount = document.querySelectorAll(".edge-path").length;
+            const alphaRootDelta = {
+              x: lastNodePositions.get("alpha").x - lastNodePositions.get("root").x,
+              y: lastNodePositions.get("alpha").y - lastNodePositions.get("root").y,
+            };
+            ["root", "nested", "alpha", "beta", 'odd"node', "zeta", "gamma", "delta", "boundary"].forEach(nodeId => {
+              const position = lastNodePositions.get(nodeId);
+              manualPositions.set(nodeId, {...position, x: position.x + 17, y: position.y + 9});
+            });
+            const retainedManualRootX = manualPositions.get("root").x;
+            presentationFacet.value = "discovery.topics";
+            presentationFacet.dispatchEvent(new Event("change", {bubbles: true}));
+            const topicChoices = document.querySelectorAll('[data-presentation-node] input[type="checkbox"]');
+            if (topicChoices.length !== 4 || Array.from(topicChoices).some(input => input.checked)) throw new Error("topics did not start as an empty multi-select");
+            topicChoices.forEach(input => {
+              input.checked = true;
+              input.dispatchEvent(new Event("change", {bubbles: true}));
+            });
+            await waitForLayout();
+            if (!manualPositions.has("root")) throw new Error(`grouped layout deleted retained manual positions: grouped=${Array.from(presentationGroupedNodeIds).join(",")}`);
+            if (document.querySelectorAll(".graph-node").length !== canonicalNodeCount || document.querySelectorAll(".edge-path").length !== canonicalEdgeCount) throw new Error("grouping controls changed canonical graph content");
+            const groupedDelta = {
+              x: lastNodePositions.get("alpha").x - lastNodePositions.get("root").x,
+              y: lastNodePositions.get("alpha").y - lastNodePositions.get("root").y,
+            };
+            if (groupedDelta.x !== alphaRootDelta.x || groupedDelta.y !== alphaRootDelta.y) throw new Error("grouping did not move the skill subtree as a rigid block");
+            const presentationShells = document.querySelectorAll("#presentation-node-layer .presentation-node-component");
+            if (presentationShells.length < 2) throw new Error("metadata shells missing");
+            if (document.querySelectorAll("#presentation-node-layer .graph-node").length) throw new Error("metadata shell entered graph-node interactions");
+            const visualizationShell = document.querySelector('[data-presentation-node-id="discovery.topics.visualization"]');
+            visualizationShell.dispatchEvent(new MouseEvent("dblclick", {bubbles: true}));
+            const hiddenTopicToggle = document.querySelector('[data-presentation-node="discovery.topics.visualization"] input');
+            if (!hiddenPresentationNodes.has("discovery.topics.visualization") || hiddenTopicToggle.checked) throw new Error("hidden multiple-facet node did not expose a restore control");
+            hiddenTopicToggle.checked = true;
+            hiddenTopicToggle.dispatchEvent(new Event("change", {bubbles: true}));
+            await waitForLayout();
+            if (hiddenPresentationNodes.has("discovery.topics.visualization") || !document.querySelector('[data-presentation-node-id="discovery.topics.visualization"]')) throw new Error("multiple-facet node did not restore");
+            const sharedRootBeforeDrag = {...lastNodePositions.get("root")};
+            const overlappingTopicBeforeDrag = JSON.stringify(presentationNodeComponents.filter(component => component.presentationNodeId === "discovery.topics.repository-workflow").map(component => component.bounds));
+            const draggableTopic = document.querySelector('[data-presentation-node-id="discovery.topics.visualization"]');
+            const topicDragZoom = zoomLevel;
+            draggableTopic.dispatchEvent(new MouseEvent("mousedown", {bubbles: true, button: 0, clientX: 100, clientY: 100}));
+            document.dispatchEvent(new MouseEvent("mousemove", {bubbles: true, clientX: 132, clientY: 116}));
+            document.dispatchEvent(new MouseEvent("mouseup", {bubbles: true, clientX: 132, clientY: 116}));
+            await waitForLayout();
+            const expectedSharedDx = 32 / topicDragZoom;
+            if (Math.abs((lastNodePositions.get("root").x - sharedRootBeforeDrag.x) - expectedSharedDx) > 0.01) throw new Error("shared member moved more than once during presentation drag");
+            const overlappingTopicAfterDrag = JSON.stringify(presentationNodeComponents.filter(component => component.presentationNodeId === "discovery.topics.repository-workflow").map(component => component.bounds));
+            if (overlappingTopicAfterDrag === overlappingTopicBeforeDrag) throw new Error("overlapping presentation shell did not reshape after shared-member drag");
+            presentationNodeOffsets.clear();
+            await updateVisibilityFull({preserveManualPositions: true});
+            if (nodeElement("root").getAttribute("data-node-id") !== "root") throw new Error("grouping duplicated canonical skill identity");
+            const rootPosition = lastNodePositions.get("root");
+            const containsPosition = (bound, position) => position.x >= bound.x && position.y >= bound.y && position.x + position.width <= bound.x + bound.width && position.y + position.height <= bound.y + bound.height;
+            for (const presentationNodeId of ["discovery.topics.visualization", "discovery.topics.repository-workflow"]) {
+              if (!presentationNodeComponents.some(component => component.presentationNodeId === presentationNodeId && containsPosition(component.bounds, rootPosition))) throw new Error("multi-member skill escaped selected shell " + presentationNodeId);
+            }
+            const boundaryPosition = lastNodePositions.get("boundary");
+            if (presentationNodeComponents.some(component => containsPosition(component.bounds, boundaryPosition))) throw new Error("ungrouped root was falsely enclosed by a metadata shell");
+            const movedCrossSkillEdge = document.querySelector('.edge-path[data-source-node-id="gamma"][data-target-node-id="delta"]');
+            if (!movedCrossSkillEdge?.getAttribute("d")) throw new Error("edge between grouped roots was not rerouted");
+            const groupedManualRootX = manualPositions.get("root").x;
+            nodeElement("root").dispatchEvent(new MouseEvent("mousedown", {bubbles: true, button: 0, clientX: 100, clientY: 100}));
+            document.dispatchEvent(new MouseEvent("mousemove", {bubbles: true, clientX: 140, clientY: 140}));
+            document.dispatchEvent(new MouseEvent("mouseup", {bubbles: true, clientX: 140, clientY: 140}));
+            if (manualPositions.get("root").x !== groupedManualRootX) throw new Error("grouped drag mutated retained manual position");
+            const groupingState = serializePresentationNodesState();
+            if (groupingState.activeFacets["skill-grouping"] !== "discovery.topics" || groupingState.selectedNodeIds["discovery.topics"].length !== 4) throw new Error("topic selection did not serialize");
+            restorePresentationNodesState({activeDimension: "discovery.topics", selectedValues: {"discovery.topics": ["missing", "visualization"]}, hiddenShells: []});
+            if (selectedPresentationNodeIds.get("discovery.topics").has("discovery.topics.missing") || !selectedPresentationNodeIds.get("discovery.topics").has("discovery.topics.visualization")) throw new Error("v6 presentation state migration was invalid");
+            presentationFacet.value = "discovery.domain";
+            presentationFacet.dispatchEvent(new Event("change", {bubbles: true}));
+            await waitForLayout();
+            let researchShell = document.querySelector('[data-presentation-node-id="discovery.domain.research"]');
+            researchShell.dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true}));
+            if (selectedPresentationNodeId !== "discovery.domain.research" || !document.getElementById("details").textContent.includes("Research")) throw new Error("presentation node did not select and inspect");
+            deselect();
+            const persistedAfterPresentationDeselect = JSON.parse(localStorage.getItem(viewerStateKey));
+            if (selectedPresentationNodeId !== null || persistedAfterPresentationDeselect.presentationNodes.selectedNodeId !== null) throw new Error("presentation deselect did not persist");
+            undoGraphAction();
+            if (selectedPresentationNodeId !== "discovery.domain.research") throw new Error("presentation deselect was not undoable");
+            redoGraphAction();
+            if (selectedPresentationNodeId !== null) throw new Error("presentation deselect redo did not clear selection");
+            researchShell = document.querySelector('[data-presentation-node-id="discovery.domain.research"]');
+            researchShell.dispatchEvent(new MouseEvent("click", {bubbles: true}));
+            showEdgeDetails(edgeData[0]);
+            const persistedAfterEdgeInspection = JSON.parse(localStorage.getItem(viewerStateKey));
+            if (selectedPresentationNodeId !== null || persistedAfterEdgeInspection.presentationNodes.selectedNodeId !== null) throw new Error("edge inspection did not persist presentation deselection");
+            undoGraphAction();
+            if (selectedPresentationNodeId !== "discovery.domain.research") throw new Error("edge-inspection deselection was not undoable");
+            redoGraphAction();
+            researchShell = document.querySelector('[data-presentation-node-id="discovery.domain.research"]');
+            researchShell.dispatchEvent(new MouseEvent("click", {bubbles: true}));
+            setNodeSelection(["root"], "root", "explicit");
+            if (selectedPresentationNodeId !== null || !selectedNodeIds.has("root")) throw new Error("canonical selection did not clear presentation selection");
+            researchShell = document.querySelector('[data-presentation-node-id="discovery.domain.research"]');
+            researchShell.dispatchEvent(new MouseEvent("click", {bubbles: true}));
+            researchShell.dispatchEvent(new MouseEvent("dblclick", {bubbles: true, altKey: true}));
+            if (!collapsedPresentationNodes.has("discovery.domain.research") || !nodeElement("root")) throw new Error("presentation collapse hid members or failed to collapse self");
+            researchShell = document.querySelector('[data-presentation-node-id="discovery.domain.research"]');
+            researchShell.dispatchEvent(new MouseEvent("dblclick", {bubbles: true, altKey: true}));
+            if (collapsedPresentationNodes.has("discovery.domain.research")) throw new Error("presentation node did not restore from collapse");
+            const rootBeforePresentationDrag = {...lastNodePositions.get("root")};
+            researchShell = document.querySelector('[data-presentation-node-id="discovery.domain.research"]');
+            const domainDragZoom = zoomLevel;
+            researchShell.dispatchEvent(new MouseEvent("mousedown", {bubbles: true, button: 0, clientX: 100, clientY: 100}));
+            document.dispatchEvent(new MouseEvent("mousemove", {bubbles: true, clientX: 132, clientY: 116}));
+            document.dispatchEvent(new MouseEvent("mouseup", {bubbles: true, clientX: 132, clientY: 116}));
+            await waitForLayout();
+            const expectedPresentationDx = 32 / domainDragZoom;
+            if (!presentationNodeOffsets.has("discovery.domain.research") || Math.abs((lastNodePositions.get("root").x - rootBeforePresentationDrag.x) - expectedPresentationDx) > 0.01) throw new Error("presentation drag did not move its shared member exactly once");
+            presentationNodeOffsets.clear();
+            await updateVisibilityFull({preserveManualPositions: true});
+            researchShell = document.querySelector('[data-presentation-node-id="discovery.domain.research"]');
+            researchShell.dispatchEvent(new MouseEvent("dblclick", {bubbles: true}));
+            if (!hiddenPresentationNodes.has("discovery.domain.research") || !nodeElement("root")) throw new Error("presentation hide changed member visibility");
+            for (let cycle = 0; cycle < 3; cycle += 1) {
+              togglePresentationNodeHidden("discovery.domain.research");
+              togglePresentationNodeHidden("discovery.domain.research");
+            }
+            togglePresentationNodeHidden("discovery.domain.research");
+            if (hiddenPresentationNodes.has("discovery.domain.research")) throw new Error("repeated presentation hide and restore did not settle visible");
+            const originalDefaultFacet = presentationNodeControls[0].default_facet;
+            presentationNodeControls[0].default_facet = "discovery.domain";
+            clearPresentationNodesState();
+            if (activePresentationFacets.get("skill-grouping") !== "discovery.domain") throw new Error("Reset discarded JSON presentation defaults");
+            presentationNodeControls[0].default_facet = originalDefaultFacet;
+            clearPresentationNodesState();
+            presentationFacet.value = "discovery.domain";
+            presentationFacet.dispatchEvent(new Event("change", {bubbles: true}));
+            await waitForLayout();
+            const groupingComputeLayout = computeLayout;
+            const historyBeforeGroupingFailure = graphUndoStack.length;
+            computeLayout = async () => { throw new Error("injected grouping failure"); };
+            presentationFacet.value = "discovery.activated_by";
+            presentationFacet.dispatchEvent(new Event("change", {bubbles: true}));
+            await delay(40);
+            if (presentationFacet.value !== "discovery.domain" || !document.querySelector('[data-presentation-node-id="discovery.domain.research"]')) throw new Error("failed grouping layout did not roll back controls and shells");
+            const persistedAfterGroupingFailure = JSON.parse(localStorage.getItem(viewerStateKey));
+            if (persistedAfterGroupingFailure.presentationNodes.activeFacets["skill-grouping"] !== "discovery.domain" || graphUndoStack.length !== historyBeforeGroupingFailure) throw new Error("failed grouping layout polluted persistence or history");
+            computeLayout = groupingComputeLayout;
+            const domainShellToggle = document.querySelector('[data-presentation-node="discovery.domain.research"] input');
+            domainShellToggle.checked = false;
+            domainShellToggle.dispatchEvent(new Event("change", {bubbles: true}));
+            if (document.querySelector('[data-presentation-node-id="discovery.domain.research"]') || document.querySelectorAll(".graph-node").length !== canonicalNodeCount || hiddenNodes.size !== 0) throw new Error("hiding a presentation node changed member visibility");
+            computeLayout = async () => { throw new Error("injected failure after shell hide"); };
+            presentationFacet.value = "discovery.visibility";
+            presentationFacet.dispatchEvent(new Event("change", {bubbles: true}));
+            await delay(40);
+            if (presentationFacet.value !== "discovery.domain" || document.querySelector('[data-presentation-node-id="discovery.domain.research"]')) throw new Error("failed layout lost committed presentation visibility");
+            computeLayout = groupingComputeLayout;
+            restorePresentationNodesState(null);
+            refreshPresentationNodesControls();
+            if (presentationFacet.value !== "") throw new Error("legacy viewer state did not restore grouping off");
+            await updateVisibilityFull();
+            if (manualPositions.get("root")?.x !== retainedManualRootX || !nodeElement("root").hasAttribute("transform")) throw new Error(`turning grouping off did not restore retained manual positions: retained=${retainedManualRootX} current=${manualPositions.get("root")?.x} transform=${nodeElement("root").getAttribute("transform")}`);
+            manualPositions.clear();
+            await updateVisibilityFull();
+            const movedRoot = {...lastNodePositions.get("root"), x: lastNodePositions.get("root").x + 23, y: lastNodePositions.get("root").y + 11};
+            manualPositions.set("root", movedRoot);
+            hideNodes(["root"]);
+            if (!hiddenNodes.has("root") || nodeElement("root")?.style.display !== "none") throw new Error("restore regression setup did not hide root");
+            presentationFacet.value = "discovery.domain";
+            presentationFacet.dispatchEvent(new Event("change", {bubbles: true}));
+            await waitForLayout();
+            if (nodeElement("root")) throw new Error("grouping relayout retained explicitly hidden root");
+            presentationFacet.value = "";
+            presentationFacet.dispatchEvent(new Event("change", {bubbles: true}));
+            await waitForLayout();
+            showNodes(["root"]);
+            await waitForLayout();
+            if (!nodeElement("root") || isHiddenNode("root")) throw new Error("restore after grouped relayout did not render root");
+            if (manualPositions.get("root")?.x !== movedRoot.x || manualPositions.get("root")?.y !== movedRoot.y) throw new Error("restore after grouped relayout discarded root manual position");
+            manualPositions.clear();
+            await updateVisibilityFull();
+            alpha = nodeElement("alpha"); beta = nodeElement("beta"); root = nodeElement("root");
             if (!(lastNodePositions.get("zeta").x < lastNodePositions.get("alpha").x)) throw new Error("post-layout containment packing reversed dependency direction");
             const fullDetailPositions = ["alpha", "beta", 'odd"node', "zeta"].map(nodeId => lastNodePositions.get(nodeId));
             const fullDetailColumns = new Set(fullDetailPositions.map(position => Math.round(position.x / 10)));
@@ -137,8 +350,9 @@ def test_filter_interactions_keep_layout_and_explain_projection():
             if (!document.querySelector(".legend-row[tabindex]")) throw new Error("legend is not keyboard focusable");
             if (!document.querySelector('meta[name="viewport"]')) throw new Error("mobile viewport metadata missing");
             if (!document.getElementById("details").closest("#left-panel")) throw new Error("selection details are not in left inspector");
-            if (document.getElementById("left-panel-toggle").getAttribute("aria-expanded") !== "true") throw new Error("left inspector did not start open");
-            if (document.getElementById("panel-toggle").getAttribute("aria-expanded") !== "true") throw new Error("right controls did not start open");
+            const expectedInitialPanelState = window.innerWidth <= 720 ? "false" : "true";
+            if (document.getElementById("left-panel-toggle").getAttribute("aria-expanded") !== expectedInitialPanelState) throw new Error("left inspector initial responsive state was wrong");
+            if (document.getElementById("panel-toggle").getAttribute("aria-expanded") !== expectedInitialPanelState) throw new Error("right controls initial responsive state was wrong");
             const cheatsheetSection = document.querySelector('[data-section-id="cheatsheet"]');
             const cheatsheetDetails = document.getElementById("cheatsheet-details");
             if (cheatsheetSection.parentElement !== panelContent || cheatsheetSection.previousElementSibling !== document.getElementById("panel-title")) throw new Error("How to use did not remain immediately below the graph title");
@@ -319,6 +533,7 @@ def test_filter_interactions_keep_layout_and_explain_projection():
             document.getElementById("reset-btn").dispatchEvent(new MouseEvent("dblclick", {bubbles: true}));
             await waitForLayout();
             if (document.getElementById("graph-filter-search").value !== "") throw new Error("full reset kept search");
+            if (presentationFacet.value !== "") throw new Error("full reset kept metadata grouping");
             if (selectedNodeIds.size !== 0) throw new Error("full reset kept node-category selection");
             const legendParent = document.querySelector('.legend-row[data-legend-kind="edge"][data-type="dependency"]');
             const legendChild = document.querySelector('.legend-row[data-legend-kind="edge"][data-type="uses"]');
@@ -459,10 +674,64 @@ def test_filter_interactions_keep_layout_and_explain_projection():
                 "--disable-dev-shm-usage",
                 "--disable-crash-reporter",
                 f"--user-data-dir={profile}",
-                "--virtual-time-budget=5000",
+                "--virtual-time-budget=7000",
+                "--window-size=1440,900",
                 "--dump-dom",
                 path.as_uri(),
             ],
             check=True, capture_output=True, text=True,
         )
-    assert 'data-test-status="PASS"' in result.stdout
+    status_marker = 'data-test-status="'
+    status_start = result.stdout.find(status_marker)
+    status = (
+        result.stdout[status_start + len(status_marker):].split('"', 1)[0]
+        if status_start >= 0
+        else "missing"
+    )
+    assert status == "PASS", status
+
+    mobile_html = base_html.replace(
+        "</body>",
+        """<script>
+        window.addEventListener("load", () => setTimeout(() => {
+          try {
+            const selector = document.getElementById("presentation-node-control-dimension");
+            if (!selector || selector.value !== "") throw new Error("mobile presentation control missing or active by default");
+            if (!document.querySelector('.presentation-node-control-panel')) throw new Error("mobile presentation panel missing");
+            if (!document.querySelector('.layout').classList.contains('narrow-layout')) throw new Error("mobile viewport did not use narrow layout");
+            if (document.documentElement.scrollWidth > document.documentElement.clientWidth) throw new Error("mobile page has horizontal overflow");
+            document.body.dataset.testStatus = "PASS";
+            document.title = "PASS";
+          } catch (error) {
+            document.body.dataset.testStatus = "FAIL:" + (error.message || String(error));
+            document.title = document.body.dataset.testStatus;
+          }
+        }, 250));
+        </script></body>""",
+    )
+    mobile_path = Path("/tmp/officina-filter-mobile-smoke.html")
+    mobile_path.write_text(mobile_html, encoding="utf-8")
+    with tempfile.TemporaryDirectory() as profile:
+        mobile_result = subprocess.run(
+            [
+                chrome,
+                "--headless",
+                "--no-sandbox",
+                "--disable-gpu",
+                "--disable-dev-shm-usage",
+                "--disable-crash-reporter",
+                f"--user-data-dir={profile}",
+                "--virtual-time-budget=3000",
+                "--window-size=390,844",
+                "--dump-dom",
+                mobile_path.as_uri(),
+            ],
+            check=True, capture_output=True, text=True,
+        )
+    mobile_start = mobile_result.stdout.find(status_marker)
+    mobile_status = (
+        mobile_result.stdout[mobile_start + len(status_marker):].split('"', 1)[0]
+        if mobile_start >= 0
+        else "missing"
+    )
+    assert mobile_status == "PASS", mobile_status
