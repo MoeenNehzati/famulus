@@ -84,6 +84,18 @@ repository's existing ambient-isolating Git test wrapper. The hostile-index
 failure and the real commit hook are the RED/GREEN evidence; production Git or
 validator behavior does not change.
 
+## Staged-docstring compatibility prerequisite
+
+The first provisional deferred merge exposed 726 genuine whole-module findings
+under master's staged-docstring contract. Independent comparison found 687 on
+the current first-parent versions of the same ten modules and 39 added by the
+deferred versions. This is neither a merge false positive nor a reason to weaken
+the validator. Preserve the provisional merge evidence, abort it, remediate each
+first-parent module as its own validated and reviewed documentation-only commit,
+then re-merge and correct the remaining deferred additions. The recurring-task
+healthcheck's missing run-record blueprint dependency is a separate first-parent
+contract omission and lands before the re-merge.
+
 ## Documentation and assurance
 
 The refactor completion record is changed from its stale self-referential final

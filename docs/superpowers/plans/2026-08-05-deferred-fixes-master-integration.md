@@ -70,6 +70,71 @@ checks plus `validators/runner.py` against the staged candidate and
 6. Obtain independent merge-resolution review, fix any finding, rerun the focused
    checks, then commit the merge.
 
+### Task 1 discovered prerequisites
+
+The first no-commit merge was safely captured and aborted after current master's
+whole-module staged-docstring validator found 726 real findings in ten Python
+files: 687 on their first-parent versions and 39 added by deferred changes. The
+following prerequisites run before repeating Task 1; the validator is not
+weakened or bypassed.
+
+First stage only this plan/spec addendum, run `validators/runner.py` against the
+staged candidate and `git diff --cached --check`, obtain independent review, and
+commit it. Task 1A then begins from a clean worktree and remains a single-file
+commit.
+
+#### Task 1A: Correct the healthcheck dependency declaration
+
+**File:**
+
+- Modify: `skills/recurring-tasks/_rtx/blueprints/rtx-healthcheck-probe.yaml`
+
+1. Add the missing `rtx-run-record` dependency required by master's
+   `read_latest_run_record` import; do not add the deferred `rtx-jobs-config`
+   dependency before that implementation is merged.
+2. Run recurring-task dependency, relationship, blueprint, and interface checks.
+3. Stage only the blueprint, run staged validators and cached diff checks, obtain
+   independent contract review, fix and repeat as required, then commit.
+
+#### Task 1B: Remediate first-parent docstring debt
+
+**Files and baseline finding counts:**
+
+- `src/officina/common/blueprint_graph.py` — 253
+- `skills/list-manager/_rtx/_yaml_store.py` — 221
+- `src/officina/wakeup/policies.py` — 47
+- `skills/skill-drift/_rtx/_check_drift_state.py` — 53
+- `skills/cloud-files/_rtx/_drive_gateway.py` — 44
+- `docs_tooling/catalog.py` — 42
+- `validators/skill_runtime_doc_references.py` — 13
+- `skills/math-dependency-graph/_rtx/_graph_server.py` — 8
+- `skills/list-manager/_rtx/tests/test_lists.py` — 5
+- `src/officina/wakeup/tests/test_features.py` — 1
+
+For each file, sequentially:
+
+1. Invoke `refactor-node` through a fresh high-reasoning implementation agent,
+   including relevant private runtime/test evidence where the owned node requires
+   it. Limit changes to accurate, informative module/callable docstrings and
+   explanatory comments needed by the current validator; do not change behavior
+   or mechanically pad prose.
+2. Require the canonical docstring checker to report zero findings for the file,
+   and run its owning focused tests.
+3. Stage only that file, run `validators/runner.py` against the staged candidate
+   and `git diff --cached --check`, then obtain independent quality review.
+4. Fix every reviewer finding and repeat the file's complete gate until approved.
+5. Commit the single-file remediation before moving to the next file.
+
+After all ten commits, run the root validator and the affected focused suites,
+then repeat Task 1. The observed deferred delta is 39 findings across four files,
+but remeasure the actual merged candidate after conflict resolution. During the
+active merge, correct and independently review each affected file sequentially
+with its direct canonical docstring check and focused tests; do not attempt an
+intermediate commit or claim the staged root gate is green per file. After every
+actual finding is resolved, run the complete staged validator and cached-diff
+gate once for the whole merge candidate, then obtain final merge review and
+commit.
+
 ## Task 2: Correct detached-HEAD authorization
 
 **Files:**
