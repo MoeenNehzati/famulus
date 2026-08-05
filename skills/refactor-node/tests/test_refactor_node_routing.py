@@ -301,6 +301,24 @@ def test_router_selects_complete_affected_ref_evidence_in_three_classes() -> Non
     )
 
 
+def test_router_consumes_only_returned_semantic_evidence() -> None:
+    skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+    selection = _authored_section(skill, "Select and retrieve")
+    review_clause = next(
+        sentence for sentence in selection.split(".") if "semantic_reviews" in sentence
+    )
+
+    assert {
+        "perform",
+        "every",
+        "returned",
+        "semantic_reviews",
+        "open",
+        "only",
+        "artifacts",
+    } <= _concept_tokens(review_clause)
+
+
 def test_router_distinguishes_defect_red_from_structural_green() -> None:
     skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
     change = _authored_section(skill, "Propose and change")
@@ -330,6 +348,16 @@ def test_router_distinguishes_defect_red_from_structural_green() -> None:
         "approved",
         "scope",
     } <= _concept_tokens(defect_stop)
+
+
+def test_router_checks_exact_diff_against_preservation_map() -> None:
+    skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+    change = _authored_section(skill, "Propose and change")
+    diff_clause = next(sentence for sentence in change.split(".") if "diff" in sentence)
+
+    assert {"inspect", "exact", "diff", "against", "preservation", "map"} <= (
+        _concept_tokens(diff_clause)
+    )
 
 
 def test_whole_node_characterization_covers_every_behavioral_source() -> None:

@@ -42,14 +42,14 @@ These interfaces are documented prompt surfaces. They are not executed through `
 `refactor-node.interface.query-standards` alone supplies repository policy: it
 resolves ownership and validates pinned imports; no file alone is effective.
 
-## Standards retrieval workflow
+## Standards retrieval
 
 ### Preflight
 
 Before every standards query, run and retain its exact dispatcher `--dry-run`.
 Resolve `cwd/python_target.gateway_path` against the reviewed root's registered
-implementation child and gateway. A match selects the gateway but does not prove
-the full imported runtime closure. On mismatch, reject the result, select the
+implementation child and gateway. A match selects the gateway, not the full
+imported runtime closure. On mismatch, reject it, select the
 checkout with the installed wrapper's `AI=<reviewed-root>`, and repeat. Execute
 only a match after verifying the rendered command's target, repository root,
 facts, view, and refs; retain it for exact replay.
@@ -76,10 +76,11 @@ changes, and ownership expansion.
 
 ### Select and retrieve
 
-Normally, dereference each partition overlay through the shared catalog;
+Dereference partition overlays through the shared catalog;
 use exact `document`/`ref`. Apply `requirements.true`; select `context_index`
-entries; evidence maps checks, tests, and assurances, `semantic_reviews`, and
-artifacts. The overlay owns applicability/missing facts.
+entries; evidence maps checks, tests, and assurances. Perform every returned
+`semantic_reviews` and open only returned artifacts; preserve limitations. The
+overlay owns applicability/missing facts.
 
 | Current decision | Request | Use |
 |---|---|---|
@@ -88,10 +89,9 @@ artifacts. The overlay owns applicability/missing facts.
 | Assess verification | `--view evidence --refs-json JSON` | Preserve returned limitations. |
 | Repair a violation | `--view remedies --refs-json JSON` | Follow only returned `remedied-by` procedures and their conditions/order/invariants/risk. |
 
-Request follow-ups only for decision-relevant refs. Use `--view full` or
-`--query-json` only via `--help`.
-For verification, query every affected normative ref in every owner partition,
-plus refs used to diagnose and remedy the pressure. Report disjointly:
+Request only decision-relevant follow-ups. Use `--view full`/`--query-json` only
+via `--help`. For verification, query every affected normative ref per owner
+partition, plus refs used to diagnose and remedy. Report disjointly:
 canonical evidence returned by the query; supplemental change-relevant checks,
 naming their actual owner and limitations, including directly affected consumer
 checks; and requested normative refs with no mapped evidence.
@@ -111,6 +111,7 @@ classified evidence, and remedy; require approval. A behavior repair requires
 genuine RED evidence. A behavior-preserving structural move requires
 standards-backed design pressure and green characterization before and after.
 If diagnosis reveals a behavioral defect, report and stop: its fix needs
-separately approved scope. Apply one move, inspect its diff, and run every
-relevant returned validator. Fix failures within the approved move and rerun;
+separately approved scope. Apply one move, inspect its exact diff against the
+preservation map, and run every relevant returned validator. Fix failures within
+the approved move and rerun;
 otherwise revert and stop. Never consume the result until validation passes.
