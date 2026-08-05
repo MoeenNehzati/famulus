@@ -15,6 +15,12 @@ dependencies:
   version: 1
 - blueprint:
     base: module-root
+    path: blueprints/rtx-run-record.yaml
+  reason: Reads each enabled job's latest structured run record when evaluating freshness and outcome.
+  source: recurring-tasks-rtx.source.rtx-run-record
+  version: 1
+- blueprint:
+    base: module-root
     path: blueprints/rtx-schedule-backend-init.yaml
   reason: Imports Python source from _rtx/_schedule_backend/__init__.py.
   source: recurring-tasks-rtx.source.rtx-schedule-backend-init
