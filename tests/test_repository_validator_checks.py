@@ -13,7 +13,9 @@ from test_support.git_repository import GitTestRepository
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
-_RUNNER_PATH = _REPO_ROOT / "validators" / "runner.py"
+_RUNNER_PATH = _REPO_ROOT / "src" / "officina" / "_validator_snapshot.py"
+_REPO_CHECKS_PATH = _REPO_ROOT / "repo_checks.py"
+_CHECKS_IMPL_PATH = _REPO_ROOT / "src" / "officina" / "repository_checks.py"
 _SPEC = importlib.util.spec_from_file_location("validator_runner_under_test", _RUNNER_PATH)
 assert _SPEC is not None and _SPEC.loader is not None
 _RUNNER = importlib.util.module_from_spec(_SPEC)
@@ -28,8 +30,21 @@ def _initialize_runner_repository(repo: Path) -> Path:
     repository = GitTestRepository.create(repo)
     validators = repo / "validators"
     validators.mkdir(parents=True)
-    shutil.copy2(_RUNNER_PATH, validators / "runner.py")
-    _require_git_ok(repository.git("add", "validators/runner.py"))
+    officina = repo / "src" / "officina"
+    common = officina / "common"
+    common.mkdir(parents=True)
+    shutil.copy2(_RUNNER_PATH, officina / "_validator_snapshot.py")
+    shutil.copy2(_CHECKS_IMPL_PATH, officina / "repository_checks.py")
+    shutil.copy2(_REPO_ROOT / "src" / "officina" / "__init__.py", officina / "__init__.py")
+    shutil.copy2(_REPO_ROOT / "src" / "officina" / "common" / "__init__.py", common / "__init__.py")
+    shutil.copy2(
+        _REPO_ROOT / "src" / "officina" / "common" / "test_discovery.py",
+        common / "test_discovery.py",
+    )
+    shutil.copy2(_REPO_CHECKS_PATH, repo / "repo_checks.py")
+    _require_git_ok(
+        repository.git("add", "repo_checks.py", "src/officina")
+    )
     return validators
 
 
@@ -78,6 +93,29 @@ def test_run_all_returns_canonical_ids_and_rejects_unknown_selection(
     }
     with pytest.raises(_RUNNER.ValidatorRunnerError, match="unknown validator"):
         _RUNNER.run_all(repo, validator_ids=["repo/missing"])
+
+
+def test_run_all_collects_validators_as_pytest_functions_with_fixtures(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    validators = _initialize_runner_repository(repo)
+    (validators / "fixture_probe.py").write_text(
+        "def validate(repo_root, request):\n"
+        "    errors = []\n"
+        "    if request.node.name != 'repo/fixture_probe':\n"
+        "        errors.append(f'unexpected pytest node: {request.node.name}')\n"
+        "    if repo_root != request.config.rootpath:\n"
+        "        errors.append('repo_root fixture does not match pytest root')\n"
+        "    return errors\n",
+        encoding="utf-8",
+    )
+    _require_git_ok(GitTestRepository(repo).git("add", "."))
+
+    assert _RUNNER.run_all(
+        repo,
+        validator_ids=["repo/fixture_probe"],
+    ) == {}
 
 
 def test_skill_validator_discovery_supports_each_layout_with_explicit_ids(
@@ -334,7 +372,7 @@ def test_run_all_rejects_an_unknown_module_without_validate(tmp_path: Path) -> N
 def test_run_all_imports_staged_transitive_dependencies(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     validators = _initialize_runner_repository(repo)
-    (repo / "src").mkdir()
+    (repo / "src").mkdir(exist_ok=True)
     helper = repo / "src" / "validator_helper.py"
     helper.write_text("VALUE = 'staged'\n", encoding="utf-8")
     (validators / "dependency_probe.py").write_text(
@@ -378,7 +416,12 @@ def test_staged_validator_receives_eligible_paths_with_unborn_head(
     assert json.loads(observation.read_text(encoding="utf-8")) == [
         "module.py",
         "notes.txt",
-        "validators/runner.py",
+        "repo_checks.py",
+        "src/officina/__init__.py",
+        "src/officina/_validator_snapshot.py",
+        "src/officina/common/__init__.py",
+        "src/officina/common/test_discovery.py",
+        "src/officina/repository_checks.py",
         "validators/staged_probe.py",
     ]
 

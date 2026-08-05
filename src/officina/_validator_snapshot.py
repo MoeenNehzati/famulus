@@ -1,7 +1,6 @@
 """Run repository validators against the exact staged Git index."""
 from __future__ import annotations
 
-import argparse
 import copy
 import importlib.util
 import json
@@ -15,7 +14,7 @@ from types import ModuleType
 from typing import Callable, NamedTuple, Sequence
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 _REPOSITORY_VALIDATOR_PACKAGE = ("repo", Path("validators"))
 _CURRENT_SKILL_VALIDATOR_PACKAGE = (
     "skill-maker",
@@ -1061,237 +1060,6 @@ def _validated_errors(
     return errors
 
 
-def _run_tracked_validators(
-    tracked_root: Path,
-    display_root: Path,
-    validator_ids: Sequence[str] | None,
-    staged_paths: Sequence[str],
-) -> dict[str, list[str]]:
-    """Execute selected validators inside one isolated staged repository view.
-
-    Intent
-    ------
-    Orchestrate ordinary, staged-aware, and blueprint-graph validators with their
-    exact protocol boundaries.
-
-    Rationale
-    ---------
-    Central dispatch prevents duplicate graph loading, rejects protocol overlap,
-    protects shared graph state, and normalizes displayed mirror paths.
-
-    Pseudocode
-    ----------
-    - set loaded_validators = selected staged validator modules
-    - set protocol_errors = staged and graph overlap findings
-    - set shared_graph = one optional blueprint preflight result
-    - set validator_findings = results from each selected entry point
-    - return nonempty findings keyed by canonical validator id
-
-    Wraps
-    -----
-    - none
-
-    InstantiationsFromRepo
-    ----------------------
-    ._selected_validator_paths:
-      why:
-        constructs: "Builds the deterministic validator execution list for this child run."
-    ._load_validator:
-      why:
-        constructs: "Builds each imported staged validator module and compatibility entry point."
-    ._validator_paths:
-      why:
-        constructs: "Builds the catalog consulted when an unselected graph owner is required."
-    ._validated_errors:
-      why:
-        constructs: "Builds validated finding lists from preflight and validator entry points."
-    .ValidatorRunnerError:
-      why:
-        raises: "Reports protocol overlap, graph contract failure, execution failure, or graph mutation."
-    """
-    mirror_paths = [str(tracked_root), str(tracked_root / "src")]
-    sys.path[:] = mirror_paths + [
-        entry
-        for entry in sys.path
-        if entry
-        and not Path(entry).is_relative_to(REPO_ROOT)
-        and entry not in mirror_paths
-    ]
-    selected_paths = _selected_validator_paths(
-        tracked_root,
-        validator_ids,
-    )
-    loaded = {
-        validator_id: _load_validator(validator_id, path)
-        for validator_id, path in selected_paths
-    }
-    for validator_id, (module, _validate_fn) in loaded.items():
-        validate_staged = getattr(module, "validate_staged", None)
-        if not callable(validate_staged):
-            continue
-        graph_hooks = []
-        if getattr(module, "REQUIRES_BLUEPRINT_GRAPH", False) is True:
-            graph_hooks.append("REQUIRES_BLUEPRINT_GRAPH")
-        for name in ("preflight", "validate_with_graph"):
-            if callable(getattr(module, name, None)):
-                graph_hooks.append(name)
-        if graph_hooks:
-            raise ValidatorRunnerError(
-                f"{validator_id}: validate_staged cannot be combined with "
-                + ", ".join(graph_hooks)
-            )
-    graph_consumers = {
-        validator_id
-        for validator_id, (module, _validate_fn) in loaded.items()
-        if getattr(module, "REQUIRES_BLUEPRINT_GRAPH", False) is True
-    }
-    preflight_owner_id: str | None = None
-    preflight_graph: object | None = None
-    preflight_errors: list[str] = []
-    if graph_consumers:
-        available = _validator_paths(tracked_root)
-        owner_ids = [
-            owner_id
-            for owner_id in (
-                "skill-maker/blueprints",
-            )
-            if owner_id in available
-        ]
-        if len(owner_ids) != 1:
-            required_consumers = [
-                validator_id
-                for validator_id in graph_consumers
-                if not getattr(
-                    loaded[validator_id][0],
-                    "BLUEPRINT_GRAPH_OPTIONAL",
-                    False,
-                )
-            ]
-            if required_consumers:
-                raise ValidatorRunnerError(
-                    "graph validators require exactly one blueprint preflight owner"
-                )
-            owner_ids = []
-        if not owner_ids:
-            graph_consumers = set()
-        else:
-            preflight_owner_id = owner_ids[0]
-    if preflight_owner_id is not None:
-        if preflight_owner_id not in loaded:
-            loaded[preflight_owner_id] = _load_validator(
-                preflight_owner_id,
-                available[preflight_owner_id],
-            )
-        owner_module, _owner_validate = loaded[preflight_owner_id]
-        preflight_fn = getattr(owner_module, "preflight", None)
-        if not callable(preflight_fn):
-            raise ValidatorRunnerError(
-                f"{preflight_owner_id}: blueprint preflight is unavailable"
-            )
-        try:
-            schema_version_fn = getattr(
-                owner_module,
-                "repository_schema_version",
-                None,
-            )
-            if callable(schema_version_fn):
-                preflight_result = preflight_fn(
-                    tracked_root,
-                    expected_schema_version=schema_version_fn(tracked_root),
-                )
-            else:
-                preflight_result = preflight_fn(tracked_root)
-        except BaseException as exc:
-            raise ValidatorRunnerError(
-                f"{preflight_owner_id}: validator execution failed: {exc}"
-            ) from exc
-        if (
-            not isinstance(preflight_result, tuple)
-            or len(preflight_result) != 2
-        ):
-            raise ValidatorRunnerError(
-                f"{preflight_owner_id}: preflight must return "
-                "tuple[list[str], graph | None]"
-            )
-        preflight_errors = _validated_errors(
-            preflight_owner_id,
-            "preflight",
-            preflight_result[0],
-        )
-        preflight_graph = preflight_result[1]
-    results: dict[str, list[str]] = {}
-    if preflight_errors and preflight_owner_id is not None:
-        mirror_prefix = str(tracked_root)
-        display_prefix = str(display_root)
-        results[preflight_owner_id] = [
-            error.replace(mirror_prefix, display_prefix)
-            for error in preflight_errors
-        ]
-    for validator_id, _path in selected_paths:
-        module, validate_fn = loaded[validator_id]
-        entry_point = "validate"
-        graph_view: object | None = None
-        pristine_graph_view: object | None = None
-        if validator_id in graph_consumers:
-            if preflight_errors or preflight_graph is None:
-                continue
-            validate_with_graph = getattr(module, "validate_with_graph", None)
-            if not callable(validate_with_graph):
-                raise ValidatorRunnerError(
-                    f"{validator_id}: graph validator has no callable "
-                    "validate_with_graph"
-                )
-            graph_view = copy.deepcopy(preflight_graph)
-            pristine_graph_view = copy.deepcopy(graph_view)
-            validate_fn = lambda root, fn=validate_with_graph: fn(
-                root,
-                graph_view,
-            )
-            entry_point = "validate_with_graph"
-        elif validator_id == preflight_owner_id:
-            if preflight_errors or preflight_graph is None:
-                continue
-            validate_with_graph = getattr(module, "validate_with_graph", None)
-            if callable(validate_with_graph):
-                graph_view = copy.deepcopy(preflight_graph)
-                pristine_graph_view = copy.deepcopy(graph_view)
-                validate_fn = lambda root, fn=validate_with_graph: fn(
-                    root,
-                    graph_view,
-                )
-                entry_point = "validate_with_graph"
-        else:
-            validate_staged = getattr(module, "validate_staged", None)
-            if callable(validate_staged):
-                validate_fn = lambda root, fn=validate_staged: fn(
-                    root,
-                    staged_paths,
-                )
-                entry_point = "validate_staged"
-        try:
-            errors = _validated_errors(
-                validator_id,
-                entry_point,
-                validate_fn(tracked_root),
-            )
-        except ValidatorRunnerError:
-            raise
-        except BaseException as exc:
-            raise ValidatorRunnerError(
-                f"{validator_id}: validator execution failed: {exc}"
-            ) from exc
-        if graph_view != pristine_graph_view:
-            errors.append(
-                f"{validator_id}: validator mutated its blueprint graph view"
-            )
-        if errors:
-            mirror_prefix = str(tracked_root)
-            display_prefix = str(display_root)
-            results[validator_id] = [
-                error.replace(mirror_prefix, display_prefix) for error in errors
-            ]
-    return results
-
 
 def _tracked_child_environment(
     mirror_root: Path,
@@ -1446,10 +1214,10 @@ def _run_tracked_child(
       why:
         raises: "Reports child failure or malformed, missing, or structurally invalid result JSON."
     """
-    runner_path = mirror_root / "validators" / "runner.py"
+    runner_path = mirror_root / "repo_checks.py"
     if not runner_path.is_file():
         raise ValidatorRunnerError(
-            "staged repository does not contain validators/runner.py"
+            "staged repository does not contain repo_checks.py"
         )
     result_path: Path | None = None
     staged_paths_file: Path | None = None
@@ -1495,7 +1263,14 @@ def _run_tracked_child(
             check=False,
         )
         if completed.returncode != 0:
-            detail = completed.stderr.strip() or completed.stdout.strip()
+            detail = "\n".join(
+                part
+                for part in (
+                    completed.stderr.strip(),
+                    completed.stdout.strip(),
+                )
+                if part
+            )
             raise ValidatorRunnerError(
                 f"tracked validator runner failed: {detail}"
             )
@@ -1633,17 +1408,17 @@ def _write_tracked_result(
     ._load_staged_paths:
       why:
         constructs: "Builds the validated changed-path tuple supplied to staged-aware validators."
-    ._run_tracked_validators:
-      why:
-        constructs: "Builds the canonical finding mapping serialized for the parent process."
     """
     try:
         staged_paths = _load_staged_paths(tracked_root, staged_paths_file)
-        results = _run_tracked_validators(
-            tracked_root,
-            display_root,
-            validator_ids,
-            staged_paths,
+        from officina.repository_checks import run_validators_with_pytest
+
+        results = run_validators_with_pytest(
+            runner=sys.modules[__name__],
+            tracked_root=tracked_root,
+            display_root=display_root,
+            validator_ids=validator_ids,
+            staged_paths=staged_paths,
         )
         result_path.write_text(
             json.dumps({"results": results}, sort_keys=True),
@@ -1685,90 +1460,3 @@ def _render_findings(results: dict[str, list[str]]) -> int:
         for error in errors:
             print(f"  {error}", file=sys.stderr)
     return 1
-
-
-def main(argv: list[str] | None = None) -> int:
-    """Parse parent or private child arguments and run the selected boundary.
-
-    Intent
-    ------
-    Expose the root validator runner as the pre-commit and child-process CLI.
-
-    Rationale
-    ---------
-    One parser keeps private transport options paired and converts runner errors
-    into deterministic exit status two while findings use status one.
-
-    Pseudocode
-    ----------
-    - set parsed_arguments = validator runner command-line options
-    - if tracked child options are present:
-      - return serialized child execution status
-    - set argument_error = partial private child options
-    - set findings = parent run for requested validator ids
-    - return rendered findings status
-
-    Wraps
-    -----
-    - none
-
-    InstantiationsFromRepo
-    ----------------------
-    ._write_tracked_result:
-      why:
-        constructs: "Builds the private child result file and child-process exit status."
-    .run_all:
-      why:
-        constructs: "Builds the parent validator finding mapping from one captured staged view."
-    ._render_findings:
-      why:
-        constructs: "Builds the human-facing stderr report and findings exit status."
-    """
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repo-root", type=Path, default=REPO_ROOT)
-    parser.add_argument("--validator", action="append", dest="validator_ids")
-    parser.add_argument("--tracked-root", type=Path, help=argparse.SUPPRESS)
-    parser.add_argument("--display-root", type=Path, help=argparse.SUPPRESS)
-    parser.add_argument("--result-path", type=Path, help=argparse.SUPPRESS)
-    parser.add_argument("--staged-paths-file", type=Path, help=argparse.SUPPRESS)
-    args = parser.parse_args(argv)
-
-    if args.tracked_root is not None:
-        if (
-            args.display_root is None
-            or args.result_path is None
-            or args.staged_paths_file is None
-        ):
-            parser.error(
-                "--tracked-root requires --display-root, --result-path, and "
-                "--staged-paths-file"
-            )
-        return _write_tracked_result(
-            args.tracked_root.resolve(),
-            args.display_root.resolve(),
-            args.result_path,
-            args.validator_ids,
-            args.staged_paths_file,
-        )
-    if (
-        args.display_root is not None
-        or args.result_path is not None
-        or args.staged_paths_file is not None
-    ):
-        parser.error(
-            "--display-root, --result-path, and --staged-paths-file are private "
-            "child options"
-        )
-    try:
-        results = run_all(
-            repo_root=args.repo_root,
-            validator_ids=args.validator_ids,
-        )
-    except ValidatorRunnerError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 2
-    return _render_findings(results)
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

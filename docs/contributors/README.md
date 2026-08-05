@@ -38,7 +38,7 @@ dispatcher --caller-skill <caller> <callee>.interface.<name> [args...]
 
 Famulus enforces the documentation and skill contracts through repo validators, the local pre-commit hook, and GitHub Actions:
 
-- [`validators/runner.py`](../../validators/runner.py)
+- [`repo_checks.py`](../../repo_checks.py)
 - [`.githooks/pre-commit`](../../.githooks/pre-commit)
 - [`.github/workflows/python-tests.yml`](../../.github/workflows/python-tests.yml)
 

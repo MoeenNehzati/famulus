@@ -453,7 +453,7 @@ def test_composite_runner_permission_is_rejected_in_generated_projection(
 def test_runner_reports_cross_platform_errors(tmp_path: Path) -> None:
     repository = GitTestRepository.initialize_existing_empty(tmp_path)
     (tmp_path / "validators").mkdir()
-    shutil.copy2(REPO_ROOT / "validators" / "runner.py", tmp_path / "validators")
+    shutil.copy2(REPO_ROOT / "repo_checks.py", tmp_path / "repo_checks.py")
     shutil.copy2(
         REPO_ROOT / "validators" / "cross_platform.py",
         tmp_path / "validators",
@@ -478,12 +478,14 @@ def test_runner_reports_cross_platform_errors(tmp_path: Path) -> None:
     runtime.mkdir(parents=True)
     (runtime / "run.sh").write_text("#!/bin/sh\necho hi\n", encoding="utf-8")
     repository.git("add", ".")
-    runner = REPO_ROOT / "validators" / "runner.py"
+    runner = tmp_path / "repo_checks.py"
 
     result = subprocess.run(
         [
             sys.executable,
             str(runner),
+            "--suite",
+            "validators",
             "--repo-root",
             str(tmp_path),
             "--validator",

@@ -7,25 +7,25 @@ This file is the canonical maintainer reference for Python test suites, the loca
 Run the named local pre-commit suite:
 
 ```bash
-python3 scripts/run-python-tests.py --suite precommit
+python3 repo_checks.py --suite precommit
 ```
 
 Run the full Python suite, including installation tests:
 
 ```bash
-python3 scripts/run-python-tests.py --suite full --verbose
+python3 repo_checks.py --suite tests --verbose
 ```
 
 Run the fast cross-platform boundary sentinel:
 
 ```bash
-python3 scripts/run-python-tests.py --suite portability --verbose
+python3 repo_checks.py --suite portability --verbose
 ```
 
 Run validators directly:
 
 ```bash
-python3 validators/runner.py
+python3 repo_checks.py --suite validators
 ```
 
 Regenerate generated documentation surfaces:
@@ -36,7 +36,8 @@ python3 scripts/generate-doc-artifacts.py
 
 ## Named Python Suites
 
-`scripts/run-python-tests.py` is the single source of truth for suite
+`repo_checks.py` is the single entry point and `officina.repository_checks` is
+the source of truth for suite
 membership. The fixed boundaries are `tests/`, `hooks/tests/`, and skill-owned
 runtime test directories. The runner discovers concrete `skills/*/_rtx/tests`
 directories at execution time so migrated runtime modules cannot fall out of
@@ -82,13 +83,12 @@ artifact, equivalent repository roots, and isolated index stages.
 3. Regenerate documentation artifacts and restage the generated docs.
 4. Regenerate `_build/README-preview.html`.
 5. Run `gitleaks protect --staged --redact`.
-6. Run `python3 validators/runner.py`.
-7. Run `python3 scripts/run-python-tests.py --suite precommit`.
+6. Run `python3 repo_checks.py --suite precommit`.
 
 Two execution details matter:
 
 - `gitleaks` scans staged content.
-- `validators/runner.py` evaluates a git-tracked mirror, so validators see staged content without being confused by untracked scratch files.
+- `officina._validator_snapshot` evaluates a git-tracked mirror, so validators see staged content without being confused by untracked scratch files.
 
 The Python tests run from the working tree, not from a staged mirror.
 
@@ -109,9 +109,9 @@ Each job runs, in order:
 3. Python setup
 4. `pip install pytest pyyaml jsonschema keyring`
 5. install Claude and Codex CLIs
-6. `python3 validators/runner.py`
-7. `python3 scripts/run-python-tests.py --suite portability --verbose`
-8. `python3 scripts/run-python-tests.py --suite full --verbose`
+6. `python3 repo_checks.py --suite validators`
+7. `python3 repo_checks.py --suite portability --verbose`
+8. `python3 repo_checks.py --suite tests --verbose`
 9. macOS and Windows only: `FAMULUS_REQUIRE_NATIVE_KEYRING=1 python3 -m pytest -q tests/test_officina_secret_store.py::test_default_backend_native_roundtrip_when_available`
 10. macOS and Windows only: `FAMULUS_RUN_SCHEDULER_SMOKE=1 python3 -m pytest -q skills/recurring-tasks/_rtx/tests/test_scheduler_live_smoke.py`
 
@@ -135,7 +135,7 @@ local test runs skip it unless
 ## Skip Hygiene
 
 Skips are repo-level coverage decisions. New test skips must be visible to
-`validators/skip_hygiene.py`, which is run by `validators/runner.py` before
+`validators/skip_hygiene.py`, which is run by `repo_checks.py` before
 the Python suite in both hooks and CI.
 
 Every `pytest.skip`, `pytest.mark.skipif`, `unittest.SkipTest`, `unittest.skip`
@@ -168,7 +168,7 @@ When you add, remove, or rename a repo-owned Python test directory:
 1. Keep it under the canonical boundary for its owner: repo tests under
    `tests/` or `hooks/tests/`, and skill runtime tests under
    `skills/<skill>/_rtx/tests/`.
-2. Update `scripts/run-python-tests.py` only if the boundary or exclusion
+2. Update `officina.repository_checks` only if the boundary or exclusion
    policy changes.
 3. Update this file if the suite boundaries changed.
 

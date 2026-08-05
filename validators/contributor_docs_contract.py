@@ -11,7 +11,7 @@ _README_REQUIRED = (
     "blueprint.yaml",
     "python3 skills/skill-maker/_rtx/_blueprint_syncer.py",
     "dispatcher --caller-skill <caller> <callee>.interface.<name> [args...]",
-    "validators/runner.py",
+    "repo_checks.py",
     ".githooks/pre-commit",
     "docs/skill-blueprints.md",
     "references/blueprint/schema.json",
@@ -31,6 +31,30 @@ _DOC_SYSTEM_REQUIRED = (
 
 
 def validate(repo_root: Path) -> list[str]:
+    """Validate generated contributor documentation and required references.
+
+    Intent
+    ------
+    Check the contributor guide and documentation-system page as one contract.
+
+    Rationale
+    ---------
+    Generated coverage and canonical command references must remain synchronized.
+
+    Pseudocode
+    ----------
+    - set errors = empty finding list
+    - if documentation and skills roots are absent:
+      - return errors
+    - set contributor_findings = generated coverage and required snippet findings
+    - set system_findings = documentation-system required snippet findings
+    - return errors plus contributor_findings plus system_findings
+
+    Wraps
+    -----
+    - none
+
+    """
     errors: list[str] = []
     if not (repo_root / "docs").exists() and not (repo_root / "skills").exists():
         return []

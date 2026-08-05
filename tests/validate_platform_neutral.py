@@ -82,9 +82,16 @@ def test_multiple_violations_all_reported(tmp_path: Path) -> None:
 
 
 def test_runner_rejects_non_git_repository(tmp_path: Path) -> None:
-    runner = Path(__file__).resolve().parents[1] / "validators" / "runner.py"
+    runner = Path(__file__).resolve().parents[1] / "repo_checks.py"
     result = subprocess.run(
-        ["python3", str(runner), "--repo-root", str(tmp_path)],
+        [
+            "python3",
+            str(runner),
+            "--suite",
+            "validators",
+            "--repo-root",
+            str(tmp_path),
+        ],
         capture_output=True,
         text=True,
     )
@@ -96,7 +103,7 @@ def test_runner_exits_nonzero_on_violation(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[1]
     repository = GitTestRepository.initialize_existing_empty(tmp_path)
     (tmp_path / "validators").mkdir()
-    shutil.copy2(repo_root / "validators" / "runner.py", tmp_path / "validators")
+    shutil.copy2(repo_root / "repo_checks.py", tmp_path / "repo_checks.py")
     shutil.copy2(
         repo_root / "validators" / "platform_neutral.py",
         tmp_path / "validators",
@@ -106,11 +113,13 @@ def test_runner_exits_nonzero_on_violation(tmp_path: Path) -> None:
     d.mkdir(parents=True)
     (d / "SKILL.md").write_text("Use Claude here.\n")
     repository.git("add", ".")
-    runner = repo_root / "validators" / "runner.py"
+    runner = tmp_path / "repo_checks.py"
     result = subprocess.run(
         [
             "python3",
             str(runner),
+            "--suite",
+            "validators",
             "--repo-root",
             str(tmp_path),
             "--validator",

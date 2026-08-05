@@ -4,7 +4,6 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 import shutil
-import subprocess
 
 import pytest
 
@@ -13,7 +12,7 @@ from test_support.git_repository import GitTestRepository
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _ADAPTER_PATH = _REPO_ROOT / "validators" / "docstrings.py"
-_RUNNER_PATH = _REPO_ROOT / "validators" / "runner.py"
+_RUNNER_PATH = _REPO_ROOT / "src" / "officina" / "_validator_snapshot.py"
 
 
 def _load_adapter():
@@ -148,26 +147,26 @@ def test_root_runner_executes_docstring_adapter_against_staged_bytes(
     tmp_path: Path,
 ) -> None:
     repo = tmp_path / "repo"
-    # famulus-raw-git: category=validator-isolation; reason=the integration test needs a tracked repository baseline before staging the live runner and adapter
-    cloned = subprocess.run(
-        ["git", "clone", "--quiet", "--shared", str(_REPO_ROOT), str(repo)],
-        capture_output=True,
-        check=False,
+    repository = GitTestRepository.create(repo)
+    shutil.copytree(
+        _REPO_ROOT / "src" / "officina",
+        repo / "src" / "officina",
+        dirs_exist_ok=True,
     )
-    assert cloned.returncode == 0, cloned.stderr.decode(errors="replace")
-    shutil.copy2(_RUNNER_PATH, repo / "validators" / "runner.py")
+    shutil.copy2(_REPO_ROOT / "repo_checks.py", repo / "repo_checks.py")
+    (repo / "validators").mkdir()
     shutil.copy2(_ADAPTER_PATH, repo / "validators" / "docstrings.py")
+    repository.git("add", ".")
+    repository.git("commit", "--quiet", "-m", "fixture baseline")
+
     (repo / "src" / "staged_bad.py").write_text(
         '"""Staged integration fixture."""\n\n'
         "def public():\n"
         "    return 1\n",
         encoding="utf-8",
     )
-    repository = GitTestRepository(repo)
     added = repository.git(
         "add",
-        "validators/runner.py",
-        "validators/docstrings.py",
         "src/staged_bad.py",
         check=False,
     )
@@ -179,6 +178,8 @@ def test_root_runner_executes_docstring_adapter_against_staged_bytes(
     )
 
     assert set(results) == {"repo/docstrings"}
-    assert len(results["repo/docstrings"]) == 1
+    assert len(results["repo/docstrings"]) == 1, "\n".join(
+        results["repo/docstrings"]
+    )
     assert "src/staged_bad.py" in results["repo/docstrings"][0]
     assert "docstring.missing" in results["repo/docstrings"][0]
