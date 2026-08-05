@@ -60,14 +60,14 @@ dispatcher standards queries, Git.
 
 ### Task 0: Record the baseline and evidence workspace
 
-- [ ] Record base HEAD `0bea7c6b09e446e2256fb480cb85d44653f61516` and the
+- [x] Record base HEAD `0bea7c6b09e446e2256fb480cb85d44653f61516` and the
       initial status showing only this plan and design as untracked.
-- [ ] Establish the exact-HEAD green baseline with
+- [x] Establish the exact-HEAD green baseline with
       `pytest -q skills/refactor-node/tests/test_refactor_node_routing.py` and
       `pytest -q tests/test_standard_consumers.py`, followed by
       `python3 validators/runner.py`; retain commands, output, and exit status in
       the Task 0 report.
-- [ ] Create the ignored SDD workspace and ledger at
+- [x] Create the ignored SDD workspace and ledger at
       `.superpowers/sdd/2026-08-05-refactor-lessons-and-five-skills/`. Give every
       task a durable `task-N-<skill>.md` report containing dry-run payloads, query
       refs/results, preservation map, evidence classes, proposal approval,
@@ -83,18 +83,18 @@ dispatcher standards queries, Git.
   and
   `docs/superpowers/plans/2026-08-05-refactor-lessons-and-five-skills.md`
 
-- [ ] Add a failing focused routing-contract wording test for dry-run checkout
+- [x] Add a failing focused routing-contract wording test for dry-run checkout
       rejection, complete affected-ref evidence retrieval, evidence
       classification, and structural versus defect RED handling.
-- [ ] Obtain independent consensus approval for the exact router move before
+- [x] Obtain independent consensus approval for the exact router move before
       mutation.
-- [ ] Trim lower-value extraction examples and implement the minimum router change.
+- [x] Trim lower-value extraction examples and implement the minimum router change.
       Keep the authored `SKILL.md` below the existing 700-word consumer limit.
-- [ ] Run live acceptance commands showing that the unqualified dry-run exposes
+- [x] Run live acceptance commands showing that the unqualified dry-run exposes
       a mismatch which the workflow rejects, then that an
       `AI=<reviewed-root>` dry-run matches; execute only the matched command after
       verifying its target, repository root, facts, view, and refs.
-- [ ] Run live-worktree tests with
+- [x] Run live-worktree tests with
       `pytest -q skills/refactor-node/tests/test_refactor_node_routing.py`, then
       `pytest -q skills/refactor-node/tests` and
       `pytest -q tests/test_standard_consumers.py`. Stage exactly the Task 1
@@ -102,87 +102,87 @@ dispatcher standards queries, Git.
       run `git diff --check --cached`. Distinguish any failure from the
       verified-green baseline; fix only within approved scope, otherwise revert
       and stop.
-- [ ] Obtain independent spec and quality approval. After every review-driven
+- [x] Obtain independent spec and quality approval. After every review-driven
       edit, rerun focused tests, restage all four Task 1 paths, rerun
       `python3 validators/runner.py` and `git diff --check --cached`, and re-review.
-- [ ] Commit the router correction and plan/spec only.
+- [x] Commit the router correction and plan/spec only.
 
 ### Task 2: Refactor `loose-mode`
 
-- [ ] Query and inspect the complete registered node; record dry-run gateway
+- [x] Query and inspect the complete registered node; record dry-run gateway
       selection, preservation map, evidence classes, and concrete pressure or
       no-churn basis.
-- [ ] Obtain independent consensus approval for one proposed move or no-churn
+- [x] Obtain independent consensus approval for one proposed move or no-churn
       decision before mutation.
-- [ ] Apply at most one coherent move, run all relevant validators until green,
+- [x] Apply at most one coherent move, run all relevant validators until green,
       and obtain independent approval.
-- [ ] For a changed target, stage exactly the accepted task files and run
+- [x] For a changed target, stage exactly the accepted task files and run
       `python3 validators/runner.py` plus `git diff --check --cached` before commit.
-- [ ] Commit only an accepted change; record a reviewed no-churn outcome otherwise.
+- [x] Commit only an accepted change; record a reviewed no-churn outcome otherwise.
 
 ### Task 3: Refactor `git-workflow`
 
-- [ ] Query and inspect the complete registered node; preserve branch-safety,
+- [x] Query and inspect the complete registered node; preserve branch-safety,
       scope, staging, commit, and push boundaries.
-- [ ] Obtain independent consensus approval for one proposed move or no-churn
+- [x] Obtain independent consensus approval for one proposed move or no-churn
       decision before mutation.
-- [ ] Apply at most one coherent move, run all relevant validators until green,
+- [x] Apply at most one coherent move, run all relevant validators until green,
       and obtain independent approval.
-- [ ] For a changed target, stage exactly the accepted task files and run
+- [x] For a changed target, stage exactly the accepted task files and run
       `python3 validators/runner.py` plus `git diff --check --cached` before commit.
-- [ ] Commit only an accepted change; record a reviewed no-churn outcome otherwise.
+- [x] Commit only an accepted change; record a reviewed no-churn outcome otherwise.
 
 ### Task 4: Refactor `latex-workshop`
 
-- [ ] Query and inspect the complete registered node; preserve workspace/user
+- [x] Query and inspect the complete registered node; preserve workspace/user
       configuration precedence, recipe discovery, output paths, and fallback behavior.
-- [ ] Obtain independent consensus approval for one proposed move or no-churn
+- [x] Obtain independent consensus approval for one proposed move or no-churn
       decision before mutation.
-- [ ] Apply at most one coherent move, run all relevant validators until green,
+- [x] Apply at most one coherent move, run all relevant validators until green,
       and obtain independent approval.
-- [ ] For a changed target, stage exactly the accepted task files and run
+- [x] For a changed target, stage exactly the accepted task files and run
       `python3 validators/runner.py` plus `git diff --check --cached` before commit.
-- [ ] Commit only an accepted change; record a reviewed no-churn outcome otherwise.
+- [x] Commit only an accepted change; record a reviewed no-churn outcome otherwise.
 
 ### Task 5: Refactor `connect-google`
 
-- [ ] Query both the instruction node and registered `_rtx` child, then read every
+- [x] Query both the instruction node and registered `_rtx` child, then read every
       returned supported source and affected reverse consumer.
-- [ ] Preserve OAuth/client configuration, authorization, filesystem effects,
+- [x] Preserve OAuth/client configuration, authorization, filesystem effects,
       errors, platform behavior, and machine-visible output while avoiding live OAuth.
-- [ ] Obtain independent consensus approval for one proposed move or no-churn
+- [x] Obtain independent consensus approval for one proposed move or no-churn
       decision before mutation.
-- [ ] Apply at most one coherent move, run all relevant validators until green,
+- [x] Apply at most one coherent move, run all relevant validators until green,
       and obtain independent approval.
-- [ ] For a changed target, stage exactly the accepted task files and run
+- [x] For a changed target, stage exactly the accepted task files and run
       `python3 validators/runner.py` plus `git diff --check --cached` before commit.
-- [ ] Commit only an accepted change; record a reviewed no-churn outcome otherwise.
+- [x] Commit only an accepted change; record a reviewed no-churn outcome otherwise.
 
 ### Task 6: Refactor `update-standards`
 
-- [ ] Query and inspect the complete registered node; preserve authority,
+- [x] Query and inspect the complete registered node; preserve authority,
       revision/digest cascades, generated views, declared evidence, and validation.
-- [ ] Obtain independent consensus approval for one proposed move or no-churn
+- [x] Obtain independent consensus approval for one proposed move or no-churn
       decision before mutation.
-- [ ] Apply at most one coherent move, run all relevant validators until green,
+- [x] Apply at most one coherent move, run all relevant validators until green,
       and obtain independent approval.
-- [ ] For a changed target, stage exactly the accepted task files and run
+- [x] For a changed target, stage exactly the accepted task files and run
       `python3 validators/runner.py` plus `git diff --check --cached` before commit.
-- [ ] Commit only an accepted change; record a reviewed no-churn outcome otherwise.
+- [x] Commit only an accepted change; record a reviewed no-churn outcome otherwise.
 
 ### Task 7: Findings and combined verification
 
-- [ ] Document each skill's pressure, move or no-churn basis, validators, review
+- [x] Document each skill's pressure, move or no-churn basis, validators, review
       outcome, and any reusable lesson in this tracked completion record; do not
       promote isolated mistakes to policy.
-- [ ] Audit all accepted commits against this plan and design, including standards
+- [x] Audit all accepted commits against this plan and design, including standards
       inflation and information-density checks over
       `0bea7c6b09e446e2256fb480cb85d44653f61516..HEAD`.
-- [ ] Run exact-HEAD focused and repository-wide validation plus
+- [x] Run exact-HEAD focused and repository-wide validation plus
       `python3 scripts/run-python-tests.py --suite full --verbose`,
       `python3 validators/runner.py`, and
       `git diff --check 0bea7c6b09e446e2256fb480cb85d44653f61516..HEAD`.
-- [ ] Obtain a final independent whole-branch review. Any implementation finding
+- [x] Obtain a final independent whole-branch review. Any implementation finding
       requires an approved correction, focused tests, exact staging, staged
       validation, cached diff check, correction commit, and re-review before the
       completion record is updated and committed separately.
@@ -191,4 +191,76 @@ dispatcher standards queries, Git.
 
 ## Completion record
 
-Pending implementation.
+Implementation and independent review covered base
+`0bea7c6b09e446e2256fb480cb85d44653f61516` through committed HEAD
+`cc1dfdef1d5ec629abf94458b8f200837014fcd6`:
+
+- Task 1 committed `66e2b4c6fcc1ac9aa7029c3c551a1debc096fc18`
+  (`refactor(refactor-node): verify query provenance and evidence`). The router
+  now retains and rejects mismatched dispatcher dry-runs, verifies the exact
+  request before replay, classifies canonical/supplemental/unmapped evidence,
+  and separates behavioral-defect RED from structural characterization. Initial
+  review replaced an editorial nineteen-clause snapshot with four outcome-scoped
+  tests. Final review then found that compression had dropped the requirements
+  to perform returned semantic reviews, open only returned artifacts, and
+  compare the exact diff against the preservation map. Correction commit
+  `cc1dfdef1d5ec629abf94458b8f200837014fcd6`
+  (`fix(refactor-node): preserve review and diff gates`) restores both
+  obligations with two additional outcome-scoped tests; the router is 698
+  words. Both Task 1 commit hooks completed green, and the scoped final re-review
+  returned `FINAL PASS` with no new Critical or Important finding.
+- `loose-mode` was reviewed no-churn. Its proposed sentence deletion was
+  rejected because “Move fast, cover ground” is behavior-directing and the
+  preservation premise failed; mechanical baseline checks passed 14 tests and
+  the independent review required no mutation.
+- `git-workflow` was blocked/no-churn. Automatic checkout from detached HEAD
+  conflicts with the declared explicit-authorization boundary for Git mutation.
+  The focused supplemental suite passed 27 tests, but repair requires a separate
+  behavior decision and genuine RED/GREEN coverage.
+- `latex-workshop` committed
+  `799e06237e0170f212f94da8fd047c446dfb6d58`
+  (`refactor(latex-workshop): make activation trigger-only`). The accepted move
+  changed only the frontmatter trigger and its two generator-owned catalog
+  views; the authored workflow and declarations are byte-identical. Its focused
+  checks passed 5 catalog/documentation tests, 22 blueprint/dispatch tests, two
+  standalone validators, the staged validator runner, and cached diff check.
+  Its commit hook also completed green.
+- `connect-google` was reviewed no-churn, not blocked. Retried remedy queries
+  returned successfully; neither the parent nor registered private child had a
+  proved smell or unique behavior-preserving move. The audit stayed offline and
+  read-only. The later exact-HEAD full run passed its 40 isolated tests.
+- `update-standards` was blocked/no-churn. One unattended interface admits both
+  alignment audits and repository-writing updates without deciding audit-on-
+  divergence authorization. Supplemental validators passed and the focused
+  suite passed 54 tests, but route decomposition cannot be proved preserving
+  until that behavior is selected and tested.
+
+No canonical standard, schema, implementation runtime, validator, or generated
+standard view changed. The combined range has only the approved router/test/
+plan/design paths and the three `latex-workshop` paths; review found no standards
+inflation or unrelated scope, but did find the Task 1 information-density
+regression described above. The committed correction restores the two identified
+operational gates without changing another obligation. Reusable query lessons
+are operational rather than new policy: retain the exact dry-run; match the
+reviewed gateway and request fields before replay; distinguish returned,
+supplemental, and unmapped evidence; do not infer a smell from an available
+remedy; and retry a transient missing projection before declaring a blocker.
+The recurring catalog-persistence and certificate-currentness warnings limit
+assurance but did not prevent matched query results.
+
+Fresh correction evidence: router contract `16 passed`, full router node
+`43 passed`, direct consumers `2 passed`, and the returned runtime-documentation
+artifact `16 passed`; `python3 validators/runner.py` and
+`git diff --check --cached` both exited 0. The exact full-suite command remains
+non-green: its repository suite passed `1424` tests with `14` skips, but the
+later installer suite ended
+`152 passed, 1 failed` because the host secret-service session rejected
+certificate-signing-material setup with
+`org.qtproject.QtDBus.Error.InvalidObjectPath` (“Can't find session ...”). No
+changed-path assertion failed, and this correction did not broaden scope to
+repair the host/session failure.
+
+The branch remains unpushed and has no configured upstream. The router/test
+correction is committed and independently re-reviewed. Only the completion-
+record commit and its post-commit exact-HEAD validation and final clean-status
+proof remain, so the last Task 7 checkbox stays open.
