@@ -1,8 +1,8 @@
 content:
 - SKILL\.md
 dependencies: []
-description: Resolves a whole node or owned sub-scope and routes supported gateway
-  languages to their refactoring interfaces.
+description: Classifies a selected scope, queries its explicit standard root, and
+  routes supported gateway languages to their refactoring interfaces.
 gateway:
   language: Markdown
   path: SKILL.md
@@ -34,7 +34,7 @@ interfaces:
           sensitivity: user-private
           system: agent-runtime
         - access: read
-          content: Query result, selected source content, scoped instructions, callers,
+          content: Standard-query result, selected source content, scoped instructions, callers,
             tests, and current diff.
           formats:
           - markdown
@@ -44,8 +44,8 @@ interfaces:
           - text
           id: repository-state
           medium: repository-filesystem
-          reason: Consume query-resolved ownership and inspect observable behavior
-            without reconstructing the blueprint graph.
+          reason: Use caller-known scope and an explicitly selected standard closure
+            while inspecting observable behavior.
           sensitivity: user-private
         writes:
         - access: write
@@ -66,7 +66,7 @@ interfaces:
           system: agent-runtime
       execution:
         consistency:
-          live: Use the standards query result for ownership, language, applicability,
+          live: Use the selected scope plus explicit standard-query results for applicability,
             evidence, and remedies.
         effects:
         - action: update
@@ -150,16 +150,16 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Resolve node ownership and gateway language, then invoke the supported
-      refactoring route without crossing scope boundaries.
+    description: Classify the selected scope, query its explicit standard root, then
+      invoke the supported refactoring route without crossing scope boundaries.
     version: 1
 node_type: behavioral_source
 schema_version: 5
 uses_interfaces:
-- interface: refactor-node.interface.query-standards
-  version: 4
+- interface: common.interface.query-standard
+  version: 1
 - interface: refactor-node.source.instruction-refactoring.interface.refactor-instructions
   version: 1
 - interface: refactor-node.source.python-refactoring.interface.refactor-python
   version: 1
-version: 4
+version: 5

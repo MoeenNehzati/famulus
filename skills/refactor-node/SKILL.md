@@ -9,49 +9,62 @@ description: Use when auditing or refactoring a whole registered skill-system no
 Catalog: assistant-development; topics: assistant-authoring, assistant-architecture, assistant-assurance, repository-workflow; visibility: featured
 Activation: user-request, skill-workflow; persistent modifier: no
 
-Skill Version: 5
+Skill Version: 6
 
 Uses Interfaces:
+- `refactor-node.source.gateway -> common.interface.query-standard@1`
 - `refactor-node.source.gateway -> refactor-node.source.instruction-refactoring.interface.refactor-instructions@1`
 - `refactor-node.source.gateway -> refactor-node.source.python-refactoring.interface.refactor-python@1`
 
 Public Interfaces:
 - `refactor-node.interface.default`
-- `refactor-node.interface.query-standards`
 - `refactor-node.interface.refactor-instructions`
 - `refactor-node.interface.refactor-python`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Dispatcher Interfaces:
-
-Use the installed `dispatcher` command for these process-bound interfaces:
-- `refactor-node.interface.query-standards` — Query effective node standards for a registered node or owned sub-scope.
-  - `dispatcher --caller-skill refactor-node refactor-node.interface.query-standards <target> [--repo-root PATH] [--facts-json JSON] [--view requirements|context|evidence|remedies|full] [--refs-json JSON] [--query-json JSON]`
-
 Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `refactor-node.interface.default` — Resolve node ownership and gateway language, then invoke the supported refactoring route without crossing scope boundaries.
+- `refactor-node.interface.default` — Classify the selected scope, query its explicit standard root, then invoke the supported refactoring route without crossing scope boundaries.
 - `refactor-node.interface.refactor-instructions` — Diagnose and repair an owned instruction source from its applicable standards.
 - `refactor-node.interface.refactor-python` — Diagnose and, after approval, apply one verified behavior-preserving Python OOD refactoring move at a time.
 <!-- END BLUEPRINT INTERFACES -->
 # Refactor Node
 
-Use `refactor-node.interface.query-standards` as the sole repository-policy
-source. It resolves ownership and validates every pinned import; never read one
-standard file as the effective policy.
+Use `common.interface.query-standard` as the sole repository-policy query.
+Select the root from the scope already established from the request and current
+artifact; the query validates and returns its complete pinned import closure.
+Never ask the query to infer ownership or reconstruct a blueprint graph.
 
 ## Standards retrieval
 
-Query the target with `task.kind=refactor` and `--view requirements`. Preserve
-each returned owner, selected scope, exclusions, gateway family, and
-`standard_ref`; report unsupported partitions.
+Classify each selected scope by its known node role and gateway family, then
+query the corresponding canonical root with `task.kind=refactor` and
+`--view requirements`:
 
-For normal views, dereference each partition overlay index through the top-level
-shared catalog. Use the catalog entry's exact `document` and `ref` in follow-up
-queries; applicability and missing facts belong to the overlay.
+| Selected scope | Root standard |
+|---|---|
+| Python module | `references/node-standards/python-module.standard.yaml` |
+| Python behavioral source | `references/node-standards/python-behavioral-source.standard.yaml` |
+| Instruction module | `references/node-standards/instruction-module.standard.yaml` |
+| Instruction behavioral source | `references/node-standards/instruction-behavioral-source.standard.yaml` |
+
+Select by affected role, not filename. For a typical registered `SKILL.md`,
+module identity, discovery, gateway, or export work uses the instruction-module
+root; authored instruction work uses the instruction-behavioral-source root.
+Query both only when both roles change; a narrow source-owned section uses only
+the source root. For other mixed work, query each applicable root separately
+and combine the returned requirements. A whole-skill audit queries both
+instruction roots plus every declared Python module and source root.
+
+Imported documents already arrive in the closure; never query them separately.
+Follow up under the original root with exact returned `document` and `ref`
+pairs. Establish `task.affects-executable-behavior` from the operation, not its
+filename or language. Enrich and rerun requirements for each established
+missing fact; report unresolved facts. Freeze that root and fact set for
+context, evidence, and remedy follow-ups.
 
 | Current decision | Request | Use |
 |---|---|---|
@@ -66,17 +79,17 @@ queries; applicability and missing facts belong to the overlay.
 `[{"document":"node-standards.python-ood","ref":"python-ood.behavioral-contract#preserve-observables"}]`.
 Request follow-up information only for refs that affect the current decision.
 
-Retain a selected class, function, method, or instruction section as a sub-scope
-of its returned owner. Read scoped repository instructions and the current diff,
-then characterize observable behavior before proposing changes.
+Retain a selected class, function, method, or instruction section as the
+caller-owned sub-scope. Read scoped repository instructions and the current
+diff, then characterize observable behavior before proposing changes.
 
 ## Route
 
-- Invoke `refactor-node.interface.refactor-python` for Python partitions.
+- Invoke `refactor-node.interface.refactor-python` for Python scopes.
 - Invoke `refactor-node.interface.refactor-instructions` for Markdown gateway
   partitions.
-- For a mixed whole module, invoke both routes as needed and combine their
-  proposals without crossing ownership boundaries.
+- For mixed work, invoke both routes as needed and combine their proposals
+  without crossing the established scope boundaries.
 
 ## Shared change contract
 

@@ -221,8 +221,8 @@ interfaces:
 node_type: behavioral_source
 schema_version: 5
 uses_interfaces:
-- interface: refactor-node.interface.query-standards
-  version: 4
+- interface: common.interface.query-standard
+  version: 1
 - interface: skill-maker.interface.sync-blueprints
   version: 1
-version: 4
+version: 5

@@ -24,21 +24,20 @@ def test_skill_maker_queries_standards_and_builds_an_authoring_brief() -> None:
     assert {
         use["interface"] for use in gateway["uses_interfaces"]
     } == {
-        "refactor-node.interface.query-standards",
+        "common.interface.query-standard",
         "skill-maker.interface.sync-blueprints",
     }
     query_use = next(
         use
         for use in gateway["uses_interfaces"]
-        if use["interface"] == "refactor-node.interface.query-standards"
+        if use["interface"] == "common.interface.query-standard"
     )
-    assert query_use["version"] == 4
-    assert "references/node-standards" not in str(gateway["interfaces"])
+    assert query_use["version"] == 1
 
     skill = _normalized("skills/skill-maker/SKILL.md")
     for required in (
         "Standards retrieval",
-        "refactor-node.interface.query-standards",
+        "common.interface.query-standard",
         "task.kind=author-skill",
         "--view requirements",
         "--view context",
@@ -50,8 +49,7 @@ def test_skill_maker_queries_standards_and_builds_an_authoring_brief() -> None:
         "requirements.true",
         "requirements.unknown",
         "context_index",
-        "shared catalog",
-        "partition overlay",
+        "complete pinned import closure",
         "missing facts",
         "checks, tests, and assurances",
         "semantic_reviews",
@@ -59,16 +57,24 @@ def test_skill_maker_queries_standards_and_builds_an_authoring_brief() -> None:
         "remedies",
     ):
         assert required in skill
+    for standard in (
+        "python-module.standard.yaml",
+        "python-behavioral-source.standard.yaml",
+        "instruction-module.standard.yaml",
+        "instruction-behavioral-source.standard.yaml",
+    ):
+        assert standard in skill
+    assert "schema-minimum skill" in skill
     assert "items.true" not in skill
     assert len(skill.split()) < 700
 
 
-def test_refactor_node_builds_a_refactoring_brief_from_each_partition() -> None:
+def test_refactor_node_builds_a_refactoring_brief_from_each_selected_root() -> None:
     skill = _normalized("skills/refactor-node/SKILL.md")
 
     for required in (
         "Standards retrieval",
-        "refactor-node.interface.query-standards",
+        "common.interface.query-standard",
         "task.kind=refactor",
         "--view requirements",
         "--view context",
@@ -80,8 +86,7 @@ def test_refactor_node_builds_a_refactoring_brief_from_each_partition() -> None:
         "requirements.true",
         "requirements.unknown",
         "context_index",
-        "shared catalog",
-        "partition overlay",
+        "complete pinned import closure",
         "missing facts",
         "checks, tests, and assurances",
         "semantic_reviews",
@@ -89,6 +94,13 @@ def test_refactor_node_builds_a_refactoring_brief_from_each_partition() -> None:
         "remedies",
     ):
         assert required in skill
+    for standard in (
+        "python-module.standard.yaml",
+        "python-behavioral-source.standard.yaml",
+        "instruction-module.standard.yaml",
+        "instruction-behavioral-source.standard.yaml",
+    ):
+        assert standard in skill
     assert "items.true" not in skill
     assert len(skill.split()) < 700
 

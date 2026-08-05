@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 
 import yaml
@@ -34,19 +33,12 @@ def test_module_identity_and_public_interfaces() -> None:
     root = _load_yaml(SKILL_ROOT / "blueprint.yaml")
 
     assert root["id"] == "refactor-node"
-    assert root["children"] == {
-        "refactor-node-rtx": {
-            "base": "module-root",
-            "path": "_rtx/blueprint.yaml",
-        }
-    }
+    assert root["children"] == {}
     assert set(root["exports"]) == {
         "refactor-node.interface.default",
-        "refactor-node.interface.query-standards",
         "refactor-node.interface.refactor-instructions",
         "refactor-node.interface.refactor-python",
     }
-    assert (SKILL_ROOT / "_rtx" / "_closure_engine.py").is_file()
 
 
 def test_gateway_routes_to_both_language_sources() -> None:
@@ -59,10 +51,8 @@ def test_gateway_routes_to_both_language_sources() -> None:
     ]["execution"]["state_effect"] == "mutating"
     assert gateway["uses_interfaces"] == [
         {
-            "interface": (
-                "refactor-node.interface.query-standards"
-            ),
-            "version": 4,
+            "interface": "common.interface.query-standard",
+            "version": 1,
         },
         {
             "interface": (
@@ -81,71 +71,15 @@ def test_gateway_routes_to_both_language_sources() -> None:
     ]
 
 
-def test_query_uses_the_common_standard_extractor_interface() -> None:
-    root = _load_yaml(SKILL_ROOT / "blueprint.yaml")
-    runtime_locator = root["children"]["refactor-node-rtx"]
-    runtime_root = _load_yaml(SKILL_ROOT / runtime_locator["path"])
-    source_locator = runtime_root["sources"][
-        "refactor-node-rtx.source.query-standards"
-    ]["blueprint"]
-    query_source = _load_yaml(
-        SKILL_ROOT / "_rtx" / source_locator["path"]
-    )
-
-    assert query_source["uses_interfaces"] == [
-        {"interface": "common.interface.standard-extractor", "version": 1}
-    ]
-
+def test_router_uses_the_common_explicit_standard_query() -> None:
     common_root = _load_yaml(
         SKILL_ROOT.parents[1] / "src" / "officina" / "common" / "blueprint.yaml"
     )
-    exported = common_root["exports"]["common.interface.standard-extractor"]
+    exported = common_root["exports"]["common.interface.query-standard"]
     assert exported["source_interface"] == (
-        "common.source.standard-extractor.interface.python-api"
+        "common.source.standard-query.interface.query-standard"
     )
-    assert "refactor-node-rtx" in exported["access"]["allowed_callers"]
-
-    certification_basis = json.loads(
-        (
-            SKILL_ROOT.parents[1]
-            / "references"
-            / "certification"
-            / "certification-basis-roots.json"
-        ).read_text(encoding="utf-8")
-    )
-    assert "src/officina/common/configured_schema.py" in certification_basis
-    assert "src/officina/dispatcher/catalog.py" in certification_basis
-
-
-def test_query_contract_exposes_compact_and_on_demand_views() -> None:
-    root = _load_yaml(SKILL_ROOT / "blueprint.yaml")
-    facade = root["exports"]["refactor-node.interface.query-standards"]
-    runtime_root = _load_yaml(SKILL_ROOT / "_rtx" / "blueprint.yaml")
-    source_locator = runtime_root["sources"][
-        "refactor-node-rtx.source.query-standards"
-    ]["blueprint"]
-    query_source = _load_yaml(SKILL_ROOT / "_rtx" / source_locator["path"])
-    interface = query_source["interfaces"][
-        "refactor-node-rtx.source.query-standards.interface.query-standards"
-    ]
-
-    assert facade["facade_interface"]["version"] == 4
-    assert interface["version"] == 4
-    assert interface["contract"]["arguments"]["view"]["default"] == "requirements"
-    output = interface["contract"]["outputs"][0]
-    assert output["schema"] == {
-        "path": "schemas/query-result.schema.json",
-        "fragment": "#",
-    }
-    assert "type" not in output
-    assert r"schemas/query-result\.schema\.json" in query_source["content"]
-    flags = interface["process_binding"]["patterns"][0]["allowed_flags"]
-    assert {"--view", "--refs-json", "--query-json"}.issubset(flags)
-    skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
-    for view in ("requirements", "context", "evidence", "remedies", "full"):
-        assert f"--view {view}" in skill
-    assert "--refs-json" in skill
-    assert "--query-json" in skill
+    assert "refactor-node" in exported["access"]["allowed_callers"]
 
 
 def test_router_and_python_export_have_distinct_owned_gateways() -> None:
@@ -226,7 +160,16 @@ def test_router_declares_exact_standard_leaf_mapping_and_closure_rules() -> None
     skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
     normalized = " ".join(skill.split())
 
-    assert "query-standards" in normalized
+    assert "common.interface.query-standard" in normalized
+    for standard in (
+        "python-module.standard.yaml",
+        "python-behavioral-source.standard.yaml",
+        "instruction-module.standard.yaml",
+        "instruction-behavioral-source.standard.yaml",
+    ):
+        assert standard in normalized
+    assert "complete pinned import closure" in normalized
+    assert "mixed" in normalized
     assert "unknown" in normalized
     assert "Never silently discard" in normalized
     assert "remedied-by" in normalized

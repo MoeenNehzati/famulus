@@ -1,0 +1,72 @@
+{
+  "benchmark": "explicit-standard-query",
+  "date": "2026-08-05",
+  "repository": "<repository-root>",
+  "root_standard": "references/node-standards/python-module.standard.yaml",
+  "facts": {
+    "task.kind": "refactor"
+  },
+  "structural_results": {
+    "blueprint_inventory_calls": 0,
+    "unique_closure_documents": 6,
+    "yaml_parses_per_unique_document_per_query": "not-instrumented",
+    "schema_validations_per_unique_document_per_query": "not-instrumented",
+    "closure_metadata_preserved_in_every_view": true
+  },
+  "single_requirements_query": {
+    "repeat": 3,
+    "cpu_seconds": [
+      3.07,
+      1.66,
+      1.61
+    ],
+    "wall_seconds": [
+      3.08,
+      1.67,
+      1.62
+    ],
+    "median_cpu_seconds": 1.66,
+    "median_wall_seconds": 1.67,
+    "max_rss_kib_after_samples": 36576
+  },
+  "six_view_sequence": {
+    "views": [
+      "requirements",
+      "context",
+      "evidence",
+      "remedies",
+      "full",
+      "query"
+    ],
+    "repeat": 3,
+    "cpu_seconds": [
+      8.66,
+      9.31,
+      9.70
+    ],
+    "wall_seconds": [
+      8.67,
+      9.32,
+      9.72
+    ],
+    "median_cpu_seconds": 9.31,
+    "median_wall_seconds": 9.32,
+    "max_rss_kib_after_samples": 57792
+  },
+  "previous_diagnostic_comparison": {
+    "previous_single_cpu_seconds": 3.111,
+    "new_single_median_cpu_seconds": 1.66,
+    "single_speedup_factor": 1.87,
+    "single_cpu_reduction_percent": 46.64,
+    "previous_six_view_cpu_seconds": 19.751,
+    "new_six_view_median_cpu_seconds": 9.31,
+    "six_view_speedup_factor": 2.12,
+    "six_view_cpu_reduction_percent": 52.86
+  },
+  "limitations": [
+    "The previous figures and new figures were captured under different transient host loads.",
+    "CPU time and structural call counts are the primary comparison evidence; wall time is reported but not treated as stable acceptance evidence.",
+    "Each view remains a fresh query and therefore revalidates and reparses its selected closure.",
+    "A single-pass closure parsing prototype was deferred because it requires a separate canonical documentation migration for two legacy modules."
+  ]
+}

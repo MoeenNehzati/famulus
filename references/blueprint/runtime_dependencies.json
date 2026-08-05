@@ -6774,37 +6774,6 @@
         }
       }
     },
-    "refactor-node": {
-      "interfaces": {
-        "query-standards": {
-          "id": "refactor-node.interface.query-standards",
-          "dependencies": [
-            {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Parses standard YAML documents."
-            },
-            {
-              "kind": "python-package",
-              "name": "jsonschema",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Supports the repository standard validator loaded by the extractor."
-            }
-          ]
-        }
-      }
-    },
     "regenerate-blueprints": {
       "interfaces": {
         "regenerate-blueprint": {

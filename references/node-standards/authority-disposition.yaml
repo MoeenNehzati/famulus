@@ -1,6 +1,6 @@
 schema_version: 1
 runtime_authority: pinned import closures rooted at references/node-standards/*.standard.yaml
-query_interface: refactor-node.interface.query-standards
+query_interface: common.interface.query-standard
 source_authorities:
   skill-guidelines:
     former_path: references/skill-standards/skill-guidelines.standard.yaml
@@ -48,7 +48,7 @@ supersessions:
 proofs:
   semantic-ownership: tests/test_node_standards.py
   recursive-validation: references/standards/validate_standard_v6.py
-  query-behavior: skills/refactor-node/tests/test_query_standards.py
+  query-behavior: tests/test_standard_query.py
 migration_audit:
   skill-guidelines:
     audited_on: 2026-08-03
