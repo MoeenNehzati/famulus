@@ -95,3 +95,34 @@ Candidate filtering can likewise avoid expensive work without changing the main
 bottleneck. Searching for personal-info tokens before three allow-pattern
 substitutions reduced call time only from 0.64 seconds to 0.61--0.64 seconds;
 repository traversal and file reads still dominate that validator.
+
+## Example: shared Python preparation
+
+Six validators independently read and parsed overlapping Python files. The
+pytest runner now provides one lazy session cache of source text and read-only
+ASTs, while standalone validator wrappers retain local caches. Exact absolute
+paths are keys, parse failures are replayed at each validator's existing error
+boundary, and findings are never cached. Later consumer calls fell by roughly
+30--62 percent; the first consumer still owns preparation, so the six-validator
+pytest-session median moved only from 4.87 to 4.75 seconds (external wall:
+5.44 to 5.37 seconds).
+
+Shared preparation does not imply removing isolation boundaries. Blueprint Git
+inventory costs about 0.002 seconds, while the isolated blueprint-sync check
+costs about 1.33 seconds and independently rebuilds the graph plus generated
+views. The prepared suite graph lacks those comparison results and Git index
+metadata, so both subprocesses remain intentional.
+
+## Measured outcome
+
+Five matched runs against the remaining-work baseline at `02a4476` gave:
+
+| Measure | Before | Final | Change |
+| --- | ---: | ---: | ---: |
+| Validator pytest session | 14.60 s | 12.69 s | -13.1% |
+| Staged runner wall time | 15.53 s | 13.69 s | -11.8% |
+| Snapshot/runner remainder | 0.92 s | 1.06 s | noise |
+
+That baseline already includes the earlier user-document, boundary, and
+standard-schema refactors. Per-item end-state deltas are diagnostic observations,
+not causal estimates; controlled checkpoint timings above support local claims.
