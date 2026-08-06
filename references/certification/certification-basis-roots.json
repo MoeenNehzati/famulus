@@ -62,6 +62,7 @@
   "src/officina/common/interface_projection.py",
   "src/officina/common/pooled_blueprint.py",
   "src/officina/common/process_binding_compiler.py",
+  "src/officina/common/python_source_cache.py",
   "src/officina/common/repository_paths.py",
   "src/officina/common/secret_store.py",
   "src/officina/common/test_discovery.py",

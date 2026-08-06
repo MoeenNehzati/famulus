@@ -36,6 +36,7 @@ from officina.common.blueprint_graph import (  # noqa: E402
     load_repository_blueprint_graph,
 )
 from officina.common.blueprint_inventory import BlueprintInventoryError  # noqa: E402
+from officina.common.python_source_cache import PythonSourceCache  # noqa: E402
 from officina.common.repository_paths import repository_relative_path  # noqa: E402
 from validators.skill_runtime_files import _registered_child_artifact  # noqa: E402
 
@@ -108,6 +109,25 @@ BLUEPRINT_GRAPH_OPTIONAL = True
 
 
 def _is_excluded(rel_path: Path) -> bool:
+    """Return whether a repository-relative path belongs to a skipped tree.
+
+    Intent
+    ------
+    Exclude files outside the validator's live shared surfaces.
+
+    Rationale
+    ---------
+    Tests, metadata, caches, and validator code are governed separately.
+
+    Pseudocode
+    ----------
+    - return whether any path component is configured for exclusion
+
+    Wraps
+    -----
+    - none
+    """
+
     if any(part in _SKIP_PARTS for part in rel_path.parts):
         return True
     return False
@@ -117,6 +137,33 @@ def _iter_skill_files(
     repo_root: Path,
     graph: RepositoryBlueprintGraph | None,
 ):
+    """Yield non-excluded, unregistered files below the skills directory.
+
+    Intent
+    ------
+    Discover skill files subject to runtime portability checks.
+
+    Rationale
+    ---------
+    Registered child artifacts and excluded trees have separate ownership.
+
+    Pseudocode
+    ----------
+    - for path in skill tree:
+      - if path is a governed file:
+        - return path
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._is_excluded:
+      why:
+        computes: "Recognizes exclusions while this function filters file type and child ownership."
+    """
+
     skills_root = repo_root / "skills"
     if not skills_root.is_dir():
         return
@@ -132,6 +179,26 @@ def _iter_skill_files(
 
 
 def _iter_ordinary_test_files(repo_root: Path):
+    """Yield Python tests governed by the raw-Git annotation policy.
+
+    Intent
+    ------
+    Discover ordinary repository and skill test modules.
+
+    Rationale
+    ---------
+    Raw Git calls in tests require explicit policy annotations.
+
+    Pseudocode
+    ----------
+    - for path in repository and skill test roots:
+      - return Python test path
+
+    Wraps
+    -----
+    - none
+    """
+
     tests_root = repo_root / "tests"
     if tests_root.is_dir():
         yield from sorted(tests_root.rglob("*.py"))
@@ -147,6 +214,27 @@ def _iter_ordinary_test_files(repo_root: Path):
 
 
 def _iter_live_python_files(repo_root: Path):
+    """Yield each non-test Python source file in the validator's live roots.
+
+    Intent
+    ------
+    Discover live Python sources for composite-target validation.
+
+    Rationale
+    ---------
+    Runtime process targets must keep path and entry point separate.
+
+    Pseudocode
+    ----------
+    - for path in configured live roots:
+      - if path is a unique non-test Python file:
+        - return path
+
+    Wraps
+    -----
+    - none
+    """
+
     roots = (
         repo_root / "src",
         repo_root / "validators",
@@ -167,11 +255,51 @@ def _iter_live_python_files(repo_root: Path):
 
 
 def _is_runtime_script(rel_path: Path) -> bool:
+    """Return whether a path is inside a skill's private runtime tree.
+
+    Intent
+    ------
+    Identify executable files governed by the shell-script prohibition.
+
+    Rationale
+    ---------
+    Non-runtime documents can legitimately share otherwise forbidden suffixes.
+
+    Pseudocode
+    ----------
+    - return whether path components identify a skill runtime directory
+
+    Wraps
+    -----
+    - none
+    """
+
     parts = rel_path.parts
     return len(parts) >= 4 and parts[0] == "skills" and parts[2] == "_rtx"
 
 
 def _allowed_platform_commands(rel_path: Path) -> set[str]:
+    """Return platform commands allowed for a platform-specific adapter path.
+
+    Intent
+    ------
+    Derive narrow command exceptions from explicit adapter identity.
+
+    Rationale
+    ---------
+    Platform adapters may invoke their named platform's native commands.
+
+    Pseudocode
+    ----------
+    - return all commands for an explicit cross-platform adapter
+    - set allowed_commands = commands for platforms named by the filename
+    - return allowed_commands
+
+    Wraps
+    -----
+    - none
+    """
+
     if rel_path in _CROSS_PLATFORM_ADAPTER_FILES:
         return set().union(*_PLATFORM_COMMAND_ALLOWLIST.values())
     name_lower = rel_path.name.lower()
@@ -183,6 +311,30 @@ def _allowed_platform_commands(rel_path: Path) -> set[str]:
 
 
 def _command_violations(tokens: list[str], context: str, allowed_commands: set[str] | None = None) -> list[str]:
+    """Return portability findings for one literal command token sequence.
+
+    Intent
+    ------
+    Detect shell scripts and disallowed platform-specific executables.
+
+    Rationale
+    ---------
+    Central token checking keeps blueprint and Python diagnostics consistent.
+
+    Pseudocode
+    ----------
+    - for token in normalized tokens:
+      - if token has a forbidden script suffix:
+        - set findings = findings plus shell-script finding
+    - if leading command is forbidden and not allowed:
+      - set findings = findings plus command finding
+    - return findings
+
+    Wraps
+    -----
+    - none
+    """
+
     errors: list[str] = []
     allowed_commands = allowed_commands or set()
     lowered = [token.strip() for token in tokens if isinstance(token, str)]
@@ -201,6 +353,39 @@ def _validate_v4_blueprints(
     graph: RepositoryBlueprintGraph,
     repo_root: Path,
 ) -> list[str]:
+    """Validate command portability declarations in a loaded blueprint graph.
+
+    Intent
+    ------
+    Check skill permissions and universal binary dependencies for portability.
+
+    Rationale
+    ---------
+    The prepared graph is the canonical source of validated declarations.
+
+    Pseudocode
+    ----------
+    - for node in blueprint graph:
+      - if node is a skill module:
+        - set findings = permission command and composite-target findings
+      - if node is a universal behavioral source:
+        - set findings = binary portability findings
+    - return findings
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .officina.common.repository_paths.repository_relative_path:
+      why:
+        constructs: "Builds stable repository-relative diagnostic paths."
+    ._command_violations:
+      why:
+        constructs: "Builds portability findings for declaration commands."
+    """
+
     errors: list[str] = []
     repo_root = repo_root.resolve()
     for node in graph.nodes.values():
@@ -289,6 +474,26 @@ def _validate_v4_blueprints(
 
 
 def _literal_string_tokens(node: ast.AST) -> list[str] | None:
+    """Return literal string elements from a list or tuple AST node.
+
+    Intent
+    ------
+    Extract statically inspectable command argument sequences.
+
+    Rationale
+    ---------
+    Dynamic command expressions cannot be classified mechanically here.
+
+    Pseudocode
+    ----------
+    - return none unless node is a list or tuple
+    - return strings when every element is a string constant
+
+    Wraps
+    -----
+    - none
+    """
+
     if not isinstance(node, (ast.List, ast.Tuple)):
         return None
     tokens: list[str] = []
@@ -299,6 +504,34 @@ def _literal_string_tokens(node: ast.AST) -> list[str] | None:
 
 
 def _literal_command_tokens(node: ast.AST) -> list[str] | None:
+    """Return command tokens from a literal sequence or whitespace-split string.
+
+    Intent
+    ------
+    Normalize statically inspectable process commands into tokens.
+
+    Rationale
+    ---------
+    Raw Git recognition supports both sequence and string subprocess forms.
+
+    Pseudocode
+    ----------
+    - return literal sequence tokens when available
+    - if node is a literal string:
+      - return whitespace-split tokens
+    - return none
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._literal_string_tokens:
+      why:
+        constructs: "Builds tokens from literal sequence nodes."
+    """
+
     tokens = _literal_string_tokens(node)
     if tokens is not None:
         return tokens
@@ -308,10 +541,48 @@ def _literal_command_tokens(node: ast.AST) -> list[str] | None:
 
 
 def _is_true_constant(node: ast.AST) -> bool:
+    """Return whether an AST node is the literal boolean value true.
+
+    Intent
+    ------
+    Recognize statically explicit shell activation.
+
+    Rationale
+    ---------
+    Only literal true proves that subprocess shell mode is enabled.
+
+    Pseudocode
+    ----------
+    - return whether node is a constant whose value is true
+
+    Wraps
+    -----
+    - none
+    """
+
     return isinstance(node, ast.Constant) and node.value is True
 
 
 def _is_subprocess_call(node: ast.Call) -> bool:
+    """Return whether a call directly invokes a monitored subprocess function.
+
+    Intent
+    ------
+    Recognize subprocess calls governed by portability checks.
+
+    Rationale
+    ---------
+    Restrict matching to explicit functions on the subprocess module.
+
+    Pseudocode
+    ----------
+    - return whether the call target is a monitored subprocess attribute
+
+    Wraps
+    -----
+    - none
+    """
+
     func = node.func
     return (
         isinstance(func, ast.Attribute)
@@ -322,6 +593,25 @@ def _is_subprocess_call(node: ast.Call) -> bool:
 
 
 def _is_direct_run_git_call(node: ast.Call) -> bool:
+    """Return whether a call targets a function or method named ``run_git``.
+
+    Intent
+    ------
+    Recognize direct repository Git helper calls.
+
+    Rationale
+    ---------
+    Both imported functions and object methods require policy annotations.
+
+    Pseudocode
+    ----------
+    - return whether call target is a name or attribute named run_git
+
+    Wraps
+    -----
+    - none
+    """
+
     func = node.func
     return (
         isinstance(func, ast.Name)
@@ -333,6 +623,44 @@ def _is_direct_run_git_call(node: ast.Call) -> bool:
 
 
 def _raw_git_kind(node: ast.Call) -> str | None:
+    """Classify a direct Git execution call, or return ``None``.
+
+    Intent
+    ------
+    Recognize repository helpers and literal subprocess Git commands.
+
+    Rationale
+    ---------
+    Annotation enforcement applies only to mechanically identifiable raw Git calls.
+
+    Pseudocode
+    ----------
+    - if node directly calls run_git:
+      - return direct-helper classification
+    - if node is a subprocess call with literal Git tokens:
+      - return raw-Git classification
+    - return none
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._is_direct_run_git_call:
+      why:
+        computes: "Recognizes calls to the repository Git helper."
+    ._is_subprocess_call:
+      why:
+        computes: "Restricts literal command inspection to subprocess calls."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._literal_command_tokens:
+      why:
+        constructs: "Builds statically inspectable tokens for subprocess classification."
+    """
+
     if _is_direct_run_git_call(node):
         return "direct run_git"
     if not _is_subprocess_call(node) or not node.args:
@@ -347,6 +675,29 @@ def _nearest_statement(
     node: ast.AST,
     parents: dict[ast.AST, ast.AST],
 ) -> ast.stmt | None:
+    """Return the closest enclosing statement for an AST node.
+
+    Intent
+    ------
+    Locate the statement whose preceding line may carry a raw-Git annotation.
+
+    Rationale
+    ---------
+    Calls can be nested inside expressions while annotations govern statements.
+
+    Pseudocode
+    ----------
+    - while current node exists:
+      - if current node is a statement:
+        - return current node
+      - set current_node = parent node
+    - return none
+
+    Wraps
+    -----
+    - none
+    """
+
     current: ast.AST | None = node
     while current is not None:
         if isinstance(current, ast.stmt):
@@ -355,10 +706,49 @@ def _nearest_statement(
     return None
 
 
-def _validate_raw_git_test(path: Path, rel_path: Path) -> list[str]:
+def _validate_raw_git_test(
+    path: Path,
+    rel_path: Path,
+    source_cache: PythonSourceCache,
+) -> list[str]:
+    """Validate required annotations on raw Git calls in one test file.
+
+    Intent
+    ------
+    Report missing, unknown-category, or empty-reason raw-Git annotations.
+
+    Rationale
+    ---------
+    Ordinary tests may bypass Git abstractions only with an explicit policy reason.
+
+    Pseudocode
+    ----------
+    - set parsed_source = cached source text for file
+    - set syntax_tree = cached syntax tree for file
+    - set parent_map = syntax-tree parent relationships
+    - for call in syntax tree:
+      - set git_kind = classified call kind
+      - set statement = nearest enclosing statement
+      - if statement annotation is invalid:
+        - set findings = findings plus annotation finding
+    - return findings
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._raw_git_kind:
+      why:
+        constructs: "Builds the Git-call classification for each candidate call."
+    ._nearest_statement:
+      why:
+        constructs: "Builds the statement boundary used to locate its annotation."
+    """
+
     try:
-        source = path.read_text(encoding="utf-8")
-        tree = ast.parse(source, filename=str(path))
+        source, tree = source_cache.read_parse(path)
     except (OSError, UnicodeError, SyntaxError):
         return []
     lines = source.splitlines()
@@ -408,9 +798,34 @@ def _validate_raw_git_test(path: Path, rel_path: Path) -> list[str]:
 def _validate_composite_python_targets(
     path: Path,
     rel_path: Path,
+    source_cache: PythonSourceCache,
 ) -> list[str]:
+    """Reject composite runtime-path and function targets in one Python file.
+
+    Intent
+    ------
+    Find literal Python runner targets that combine a path and entry point.
+
+    Rationale
+    ---------
+    Runtime paths and callable entries must remain separate except in one migration shim.
+
+    Pseudocode
+    ----------
+    - set syntax_tree = cached syntax tree for file
+    - set parent_map = syntax-tree parent relationships
+    - for node in syntax_tree:
+      - if literal is a forbidden composite target outside the legacy function:
+        - set findings = findings plus composite-target finding
+    - return findings
+
+    Wraps
+    -----
+    - none
+    """
+
     try:
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        _source, tree = source_cache.read_parse(path)
     except (OSError, UnicodeError, SyntaxError):
         return []
     parents = {
@@ -447,6 +862,37 @@ def _validate_composite_python_targets(
 
 
 def _iter_nested_lists(value: object):
+    """Yield every list nested within a list-or-dictionary document tree.
+
+    Intent
+    ------
+    Traverse permission documents without depending on their nesting shape.
+
+    Rationale
+    ---------
+    Runner command token lists may appear at several declaration depths.
+
+    Pseudocode
+    ----------
+    - if value is a list:
+      - return value
+      - for child in value:
+        - set nested_lists = recursive traversal for child
+    - if value is a dictionary:
+      - for child in dictionary values:
+        - set nested_lists = recursive traversal for child
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._iter_nested_lists:
+      why:
+        computes: "Recursively traverses child containers while this function owns type dispatch and yielding."
+    """
+
     if isinstance(value, list):
         yield value
         for item in value:
@@ -457,6 +903,36 @@ def _iter_nested_lists(value: object):
 
 
 def _validate_runner_permission_documents(repo_root: Path) -> list[str]:
+    """Reject composite Python targets in skill permission documents.
+
+    Intent
+    ------
+    Scan blueprint and pooled-review command lists for combined runner targets.
+
+    Rationale
+    ---------
+    Permission documents are not all represented by the prepared blueprint graph.
+
+    Pseudocode
+    ----------
+    - for document in skill permission documents:
+      - set document_tree = parsed YAML
+      - for tokens in nested document lists:
+        - if tokens contain a composite Python runner target:
+          - set findings = findings plus composite-target finding
+    - return findings
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._iter_nested_lists:
+      why:
+        computes: "Traverses candidate token lists while this function parses documents and reports matches."
+    """
+
     errors: list[str] = []
     paths = [
         *sorted((repo_root / "skills").glob("*/blueprint.yaml")),
@@ -491,6 +967,25 @@ def _validate_runner_permission_documents(repo_root: Path) -> list[str]:
 
 
 def _is_os_system(node: ast.Call) -> bool:
+    """Return whether a call directly invokes ``os.system``.
+
+    Intent
+    ------
+    Recognize an explicitly non-portable process-execution surface.
+
+    Rationale
+    ---------
+    Attribute matching avoids classifying unrelated functions named system.
+
+    Pseudocode
+    ----------
+    - return whether call target is the system attribute on os
+
+    Wraps
+    -----
+    - none
+    """
+
     func = node.func
     return (
         isinstance(func, ast.Attribute)
@@ -500,11 +995,65 @@ def _is_os_system(node: ast.Call) -> bool:
     )
 
 
-def _validate_python(path: Path, rel_path: Path) -> list[str]:
+def _validate_python(
+    path: Path,
+    rel_path: Path,
+    source_cache: PythonSourceCache,
+) -> list[str]:
+    """Validate portable process execution in one skill Python file.
+
+    Intent
+    ------
+    Report parse failures, shell execution, and literal non-portable commands.
+
+    Rationale
+    ---------
+    Static AST inspection catches explicit process behavior without executing skill code.
+
+    Pseudocode
+    ----------
+    - set allowed_commands = path-specific platform exceptions
+    - set syntax_tree = cached syntax tree for file
+    - for call in syntax tree:
+      - if call invokes os.system or literal shell mode:
+        - set findings = findings plus shell finding
+      - if call is a subprocess call with literal tokens:
+        - set findings = findings plus command findings
+    - return findings
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._is_os_system:
+      why:
+        computes: "Recognizes direct os.system calls."
+    ._is_subprocess_call:
+      why:
+        computes: "Recognizes monitored subprocess calls."
+    ._is_true_constant:
+      why:
+        computes: "Recognizes explicit shell activation."
+    ._command_violations:
+      why:
+        computes: "Returns portability findings for literal command tokens."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._allowed_platform_commands:
+      why:
+        constructs: "Builds path-specific command exceptions."
+    ._literal_string_tokens:
+      why:
+        constructs: "Builds literal subprocess token sequences."
+    """
+
     errors: list[str] = []
     allowed_commands = _allowed_platform_commands(rel_path)
     try:
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        _source, tree = source_cache.read_parse(path)
     except SyntaxError as exc:
         return [f"{rel_path}:{exc.lineno}: failed to parse Python: {exc.msg}"]
 
@@ -537,7 +1086,73 @@ def _validate_python(path: Path, rel_path: Path) -> list[str]:
 def _validate(
     repo_root: Path,
     repository_graph: RepositoryBlueprintGraph | None,
+    source_cache: PythonSourceCache,
 ) -> list[str]:
+    """Run all cross-platform checks using supplied shared preparation.
+
+    Intent
+    ------
+    Aggregate declaration, skill-file, test, live-source, and permission findings.
+
+    Rationale
+    ---------
+    One orchestration boundary preserves finding order while accepting reusable preparation.
+
+    Pseudocode
+    ----------
+    - if repository graph is absent and blueprints exist:
+      - set repository_graph = loaded blueprint graph
+    - set findings = blueprint declaration findings
+    - for path in governed skill files:
+      - set findings = findings plus runtime-file findings
+    - for path in ordinary tests:
+      - set findings = findings plus raw-Git findings
+    - for path in live Python files:
+      - set findings = findings plus composite-target findings
+    - set findings = findings plus permission-document findings
+    - return findings
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._iter_skill_files:
+      why:
+        computes: "Provides governed skill files in scan order."
+    ._is_runtime_script:
+      why:
+        computes: "Recognizes forbidden runtime script locations."
+    ._iter_ordinary_test_files:
+      why:
+        computes: "Provides tests subject to raw-Git annotation checks."
+    ._iter_live_python_files:
+      why:
+        computes: "Provides live sources subject to composite-target checks."
+
+    InstantiationsFromRepo
+    ----------------------
+    .officina.common.blueprint_graph.load_repository_blueprint_graph:
+      why:
+        constructs: "Builds standalone blueprint preparation when no graph is supplied."
+    ._validate_v4_blueprints:
+      why:
+        constructs: "Builds declaration portability findings."
+    ._validate_python:
+      why:
+        constructs: "Builds per-skill Python portability findings."
+    ._validate_raw_git_test:
+      why:
+        constructs: "Builds per-test raw-Git annotation findings."
+    ._validate_composite_python_targets:
+      why:
+        constructs: "Builds per-source composite-target findings."
+    ._validate_runner_permission_documents:
+      why:
+        constructs: "Builds permission-document composite-target findings."
+    """
+
     errors: list[str] = []
     skills_root = repo_root / "skills"
     if repository_graph is None and skills_root.is_dir() and any(
@@ -574,12 +1189,13 @@ def _validate(
         if path.name == "blueprint.yaml":
             continue
         if path.suffix == PYTHON_SUFFIX:
-            errors.extend(_validate_python(path, rel_path))
+            errors.extend(_validate_python(path, rel_path, source_cache))
     for path in _iter_ordinary_test_files(repo_root):
         errors.extend(
             _validate_raw_git_test(
                 path,
                 path.relative_to(repo_root),
+                source_cache,
             )
         )
     for path in _iter_live_python_files(repo_root):
@@ -587,6 +1203,7 @@ def _validate(
             _validate_composite_python_targets(
                 path,
                 path.relative_to(repo_root),
+                source_cache,
             )
         )
     errors.extend(_validate_runner_permission_documents(repo_root))
@@ -597,14 +1214,133 @@ def validate_with_graph(
     repo_root: Path,
     graph: RepositoryBlueprintGraph,
 ) -> list[str]:
-    return _validate(repo_root, graph)
+    """Validate a repository while reusing a caller-provided blueprint graph.
+
+    Intent
+    ------
+    Supply direct callers with graph reuse and validator-owned source preparation.
+
+    Rationale
+    ---------
+    Some callers share the expensive graph but do not own a Python source cache.
+
+    Pseudocode
+    ----------
+    - set source_cache = repository Python source cache
+    - return cross-platform findings with graph and source cache
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .officina.common.python_source_cache.PythonSourceCache:
+      why:
+        computes: "Provides validator-scoped source and syntax-tree preparation."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._validate:
+      why:
+        constructs: "Builds findings from the supplied graph and new source cache."
+    """
+
+    return _validate(repo_root, graph, PythonSourceCache(repo_root))
 
 
 def validate(repo_root: Path) -> list[str]:
-    return _validate(repo_root, None)
+    """Validate a repository with validator-owned preparation.
+
+    Intent
+    ------
+    Preserve the standalone validator entry point.
+
+    Rationale
+    ---------
+    Direct callers cannot rely on pytest-managed graph or source fixtures.
+
+    Pseudocode
+    ----------
+    - set source_cache = repository Python source cache
+    - return cross-platform findings with standalone preparation
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .officina.common.python_source_cache.PythonSourceCache:
+      why:
+        computes: "Provides validator-scoped source and syntax-tree preparation."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._validate:
+      why:
+        constructs: "Builds findings with standalone graph and source preparation."
+    """
+
+    return _validate(repo_root, None, PythonSourceCache(repo_root))
+
+
+def test_cross_platform(
+    repo_root: Path,
+    graph: RepositoryBlueprintGraph | None,
+    python_source_cache: PythonSourceCache,
+) -> list[str]:
+    """Run cross-platform checks as a pytest item with shared fixtures.
+
+    Intent
+    ------
+    Expose cross-platform validation to repository-check pytest collection.
+
+    Rationale
+    ---------
+    Suite fixtures eliminate repeated graph loading and Python parsing.
+
+    Pseudocode
+    ----------
+    - return cross-platform findings from shared fixtures
+
+    Wraps
+    -----
+    - ._validate -> preprocess: forwards shared fixtures; postprocess: returns findings unchanged; fixed_arguments: none
+    """
+
+    return _validate(repo_root, graph, python_source_cache)
 
 
 def main() -> int:
+    """Run the validator for this repository and return a process exit code.
+
+    Intent
+    ------
+    Print cross-platform findings for standalone command-line use.
+
+    Rationale
+    ---------
+    Maintainers need a conventional script boundary outside pytest.
+
+    Pseudocode
+    ----------
+    - set findings = repository cross-platform validation
+    - if findings exist:
+      - return failure status
+    - return success status
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .validate:
+      why:
+        constructs: "Builds findings printed by the command-line boundary."
+    """
+
     repo_root = Path(__file__).resolve().parents[1]
     errors = validate(repo_root)
     if errors:
