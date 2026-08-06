@@ -10,26 +10,112 @@ instructions. It seeks reliability and maintainability by dividing such a
 system into cohesive parts, encapsulating those parts, and making the
 relationships between them explicit.
 
-Programming languages provide established ways to organize code into modules.
-They do not provide equivalent standards for modules that combine executable
-behavior with instructions interpreted by humans or language models. Officina
-supplies this missing architecture.
+While most existing programming languages enforce structure to foster these
+goals, such structures don't exist for modules composed of a mixture of LLM
+instructions and code. Officina aims to fill this gap by providing a harness
+for the continuous development of mixed LLM/code projects. One example of such
+a project is a skill library. It's natural to think of each skill as a module
+that can reuse the code and LLM instructions of other modules if needed.
 
-The architecture follows one chain:
+The trouble is not the reuse itself but that nothing keeps track of it. In a
+programming language, one module cannot quietly depend on the internals of
+another: the dependency must be declared before it can exist, and the compiler
+or module system refuses whatever was not declared. Between two skills, that
+same dependency is just a sentence. Nothing resolves it, nothing records it,
+and nothing can reject it. Undocumented coupling is therefore not a tendency
+that some projects fall into. It is the default state of any system where
+nothing prevents it, and its absence would be the surprising outcome.
 
-1. behavior is divided into encapsulated nodes;
-2. each node describes itself in a structured form;
-3. those descriptions form a graph of explicit relationships;
-4. standards state the rules that govern the graph and the behavior it
-   describes;
-5. validators decide the mechanically checkable part of those rules;
-6. humans or language models decide the semantic remainder;
-7. certification retains the combined assurance; and
-8. currentness is lost when relevant state differs or assurance can no longer
-   be evaluated.
+LLM assistance turns this from a slow problem into a fast one. Architectural
+decay is a function of how much change a system absorbs against how much of
+that change is checked; LLM-assisted development multiplies the first and
+leaves the second at zero. This matches what I have seen building this
+library. The coupling accumulates quietly, and by the time it is visible,
+neither a human nor a model can safely change one skill without breaking
+another.
 
-Detailed contracts, schemas, validators, documentation, and implementations
-must conform to these principles.
+To be specific, the project addresses two main concerns:
+1. Undocumented and unregulated dependencies grow ever more numerous over the
+   course of development. Each skill may reuse any part of the existing
+   project in any fashion. That will eventually make the system unmaintainable
+   and confusing.
+2. The lack of a boundary between LLM instructions and machine instructions
+   hinders reproducibility and performance. A good LLM-assisted module should
+   do as much as it can with scripts and use an LLM only where a script won't
+   do.
+
+The proposed remedy is as follows: develop standards for what such mixed
+projects should look like, then check them statically and periodically (via
+git hooks). Officina calls such conformance tests validators. Failures are
+accompanied by informative messages guiding the LLM to make the right
+adjustments. An LLM may still find a way to forgo these checks (by forcing a
+commit, for instance), but this is unlikely, since it is directly instructed
+not to force commits unless the user approves.
+
+Any such standard presupposes that we can formally analyze mixed modules. The
+first step is structuring the code base into logical components we call nodes.
+A node is a logical unit that exists in the project and can be contained by
+other nodes; it may be a mixed module, a Python file, or even a JSON schema.
+
+Since nodes in mixed projects can be of different types, some of which (like
+LLM instructions) have next to no structure, we accompany them with
+machine-readable documentation files called blueprints. A blueprint documents
+all the relevant information about the node. Once machine-readable blueprints
+reflect the node, interactions between different nodes can be allowed or
+prohibited based on the blueprints. We can even construct the graph of the
+repository and put constraints on its shape, for example banning dependency
+cycles.
+
+The catch is that quality assurance for blueprints is not trivial. This is
+part of a bigger problem: not every standard we set for the objects in the
+repository will be mechanically checkable. For example, we want to remove
+direct references a skill makes to the content of another skill. We can ban
+all exact paths from the blueprints and ban paths that look like
+`../<other-skill-name>/`. But there are many ways of sneaking that address in,
+for example by stating "go to the parent skills directory and look under
+`<other-skill-name>`". As the example demonstrates, there are meaningful
+mechanical harnesses that get some of the job done, but when dealing with
+free-form instructions, you can rarely exhaust all the bad behaviors
+mechanically.
+
+The solution is a hybrid. Keep mechanical tests, and design the system to
+favor them. For example, take skill names. We want to know whether a skill is
+being addressed in another skill. If skill names are allowed to be single
+words, like `design`, then it's next to impossible to mechanically assess
+whether an occurrence of design is just the word design or a reference to
+`design`. Officina's solution is to require skill names to contain a hyphen,
+renaming `design` to, for example, `design-code`. Then an occurrence of
+`design-code` can be interpreted as a reference to `design-code`. The trick is
+to enrich the language with additional structure and then use that structure
+for machine checks. This is a recurring pattern across Officina: when in need,
+we enrich the problem with structure that allows for mechanical checks,
+sometimes even building a domain-specific language.
+
+Still, these mechanical checks aren't exhaustive, and we occasionally need
+human/LLM audits. Chief among the things only an audit can settle is the
+question we started with: whether a blueprint faithfully describes the node it
+claims to. The problem with human/LLM checks is that they are orders of
+magnitude more expensive than mechanical ones. The solution is to do them only
+when needed and to retain the checks that passed until relevant changes happen
+in the repo. The certification process takes care of this. A certificate is
+given to a node if it passes all its mechanical and human/LLM tests. The
+certificate contains the relevant hashes for the node's content and its
+dependencies. Hence a certificate is retained so long as those hashes do not
+change, meaning the changes in the repo were not relevant to our node. If
+hashes drift, the certificate goes stale and re-certification is required.
+
+This is a broad explanation of what Officina is:
+1. It contains a rich set of standards for how modules should be organized and
+   interact, to ensure encapsulation, reproducibility, and maintainability.
+2. The standards are designed to be checkable with mechanical validators as
+   much as possible.
+3. A certification process augments these with LLM/human-assisted validation.
+4. The certification and validators are used to harness LLM-assisted
+   continuous development.
+
+The next sections will dig into different parts of Officina. They state the
+design principles Officina is built around. The implementation details are
+left to the relevant in-depth documentation.
 
 > **Current scope, nonnormative:** Officina currently exists as an internal
 > framework within Famulus. Its exact package and graph boundary is not yet
@@ -41,7 +127,7 @@ must conform to these principles.
 
 ## 1. Architectural method
 
-Officina reduces the amount of behavior that must be understood and changed
+Officina encapsulates the amount of behavior that must be understood and changed
 together.
 
 Behavior that can evolve independently should, when useful, be separated

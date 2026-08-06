@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -153,6 +154,11 @@ def test_root_runner_executes_docstring_adapter_against_staged_bytes(
         ["git", "clone", "--quiet", "--shared", str(_REPO_ROOT), str(repo)],
         capture_output=True,
         check=False,
+        env={
+            name: value
+            for name, value in os.environ.items()
+            if not name.startswith("GIT_")
+        },
     )
     assert cloned.returncode == 0, cloned.stderr.decode(errors="replace")
     shutil.copy2(_RUNNER_PATH, repo / "validators" / "runner.py")

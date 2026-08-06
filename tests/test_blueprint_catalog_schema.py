@@ -99,7 +99,7 @@ def test_blueprint_catalog_configuration_uses_central_schema() -> None:
 def test_every_configured_discovery_value_has_defined_semantics() -> None:
     config = load_configuration(CONFIG_PATH)["blueprint_catalog"]
     standard = (
-        REPO_ROOT / "docs" / "contributors" / "blueprint-discovery-metadata.md"
+        REPO_ROOT / "docs" / "officina" / "blueprint-discovery-metadata.md"
     ).read_text(encoding="utf-8")
 
     for values in config.values():

@@ -13,8 +13,6 @@
   "references/blueprint/template.yaml",
   "references/certification/node-hash-policy.yaml",
   "references/certification/node-hash-policy.schema.json",
-  "docs/architecture.md",
-  "docs/certification_and_drift.md",
   "validators/*.py",
   "docs_tooling/__init__.py",
   "docs_tooling/catalog.py",
