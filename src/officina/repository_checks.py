@@ -144,7 +144,7 @@ class _ValidatorModule(pytest.Module):
         return self.validator_plugin.modules[self.validator_id]
 
     def collect(self):
-        """Return one marked normal pytest function for this validator.
+        """Return marked normal pytest functions for this validator.
 
         Intent
         ------
@@ -152,22 +152,65 @@ class _ValidatorModule(pytest.Module):
 
         Rationale
         ---------
-        One item per canonical validator preserves granular reports and selection.
+        Native module collection enables validator-local fixtures and parametrization.
+        Validators without test functions retain their established singleton item.
 
         Pseudocode
         ----------
-        - set validator_entry = entry name and callable
-        - set pytest_function = normal pytest function for validator_entry
+        - if validator module has no test functions:
+          - return singleton legacy validator item
+        - set pytest_functions = normally collected module test functions
         - set pytest_function_metadata = validator marker and canonical id
-        - return singleton item list
+        - return pytest function items
 
         Wraps
         -----
         - none
         """
-        entry_name, callobj = self.validator_plugin.entry_points[
-            self.validator_id
+        test_names = tuple(
+            name
+            for name, value in vars(self.obj).items()
+            if name.startswith("test_") and callable(value)
+        )
+        if not test_names:
+            return [self._legacy_item()]
+
+        items = [
+            item
+            for item in super().collect()
+            if isinstance(item, pytest.Function)
         ]
+        for item in items:
+            item.add_marker("validator")
+            item._validator_id = self.validator_id  # type: ignore[attr-defined]
+            item._validator_entry_name = (  # type: ignore[attr-defined]
+                item.originalname or item.name
+            )
+        return items
+
+    def _legacy_item(self) -> pytest.Function:
+        """Build the established single entry-point validator item.
+
+        Intent
+        ------
+        Preserve collection for validator modules that do not define pytest tests.
+
+        Rationale
+        ---------
+        Fixture-backed validators are opt-in and must not migrate existing modules.
+
+        Pseudocode
+        ----------
+        - set validator_entry = configured protocol entry point
+        - set pytest_function = ordinary function item for validator entry
+        - set pytest_function_metadata = validator marker and canonical id
+        - return pytest function
+
+        Wraps
+        -----
+        - none
+        """
+        entry_name, callobj = self.validator_plugin.entry_points[self.validator_id]
         item = pytest.Function.from_parent(
             self,
             name=self.validator_id,
@@ -176,7 +219,7 @@ class _ValidatorModule(pytest.Module):
         item.add_marker("validator")
         item._validator_id = self.validator_id  # type: ignore[attr-defined]
         item._validator_entry_name = entry_name  # type: ignore[attr-defined]
-        return [item]
+        return item
 
 
 class ValidatorPytestPlugin:
@@ -454,7 +497,7 @@ class ValidatorPytestPlugin:
             self.results[owner_id] = list(normalized)
         return self._graph_state_value
 
-    @pytest.fixture
+    @pytest.fixture(scope="session")
     def repo_root(self) -> Path:
         """Return the exact staged repository root.
 
@@ -464,7 +507,8 @@ class ValidatorPytestPlugin:
 
         Rationale
         ---------
-        Validators must not read unstaged working-tree bytes.
+        Validators must not read unstaged working-tree bytes. The immutable session
+        path may be shared by broader-scoped validator preparation fixtures.
 
         Pseudocode
         ----------
@@ -571,6 +615,37 @@ class ValidatorPytestPlugin:
             validator_plugin=self,
         )
 
+    def pytest_collection_modifyitems(
+        self,
+        items: list[pytest.Item],
+    ) -> None:
+        """Keep only items emitted by the repository validator collector.
+
+        Intent
+        ------
+        Remove duplicate ordinary pytest collection for explicitly selected files.
+
+        Rationale
+        ---------
+        Pytest treats explicit file arguments as collection roots even when their
+        names do not match test patterns. Without filtering, fixture-backed
+        validator modules execute once through each collector.
+
+        Pseudocode
+        ----------
+        - set validator_items = collected items carrying canonical validator ids
+        - set session_items = validator items
+
+        Wraps
+        -----
+        - none
+        """
+        items[:] = [
+            item
+            for item in items
+            if isinstance(getattr(item, "_validator_id", None), str)
+        ]
+
     def pytest_pyfunc_call(self, pyfuncitem: pytest.Function):
         """Execute validator functions using pytest-resolved fixtures.
 
@@ -636,7 +711,7 @@ class ValidatorPytestPlugin:
             )
         errors = self._normalized_errors(errors)
         if errors:
-            self.results[validator_id] = errors
+            self.results.setdefault(validator_id, []).extend(errors)
             pytest.fail("\n".join(errors), pytrace=False)
         return True
 

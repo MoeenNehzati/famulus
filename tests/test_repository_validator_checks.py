@@ -118,6 +118,34 @@ def test_run_all_collects_validators_as_pytest_functions_with_fixtures(
     ) == {}
 
 
+def test_run_all_reuses_module_fixture_and_aggregates_validator_items(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    validators = _initialize_runner_repository(repo)
+    evidence = tmp_path / "fixture-calls"
+    (validators / "multi_item.py").write_text(
+        "from pathlib import Path\n"
+        "import pytest\n"
+        f"EVIDENCE = Path({str(evidence)!r})\n"
+        "@pytest.fixture(scope='module')\n"
+        "def prepared(repo_root):\n"
+        "    prior = EVIDENCE.read_text() if EVIDENCE.exists() else ''\n"
+        "    EVIDENCE.write_text(prior + 'x')\n"
+        "    return 'prepared' if repo_root.is_dir() else 'missing'\n"
+        "def test_first(prepared): return [f'first:{prepared}']\n"
+        "def test_second(prepared): return [f'second:{prepared}']\n"
+        "def validate(repo_root): return ['legacy fallback ran']\n",
+        encoding="utf-8",
+    )
+    _require_git_ok(GitTestRepository(repo).git("add", "."))
+
+    assert _RUNNER.run_all(repo, validator_ids=["repo/multi_item"]) == {
+        "repo/multi_item": ["first:prepared", "second:prepared"]
+    }
+    assert evidence.read_text(encoding="utf-8") == "x"
+
+
 def test_skill_validator_discovery_supports_each_layout_with_explicit_ids(
     tmp_path: Path,
 ) -> None:

@@ -8,7 +8,7 @@ import re
 import yaml
 
 from officina.common.configured_schema import load_configuration
-from officina.common.blueprint_graph import load_module_blueprint
+from officina.common.blueprint_graph import prepare_module_blueprint_loader
 
 SKILL_INDEX_PATH = Path("docs/skills.md")
 
@@ -21,6 +21,24 @@ DOC_SYSTEM_DOC = Path("docs/contributors/documentation-system.md")
 
 @dataclass(frozen=True)
 class SkillInfo:
+    """Store skillinfo state.
+
+    Intent
+    ------
+    Keep name, domain, topics, visibility, activated_by together as a SkillInfo contract derived from an immutable record boundary.
+
+    Rationale
+    ---------
+    Callers use this type to carry name, domain, topics, visibility, activated_by across validation and graph assembly while retaining the semantics provided by an immutable record boundary.
+
+    Pseudocode
+    ----------
+    - set skillinfo_contract = declared fields and invariants
+
+    Wraps
+    -----
+    - none
+    """
     name: str
     domain: str
     topics: tuple[str, ...]
@@ -33,6 +51,24 @@ class SkillInfo:
 
 @dataclass(frozen=True)
 class CatalogVocabulary:
+    """Store catalogvocabulary state.
+
+    Intent
+    ------
+    Keep domains, topics, visibility, activated_by together as a CatalogVocabulary contract derived from an immutable record boundary.
+
+    Rationale
+    ---------
+    Callers use this type to carry domains, topics, visibility, activated_by across validation and graph assembly while retaining the semantics provided by an immutable record boundary.
+
+    Pseudocode
+    ----------
+    - set catalogvocabulary_contract = declared fields and invariants
+
+    Wraps
+    -----
+    - none
+    """
     domains: tuple[str, ...]
     topics: tuple[str, ...]
     visibility: tuple[str, ...]
@@ -41,12 +77,49 @@ class CatalogVocabulary:
 
 @dataclass(frozen=True)
 class CoverageBlock:
+    """Store coverageblock state.
+
+    Intent
+    ------
+    Keep doc_path, domain, heading together as a CoverageBlock contract derived from an immutable record boundary.
+
+    Rationale
+    ---------
+    Callers use this type to carry doc_path, domain, heading across validation and graph assembly while retaining the semantics provided by an immutable record boundary.
+
+    Pseudocode
+    ----------
+    - set coverageblock_contract = declared fields and invariants
+
+    Wraps
+    -----
+    - none
+    """
     doc_path: Path
     domain: str
     heading: str
 
     @property
     def marker_id(self) -> str:
+        """Transform declared fields into the marker id result used by the blueprint graph.
+
+        Intent
+        ------
+        Use declared fields to transform declared fields into the marker id result used by the blueprint graph.
+
+        Rationale
+        ---------
+        The operation combines declared fields through local state and an explicit return value, making the resulting marker id behavior explicit across 0 conditional branches.
+
+        Pseudocode
+        ----------
+        - set marker_id_inputs = declared fields
+        - return marker id value
+
+        Wraps
+        -----
+        - none
+        """
         return self.domain
 
 
@@ -102,6 +175,25 @@ _TRIGGER_PREFIXES = [
 
 
 def _frontmatter(skill_md: Path) -> dict[str, object]:
+    """Transform skill md into the frontmatter result used by the blueprint graph.
+
+    Intent
+    ------
+    Use skill md to transform skill md into the frontmatter result used by the blueprint graph.
+
+    Rationale
+    ---------
+    The operation combines skill md through read_text, match, safe_load and an explicit return value, making the resulting frontmatter behavior explicit across 1 conditional branches.
+
+    Pseudocode
+    ----------
+    - set frontmatter_inputs = skill md
+    - return frontmatter value
+
+    Wraps
+    -----
+    - none
+    """
     text = skill_md.read_text(encoding="utf-8")
     match = re.match(r"\A---\n(.*?)\n---\n", text, re.DOTALL)
     if not match:
@@ -111,6 +203,27 @@ def _frontmatter(skill_md: Path) -> dict[str, object]:
 
 
 def _summary(description: str) -> str:
+    """Transform description into the summary result used by the blueprint graph.
+
+    Intent
+    ------
+    Use description to transform description into the summary result used by the blueprint graph.
+
+    Rationale
+    ---------
+    The operation combines description through join, lower, rstrip and ordered iteration, an explicit return value, making the resulting summary behavior explicit across 2 conditional branches.
+
+    Pseudocode
+    ----------
+    - set summary_inputs = description
+    - for item in summary_inputs:
+      - set validated_item = item
+    - return summary value
+
+    Wraps
+    -----
+    - none
+    """
     flat = " ".join(description.split())
     sentence = re.split(r"(?<=[.!?])\s", flat, maxsplit=1)[0]
     lowered = sentence.lower()
@@ -126,7 +239,39 @@ def _summary(description: str) -> str:
 
 
 def load_catalog_vocabulary(repo_root: Path) -> CatalogVocabulary:
-    """Load the configured, centrally validated discovery vocabulary."""
+    """Load the configured, centrally validated discovery vocabulary.
+
+    Intent
+    ------
+    Use repo root to load the configured, centrally validated discovery vocabulary.
+
+    Rationale
+    ---------
+    The operation combines repo root through CatalogVocabulary, is_file, ValueError and bounded failure checks, an explicit return value, making the resulting load catalog vocabulary behavior explicit across 1 conditional branches.
+
+    Pseudocode
+    ----------
+    - set load_catalog_vocabulary_inputs = repo root
+    - if load_catalog_vocabulary_inputs violate blueprint invariants:
+      - raise blueprint graph error
+    - return load catalog vocabulary value
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .officina.common.configured_schema.load_configuration:
+      why:
+        computes: "Supplies dependency position 1, load configuration, while transforming repo root into the load catalog vocabulary value."
+
+    InstantiationsFromRepo
+    ----------------------
+    .CatalogVocabulary:
+      why:
+        constructs: "Supplies dependency position 1, CatalogVocabulary, while transforming repo root into the load catalog vocabulary value."
+    """
     config_path = repo_root / "references" / "blueprint" / "config.yaml"
     if not config_path.is_file():
         raise ValueError(f"{config_path}: blueprint catalog configuration is missing")
@@ -146,6 +291,27 @@ def _configured_value(
     allowed: tuple[str, ...],
     blueprint_path: Path,
 ) -> str:
+    """Transform value, field, allowed, blueprint path into the configured value result used by the blueprint graph.
+
+    Intent
+    ------
+    Use value, field, allowed, blueprint path to transform value, field, allowed, blueprint path into the configured value result used by the blueprint graph.
+
+    Rationale
+    ---------
+    The operation combines value, field, allowed, blueprint path through join, ValueError, isinstance and bounded failure checks, an explicit return value, making the resulting configured value behavior explicit across 1 conditional branches.
+
+    Pseudocode
+    ----------
+    - set configured_value_inputs = value, field, allowed, blueprint path
+    - if configured_value_inputs violate blueprint invariants:
+      - raise blueprint graph error
+    - return configured value value
+
+    Wraps
+    -----
+    - none
+    """
     if not isinstance(value, str) or value not in allowed:
         choices = ", ".join(allowed)
         raise ValueError(
@@ -162,6 +328,27 @@ def _configured_values(
     allowed: tuple[str, ...],
     blueprint_path: Path,
 ) -> tuple[str, ...]:
+    """Transform value, field, allowed, blueprint path into the configured values result used by the blueprint graph.
+
+    Intent
+    ------
+    Use value, field, allowed, blueprint path to transform value, field, allowed, blueprint path into the configured values result used by the blueprint graph.
+
+    Rationale
+    ---------
+    The operation combines value, field, allowed, blueprint path through tuple, any, join and bounded failure checks, an explicit return value, making the resulting configured values behavior explicit across 1 conditional branches.
+
+    Pseudocode
+    ----------
+    - set configured_values_inputs = value, field, allowed, blueprint path
+    - if configured_values_inputs violate blueprint invariants:
+      - raise blueprint graph error
+    - return configured values value
+
+    Wraps
+    -----
+    - none
+    """
     if (
         not isinstance(value, list)
         or not value
@@ -177,8 +364,62 @@ def _configured_values(
 
 
 def load_catalog(repo_root: Path) -> list[SkillInfo]:
-    """Return live skills from blueprints and SKILL.md frontmatter."""
+    """Return live skills from blueprints and SKILL.md frontmatter.
+
+    Intent
+    ------
+    Use repo root to return live skills from blueprints and skill.md frontmatter.
+
+    Rationale
+    ---------
+    The operation combines repo root through load_catalog_vocabulary, prepare_module_blueprint_loader, sorted and ordered iteration, bounded failure checks, an explicit return value, making the resulting load catalog behavior explicit across 4 conditional branches.
+
+    Pseudocode
+    ----------
+    - set load_catalog_inputs = repo root
+    - if load_catalog_inputs violate blueprint invariants:
+      - raise blueprint graph error
+    - for item in load_catalog_inputs:
+      - set validated_item = item
+    - return load catalog value
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._summary:
+      why:
+        computes: "Supplies dependency position 1,  summary, while transforming repo root into the load catalog value."
+    ._frontmatter:
+      why:
+        computes: "Supplies dependency position 2,  frontmatter, while transforming repo root into the load catalog value."
+
+    InstantiationsFromRepo
+    ----------------------
+    .officina.common.blueprint_graph.prepare_module_blueprint_loader:
+      why:
+        constructs: "Supplies dependency position 1, prepare module blueprint loader, while transforming repo root into the load catalog value."
+    ._configured_value:
+      why:
+        constructs: "Supplies dependency position 2,  configured value, while transforming repo root into the load catalog value."
+    .SkillInfo:
+      why:
+        constructs: "Supplies dependency position 3, SkillInfo, while transforming repo root into the load catalog value."
+    .load_catalog_vocabulary:
+      why:
+        constructs: "Supplies dependency position 4, load catalog vocabulary, while transforming repo root into the load catalog value."
+    ._configured_values:
+      why:
+        constructs: "Supplies dependency position 5,  configured values, while transforming repo root into the load catalog value."
+    """
     vocabulary = load_catalog_vocabulary(repo_root)
+    validate_blueprint = prepare_module_blueprint_loader(
+        repo_root,
+        schema_root=repo_root / "references" / "blueprint",
+        expected_schema_version=5,
+    )
     skills: list[SkillInfo] = []
     for blueprint_path in sorted((repo_root / "skills").glob("*/blueprint.yaml")):
         skill_dir = blueprint_path.parent
@@ -224,12 +465,7 @@ def load_catalog(repo_root: Path) -> list[SkillInfo]:
                 f"{blueprint_path}: persistent modifiers must include the "
                 "reasoning-control topic"
             )
-        load_module_blueprint(
-            repo_root,
-            skill_dir,
-            schema_root=repo_root / "references" / "blueprint",
-            expected_schema_version=5,
-        )
+        validate_blueprint(skill_dir)
         description = str(_frontmatter(skill_md).get("description", "")).strip()
         summary = SUMMARY_OVERRIDES.get(skill_dir.name) or _summary(description)
         skills.append(
@@ -252,6 +488,27 @@ def skills_by_domain(
     *,
     include_hidden: bool = False,
 ) -> dict[str, list[SkillInfo]]:
+    """Transform catalog, include hidden into the skills by domain result used by the blueprint graph.
+
+    Intent
+    ------
+    Use catalog, include hidden to transform catalog, include hidden into the skills by domain result used by the blueprint graph.
+
+    Rationale
+    ---------
+    The operation combines catalog, include hidden through append, setdefault and ordered iteration, an explicit return value, making the resulting skills by domain behavior explicit across 1 conditional branches.
+
+    Pseudocode
+    ----------
+    - set skills_by_domain_inputs = catalog, include hidden
+    - for item in skills_by_domain_inputs:
+      - set validated_item = item
+    - return skills by domain value
+
+    Wraps
+    -----
+    - none
+    """
     grouped: dict[str, list[SkillInfo]] = {}
     for skill in catalog:
         if skill.visibility == "hidden" and not include_hidden:
@@ -261,11 +518,59 @@ def skills_by_domain(
 
 
 def configured_domains(repo_root: Path, catalog: list[SkillInfo]) -> tuple[str, ...]:
-    """Return domains in their configured documentation order."""
+    """Return domains in their configured documentation order.
+
+    Intent
+    ------
+    Use repo root, catalog to return domains in their configured documentation order.
+
+    Rationale
+    ---------
+    The operation combines repo root, catalog through load_catalog_vocabulary and an explicit return value, making the resulting configured domains behavior explicit across 0 conditional branches.
+
+    Pseudocode
+    ----------
+    - set configured_domains_inputs = repo root, catalog
+    - return configured domains value
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .load_catalog_vocabulary:
+      why:
+        computes: "Supplies dependency position 1, load catalog vocabulary, while transforming repo root, catalog into the configured domains value."
+    """
     del catalog
     return load_catalog_vocabulary(repo_root).domains
 
 
 def configured_visibilities(repo_root: Path) -> tuple[str, ...]:
-    """Return visibility classes in their configured documentation order."""
+    """Return visibility classes in their configured documentation order.
+
+    Intent
+    ------
+    Use repo root to return visibility classes in their configured documentation order.
+
+    Rationale
+    ---------
+    The operation combines repo root through load_catalog_vocabulary and an explicit return value, making the resulting configured visibilities behavior explicit across 0 conditional branches.
+
+    Pseudocode
+    ----------
+    - set configured_visibilities_inputs = repo root
+    - return configured visibilities value
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .load_catalog_vocabulary:
+      why:
+        computes: "Supplies dependency position 1, load catalog vocabulary, while transforming repo root into the configured visibilities value."
+    """
     return load_catalog_vocabulary(repo_root).visibility

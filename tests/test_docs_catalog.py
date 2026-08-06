@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import yaml
 
+import officina.common.blueprint_graph as blueprint_graph
 from docs_tooling.catalog import load_catalog, skills_by_domain
-from docs_tooling.render import render_skill_index
+from docs_tooling.render import render_doc_with_updated_blocks, render_skill_index
 
 
 def _write_skill(
@@ -85,6 +87,41 @@ def test_load_catalog_reads_configured_discovery_metadata(tmp_path: Path) -> Non
     assert skill.persistent_modifier is False
 
 
+def test_load_catalog_reuses_module_schema_preparation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_skill(
+        tmp_path,
+        "proof-audit",
+        domain="research",
+        topics=["mathematical-reasoning"],
+        visibility="featured",
+    )
+    _write_skill(
+        tmp_path,
+        "session-guide",
+        domain="assistant-interaction",
+        topics=["session-management"],
+        visibility="listed",
+    )
+    loaded_schema_names: list[str] = []
+    real_load_schema_validator = blueprint_graph._load_schema_validator
+
+    def counted_load_schema_validator(schema_path: Path):
+        loaded_schema_names.append(schema_path.name)
+        return real_load_schema_validator(schema_path)
+
+    monkeypatch.setattr(
+        blueprint_graph,
+        "_load_schema_validator",
+        counted_load_schema_validator,
+    )
+
+    assert len(load_catalog(tmp_path)) == 2
+    assert loaded_schema_names == ["module.schema.json"]
+
+
 def test_domain_grouping_omits_hidden_skills_by_default(tmp_path: Path) -> None:
     _write_skill(
         tmp_path,
@@ -104,6 +141,40 @@ def test_domain_grouping_omits_hidden_skills_by_default(tmp_path: Path) -> None:
     grouped = skills_by_domain(load_catalog(tmp_path))
 
     assert [skill.name for skill in grouped["assistant-interaction"]] == ["visible"]
+
+
+def test_render_document_uses_supplied_catalog(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_skill(
+        tmp_path,
+        "proof-audit",
+        domain="research",
+        topics=["mathematical-reasoning"],
+        visibility="featured",
+    )
+    catalog = load_catalog(tmp_path)
+    doc_path = tmp_path / "docs" / "user" / "research.md"
+    doc_path.parent.mkdir(parents=True)
+    doc_path.write_text(
+        "<!-- BEGIN AUTO-GENERATED DOCS: research -->\n"
+        "stale\n"
+        "<!-- END AUTO-GENERATED DOCS: research -->\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "docs_tooling.render.load_catalog",
+        lambda _repo_root: pytest.fail("catalog was reconstructed"),
+    )
+
+    rendered = render_doc_with_updated_blocks(
+        tmp_path,
+        Path("docs/user/research.md"),
+        catalog=catalog,
+    )
+
+    assert "Generated from live blueprints" in rendered
 
 
 def test_skill_index_separates_featured_and_listed_and_shows_topics(
