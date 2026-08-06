@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import ast
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from validators.toml_io_boundary import validate  # noqa: E402
+from validators import toml_io_boundary as module_under_test  # noqa: E402
+from officina.common.python_source_cache import PythonSourceCache  # noqa: E402
 
 
 def _write_runtime_file(tmp_path: Path, content: str, rel: str = "skills/demo/_rtx/_run_tool.py") -> Path:
@@ -48,6 +51,20 @@ def test_direct_toml_path_literal_is_rejected(tmp_path: Path) -> None:
     errors = validate(tmp_path)
     assert len(errors) == 1
     assert "direct filename argument to toml_io.open" in errors[0]
+
+
+def test_injected_cache_preserves_findings_and_ast(tmp_path: Path) -> None:
+    path = _write_runtime_file(
+        tmp_path,
+        "from pathlib import Path\npath = Path('config.toml')\n",
+    )
+    expected = validate(tmp_path)
+    source_cache = PythonSourceCache(tmp_path)
+    _source, tree = source_cache.read_parse(path)
+    before = ast.dump(tree, include_attributes=True)
+
+    assert module_under_test._validate(tmp_path, source_cache) == expected
+    assert ast.dump(tree, include_attributes=True) == before
 
 
 def test_toml_filename_variable_is_rejected_at_assignment(tmp_path: Path) -> None:
