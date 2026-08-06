@@ -2592,6 +2592,122 @@ def test_nonlocal_assigned_result_remains_a_product(tmp_path: Path) -> None:
     assert "docstring.module-dependency-undocumented" not in entry_codes
 
 
+@pytest.mark.parametrize(
+    ("body", "uses_repo_consumer", "is_async"),
+    (
+        ("return produce() | fallback", False, False),
+        ("combined = produce() + suffix\nreturn None", False, False),
+        ("return produce().attr / 'segment'", False, False),
+        ("die(f'{produce()}')\nreturn None", True, False),
+        ('return f"{value:{produce()}}"', False, False),
+        ('die(f"{value:{produce()}}")\nreturn None', True, False),
+        (
+            "return [value for value in ([produce(item) for item in items] + fallback)]",
+            False,
+            False,
+        ),
+        (
+            "return [char for char in f'{ {item: produce(item) for item in items} }']",
+            False,
+            False,
+        ),
+        ("combined = initial\ncombined |= produce()\nreturn None", False, False),
+        (
+            "combined = initial\ncombined |= await produce()\nreturn None",
+            False,
+            True,
+        ),
+    ),
+)
+def test_generic_expression_carriers_preserve_repo_products(
+    tmp_path: Path,
+    body: str,
+    uses_repo_consumer: bool,
+    is_async: bool,
+) -> None:
+    """Binary, formatted, and augmented carriers retain repo product results."""
+    producer = "officina.common.repository_paths.repository_relative_path"
+    consumer = "officina.common.repository_paths.normalize_repository_root"
+    rendered = _function_source(
+        "entry",
+        _dependency_doc(
+            "Carry one repository result through a generic expression product.",
+            calls=(consumer,) if uses_repo_consumer else (),
+            products=(producer,),
+        ),
+        body,
+    )
+    if is_async:
+        rendered = rendered.replace("def entry():", "async def entry():", 1)
+    source = (
+        "from officina.common.repository_paths import repository_relative_path as produce\n"
+        "from officina.common.repository_paths import normalize_repository_root as die\n\n"
+        f"{rendered}"
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.module-dependency-not-observed" not in entry_codes
+    assert "docstring.module-dependency-undocumented" not in entry_codes
+
+
+@pytest.mark.parametrize(
+    ("prefix", "body"),
+    (
+        ("", "if produce() + suffix:\n    pass\nreturn None"),
+        ("", "if f'{produce()}':\n    pass\nreturn None"),
+        ("", "print(produce() + suffix)\nreturn None"),
+        ("", "print(f'{produce()}')\nreturn None"),
+        ("import logging\n", "logging.info(f'{produce()}')\nreturn None"),
+        ("import json\n", "json.dumps(produce() + suffix)\nreturn None"),
+        ("", "external.consume(f'{produce()}')\nreturn None"),
+        ("", 'if f"{value:{produce()}}":\n    pass\nreturn None'),
+        ("", 'print(f"{value:{produce()}}")\nreturn None'),
+        ("import logging\n", 'logging.info(f"{value:{produce()}}")\nreturn None'),
+        ("import json\n", 'json.dumps(f"{value:{produce()}}")\nreturn None'),
+        ("", 'external.consume(f"{value:{produce()}}")\nreturn None'),
+        (
+            "",
+            "return [key for key in ({item: produce(item) for item in items} | fallback)]",
+        ),
+        (
+            "",
+            "if f'{ {item: produce(item) for item in items} }':\n    pass\nreturn None",
+        ),
+        (
+            "",
+            "print(f'{ {item: produce(item) for item in items} }')\nreturn None",
+        ),
+    ),
+)
+def test_generic_expression_carriers_keep_control_and_external_sinks_operational(
+    tmp_path: Path,
+    prefix: str,
+    body: str,
+) -> None:
+    """Generic carriers do not turn control or unrecognized consumers into products."""
+    producer = "officina.common.repository_paths.repository_relative_path"
+    source = (
+        prefix
+        + "from officina.common.repository_paths import repository_relative_path as produce\n\n"
+        + _function_source(
+            "entry",
+            _dependency_doc(
+                "Use a generic repository expression only as an operation.",
+                calls=(producer,),
+            ),
+            body,
+        )
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.module-dependency-not-observed" not in entry_codes
+    assert "docstring.module-dependency-undocumented" not in entry_codes
+
+
 def test_runtime_loader_rejects_unsupported_compact_structural_kind(tmp_path: Path) -> None:
     """Runtime parsing fails closed on an unknown compact structural kind."""
     policy_path = tmp_path / "docstring.standard.yaml"

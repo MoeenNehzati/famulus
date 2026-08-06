@@ -1845,11 +1845,6 @@ def _collect_callable_import_aliases(
           why:
             constructs: "Builds statement binding sets used after class-body evaluation."
 
-        CallsFromRepo
-        -------------
-        ._scope_nonimport_bound_names:
-          why:
-            computes: "Builds lexical shadow sets for nested compact-class classification."
         """
         execution_aliases = dict(inherited)
         execution_shadows = set(inherited_shadows)
@@ -1926,9 +1921,11 @@ def _collect_defined_symbols(tree: ast.AST) -> set[str]:
       why:
         computes: "Streams module-scope bindings without nested-scope leakage."
 
+    InstantiationsFromRepo
+    ----------------------
     ._bound_target_names:
       why:
-        computes: "Computes assignment-target names used to detect shadowed exception markers."
+        constructs: "Builds target-name intersections merged into the defined-symbol set."
     """
     symbols: set[str] = set()
     for node in _iter_lexical_scope_nodes(tree.body):
@@ -2402,17 +2399,21 @@ def _call_result_is_product_position(
 
     Intent
     ------
-    Expose the call result is product position step in AST-backed behavioral docstring validation so readers and tools can locate its exact responsibility.
+    Trace one repo-call result through supported value carriers to a semantic product.
 
     Rationale
     ---------
-    This boundary keeps call result is product position behavior separate inside AST-backed behavioral docstring validation; documenting it makes dependency checks and graph extraction reviewable.
+    Projections, binary expressions, formatted strings, comprehensions, and containers
+    preserve a value channel but become products only at a recognized anchor or consumer.
 
     Pseudocode
     ----------
-    - set call_result_is_product_position_inputs = received_context
-    - set call_result_is_product_position_effects = local_decisions
-    - return call_result_is_product_position_effects
+    - set value_node = call or awaited call
+    - while value_node is in a supported value-carrying expression:
+      - set value_node = containing expression
+    - if value_node reaches return, raise, yield, assignment, augmented assignment, collector, or repo consumer:
+      - return true
+    - return false
 
     Wraps
     -----
@@ -2456,6 +2457,29 @@ def _call_result_is_product_position(
             parent = parents.get(parent)
             continue
         if isinstance(parent, ast.Subscript) and parent.value is value_node:
+            value_node = parent
+            parent = parents.get(parent)
+            continue
+        if isinstance(parent, ast.BinOp) and value_node in (parent.left, parent.right):
+            if promoted_comprehension is value_node:
+                promoted_comprehension = parent
+            value_node = parent
+            parent = parents.get(parent)
+            continue
+        if isinstance(parent, ast.FormattedValue) and value_node in (
+            parent.value,
+            parent.format_spec,
+        ):
+            if promoted_comprehension is value_node:
+                promoted_comprehension = parent
+                promoted_iteration_carries_result = True
+            value_node = parent
+            parent = parents.get(parent)
+            continue
+        if isinstance(parent, ast.JoinedStr) and value_node in parent.values:
+            if promoted_comprehension is value_node:
+                promoted_comprehension = parent
+                promoted_iteration_carries_result = True
             value_node = parent
             parent = parents.get(parent)
             continue
@@ -2566,6 +2590,10 @@ def _call_result_is_product_position(
     ):
         return True
     if isinstance(parent, ast.Yield) and (
+        parent.value is value_node or _is_wrapped_call_node(parent.value, call)
+    ):
+        return True
+    if isinstance(parent, ast.AugAssign) and (
         parent.value is value_node or _is_wrapped_call_node(parent.value, call)
     ):
         return True
