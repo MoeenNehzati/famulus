@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import pytest
+import shutil
 import sys
+import textwrap
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from officina.common.docstring.docstring_parser import check_graph_docstring, parse_graph_block  # noqa: E402
 from officina.common.docstring.docstring_schema import load_docstring_schema  # noqa: E402
+from officina.common.docstring import docstring_policy  # noqa: E402
 from officina.validators.docstring_validator import validate_module_docstrings  # noqa: E402
 
 
@@ -116,6 +119,82 @@ def _install_custom_config(tmp_path: Path, monkeypatch, text: str) -> None:
     monkeypatch.setattr(
         "officina.common.docstring.docstring_policy.resolve_docstring_config_path",
         lambda _path=None: config_path,
+    )
+
+
+def _validate_source(
+    tmp_path: Path,
+    source: str,
+    *,
+    check_group: str = "all",
+):
+    """Validate one temporary production-like module through the public API."""
+    module_path = tmp_path / "sample.py"
+    module_path.write_text(source, encoding="utf-8")
+    return validate_module_docstrings(
+        module_path,
+        require_module_docstring=False,
+        check_group=check_group,
+    )
+
+
+def _dependency_doc(
+    summary: str,
+    *,
+    calls: tuple[str, ...] = (),
+    products: tuple[str, ...] = (),
+) -> str:
+    """Build a complete callable docstring fixture with literal dependency edges."""
+    sections = [
+        summary,
+        "",
+        "Intent",
+        "------",
+        "Exercise the dependency classification contract under a controlled source fixture.",
+        "",
+        "Rationale",
+        "---------",
+        "The fixture keeps lexical resolution and product-position expectations independently observable.",
+        "",
+        "Pseudocode",
+        "----------",
+        "- return dependency classification result",
+        "",
+        "Wraps",
+        "-----",
+        "- none",
+    ]
+    if calls:
+        sections.extend(("", "CallsFromRepo", "-------------"))
+        for name in calls:
+            sections.extend(
+                (
+                    f"{name}:",
+                    "  why:",
+                    "    computes: \"Invokes the repo dependency as an operation in the classification fixture.\"",
+                )
+            )
+    if products:
+        sections.extend(("", "InstantiationsFromRepo", "----------------------"))
+        for name in products:
+            sections.extend(
+                (
+                    f"{name}:",
+                    "  why:",
+                    "    constructs: \"Carries the repo dependency result into the recognized consumer fixture.\"",
+                )
+            )
+    return "\n".join(sections)
+
+
+def _function_source(name: str, doc: str, body: str, *, indent: str = "") -> str:
+    """Render one nested or top-level function fixture."""
+    rendered_doc = textwrap.indent(doc, f"{indent}    ")
+    rendered_body = textwrap.indent(textwrap.dedent(body).strip(), f"{indent}    ")
+    return (
+        f'{indent}def {name}():\n'
+        f'{indent}    """\n{rendered_doc}\n{indent}    """\n'
+        f"{rendered_body}\n"
     )
 
 
@@ -1582,3 +1661,540 @@ profiles:
 
     with pytest.raises(ValueError, match="applies_to"):
         load_docstring_schema()
+
+
+@pytest.mark.parametrize(
+    "source",
+    (
+        '''from dataclasses import dataclass\n\n@dataclass\nclass Candidate:\n    """Carry immutable candidate fields."""\n    value: int\n    label: str = "ready"\n''',
+        '''import dataclasses as dc\n\n@dc.dataclass\nclass Candidate:\n    """Carry aliased dataclass fields."""\n    value: int = dc.field(default=1)\n''',
+        '''from dataclasses import dataclass as record, field as slot\n\n@record\nclass Candidate:\n    """Carry imported decorator fields."""\n    value: int = slot(default=1)\n''',
+        '''from dataclasses import dataclass\n\n@dataclass(frozen=True)\nclass Candidate:\n    """Carry configured dataclass fields."""\n    value: int\n''',
+        '''import dataclasses as dc\n\n@dc.dataclass(frozen=True)\nclass Candidate:\n    """Carry aliased configured fields."""\n    value: int\n''',
+        '''from dataclasses import dataclass as record\n\n@record(frozen=True)\nclass Candidate:\n    """Carry imported configured fields."""\n    value: int\n''',
+        '''from dataclasses import dataclass\n\n@dataclass(frozen=True)\nclass Candidate:\n    """Carry configured fields with optional explanatory sections.\n\n    Intent\n    ------\n    Preserve useful detail when a compact structural class already documents it.\n\n    Rationale\n    ---------\n    Compact treatment waives explanatory sections but must not reject them when present.\n    """\n    value: int\n''',
+    ),
+)
+def test_compact_dataclass_accepts_only_resolved_stdlib_passive_fields(
+    tmp_path: Path,
+    source: str,
+) -> None:
+    """A sole resolved stdlib dataclass with passive fields needs only a summary."""
+    issues = _validate_source(tmp_path, source, check_group="syntax")
+
+    assert [issue for issue in issues if issue.node_id == "Candidate"] == []
+
+
+@pytest.mark.parametrize(
+    "source",
+    (
+        '''def dataclass(cls):\n    return cls\n\n@dataclass\nclass Candidate:\n    """Reject a spoofed decorator marker."""\n    value: int\n''',
+        '''from dataclasses import dataclass\n\ndef tagged(cls):\n    return cls\n\n@tagged\n@dataclass\nclass Candidate:\n    """Reject an additional decorator marker."""\n    value: int\n''',
+        '''from dataclasses import dataclass\n\n@dataclass\nclass Candidate:\n    """Reject methods in compact dataclasses."""\n    value: int\n    def method(self):\n        return self.value\n''',
+        '''from dataclasses import dataclass\n\n@dataclass\nclass Candidate:\n    """Reject nested compact declarations."""\n    class Nested:\n        pass\n''',
+        '''from dataclasses import dataclass\n\n@dataclass\nclass Candidate:\n    """Reject active field default calls."""\n    value: int = build_value()\n''',
+        '''from dataclasses import dataclass\n\n@dataclass\nclass Candidate:\n    """Reject executable class assignments."""\n    value = 1\n''',
+        '''class Candidate:\n    """Keep ordinary empty classes on the full profile."""\n    pass\n''',
+    ),
+)
+def test_compact_dataclass_disqualifiers_keep_the_full_profile(
+    tmp_path: Path,
+    source: str,
+) -> None:
+    """Spoofed, decorated, active, or non-field classes retain full sections."""
+    issues = _validate_source(tmp_path, source, check_group="syntax")
+
+    assert any(
+        issue.node_id == "Candidate" and issue.code == "docstring.section-missing"
+        for issue in issues
+    )
+
+
+@pytest.mark.parametrize(
+    "source",
+    (
+        '''@dataclasses.dataclass\nclass Candidate:\n    """Reject an unimported qualified decorator."""\n    value: int\n''',
+        '''dataclasses = object()\n\n@dataclasses.dataclass\nclass Candidate:\n    """Reject a locally shadowed decorator root."""\n    value: int\n''',
+        '''from dataclasses import dataclass\n\n@dataclass\nclass Candidate:\n    """Reject an unimported qualified field root."""\n    value: int = dataclasses.field(default=1)\n''',
+        '''import dataclasses\nfrom dataclasses import dataclass\ndataclasses = object()\n\n@dataclass\nclass Candidate:\n    """Reject a locally shadowed field root."""\n    value: int = dataclasses.field(default=1)\n''',
+    ),
+)
+def test_compact_dataclass_requires_visible_exact_stdlib_resolution(
+    tmp_path: Path,
+    source: str,
+) -> None:
+    """Qualified dataclass and field names are never trusted without visible imports."""
+    issues = _validate_source(tmp_path, source, check_group="syntax")
+
+    assert any(
+        issue.node_id == "Candidate" and issue.code == "docstring.section-missing"
+        for issue in issues
+    )
+
+
+def test_compact_dataclass_field_resolution_tracks_class_statement_order(
+    tmp_path: Path,
+) -> None:
+    """A class target shadows an imported field root only after its RHS is evaluated."""
+    source = '''import dataclasses\n\n@dataclasses.dataclass\nclass First:\n    """Allow the imported root while evaluating its binding RHS."""\n    dataclasses: object = dataclasses.field(default=None)\n\n@dataclasses.dataclass\nclass Candidate:\n    """Reject a field root shadowed by an earlier class binding."""\n    dataclasses: object = None\n    value: int = dataclasses.field(default=1)\n'''
+
+    issues = _validate_source(tmp_path, source, check_group="syntax")
+
+    assert [issue for issue in issues if issue.node_id == "First"] == []
+    assert any(
+        issue.node_id == "Candidate" and issue.code == "docstring.section-missing"
+        for issue in issues
+    )
+
+
+@pytest.mark.parametrize("body", ("pass", "...", ""))
+def test_compact_builtin_exception_accepts_only_passive_markers(
+    tmp_path: Path,
+    body: str,
+) -> None:
+    """An undecorated direct builtin exception marker needs only a summary."""
+    suffix = f"    {body}\n" if body else ""
+    source = (
+        'class Candidate(ValueError):\n'
+        '    """Report invalid candidate input."""\n'
+        f"{suffix}"
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="syntax")
+
+    assert [issue for issue in issues if issue.node_id == "Candidate"] == []
+
+
+@pytest.mark.parametrize(
+    "source",
+    (
+        '''class ProjectError(Exception):\n    """Define the complete project exception base.\n\n    Intent\n    ------\n    Provide a project error marker.\n\n    Rationale\n    ---------\n    The complete declaration keeps the derived-class disqualifier fixture valid.\n\n    Pseudocode\n    ----------\n    - return project error marker\n\n    Wraps\n    -----\n    - none\n    """\n\nclass Candidate(ProjectError):\n    """Reject project-derived exceptions."""\n''',
+        '''class Candidate(ValueError, TypeError):\n    """Reject multiple direct exception bases."""\n''',
+        '''def tagged(cls):\n    return cls\n\n@tagged\nclass Candidate(ValueError):\n    """Reject decorated exception markers."""\n''',
+        '''class Candidate(ValueError):\n    """Reject methods on exception markers."""\n    def explain(self):\n        return "bad"\n''',
+        '''ValueError = RuntimeError\n\nclass Candidate(ValueError):\n    """Reject shadowed builtin exception names."""\n''',
+        '''from custom import *\n\nclass Candidate(ValueError):\n    """Reject builtin names made ambiguous by a wildcard import."""\n''',
+    ),
+)
+def test_compact_builtin_exception_disqualifiers_keep_the_full_profile(
+    tmp_path: Path,
+    source: str,
+) -> None:
+    """Only exact passive direct builtin exception markers are compact."""
+    issues = _validate_source(tmp_path, source, check_group="syntax")
+
+    assert any(
+        issue.node_id == "Candidate" and issue.code == "docstring.section-missing"
+        for issue in issues
+    )
+
+
+@pytest.mark.parametrize(
+    "outer_header",
+    (
+        "def outer(ValueError):",
+        "def outer():\n    ValueError = RuntimeError",
+        "def outer():\n    del ValueError",
+    ),
+)
+def test_compact_builtin_exception_rejects_enclosing_nonimport_shadows(
+    tmp_path: Path,
+    outer_header: str,
+) -> None:
+    """Parameters and assignments in enclosing functions shadow builtin exceptions."""
+    source = (
+        f"{outer_header}\n"
+        "    class Candidate(ValueError):\n"
+        '        """Reject a shadowed builtin exception marker."""\n'
+        "    return Candidate\n"
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="syntax")
+
+    assert any(
+        issue.node_id == "outer.Candidate"
+        and issue.code == "docstring.section-missing"
+        for issue in issues
+    )
+
+
+@pytest.mark.parametrize(
+    "source,node_id",
+    (
+        (
+            '''import dataclasses\n\nclass Outer:\n    dataclasses = object()\n\n    @dataclasses.dataclass\n    class Candidate:\n        """Reject a decorator root shadowed in the executing class namespace."""\n        value: int\n''',
+            "Outer.Candidate",
+        ),
+        (
+            '''class Outer:\n    ValueError = RuntimeError\n\n    class Candidate(ValueError):\n        """Reject a builtin base shadowed in the executing class namespace."""\n''',
+            "Outer.Candidate",
+        ),
+        (
+            '''class Outer:\n    match object():\n        case ValueError:\n            pass\n\n    class Candidate(ValueError):\n        """Reject a pattern-bound base in the executing class namespace."""\n''',
+            "Outer.Candidate",
+        ),
+    ),
+)
+def test_compact_class_headers_respect_prior_enclosing_class_bindings(
+    tmp_path: Path,
+    source: str,
+    node_id: str,
+) -> None:
+    """Nested class headers resolve after earlier containing-class bindings execute."""
+    issues = _validate_source(tmp_path, source, check_group="syntax")
+
+    assert any(
+        issue.node_id == node_id and issue.code == "docstring.section-missing"
+        for issue in issues
+    )
+
+
+def test_callable_local_import_is_visible_to_dependency_validation(tmp_path: Path) -> None:
+    """A function-local repo import resolves its documented operation edge."""
+    dependency = "officina.common.repository_paths.repository_relative_path"
+    source = _function_source(
+        "entry",
+        _dependency_doc("Resolve one repository-relative input.", calls=(dependency,)),
+        """
+        from officina.common.repository_paths import repository_relative_path as resolve
+        resolve("sample")
+        return None
+        """,
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.module-dependency-not-observed" not in entry_codes
+    assert "docstring.module-dependency-unresolved" not in entry_codes
+    assert "docstring.module-dependency-undocumented" not in entry_codes
+
+
+def test_nested_callable_inherits_enclosing_import_without_parent_absorption(
+    tmp_path: Path,
+) -> None:
+    """Nested closures see enclosing imports while parents ignore nested calls."""
+    dependency = "officina.common.repository_paths.repository_relative_path"
+    outer_doc = _dependency_doc("Create a nested repository resolver.")
+    inner_doc = _dependency_doc("Resolve input inside a nested closure.", calls=(dependency,))
+    source = (
+        'def outer():\n'
+        '    """\n'
+        f'{textwrap.indent(outer_doc, "    ")}\n'
+        '    """\n'
+        '    from officina.common.repository_paths import repository_relative_path as resolve\n'
+        '    def inner():\n'
+        '        """\n'
+        f'{textwrap.indent(inner_doc, "        ")}\n'
+        '        """\n'
+        '        resolve("sample")\n'
+        '        return None\n'
+        '    return inner\n'
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    outer_codes = {issue.code for issue in issues if issue.node_id == "outer"}
+    inner_codes = {issue.code for issue in issues if issue.node_id == "outer.inner"}
+
+    assert "docstring.module-dependency-undocumented" not in outer_codes
+    assert "docstring.module-dependency-not-observed" not in inner_codes
+    assert "docstring.module-dependency-unresolved" not in inner_codes
+
+
+@pytest.mark.parametrize(
+    "body",
+    (
+        "from pathlib import Path as target\ntarget('sample')\nreturn None",
+        "target = lambda value: value\ntarget('sample')\nreturn None",
+    ),
+)
+def test_current_scope_bindings_shadow_inherited_repo_aliases(
+    tmp_path: Path,
+    body: str,
+) -> None:
+    """A local import or assignment prevents inherited repo-alias classification."""
+    source = (
+        "from officina.common.repository_paths import repository_relative_path as target\n\n"
+        + _function_source(
+            "entry",
+            _dependency_doc("Use a locally shadowed helper binding."),
+            body,
+        )
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+
+    assert not any(
+        issue.node_id == "entry"
+        and issue.code == "docstring.module-dependency-undocumented"
+        for issue in issues
+    )
+
+
+def test_sibling_and_class_body_imports_do_not_leak_into_callable_scope(
+    tmp_path: Path,
+) -> None:
+    """Non-lexical imports never make an unrelated callable look repo-dependent."""
+    sibling = _function_source(
+        "first",
+        _dependency_doc("Define a sibling-local repository import."),
+        """
+        from officina.common.repository_paths import repository_relative_path as leaked
+        return None
+        """,
+    )
+    second = _function_source(
+        "second",
+        _dependency_doc("Call an unresolved sibling name locally."),
+        """
+        leaked("sample")
+        return None
+        """,
+    )
+    method_doc = textwrap.indent(
+        _dependency_doc("Call an unresolved class-body name locally."),
+        "        ",
+    )
+    source = (
+        sibling
+        + "\n"
+        + second
+        + "\nclass Holder:\n"
+        + '    """Hold a complete fixture class.\n\n'
+          '    Intent\n    ------\n    Group one non-lexical method fixture.\n\n'
+          '    Rationale\n    ---------\n    The class exists to test that class-body imports do not leak into method scope.\n\n'
+          '    Pseudocode\n    ----------\n    - return holder interface\n\n'
+          '    Wraps\n    -----\n    - none\n    """\n'
+        + "    from officina.common.repository_paths import repository_relative_path as leaked\n"
+        + "    def method(self):\n"
+        + "        \"\"\"\n"
+        + method_doc
+        + "\n        \"\"\"\n"
+        + "        leaked('sample')\n"
+        + "        return None\n"
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+
+    assert not any(
+        issue.node_id in {"second", "Holder.method"}
+        and issue.code == "docstring.module-dependency-undocumented"
+        for issue in issues
+    )
+
+
+@pytest.mark.parametrize(
+    "expression",
+    (
+        "consume(produce())",
+        "consume(value=produce())",
+    ),
+)
+def test_repo_consumer_arguments_classify_repo_results_as_products(
+    tmp_path: Path,
+    expression: str,
+) -> None:
+    """Repo results passed into recognized repo calls are product dependencies."""
+    producer = "officina.common.repository_paths.repository_relative_path"
+    consumer = "officina.common.repository_paths.normalize_repository_root"
+    source = (
+        "from officina.common.repository_paths import repository_relative_path as produce\n"
+        "from officina.common.repository_paths import normalize_repository_root as consume\n\n"
+        + _function_source(
+            "entry",
+            _dependency_doc(
+                "Feed a repository result into a repository consumer.",
+                calls=(consumer,),
+                products=(producer,),
+            ),
+            f"{expression}\nreturn None",
+        )
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.module-dependency-not-observed" not in entry_codes
+    assert "docstring.module-dependency-undocumented" not in entry_codes
+
+
+@pytest.mark.parametrize(
+    ("prefix", "expression"),
+    (
+        ("", "print(produce())"),
+        ("import json\n", "json.dumps(produce())"),
+        ("", "external.consume(produce())"),
+    ),
+)
+def test_nonrepo_consumers_do_not_classify_repo_results_as_products(
+    tmp_path: Path,
+    prefix: str,
+    expression: str,
+) -> None:
+    """Builtin, stdlib, and unknown sinks leave nested repo results as calls."""
+    producer = "officina.common.repository_paths.repository_relative_path"
+    source = (
+        prefix
+        + "from officina.common.repository_paths import repository_relative_path as produce\n\n"
+        + _function_source(
+            "entry",
+            _dependency_doc("Pass a repository result to a non-repo sink.", calls=(producer,)),
+            f"{expression}\nreturn None",
+        )
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.module-dependency-not-observed" not in entry_codes
+    assert "docstring.module-dependency-undocumented" not in entry_codes
+
+
+def test_unknown_uppercase_keyword_consumer_does_not_create_product(
+    tmp_path: Path,
+) -> None:
+    """An unresolved constructor-like sink cannot promote a nested repo result."""
+    producer = "officina.common.repository_paths.repository_relative_path"
+    source = (
+        "from officina.common.repository_paths import repository_relative_path as produce\n\n"
+        + _function_source(
+            "entry",
+            _dependency_doc(
+                "Return an unknown wrapper around a repository operation.",
+                calls=(producer,),
+            ),
+            "return External(value=produce())",
+        )
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.module-dependency-not-observed" not in entry_codes
+    assert "docstring.module-dependency-undocumented" not in entry_codes
+
+
+def test_runtime_loader_rejects_unsupported_compact_structural_kind(tmp_path: Path) -> None:
+    """Runtime parsing fails closed on an unknown compact structural kind."""
+    policy_path = tmp_path / "docstring.standard.yaml"
+    policy_path.write_text(
+        """\
+docstring_format_version: 31
+name: docstring_format
+callable:
+  compact_structural_kinds:
+    - protocol
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="compact_structural_kinds"):
+        load_docstring_schema(policy_path)
+
+
+def test_missing_no_argument_policy_fallback_exactly_matches_canonical_policy(
+    monkeypatch,
+) -> None:
+    """The built-in compatibility policy has exact canonical runtime parity."""
+    canonical = Path(__file__).resolve().parents[1] / "references/standards/docstring.standard.yaml"
+    canonical_policy = load_docstring_schema(canonical)
+    monkeypatch.setattr(
+        docstring_policy,
+        "resolve_docstring_schema_path",
+        lambda path=None: Path(path) if path is not None else None,
+    )
+
+    assert load_docstring_schema() == canonical_policy
+
+
+def test_explicit_missing_policy_fails_closed(tmp_path: Path) -> None:
+    """An explicitly requested policy path cannot silently become built-in fallback."""
+    with pytest.raises(FileNotFoundError, match="docstring policy"):
+        load_docstring_schema(tmp_path / "missing.yaml")
+
+
+@pytest.mark.parametrize(
+    "policy_text",
+    (
+        "docstring_format_version: 31\nname: docstring_format\ncallable: []\n",
+        "standards: [\n",
+        "- not\n- a\n- mapping\n",
+    ),
+)
+def test_existing_canonical_policy_fails_closed_before_fallback(
+    tmp_path: Path,
+    policy_text: str,
+) -> None:
+    """Schema-invalid, malformed, and non-mapping canonical files never use fallback."""
+    policy_path = tmp_path / "docstring.standard.yaml"
+    policy_path.write_text(policy_text, encoding="utf-8")
+    source_schema = (
+        Path(__file__).resolve().parents[1]
+        / "references/standards/docstring_format.schema.json"
+    )
+    shutil.copy2(source_schema, tmp_path / "docstring_format.schema.json")
+
+    with pytest.raises(ValueError, match="docstring policy"):
+        load_docstring_schema(policy_path)
+
+
+@pytest.mark.parametrize("explicit", (False, True))
+def test_schema_invalid_candidate_policy_fails_closed(
+    tmp_path: Path,
+    monkeypatch,
+    explicit: bool,
+) -> None:
+    """Discovered and explicit candidate standards obey the companion schema."""
+    module_path = tmp_path / "src/officina/common/docstring/docstring_policy.py"
+    module_path.parent.mkdir(parents=True)
+    module_path.write_text("", encoding="utf-8")
+    policy_path = tmp_path / "references/docstring.standard.candidate.yaml"
+    policy_path.parent.mkdir(parents=True)
+    policy_path.write_text(
+        "docstring_format_version: 31\nname: docstring_format\ncallable: []\n",
+        encoding="utf-8",
+    )
+    source_schema = (
+        Path(__file__).resolve().parents[1]
+        / "references/standards/docstring_format.schema.json"
+    )
+    shutil.copy2(source_schema, policy_path.with_name("docstring_format.schema.json"))
+    monkeypatch.setattr(docstring_policy, "__file__", str(module_path))
+
+    with pytest.raises(ValueError, match="docstring policy"):
+        load_docstring_schema(policy_path if explicit else None)
+
+
+def test_explicit_legacy_policy_remains_loadable(tmp_path: Path) -> None:
+    """A caller-supplied legacy policy path remains a supported compatibility input."""
+    legacy = tmp_path / "docstring_format.yaml"
+    legacy.write_text(
+        """\
+docstring_format_version: 27
+name: docstring_format
+callable:
+  required_sections:
+    - Intent
+""",
+        encoding="utf-8",
+    )
+
+    loaded = load_docstring_schema(legacy)
+
+    assert loaded.callable.required_sections == ("Intent",)
+
+
+def test_implicit_resolution_does_not_autodiscover_legacy_policy(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """No-argument resolution ignores a legacy file when canonical files are absent."""
+    module_path = tmp_path / "src/officina/common/docstring/docstring_policy.py"
+    module_path.parent.mkdir(parents=True)
+    module_path.write_text("", encoding="utf-8")
+    legacy = tmp_path / "references/standards/docstring_format.yaml"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("name: legacy\n", encoding="utf-8")
+    monkeypatch.setattr(docstring_policy, "__file__", str(module_path))
+
+    assert docstring_policy.resolve_docstring_schema_path() is None

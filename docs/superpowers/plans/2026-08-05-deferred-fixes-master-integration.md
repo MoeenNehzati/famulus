@@ -145,10 +145,11 @@ do not commit or discard it until the corrected contract is available.
      repo-local call are products, but builtin/stdlib/unknown consumers do not
      create that classification;
    - the canonical standard is schema-validated, unsupported compact kinds fail
-     both schema validation and runtime-loader parsing, missing-file fallback
-     equals canonical policy, tracked-legacy absence works, an explicitly
-     supplied external legacy fixture remains loadable, and no-
-     argument resolution does not autodiscover a legacy file.
+     both schema validation and runtime-loader parsing, the no-argument
+     unresolved-default fallback equals canonical policy, an explicitly requested
+     missing path fails closed, tracked-legacy absence works, an explicitly
+     supplied external legacy fixture remains loadable, and no-argument
+     resolution does not autodiscover a legacy file.
 3. Through `update-standards`, add one concise callable setting for exactly two
    compact structural kinds: classes whose sole decorator resolves to stdlib
    `dataclasses.dataclass` (including imported aliases and qualified use) and
@@ -164,16 +165,19 @@ do not commit or discard it until the corrected contract is available.
    discovered pinned closure/generated view.
 4. Implement lexical-scope import/dependency analysis: inherit module and valid
    enclosing-function imports; include current-function imports; prevent sibling
-   and class-body leakage; prune nested callable/class bodies from parent walks.
+   and method/class-body leakage; prune nested callable/class bodies from parent
+   walks; collect structural-pattern and deletion bindings; and process class-
+   execution bindings in source order for later field expressions and nested
+   declaration headers without leaking them into method or nested-class bodies.
 5. Treat repo-call results passed to recognized repo-local calls as products,
    preserving existing return/raise/assignment/container/collector cases and
    excluding builtin, standard-library, logging, and unknown third-party sinks.
 6. Delete the stale tracked v27 `docstring_format.yaml` and remove legacy-file
    no-argument autodiscovery. Preserve legacy loading only when callers supply an
    explicit path, schema-validate the canonical YAML, update `docs/docstring.md`,
-   retain and align the built-in compatibility fallback with v31, and make exact
-   canonical parity a required validator/test invariant so the mirror cannot
-   drift independently.
+   retain and align the built-in no-argument compatibility fallback with v31, and
+   make exact canonical parity a required validator/test invariant so the mirror
+   cannot drift independently.
 7. Run focused RED/GREEN tests, standards validation, direct canonical checks,
    staged `validators/runner.py`, `git diff --cached --check`, and affected
    docstring suites. Obtain independent standard, validator, and test-quality

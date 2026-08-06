@@ -111,8 +111,8 @@ behaviorful classes and every function/method retain the full profile. Repair
 lexical dependency and product analysis in enforcement, remove the stale tracked
 v27 policy duplicate and its no-argument autodiscovery while preserving explicit
 legacy-path loading, and enforce exact canonical parity for the built-in
-compatibility fallback. Do not add a broad private-helper exemption or a parallel
-profile subsystem.
+no-argument compatibility fallback. Do not add a broad private-helper exemption
+or a parallel profile subsystem.
 
 ## Documentation and assurance
 

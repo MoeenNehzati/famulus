@@ -8,8 +8,37 @@ This pipeline keeps docstring parsing/validation explicit and machine-checkable.
 - `src/officina/common/docstring/config.yaml`: repo-local config (`allowed_abs`, dependency section names, syntax toggles, and ordered path profiles).
 - Keep behavior policy in YAML; keep punctuation/shape syntax in `.lark`.
 - Users should not edit Python to tune docstring policy; repo-specific knobs belong in `config.yaml`.
+- Canonical and candidate policies are schema-validated against
+  `references/standards/docstring_format.schema.json`. No-argument loading discovers
+  canonical and candidate filenames only; callers may still load an older policy by
+  supplying its path explicitly. A requested or discovered file that is missing,
+  malformed, non-mapping, or schema-invalid fails closed; built-in fallback is used
+  only when no no-argument default path resolves.
 
-## 1a) Module architecture
+## 1a) Compact structural classes
+
+The callable policy names two conservative summary-only structural kinds:
+
+- A class with exactly one decorator resolving through visible imports to stdlib
+  `dataclasses.dataclass`; that decorator may be bare or argument-bearing. Its body
+  may contain only its docstring and annotated
+  instance fields. Defaults may be non-call expressions or a sole call resolving to
+  stdlib `dataclasses.field`.
+- An undecorated class with exactly one direct builtin-exception base that is not
+  shadowed by a module, enclosing-function, or prior containing-class binding, and
+  is not made ambiguous by a wildcard import. Its body may contain only its docstring,
+  `pass`, or an ellipsis marker.
+
+These classes still require a meaningful summary but waive `Intent`, `Rationale`,
+`Pseudocode`, and `Wraps`. Spoofed or additional decorators, project-derived or
+multiple exception bases, methods, properties, descriptors, nested declarations,
+other call-valued defaults, and executable class-body statements retain the full
+callable profile. Field-root resolution follows class statement order: a target is
+bound after its right-hand side is checked and shadows that spelling for later fields.
+Unsupported compact-kind names fail policy loading rather than silently widening the
+exemption.
+
+## 1b) Module architecture
 
 The docstring stack has four layers:
 
@@ -28,7 +57,7 @@ The docstring stack has four layers:
 `officina.common.docstring.docstring_schema` is a deprecated compatibility alias
 for `docstring_policy`; new internal imports should not use it.
 
-## 1b) Repo dependency sections
+## 1c) Repo dependency sections
 
 Callable dependency declarations use these configured section names by default:
 
@@ -133,6 +162,18 @@ show that product position with constructor/product call syntax:
 - yield make_item(row)
 ```
 
+A repo-call result passed positionally or by keyword to another recognized
+repo-local call is also a product. Passing the same result to a builtin, stdlib,
+logging, or unresolved third-party consumer does not create that classification;
+existing return, raise, assignment, container, and collector positions remain
+products.
+
+Dependency resolution follows lexical scope. Module imports are visible throughout
+the module, function-local imports are visible in that function, and nested closures
+inherit enclosing-function imports. Current-scope imports and assignments shadow
+inherited aliases. Sibling imports and class-body imports do not leak, and a parent
+callable does not absorb calls made inside nested callables or classes.
+
 Profiles can emit `docstring.instantiation-product-unshown` when an
 `InstantiationsFromRepo` target is not shown in one of those product positions.
 This stricter check is available for small functions whose compact pseudocode
@@ -158,7 +199,7 @@ The validator treats `skill.interface.default` and
 portable docstring form should use the allowed root, e.g.
 `skills.skill-certifier.interface.default`.
 
-## 1c) Resource and dataflow sections
+## 1d) Resource and dataflow sections
 
 Use `Resources` for non-call dependencies that matter to behavior or graphing:
 
@@ -185,7 +226,7 @@ Dataflow:
 This is separate from flow. `Dataflow` answers what information/resource moves
 between logical nodes; execution ordering remains in `Pseudocode` for now.
 
-## 1d) Strict pseudocode syntax
+## 1e) Strict pseudocode syntax
 
 `Pseudocode` is a compact execution sketch language, not prose. Every bullet is
 one graph node; every sigil resolves to one declared dependency; every indent
@@ -244,7 +285,7 @@ Repeated-template detection can also run at module scope. It normalizes
 callable and dependency names, then reports copied prose templates with
 `docstring.repeated-template`.
 
-## 1e) Repo-local profiles
+## 1f) Repo-local profiles
 
 Profiles in `src/officina/common/docstring/config.yaml` are ordered path
 overrides. Later matching profiles override earlier matching profiles for the
@@ -293,7 +334,7 @@ The standard includes phrase-level guards for known filler and a
 validator intentionally avoids broad single-phrase bans that would require large
 manual rewrites without proving semantic usefulness.
 
-## 1f) Canonical visualization pipeline
+## 1g) Canonical visualization pipeline
 
 Visualization follows a two-stage path:
 

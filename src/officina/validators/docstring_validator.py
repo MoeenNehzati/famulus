@@ -6,7 +6,7 @@ from __future__ import annotations
 import ast
 import builtins
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Iterable, Mapping
 
@@ -40,6 +40,13 @@ _IGNORED_CALL_BASES = frozenset({
 })
 
 _BUILTIN_SYMBOLS = frozenset(dir(builtins))
+_BUILTIN_EXCEPTION_NAMES = frozenset(
+    name
+    for name in dir(builtins)
+    if isinstance(getattr(builtins, name), type)
+    and issubclass(getattr(builtins, name), BaseException)
+)
+_COMPACT_SECTION_WAIVERS = frozenset({"Intent", "Rationale", "Pseudocode", "Wraps"})
 _PSEUDOCODE_TOKEN_RE = re.compile(
     r"(?<![A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)(?![A-Za-z0-9_])"
 )
@@ -767,6 +774,7 @@ class SyntaxDocstringChecker(_BaseDocstringChecker):
         allow_cross_file_ownership: bool,
         import_aliases: Mapping[str, str],
         defined_symbols: set[str],
+        shadowed_names: set[str],
     ) -> tuple[DocstringValidationIssue, ...]:
         """Validate one parsed callable docstring against this checker family.
 
@@ -806,6 +814,7 @@ class SyntaxDocstringChecker(_BaseDocstringChecker):
                 allow_cross_file_ownership=allow_cross_file_ownership,
                 import_aliases=import_aliases,
                 defined_symbols=defined_symbols,
+                shadowed_names=shadowed_names,
             )
         )
 
@@ -874,6 +883,7 @@ class BehavioralDocstringChecker(_BaseDocstringChecker):
         allow_cross_file_ownership: bool,
         import_aliases: Mapping[str, str],
         defined_symbols: set[str],
+        shadowed_names: set[str],
     ) -> tuple[DocstringValidationIssue, ...]:
         """Validate one parsed callable docstring against this checker family.
 
@@ -913,6 +923,7 @@ class BehavioralDocstringChecker(_BaseDocstringChecker):
                 allow_cross_file_ownership=allow_cross_file_ownership,
                 import_aliases=import_aliases,
                 defined_symbols=defined_symbols,
+                shadowed_names=shadowed_names,
             )
         )
 
@@ -939,6 +950,317 @@ def _should_require_docstring(node: ast.AST) -> bool:
     """
     del node
     return True
+
+
+def _is_resolved_dataclasses_field(
+    call: ast.Call,
+    import_aliases: Mapping[str, str],
+) -> bool:
+    """Return whether a call target resolves to stdlib ``dataclasses.field``.
+
+    Intent
+    ------
+    Permit the one active expression intrinsic to passive dataclass field declarations.
+
+    Rationale
+    ---------
+    Name spelling alone is spoofable, so compact treatment must use the same import
+    resolution that distinguishes stdlib decorators from project-local callables.
+
+    Pseudocode
+    ----------
+    - target = _flatten_attribute_name(call)
+    - if target is missing:
+      - return false
+    - return @_resolves_visible_import(target) for dataclasses.field
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._resolves_visible_import:
+      why:
+        computes: "Requires the field-call target to resolve through a visible exact stdlib import."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._flatten_attribute_name:
+      why:
+        constructs: "Builds the dotted field-call spelling used for alias resolution."
+    """
+    target = _flatten_attribute_name(call.func)
+    return bool(
+        target
+        and _resolves_visible_import(
+            target,
+            "dataclasses.field",
+            import_aliases,
+        )
+    )
+
+
+def _resolves_visible_import(
+    name: str,
+    expected: str,
+    import_aliases: Mapping[str, str],
+) -> bool:
+    """Return whether a visible import resolves a name to one exact symbol.
+
+    Intent
+    ------
+    Reject qualified spellings that merely resemble trusted stdlib markers.
+
+    Rationale
+    ---------
+    Normalization leaves unknown roots unchanged, so equality without an imported root
+    would accept unimported or locally shadowed ``dataclasses`` objects.
+
+    Pseudocode
+    ----------
+    - set root = first name segment
+    - if root is not a visible import:
+      - return false
+    - return @_normalize_dependency_name(name) equals expected symbol
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._normalize_dependency_name:
+      why:
+        computes: "Resolves the visibly imported name before exact-symbol comparison."
+    """
+    root = name.split(".", 1)[0]
+    if root not in import_aliases:
+        return False
+    return _normalize_dependency_name(name, import_aliases) == expected
+
+
+def _is_passive_dataclass_field(
+    statement: ast.stmt,
+    import_aliases: Mapping[str, str],
+) -> bool:
+    """Return whether one class statement is an allowed annotated instance field.
+
+    Intent
+    ------
+    Admit annotations, non-call defaults, and resolved ``dataclasses.field`` defaults.
+
+    Rationale
+    ---------
+    Methods, descriptors, nested declarations, and arbitrary calls carry behavior that
+    requires the full docstring profile rather than a summary-only structural marker.
+
+    Pseudocode
+    ----------
+    - if statement is not a plain-name annotated assignment:
+      - return false
+    - if no default:
+      - return true
+    - set calls = call nodes in default expression
+    - if no calls:
+      - return true
+    - return _is_resolved_dataclasses_field(sole_outer_call)
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._is_resolved_dataclasses_field:
+      why:
+        computes: "Checks the only call-valued default permitted by compact dataclass policy."
+    """
+    if not isinstance(statement, ast.AnnAssign) or not isinstance(statement.target, ast.Name):
+        return False
+    if statement.value is None:
+        return True
+    calls = tuple(node for node in ast.walk(statement.value) if isinstance(node, ast.Call))
+    if not calls:
+        return True
+    return (
+        len(calls) == 1
+        and calls[0] is statement.value
+        and _is_resolved_dataclasses_field(calls[0], import_aliases)
+    )
+
+
+def _compact_structural_kind(
+    node: ast.AST,
+    import_aliases: Mapping[str, str],
+    defined_symbols: set[str],
+    shadowed_names: set[str],
+    enabled_kinds: tuple[str, ...],
+) -> str | None:
+    """Classify only the two policy-approved passive structural declarations.
+
+    Intent
+    ------
+    Select summary-only treatment for exact stdlib dataclasses and builtin exception
+    markers while rejecting every executable or spoofable near miss.
+
+    Rationale
+    ---------
+    Compact docstrings remove behavioral explanation, so false positives are more costly
+    than leaving a structural class on the full profile.
+
+    Pseudocode
+    ----------
+    - if node is not a class:
+      - return no kind
+    - body = _statements_without_docstring(class_body)
+    - if stdlib dataclass kind is enabled and statement-ordered fields qualify:
+      - return stdlib dataclass kind
+    - if unambiguous builtin exception base and passive body qualify:
+      - return builtin exception kind
+    - return no kind
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._is_passive_dataclass_field:
+      why:
+        computes: "Checks every dataclass body statement against the passive-field boundary."
+    ._resolves_visible_import:
+      why:
+        computes: "Requires the decorator target to resolve through a visible exact stdlib import."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._flatten_attribute_name:
+      why:
+        constructs: "Builds the decorator spelling used for stdlib alias resolution."
+    ._statements_without_docstring:
+      why:
+        constructs: "Builds the structural class body after removing its summary expression."
+    """
+    if not isinstance(node, ast.ClassDef):
+        return None
+    body = _statements_without_docstring(node.body)
+
+    if "stdlib_dataclass" in enabled_kinds and len(node.decorator_list) == 1:
+        decorator_node = node.decorator_list[0]
+        decorator_target = (
+            decorator_node.func if isinstance(decorator_node, ast.Call) else decorator_node
+        )
+        decorator = _flatten_attribute_name(decorator_target)
+        if (
+            decorator
+            and _resolves_visible_import(
+                decorator,
+                "dataclasses.dataclass",
+                import_aliases,
+            )
+            and not node.bases
+            and not node.keywords
+        ):
+            field_aliases = dict(import_aliases)
+            for statement in body:
+                if not _is_passive_dataclass_field(statement, field_aliases):
+                    break
+                if isinstance(statement, ast.AnnAssign) and isinstance(
+                    statement.target,
+                    ast.Name,
+                ):
+                    field_aliases.pop(statement.target.id, None)
+            else:
+                return "stdlib_dataclass"
+
+    if (
+        "builtin_exception" in enabled_kinds
+        and not node.decorator_list
+        and len(node.bases) == 1
+        and not node.keywords
+        and isinstance(node.bases[0], ast.Name)
+        and node.bases[0].id in _BUILTIN_EXCEPTION_NAMES
+        and node.bases[0].id not in import_aliases
+        and node.bases[0].id not in defined_symbols
+        and node.bases[0].id not in shadowed_names
+        and "*" not in import_aliases
+        and all(
+            isinstance(statement, ast.Pass)
+            or (
+                isinstance(statement, ast.Expr)
+                and isinstance(statement.value, ast.Constant)
+                and statement.value.value is Ellipsis
+            )
+            for statement in body
+        )
+    ):
+        return "builtin_exception"
+
+    return None
+
+
+def _schema_for_node(
+    node: ast.AST,
+    schema_rules: DocstringSchema,
+    import_aliases: Mapping[str, str],
+    defined_symbols: set[str],
+    shadowed_names: set[str],
+) -> DocstringSchema:
+    """Return node policy with only approved compact section waivers applied.
+
+    Intent
+    ------
+    Preserve the full callable contract unless AST classification proves a configured
+    passive structural kind.
+
+    Rationale
+    ---------
+    Deriving a temporary policy keeps parser enforcement unchanged and prevents compact
+    exemptions from leaking to neighboring declarations.
+
+    Pseudocode
+    ----------
+    - if @_compact_structural_kind(node) is missing:
+      - return original policy
+    - set required_sections = required sections minus compact waivers
+    - set pseudocode_minimum = zero
+    - return derived node policy
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._compact_structural_kind:
+      why:
+        computes: "Checks the conservative structural classification controlling section waivers."
+    """
+    if _compact_structural_kind(
+        node,
+        import_aliases,
+        defined_symbols,
+        shadowed_names,
+        schema_rules.callable.compact_structural_kinds,
+    ) is None:
+        return schema_rules
+    callable_rules = replace(
+        schema_rules.callable,
+        required_sections=tuple(
+            section
+            for section in schema_rules.callable.required_sections
+            if section not in _COMPACT_SECTION_WAIVERS
+        ),
+        optional_sections=tuple(
+            dict.fromkeys(
+                (*schema_rules.callable.optional_sections, *_COMPACT_SECTION_WAIVERS)
+            )
+        ),
+        min_pseudocode_steps=0,
+        pseudocode=replace(schema_rules.callable.pseudocode, min_steps=0),
+    )
+    return replace(schema_rules, callable=callable_rules)
 
 
 def _iter_defined_callables(
@@ -1032,34 +1354,451 @@ def _collect_import_aliases(
     Wraps
     -----
     - none
+
+    CallsFromRepo
+    -------------
+    ._iter_lexical_scope_nodes:
+      why:
+        computes: "Streams module-scope imports while excluding nested declarations."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._scope_import_aliases:
+      why:
+        constructs: "Builds the module alias map with top-level shadowing applied."
     """
-    aliases: dict[str, str] = {}
-    has_wildcard_import = False
-
-    for node in tree.body:
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                key = alias.asname or alias.name
-                aliases[key.split(".")[0]] = alias.name
-        elif isinstance(node, ast.ImportFrom):
-            if any(alias.name == "*" for alias in node.names):
-                has_wildcard_import = True
-            module_name = node.module or ""
-            if not module_name and node.level <= 0:
-                continue
-            if node.level > 0:
-                module_name = f"{'.' * node.level}{module_name}"
-            for alias in node.names:
-                if alias.name == "*":
-                    continue
-                key = alias.asname or alias.name
-                aliases[key] = f"{module_name}.{alias.name}"
-
+    aliases = _scope_import_aliases(tree.body, inherited={})
+    has_wildcard_import = any(
+        isinstance(node, ast.ImportFrom)
+        and any(alias.name == "*" for alias in node.names)
+        for node in _iter_lexical_scope_nodes(tree.body)
+    )
     return aliases, has_wildcard_import
 
 
+def _iter_lexical_scope_nodes(body: Iterable[ast.stmt]) -> Iterable[ast.AST]:
+    """Yield nodes in one lexical scope without entering nested callables or classes.
+
+    Intent
+    ------
+    Keep import and dependency analysis aligned with Python lexical visibility.
+
+    Rationale
+    ---------
+    ``ast.walk`` crosses nested definitions and makes sibling or child bindings appear
+    available to parents, which invents dependency edges that source execution cannot use.
+
+    Pseudocode
+    ----------
+    - set stack = scope statements
+    - while stack has nodes:
+      - set current = next stack node
+      - if current opens a nested scope:
+        - continue
+      - set stack = stack plus child nodes
+    - return scope node stream
+
+    Wraps
+    -----
+    - none
+    """
+    stack: list[ast.AST] = list(reversed(tuple(body)))
+    while stack:
+        current = stack.pop()
+        yield current
+        if isinstance(
+            current,
+            (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda),
+        ):
+            continue
+        stack.extend(reversed(tuple(ast.iter_child_nodes(current))))
+
+
+def _bound_target_names(target: ast.AST) -> set[str]:
+    """Return plain names bound by one assignment-like target.
+
+    Intent
+    ------
+    Identify bindings that shadow inherited import aliases in a lexical scope.
+
+    Rationale
+    ---------
+    Tuple unpacking and starred targets bind several names, so alias invalidation must
+    traverse target structure without treating attribute or subscription writes as binds.
+
+    Pseudocode
+    ----------
+    - if target is a name:
+      - return its identifier
+    - if target unpacks values:
+      - return names from each child target
+    - return no names
+
+    Wraps
+    -----
+    - none
+    """
+    names: set[str] = set()
+    stack: list[ast.AST] = [target]
+    while stack:
+        current = stack.pop()
+        if isinstance(current, ast.Name):
+            names.add(current.id)
+        elif isinstance(current, ast.Starred):
+            stack.append(current.value)
+        elif isinstance(current, (ast.Tuple, ast.List)):
+            stack.extend(current.elts)
+    return names
+
+
+def _scope_binding_names(node: ast.AST) -> set[str]:
+    """Return non-import names bound by one node in its containing scope.
+
+    Intent
+    ------
+    Keep alias invalidation and compact-class shadow tracking on one binding model.
+
+    Rationale
+    ---------
+    Assignments are not the only lexical binders: deletes and structural-pattern
+    captures also make imported or builtin spellings unsafe to trust.
+
+    Pseudocode
+    ----------
+    - if node declares a callable or class:
+      - return its name
+    - if node binds assignment-like targets:
+      - return ._bound_target_names(targets)
+    - if node captures a structural-pattern name:
+      - return captured names
+    - return empty names
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._bound_target_names:
+      why:
+        computes: "Collects names bound or deleted through assignment-shaped targets."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._bound_target_names:
+      why:
+        constructs: "Builds target-name sets returned for direct assignment-shaped binders."
+    """
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return {node.name}
+    if isinstance(node, ast.Assign):
+        return {
+            name
+            for target in node.targets
+            for name in _bound_target_names(target)
+        }
+    if isinstance(node, (ast.AnnAssign, ast.AugAssign, ast.NamedExpr)):
+        return _bound_target_names(node.target)
+    if isinstance(node, (ast.For, ast.AsyncFor)):
+        return _bound_target_names(node.target)
+    if isinstance(node, (ast.With, ast.AsyncWith)):
+        return {
+            name
+            for item in node.items
+            if item.optional_vars is not None
+            for name in _bound_target_names(item.optional_vars)
+        }
+    if isinstance(node, ast.ExceptHandler) and node.name:
+        return {node.name}
+    if isinstance(node, ast.Delete):
+        return {
+            name
+            for target in node.targets
+            for name in _bound_target_names(target)
+        }
+    if isinstance(node, (ast.MatchAs, ast.MatchStar)) and node.name:
+        return {node.name}
+    if isinstance(node, ast.MatchMapping) and node.rest:
+        return {node.rest}
+    return set()
+
+
+def _scope_import_aliases(
+    body: Iterable[ast.stmt],
+    inherited: Mapping[str, str],
+    *,
+    arguments: ast.arguments | None = None,
+) -> dict[str, str]:
+    """Merge imports for one scope while removing aliases shadowed by local bindings.
+
+    Intent
+    ------
+    Resolve module and enclosing-function imports exactly where a callable may use them.
+
+    Rationale
+    ---------
+    Python function bindings are scope-wide: current imports replace inherited aliases,
+    while parameters, assignments, and declarations make inherited aliases unavailable.
+
+    Pseudocode
+    ----------
+    - set aliases = inherited aliases
+    - set current_imports = imports in current scope
+    - set shadowed_names = non-import bindings and parameters
+    - set aliases = aliases plus current imports minus shadowed names
+    - return effective aliases
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._iter_lexical_scope_nodes:
+      why:
+        computes: "Streams only nodes belonging to the current lexical scope."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._scope_binding_names:
+      why:
+        constructs: "Builds every non-import binder that invalidates an inherited alias."
+    """
+    aliases = dict(inherited)
+    local_imports: dict[str, str] = {}
+    shadowed: set[str] = set()
+    if arguments is not None:
+        shadowed.update(argument.arg for argument in arguments.posonlyargs)
+        shadowed.update(argument.arg for argument in arguments.args)
+        shadowed.update(argument.arg for argument in arguments.kwonlyargs)
+        if arguments.vararg is not None:
+            shadowed.add(arguments.vararg.arg)
+        if arguments.kwarg is not None:
+            shadowed.add(arguments.kwarg.arg)
+
+    for current in _iter_lexical_scope_nodes(body):
+        if isinstance(current, ast.Import):
+            for alias in current.names:
+                key = (alias.asname or alias.name).split(".")[0]
+                local_imports[key] = alias.name
+            continue
+        if isinstance(current, ast.ImportFrom):
+            module_name = current.module or ""
+            if not module_name and current.level <= 0:
+                continue
+            if current.level > 0:
+                module_name = f"{'.' * current.level}{module_name}"
+            for alias in current.names:
+                if alias.name == "*":
+                    continue
+                local_imports[alias.asname or alias.name] = f"{module_name}.{alias.name}"
+            continue
+        shadowed.update(_scope_binding_names(current))
+
+    aliases.update(local_imports)
+    for name in shadowed:
+        aliases.pop(name, None)
+    return aliases
+
+
+def _scope_nonimport_bound_names(
+    body: Iterable[ast.stmt],
+    *,
+    arguments: ast.arguments | None = None,
+) -> set[str]:
+    """Collect non-import bindings that shadow enclosing or builtin names.
+
+    Intent
+    ------
+    Preserve lexical non-import bindings for conservative structural classification.
+
+    Rationale
+    ---------
+    Import maps alone cannot distinguish a builtin exception marker from a parameter or
+    assignment, deletion, or pattern capture with the same spelling in an enclosing scope.
+
+    Pseudocode
+    ----------
+    - set bound_names = parameter names
+    - for node in current lexical scope:
+      - set bound_names = bound_names plus ._scope_binding_names(node)
+    - return bound names
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._iter_lexical_scope_nodes:
+      why:
+        computes: "Streams current-scope bindings without entering child declarations."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._scope_binding_names:
+      why:
+        constructs: "Builds declarations, targets, deletes, and pattern captures in the scope."
+    """
+    bound: set[str] = set()
+    if arguments is not None:
+        bound.update(argument.arg for argument in arguments.posonlyargs)
+        bound.update(argument.arg for argument in arguments.args)
+        bound.update(argument.arg for argument in arguments.kwonlyargs)
+        if arguments.vararg is not None:
+            bound.add(arguments.vararg.arg)
+        if arguments.kwarg is not None:
+            bound.add(arguments.kwarg.arg)
+
+    for current in _iter_lexical_scope_nodes(body):
+        if isinstance(current, (ast.Import, ast.ImportFrom)):
+            continue
+        bound.update(_scope_binding_names(current))
+    return bound
+
+
+def _collect_callable_import_aliases(
+    tree: ast.Module,
+    module_aliases: Mapping[str, str],
+) -> tuple[dict[ast.AST, dict[str, str]], dict[ast.AST, set[str]]]:
+    """Map each callable or class to imports visible in its lexical scope.
+
+    Intent
+    ------
+    Supply node-specific resolution maps for nested dependency and decorator checks.
+
+    Rationale
+    ---------
+    Functions inherit enclosing-function imports, but sibling and class-body imports are
+    not lexical parents; retaining that distinction prevents both missed and invented edges.
+
+    Pseudocode
+    ----------
+    - set aliases_by_node = empty mapping
+    - set shadows_by_node = empty mapping
+    - for declaration in module declarations:
+      - if declaration is a function:
+        - set function_aliases = lexical aliases including function scope
+      - else:
+        - set class_aliases = lexical parent aliases
+    - return node alias and non-import shadow maps
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._scope_nonimport_bound_names:
+      why:
+        constructs: "Builds lexical shadow sets carried beside each callable alias map."
+
+    """
+    aliases_by_node: dict[ast.AST, dict[str, str]] = {}
+    shadows_by_node: dict[ast.AST, set[str]] = {}
+    module_shadows = _scope_nonimport_bound_names(tree.body)
+
+    def walk(
+        body: Iterable[ast.stmt],
+        inherited: Mapping[str, str],
+        inherited_shadows: set[str],
+        *,
+        class_namespace: bool = False,
+    ) -> None:
+        """Populate callable alias maps without treating class scope as lexical.
+
+        Intent
+        ------
+        Recurse through nested declarations with the correct enclosing-function aliases.
+
+        Rationale
+        ---------
+        Methods may close over an enclosing function but never inherit class locals, while
+        nested declaration headers execute after earlier class statements. Recursion must
+        carry lexical and statement-ordered execution contexts separately.
+
+        Pseudocode
+        ----------
+        - for declaration in body:
+          - if declaration is a function:
+            - aliases = _scope_import_aliases(function_body)
+            - set shadows = inherited shadows plus @_scope_nonimport_bound_names(function_body)
+          - else:
+            - if declaration is a class:
+              - set aliases = current execution aliases
+          - if walking a class namespace:
+            - set execution_aliases = remaining aliases after statement bindings
+
+        Wraps
+        -----
+        - none
+
+        InstantiationsFromRepo
+        ----------------------
+        ._scope_import_aliases:
+          why:
+            constructs: "Builds aliases visible in each function before descending further."
+        ._scope_nonimport_bound_names:
+          why:
+            constructs: "Builds statement binding sets used after class-body evaluation."
+
+        CallsFromRepo
+        -------------
+        ._scope_nonimport_bound_names:
+          why:
+            computes: "Builds lexical shadow sets for nested compact-class classification."
+        """
+        execution_aliases = dict(inherited)
+        execution_shadows = set(inherited_shadows)
+        for current in body:
+            declaration_aliases = execution_aliases if class_namespace else inherited
+            declaration_shadows = (
+                execution_shadows if class_namespace else inherited_shadows
+            )
+            if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                effective = _scope_import_aliases(
+                    current.body,
+                    inherited,
+                    arguments=current.args,
+                )
+                local_imports = _scope_import_aliases(
+                    current.body,
+                    {},
+                    arguments=current.args,
+                )
+                effective_shadows = (
+                    inherited_shadows - set(local_imports)
+                ) | _scope_nonimport_bound_names(
+                    current.body,
+                    arguments=current.args,
+                )
+                aliases_by_node[current] = effective
+                shadows_by_node[current] = effective_shadows
+                walk(current.body, effective, effective_shadows)
+            elif isinstance(current, ast.ClassDef):
+                aliases_by_node[current] = dict(declaration_aliases)
+                shadows_by_node[current] = set(declaration_shadows)
+                walk(
+                    current.body,
+                    inherited,
+                    inherited_shadows,
+                    class_namespace=True,
+                )
+            if class_namespace:
+                statement_bindings = _scope_nonimport_bound_names((current,))
+                statement_bindings.update(
+                    _scope_import_aliases((current,), inherited={})
+                )
+                for name in statement_bindings:
+                    execution_aliases.pop(name, None)
+                execution_shadows.update(statement_bindings)
+
+    walk(tree.body, module_aliases, module_shadows)
+    return aliases_by_node, shadows_by_node
+
+
 def _collect_defined_symbols(tree: ast.AST) -> set[str]:
-    """Collect top-level callable and class names.
+    """Collect top-level callables, classes, and shadowed exception markers.
 
     Intent
     ------
@@ -1077,11 +1816,26 @@ def _collect_defined_symbols(tree: ast.AST) -> set[str]:
     Wraps
     -----
     - none
+
+    CallsFromRepo
+    -------------
+    ._iter_lexical_scope_nodes:
+      why:
+        computes: "Streams module-scope bindings without nested-scope leakage."
+
+    ._bound_target_names:
+      why:
+        computes: "Computes assignment-target names used to detect shadowed exception markers."
     """
     symbols: set[str] = set()
-    for node in tree.body:
+    for node in _iter_lexical_scope_nodes(tree.body):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             symbols.add(node.name)
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                symbols.update(_bound_target_names(target) & _BUILTIN_EXCEPTION_NAMES)
+        elif isinstance(node, (ast.AnnAssign, ast.AugAssign, ast.NamedExpr)):
+            symbols.update(_bound_target_names(node.target) & _BUILTIN_EXCEPTION_NAMES)
     return symbols
 
 
@@ -1297,6 +2051,10 @@ def _is_wrapped_call_node(node: ast.AST, call: ast.Call) -> bool:
 def _call_result_is_product_position(
     call: ast.Call,
     parents: Mapping[ast.AST, ast.AST],
+    *,
+    import_aliases: Mapping[str, str],
+    defined_symbols: set[str],
+    allowed_abs: tuple[str, ...],
 ) -> bool:
     """Return true when a call result is carried as a semantic product.
 
@@ -1326,6 +2084,15 @@ def _call_result_is_product_position(
     ._is_wrapped_call_node:
       why:
         computes: "is wrapped call node supplies repo-local behavior used by call result is product position; this edge is documented from an observed call in the body."
+    ._observed_call_is_repo_dependency:
+      why:
+        computes: "Checks whether an outer positional or keyword consumer is repo-local."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._normalize_dependency_name:
+      why:
+        constructs: "Builds normalized outer-consumer names before repo-local classification."
     """
     parent = parents.get(call)
     value_node: ast.AST = call
@@ -1345,15 +2112,29 @@ def _call_result_is_product_position(
                 value_node = parent
                 parent = parents.get(parent)
                 continue
+            normalized_wrapper = _normalize_dependency_name(wrapper, import_aliases)
+            if _observed_call_is_repo_dependency(
+                normalized_wrapper,
+                import_aliases=import_aliases,
+                defined_symbols=defined_symbols,
+                allowed_abs=allowed_abs,
+            ):
+                return True
         if isinstance(parent, ast.keyword) and parent.value is value_node:
             call_parent = parents.get(parent)
             if isinstance(call_parent, ast.Call):
                 constructor = _flatten_attribute_name(call_parent.func) or ""
-                constructor_tail = constructor.rsplit(".", 1)[-1]
-                if constructor_tail[:1].isupper():
-                    value_node = call_parent
-                    parent = parents.get(call_parent)
-                    continue
+                normalized_constructor = _normalize_dependency_name(
+                    constructor,
+                    import_aliases,
+                )
+                if _observed_call_is_repo_dependency(
+                    normalized_constructor,
+                    import_aliases=import_aliases,
+                    defined_symbols=defined_symbols,
+                    allowed_abs=allowed_abs,
+                ):
+                    return True
         break
 
     if isinstance(parent, ast.Return) and (
@@ -1442,26 +2223,21 @@ def _collect_dependency_targets(
     ._normalize_dependency_name:
       why:
         constructs: "normalize dependency name produces a value carried by collect dependency targets; this edge is documented from the observed product position in the body."
+    ._iter_lexical_scope_nodes:
+      why:
+        constructs: "Builds the node stream for the callable body without nested-scope absorption."
     """
     calls: set[str] = set()
     instantiations: set[str] = set()
     has_calls = bool(dependency_rules.calls_section)
     has_instantiations = bool(dependency_rules.instantiates_section)
-    walk_roots: Iterable[ast.AST]
-    if isinstance(node, ast.ClassDef):
-        walk_roots = tuple(
-            statement
-            for statement in node.body
-            if not isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
-        )
-    elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-        walk_roots = tuple(node.body)
+    if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+        walk_nodes: Iterable[ast.AST] = _iter_lexical_scope_nodes(node.body)
     else:
-        walk_roots = (node,)
+        walk_nodes = ast.walk(node)
+    parents = _ast_parent_map(node)
 
-    for root in walk_roots:
-        parents = _ast_parent_map(root)
-        for statement in ast.walk(root):
+    for statement in walk_nodes:
             if not isinstance(statement, ast.Call):
                 continue
 
@@ -1493,7 +2269,13 @@ def _collect_dependency_targets(
                 allowed_abs=dependency_rules.allowed_abs,
             ):
                 continue
-            if _call_result_is_product_position(statement, parents):
+            if _call_result_is_product_position(
+                statement,
+                parents,
+                import_aliases=import_aliases,
+                defined_symbols=defined_symbols,
+                allowed_abs=dependency_rules.allowed_abs,
+            ):
                 if has_instantiations:
                     instantiations.add(normalized)
                 elif has_calls:
@@ -1532,9 +2314,6 @@ def _collect_repo_call_targets(
 
     CallsFromRepo
     -------------
-    ._meaningful_call_target_names:
-      why:
-        computes: "meaningful call target names supplies repo-local behavior used by collect repo call targets; this edge is documented from an observed call in the body."
     ._observed_call_is_repo_dependency:
       why:
         computes: "observed call is repo dependency supplies repo-local behavior used by collect repo call targets; this edge is documented from an observed call in the body."
@@ -1544,21 +2323,23 @@ def _collect_repo_call_targets(
     ._normalize_dependency_name:
       why:
         constructs: "normalize dependency name produces a value carried by collect repo call targets; this edge is documented from the observed product position in the body."
+    ._flatten_attribute_name:
+      why:
+        constructs: "Builds dotted call targets for repo-local resolution."
+    ._iter_lexical_scope_nodes:
+      why:
+        constructs: "Builds the callable node stream without entering nested scopes."
     """
-    if isinstance(node, ast.ClassDef):
-        walk_roots: Iterable[ast.AST] = tuple(
-            statement
-            for statement in node.body
-            if not isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
-        )
-    elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-        walk_roots = tuple(node.body)
-    else:
-        walk_roots = (node,)
-
     targets: set[str] = set()
-    for root in walk_roots:
-        for target_name in _meaningful_call_target_names(root):
+    if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+        walk_nodes = _iter_lexical_scope_nodes(node.body)
+    else:
+        walk_nodes = ast.walk(node)
+    for current in walk_nodes:
+        if not isinstance(current, ast.Call):
+            continue
+        target_name = _flatten_attribute_name(current.func)
+        if target_name:
             normalized = _normalize_dependency_name(target_name, import_aliases)
             if _observed_call_is_repo_dependency(
                 normalized,
@@ -1692,9 +2473,19 @@ def _collect_observed_dispatch_ids(node: ast.AST) -> set[str]:
     Wraps
     -----
     - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._iter_lexical_scope_nodes:
+      why:
+        constructs: "Builds the callable node stream without nested-scope dispatch leakage."
     """
     observed: set[str] = set()
-    for statement in ast.walk(node):
+    if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+        walk_nodes: Iterable[ast.AST] = _iter_lexical_scope_nodes(node.body)
+    else:
+        walk_nodes = ast.walk(node)
+    for statement in walk_nodes:
         if not isinstance(statement, ast.Call):
             continue
         literals = [
@@ -2008,9 +2799,16 @@ def _meaningful_call_target_names(node: ast.AST) -> tuple[str, ...]:
     ._flatten_attribute_name:
       why:
         constructs: "flatten attribute name produces a value carried by meaningful call target names; this edge is documented from the observed product position in the body."
+    ._iter_lexical_scope_nodes:
+      why:
+        constructs: "Builds the callable node stream without nested-scope call leakage."
     """
     targets: list[str] = []
-    for statement in ast.walk(node):
+    if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+        walk_nodes: Iterable[ast.AST] = _iter_lexical_scope_nodes(node.body)
+    else:
+        walk_nodes = ast.walk(node)
+    for statement in walk_nodes:
         if not isinstance(statement, ast.Call):
             continue
         target = _flatten_attribute_name(statement.func)
@@ -3375,6 +4173,7 @@ def _validate_node_docstring(
     allow_cross_file_ownership: bool,
     import_aliases: Mapping[str, str],
     defined_symbols: set[str],
+    shadowed_names: set[str],
 ) -> tuple[DocstringValidationIssue, ...]:
     """Validate docstring presence and parse quality for one callable/class node.
 
@@ -3402,10 +4201,6 @@ def _validate_node_docstring(
       why:
         computes: "should require docstring supplies repo-local behavior used by validate node docstring; this edge is documented from an observed call in the body."
 
-    ..common.docstring.docstring_parser.check_graph_docstring:
-      why:
-        computes: "Computes the check_graph_docstring contribution used by _validate_node_docstring."
-
     InstantiationsFromRepo
     ----------------------
     .DocstringValidationIssue:
@@ -3426,10 +4221,16 @@ def _validate_node_docstring(
     ._iter_wrap_issues:
       why:
         constructs: "iter wrap issues produces a value carried by validate node docstring; this edge is documented from the observed product position in the body."
+    ._schema_for_node:
+      why:
+        constructs: "Builds the node-specific policy after conservative structural classification."
 
     ..common.docstring.docstring_parser.parse_graph_block:
       why:
         constructs: "Builds the parsed callable docstring used for syntax and behavior validation."
+    ..common.docstring.docstring_parser.check_graph_docstring:
+      why:
+        constructs: "Builds parser diagnostics passed into the shared issue projection."
     """
     issues: list[DocstringValidationIssue] = []
 
@@ -3451,11 +4252,19 @@ def _validate_node_docstring(
         )
         return tuple(issues)
 
+    node_schema_rules = _schema_for_node(
+        node,
+        schema_rules,
+        import_aliases,
+        defined_symbols,
+        shadowed_names,
+    )
+
     issues.extend(
         _iter_parser_issue_records(
             path=path,
             node_id=node_id,
-            parser_issues=check_graph_docstring(doc, schema_rules=schema_rules),
+            parser_issues=check_graph_docstring(doc, schema_rules=node_schema_rules),
             line_hint=node.lineno,
         )
     )
@@ -3467,7 +4276,7 @@ def _validate_node_docstring(
             node_id=node_id,
             line_no=node.lineno,
             parsed=parsed,
-            ownership_config=schema_rules.callable.ownership,
+            ownership_config=node_schema_rules.callable.ownership,
             local_aliases=ownership_aliases,
             ownership_index=ownership_index,
             allow_cross_file=allow_cross_file_ownership,
@@ -3477,7 +4286,7 @@ def _validate_node_docstring(
         node=node,
         defined_symbols=defined_symbols,
         import_aliases=import_aliases,
-        dependency_rules=schema_rules.module_dependencies,
+        dependency_rules=node_schema_rules.module_dependencies,
     )
     issues.extend(
         _iter_wrap_issues(
@@ -3499,7 +4308,7 @@ def _validate_node_docstring(
                 line_no=node.lineno,
                 node=node,
                 parsed=parsed,
-                schema_rules=schema_rules.module_dependencies,
+                schema_rules=node_schema_rules.module_dependencies,
                 import_aliases=import_aliases,
                 defined_symbols=defined_symbols,
             )
@@ -3585,11 +4394,9 @@ def _module_docstring_issues_by_check(
       why:
         constructs: "iter module ownership registry issues produces a value carried by module docstring issues by check; this edge is documented from the observed product position in the body."
 
-    CallsFromRepo
-    -------------
     ..common.docstring.docstring_parser.check_pipeline_docstring:
       why:
-        computes: "Computes the check_pipeline_docstring contribution used by _module_docstring_issues_by_check."
+        constructs: "Builds pipeline diagnostics passed into module issue projection."
     """
     issues: list[DocstringValidationIssue] = []
     if module_doc is None:
@@ -3946,6 +4753,9 @@ def validate_module_docstrings(
     ._collect_import_aliases:
       why:
         constructs: "Builds import-alias maps used to resolve documented dependency paths."
+    ._collect_callable_import_aliases:
+      why:
+        constructs: "Builds callable-specific lexical alias maps without sibling or class leakage."
     ._collect_defined_symbols:
       why:
         constructs: "Builds the local symbol table used for dependency resolution checks."
@@ -3980,7 +4790,13 @@ def validate_module_docstrings(
     source = path.read_text(encoding="utf-8")
     tree = ast.parse(source, filename=str(path))
     issues: list[DocstringValidationIssue] = []
-    import_aliases, _ = _collect_import_aliases(tree)
+    import_aliases, has_wildcard_import = _collect_import_aliases(tree)
+    if has_wildcard_import:
+        import_aliases["*"] = "*"
+    aliases_by_node, shadows_by_node = _collect_callable_import_aliases(
+        tree,
+        import_aliases,
+    )
     defined_symbols = _collect_defined_symbols(tree)
 
     ownership_aliases = _module_aliases(path)
@@ -4013,6 +4829,8 @@ def validate_module_docstrings(
     ):
         if not isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
+        node_import_aliases = aliases_by_node.get(node, import_aliases)
+        node_shadowed_names = shadows_by_node.get(node, set())
         for checker in checkers:
             issues.extend(
                 checker.validate_node(
@@ -4024,8 +4842,9 @@ def validate_module_docstrings(
                     ownership_aliases=ownership_aliases,
                     ownership_index=ownership_index,
                     allow_cross_file_ownership=effective_allow_cross_file,
-                    import_aliases=import_aliases,
+                    import_aliases=node_import_aliases,
                     defined_symbols=defined_symbols,
+                    shadowed_names=node_shadowed_names,
                 )
             )
 

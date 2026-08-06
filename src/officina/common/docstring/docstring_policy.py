@@ -12,14 +12,19 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
 
+import jsonschema
 import yaml
 
 from ..configured_schema import load_configuration
 
 DOCSTRING_STANDARD_FILE = "docstring.standard.yaml"
 DOCSTRING_STANDARD_CANDIDATE_FILE = "docstring.standard.candidate.yaml"
-DOCSTRING_LEGACY_FORMAT_FILE = "docstring_format.yaml"
+DOCSTRING_STANDARD_SCHEMA_FILE = "docstring_format.schema.json"
 DOCSTRING_CONFIG_FILE = "config.yaml"
+
+_ALLOWED_COMPACT_STRUCTURAL_KINDS: frozenset[str] = frozenset(
+    {"stdlib_dataclass", "builtin_exception"}
+)
 
 _ALLOWED_PROFILE_CHECKS: frozenset[str] = frozenset(
     {
@@ -61,6 +66,7 @@ class DependencySectionNames:
     Wraps
     -----
     - none
+
     """
 
     calls: str = "CallsFromRepo"
@@ -428,7 +434,11 @@ class CallableDocstringSchema:
 
     require_docstrings: bool = True
     required_summary: bool = True
-    required_sections: tuple[str, ...] = ("Intent", "Rationale")
+    required_sections: tuple[str, ...] = ("Intent", "Rationale", "Pseudocode", "Wraps")
+    compact_structural_kinds: tuple[str, ...] = (
+        "stdlib_dataclass",
+        "builtin_exception",
+    )
     summary_min_chars: int = 20
     summary_max_chars: int = 240
     rationale_min_chars: int = 45
@@ -440,12 +450,19 @@ class CallableDocstringSchema:
         "NonInferableCalls",
         "Wraps",
         "Owns",
+        "Parameters",
+        "Returns",
+        "Raises",
+        "Attributes",
+        "Pseudocode",
         "Resources",
         "Dataflow",
     )
     pseudocode: PseudocodeDocstringSchema = field(default_factory=PseudocodeDocstringSchema)
     dependency_reference_sections: tuple[str, ...] = ()
-    ownership: OwnershipConfig = field(default_factory=OwnershipConfig)
+    ownership: OwnershipConfig = field(
+        default_factory=lambda: OwnershipConfig(cross_file_enabled=True)
+    )
     min_pseudocode_steps: int = 1
     forbidden_summary_phrases: tuple[str, ...] = (
         "what does this do",
@@ -475,6 +492,7 @@ class CallableDocstringSchema:
         "this callable exists to implement the behavior described in the contract documentation",
         "implemented as described in the contract documentation",
         "implemented as described in contract documentation",
+        "callable semantics explicit and auditable",
         "dependency declarations that the docstring graph can parse",
         "docstring graph can parse",
         "static dependency validation",
@@ -577,10 +595,10 @@ class ModuleDependencyConfig:
     validate_declared_calls: bool = True
     validate_declared_instantiations: bool = True
     validate_declared_dispatches: bool = True
-    report_unlisted_calls: bool = False
-    report_unlisted_instantiations: bool = False
+    report_unlisted_calls: bool = True
+    report_unlisted_instantiations: bool = True
     ignore_non_external: bool = True
-    validate_dependency_targets_resolved: bool = False
+    validate_dependency_targets_resolved: bool = True
     require_repo_dependency_targets: bool = False
     enforce_declared_dependency_pseudocode_coverage: bool = False
     enforce_observed_dependency_pseudocode_coverage: bool = False
@@ -746,7 +764,7 @@ class DocstringSchema:
     - none
     """
 
-    name: str = "docstring_policy"
+    name: str = "docstring_format"
     strict: bool = True
     callable: CallableDocstringSchema = field(default_factory=CallableDocstringSchema)
     module_dependencies: ModuleDependencyConfig = field(default_factory=ModuleDependencyConfig)
@@ -867,6 +885,54 @@ def _safe_str_tuple(values: object, fallback: tuple[str, ...] = ()) -> tuple[str
     if isinstance(values, list):
         return tuple(item for item in values if isinstance(item, str))
     return fallback
+
+
+def _parse_compact_structural_kinds(
+    value: object,
+    fallback: tuple[str, ...],
+) -> tuple[str, ...]:
+    """Parse the closed set of summary-only structural class kinds.
+
+    Intent
+    ------
+    Reject misspelled or future structural exemptions instead of silently widening
+    the docstring profile.
+
+    Rationale
+    ---------
+    Compact treatment waives substantive sections, so every accepted kind must have
+    matching conservative AST enforcement before policy can name it.
+
+    Pseudocode
+    ----------
+    - if compact kinds are omitted:
+      - return fallback kinds
+    - if compact kinds are not a unique string list:
+      - raise configuration error
+    - if any compact kind is unsupported:
+      - raise configuration error
+    - return compact kinds
+
+    Wraps
+    -----
+    - none
+    """
+    if value is None:
+        return fallback
+    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+        raise ValueError("callable.compact_structural_kinds must be a list of strings")
+    normalized = tuple(item.strip() for item in value)
+    if any(not item for item in normalized) or len(set(normalized)) != len(normalized):
+        raise ValueError(
+            "callable.compact_structural_kinds must contain unique non-empty strings"
+        )
+    unsupported = sorted(set(normalized) - _ALLOWED_COMPACT_STRUCTURAL_KINDS)
+    if unsupported:
+        raise ValueError(
+            "callable.compact_structural_kinds contains unsupported kind(s): "
+            + ", ".join(unsupported)
+        )
+    return normalized
 
 
 def _safe_int(value: object, fallback: int = 0) -> int:
@@ -1128,6 +1194,55 @@ def _load_yaml(path: Path) -> object:
         return None
 
 
+def _validate_canonical_docstring_standard(path: Path, value: object) -> None:
+    """Validate standard or candidate policy data when its schema is present.
+
+    Intent
+    ------
+    Fail closed on standard and candidate policy shapes the runtime cannot support.
+
+    Rationale
+    ---------
+    Repository validation and runtime loading must apply the same structural contract,
+    while explicit legacy fixtures remain usable without carrying repository tooling.
+
+    Pseudocode
+    ----------
+    - if path is not standard or candidate or companion schema is absent:
+      - return
+    - schema = _load_yaml(schema_path)
+    - if schema is invalid:
+      - raise ValueError
+    - set validation_result = validate policy data against schema
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._load_yaml:
+      why:
+        constructs: "Loads the companion schema mapping consumed by canonical policy validation."
+    """
+    schema_path = path.with_name(DOCSTRING_STANDARD_SCHEMA_FILE)
+    if path.name not in {
+        DOCSTRING_STANDARD_FILE,
+        DOCSTRING_STANDARD_CANDIDATE_FILE,
+    } or not schema_path.is_file():
+        return
+    schema = _load_yaml(schema_path)
+    if not isinstance(schema, dict):
+        raise ValueError(f"Cannot load docstring policy schema: {schema_path}")
+    try:
+        jsonschema.Draft7Validator(schema).validate(value)
+    except jsonschema.ValidationError as exc:
+        location = ".".join(str(part) for part in exc.absolute_path) or "<root>"
+        raise ValueError(
+            f"Invalid canonical docstring policy at {location}: {exc.message}"
+        ) from exc
+
+
 def _parse_ownership_config(
     value: object,
     default: OwnershipConfig,
@@ -1269,17 +1384,14 @@ def _default_docstring_schema() -> DocstringSchema:
     -----
     - none
 
-    CallsFromRepo
-    -------------
-    .DocstringSchema:
-      why:
-        computes: "DocstringSchema supplies repo-local behavior used by default docstring schema; this edge is documented from an observed call in the body."
-    .load_docstring_config:
-      why:
-        reads: "load docstring config supplies repo-local behavior used by default docstring schema; this edge is documented from an observed call in the body."
-
     InstantiationsFromRepo
     ----------------------
+    .DocstringSchema:
+      why:
+        constructs: "Builds the built-in policy passed into repository configuration application."
+    .load_docstring_config:
+      why:
+        constructs: "Builds repository configuration passed into policy application."
     .apply_config_to_policy:
       why:
         transforms: "apply config to policy produces a value carried by default docstring schema; this edge is documented from the observed product position in the body."
@@ -1333,10 +1445,8 @@ def resolve_docstring_schema_path(path: str | Path | None = None) -> Path | None
         return [
             base / DOCSTRING_STANDARD_FILE,
             base / DOCSTRING_STANDARD_CANDIDATE_FILE,
-            base / DOCSTRING_LEGACY_FORMAT_FILE,
             base / "standards" / DOCSTRING_STANDARD_FILE,
             base / "standards" / DOCSTRING_STANDARD_CANDIDATE_FILE,
-            base / "standards" / DOCSTRING_LEGACY_FORMAT_FILE,
         ]
 
     module_path = Path(__file__).resolve()
@@ -1390,7 +1500,7 @@ def load_docstring_config(path: str | Path | None = None) -> DocstringRuntimeCon
     - config_path = .resolve_docstring_config_path(optional_config_path)
     - if config_path is missing:
       - return default runtime config
-    - config_values = ._load_yaml(config_path)
+    - config_values = load_configuration(config_path)
     - runtime_config = DocstringRuntimeConfig(config_values)
     - return runtime_config
 
@@ -1403,9 +1513,9 @@ def load_docstring_config(path: str | Path | None = None) -> DocstringRuntimeCon
     .resolve_docstring_config_path:
       why:
         constructs: "Builds the repository config path searched by the loader."
-    ._load_yaml:
+    ..configured_schema.load_configuration:
       why:
-        constructs: "Builds the raw YAML mapping used to configure docstring policy."
+        constructs: "Builds the schema-validated repository configuration mapping."
     .DocstringRuntimeConfig:
       why:
         constructs: "Builds the typed runtime configuration returned to policy loading."
@@ -1774,12 +1884,17 @@ def load_docstring_schema(path: str | Path | None = None) -> DocstringSchema:
     ----------
     - schema_path = .resolve_docstring_schema_path(optional_policy_path)
     - config_rules = .load_docstring_config()
-    - if schema_path is missing:
+    - if no default schema path resolves:
       - return ._default_docstring_schema()
+    - if requested schema path does not exist:
+      - raise file-not-found error
     - schema_values = ._load_yaml(schema_path)
-    - dependency_rules = ModuleDependencyConfig(schema_values)
-    - callable_rules = CallableDocstringSchema(schema_values)
-    - schema_rules = DocstringSchema(callable_rules, dependency_rules)
+    - if schema_values is not a mapping:
+      - raise malformed-policy error
+    - @_validate_canonical_docstring_standard(schema_path, schema_values)
+    - set dependency_rules = ModuleDependencyConfig
+    - set callable_rules = CallableDocstringSchema
+    - set schema_rules = DocstringSchema
     - effective_policy = .apply_config_to_policy(schema_rules, config_rules)
     - return effective_policy
 
@@ -1789,15 +1904,12 @@ def load_docstring_schema(path: str | Path | None = None) -> DocstringSchema:
 
     CallsFromRepo
     -------------
-    .ModuleOwnershipConfig:
-      why:
-        computes: "Supplies nested module ownership defaults while building module policy."
-    .OwnershipConfig:
-      why:
-        computes: "Supplies nested callable ownership defaults while building callable policy."
     .PseudocodeDocstringSchema:
       why:
         computes: "Supplies default pseudocode field values while merging YAML policy."
+    ._validate_canonical_docstring_standard:
+      why:
+        validates: "Checks the canonical policy mapping against its companion schema before parsing."
 
     InstantiationsFromRepo
     ----------------------
@@ -1812,7 +1924,7 @@ def load_docstring_schema(path: str | Path | None = None) -> DocstringSchema:
         constructs: "Builds the raw standard-policy mapping consumed by schema constructors."
     ._default_docstring_schema:
       why:
-        constructs: "Builds fallback policy defaults when no readable standard file exists."
+        constructs: "Builds fallback policy defaults only when no default standard path resolves."
     ._safe_str:
       why:
         constructs: "Builds string-valued policy fields from YAML scalars."
@@ -1831,6 +1943,12 @@ def load_docstring_schema(path: str | Path | None = None) -> DocstringSchema:
     ._parse_ownership_config:
       why:
         constructs: "Builds callable ownership policy from the loaded standard mapping."
+    ._parse_compact_structural_kinds:
+      why:
+        constructs: "Builds the closed compact-kind tuple after rejecting unsupported names."
+    .ModuleOwnershipConfig:
+      why:
+        constructs: "Builds nested module ownership defaults while constructing module policy."
     .apply_config_to_policy:
       why:
         transforms: "Builds the effective policy by applying repository overrides to standard defaults."
@@ -1864,12 +1982,17 @@ def load_docstring_schema(path: str | Path | None = None) -> DocstringSchema:
     """
     schema_path = resolve_docstring_schema_path(path)
     config = load_docstring_config()
-    if schema_path is None or not schema_path.exists():
+    if schema_path is None:
         return _default_docstring_schema()
+    if not schema_path.exists():
+        raise FileNotFoundError(f"Requested docstring policy does not exist: {schema_path}")
 
     schema_value = _load_yaml(schema_path)
     if not isinstance(schema_value, dict):
-        return _default_docstring_schema()
+        raise ValueError(
+            f"Existing docstring policy is malformed or not a mapping: {schema_path}"
+        )
+    _validate_canonical_docstring_standard(schema_path, schema_value)
 
     callable_values = schema_value.get("callable", {})
     if not isinstance(callable_values, dict):
@@ -2069,6 +2192,10 @@ def load_docstring_schema(path: str | Path | None = None) -> DocstringSchema:
                 callable_values.get("required_sections"),
                 callable_defaults.required_sections,
             ),
+            compact_structural_kinds=_parse_compact_structural_kinds(
+                callable_values.get("compact_structural_kinds"),
+                callable_defaults.compact_structural_kinds,
+            ),
             optional_sections=_safe_str_tuple(
                 callable_values.get("optional_sections"),
                 callable_defaults.optional_sections,
@@ -2116,7 +2243,7 @@ def load_docstring_schema(path: str | Path | None = None) -> DocstringSchema:
             ),
             ownership=_parse_ownership_config(
                 callable_values.get("ownership"),
-                default=OwnershipConfig(),
+                default=callable_defaults.ownership,
             ),
         ),
         module_dependencies=module_dependency_config,

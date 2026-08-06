@@ -39,12 +39,38 @@ def _copy_standard_repo(tmp_path: Path) -> Path:
     tooling.mkdir(parents=True, exist_ok=True)
     for name in ("standard-v6.schema.json", "validate_standard_v6.py", "render_standard_v6.py"):
         shutil.copy2(ROOT / "references" / "standards" / name, tooling / name)
+    shutil.copy2(
+        ROOT / "references" / "standards" / "docstring_format.schema.json",
+        tooling / "docstring_format.schema.json",
+    )
     return tmp_path
 
 
 def test_repository_canonical_standards_are_valid_and_fresh():
     validator = _load_validator()
     assert validator.validate(ROOT) == []
+
+
+def test_docstring_standard_is_validated_against_its_canonical_schema(tmp_path):
+    """Unsupported compact kinds are rejected at the repository standards gate."""
+    repo = _copy_standard_repo(tmp_path)
+    path = repo / "references/standards/docstring.standard.yaml"
+    document = yaml.safe_load(path.read_text(encoding="utf-8"))
+    document["callable"]["compact_structural_kinds"] = ["protocol"]
+    path.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
+
+    errors = _load_validator().validate(repo)
+
+    assert any(
+        "references/standards/docstring.standard.yaml: schema validation failed"
+        in error
+        for error in errors
+    )
+
+
+def test_stale_tracked_legacy_docstring_policy_is_absent():
+    """The repository ships only the canonical docstring policy filename."""
+    assert not (ROOT / "references/standards/docstring_format.yaml").exists()
 
 
 def test_accepts_utf8_standards_and_crlf_views_under_windows_default_encoding(

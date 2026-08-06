@@ -11,7 +11,7 @@
 #   `docstring_format_version` should be bumped whenever this policy shape
 #   changes in a way that can affect docstring quality checks.
 #   `name` is used as an identifier in diagnostics and docs.
-docstring_format_version: 30
+docstring_format_version: 31
 # Stable contract identifier used by tooling outputs and diagnostics.
 name: docstring_format
 # If true, required settings are enforced and surface as warnings.
@@ -87,6 +87,12 @@ callable:
     - Rationale
     - Pseudocode
     - Wraps
+
+  # Conservative structural declarations may use a meaningful summary without
+  # narrative sections when the validator proves the exact listed AST shape.
+  compact_structural_kinds:
+    - stdlib_dataclass
+    - builtin_exception
 
   # Additional optional callable sections that are retained by parser/validator tooling.
   optional_sections:
