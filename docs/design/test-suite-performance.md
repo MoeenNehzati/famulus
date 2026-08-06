@@ -22,6 +22,8 @@ assertions.
   per-file loop.
 - Reuse only behaviorally equivalent preparation. Do not broaden a check or hide
   ordering and error-boundary changes merely to obtain a cache hit.
+- Measure the result of each refactor. Removing repeated cheap operations may be
+  correct without materially changing end-to-end runtime.
 - Stop optimizing when suite logic is no longer the bottleneck. Framework,
   subprocess, and staged-repository setup are shared runner concerns.
 
@@ -72,3 +74,10 @@ median of about 5.1 seconds.
 The existing document/error cache remains traversal-scoped. Reusing it across
 top-level roots could change cycle paths and error prefixes, so parsed-data or
 result reuse requires a separate semantics-preserving design.
+
+## Example: path preparation
+
+The platform-neutral validator computed the same repository-relative path
+during discovery and again for every line. Carrying it forward from discovery
+reduced five-run call time from 2.50--3.06 seconds to 2.31--2.48 seconds. The
+small gain shows that file reading and content matching remain the dominant work.

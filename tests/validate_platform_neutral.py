@@ -11,7 +11,36 @@ import pytest
 from test_support.git_repository import GitTestRepository
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from validators import platform_neutral as module_under_test  # noqa: E402
 from validators.platform_neutral import validate  # noqa: E402
+
+
+def test_scanned_path_is_relativized_once(tmp_path: Path, monkeypatch) -> None:
+    source = tmp_path / "skills" / "demo" / "SKILL.md"
+    source.parent.mkdir(parents=True)
+    source.write_text("first\nsecond\nthird\n", encoding="utf-8")
+    original_relative_to = Path.relative_to
+    calls = 0
+
+    def counting_relative_to(path, other, *args, **kwargs):
+        nonlocal calls
+        if path == source and other == tmp_path.resolve():
+            calls += 1
+        return original_relative_to(path, other, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "relative_to", counting_relative_to)
+
+    assert module_under_test._validate(tmp_path, frozenset()) == []
+    assert calls == 1
+
+
+def test_standalone_check_root_keeps_relative_finding_path(tmp_path: Path) -> None:
+    root_file = tmp_path / "CLAUDE.md"
+    root_file.write_text("Use Codex here.\n", encoding="utf-8")
+
+    assert module_under_test._validate(tmp_path, frozenset()) == [
+        "CLAUDE.md:1: Use Codex here."
+    ]
 
 
 def test_empty_repo_passes(tmp_path: Path) -> None:
