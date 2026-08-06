@@ -1,10 +1,12 @@
 """Smoke tests for validators/skill/dispatch_caller_module.py."""
 from __future__ import annotations
 
+import ast
 import importlib.util
 from pathlib import Path
 
 from officina.common.blueprint_graph import load_repository_blueprint_graph
+from officina.common.python_source_cache import PythonSourceCache
 from v5_blueprint_fixtures import copy_v5_fixture_tree
 
 
@@ -24,6 +26,25 @@ _V5_FIXTURE = _REPO_ROOT / "tests" / "fixtures" / "blueprint_v5" / "authorizatio
 def test_empty_skills_passes(tmp_path: Path) -> None:
     (tmp_path / "skills").mkdir()
     assert _mod.validate(tmp_path) == []
+
+
+def test_injected_cache_preserves_findings_and_ast(tmp_path: Path) -> None:
+    skill = tmp_path / "skills" / "demo"
+    runtime = skill / "_rtx" / "caller.py"
+    runtime.parent.mkdir(parents=True)
+    (skill / "blueprint.yaml").write_text("", encoding="utf-8")
+    runtime.write_text(
+        "from officina.dispatcher import dispatch\n"
+        "dispatch(target='demo.run')\n",
+        encoding="utf-8",
+    )
+    expected = _mod.validate(tmp_path)
+    source_cache = PythonSourceCache(tmp_path)
+    _source, tree = source_cache.read_parse(runtime)
+    before = ast.dump(tree, include_attributes=True)
+
+    assert _mod._validate(tmp_path, None, source_cache) == expected
+    assert ast.dump(tree, include_attributes=True) == before
 
 
 def test_v5_dispatch_caller_uses_deepest_registered_module(
