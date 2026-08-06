@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import pytest
 import shutil
 import sys
@@ -195,6 +196,25 @@ def _function_source(name: str, doc: str, body: str, *, indent: str = "") -> str
         f'{indent}def {name}():\n'
         f'{indent}    """\n{rendered_doc}\n{indent}    """\n'
         f"{rendered_body}\n"
+    )
+
+
+def _wrapper_doc(
+    summary: str,
+    target: str,
+    *,
+    calls: tuple[str, ...] = (),
+) -> str:
+    """Build a complete callable docstring fixture with one wrapper edge."""
+    doc = _dependency_doc(summary, calls=calls)
+    return doc.replace(
+        "Wraps\n-----\n- none",
+        (
+            "Wraps\n-----\n"
+            f"- {target} -> preprocess: forward supplied arguments unchanged; "
+            "postprocess: convert the delegated result to a boolean; "
+            "fixed_arguments: none"
+        ),
     )
 
 
@@ -1293,6 +1313,88 @@ def test_relative_repo_dependency_is_grounded_to_local_call(tmp_path: Path) -> N
     assert "docstring.module-dependency-unresolved" not in entry_codes
 
 
+def test_wraps_only_documents_thin_wrapper_repo_call(tmp_path: Path) -> None:
+    """A Wraps edge alone documents the repo operation delegated by a wrapper."""
+    dependency = "officina.common.repository_paths.repository_relative_path"
+    source = (
+        "from officina.common.repository_paths import repository_relative_path as resolve\n\n"
+        + _function_source(
+            "entry",
+            _wrapper_doc("Report whether one repository-relative input resolves.", dependency),
+            "return resolve('sample') is not None",
+        )
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.module-dependency-undocumented" not in entry_codes
+
+
+def test_wraps_does_not_document_same_leaf_from_different_module(
+    tmp_path: Path,
+) -> None:
+    """A wrapper target cannot cover an unrelated repo call with the same leaf."""
+    source = (
+        "from officina.beta import build\n\n"
+        + _function_source(
+            "entry",
+            _wrapper_doc(
+                "Report whether an unrelated repository build succeeds.",
+                "officina.alpha.build",
+            ),
+            "return build('sample') is not None",
+        )
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert {
+        "docstring.module-dependency-undocumented",
+        "docstring.wraps-unresolved-target",
+    } <= entry_codes
+
+
+def test_wraps_and_calls_overlap_for_absolute_current_module_and_relative_target(
+    tmp_path: Path,
+) -> None:
+    """Current-module absolute and local-relative spellings overlap exactly."""
+    relative_target = "._helper"
+    absolute_target = "officina.validators.docstring_validator._helper"
+    helper = _function_source(
+        "_helper",
+        _dependency_doc("Provide the local result used by the wrapper fixture."),
+        "return None",
+    )
+    entry = _function_source(
+        "entry",
+        _wrapper_doc(
+            "Delegate to the local helper through one wrapper edge.",
+            absolute_target,
+            calls=(relative_target,),
+        ),
+        "_helper()\nreturn None",
+    )
+    module_path = (
+        tmp_path / "src" / "officina" / "validators" / "docstring_validator.py"
+    )
+    module_path.parent.mkdir(parents=True)
+    module_path.write_text(helper + "\n" + entry, encoding="utf-8")
+
+    issues = validate_module_docstrings(
+        module_path,
+        require_module_docstring=False,
+        check_group="behavioral",
+    )
+
+    assert any(
+        issue.node_id == "entry"
+        and issue.code == "docstring.dependency-section-overlap"
+        for issue in issues
+    )
+
+
 def test_implicit_relative_dependency_must_still_resolve(tmp_path: Path) -> None:
     """Implicit dependencies skip body observation but not logical target grounding."""
     module_path = tmp_path / "sample.py"
@@ -2019,6 +2121,349 @@ def test_repo_consumer_arguments_classify_repo_results_as_products(
 
 
 @pytest.mark.parametrize(
+    ("prefix", "body"),
+    (
+        ("", "for item in produce():\n    print(item)\nreturn None"),
+        (
+            "",
+            "items = [item for item in produce() if item is not None]\nreturn items",
+        ),
+    ),
+)
+def test_repo_results_consumed_as_iterables_are_products(
+    tmp_path: Path,
+    prefix: str,
+    body: str,
+) -> None:
+    """Returned repo values remain products when consumed by semantic sinks."""
+    producer = "officina.common.repository_paths.repository_relative_path"
+    source = (
+        prefix
+        + "from officina.common.repository_paths import repository_relative_path as produce\n\n"
+        + _function_source(
+            "entry",
+            _dependency_doc(
+                "Consume a repository result through a semantic value channel.",
+                products=(producer,),
+            ),
+            body,
+        )
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.module-dependency-not-observed" not in entry_codes
+    assert "docstring.module-dependency-undocumented" not in entry_codes
+
+
+@pytest.mark.parametrize(
+    ("body", "is_async"),
+    (
+        ("for item in produce():\n    pass\nreturn item", False),
+        ("for item in produce():\n    pass\nreturn None", False),
+        ("for left, right in produce():\n    pass\nreturn left", False),
+        ("for head, *tail in produce():\n    pass\nreturn tail", False),
+        (
+            "for item in produce():\n    def capture():\n        return item\nreturn capture",
+            False,
+        ),
+        ("async for item in produce():\n    pass\nreturn item", True),
+    ),
+)
+def test_direct_iteration_remains_a_product_without_flow_guessing(
+    tmp_path: Path,
+    body: str,
+    is_async: bool,
+) -> None:
+    """Direct iteration is a product across target and later-use shapes."""
+    producer = "officina.common.repository_paths.repository_relative_path"
+    entry = _function_source(
+        "entry",
+        _dependency_doc(
+            "Consume a repository container through direct iteration.",
+            products=(producer,),
+        ),
+        body,
+    )
+    if is_async:
+        entry = entry.replace("def entry():", "async def entry():", 1)
+    source = (
+        "from officina.common.repository_paths import repository_relative_path as produce\n\n"
+        + entry
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.module-dependency-not-observed" not in entry_codes
+    assert "docstring.module-dependency-undocumented" not in entry_codes
+
+
+@pytest.mark.parametrize(
+    "body",
+    (
+        "return [0 for item in produce()]",
+        "return [left for left, right in produce()]",
+        "return [tail for head, *tail in produce()]",
+        "return [[inner for inner in item] for item in produce()]",
+    ),
+)
+def test_comprehension_iterable_reaching_product_anchor_is_a_product(
+    tmp_path: Path,
+    body: str,
+) -> None:
+    """Anchored comprehensions carry their source despite emitted-value shape."""
+    producer = "officina.common.repository_paths.repository_relative_path"
+    source = (
+        "from officina.common.repository_paths import repository_relative_path as produce\n\n"
+        + _function_source(
+            "entry",
+            _dependency_doc(
+                "Consume a repository container through an anchored comprehension.",
+                products=(producer,),
+            ),
+            body,
+        )
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.module-dependency-not-observed" not in entry_codes
+    assert "docstring.module-dependency-undocumented" not in entry_codes
+
+
+@pytest.mark.parametrize(
+    ("prefix", "body"),
+    (
+        ("import sys as system\n", "system.stdout.write(produce())\nreturn None"),
+        ("from sys import stdout as output\n", "output.write(s=produce())\nreturn None"),
+    ),
+)
+def test_stdout_aliases_carry_repo_results_to_output(
+    tmp_path: Path,
+    prefix: str,
+    body: str,
+) -> None:
+    """Normalized unshadowed stdout aliases are semantic output sinks."""
+    producer = "officina.common.repository_paths.repository_relative_path"
+    source = (
+        prefix
+        + "from officina.common.repository_paths import repository_relative_path as produce\n\n"
+        + _function_source(
+            "entry",
+            _dependency_doc("Write a repository result to standard output.", products=(producer,)),
+            body,
+        )
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.module-dependency-not-observed" not in entry_codes
+    assert "docstring.module-dependency-undocumented" not in entry_codes
+
+
+@pytest.mark.parametrize("argument", ("produce()", "data=produce()"))
+def test_source_backed_local_write_bytes_receiver_carries_copy_product(
+    tmp_path: Path,
+    argument: str,
+) -> None:
+    """A repo-produced local destination proves the bounded byte-copy sink."""
+    producer = "officina.common.repository_paths.repository_relative_path"
+    target_factory = "officina.common.repository_paths.normalize_repository_root"
+    source = (
+        "from officina.common.repository_paths import repository_relative_path as produce\n"
+        "from officina.common.repository_paths import normalize_repository_root as make_target\n\n"
+        + _function_source(
+            "entry",
+            _dependency_doc(
+                "Copy one repository byte product to a source-backed local target.",
+                products=(producer, target_factory),
+            ),
+            f"target = make_target('sample')\ntarget.write_bytes({argument})\nreturn None",
+        )
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.module-dependency-not-observed" not in entry_codes
+    assert "docstring.module-dependency-undocumented" not in entry_codes
+
+
+@pytest.mark.parametrize(
+    ("prefix", "body", "shadow_sys"),
+    (
+        ("import sys as system\n", "system.stdout.write(produce())\nreturn None", True),
+        ("", "sys.stdout.write(produce())\nreturn None", False),
+        ("", "sys = object()\nsys.stdout.write(produce())\nreturn None", False),
+        ("", "target.write_bytes(produce())\nreturn None", False),
+        ("import external\n", "external.target.write_bytes(data=produce())\nreturn None", False),
+    ),
+)
+def test_shadowed_stdout_and_unproven_write_bytes_receivers_remain_operations(
+    tmp_path: Path,
+    prefix: str,
+    body: str,
+    shadow_sys: bool,
+) -> None:
+    """Aliases and method leaves cannot prove output or copy sinks by spelling alone."""
+    producer = "officina.common.repository_paths.repository_relative_path"
+    entry = _function_source(
+        "entry",
+        _dependency_doc("Use a repository result through an unproven sink.", calls=(producer,)),
+        body,
+    )
+    if shadow_sys:
+        entry = entry.replace("def entry():", "def entry(system):", 1)
+    source = (
+        prefix
+        + "from officina.common.repository_paths import repository_relative_path as produce\n\n"
+        + entry
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.module-dependency-not-observed" not in entry_codes
+    assert "docstring.module-dependency-undocumented" not in entry_codes
+
+
+@pytest.mark.parametrize(
+    "rebinding",
+    (
+        "import external as target",
+        "from external import target",
+        "def target():\n    return None",
+        "async def target():\n    return None",
+        "class target:\n    pass",
+        "match candidate:\n    case {'target': target}:\n        pass",
+        "del target",
+        "target = external",
+    ),
+)
+def test_competing_local_receiver_bindings_prevent_write_bytes_promotion(
+    tmp_path: Path,
+    rebinding: str,
+) -> None:
+    """Every later same-scope binding invalidates byte-copy receiver provenance."""
+    producer = "officina.common.repository_paths.repository_relative_path"
+    target_factory = "officina.common.repository_paths.normalize_repository_root"
+    source = (
+        "from officina.common.repository_paths import repository_relative_path as produce\n"
+        "from officina.common.repository_paths import normalize_repository_root as make_target\n\n"
+        + _function_source(
+            "entry",
+            _dependency_doc(
+                "Reject byte-copy promotion after competing receiver provenance.",
+                calls=(producer,),
+                products=(target_factory,),
+            ),
+            (
+                "target = make_target('sample')\n"
+                f"{rebinding}\n"
+                "target.write_bytes(produce())\n"
+                "return None"
+            ),
+        )
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.module-dependency-not-observed" not in entry_codes
+    assert "docstring.module-dependency-undocumented" not in entry_codes
+
+
+@pytest.mark.parametrize(
+    ("body", "producer_is_product"),
+    (
+        (
+            "target = make_target('sample'); target.write_bytes(produce()); return None",
+            True,
+        ),
+        (
+            "target = make_target('sample'); target = external; "
+            "target.write_bytes(produce()); return None",
+            False,
+        ),
+        (
+            "target = make_target('sample'); target.write_bytes(produce()); "
+            "target = external; return None",
+            True,
+        ),
+    ),
+)
+def test_same_line_receiver_bindings_follow_full_source_order(
+    tmp_path: Path,
+    body: str,
+    producer_is_product: bool,
+) -> None:
+    """Column order separates pre-sink provenance from post-sink rebinding."""
+    producer = "officina.common.repository_paths.repository_relative_path"
+    target_factory = "officina.common.repository_paths.normalize_repository_root"
+    source = (
+        "from officina.common.repository_paths import repository_relative_path as produce\n"
+        "from officina.common.repository_paths import normalize_repository_root as make_target\n\n"
+        + _function_source(
+            "entry",
+            _dependency_doc(
+                "Classify same-line receiver provenance in exact source order.",
+                calls=() if producer_is_product else (producer,),
+                products=(
+                    (producer, target_factory)
+                    if producer_is_product
+                    else (target_factory,)
+                ),
+            ),
+            body,
+        )
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.module-dependency-not-observed" not in entry_codes
+    assert "docstring.module-dependency-undocumented" not in entry_codes
+
+
+def test_type_alias_rebinding_prevents_write_bytes_promotion(tmp_path: Path) -> None:
+    """Python 3.12 type aliases compete with earlier receiver value bindings."""
+    if not hasattr(ast, "TypeAlias"):
+        # famulus-skip: category=platform-contract; reason=Python before 3.12 has no TypeAlias AST node; alternate=covered on Python 3.12+
+        pytest.skip("ast.TypeAlias is unavailable on this Python")
+
+    producer = "officina.common.repository_paths.repository_relative_path"
+    target_factory = "officina.common.repository_paths.normalize_repository_root"
+    source = (
+        "from officina.common.repository_paths import repository_relative_path as produce\n"
+        "from officina.common.repository_paths import normalize_repository_root as make_target\n\n"
+        + _function_source(
+            "entry",
+            _dependency_doc(
+                "Reject copy promotion after a competing local type alias.",
+                calls=(producer,),
+                products=(target_factory,),
+            ),
+            (
+                "target = make_target('sample')\n"
+                "type target = int\n"
+                "target.write_bytes(produce())\n"
+                "return None"
+            ),
+        )
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.module-dependency-not-observed" not in entry_codes
+    assert "docstring.module-dependency-undocumented" not in entry_codes
+
+
+@pytest.mark.parametrize(
     ("prefix", "expression"),
     (
         ("", "print(produce())"),
@@ -2173,11 +2618,12 @@ def test_named_nested_scopes_remain_pruned_from_parent_dependency_attribution(
 
 
 @pytest.mark.parametrize(
-    ("body", "calls"),
+    ("body", "calls", "products"),
     (
-        ("return [produce('x') for produce in callbacks]", ()),
+        ("return [produce('x') for produce in callbacks]", (), ()),
         (
             "return [item for produce in produce() for item in produce]",
+            (),
             ("officina.common.repository_paths.repository_relative_path",),
         ),
     ),
@@ -2186,13 +2632,18 @@ def test_comprehension_targets_shadow_repo_aliases_after_iterator_evaluation(
     tmp_path: Path,
     body: str,
     calls: tuple[str, ...],
+    products: tuple[str, ...],
 ) -> None:
     """A comprehension target shadows only expressions evaluated after binding."""
     source = (
         "from officina.common.repository_paths import repository_relative_path as produce\n\n"
         + _function_source(
             "entry",
-            _dependency_doc("Evaluate a comprehension with ordered bindings.", calls=calls),
+            _dependency_doc(
+                "Evaluate a comprehension with ordered bindings.",
+                calls=calls,
+                products=products,
+            ),
             body,
         )
     )
@@ -2328,7 +2779,6 @@ def test_nested_generator_outputs_flow_through_value_preserving_bindings(
 @pytest.mark.parametrize(
     "body",
     (
-        "return [c for c in produce()]",
         "return [c for c in xs if produce(c)]",
         "return xs[produce()]",
         "return [mapping[c] for c in (produce(x) for x in xs)]",

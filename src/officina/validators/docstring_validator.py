@@ -46,6 +46,7 @@ _BUILTIN_EXCEPTION_NAMES = frozenset(
     if isinstance(getattr(builtins, name), type)
     and issubclass(getattr(builtins, name), BaseException)
 )
+_AST_TYPE_ALIAS = getattr(ast, "TypeAlias", ())
 _COMPACT_SECTION_WAIVERS = frozenset({"Intent", "Rationale", "Pseudocode", "Wraps"})
 _PSEUDOCODE_TOKEN_RE = re.compile(
     r"(?<![A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)(?![A-Za-z0-9_])"
@@ -381,7 +382,7 @@ def _name_mentioned_in_pseudocode(
     ----------
     - for dependency_ref in pseudocode_refs:
       - explicit_ref = ._split_explicit_ref(dependency_ref)
-      - candidate_names = @._dependency_name_variants(explicit_ref)
+      - candidate_names = ._dependency_name_variants(explicit_ref)
       - if candidate_names mention name:
         - return true
     - return false
@@ -389,12 +390,6 @@ def _name_mentioned_in_pseudocode(
     Wraps
     -----
     - none
-
-    CallsFromRepo
-    -------------
-    ._dependency_name_variants:
-      why:
-        computes: "Expands scoped and compact dependency name forms before matching pseudocode markers."
 
     InstantiationsFromRepo
     ----------------------
@@ -1563,12 +1558,12 @@ def _scope_binding_names(node: ast.AST) -> set[str]:
 
     Rationale
     ---------
-    Assignments are not the only lexical binders: deletes and structural-pattern
-    captures also make imported or builtin spellings unsafe to trust.
+    Assignments are not the only lexical binders: type aliases, deletes, and
+    structural-pattern captures also make imported or builtin spellings unsafe to trust.
 
     Pseudocode
     ----------
-    - if node declares a callable or class:
+    - if node declares a callable, class, or type alias:
       - return its name
     - if node binds assignment-like targets:
       - return ._bound_target_names(targets)
@@ -1580,12 +1575,6 @@ def _scope_binding_names(node: ast.AST) -> set[str]:
     -----
     - none
 
-    CallsFromRepo
-    -------------
-    ._bound_target_names:
-      why:
-        computes: "Collects names bound or deleted through assignment-shaped targets."
-
     InstantiationsFromRepo
     ----------------------
     ._bound_target_names:
@@ -1594,6 +1583,8 @@ def _scope_binding_names(node: ast.AST) -> set[str]:
     """
     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
         return {node.name}
+    if _AST_TYPE_ALIAS and isinstance(node, _AST_TYPE_ALIAS):
+        return _bound_target_names(node.name)
     if isinstance(node, ast.Assign):
         return {
             name
@@ -1655,14 +1646,11 @@ def _scope_import_aliases(
     -----
     - none
 
-    CallsFromRepo
-    -------------
-    ._iter_lexical_scope_nodes:
-      why:
-        computes: "Streams only nodes belonging to the current lexical scope."
-
     InstantiationsFromRepo
     ----------------------
+    ._iter_lexical_scope_nodes:
+      why:
+        constructs: "Builds the lexical node stream consumed into the returned effective alias mapping."
     ._scope_binding_names:
       why:
         constructs: "Builds every non-import binder that invalidates an inherited alias."
@@ -1731,14 +1719,11 @@ def _scope_nonimport_bound_names(
     -----
     - none
 
-    CallsFromRepo
-    -------------
-    ._iter_lexical_scope_nodes:
-      why:
-        computes: "Streams current-scope bindings without entering child declarations."
-
     InstantiationsFromRepo
     ----------------------
+    ._iter_lexical_scope_nodes:
+      why:
+        constructs: "Builds the lexical node stream consumed into the returned bound-name set."
     ._scope_binding_names:
       why:
         constructs: "Builds declarations, targets, deletes, and pattern captures in the scope."
@@ -1915,14 +1900,11 @@ def _collect_defined_symbols(tree: ast.AST) -> set[str]:
     -----
     - none
 
-    CallsFromRepo
-    -------------
-    ._iter_lexical_scope_nodes:
-      why:
-        computes: "Streams module-scope bindings without nested-scope leakage."
-
     InstantiationsFromRepo
     ----------------------
+    ._iter_lexical_scope_nodes:
+      why:
+        constructs: "Builds the module-scope node stream consumed into the returned symbol set."
     ._bound_target_names:
       why:
         constructs: "Builds target-name intersections merged into the defined-symbol set."
@@ -2063,6 +2045,10 @@ def _declared_dependency_targets_match(
     left: str,
     right: str,
     import_aliases: Mapping[str, str],
+    *,
+    path: Path,
+    defined_symbols: set[str],
+    allowed_abs: tuple[str, ...],
 ) -> bool:
     """Return ``True`` when two documented dependency leaves name the same target.
 
@@ -2084,16 +2070,30 @@ def _declared_dependency_targets_match(
     -----
     - none
 
-    CallsFromRepo
-    -------------
+    InstantiationsFromRepo
+    ----------------------
     ._normalize_dependency_name:
       why:
-        computes: "normalize dependency name supplies repo-local behavior used by declared dependency targets match; this edge is documented from an observed call in the body."
+        constructs: "Builds the normalized dependency names compared across declared dependency sections."
     """
-    return _normalize_dependency_name(left, import_aliases) == _normalize_dependency_name(
-        right,
-        import_aliases,
-    )
+    normalized_left = _normalize_dependency_name(left, import_aliases)
+    normalized_right = _normalize_dependency_name(right, import_aliases)
+    if normalized_left == normalized_right:
+        return True
+
+    module_path = path.parent if path.name == "__init__.py" else path.with_suffix("")
+    module_parts = module_path.parts
+    module_name = ""
+    for index in range(len(module_parts) - 1, -1, -1):
+        if module_parts[index] in allowed_abs:
+            module_name = ".".join(module_parts[index:])
+            break
+
+    if module_name and normalized_left.split(".", 1)[0] in defined_symbols:
+        normalized_left = f"{module_name}.{normalized_left}"
+    if module_name and normalized_right.split(".", 1)[0] in defined_symbols:
+        normalized_right = f"{module_name}.{normalized_right}"
+    return normalized_left == normalized_right
 
 
 def _ast_parent_map(root: ast.AST) -> dict[ast.AST, ast.AST]:
@@ -2386,6 +2386,270 @@ def _assigned_name_is_proven_control_only(
     return True
 
 
+def _scope_binding_value(
+    node: ast.AST,
+    name: str,
+) -> tuple[bool, ast.AST | None]:
+    """Return whether one node binds a name and its direct value, if any.
+
+    Intent
+    ------
+    Give local provenance checks one complete lexical binding model for imports,
+    assignments, declarations, patterns, deletes, and other Python binders.
+
+    Rationale
+    ---------
+    Only a simple direct value binding can establish provenance. Every other binding
+    form still counts as competition and therefore returns a missing direct value.
+
+    Pseudocode
+    ----------
+    - if node imports name:
+      - return bound without direct value
+    - if name is not in @._scope_binding_names(node):
+      - return unbound
+    - if node is one simple direct value assignment to name:
+      - return bound with assigned value
+    - return bound without direct value
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._scope_binding_names:
+      why:
+        computes: "Applies the shared lexical binding model to every non-import binder."
+    """
+    if isinstance(node, ast.Import):
+        imported_names = {
+            (alias.asname or alias.name).split(".", 1)[0]
+            for alias in node.names
+        }
+        return name in imported_names, None
+    if isinstance(node, ast.ImportFrom):
+        imported_names = {
+            alias.asname or alias.name
+            for alias in node.names
+            if alias.name != "*"
+        }
+        return name in imported_names, None
+
+    if name not in _scope_binding_names(node):
+        return False, None
+    if (
+        isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+        and node.targets[0].id == name
+    ):
+        return True, node.value
+    if (
+        isinstance(node, (ast.AnnAssign, ast.NamedExpr))
+        and isinstance(node.target, ast.Name)
+        and node.target.id == name
+        and node.value is not None
+    ):
+        return True, node.value
+    return True, None
+
+
+def _source_backed_local_receiver(
+    sink: ast.Call,
+    parents: Mapping[ast.AST, ast.AST],
+    *,
+    import_aliases: Mapping[str, str],
+    defined_symbols: set[str],
+    allowed_abs: tuple[str, ...],
+    shadowed_names: frozenset[str],
+) -> bool:
+    """Prove that a byte-write receiver comes from one local repo result.
+
+    Intent
+    ------
+    Recognize copy destinations created by repository code without trusting an
+    arbitrary method receiver merely because its final attribute is ``write_bytes``.
+
+    Rationale
+    ---------
+    A single earlier same-scope binding from a resolved repo call gives the receiver
+    source provenance. Parameters, multiple bindings, non-call values, and nested
+    declarations remain unproven without control-flow inference.
+
+    Pseudocode
+    ----------
+    - if sink receiver is not one plain local name:
+      - return false
+    - set owner = nearest named function
+    - if receiver is a parameter:
+      - return false
+    - set bindings = same-scope bindings of receiver before sink
+    - if bindings are not one direct repo-call assignment:
+      - return false
+    - return true
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._flatten_attribute_name:
+      why:
+        computes: "Extracts the source call target that created the local receiver."
+    InstantiationsFromRepo
+    ----------------------
+    ._iter_lexical_scope_nodes:
+      why:
+        constructs: "Builds the same-scope node stream consumed by receiver provenance checks."
+    ._observed_call_is_repo_dependency:
+      why:
+        constructs: "Builds the final repository-provenance decision returned for the receiver."
+    ._normalize_dependency_name:
+      why:
+        constructs: "Builds the normalized receiver source carried into repository classification."
+    ._scope_binding_value:
+      why:
+        constructs: "Builds each complete binding record consumed by the receiver provenance decision."
+    """
+    if not isinstance(sink.func, ast.Attribute) or not isinstance(
+        sink.func.value,
+        ast.Name,
+    ):
+        return False
+    receiver = sink.func.value.id
+
+    owner = parents.get(sink)
+    while owner is not None and not isinstance(
+        owner,
+        (ast.FunctionDef, ast.AsyncFunctionDef),
+    ):
+        owner = parents.get(owner)
+    if owner is None:
+        return False
+
+    parameter_names = {
+        argument.arg
+        for argument in (
+            *owner.args.posonlyargs,
+            *owner.args.args,
+            *owner.args.kwonlyargs,
+        )
+    }
+    if owner.args.vararg is not None:
+        parameter_names.add(owner.args.vararg.arg)
+    if owner.args.kwarg is not None:
+        parameter_names.add(owner.args.kwarg.arg)
+    if receiver in parameter_names:
+        return False
+
+    bindings: list[ast.AST | None] = []
+    sink_position = (
+        getattr(sink, "lineno", 0),
+        getattr(sink, "col_offset", 0),
+    )
+    for current in _iter_lexical_scope_nodes(owner.body):
+        current_position = (
+            getattr(current, "lineno", 0),
+            getattr(current, "col_offset", 0),
+        )
+        if current_position >= sink_position:
+            continue
+        is_binding, value = _scope_binding_value(current, receiver)
+        if is_binding:
+            bindings.append(value)
+
+    if len(bindings) != 1 or bindings[0] is None:
+        return False
+    source = bindings[0]
+    if isinstance(source, ast.Await):
+        source = source.value
+    if not isinstance(source, ast.Call):
+        return False
+    target = _flatten_attribute_name(source.func) or ""
+    if not target or target.split(".", 1)[0] in shadowed_names:
+        return False
+    normalized = _normalize_dependency_name(target, import_aliases)
+    return _observed_call_is_repo_dependency(
+        normalized,
+        import_aliases=import_aliases,
+        defined_symbols=defined_symbols,
+        allowed_abs=allowed_abs,
+    )
+
+
+def _call_is_semantic_product_sink(
+    sink: ast.Call,
+    parents: Mapping[ast.AST, ast.AST],
+    *,
+    import_aliases: Mapping[str, str],
+    defined_symbols: set[str],
+    allowed_abs: tuple[str, ...],
+    shadowed_names: frozenset[str],
+) -> bool:
+    """Recognize bounded output and copy consumers for call arguments.
+
+    Intent
+    ------
+    Centralize semantic sink recognition for both positional and keyword arguments.
+
+    Rationale
+    ---------
+    Import normalization plus lexical shadow checks identify real stdout writes,
+    while byte-copy promotion additionally requires a source-backed local receiver.
+
+    Pseudocode
+    ----------
+    - set sink_name = normalized call target
+    - if sink base is shadowed:
+      - return false
+    - if sink_name is sys stdout write:
+      - return true
+    - if sink leaf is write_bytes:
+      - return ._source_backed_local_receiver(sink)
+    - return false
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._flatten_attribute_name:
+      why:
+        computes: "Extracts the candidate output or copy sink target."
+    ._normalize_dependency_name:
+      why:
+        computes: "Resolves stdout import aliases before exact sink comparison."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._source_backed_local_receiver:
+      why:
+        constructs: "Builds the byte-copy receiver provenance decision returned for the candidate sink."
+    """
+    sink_name = _flatten_attribute_name(sink.func) or ""
+    if not sink_name:
+        return False
+    if sink_name.split(".", 1)[0] in shadowed_names:
+        return False
+    normalized = _normalize_dependency_name(sink_name, import_aliases)
+    sink_base = sink_name.split(".", 1)[0]
+    if normalized == "sys.stdout.write" and sink_base in import_aliases:
+        return True
+    if sink_name.rsplit(".", 1)[-1] != "write_bytes":
+        return False
+    return _source_backed_local_receiver(
+        sink,
+        parents,
+        import_aliases=import_aliases,
+        defined_symbols=defined_symbols,
+        allowed_abs=allowed_abs,
+        shadowed_names=shadowed_names,
+    )
+
+
 def _call_result_is_product_position(
     call: ast.Call,
     parents: Mapping[ast.AST, ast.AST],
@@ -2405,13 +2669,15 @@ def _call_result_is_product_position(
     ---------
     Projections, binary expressions, formatted strings, comprehensions, and containers
     preserve a value channel but become products only at a recognized anchor or consumer.
+    Direct iteration consumes a returned container, while exact stdout and byte-write
+    sinks carry returned text or bytes into externally visible output.
 
     Pseudocode
     ----------
     - set value_node = call or awaited call
     - while value_node is in a supported value-carrying expression:
       - set value_node = containing expression
-    - if value_node reaches return, raise, yield, assignment, augmented assignment, collector, or repo consumer:
+    - if value_node reaches direct iteration, output, copy, return, raise, yield, assignment, augmented assignment, collector, or repo consumer:
       - return true
     - return false
 
@@ -2430,6 +2696,9 @@ def _call_result_is_product_position(
     ._assigned_name_is_proven_control_only:
       why:
         computes: "Proves the narrow direct-assignment exception whose uses are exclusively control inputs."
+    ._call_is_semantic_product_sink:
+      why:
+        computes: "Recognizes exact output and source-backed copy consumers for positional and keyword arguments."
     ._observed_call_is_repo_dependency:
       why:
         computes: "Checks whether an outer positional or keyword consumer is repo-local."
@@ -2504,26 +2773,36 @@ def _call_result_is_product_position(
             promoted_comprehension = parent
             parent = parents.get(parent)
             continue
+        if isinstance(parent, (ast.For, ast.AsyncFor)) and parent.iter is value_node:
+            return True
         if (
             isinstance(parent, ast.comprehension)
             and parent.iter is value_node
-            and promoted_comprehension is value_node
-            and promoted_iteration_carries_result
         ):
             owner = parents.get(parent)
             if isinstance(
                 owner,
                 (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp),
             ):
-                output_carries, iteration_carries = (
-                    _comprehension_iter_result_channels(parent, owner)
-                )
-                if output_carries:
+                if promoted_comprehension is None:
                     value_node = owner
                     promoted_comprehension = owner
-                    promoted_iteration_carries_result = iteration_carries
+                    promoted_iteration_carries_result = True
                     parent = parents.get(owner)
                     continue
+                if (
+                    promoted_comprehension is value_node
+                    and promoted_iteration_carries_result
+                ):
+                    output_carries, iteration_carries = (
+                        _comprehension_iter_result_channels(parent, owner)
+                    )
+                    if output_carries:
+                        value_node = owner
+                        promoted_comprehension = owner
+                        promoted_iteration_carries_result = iteration_carries
+                        parent = parents.get(owner)
+                        continue
         if isinstance(parent, ast.Lambda) and parent.body is value_node:
             return True
         if isinstance(parent, (ast.Tuple, ast.List, ast.Set, ast.Dict)):
@@ -2533,6 +2812,15 @@ def _call_result_is_product_position(
         if isinstance(parent, ast.Call) and value_node in tuple(parent.args):
             wrapper = _flatten_attribute_name(parent.func) or ""
             wrapper_tail = wrapper.rsplit(".", 1)[-1]
+            if _call_is_semantic_product_sink(
+                parent,
+                parents,
+                import_aliases=import_aliases,
+                defined_symbols=defined_symbols,
+                allowed_abs=allowed_abs,
+                shadowed_names=shadowed_names,
+            ):
+                return True
             if wrapper_tail in {"tuple", "list", "set", "frozenset"}:
                 if (
                     value_node is promoted_comprehension
@@ -2564,6 +2852,15 @@ def _call_result_is_product_position(
         if isinstance(parent, ast.keyword) and parent.value is value_node:
             call_parent = parents.get(parent)
             if isinstance(call_parent, ast.Call):
+                if _call_is_semantic_product_sink(
+                    call_parent,
+                    parents,
+                    import_aliases=import_aliases,
+                    defined_symbols=defined_symbols,
+                    allowed_abs=allowed_abs,
+                    shadowed_names=shadowed_names,
+                ):
+                    return True
                 constructor = _flatten_attribute_name(call_parent.func) or ""
                 normalized_constructor = _normalize_dependency_name(
                     constructor,
@@ -3821,7 +4118,14 @@ def _iter_module_dependency_issues(
     if len(all_repo_calls) == 1:
         wrapper_target = next(iter(all_repo_calls))
         has_documented_wrap = any(
-            _dependency_matches(wrapper_target, documented, import_aliases)
+            _declared_dependency_targets_match(
+                wrapper_target,
+                documented,
+                import_aliases,
+                path=path,
+                defined_symbols=defined_symbols,
+                allowed_abs=schema_rules.allowed_abs,
+            )
             for documented in documented_wrap_targets
         )
         has_documented_product = any(
@@ -3864,7 +4168,14 @@ def _iter_module_dependency_issues(
 
     for documented in documented_call_names:
         if any(
-            _declared_dependency_targets_match(documented, target, import_aliases)
+            _declared_dependency_targets_match(
+                documented,
+                target,
+                import_aliases,
+                path=path,
+                defined_symbols=defined_symbols,
+                allowed_abs=schema_rules.allowed_abs,
+            )
             for target in documented_wrap_targets
         ):
             yield DocstringValidationIssue(
@@ -3878,7 +4189,14 @@ def _iter_module_dependency_issues(
                 node_id=node_id,
             )
         if any(
-            _declared_dependency_targets_match(documented, target, import_aliases)
+            _declared_dependency_targets_match(
+                documented,
+                target,
+                import_aliases,
+                path=path,
+                defined_symbols=defined_symbols,
+                allowed_abs=schema_rules.allowed_abs,
+            )
             for target in documented_instantiation_names
         ) and not (
             _name_matches_observed(documented, observed_calls, import_aliases)
@@ -3898,7 +4216,14 @@ def _iter_module_dependency_issues(
 
     for documented in documented_instantiation_names:
         if any(
-            _declared_dependency_targets_match(documented, target, import_aliases)
+            _declared_dependency_targets_match(
+                documented,
+                target,
+                import_aliases,
+                path=path,
+                defined_symbols=defined_symbols,
+                allowed_abs=schema_rules.allowed_abs,
+            )
             for target in documented_wrap_targets
         ):
             yield DocstringValidationIssue(
@@ -4023,6 +4348,18 @@ def _iter_module_dependency_issues(
 
     if schema_rules.report_unlisted_calls:
         for observed in observed_calls:
+            if any(
+                _declared_dependency_targets_match(
+                    observed,
+                    documented,
+                    import_aliases,
+                    path=path,
+                    defined_symbols=defined_symbols,
+                    allowed_abs=schema_rules.allowed_abs,
+                )
+                for documented in documented_wrap_targets
+            ):
+                continue
             if not any(
                 _dependency_matches(observed, documented, import_aliases)
                 for documented in documented_call_names
@@ -4056,7 +4393,14 @@ def _iter_module_dependency_issues(
     if schema_rules.report_unlisted_instantiations:
         for observed in observed_instantiations:
             if any(
-                _dependency_matches(observed, documented, import_aliases)
+                _declared_dependency_targets_match(
+                    observed,
+                    documented,
+                    import_aliases,
+                    path=path,
+                    defined_symbols=defined_symbols,
+                    allowed_abs=schema_rules.allowed_abs,
+                )
                 for documented in documented_wrap_targets
             ):
                 continue
@@ -4160,6 +4504,7 @@ def _iter_wrap_issues(
     parsed: object,
     import_aliases: Mapping[str, str],
     defined_symbols: set[str],
+    allowed_abs: tuple[str, ...],
     observed_calls: set[str],
     observed_instantiations: set[str],
 ) -> Iterable[DocstringValidationIssue]:
@@ -4188,9 +4533,9 @@ def _iter_wrap_issues(
     ._dependency_is_resolved:
       why:
         computes: "dependency is resolved supplies repo-local behavior used by iter wrap issues; this edge is documented from an observed call in the body."
-    ._name_matches_observed:
+    ._declared_dependency_targets_match:
       why:
-        computes: "name matches observed supplies repo-local behavior used by iter wrap issues; this edge is documented from an observed call in the body."
+        computes: "Matches a wrapper target to exact observed or current-module-equivalent dependency names."
 
     InstantiationsFromRepo
     ----------------------
@@ -4226,10 +4571,16 @@ def _iter_wrap_issues(
             target,
             import_aliases=import_aliases,
             defined_symbols=defined_symbols,
-        ) and not _name_matches_observed(
-            target,
-            observed_symbols,
-            import_aliases,
+        ) and not any(
+            _declared_dependency_targets_match(
+                target,
+                observed,
+                import_aliases,
+                path=path,
+                defined_symbols=defined_symbols,
+                allowed_abs=allowed_abs,
+            )
+            for observed in observed_symbols
         ):
             yield DocstringValidationIssue(
                 path=path,
@@ -4310,14 +4661,11 @@ def _collect_ownership_index(
     -----
     - none
 
-    CallsFromRepo
-    -------------
-    ._module_aliases:
-      why:
-        computes: "module aliases supplies repo-local behavior used by collect ownership index; this edge is documented from an observed call in the body."
-
     InstantiationsFromRepo
     ----------------------
+    ._module_aliases:
+      why:
+        constructs: "Builds alias keys retained in the returned ownership index."
     ..common.docstring.docstring_parser.parse_ownable_registry:
       why:
         constructs: "Builds ownership registry entries from module docstrings before callable checks run."
@@ -4599,11 +4947,11 @@ def _iter_module_ownership_registry_issues(
     -----
     - none
 
-    CallsFromRepo
-    -------------
+    InstantiationsFromRepo
+    ----------------------
     ._iter_parser_issue_records:
       why:
-        computes: "iter parser issue records supplies repo-local behavior used by iter module ownership registry issues; this edge is documented from an observed call in the body."
+        constructs: "Builds parser issue records yielded through the compatibility iterator."
     """
     for issue in _iter_parser_issue_records(
         path=path,
@@ -4748,6 +5096,7 @@ def _validate_node_docstring(
             parsed=parsed,
             import_aliases=import_aliases,
             defined_symbols=defined_symbols,
+            allowed_abs=node_schema_rules.module_dependencies.allowed_abs,
             observed_calls=observed_calls,
             observed_instantiations=observed_instantiations,
         )
@@ -4979,14 +5328,11 @@ def _iter_repeated_template_issues(
     -----
     - none
 
-    CallsFromRepo
-    -------------
-    ._iter_defined_callables:
-      why:
-        computes: "iter defined callables supplies repo-local behavior used by iter repeated template issues; this edge is documented from an observed call in the body."
-
     InstantiationsFromRepo
     ----------------------
+    ._iter_defined_callables:
+      why:
+        constructs: "Builds callable records consumed into repeated-template diagnostics."
     .DocstringValidationIssue:
       why:
         constructs: "DocstringValidationIssue produces a value carried by iter repeated template issues; this edge is documented from the observed product position in the body."
@@ -5193,12 +5539,11 @@ def validate_module_docstrings(
     ..common.test_discovery.is_test_module:
       why:
         computes: "Selects syntax-only validation for test modules under the configured profile."
-    ._iter_defined_callables:
-      why:
-        computes: "Streams callable AST nodes that require docstring validation."
-
     InstantiationsFromRepo
     ----------------------
+    ._iter_defined_callables:
+      why:
+        constructs: "Builds callable records consumed into the final diagnostic collection."
     ..common.docstring.docstring_policy.apply_docstring_profiles:
       why:
         transforms: "Builds path-specific policy rules before any checks execute."
