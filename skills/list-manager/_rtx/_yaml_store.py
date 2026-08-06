@@ -59,12 +59,44 @@ HEX6_RE = re.compile(r"^[0-9a-f]{6}$")
 # ── I/O helpers ──────────────────────────────────────────────────────────────
 
 def normalize_dates(node) -> None:
-    """Coerce any date/datetime values to ISO strings, in place, recursively.
+    """Replace parsed date objects with ISO strings throughout a YAML tree.
 
-    YAML parses an unquoted `deadline: 2026-07-05` into a datetime.date, which
-    then fails the schema's `type: string, format: date`. Normalizing on load
-    and before validation makes the store robust to writers that emit unquoted
-    dates, without changing the schema.
+    Intent
+    ------
+    Normalize mapping and sequence values in place before schema validation.
+
+    Rationale
+    ---------
+    PyYAML converts unquoted dates to ``date`` objects, but list schemas require
+    portable string values; recursive normalization accepts those documents
+    without weakening the schema.
+
+    Pseudocode
+    ----------
+    - if node is a mapping:
+      - for child in mapping values:
+        - if child is a date:
+          - set normalized_child = ISO date string
+        - else:
+          - @normalize_dates(child)
+    - else:
+      - if node is a sequence:
+        - for indexed_child in enumerated sequence:
+          - set child = indexed_child value
+          - if child is a date:
+            - set updated_sequence = child ISO string written at indexed_child index
+          - else:
+            - @normalize_dates(child)
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .normalize_dates:
+      why:
+        transforms: "Recursively normalizes nested mapping and sequence values."
     """
     if isinstance(node, dict):
         for k, v in node.items():
@@ -81,6 +113,33 @@ def normalize_dates(node) -> None:
 
 
 def load_yaml(path: Path) -> dict:
+    """Load one YAML document and normalize its parsed date values.
+
+    Intent
+    ------
+    Return a mapping suitable for list operations from a UTF-8 YAML file.
+
+    Rationale
+    ---------
+    Centralizing empty-document handling and date normalization keeps every
+    read path consistent before filtering, mutation, or validation.
+
+    Pseudocode
+    ----------
+    - set parsed_document = YAML mapping read from the UTF-8 path
+    - @normalize_dates(parsed_document)
+    - return parsed_document
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .normalize_dates:
+      why:
+        transforms: "Converts YAML date objects in the parsed document to schema-compatible strings."
+    """
     with open(path, encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
     normalize_dates(data)
@@ -88,11 +147,51 @@ def load_yaml(path: Path) -> dict:
 
 
 def save_yaml(path: Path, data: dict) -> None:
+    """Serialize one list mapping to a UTF-8 YAML file.
+
+    Intent
+    ------
+    Persist a mapping with readable block formatting and insertion-order keys.
+
+    Rationale
+    ---------
+    A single serializer keeps Unicode, flow style, and key ordering identical
+    across initialization and mutation paths.
+
+    Pseudocode
+    ----------
+    - set serialized_document = block YAML preserving Unicode and key order
+    - set persisted_file = UTF-8 destination containing serialized_document
+
+    Wraps
+    -----
+    - none
+    """
     with open(path, "w", encoding="utf-8") as f:
         yaml.dump(data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
 
 
 def die(msg: str) -> None:
+    """Report a caller-facing error and terminate the current command.
+
+    Intent
+    ------
+    Give command handlers one consistent nonzero failure boundary.
+
+    Rationale
+    ---------
+    Writing diagnostics to stderr before ``SystemExit(1)`` preserves stdout for
+    machine-readable command results.
+
+    Pseudocode
+    ----------
+    - set diagnostic = error prefix plus caller message
+    - raise SystemExit with status one after writing diagnostic to stderr
+
+    Wraps
+    -----
+    - none
+    """
     print(f"error: {msg}", file=sys.stderr)
     sys.exit(1)
 
@@ -158,10 +257,49 @@ def die(msg: str) -> None:
 # still open for cloud mode's real usage (see cloud_lock_path() and its use
 # in main(), below, which closes it).
 class StaleRevisionError(RuntimeError):
-    """Raised when --expected-revision no longer matches the file's current
-    revision: someone else saved this list since the caller last read it."""
+    """Represent an optimistic-concurrency mismatch for one list file.
+
+    Intent
+    ------
+    Carry the file path and both revision values across the mutation boundary.
+
+    Rationale
+    ---------
+    A distinct exception lets local and cloud orchestration reject stale input
+    before writing while rendering one actionable diagnostic at the CLI edge.
+
+    Pseudocode
+    ----------
+    - set conflict_context = file plus expected and observed revisions
+    - set runtime_message = conflict context plus reread and retry guidance
+
+    Wraps
+    -----
+    - none
+    """
 
     def __init__(self, file: Path, expected: int, actual: int):
+        """Initialize a stale-revision error with conflict context.
+
+        Intent
+        ------
+        Preserve structured revision values and a complete user-facing message.
+
+        Rationale
+        ---------
+        Callers need both programmatic fields and a diagnostic that names the
+        changed file and the safe recovery action.
+
+        Pseudocode
+        ----------
+        - set stored_file = conflicted list path
+        - set stored_revisions = expected and observed revisions
+        - set base_error = conflict and retry message
+
+        Wraps
+        -----
+        - none
+        """
         self.file = file
         self.expected = expected
         self.actual = actual
@@ -172,7 +310,35 @@ class StaleRevisionError(RuntimeError):
 
 
 def check_revision(data: dict, expected: int | None, file: Path) -> None:
-    """No-op when expected is None: the check is opt-in (see module note above)."""
+    """Reject a list snapshot that does not match an optional revision guard.
+
+    Intent
+    ------
+    Enforce opt-in optimistic concurrency before any mutation is applied.
+
+    Rationale
+    ---------
+    Treating a missing document revision as zero preserves old files, while a
+    missing expected revision intentionally retains unconditional writes.
+
+    Pseudocode
+    ----------
+    - if expected revision is missing:
+      - return
+    - set actual_revision = document revision or zero
+    - if actual_revision differs:
+      - raise StaleRevisionError(file, expected, actual_revision)
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .StaleRevisionError:
+      why:
+        raises: "Constructs the structured conflict raised for a stale snapshot."
+    """
     if expected is None:
         return
     actual = data.get("revision", 0)
@@ -181,8 +347,36 @@ def check_revision(data: dict, expected: int | None, file: Path) -> None:
 
 
 def save_with_revision_bump(path: Path, data: dict) -> None:
-    """The single choke point every mutating command (create-entry, update,
-    delete) goes through to validate, bump `revision`, and write once."""
+    """Advance, validate, and persist one successful list mutation.
+
+    Intent
+    ------
+    Make revision advancement the common finalization path for mutating commands.
+
+    Rationale
+    ---------
+    Bumping before validation ensures the exact persisted snapshot, including
+    its new revision, satisfies the selected list schema.
+
+    Pseudocode
+    ----------
+    - set next_revision = current revision plus one
+    - @validate_list(document)
+    - @save_yaml(path, document)
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .validate_list:
+      why:
+        validates: "Checks the revision-advanced snapshot before persistence."
+    .save_yaml:
+      why:
+        writes: "Persists the validated snapshot exactly once."
+    """
     data["revision"] = data.get("revision", 0) + 1
     validate_list(data)
     save_yaml(path, data)
@@ -193,17 +387,27 @@ _LOCK_POLL_INTERVAL_S = 0.05
 
 
 def _lock_timeout_s() -> float:
-    """Bounded-wait deadline for file_lock() acquisition. A crashed writer
-    isn't the risk -- the OS releases flock/msvcrt locks automatically on
-    process exit -- but a HUNG-but-alive writer (stuck network call,
-    deadlock) must not make every later local invocation on this file stall
-    silently forever, which is exactly the wrong failure mode for an
-    unattended caller like email-triage. 30s is meant to catch genuinely
-    stuck processes, not add friction to normal fast operations.
+    """Resolve the bounded wait used for advisory-lock acquisition.
 
-    LIST_MANAGER_TEST_LOCK_TIMEOUT_S overrides it for tests that need to
-    exercise the timeout path in well under a second rather than waiting out
-    the real default.
+    Intent
+    ------
+    Return the production timeout or an explicit test-only override.
+
+    Rationale
+    ---------
+    Operating systems release locks after crashes, but a hung live process can
+    retain one indefinitely; a bounded wait keeps unattended calls from wedging.
+
+    Pseudocode
+    ----------
+    - set override_seconds = environment timeout override
+    - if override_seconds exists:
+      - return parsed override_seconds
+    - return production timeout
+
+    Wraps
+    -----
+    - none
     """
     override = os.environ.get("LIST_MANAGER_TEST_LOCK_TIMEOUT_S")
     return float(override) if override else _DEFAULT_LOCK_TIMEOUT_S
@@ -211,40 +415,45 @@ def _lock_timeout_s() -> float:
 
 @contextlib.contextmanager
 def file_lock(path: Path):
-    """Cross-platform exclusive advisory lock, held for the full
-    load -> check_revision -> mutate -> save sequence so two racing
-    processes are genuinely serialized rather than merely optimistically
-    checked (see the module note above for why the revision check alone is
-    not sufficient).
+    """Hold a bounded cross-platform advisory lock on a file sidecar.
 
-    Uses a `<file>.lock` sidecar as the lock handle rather than locking
-    `path` itself, since `path` is fully replaced (not written in place) by
-    save_yaml -- locking a path across a replace is unreliable. Advisory
-    only: it serializes cooperating callers that go through this same
-    function (every mutating list-manager subcommand does); it does not
-    prevent a process that ignores locking entirely from writing the file.
+    Intent
+    ------
+    Serialize each cooperating read-check-mutate-save critical section.
 
-    Acquisition is a bounded-retry loop (non-blocking lock attempt, sleep,
-    repeat, until a deadline) rather than one blocking call on either
-    platform: a plain blocking fcntl.flock has no built-in timeout, and a
-    stuck-but-alive lock holder must not wedge every later invocation on
-    this file forever -- see _lock_timeout_s(). On timeout, dies with a
-    message naming the sidecar and suggesting manual recovery if no process
-    is actually still running.
+    Rationale
+    ---------
+    Locking ``<file>.lock`` remains stable when the data file is replaced, and
+    nonblocking retries give every supported host the same bounded timeout
+    behavior.
 
-    os.name == "posix": fcntl.flock(LOCK_EX | LOCK_NB) -- the same
-    primitive officina.common.atomic_files uses to serialize its own
-    compare-and-append writers (see _posix_atomic_append_bytes). That
-    module's public API is purpose-built for confined-root, restrictive-ACL
-    certificate-log operations (secure_open, ACL verification, native NT-ABI
-    calls) and isn't a structural fit for list-manager's arbitrary
-    user-supplied file paths, so this mirrors its per-os.name split directly
-    rather than reusing it.
+    Pseudocode
+    ----------
+    - set sidecar = stable lock path beside the target
+    - timeout_seconds = _lock_timeout_s()
+    - set deadline = current monotonic time plus timeout_seconds
+    - while the platform lock is unavailable:
+      - if deadline has expired:
+        - @die(lock recovery diagnostic)
+      - set retry_wait = polling interval
+    - set critical_section = caller executes while the lock is held
+    - set released_lock = platform lock released and descriptor closed
 
-    os.name == "nt": msvcrt.locking(LK_NBLCK) on the sidecar file (the
-    stdlib cross-platform equivalent; atomic_files.py's nt-branch lock uses
-    the lower-level LockFileEx/UnlockFileEx pair via ctypes for its own
-    confined-handle pipeline, which isn't reachable without that pipeline).
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .die:
+      why:
+        orchestrates: "Routes acquisition timeout through the shared command failure boundary."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._lock_timeout_s:
+      why:
+        constructs: "Constructs the timeout value carried into the deadline and failure diagnostics."
     """
     lock_path = path.with_name(path.name + ".lock")
     fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR)
@@ -297,15 +506,33 @@ def file_lock(path: Path):
 
 
 def _cloud_lock_dir(*, home: Path | None = None) -> Path:
-    """Stable, well-known directory for cloud-mode lock sidecars -- as
-    opposed to file_lock()'s per-command sidecar next to the file it locks,
-    which for --cloud mode is a fresh tempfile.mkdtemp() path every
-    invocation and therefore useless as a lock (see cloud_lock_path()).
+    """Resolve the stable directory that coordinates cloud-list writers.
 
-    LIST_MANAGER_CLOUD_LOCK_DIR overrides it for tests, mirroring the
-    EMAIL_TRIAGE_STATE_DIR override pattern used by
-    email-triage/_rtx/_failure_sentinel.py for the same reason: tests need a
-    tmp_path, not the real shared state root.
+    Intent
+    ------
+    Select a shared state directory or an isolated test override for lock files.
+
+    Rationale
+    ---------
+    Per-invocation download directories cannot coordinate cloud writers, so
+    their lock sidecars need a machine-stable location outside those snapshots.
+
+    Pseudocode
+    ----------
+    - if cloud-lock override exists:
+      - return override path
+    - resolved_paths = resolve_famulus_paths(platform, selected home)
+    - return list-manager locks directory beneath resolved_paths state root
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    officina.common.famulus_paths.resolve_famulus_paths:
+      why:
+        constructs: "Constructs resolved path state whose state root is carried into the returned lock directory."
     """
     override = os.environ.get("LIST_MANAGER_CLOUD_LOCK_DIR")
     if override:
@@ -319,27 +546,33 @@ _SAFE_LOCK_NAME_RE = re.compile(r"[^A-Za-z0-9_.-]")
 
 
 def cloud_lock_path(list_name: str) -> Path:
-    """Resolve a STABLE lock target for a cloud list name, keyed by the name
-    itself rather than by any per-invocation local path.
+    """Build the shared local lock target for one cloud-list name.
 
-    This is what actually closes the cloud-mode race: unlike file_lock()
-    applied to lists.py's per-invocation temp file (unique every time, so it
-    serializes nothing), every --cloud invocation for the same list name
-    resolves to the same lock sidecar here, in the same well-known directory
-    -- so file_lock(cloud_lock_path(name)), held for the whole
-    download -> mutate -> upload sequence in main(), genuinely serializes two
-    concurrent --cloud processes on the same machine the same way the
-    existing per-command lock serializes two local-file processes.
+    Intent
+    ------
+    Map equal cloud names on one machine to the same safe sidecar stem.
 
-    This only coordinates writers that share a local filesystem (i.e. the
-    same machine) -- it cannot serialize truly independent machines writing
-    to the same Drive-backed list with no shared local state, since there is
-    no cloud-native conditional-write primitive plumbed through
-    _cloud_transport.py's upload_list() to use instead (Drive's v3 files.update
-    has no documented If-Match/etag-conditional semantics that this codebase
-    exposes). Same-machine concurrent invocations (e.g. two triage runs, or a
-    triage run racing a manual edit) are the realistic common case this
-    closes.
+    Rationale
+    ---------
+    Stable name-based paths serialize same-machine writers across independent
+    download directories; they intentionally cannot coordinate separate hosts.
+
+    Pseudocode
+    ----------
+    - set safe_name = cloud name with unsafe characters replaced
+    - lock_directory = _cloud_lock_dir()
+    - set existing_directory = lock_directory created when absent
+    - return name-keyed target beneath lock_directory
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._cloud_lock_dir:
+      why:
+        constructs: "Provides the shared directory used to construct the name-keyed lock target."
     """
     safe_name = _SAFE_LOCK_NAME_RE.sub("_", list_name) or "_"
     lock_dir = _cloud_lock_dir()
@@ -351,12 +584,26 @@ def cloud_lock_path(list_name: str) -> Path:
 
 
 def _test_race_delay() -> None:
-    """Test-only hook: sleeping here -- inside the lock, after check_revision
-    has passed, before the mutation and save -- lets a test deterministically
-    hold a writer inside the exact check-to-write gap that a lock (rather
-    than a bare revision check) is required to close. No-op unless
-    LIST_MANAGER_TEST_RACE_DELAY is set; only used by
-    test_update_concurrent_writers_are_serialized_by_the_lock.
+    """Pause a lock-held mutation only when the race-test hook is enabled.
+
+    Intent
+    ------
+    Make concurrent tests hold a writer inside the check-to-write interval.
+
+    Rationale
+    ---------
+    An environment-gated delay creates deterministic overlap without affecting
+    production invocations or changing the lock protocol under test.
+
+    Pseudocode
+    ----------
+    - set delay_seconds = environment race-test delay
+    - if delay_seconds exists:
+      - set elapsed_delay = sleep for delay_seconds
+
+    Wraps
+    -----
+    - none
     """
     delay = os.environ.get("LIST_MANAGER_TEST_RACE_DELAY")
     if delay:
@@ -368,6 +615,36 @@ def _test_race_delay() -> None:
 # one implementation of "talk to cloud-files' lists-read/lists-write".
 
 def download_list(list_name: str, dest_path: Path) -> None:
+    """Download one cloud list or terminate with a bounded transport error.
+
+    Intent
+    ------
+    Translate the cloud helper's exception into the CLI failure protocol.
+
+    Rationale
+    ---------
+    Command orchestration should not expose transport exception types or stack
+    traces to callers expecting stderr diagnostics and a nonzero status.
+
+    Pseudocode
+    ----------
+    - @_cloud_transport.download_list(list_name, destination_path)
+    - if CloudTransportError is raised:
+      - @die(transport diagnostic)
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._cloud_transport.download_list [implicit]:
+      why:
+        reads: "Downloads the named cloud list into the requested local snapshot path."
+    .die:
+      why:
+        orchestrates: "Translates a transport exception into the command failure protocol."
+    """
     try:
         cloud_transport.download_list(list_name, dest_path)
     except cloud_transport.CloudTransportError as exc:
@@ -375,6 +652,36 @@ def download_list(list_name: str, dest_path: Path) -> None:
 
 
 def upload_list(list_name: str, src_path: Path) -> None:
+    """Upload one cloud list or terminate with a bounded transport error.
+
+    Intent
+    ------
+    Translate the cloud helper's exception into the CLI failure protocol.
+
+    Rationale
+    ---------
+    Keeping the conversion at this boundary gives local command handlers one
+    uniform error model for cloud reads and writes.
+
+    Pseudocode
+    ----------
+    - @_cloud_transport.upload_list(list_name, source_path)
+    - if CloudTransportError is raised:
+      - @die(transport diagnostic)
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._cloud_transport.upload_list [implicit]:
+      why:
+        writes: "Uploads the requested local snapshot to the named cloud list."
+    .die:
+      why:
+        orchestrates: "Translates a transport exception into the command failure protocol."
+    """
     try:
         cloud_transport.upload_list(list_name, src_path)
     except cloud_transport.CloudTransportError as exc:
@@ -384,7 +691,40 @@ def upload_list(list_name: str, src_path: Path) -> None:
 # ── ID generation ─────────────────────────────────────────────────────────────
 
 def collect_ids(node) -> set[str]:
-    """Recursively collect all entry IDs from a list document."""
+    """Collect every entry ID reachable in a nested list structure.
+
+    Intent
+    ------
+    Return the set of identifiers already occupied by entries at any depth.
+
+    Rationale
+    ---------
+    ID generation must avoid collisions in categories and child-entry trees,
+    not only in a single top-level collection.
+
+    Pseudocode
+    ----------
+    - set identifiers = empty set
+    - if node is a mapping:
+      - set identifiers = identifiers plus the mapping ID
+      - nested_ids = collect_ids(nested_value)
+      - set identifiers = identifiers plus nested_ids
+    - else:
+      - if node is a sequence:
+        - nested_ids = collect_ids(each nested sequence item)
+        - set identifiers = identifiers plus nested_ids
+    - return identifiers
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .collect_ids:
+      why:
+        transforms: "Produces recursive identifier sets merged into the caller's accumulated result."
+    """
     ids: set[str] = set()
     if isinstance(node, dict):
         if "id" in node:
@@ -398,7 +738,30 @@ def collect_ids(node) -> set[str]:
 
 
 def gen_ids(existing_ids: set[str], count: int = 1) -> list[str]:
-    """Return `count` collision-free 6-char lowercase hex IDs."""
+    """Generate the requested number of unique six-character hexadecimal IDs.
+
+    Intent
+    ------
+    Return fresh identifiers absent from both the document and the current batch.
+
+    Rationale
+    ---------
+    Three random bytes match the schema's six-hex-character shape, while explicit
+    collision checks protect the occupied set and multi-ID requests.
+
+    Pseudocode
+    ----------
+    - set accepted_ids = empty list
+    - while accepted count is less than requested count:
+      - set candidate_id = three random bytes encoded as hexadecimal
+      - if candidate_id is unused:
+        - set accepted_ids = accepted_ids plus candidate_id
+    - return accepted_ids
+
+    Wraps
+    -----
+    - none
+    """
     ids: list[str] = []
     while len(ids) < count:
         candidate = os.urandom(3).hex()
@@ -413,13 +776,49 @@ _AUTO_GENERATED_FIELDS = {"id", "created", "state"}
 
 
 def validate_entries_before_insert(entries: list, schema_name: str) -> None:
-    """Check that each entry has all required fields before insertion.
+    """Reject entry inputs missing fields that callers must supply.
 
-    This prevents the mistake of inventing missing required fields. If any entry
-    is missing a required field, fail loudly so the caller is forced to ask for
-    the value instead of guessing.
+    Intent
+    ------
+    Check user-provided required fields before generated defaults are added.
 
-    Auto-generated fields (id, created, state) are not required in the input.
+    Rationale
+    ---------
+    Failing early prevents invented schema-required values while exempting fields
+    generated by the command itself.
+
+    Pseudocode
+    ----------
+    - if validation support is unavailable:
+      - return
+    - schema_exists = @_get_schema.list_schema_exists(schema_name)
+    - if schema_exists is false:
+      - return
+    - whole_schema = _get_schema.get_schema(schema_name, `*`)
+    - set required_inputs = whole_schema requirements minus generated fields
+    - for entry in entries:
+      - set missing_inputs = required inputs absent from entry
+      - if missing_inputs is nonempty:
+        - @die(missing field diagnostic)
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._get_schema.list_schema_exists [implicit]:
+      why:
+        validates: "Checks whether the named schema is available before required-field lookup."
+    .die:
+      why:
+        validates: "Rejects an entry that omits caller-owned required fields."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._get_schema.get_schema [implicit]:
+      why:
+        constructs: "Provides the whole-schema mapping used to derive caller-owned required fields."
     """
     if not HAS_JSONSCHEMA:
         return  # Skip if jsonschema not available; full validation will happen later
@@ -445,7 +844,62 @@ def validate_entries_before_insert(entries: list, schema_name: str) -> None:
 
 
 def validate_list(data: dict) -> None:
-    """Validate data against its declared schema. Calls die() on failure."""
+    """Validate a list document against its declared schema.
+
+    Intent
+    ------
+    Normalize the document and reject unknown, unavailable, or violated schemas.
+
+    Rationale
+    ---------
+    Mutating commands share this fail-closed boundary so invalid snapshots are
+    never deliberately written.
+
+    Pseudocode
+    ----------
+    - @normalize_dates(document)
+    - set schema_name = document schema
+    - if schema_name is missing:
+      - @die(missing schema diagnostic)
+    - schema_exists = @_get_schema.list_schema_exists(schema_name)
+    - if schema_exists is false:
+      - missing_schema_path = _get_schema.list_schema_path(schema_name)
+      - @die(unknown schema and missing_schema_path)
+    - if validation support is unavailable:
+      - @die(installation diagnostic)
+    - @_get_schema.validate_document(document, schema_name)
+    - if schema validation fails:
+      - failure_message = describe_validation_error(document, failure)
+      - @die(failure_message)
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .normalize_dates:
+      why:
+        transforms: "Converts parsed dates before applying string schema constraints."
+    ._get_schema.list_schema_exists [implicit]:
+      why:
+        validates: "Checks that the document's declared schema exists before validation."
+    ._get_schema.validate_document [implicit]:
+      why:
+        validates: "Applies the selected schema to the normalized document."
+    .die:
+      why:
+        validates: "Terminates mutation when schema selection or validation fails."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._get_schema.list_schema_path [implicit]:
+      why:
+        constructs: "Provides the expected schema path included in an unknown-schema diagnostic."
+    .describe_validation_error:
+      why:
+        constructs: "Constructs a contextual failure message carried into the shared termination boundary."
+    """
     # Patch inputs (create-entry/update) may carry date objects from YAML; coerce
     # them so what we validate matches what we save.
     normalize_dates(data)
@@ -471,8 +925,28 @@ def validate_list(data: dict) -> None:
 
 
 def describe_validation_error(data: dict, err) -> str:
-    """Turn a jsonschema error into an actionable message: the specific problem,
-    the location, and the offending entry's id/title when there is one."""
+    """Render a schema failure with its document and entry context.
+
+    Intent
+    ------
+    Return an actionable message naming the failing path and nearest entry.
+
+    Rationale
+    ---------
+    Raw schema messages often omit the stable ID and title needed to locate an
+    invalid row in a nested list.
+
+    Pseudocode
+    ----------
+    - set error_path = schema failure path
+    - set nearest_entry = mapping with ID and title found while walking error_path
+    - set location = joined path or document root marker
+    - return schema message with location and optional entry identity
+
+    Wraps
+    -----
+    - none
+    """
     path = list(err.absolute_path)
     # Walk the document along the error path, remembering the nearest enclosing
     # entry (a dict with id + title) so we can name the row that is wrong.
@@ -496,12 +970,35 @@ def describe_validation_error(data: dict, err) -> str:
 # ── Filter helpers (for `read`) ───────────────────────────────────────────────
 
 def parse_filters(filter_args: list[str]) -> list[tuple[str, str, str]]:
-    """Parse filter strings into (key, op, value) tuples.
+    """Parse exact and regular-expression filters into structured triples.
 
-    Supported ops:
-      key=value    exact match (comma-separated = OR)
-      key~=value   regex search on the field (case-insensitive; substring is a
-                   plain-text regex, so old substring filters keep working)
+    Intent
+    ------
+    Convert each supported token into a key, operator, and value.
+
+    Rationale
+    ---------
+    Strict parsing rejects malformed filters before matching while preserving
+    comma-separated exact alternatives for later OR evaluation.
+
+    Pseudocode
+    ----------
+    - set parsed_filters = empty list
+    - for token in filter arguments:
+      - if token does not match the supported grammar:
+        - @die(filter syntax diagnostic)
+      - set parsed_filters = parsed_filters plus captured triple
+    - return parsed_filters
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .die:
+      why:
+        parses: "Rejects a token outside the two supported filter forms."
     """
     filters = []
     for f in filter_args:
@@ -513,12 +1010,45 @@ def parse_filters(filter_args: list[str]) -> list[tuple[str, str, str]]:
 
 
 def validate_filter_values(filters: list[tuple[str, str, str]], schema_name: str) -> None:
-    """Reject exact-match (`=`) filters whose value isn't a valid enum member
-    for that field, instead of silently matching zero entries.
+    """Reject invalid enum literals used in exact-match filters.
 
-    Only applies to `=` filters on fields with a known enum (currently just
-    `state`, per schema). `~=` (regex) filters are intentionally exempt since
-    partial/pattern matches aren't a fixed-value comparison.
+    Intent
+    ------
+    Validate comma-separated exact values when the selected field defines an enum.
+
+    Rationale
+    ---------
+    A mistyped enum should be an actionable error rather than an apparently valid
+    empty result; pattern filters remain exempt because they are not literals.
+
+    Pseudocode
+    ----------
+    - for filter_spec in filters:
+      - set key_operator_value = unpacked filter_spec
+      - if operator is not exact:
+        - continue
+      - field_schema = _get_schema.get_schema(schema_name, key)
+      - if field_schema has no enum:
+        - continue
+      - set invalid_values = values absent from the field enum
+      - if invalid_values is nonempty:
+        - @die(enum diagnostic)
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .die:
+      why:
+        validates: "Rejects invalid exact-match enum members with allowed values."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._get_schema.get_schema [implicit]:
+      why:
+        constructs: "Provides the field schema whose enum constrains exact filter literals."
     """
     for key, op, val in filters:
         if op != "=":
@@ -537,7 +1067,31 @@ def validate_filter_values(filters: list[tuple[str, str, str]], schema_name: str
 
 
 def entry_matches(entry: dict, filters: list[tuple[str, str, str]]) -> bool:
-    """Return True if entry satisfies all filters (AND across keys, OR within a key)."""
+    """Decide whether an entry satisfies grouped exact and pattern filters.
+
+    Intent
+    ------
+    Apply OR within each field and AND across distinct fields.
+
+    Rationale
+    ---------
+    Grouping repeated keys preserves alternative-value semantics, while invalid
+    regular expressions fall back to literal containment instead of crashing.
+
+    Pseudocode
+    ----------
+    - set grouped_filters = conditions grouped by field
+    - for field_conditions in grouped_filters:
+      - set field_and_conditions = unpacked field_conditions
+      - set field_match = any exact alternative or pattern match
+      - if field_match is false:
+        - return false
+    - return true
+
+    Wraps
+    -----
+    - none
+    """
     from collections import defaultdict
     by_key: dict[str, list[tuple[str, str]]] = defaultdict(list)
     for key, op, val in filters:
@@ -568,13 +1122,45 @@ def entry_matches(entry: dict, filters: list[tuple[str, str, str]]) -> bool:
 
 
 def _prune_entry(entry: dict, filters: list[tuple[str, str, str]]) -> dict | None:
-    """Prune one entry (and its children) to only what matches or has a matching
-    descendant. Returns None if neither the entry nor any descendant matches.
+    """Prune one entry while retaining ancestors of matching descendants.
 
-    A matching entry is never duplicated: it appears exactly once, in place,
-    with its children pruned to just the matching branches -- an ancestor of a
-    match is always included (so context is never lost), but a match is not
-    also promoted to a separate top-level result.
+    Intent
+    ------
+    Return one copied branch when the entry or any child matches, otherwise ``None``.
+
+    Rationale
+    ---------
+    Preserving position and pruned children retains context without duplicating a
+    nested match as a separate top-level result.
+
+    Pseudocode
+    ----------
+    - set pruned_children = empty list
+    - for child in declared children:
+      - pruned_child = _prune_entry(child, filters)
+      - if pruned_child exists:
+        - set pruned_children = pruned_children plus pruned_child
+    - self_matches = @entry_matches(entry, filters)
+    - if self_matches is false and pruned_children is empty:
+      - return none
+    - set retained_entry = copy with pruned declared children
+    - return retained_entry
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .entry_matches:
+      why:
+        computes: "Tests whether the current entry itself satisfies the grouped filters."
+
+    InstantiationsFromRepo
+    ----------------------
+    "._prune_entry [implicit]":
+      why:
+        transforms: "Produces each recursively pruned child carried into the retained branch."
     """
     children = entry.get("children", [])
     pruned_children = [c for c in (_prune_entry(ch, filters) for ch in children) if c is not None]
@@ -588,8 +1174,46 @@ def _prune_entry(entry: dict, filters: list[tuple[str, str, str]]) -> dict | Non
 
 
 def _prune_category(cat: dict, filters: list[tuple[str, str, str]]) -> dict | None:
-    """Prune one category (and its subcategories) to only branches containing a
-    match. Returns None if the category has no matching entry anywhere beneath it.
+    """Prune a category to entry and subcategory branches containing matches.
+
+    Intent
+    ------
+    Return a copied category only when some descendant entry survives filtering.
+
+    Rationale
+    ---------
+    Retaining only nonempty ancestors preserves navigational context and removes
+    unrelated branches without mutating the source document.
+
+    Pseudocode
+    ----------
+    - set pruned_entries = empty list
+    - for entry in direct entries:
+      - pruned_entry = _prune_entry(entry, filters)
+      - if pruned_entry exists:
+        - set pruned_entries = pruned_entries plus pruned_entry
+    - set pruned_categories = empty list
+    - for category in nested categories:
+      - pruned_category = _prune_category(category, filters)
+      - if pruned_category exists:
+        - set pruned_categories = pruned_categories plus pruned_category
+    - if both collections are empty:
+      - return none
+    - set retained_category = copy with pruned declared collections
+    - return retained_category
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    "._prune_entry [implicit]":
+      why:
+        transforms: "Produces each pruned entry carried into the retained category."
+    "._prune_category [implicit]":
+      why:
+        transforms: "Produces each pruned subcategory carried into the retained category."
     """
     pruned_entries = [e for e in (_prune_entry(en, filters) for en in cat.get("entries", [])) if e is not None]
     pruned_subs = [s for s in (_prune_category(sc, filters) for sc in cat.get("categories", [])) if s is not None]
@@ -604,6 +1228,31 @@ def _prune_category(cat: dict, filters: list[tuple[str, str, str]]) -> dict | No
 
 
 def _entry_sort_key(entry: dict, sort_field: str):
+    """Return the current heterogeneous ordering key for one filtered entry.
+
+    Intent
+    ------
+    Preserve the exact key shapes currently consumed by recursive list sorting.
+
+    Rationale
+    ---------
+    Missing fields produce positive infinity, strings of length at least ten
+    produce ``(string, 0)``, and other values remain unchanged. Mixed shapes can
+    be mutually incomparable and therefore cause sorting to raise ``TypeError``.
+
+    Pseudocode
+    ----------
+    - if the sort field is missing:
+      - return positive infinity
+    - set field_value = selected entry value
+    - if field_value is a string of length at least ten:
+      - return tuple of field_value and zero
+    - return field_value unchanged
+
+    Wraps
+    -----
+    - none
+    """
     if sort_field not in entry:
         return float('inf')  # missing values sort last
     v = entry[sort_field]
@@ -613,9 +1262,48 @@ def _entry_sort_key(entry: dict, sort_field: str):
 
 
 def _sort_tree(node, sort_field: str) -> None:
-    """Sort every entries/children list found anywhere in a (possibly nested)
-    filtered-read result, in place, so sorting still works now that matches
-    can be nested rather than a single flat list."""
+    """Sort every entry-bearing sequence in a filtered result tree.
+
+    Intent
+    ------
+    Apply one field ordering recursively to entries, children, and bare lists.
+
+    Rationale
+    ---------
+    Ancestor-preserving filters can return matches at arbitrary depth, so sorting
+    only one top-level collection would produce inconsistent output. The helper's
+    heterogeneous keys are used unchanged, so an incompatible comparison can
+    propagate ``TypeError`` to the command boundary.
+
+    Pseudocode
+    ----------
+    - if node is a mapping:
+      - entry_key = _entry_sort_key(each entry, sort_field)
+      - set ordered_entries = entries sorted by entry_key
+      - @_sort_tree(each nested branch, sort field)
+      - child_key = _entry_sort_key(each child, sort_field)
+      - set ordered_children = children sorted by child_key
+    - if node is a sequence:
+      - item_key = _entry_sort_key(each item, sort_field)
+      - set ordered_items = items sorted by item_key
+      - @_sort_tree(each ordered item, sort field)
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._sort_tree:
+      why:
+        transforms: "Recursively sorts every nested entry-bearing branch."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._entry_sort_key [implicit]:
+      why:
+        constructs: "Produces each lambda key consumed by in-place sequence sorting."
+    """
     if isinstance(node, dict):
         if "entries" in node:
             node["entries"].sort(key=lambda e: _entry_sort_key(e, sort_field))
@@ -635,14 +1323,41 @@ def _sort_tree(node, sort_field: str) -> None:
 
 
 def collect_matching_entries(data, filters: list[tuple[str, str, str]]):
-    """Filter a list document down to only what matches, preserving structure:
-    every ancestor (category and/or parent entry) of a match is kept so a
-    match is never returned without its context, and a match is never
-    duplicated as both a nested child and an independent top-level result.
+    """Filter a document or bare entry list without flattening its structure.
 
-    - Full document (dict with 'categories'): returns the same dict shape,
-      pruned to only categories/subcategories/entries containing a match.
-    - Bare entry list (e.g. already-filtered input): returns a pruned list.
+    Intent
+    ------
+    Return only matching branches while retaining every category and entry ancestor.
+
+    Rationale
+    ---------
+    Preserving the input shape gives callers context and prevents nested matches
+    from appearing twice in independently flattened output.
+
+    Pseudocode
+    ----------
+    - if input is a document with categories:
+      - for category in document categories:
+        - pruned_category = _prune_category(category, filters)
+      - return document copy with nonempty pruned_category products
+    - if input is a sequence:
+      - for entry in input sequence:
+        - pruned_entry = _prune_entry(entry, filters)
+      - return nonempty pruned_entry products
+    - return input unchanged
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    "._prune_category [implicit]":
+      why:
+        transforms: "Produces each pruned category carried into the returned document copy."
+    "._prune_entry [implicit]":
+      why:
+        transforms: "Produces each pruned entry carried into the returned bare list."
     """
     if isinstance(data, dict) and "categories" in data:
         pruned_cats = [c for c in (_prune_category(cat, filters) for cat in data.get("categories", [])) if c is not None]
@@ -657,7 +1372,38 @@ def collect_matching_entries(data, filters: list[tuple[str, str, str]]):
 # ── Category / entry lookup helpers ──────────────────────────────────────────
 
 def find_category_by_path(categories: list[dict], path_parts: list[str]) -> dict | None:
-    """Navigate nested categories by name path. Returns the category dict or None."""
+    """Find a nested category by its ordered name path.
+
+    Intent
+    ------
+    Return the category at the complete path, or ``None`` when unresolved.
+
+    Rationale
+    ---------
+    Recursive descent mirrors the category tree and prevents partial path matches
+    from being mistaken for a valid mutation target.
+
+    Pseudocode
+    ----------
+    - if the path is empty:
+      - return none
+    - for category in the current level:
+      - if its name matches the final segment:
+        - return category
+      - if its name matches:
+        - return find_category_by_path(children, remaining segments)
+    - return none
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .find_category_by_path:
+      why:
+        constructs: "Constructs the recursive lookup result for the remaining path."
+    """
     if not path_parts:
         return None
     name = path_parts[0]
@@ -670,7 +1416,35 @@ def find_category_by_path(categories: list[dict], path_parts: list[str]) -> dict
 
 
 def all_category_paths(categories: list[dict], prefix: str = "") -> list[str]:
-    """Return all category paths for error messages."""
+    """Enumerate display paths for every category in a nested tree.
+
+    Intent
+    ------
+    Return parent-qualified category names in traversal order.
+
+    Rationale
+    ---------
+    Mutation errors can show valid targets instead of reporting only that a
+    requested category was absent.
+
+    Pseudocode
+    ----------
+    - set paths = empty list
+    - for category in categories:
+      - set path = prefix plus category name
+      - set paths = paths plus path and all_category_paths(children, path)
+    - return paths
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .all_category_paths:
+      why:
+        constructs: "Constructs descendant display paths used to extend the result."
+    """
     paths = []
     for cat in categories:
         path = f"{prefix}/{cat['name']}" if prefix else cat["name"]
@@ -680,7 +1454,36 @@ def all_category_paths(categories: list[dict], prefix: str = "") -> list[str]:
 
 
 def find_entry_by_id(node, target_id: str) -> dict | None:
-    """Recursively find an entry by ID."""
+    """Find the first mapping with a requested entry ID in a nested tree.
+
+    Intent
+    ------
+    Return the matching entry mapping or ``None`` across mappings and sequences.
+
+    Rationale
+    ---------
+    Entries may occur in categories or child lists at arbitrary depth, so every
+    nested value participates in target lookup.
+
+    Pseudocode
+    ----------
+    - if node is a mapping with the target ID:
+      - return node
+    - set candidate = find_entry_by_id(each nested mapping value or sequence item, target ID)
+    - if candidate exists:
+      - return candidate
+    - return none
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .find_entry_by_id:
+      why:
+        constructs: "Constructs each recursive candidate returned to the caller."
+    """
     if isinstance(node, dict):
         if node.get("id") == target_id:
             return node
@@ -699,8 +1502,54 @@ def find_entry_by_id(node, target_id: str) -> dict | None:
 # ── Subcommands ───────────────────────────────────────────────────────────────
 
 def cmd_describe_schema(args: argparse.Namespace) -> None:
-    """Answer "what fields/values does this schema allow" without reading raw
-    JSON Schema. Purely local and read-only -- no --cloud, no file/list arg.
+    """Print field metadata for one packaged list schema.
+
+    Intent
+    ------
+    Expose one field or the complete entry contract as stable YAML output.
+
+    Rationale
+    ---------
+    Callers can discover required, generated, typed, and enumerated fields without
+    parsing raw JSON Schema or guessing acceptable values.
+
+    Pseudocode
+    ----------
+    - schema_exists = @_get_schema.list_schema_exists(schema_name)
+    - if schema_exists is false:
+      - missing_schema_path = _get_schema.list_schema_path(schema_name)
+      - @die(unknown schema and missing_schema_path)
+    - if all fields were requested:
+      - whole_schema = _get_schema.get_schema(schema_name, `*`)
+      - set schema_description = whole_schema properties and requirement groups
+    - else:
+      - field_schema = _get_schema.get_schema(schema_name, field_name)
+      - set schema_description = requested field_schema metadata
+    - if the requested field is unknown:
+      - @die(field diagnostic)
+    - set emitted_yaml = schema_description serialized to stdout
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._get_schema.list_schema_exists [implicit]:
+      why:
+        validates: "Checks that the requested packaged schema exists before metadata lookup."
+    .die:
+      why:
+        orchestrates: "Rejects unknown schemas and fields before metadata emission."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._get_schema.list_schema_path [implicit]:
+      why:
+        constructs: "Provides the expected file path included in an unknown-schema diagnostic."
+    ._get_schema.get_schema [implicit]:
+      why:
+        constructs: "Provides whole-schema or field metadata carried into emitted YAML."
     """
     if not get_schema.list_schema_exists(args.schema):
         die(f"unknown schema '{args.schema}' (no file at {get_schema.list_schema_path(args.schema)})")
@@ -726,33 +1575,64 @@ def cmd_describe_schema(args: argparse.Namespace) -> None:
 
 
 def _domain_category(name: str, personal: bool) -> dict:
-    """Build one domain category, populated with the fixed subcategory set
-    todo/triage schemas require (task-list.json / task-list-personal.json),
-    resolved through get_schema so this stays in sync with the schema files
-    instead of duplicating their enum here.
+    """Build a domain category with its schema-defined subcategories.
+
+    Intent
+    ------
+    Return one named category populated for personal or general use.
+
+    Rationale
+    ---------
+    Reading the packaged vocabulary avoids duplicating enum values and keeps fresh
+    list defaults aligned with schema validation.
+
+    Pseudocode
+    ----------
+    - subcategory_names = _get_schema.domain_subcategory_names(personal)
+    - return domain mapping with child categories named by subcategory_names
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._get_schema.domain_subcategory_names [implicit]:
+      why:
+        constructs: "Provides the schema-defined names carried into child category mappings."
     """
     sub_names = get_schema.domain_subcategory_names(personal)
     return {"name": name, "categories": [{"name": n} for n in sub_names]}
 
 
 def default_categories(schema: str) -> list[dict]:
-    """Usable starting categories for a freshly initialized list.
+    """Choose usable seed categories for a newly initialized list.
 
-    Fixes feedback item 23: an unconditional `categories: []` left every new
-    list unusable until the caller manually built out the schema's required
-    category structure. todo/triage lists need at least one domain category,
-    and that domain category must carry the schema's fixed subcategory set
-    (see task-list.json / task-list-personal.json), so a bare `[{"name":
-    "Personal"}]` would itself fail validation -- the seed must be fully
-    populated. Schemas without a fixed category vocabulary (e.g. "default")
-    have no meaningful default, so they keep an empty list.
+    Intent
+    ------
+    Populate structured action schemas with Personal and Work domains.
 
-    "Personal" and "Work" are the two seed domain names: "Personal" is not
-    arbitrary -- todo.json/triage.json route on the literal name "Personal"
-    to require the 7-subcategory (incl. "Shop") variant, so it must be spelled
-    exactly that way to exercise it. "Work" has no schema significance (any
-    other name would validate identically); it's just a second, common-sense
-    domain so a fresh list isn't limited to a single bucket.
+    Rationale
+    ---------
+    Those schemas require fixed child vocabularies, whereas schemas without a
+    category vocabulary have no defensible seed and therefore remain empty.
+
+    Pseudocode
+    ----------
+    - if schema uses structured action categories:
+      - set seeded_categories = _domain_category(Personal) and _domain_category(Work)
+      - return seeded_categories
+    - return empty list
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._domain_category:
+      why:
+        constructs: "Constructs each schema-valid seeded domain category."
     """
     if schema in ("todo", "triage"):
         return [
@@ -763,6 +1643,50 @@ def default_categories(schema: str) -> list[dict]:
 
 
 def cmd_init(args: argparse.Namespace) -> None:
+    """Create and validate a new local list document.
+
+    Intent
+    ------
+    Refuse existing paths, apply schema-appropriate defaults, and persist one list.
+
+    Rationale
+    ---------
+    Validation before the first write prevents unusable files, while deriving the
+    default name from the path keeps the optional display name predictable.
+
+    Pseudocode
+    ----------
+    - set destination = requested list path
+    - if destination exists:
+      - @die(existing path diagnostic)
+    - initialized_categories = default_categories(schema name)
+    - set list_document = schema name display name and initialized_categories
+    - @validate_list(list_document)
+    - @save_yaml(destination, list_document)
+    - set confirmation = created destination emitted to stdout
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .die:
+      why:
+        orchestrates: "Refuses to overwrite an existing list path."
+    .validate_list:
+      why:
+        validates: "Checks the initialized document before its first write."
+    .save_yaml:
+      why:
+        writes: "Persists the validated list document to the requested path."
+
+    InstantiationsFromRepo
+    ----------------------
+    .default_categories:
+      why:
+        constructs: "Constructs schema-appropriate seed categories carried into the document."
+    """
     file = Path(args.file)
     if file.exists():
         die(f"file already exists: {file}")
@@ -780,6 +1704,41 @@ def cmd_init(args: argparse.Namespace) -> None:
 
 
 def cmd_gen_id(args: argparse.Namespace) -> None:
+    """Print fresh identifiers that avoid one list snapshot.
+
+    Intent
+    ------
+    Generate the requested count of IDs absent from every nested entry.
+
+    Rationale
+    ---------
+    Reading and collecting once gives the command a consistent collision set, and
+    one ID per output line remains straightforward for machine callers.
+
+    Pseudocode
+    ----------
+    - list_document = load_yaml(requested path)
+    - occupied_ids = collect_ids(list_document)
+    - generated_ids = gen_ids(occupied_ids, requested count)
+    - for generated_id in generated_ids:
+      - set emitted_line = generated_id written to stdout
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .load_yaml:
+      why:
+        transforms: "Builds the normalized list snapshot used for collision checks."
+    .collect_ids:
+      why:
+        constructs: "Constructs the occupied identifier set from the snapshot."
+    .gen_ids:
+      why:
+        constructs: "Constructs the fresh identifier sequence emitted by the command."
+    """
     file = Path(args.file)
     data = load_yaml(file)
     existing = collect_ids(data)
@@ -789,10 +1748,86 @@ def cmd_gen_id(args: argparse.Namespace) -> None:
 
 
 def cmd_read(args: argparse.Namespace) -> None:
+    """Read, filter, optionally sort, and emit one list snapshot.
+
+    Intent
+    ------
+    Preserve raw document shape for unfiltered reads and ancestor context for matches.
+
+    Rationale
+    ---------
+    A shared path handles local and downloaded snapshots, validates enum filters before
+    matching, and applies sorting throughout the retained tree rather than flattening it.
+
+    Pseudocode
+    ----------
+    - list_document = load_yaml(requested path)
+    - if filters are absent:
+      - set emitted_yaml = complete list_document written to the selected output
+      - return
+    - parsed_filters = parse_filters(filter tokens)
+    - @validate_filter_values(parsed_filters, schema name)
+    - matching_tree = collect_matching_entries(list_document, parsed_filters)
+    - if a sort field is present:
+      - @_sort_tree(matching_tree, sort field)
+    - if sorting fails:
+      - @die(sort diagnostic)
+    - set emitted_yaml = matching_tree written to the selected output
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .validate_filter_values:
+      why:
+        validates: "Rejects impossible exact enum filters before matching."
+    ._sort_tree:
+      why:
+        transforms: "Orders every retained entry branch by the requested field."
+    .die:
+      why:
+        orchestrates: "Converts an incompatible sort into a bounded command error."
+
+    InstantiationsFromRepo
+    ----------------------
+    .load_yaml:
+      why:
+        transforms: "Builds the normalized list snapshot used by the read command."
+    .parse_filters:
+      why:
+        constructs: "Constructs structured filter triples from caller tokens."
+    .collect_matching_entries:
+      why:
+        constructs: "Constructs the ancestor-preserving filtered result tree."
+    """
     file = Path(args.file)
     data = load_yaml(file)
 
     def emit(content: str) -> None:
+        """Write serialized list content to the selected output boundary.
+
+        Intent
+        ------
+        Honor an explicit output file and otherwise preserve stdout behavior.
+
+        Rationale
+        ---------
+        Keeping this choice local prevents filtering and sorting paths from duplicating
+        file encoding and newline-preservation details.
+
+        Pseudocode
+        ----------
+        - if an output path is configured:
+          - set persisted_content = UTF-8 file containing content
+        - else:
+          - set emitted_content = content written to stdout without an added newline
+
+        Wraps
+        -----
+        - none
+        """
         if getattr(args, "output", None):
             with open(args.output, "w", encoding="utf-8") as f:
                 f.write(content)
@@ -821,6 +1856,80 @@ def cmd_read(args: argparse.Namespace) -> None:
 
 
 def cmd_create_entry(args: argparse.Namespace) -> None:
+    """Insert validated entries beneath a category or parent entry.
+
+    Intent
+    ------
+    Resolve one destination, supply generated fields, and save one revisioned mutation.
+
+    Rationale
+    ---------
+    Holding the lock across load, stale-check, mutation, validation, and write prevents
+    races; validating caller-owned fields before defaults avoids invented information.
+
+    Pseudocode
+    ----------
+    - list_document = load_yaml(path)
+    - if resolved parent-entry or category destination is missing:
+      - @die(available target diagnostic)
+    - set new_entries = YAML sequence read from file or stdin
+    - @validate_entries_before_insert(new_entries, schema name)
+    - for entry in new_entries preserving any supplied ID:
+      - if entry ID is missing:
+        - generated_ids = gen_ids(occupied IDs, one)
+        - set entry_id = first member of generated_ids and reserve it
+      - if entry state is missing:
+        - set entry_state = undecided for triage or incomplete otherwise
+      - if entry created date is missing:
+        - set entry_created = today
+    - @save_with_revision_bump(path, list_document)
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .file_lock:
+      why:
+        orchestrates: "Holds the complete local mutation inside one advisory critical section."
+    .check_revision:
+      why:
+        validates: "Prevents insertion into a revision superseded since the caller read it."
+    ._test_race_delay:
+      why:
+        orchestrates: "Widens the create critical section for deterministic concurrency tests."
+    .die:
+      why:
+        orchestrates: "Rejects absent targets and malformed entry input before persistence."
+    .validate_entries_before_insert:
+      why:
+        validates: "Checks caller-owned required fields before generated defaults are added."
+    .save_with_revision_bump:
+      why:
+        orchestrates: "Advances, validates, and writes the completed mutation once."
+
+    InstantiationsFromRepo
+    ----------------------
+    .load_yaml:
+      why:
+        transforms: "Deserializes and normalizes the document that will receive new entries."
+    .find_entry_by_id:
+      why:
+        constructs: "Constructs the optional parent-entry destination for ID targets."
+    .find_category_by_path:
+      why:
+        constructs: "Constructs the optional category destination for path targets."
+    .all_category_paths:
+      why:
+        constructs: "Constructs available target paths carried into an error diagnostic."
+    .collect_ids:
+      why:
+        constructs: "Constructs the occupied ID set used to avoid collisions."
+    .gen_ids [implicit]:
+      why:
+        constructs: "Produces the fresh ID sequence whose first member is assigned to an entry."
+    """
     file = Path(args.file)
     # The lock spans the whole load -> check -> mutate -> save sequence (not
     # just the check) -- see the module note above check_revision() for why
@@ -887,6 +1996,65 @@ FINISHED_STATES = frozenset({"complete", "accepted", "rejected"})
 
 
 def cmd_update(args: argparse.Namespace) -> None:
+    """Apply a batch of validated field patches to existing entries.
+
+    Intent
+    ------
+    Update only identified mutable fields and stamp modification lifecycle dates.
+
+    Rationale
+    ---------
+    The lock and optional revision guard prevent stale writes, while resolving every ID
+    before the final validated save keeps the batch within one revision transition.
+
+    Pseudocode
+    ----------
+    - list_document = load_yaml(requested path)
+    - set patches = YAML sequence read from file or stdin
+    - for patch in patches:
+      - if ID is missing or an immutable field is selected:
+        - @die(patch diagnostic)
+      - target_entry = find_entry_by_id(list_document, patch ID)
+      - if target_entry is missing:
+        - @die(missing ID diagnostic)
+      - set target_entry = mutable fields preserving supplied modified and completed dates
+      - if modified is absent from patch:
+        - set target_modified = today
+      - if completed is absent and state first enters FINISHED_STATES with no recorded completion:
+        - set target_completed = today
+    - @save_with_revision_bump(requested path, list_document)
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .file_lock:
+      why:
+        orchestrates: "Holds the complete batch mutation inside one advisory critical section."
+    .check_revision:
+      why:
+        validates: "Prevents patching a revision superseded since the caller read it."
+    ._test_race_delay:
+      why:
+        orchestrates: "Widens the update critical section for deterministic concurrency tests."
+    .die:
+      why:
+        orchestrates: "Rejects malformed patches immutable fields and absent IDs."
+    .save_with_revision_bump:
+      why:
+        orchestrates: "Advances, validates, and writes the completed patch batch once."
+
+    InstantiationsFromRepo
+    ----------------------
+    .load_yaml:
+      why:
+        transforms: "Deserializes and normalizes the document whose entries receive patches."
+    .find_entry_by_id:
+      why:
+        constructs: "Constructs each optional target entry carried into patch application."
+    """
     file = Path(args.file)
     with file_lock(file):
         data = load_yaml(file)
@@ -944,11 +2112,37 @@ def cmd_update(args: argparse.Namespace) -> None:
 # ── Deletion helpers ─────────────────────────────────────────────────────────
 
 def remove_entries_by_ids(node, ids_to_remove: set[str]) -> None:
-    """Remove entries with the given IDs from the tree, in place.
+    """Remove selected entries and their subtrees from a nested list in place.
 
-    Operates on any list-bearing node: top-level category entries AND nested
-    children lists. Removing a parent removes the whole subtree naturally
-    (the node is never visited after removal).
+    Intent
+    ------
+    Filter matching IDs from every sequence while preserving all surviving branches.
+
+    Rationale
+    ---------
+    Filtering before recursion naturally drops a removed parent's complete subtree and
+    ensures recursion visits only survivors at category and child-entry depths.
+
+    Pseudocode
+    ----------
+    - if node is a mapping:
+      - for child in mapping values:
+        - set surviving_items = sequence items whose IDs are not selected
+        - @remove_entries_by_ids(each surviving item, selected IDs)
+    - else:
+      - if node is a sequence:
+        - set surviving_items = sequence items whose IDs are not selected
+        - @remove_entries_by_ids(each surviving item, selected IDs)
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .remove_entries_by_ids:
+      why:
+        transforms: "Recursively removes selected entries from every surviving branch."
     """
     if isinstance(node, dict):
         for val in node.values():
@@ -973,6 +2167,62 @@ def remove_entries_by_ids(node, ids_to_remove: set[str]) -> None:
 
 
 def cmd_delete(args: argparse.Namespace) -> None:
+    """Delete a verified set of entry IDs in one revisioned mutation.
+
+    Intent
+    ------
+    Abort the whole request when any ID is absent, otherwise remove every selected subtree.
+
+    Rationale
+    ---------
+    Prechecking the complete set avoids partial deletion, and the lock plus optional
+    revision guard prevents concurrent writers from silently replacing one another.
+
+    Pseudocode
+    ----------
+    - @file_lock(requested path)
+    - list_document = load_yaml(requested path)
+    - @check_revision(list_document, expected revision, requested path)
+    - @_test_race_delay()
+    - occupied_ids = collect_ids(list_document)
+    - set missing_ids = requested IDs absent from occupied_ids
+    - if missing_ids is nonempty:
+      - raise SystemExit after writing each missing ID to stderr
+    - @remove_entries_by_ids(list_document, requested IDs)
+    - @save_with_revision_bump(requested path, list_document)
+    - set confirmations = sorted deleted IDs written to stdout
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .file_lock:
+      why:
+        orchestrates: "Holds the complete deletion inside one advisory critical section."
+    .check_revision:
+      why:
+        validates: "Prevents deletion from a revision superseded since the caller read it."
+    ._test_race_delay:
+      why:
+        orchestrates: "Widens the delete critical section for deterministic concurrency tests."
+    .remove_entries_by_ids:
+      why:
+        transforms: "Removes each selected entry and its descendants from the snapshot."
+    .save_with_revision_bump:
+      why:
+        orchestrates: "Advances, validates, and writes the completed deletion once."
+
+    InstantiationsFromRepo
+    ----------------------
+    .load_yaml:
+      why:
+        transforms: "Deserializes and normalizes the document whose selected subtrees are removed."
+    .collect_ids:
+      why:
+        constructs: "Constructs the occupied ID set used to prove all targets exist."
+    """
     file = Path(args.file)
     with file_lock(file):
         data = load_yaml(file)
@@ -999,6 +2249,35 @@ def cmd_delete(args: argparse.Namespace) -> None:
 # ── Argument parsing + dispatch ───────────────────────────────────────────────
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the command parser for every local and cloud list operation.
+
+    Intent
+    ------
+    Define subcommands, positionals, shared cloud flags, and revision guards in one place.
+
+    Rationale
+    ---------
+    Central construction keeps local and cloud entrypoints on the same argument contract
+    while limiting schema-description parsing to its dedicated reusable helper.
+
+    Pseudocode
+    ----------
+    - set command_parser = parser with required subcommand selection
+    - set shared_flags = cloud mode and optional expected revision definitions
+    - @build_describe_schema_parser(schema description subparser)
+    - set subcommands = initialization read create update ID generation and deletion parsers
+    - return command_parser
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .build_describe_schema_parser:
+      why:
+        transforms: "Adds the reusable schema and field positionals to its subparser."
+    """
     parser = argparse.ArgumentParser(prog="lists.py")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -1007,6 +2286,25 @@ def build_parser() -> argparse.ArgumentParser:
     # local file PATH. It is a plain boolean, so it never consumes a positional
     # and filters keep their own slot.
     def add_cloud_arg(subparser):
+        """Add the shared cloud-mode switch to one subcommand parser.
+
+        Intent
+        ------
+        Mark a source positional as a cloud list name rather than a local path.
+
+        Rationale
+        ---------
+        One boolean option avoids duplicated definitions and leaves positional filter
+        parsing unchanged because the switch consumes no value.
+
+        Pseudocode
+        ----------
+        - set cloud_option = boolean cloud switch added to subparser
+
+        Wraps
+        -----
+        - none
+        """
         subparser.add_argument(
             "--cloud",
             action="store_true",
@@ -1017,6 +2315,25 @@ def build_parser() -> argparse.ArgumentParser:
     # mutating subcommand, opt-in for backward compat. See the module note
     # above check_revision()/StaleRevisionError for the full rationale.
     def add_expected_revision_arg(subparser):
+        """Add the optional optimistic-concurrency guard to a mutating parser.
+
+        Intent
+        ------
+        Parse an expected integer revision while preserving an unconditional default.
+
+        Rationale
+        ---------
+        Reusing one option definition keeps every mutating command backward compatible
+        and gives guarded callers identical stale-write semantics.
+
+        Pseudocode
+        ----------
+        - set revision_option = optional integer guard added to subparser
+
+        Wraps
+        -----
+        - none
+        """
         subparser.add_argument(
             "--expected-revision",
             dest="expected_revision",
@@ -1077,6 +2394,27 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def build_describe_schema_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    """Add schema-description positionals to an existing parser.
+
+    Intent
+    ------
+    Configure a required schema and an optional field defaulting to all fields.
+
+    Rationale
+    ---------
+    The helper supports both the full command tree and the dedicated machine interface
+    without duplicating positional names, defaults, or help text.
+
+    Pseudocode
+    ----------
+    - set schema_argument = required schema positional added to parser
+    - set field_argument = optional field positional defaulting to all fields
+    - return parser
+
+    Wraps
+    -----
+    - none
+    """
     parser.add_argument("schema", help="Schema name (todo, triage, default)")
     parser.add_argument(
         "field",
@@ -1088,25 +2426,218 @@ def build_describe_schema_parser(parser: argparse.ArgumentParser) -> argparse.Ar
 
 
 class DescribeSchemaInterface(PythonMachineInterface):
+    """Expose schema description as a dedicated machine interface.
+
+    Intent
+    ------
+    Bind schema and optional field arguments directly to the read-only handler.
+
+    Rationale
+    ---------
+    A narrow interface avoids requiring the general subcommand parser for callers that
+    need packaged field metadata without local or cloud list access.
+
+    Pseudocode
+    ----------
+    - set interface_program = schema-description command label
+    - set interface_parser = base parser extended with schema positionals
+    - set interface_result = schema handler completion status
+
+    Wraps
+    -----
+    - none
+    """
     prog = "lists.py describe-schema"
 
     def build_parser(self) -> argparse.ArgumentParser:
+        """Extend the base interface parser with schema positionals.
+
+        Intent
+        ------
+        Return the dedicated parser accepted by this machine interface.
+
+        Rationale
+        ---------
+        Delegating positional construction preserves exact parity with the general
+        ``describe-schema`` subcommand while retaining the framework base parser.
+
+        Pseudocode
+        ----------
+        - base_parser = PythonMachineInterface.build_parser()
+        - return base_parser extended with schema and field positionals
+
+        Wraps
+        -----
+        - .build_describe_schema_parser -> preprocess: supply the superclass parser; postprocess: return the extended parser; fixed_arguments: none
+
+        InstantiationsFromRepo
+        ----------------------
+        "officina.runtime.python_machine_interface.PythonMachineInterface.build_parser [implicit]":
+          why:
+            constructs: "Produces the base parser carried into schema-position configuration."
+        """
         return build_describe_schema_parser(super().build_parser())
 
     def run(self, args: argparse.Namespace) -> int:
+        """Execute schema description and return a successful interface status.
+
+        Intent
+        ------
+        Invoke the shared handler with parsed interface arguments.
+
+        Rationale
+        ---------
+        The handler owns validation and output, while this method supplies the integer
+        status required by the machine-interface runtime after normal completion.
+
+        Pseudocode
+        ----------
+        - @cmd_describe_schema(parsed arguments)
+        - set completion_status = zero after normal handler completion
+        - return completion_status
+
+        Wraps
+        -----
+        - none
+
+        CallsFromRepo
+        -------------
+        .cmd_describe_schema:
+          why:
+            dispatches: "Produces schema output before this adapter returns the required integer success status."
+        """
         cmd_describe_schema(args)
         return 0
 
 
 class Interface(PythonArgvMachineInterface):
+    """Expose the complete list command tree as an argv machine interface.
+
+    Intent
+    ------
+    Bind declared cloud dispatches and command-line parsing to the runtime gateway.
+
+    Rationale
+    ---------
+    The generic argv adapter preserves one implementation for direct execution and
+    dispatcher-managed local or cloud invocations.
+
+    Pseudocode
+    ----------
+    - set declared_dispatches = cloud transport interface menu
+    - set interface_program = list command label
+    - set interface_result = main invoked with provided argv
+
+    Wraps
+    -----
+    - none
+    """
     dispatches = cloud_transport.DISPATCHES
     prog = "lists.py"
 
     def run(self, argv: list[str]) -> int:
+        """Forward interface arguments to the shared command entrypoint.
+
+        Intent
+        ------
+        Return the command status produced for the supplied argv sequence.
+
+        Rationale
+        ---------
+        Direct delegation keeps interface-managed execution behavior identical to the
+        module's executable entrypoint without re-parsing or translating arguments.
+
+        Pseudocode
+        ----------
+        - return status from shared command entrypoint
+
+        Wraps
+        -----
+        - .main -> preprocess: forward argv unchanged; postprocess: return status unchanged; fixed_arguments: none
+        """
         return main(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Parse and orchestrate one local or cloud list command.
+
+    Intent
+    ------
+    Route parsed arguments through local handlers and bounded cloud snapshot transport.
+
+    Rationale
+    ---------
+    Cloud mutations hold a stable name-keyed lock across download, local mutation, and
+    upload, while local mode dispatches directly and stale conflicts share one error edge.
+
+    Pseudocode
+    ----------
+    - set parsed_command = argv parsed by the command parser
+    - if cloud mode is selected:
+      - set cloud_workspace = isolated snapshot plus name-keyed mutation guard
+      - if command is initialization:
+        - if display name is missing:
+          - set display_name = cloud list name
+      - else:
+        - @download_list(list name, temporary snapshot)
+      - set command_effects = selected handler executed against temporary snapshot
+      - if command mutates:
+        - @upload_list(list name, temporary snapshot)
+      - set cloud_workspace = removed unconditionally
+    - else:
+      - set command_effects = selected handler executed with parsed arguments
+    - if a stale revision is raised:
+      - @die(conflict diagnostic)
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ".cmd_init [implicit]":
+      why:
+        dispatches: "Handles the dynamically selected local initialization command."
+    ".cmd_read [implicit]":
+      why:
+        dispatches: "Handles the dynamically selected local read command."
+    ".cmd_create_entry [implicit]":
+      why:
+        dispatches: "Handles the dynamically selected local entry-creation command."
+    ".cmd_update [implicit]":
+      why:
+        dispatches: "Handles the dynamically selected local update command."
+    ".cmd_delete [implicit]":
+      why:
+        dispatches: "Handles the dynamically selected local deletion command."
+    ".cmd_gen_id [implicit]":
+      why:
+        dispatches: "Handles the dynamically selected local ID-generation command."
+    ".cmd_describe_schema [implicit]":
+      why:
+        dispatches: "Handles the dynamically selected local schema-description command."
+    .download_list:
+      why:
+        reads: "Materializes the current cloud snapshot before local handling."
+    .upload_list:
+      why:
+        writes: "Publishes a successfully mutated cloud snapshot."
+    .die:
+      why:
+        orchestrates: "Translates stale revision conflicts into the command failure protocol."
+
+    InstantiationsFromRepo
+    ----------------------
+    .build_parser:
+      why:
+        constructs: "Constructs the parser carried into argument selection."
+    .cloud_lock_path:
+      why:
+        constructs: "Constructs the stable target carried into cloud lock acquisition."
+    .file_lock:
+      why:
+        constructs: "Constructs the context manager carried across the cloud transport critical section."
+    """
     parser = build_parser()
     args = parser.parse_args(argv)
 
