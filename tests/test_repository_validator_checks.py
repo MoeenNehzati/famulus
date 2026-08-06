@@ -41,6 +41,10 @@ def _initialize_runner_repository(repo: Path) -> Path:
         _REPO_ROOT / "src" / "officina" / "common" / "test_discovery.py",
         common / "test_discovery.py",
     )
+    source_cache = (
+        _REPO_ROOT / "src" / "officina" / "common" / "python_source_cache.py"
+    )
+    shutil.copy2(source_cache, common / "python_source_cache.py")
     shutil.copy2(_REPO_CHECKS_PATH, repo / "repo_checks.py")
     _require_git_ok(
         repository.git("add", "repo_checks.py", "src/officina")
@@ -144,6 +148,38 @@ def test_run_all_reuses_module_fixture_and_aggregates_validator_items(
         "repo/multi_item": ["first:prepared", "second:prepared"]
     }
     assert evidence.read_text(encoding="utf-8") == "x"
+
+
+def test_run_all_shares_python_source_cache_only_within_one_session(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    validators = _initialize_runner_repository(repo)
+    (repo / "shared.py").write_text("value = 1\n", encoding="utf-8")
+    (validators / "a_cache_writer.py").write_text(
+        "def test_cache_starts_empty(repo_root, python_source_cache):\n"
+        "    if python_source_cache._entries:\n"
+        "        return ['cache did not start empty']\n"
+        "    python_source_cache.read_parse(repo_root / 'shared.py')\n"
+        "    return []\n"
+        "def validate(repo_root): return ['legacy fallback ran']\n",
+        encoding="utf-8",
+    )
+    (validators / "b_cache_reader.py").write_text(
+        "def test_cache_reuses_prior_parse(repo_root, python_source_cache):\n"
+        "    before = len(python_source_cache._entries)\n"
+        "    python_source_cache.read_parse(repo_root / 'shared.py')\n"
+        "    after = len(python_source_cache._entries)\n"
+        "    return [] if (before, after) == (1, 1) else "
+        "[f'unexpected cache sizes: {(before, after)}']\n"
+        "def validate(repo_root): return ['legacy fallback ran']\n",
+        encoding="utf-8",
+    )
+    _require_git_ok(GitTestRepository(repo).git("add", "."))
+
+    selected = ["repo/a_cache_writer", "repo/b_cache_reader"]
+    assert _RUNNER.run_all(repo, validator_ids=selected) == {}
+    assert _RUNNER.run_all(repo, validator_ids=selected) == {}
 
 
 def test_skill_validator_discovery_supports_each_layout_with_explicit_ids(
@@ -305,6 +341,39 @@ def test_graph_preflight_errors_are_reported_only_by_blueprint_owner(
     }
 
 
+def test_fixture_backed_graph_consumer_obeys_preflight_error_gating(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    _initialize_runner_repository(repo)
+    skill_validators = repo / "skills" / "skill-maker" / "validators"
+    skill_validators.mkdir(parents=True)
+    sentinel = tmp_path / "consumer-ran"
+    (skill_validators / "blueprints.py").write_text(
+        "def preflight(repo_root): return ['topology error'], None\n"
+        "def validate(repo_root): return ['duplicate topology error']\n",
+        encoding="utf-8",
+    )
+    (skill_validators / "fixture_consumer.py").write_text(
+        "from pathlib import Path\n"
+        "REQUIRES_BLUEPRINT_GRAPH = True\n"
+        f"SENTINEL = Path({str(sentinel)!r})\n"
+        "def test_graph_consumer(repo_root, python_source_cache):\n"
+        "    SENTINEL.write_text('ran')\n"
+        "    return ['consumer ran']\n"
+        "def validate_with_graph(repo_root, graph): return ['legacy ran']\n"
+        "def validate(repo_root): return ['duplicate topology error']\n",
+        encoding="utf-8",
+    )
+    _require_git_ok(GitTestRepository(repo).git("add", "."))
+
+    assert _RUNNER.run_all(
+        repo,
+        validator_ids=["skill-maker/fixture_consumer"],
+    ) == {"skill-maker/blueprints": ["topology error"]}
+    assert not sentinel.exists()
+
+
 def test_selected_graph_consumer_is_a_noop_when_preflight_has_no_graph(
     tmp_path: Path,
 ) -> None:
@@ -463,6 +532,7 @@ def test_staged_validator_receives_eligible_paths_with_unborn_head(
         "src/officina/__init__.py",
         "src/officina/_validator_snapshot.py",
         "src/officina/common/__init__.py",
+        "src/officina/common/python_source_cache.py",
         "src/officina/common/test_discovery.py",
         "src/officina/repository_checks.py",
         "validators/staged_probe.py",

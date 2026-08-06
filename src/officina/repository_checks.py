@@ -14,6 +14,7 @@ from typing import Callable, Sequence
 import pytest
 
 from officina import _validator_snapshot
+from officina.common.python_source_cache import PythonSourceCache
 from officina.common.test_discovery import discover_repository_test_dirs
 
 
@@ -544,6 +545,35 @@ class ValidatorPytestPlugin:
 
         return self.staged_path_values
 
+    @pytest.fixture(scope="session")
+    def python_source_cache(self) -> PythonSourceCache:
+        """Return lazy Python preparation shared within this staged session.
+
+        Intent
+        ------
+        Inject one source-and-AST cache into fixture-backed validators.
+
+        Rationale
+        ---------
+        Independent validators frequently read and parse the same immutable files.
+
+        Pseudocode
+        ----------
+        - return Python source cache owned by tracked root
+
+        Wraps
+        -----
+        - none
+
+        InstantiationsFromRepo
+        ----------------------
+        .common.python_source_cache.PythonSourceCache:
+          why:
+            constructs: "Builds the staged session's lazy source and AST cache."
+        """
+
+        return PythonSourceCache(self.tracked_root)
+
     @pytest.fixture
     def graph(self, request: pytest.FixtureRequest) -> object | None:
         """Return an isolated view of the session blueprint graph.
@@ -678,7 +708,14 @@ class ValidatorPytestPlugin:
         if not isinstance(validator_id, str):
             return None
         entry_name = getattr(pyfuncitem, "_validator_entry_name", "validate")
-        state = self._graph_state() if entry_name == "validate_with_graph" else None
+        fixture_names = pyfuncitem._fixtureinfo.argnames
+        module = self.modules[validator_id]
+        uses_graph = entry_name == "validate_with_graph" or getattr(
+            module,
+            "REQUIRES_BLUEPRINT_GRAPH",
+            False,
+        ) is True
+        state = self._graph_state() if uses_graph else None
         if state is not None and state.errors:
             if validator_id == state.owner_id:
                 pytest.fail("\n".join(state.errors), pytrace=False)
@@ -687,7 +724,7 @@ class ValidatorPytestPlugin:
             pytest.skip("blueprint preflight produced no graph")
         arguments = {
             name: pyfuncitem.funcargs[name]
-            for name in pyfuncitem._fixtureinfo.argnames
+            for name in fixture_names
         }
         try:
             returned = pyfuncitem.obj(**arguments)
