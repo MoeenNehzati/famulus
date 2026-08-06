@@ -1,3 +1,5 @@
+"""Cross-module behavioral tests for guarded wakeup scheduling and delivery."""
+
 from __future__ import annotations
 
 import json
