@@ -71,6 +71,8 @@ _PSEUDOCODE_SKIP_TOKENS = {
 _DISPATCH_ID_RE = re.compile(
     r"(?<![A-Za-z0-9_.:-])(?:skills\.)?[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.interface\.[A-Za-z0-9_-]+(?![A-Za-z0-9_.:-])"
 )
+_VALUE_CARRYING_RECEIVER_METHODS = frozenset({"get", "strip"})
+_VALUE_SERIALIZERS = frozenset({"str"})
 
 
 def _relative_dependency_tail(name: str) -> str:
@@ -1065,11 +1067,11 @@ def _is_passive_dataclass_field(
     -----
     - none
 
-    CallsFromRepo
-    -------------
+    InstantiationsFromRepo
+    ----------------------
     ._is_resolved_dataclasses_field:
       why:
-        computes: "Checks the only call-valued default permitted by compact dataclass policy."
+        transforms: "Carries the resolved-field decision into compact dataclass field classification."
     """
     if not isinstance(statement, ast.AnnAssign) or not isinstance(statement.target, ast.Name):
         return False
@@ -2493,13 +2495,11 @@ def _source_backed_local_receiver(
     -----
     - none
 
-    CallsFromRepo
-    -------------
-    ._flatten_attribute_name:
-      why:
-        computes: "Extracts the source call target that created the local receiver."
     InstantiationsFromRepo
     ----------------------
+    ._flatten_attribute_name:
+      why:
+        transforms: "Builds the source call target carried into receiver provenance classification."
     ._iter_lexical_scope_nodes:
       why:
         constructs: "Builds the same-scope node stream consumed by receiver provenance checks."
@@ -2616,15 +2616,15 @@ def _call_is_semantic_product_sink(
 
     CallsFromRepo
     -------------
-    ._flatten_attribute_name:
-      why:
-        computes: "Extracts the candidate output or copy sink target."
     ._normalize_dependency_name:
       why:
         computes: "Resolves stdout import aliases before exact sink comparison."
 
     InstantiationsFromRepo
     ----------------------
+    ._flatten_attribute_name:
+      why:
+        transforms: "Builds the candidate sink target carried into output and copy classification."
     ._source_backed_local_receiver:
       why:
         constructs: "Builds the byte-copy receiver provenance decision returned for the candidate sink."
@@ -2658,6 +2658,7 @@ def _call_result_is_product_position(
     defined_symbols: set[str],
     allowed_abs: tuple[str, ...],
     shadowed_names: frozenset[str],
+    builtin_shadowed_names: frozenset[str] = frozenset(),
 ) -> bool:
     """Return true when a call result is carried as a semantic product.
 
@@ -2667,10 +2668,11 @@ def _call_result_is_product_position(
 
     Rationale
     ---------
-    Projections, binary expressions, formatted strings, comprehensions, and containers
-    preserve a value channel but become products only at a recognized anchor or consumer.
-    Direct iteration consumes a returned container, while exact stdout and byte-write
-    sinks carry returned text or bytes into externally visible output.
+    Projections, value-preserving method calls, serializers, boolean and binary
+    expressions, formatted strings, comprehensions, and containers preserve a value
+    channel but become products only at a recognized anchor or consumer. Direct
+    iteration consumes a returned container, while exact stdout and byte-write sinks
+    carry returned text or bytes into externally visible output.
 
     Pseudocode
     ----------
@@ -2687,9 +2689,6 @@ def _call_result_is_product_position(
 
     CallsFromRepo
     -------------
-    ._flatten_attribute_name:
-      why:
-        computes: "flatten attribute name supplies repo-local behavior used by call result is product position; this edge is documented from an observed call in the body."
     ._is_wrapped_call_node:
       why:
         computes: "is wrapped call node supplies repo-local behavior used by call result is product position; this edge is documented from an observed call in the body."
@@ -2705,6 +2704,9 @@ def _call_result_is_product_position(
 
     InstantiationsFromRepo
     ----------------------
+    ._flatten_attribute_name:
+      why:
+        transforms: "Builds outer call targets carried into wrapper and consumer classification."
     ._normalize_dependency_name:
       why:
         constructs: "Builds normalized outer-consumer names before repo-local classification."
@@ -2726,6 +2728,10 @@ def _call_result_is_product_position(
             parent = parents.get(parent)
             continue
         if isinstance(parent, ast.Subscript) and parent.value is value_node:
+            value_node = parent
+            parent = parents.get(parent)
+            continue
+        if isinstance(parent, ast.BoolOp) and value_node in parent.values:
             value_node = parent
             parent = parents.get(parent)
             continue
@@ -2809,6 +2815,15 @@ def _call_result_is_product_position(
             value_node = parent
             parent = parents.get(parent)
             continue
+        if (
+            isinstance(parent, ast.Call)
+            and isinstance(parent.func, ast.Attribute)
+            and parent.func is value_node
+            and parent.func.attr in _VALUE_CARRYING_RECEIVER_METHODS
+        ):
+            value_node = parent
+            parent = parents.get(parent)
+            continue
         if isinstance(parent, ast.Call) and value_node in tuple(parent.args):
             wrapper = _flatten_attribute_name(parent.func) or ""
             wrapper_tail = wrapper.rsplit(".", 1)[-1]
@@ -2836,6 +2851,14 @@ def _call_result_is_product_position(
                 value_node = parent
                 if promoted_comprehension is not None:
                     promoted_comprehension = parent
+                parent = parents.get(parent)
+                continue
+            if (
+                wrapper in _VALUE_SERIALIZERS
+                and wrapper.split(".", 1)[0] not in builtin_shadowed_names
+                and wrapper.split(".", 1)[0] not in import_aliases
+            ):
+                value_node = parent
                 parent = parents.get(parent)
                 continue
             normalized_wrapper = _normalize_dependency_name(wrapper, import_aliases)
@@ -2929,6 +2952,7 @@ def _collect_dependency_targets(
     defined_symbols: set[str],
     import_aliases: Mapping[str, str],
     dependency_rules: ModuleDependencyConfig,
+    scope_shadowed_names: frozenset[str] = frozenset(),
 ) -> tuple[set[str], set[str]]:
     """Collect observed module calls and instantiations from one callable node.
 
@@ -2938,7 +2962,9 @@ def _collect_dependency_targets(
 
     Rationale
     ---------
-    This boundary keeps collect dependency targets behavior separate inside AST-backed behavioral docstring validation; documenting it makes dependency checks and graph extraction reviewable.
+    Named-callable bindings and active lambda or comprehension bindings must both
+    reach product classification so builtin-looking serializers are trusted only
+    when lexically visible.
 
     Pseudocode
     ----------
@@ -2984,7 +3010,10 @@ def _collect_dependency_targets(
         walk_nodes = ((current, frozenset()) for current in ast.walk(node))
     parents = _ast_parent_map(node)
 
-    for statement, shadowed_names in walk_nodes:
+    for statement, anonymous_shadowed_names in walk_nodes:
+            builtin_shadowed_names = (
+                scope_shadowed_names | anonymous_shadowed_names
+            )
             if not isinstance(statement, ast.Call):
                 continue
 
@@ -3000,7 +3029,7 @@ def _collect_dependency_targets(
             is_local_defined = base in defined_symbols
             if (
                 not base
-                or base in shadowed_names
+                or base in anonymous_shadowed_names
                 or base in _IGNORED_CALL_BASES
                 or base in _BUILTIN_SYMBOLS
             ):
@@ -3023,7 +3052,8 @@ def _collect_dependency_targets(
                 import_aliases=import_aliases,
                 defined_symbols=defined_symbols,
                 allowed_abs=dependency_rules.allowed_abs,
-                shadowed_names=shadowed_names,
+                shadowed_names=anonymous_shadowed_names,
+                builtin_shadowed_names=builtin_shadowed_names,
             ):
                 if has_instantiations:
                     instantiations.add(normalized)
@@ -3575,29 +3605,38 @@ def _meaningful_call_target_names(node: ast.AST) -> tuple[str, ...]:
 
 
 def _unwrap_call_value(value: ast.AST | None) -> ast.Call | None:
-    """Return the call expression inside simple return/await wrappers.
+    """Return the call inside simple await or value-projection wrappers.
 
     Intent
     ------
-    Expose the unwrap call value step in AST-backed behavioral docstring validation so readers and tools can locate its exact responsibility.
+    Unwrap attribute and subscript projections, plus one await, to recover the
+    delegated call whose value is returned.
 
     Rationale
     ---------
-    This boundary keeps unwrap call value behavior separate inside AST-backed behavioral docstring validation; documenting it makes dependency checks and graph extraction reviewable.
+    Attribute and subscript access preserve the delegated result's value channel,
+    so direct wrapper recognition should not depend on returning the whole object.
 
     Pseudocode
     ----------
-    - set unwrap_call_value_inputs = received_context
-    - return unwrap_call_value_inputs
+    - set projected_value = received value
+    - while projected_value is an attribute or subscript projection:
+      - set projected_value = its source value
+    - if projected_value awaits one call:
+      - return the awaited call
+    - return projected_value when it is a call, otherwise none
 
     Wraps
     -----
     - none
     """
-    if isinstance(value, ast.Call):
-        return value
-    if isinstance(value, ast.Await) and isinstance(value.value, ast.Call):
-        return value.value
+    current = value
+    while isinstance(current, (ast.Attribute, ast.Subscript)):
+        current = current.value
+    if isinstance(current, ast.Await):
+        current = current.value
+    if isinstance(current, ast.Call):
+        return current
     return None
 
 
@@ -3668,22 +3707,76 @@ def _statements_without_docstring(body: Iterable[ast.stmt]) -> tuple[ast.stmt, .
     return statements
 
 
-def _direct_wrapper_target_from_statements(statements: Iterable[ast.stmt]) -> str | None:
+def _is_ignorable_wrapper_cleanup(
+    statement: ast.stmt,
+    compatibility_names: frozenset[str],
+) -> bool:
+    """Return whether a statement only deletes compatibility parameters.
+
+    Intent
+    ------
+    Admit simple-name deletion only when every deleted name is a callable parameter.
+
+    Rationale
+    ---------
+    Parameter deletion can document an intentionally unused compatibility input,
+    whereas attribute, subscript, local, or unrelated deletion performs semantic work.
+
+    Pseudocode
+    ----------
+    - if statement is not a deletion:
+      - return false
+    - set deleted_names = bound names from every simple deletion target
+    - return targets are simple names and deleted_names are compatibility parameters
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._bound_target_names:
+      why:
+        transforms: "Builds the deleted-name set carried into compatibility-parameter classification."
+    """
+    if not isinstance(statement, ast.Delete):
+        return False
+    deleted_names = {
+        name
+        for target in statement.targets
+        for name in _bound_target_names(target)
+    }
+    return (
+        len(deleted_names) == len(statement.targets)
+        and deleted_names <= compatibility_names
+    )
+
+
+def _direct_wrapper_target_from_statements(
+    statements: Iterable[ast.stmt],
+    *,
+    compatibility_names: frozenset[str] = frozenset(),
+) -> str | None:
     """Detect simple direct wrapper bodies and return their call target.
 
     Intent
     ------
-    Expose the direct wrapper target from statements step in AST-backed behavioral docstring validation so readers and tools can locate its exact responsibility.
+    Recover the delegated target from a direct return, allowing only deletion of
+    simple compatibility-parameter names before that return.
 
     Rationale
     ---------
-    This boundary keeps direct wrapper target from statements behavior separate inside AST-backed behavioral docstring validation; documenting it makes dependency checks and graph extraction reviewable.
+    Deleting an unused compatibility input neither transforms nor consumes the
+    delegated result, so it does not make an otherwise direct wrapper semantic work.
 
     Pseudocode
     ----------
-    - set direct_wrapper_target_from_statements_inputs = received_context
-    - set direct_wrapper_target_from_statements_products = carried_outputs
-    - return direct_wrapper_target_from_statements_products
+    - set body = executable statements without docstring or parameter-name deletion
+    - if body directly returns or assigns then returns one call projection:
+      - return delegated call target
+    - if body is one transparent try wrapper:
+      - return recursively detected target
+    - return none
 
     Wraps
     -----
@@ -3691,9 +3784,9 @@ def _direct_wrapper_target_from_statements(statements: Iterable[ast.stmt]) -> st
 
     CallsFromRepo
     -------------
-    ._meaningful_call_target_names:
+    ._is_ignorable_wrapper_cleanup:
       why:
-        computes: "meaningful call target names supplies repo-local behavior used by direct wrapper target from statements; this edge is documented from an observed call in the body."
+        computes: "Filters simple compatibility-parameter deletion from every candidate wrapper region."
 
     InstantiationsFromRepo
     ----------------------
@@ -3707,7 +3800,11 @@ def _direct_wrapper_target_from_statements(statements: Iterable[ast.stmt]) -> st
       why:
         constructs: "statements without docstring produces a value carried by direct wrapper target from statements; this edge is documented from the observed product position in the body."
     """
-    body = _statements_without_docstring(statements)
+    body = tuple(
+        statement
+        for statement in _statements_without_docstring(statements)
+        if not _is_ignorable_wrapper_cleanup(statement, compatibility_names)
+    )
     if len(body) == 1 and isinstance(body[0], ast.Return):
         return _call_target_name(body[0].value)
 
@@ -3723,8 +3820,23 @@ def _direct_wrapper_target_from_statements(statements: Iterable[ast.stmt]) -> st
         return _call_target_name(body[0].value)
 
     if len(body) == 1 and isinstance(body[0], ast.Try):
-        candidate = _direct_wrapper_target_from_statements(body[0].body)
-        if candidate and not any(_meaningful_call_target_names(handler) for handler in body[0].handlers):
+        candidate = _direct_wrapper_target_from_statements(
+            body[0].body,
+            compatibility_names=compatibility_names,
+        )
+        ancillary_statements = (
+            *body[0].orelse,
+            *body[0].finalbody,
+            *(
+                statement
+                for handler in body[0].handlers
+                for statement in handler.body
+            ),
+        )
+        if candidate and all(
+            _is_ignorable_wrapper_cleanup(statement, compatibility_names)
+            for statement in ancillary_statements
+        ):
             return candidate
 
     return None
@@ -3775,7 +3887,20 @@ def _is_direct_thin_wrapper(
         return False
     if len(repo_calls) != 1:
         return False
-    direct_target = _direct_wrapper_target_from_statements(node.body)
+    compatibility_names = frozenset(
+        argument.arg
+        for argument in (
+            *node.args.posonlyargs,
+            *node.args.args,
+            *node.args.kwonlyargs,
+            *((node.args.vararg,) if node.args.vararg is not None else ()),
+            *((node.args.kwarg,) if node.args.kwarg is not None else ()),
+        )
+    )
+    direct_target = _direct_wrapper_target_from_statements(
+        node.body,
+        compatibility_names=compatibility_names,
+    )
     if not direct_target:
         return False
     if not _dependency_matches(target, direct_target, import_aliases):
@@ -3965,6 +4090,7 @@ def _iter_module_dependency_issues(
     schema_rules: ModuleDependencyConfig,
     import_aliases: Mapping[str, str],
     defined_symbols: set[str],
+    shadowed_names: frozenset[str],
 ) -> Iterable[DocstringValidationIssue]:
     """Validate callable module dependency sections with static inference.
 
@@ -4066,6 +4192,7 @@ def _iter_module_dependency_issues(
         defined_symbols=defined_symbols,
         import_aliases=import_aliases,
         dependency_rules=schema_rules,
+        scope_shadowed_names=shadowed_names,
     )
 
     documented_calls = tuple(getattr(parsed, "module_calls", ()))
@@ -5087,6 +5214,7 @@ def _validate_node_docstring(
         defined_symbols=defined_symbols,
         import_aliases=import_aliases,
         dependency_rules=node_schema_rules.module_dependencies,
+        scope_shadowed_names=frozenset(shadowed_names),
     )
     issues.extend(
         _iter_wrap_issues(
@@ -5112,6 +5240,7 @@ def _validate_node_docstring(
                 schema_rules=node_schema_rules.module_dependencies,
                 import_aliases=import_aliases,
                 defined_symbols=defined_symbols,
+                shadowed_names=frozenset(shadowed_names),
             )
         )
 

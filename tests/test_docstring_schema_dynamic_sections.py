@@ -1331,6 +1331,153 @@ def test_wraps_only_documents_thin_wrapper_repo_call(tmp_path: Path) -> None:
     assert "docstring.module-dependency-undocumented" not in entry_codes
 
 
+def test_wraps_only_documents_projected_repo_product(tmp_path: Path) -> None:
+    """A Wraps edge outranks product classification for a projected result."""
+    dependency = "officina.common.repository_paths.repository_relative_path"
+    source = (
+        "from officina.common.repository_paths import repository_relative_path as resolve\n\n"
+        + _function_source(
+            "entry",
+            _wrapper_doc("Project one repository-relative result attribute.", dependency),
+            "return resolve('sample').name",
+        )
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.module-dependency-undocumented" not in entry_codes
+    assert "docstring.wraps-missing-thin-wrapper" not in entry_codes
+
+
+@pytest.mark.parametrize(
+    ("body", "is_async"),
+    (
+        ("return produce()", False),
+        ("return produce().name", False),
+        ("del compatibility\nreturn produce().name", False),
+        ("return await produce()", True),
+        ("return (await produce()).name", True),
+    ),
+)
+def test_returned_repo_call_projections_are_thin_wrappers(
+    tmp_path: Path,
+    body: str,
+    is_async: bool,
+) -> None:
+    """Bare, awaited, and projected direct returns require a wrapper edge."""
+    rendered = _function_source(
+        "entry",
+        _dependency_doc("Return one directly delegated repository result."),
+        body,
+    )
+    if body.startswith("del compatibility"):
+        rendered = rendered.replace("def entry():", "def entry(compatibility):", 1)
+    if is_async:
+        rendered = rendered.replace("def entry():", "async def entry():", 1)
+    source = (
+        "from officina.common.repository_paths import repository_relative_path as produce\n\n"
+        f"{rendered}"
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.wraps-missing-thin-wrapper" in entry_codes
+
+
+def test_side_effect_delete_prevents_thin_wrapper_classification(
+    tmp_path: Path,
+) -> None:
+    """Deleting an attribute is semantic work, not compatibility cleanup."""
+    source = (
+        "from officina.common.repository_paths import repository_relative_path as produce\n\n"
+        + _function_source(
+            "entry",
+            _dependency_doc("Delete state before returning a repository projection."),
+            "del external.item\nreturn produce().name",
+        )
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.wraps-missing-thin-wrapper" not in entry_codes
+    assert "docstring.single-repo-call-review" in entry_codes
+
+
+def test_compatibility_delete_in_finally_keeps_projected_wrapper_transparent(
+    tmp_path: Path,
+) -> None:
+    """A simple compatibility-parameter delete in finally remains cleanup."""
+    source = (
+        "from officina.common.repository_paths import repository_relative_path as produce\n\n"
+        + _function_source(
+            "entry",
+            _dependency_doc("Return a repository projection through transparent cleanup."),
+            "try:\n    return produce().name\nfinally:\n    del compatibility",
+        ).replace("def entry():", "def entry(compatibility):", 1)
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.wraps-missing-thin-wrapper" in entry_codes
+
+
+@pytest.mark.parametrize(
+    "body",
+    (
+        (
+            "try:\n"
+            "    return produce().name\n"
+            "except Exception:\n"
+            "    del external.item"
+        ),
+        (
+            "try:\n"
+            "    return produce().name\n"
+            "except Exception:\n"
+            "    del compatibility\n"
+            "else:\n"
+            "    del external.item"
+        ),
+        (
+            "try:\n"
+            "    return produce().name\n"
+            "finally:\n"
+            "    del external.item"
+        ),
+        (
+            "try:\n"
+            "    del external.item\n"
+            "    return produce().name\n"
+            "finally:\n"
+            "    del compatibility"
+        ),
+    ),
+)
+def test_try_wrapper_semantic_cleanup_blocks_transparency(
+    tmp_path: Path,
+    body: str,
+) -> None:
+    """Semantic deletes in every try region prevent thin-wrapper classification."""
+    source = (
+        "from officina.common.repository_paths import repository_relative_path as produce\n\n"
+        + _function_source(
+            "entry",
+            _dependency_doc("Perform semantic cleanup around a repository projection."),
+            body,
+        ).replace("def entry():", "def entry(compatibility):", 1)
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.wraps-missing-thin-wrapper" not in entry_codes
+    assert "docstring.single-repo-call-review" in entry_codes
+
+
 def test_wraps_does_not_document_same_leaf_from_different_module(
     tmp_path: Path,
 ) -> None:
@@ -3093,6 +3240,147 @@ def test_generic_expression_carriers_preserve_repo_products(
         "from officina.common.repository_paths import repository_relative_path as produce\n"
         "from officina.common.repository_paths import normalize_repository_root as die\n\n"
         f"{rendered}"
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.module-dependency-not-observed" not in entry_codes
+    assert "docstring.module-dependency-undocumented" not in entry_codes
+
+
+@pytest.mark.parametrize(
+    "body",
+    (
+        "combined = fallback or produce()\nreturn None",
+        "combined = produce() and fallback\nreturn None",
+    ),
+)
+def test_boolean_expression_carriers_preserve_repo_products(
+    tmp_path: Path,
+    body: str,
+) -> None:
+    """Boolean operands carried into assignments remain repository products."""
+    producer = "officina.common.repository_paths.repository_relative_path"
+    source = (
+        "from officina.common.repository_paths import repository_relative_path as produce\n\n"
+        + _function_source(
+            "entry",
+            _dependency_doc(
+                "Carry one repository result through a boolean expression.",
+                products=(producer,),
+            ),
+            body,
+        )
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.module-dependency-not-observed" not in entry_codes
+    assert "docstring.module-dependency-undocumented" not in entry_codes
+
+
+def test_projection_serialization_and_transform_chain_preserves_repo_product(
+    tmp_path: Path,
+) -> None:
+    """Projection, serialization, and value transforms carry a repo result."""
+    producer = "officina.common.repository_paths.repository_relative_path"
+    source = (
+        "from officina.common.repository_paths import repository_relative_path as produce\n\n"
+        + _function_source(
+            "entry",
+            _dependency_doc(
+                "Normalize one projected repository mapping value.",
+                products=(producer,),
+            ),
+            "normalized = str(produce().get('description', '')).strip()\nreturn None",
+        )
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.module-dependency-not-observed" not in entry_codes
+    assert "docstring.module-dependency-undocumented" not in entry_codes
+
+
+@pytest.mark.parametrize(
+    ("prefix", "body", "has_parameter", "is_product"),
+    (
+        ("", "serialized = str(produce())\nreturn None", True, False),
+        ("", "str = external\nserialized = str(produce())\nreturn None", False, False),
+        (
+            "from external import stringify as str\n",
+            "serialized = str(produce())\nreturn None",
+            False,
+            False,
+        ),
+        (
+            "",
+            "serialized = (lambda str: str(produce()))(external)\nreturn None",
+            False,
+            False,
+        ),
+        (
+            "",
+            "serialized = (lambda: str(produce()))()\nreturn None",
+            False,
+            True,
+        ),
+    ),
+)
+def test_serializer_recognition_respects_named_and_anonymous_scope_shadows(
+    tmp_path: Path,
+    prefix: str,
+    body: str,
+    has_parameter: bool,
+    is_product: bool,
+) -> None:
+    """Only an unshadowed builtin str carries a repository result."""
+    producer = "officina.common.repository_paths.repository_relative_path"
+    rendered = _function_source(
+        "entry",
+        _dependency_doc(
+            "Serialize a repository result under explicit lexical bindings.",
+            calls=() if is_product else (producer,),
+            products=(producer,) if is_product else (),
+        ),
+        body,
+    )
+    if has_parameter:
+        rendered = rendered.replace("def entry():", "def entry(str):", 1)
+    source = (
+        prefix
+        + "from officina.common.repository_paths import repository_relative_path as produce\n\n"
+        + rendered
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.module-dependency-not-observed" not in entry_codes
+    assert "docstring.module-dependency-undocumented" not in entry_codes
+
+
+@pytest.mark.parametrize("method", ("clear", "sort", "append"))
+def test_side_effect_receiver_methods_do_not_carry_repo_products(
+    tmp_path: Path,
+    method: str,
+) -> None:
+    """Mutating receiver calls do not carry the receiver as their result."""
+    producer = "officina.common.repository_paths.repository_relative_path"
+    arguments = "item" if method == "append" else ""
+    source = (
+        "from officina.common.repository_paths import repository_relative_path as produce\n\n"
+        + _function_source(
+            "entry",
+            _dependency_doc(
+                "Invoke a side-effect method on one repository result.",
+                calls=(producer,),
+            ),
+            f"outcome = produce().{method}({arguments})\nreturn None",
+        )
     )
 
     issues = _validate_source(tmp_path, source, check_group="behavioral")
