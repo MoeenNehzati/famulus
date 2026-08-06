@@ -96,6 +96,24 @@ then re-merge and correct the remaining deferred additions. The recurring-task
 healthcheck's missing run-record blueprint dependency is a separate first-parent
 contract omission and lands before the re-merge.
 
+The first remediation also exposed a narrower enforcement defect. Requiring the
+full four-section callable template for passive structural declarations produced
+low-information pseudocode and `Wraps: none` boilerplate, while module-wide
+import analysis missed lexical local/closure dependencies and repo-call products
+passed to repo-local consumers. Before remediating the remaining modules, make
+one concise compatibility update: classes whose sole decorator resolves to
+stdlib `dataclasses.dataclass` and whose bodies contain only a docstring and
+annotated instance fields with non-call defaults or resolved stdlib
+`dataclasses.field(...)`, and undecorated subclasses with exactly one direct
+builtin-exception base whose bodies contain only a docstring/pass/ellipsis, use a
+summary-only structural kind;
+behaviorful classes and every function/method retain the full profile. Repair
+lexical dependency and product analysis in enforcement, remove the stale tracked
+v27 policy duplicate and its no-argument autodiscovery while preserving explicit
+legacy-path loading, and enforce exact canonical parity for the built-in
+compatibility fallback. Do not add a broad private-helper exemption or a parallel
+profile subsystem.
+
 ## Documentation and assurance
 
 The refactor completion record is changed from its stale self-referential final

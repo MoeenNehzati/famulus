@@ -98,6 +98,92 @@ commit.
 
 #### Task 1B: Remediate first-parent docstring debt
 
+Before the per-file loop, complete Task 1B0. The useful first
+`blueprint_graph.py` prose patch is held unstaged and preserved at
+`/tmp/blueprint-graph-docstrings-pre-v31.patch` with SHA256
+`5216a2681b97193a26a0b0ca4e80ba7ae86a384a9e8240c04669120eab57630e`;
+do not commit or discard it until the corrected contract is available.
+
+##### Task 1B0: Repair the docstring contract narrowly
+
+**Files:**
+
+- Modify: `references/standards/docstring.standard.yaml`
+- Modify: `references/standards/docstring_format.schema.json`
+- Delete: `references/standards/docstring_format.yaml`
+- Modify: `src/officina/common/docstring/docstring_policy.py`
+- Modify: `src/officina/validators/docstring_validator.py`
+- Modify: `docs/docstring.md`
+- Modify: `validators/standard_documents.py`
+- Modify: `tests/test_docstring_schema_dynamic_sections.py`
+- Modify: `tests/validate_standard_documents.py`
+- Synchronize: pinned dependents and registered views discovered by the public
+  `update-standards` workflow
+
+1. Commit this reviewed plan/spec addendum alone before changing policy or
+   enforcement. Immediately before that commit, require
+   `src/officina/common/blueprint_graph.py` to be absent from the index, verify
+   its diff still hashes to the recorded SHA256, and require
+   `git apply --reverse --check` to prove the held patch can recover the exact
+   working-tree change.
+2. Add RED tests proving:
+   - summary-only classes whose decorator resolves to stdlib
+     `dataclasses.dataclass` (direct, imported alias, or qualified) and whose
+     bodies contain only a docstring and annotated instance fields (including
+     non-call defaults and resolved stdlib `dataclasses.field(...)`), and direct
+     builtin-exception subclasses whose
+     bodies contain only a docstring/pass/ellipsis, are accepted; spoofed
+     dataclass decorators, extra decorators, methods, properties, descriptors,
+     nested declarations, any other call-valued default, other executable class-
+     body statements, project-derived exceptions, and ordinary empty classes
+     retain the full profile;
+   - local imports are visible in their callable, nested closures inherit
+     enclosing imports, current-scope imports and assignments shadow inherited aliases,
+     sibling/class-body imports do not leak, and parent callables do not absorb
+     nested callable dependencies;
+   - repo-local call results passed positionally or by keyword to another
+     repo-local call are products, but builtin/stdlib/unknown consumers do not
+     create that classification;
+   - the canonical standard is schema-validated, unsupported compact kinds fail
+     both schema validation and runtime-loader parsing, missing-file fallback
+     equals canonical policy, tracked-legacy absence works, an explicitly
+     supplied external legacy fixture remains loadable, and no-
+     argument resolution does not autodiscover a legacy file.
+3. Through `update-standards`, add one concise callable setting for exactly two
+   compact structural kinds: classes whose sole decorator resolves to stdlib
+   `dataclasses.dataclass` (including imported aliases and qualified use) and
+   whose bodies contain only a docstring plus annotated instance-field
+   declarations (non-call defaults and resolved stdlib `dataclasses.field(...)`
+   are allowed), and undecorated subclasses with exactly one direct builtin-exception
+   base whose bodies contain only a docstring/pass/ellipsis. Spoofed or additional
+   decorators, methods, properties, descriptors, nested declarations, project-
+   exception bases, and any other executable class-body statement disqualify
+   compact treatment. Compact declarations
+   require a meaningful summary but waive `Intent`, `Rationale`, `Pseudocode`,
+   and `Wraps`. Bump `docstring_format_version` from 30 to 31 and update only the
+   discovered pinned closure/generated view.
+4. Implement lexical-scope import/dependency analysis: inherit module and valid
+   enclosing-function imports; include current-function imports; prevent sibling
+   and class-body leakage; prune nested callable/class bodies from parent walks.
+5. Treat repo-call results passed to recognized repo-local calls as products,
+   preserving existing return/raise/assignment/container/collector cases and
+   excluding builtin, standard-library, logging, and unknown third-party sinks.
+6. Delete the stale tracked v27 `docstring_format.yaml` and remove legacy-file
+   no-argument autodiscovery. Preserve legacy loading only when callers supply an
+   explicit path, schema-validate the canonical YAML, update `docs/docstring.md`,
+   retain and align the built-in compatibility fallback with v31, and make exact
+   canonical parity a required validator/test invariant so the mirror cannot
+   drift independently.
+7. Run focused RED/GREEN tests, standards validation, direct canonical checks,
+   staged `validators/runner.py`, `git diff --cached --check`, and affected
+   docstring suites. Obtain independent standard, validator, and test-quality
+   review; correct and repeat every gate before a single contract-repair commit.
+8. Verify the held patch or recover the working-tree change from it, then revise
+   `blueprint_graph.py` under v31: compact only qualifying
+   structural declarations; remove the three now-inferred `[implicit]` markers;
+   retain corrected shallow-frozen wording and coherent pseudocode. Then resume
+   the one-file Task 1B gate below.
+
 **Files and baseline finding counts:**
 
 - `src/officina/common/blueprint_graph.py` — 253
