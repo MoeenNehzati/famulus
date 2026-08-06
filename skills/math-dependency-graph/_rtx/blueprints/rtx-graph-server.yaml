@@ -89,7 +89,7 @@ interfaces:
               dialect: python
               kind: regex
               matching: prefix
-              pattern: '"url"'
+              pattern: '\{'
             output_ref: ready
           startup_failure_outcome: bind-failed
         state_effect: read-only
