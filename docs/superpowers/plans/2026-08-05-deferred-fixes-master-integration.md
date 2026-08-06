@@ -188,6 +188,57 @@ do not commit or discard it until the corrected contract is available.
    retain corrected shallow-frozen wording and coherent pseudocode. Then resume
    the one-file Task 1B gate below.
 
+##### Task 1B0.1: Make documentation refactors schema-first and source-led
+
+The reviewer-correct YAML-store patch is held unstaged at
+`/tmp/yaml-store-docstrings-pre-ledger-fix.patch` with SHA256
+`ef43ad29d77ed56ccf022888290adfeeb5e4401688eef1d3c18896d1d8ecf31b`.
+It truthfully documents six product edges that current enforcement misclassifies;
+do not add duplicate call declarations or edit the held file during this task.
+
+**Files:**
+
+- Modify: `skills/refactor-node/instructions/python-refactoring.md`
+- Modify: `src/officina/validators/docstring_validator.py`
+- Modify: `tests/test_docstring_schema_dynamic_sections.py`
+- Modify: this plan/spec only to record the reviewed prerequisite
+
+1. Commit this reviewed plan/spec addendum alone. Immediately before commit,
+   verify `_yaml_store.py` is absent from the index, its worktree diff hashes to
+   the recorded SHA256, and the held patch passes `git apply --reverse --check`.
+2. Add one concise instruction paragraph, not canonical policy or generic SKILL
+   prose: before the first documentation draft, read the effective runtime
+   schema/grammar/config that the selected scope consumes, when present, and
+   independently build a transient, relevance-filtered source ledger from the
+   owned/private source and focused tests. Record branches,
+   mutations/effects, exceptions, every repo call (including conditional aliases,
+   lambdas, comprehensions/generators, projections, and subscripts), result use,
+   and operation/product/wrapper classification. Do not require unrelated files.
+3. Prove the instruction behavior with fresh-agent RED/GREEN pressure scenarios;
+   do not use source-text grep as behavioral evidence. Validator correction
+   remains mandatory after drafting rather than being replaced by “one pass.”
+4. Add focused validator RED/GREEN tests for:
+   - lambda-body repo calls attributed to the nearest named documented callable;
+     a repo result returned by a value-producing inline callback such as
+     `key=lambda item: repo_key(item)` is a product, with parameter shadowing
+     handled and named nested functions/classes pruned;
+   - product propagation from comprehension/generator output expressions and
+     through `Attribute.value` / `Subscript.value` into existing product positions;
+   - negative controls: comprehension iterators/filters, subscript keys, bare
+     expression calls, and builtin/stdlib/logging/unknown consumers remain
+     operations; existing repo-consumer and container/collector cases stay green.
+5. Defer general conditional-import multi-target/path-sensitive aliases. Require
+   the source ledger and semantic reviewer to validate branch-equivalent logical
+   targets and honest `[implicit]` declarations; reopen enforcement only if a
+   truthful declaration cannot pass without false attribution.
+6. Stage only the instruction, validator, and tests. Run the
+   focused tests, consuming-agent scenarios, direct docstring checks, staged root
+   validator, cached diff check, and independent instruction/validator reviews.
+   Fix and repeat every gate before one focused commit.
+7. Reverify or recover the YAML-store patch, rerun its canonical checker and
+   owning tests under corrected enforcement, then resume the one-file Task 1B
+   review/commit gate.
+
 **Files and baseline finding counts:**
 
 - `src/officina/common/blueprint_graph.py` — 253

@@ -114,6 +114,18 @@ legacy-path loading, and enforce exact canonical parity for the built-in
 no-argument compatibility fallback. Do not add a broad private-helper exemption
 or a parallel profile subsystem.
 
+The second remediation shows that schema-first drafting must also be source-led.
+`refactor-node` therefore gains one concise Python preflight: before the first
+documentation draft, read the effective schema/grammar/config consumed by the
+selected scope when present, and independently derive a relevance-filtered
+ledger of branches, effects, exceptions, repo calls, and result flow, including
+conditional aliases, lambdas, comprehensions,
+generators, projections, and subscripts. Enforcement gains focused support for
+lambda attribution and product propagation through output/projection positions,
+with negative controls for operation-only positions. Path-sensitive conditional
+import modeling remains deferred; truthful `[implicit]` declarations plus
+semantic review cover it meanwhile. No canonical policy text changes.
+
 ## Documentation and assurance
 
 The refactor completion record is changed from its stale self-referential final
