@@ -90,3 +90,8 @@ table removed that repetition,
 but Python's regex cache had already limited its cost: median call time moved
 from 0.33 to 0.30 seconds. Count repeated preparation, but confirm that removing
 it changes the measured bottleneck.
+
+Candidate filtering can likewise avoid expensive work without changing the main
+bottleneck. Searching for personal-info tokens before three allow-pattern
+substitutions reduced call time only from 0.64 seconds to 0.61--0.64 seconds;
+repository traversal and file reads still dominate that validator.
