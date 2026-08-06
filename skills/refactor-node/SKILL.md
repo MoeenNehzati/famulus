@@ -82,5 +82,7 @@ then characterize observable behavior before proposing changes.
 
 Preserve behavior; separate features, bug fixes, and public-API redesign. Before
 mutation, report scope, relevant requirements, unresolved facts, evidence, and
-the selected remedy. Require approval, apply one move at a time, inspect the
-exact diff, and stop on failed verification or an ownership boundary.
+the selected remedy. Require approval, apply one move at a time, and inspect the
+exact diff. On a relevant verification failure, diagnose and correct within the
+approved scope, then rerun until it passes or a genuine ownership or
+authorization blocker is reached; never finalize known-unvalidated output.

@@ -124,7 +124,10 @@ generators, projections, and subscripts. Enforcement gains focused support for
 lambda attribution and product propagation through output/projection positions,
 with negative controls for operation-only positions. Path-sensitive conditional
 import modeling remains deferred; truthful `[implicit]` declarations plus
-semantic review cover it meanwhile. No canonical policy text changes.
+semantic review cover it meanwhile. The existing shared `refactor-node` change
+contract is also corrected to require diagnose, fix, and rerun on relevant
+validator failures until green or a genuine ownership/authorization blocker;
+known-unvalidated output is never final. No canonical policy text changes.
 
 ## Documentation and assurance
 

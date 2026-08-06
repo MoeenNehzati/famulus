@@ -1414,6 +1414,109 @@ def _iter_lexical_scope_nodes(body: Iterable[ast.stmt]) -> Iterable[ast.AST]:
         stack.extend(reversed(tuple(ast.iter_child_nodes(current))))
 
 
+def _iter_dependency_scope_nodes(
+    body: Iterable[ast.stmt],
+) -> Iterable[tuple[ast.AST, frozenset[str]]]:
+    """Yield dependency nodes with active anonymous-scope shadows.
+
+    Intent
+    ------
+    Attribute lambda and comprehension calls to the nearest named callable while
+    respecting their parameter and target bindings.
+
+    Rationale
+    ---------
+    Anonymous scopes share their owning callable's documentation boundary, but
+    lambda parameters and ordered comprehension targets still shadow enclosing
+    imports within the expressions where those bindings are active.
+
+    Pseudocode
+    ----------
+    - set stack = scope statements with no lambda shadows
+    - while stack has nodes:
+      - set current = next node and active shadows
+      - if current opens a named nested scope:
+        - continue
+      - if current is a lambda:
+        - set stack = lambda defaults and body with parameter shadows
+        - continue
+      - if current is a comprehension:
+        - set stack = ordered iterator, filter, and emitted-value nodes
+        - set target_names = names bound by each generator target
+        - set active_shadows = active shadows plus target_names
+        - continue
+      - set stack = child nodes with active shadows
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._bound_target_names:
+      why:
+        constructs: "Builds the target-name set carried into later comprehension expressions as active shadows."
+    """
+    stack: list[tuple[ast.AST, frozenset[str]]] = [
+        (statement, frozenset()) for statement in reversed(tuple(body))
+    ]
+    while stack:
+        current, shadowed_names = stack.pop()
+        yield current, shadowed_names
+        if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        if isinstance(current, ast.Lambda):
+            defaults = (*current.args.defaults, *current.args.kw_defaults)
+            lambda_parameters = {
+                argument.arg
+                for argument in (
+                    *current.args.posonlyargs,
+                    *current.args.args,
+                    *current.args.kwonlyargs,
+                )
+            }
+            if current.args.vararg is not None:
+                lambda_parameters.add(current.args.vararg.arg)
+            if current.args.kwarg is not None:
+                lambda_parameters.add(current.args.kwarg.arg)
+            stack.append((current.body, shadowed_names | lambda_parameters))
+            stack.extend(
+                (default, shadowed_names)
+                for default in reversed(
+                    tuple(default for default in defaults if default is not None)
+                )
+            )
+            continue
+        if isinstance(
+            current,
+            (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp),
+        ):
+            ordered_nodes: list[tuple[ast.AST, frozenset[str]]] = []
+            active_shadows = shadowed_names
+            for generator in current.generators:
+                ordered_nodes.append((generator.iter, active_shadows))
+                target_names = _bound_target_names(generator.target)
+                active_shadows = active_shadows | target_names
+                ordered_nodes.extend(
+                    (condition, active_shadows) for condition in generator.ifs
+                )
+            if isinstance(current, ast.DictComp):
+                ordered_nodes.extend(
+                    (
+                        (current.key, active_shadows),
+                        (current.value, active_shadows),
+                    )
+                )
+            else:
+                ordered_nodes.append((current.elt, active_shadows))
+            stack.extend(reversed(ordered_nodes))
+            continue
+        stack.extend(
+            (child, shadowed_names)
+            for child in reversed(tuple(ast.iter_child_nodes(current)))
+        )
+
+
 def _bound_target_names(target: ast.AST) -> set[str]:
     """Return plain names bound by one assignment-like target.
 
@@ -2055,6 +2158,7 @@ def _call_result_is_product_position(
     import_aliases: Mapping[str, str],
     defined_symbols: set[str],
     allowed_abs: tuple[str, ...],
+    shadowed_names: frozenset[str],
 ) -> bool:
     """Return true when a call result is carried as a semantic product.
 
@@ -2101,7 +2205,34 @@ def _call_result_is_product_position(
         parent = parents.get(parent)
 
     while True:
-        if isinstance(parent, (ast.Tuple, ast.List, ast.Set, ast.Dict, ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)):
+        if isinstance(parent, ast.Attribute) and parent.value is value_node:
+            value_node = parent
+            parent = parents.get(parent)
+            continue
+        if isinstance(parent, ast.Subscript) and parent.value is value_node:
+            value_node = parent
+            parent = parents.get(parent)
+            continue
+        if isinstance(parent, ast.IfExp) and value_node in (
+            parent.body,
+            parent.orelse,
+        ):
+            value_node = parent
+            parent = parents.get(parent)
+            continue
+        if isinstance(parent, (ast.ListComp, ast.SetComp, ast.GeneratorExp)) and (
+            parent.elt is value_node
+        ):
+            value_node = parent
+            parent = parents.get(parent)
+            continue
+        if isinstance(parent, ast.DictComp) and value_node in (parent.key, parent.value):
+            value_node = parent
+            parent = parents.get(parent)
+            continue
+        if isinstance(parent, ast.Lambda) and parent.body is value_node:
+            return True
+        if isinstance(parent, (ast.Tuple, ast.List, ast.Set, ast.Dict)):
             value_node = parent
             parent = parents.get(parent)
             continue
@@ -2113,11 +2244,14 @@ def _call_result_is_product_position(
                 parent = parents.get(parent)
                 continue
             normalized_wrapper = _normalize_dependency_name(wrapper, import_aliases)
-            if _observed_call_is_repo_dependency(
-                normalized_wrapper,
-                import_aliases=import_aliases,
-                defined_symbols=defined_symbols,
-                allowed_abs=allowed_abs,
+            if (
+                wrapper.split(".", 1)[0] not in shadowed_names
+                and _observed_call_is_repo_dependency(
+                    normalized_wrapper,
+                    import_aliases=import_aliases,
+                    defined_symbols=defined_symbols,
+                    allowed_abs=allowed_abs,
+                )
             ):
                 return True
         if isinstance(parent, ast.keyword) and parent.value is value_node:
@@ -2128,11 +2262,14 @@ def _call_result_is_product_position(
                     constructor,
                     import_aliases,
                 )
-                if _observed_call_is_repo_dependency(
-                    normalized_constructor,
-                    import_aliases=import_aliases,
-                    defined_symbols=defined_symbols,
-                    allowed_abs=allowed_abs,
+                if (
+                    constructor.split(".", 1)[0] not in shadowed_names
+                    and _observed_call_is_repo_dependency(
+                        normalized_constructor,
+                        import_aliases=import_aliases,
+                        defined_symbols=defined_symbols,
+                        allowed_abs=allowed_abs,
+                    )
                 ):
                     return True
         break
@@ -2223,21 +2360,21 @@ def _collect_dependency_targets(
     ._normalize_dependency_name:
       why:
         constructs: "normalize dependency name produces a value carried by collect dependency targets; this edge is documented from the observed product position in the body."
-    ._iter_lexical_scope_nodes:
+    ._iter_dependency_scope_nodes:
       why:
-        constructs: "Builds the node stream for the callable body without nested-scope absorption."
+        constructs: "Builds the callable dependency stream with lambda shadow context and named-scope pruning."
     """
     calls: set[str] = set()
     instantiations: set[str] = set()
     has_calls = bool(dependency_rules.calls_section)
     has_instantiations = bool(dependency_rules.instantiates_section)
     if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
-        walk_nodes: Iterable[ast.AST] = _iter_lexical_scope_nodes(node.body)
+        walk_nodes = _iter_dependency_scope_nodes(node.body)
     else:
-        walk_nodes = ast.walk(node)
+        walk_nodes = ((current, frozenset()) for current in ast.walk(node))
     parents = _ast_parent_map(node)
 
-    for statement in walk_nodes:
+    for statement, shadowed_names in walk_nodes:
             if not isinstance(statement, ast.Call):
                 continue
 
@@ -2253,6 +2390,7 @@ def _collect_dependency_targets(
             is_local_defined = base in defined_symbols
             if (
                 not base
+                or base in shadowed_names
                 or base in _IGNORED_CALL_BASES
                 or base in _BUILTIN_SYMBOLS
             ):
@@ -2275,6 +2413,7 @@ def _collect_dependency_targets(
                 import_aliases=import_aliases,
                 defined_symbols=defined_symbols,
                 allowed_abs=dependency_rules.allowed_abs,
+                shadowed_names=shadowed_names,
             ):
                 if has_instantiations:
                     instantiations.add(normalized)
@@ -2326,20 +2465,20 @@ def _collect_repo_call_targets(
     ._flatten_attribute_name:
       why:
         constructs: "Builds dotted call targets for repo-local resolution."
-    ._iter_lexical_scope_nodes:
+    ._iter_dependency_scope_nodes:
       why:
-        constructs: "Builds the callable node stream without entering nested scopes."
+        constructs: "Builds the callable dependency stream with lambda shadow context and named-scope pruning."
     """
     targets: set[str] = set()
     if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
-        walk_nodes = _iter_lexical_scope_nodes(node.body)
+        walk_nodes = _iter_dependency_scope_nodes(node.body)
     else:
-        walk_nodes = ast.walk(node)
-    for current in walk_nodes:
+        walk_nodes = ((current, frozenset()) for current in ast.walk(node))
+    for current, shadowed_names in walk_nodes:
         if not isinstance(current, ast.Call):
             continue
         target_name = _flatten_attribute_name(current.func)
-        if target_name:
+        if target_name and target_name.split(".", 1)[0] not in shadowed_names:
             normalized = _normalize_dependency_name(target_name, import_aliases)
             if _observed_call_is_repo_dependency(
                 normalized,

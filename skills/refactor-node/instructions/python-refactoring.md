@@ -8,6 +8,15 @@ Python standards. Use python-ood.* items for Python-specific diagnosis and
 structural moves; they do not replace applicable base node and module
 requirements. Cite standard IDs plus file evidence.
 
+Before the first documentation draft, read the effective runtime schema,
+grammar, and configuration consumed by the selected scope, when present, then
+independently build a transient, relevance-filtered ledger from its owned or
+private source and focused tests. Record branches, mutations and effects,
+exceptions, every repo call (including conditional aliases, lambdas,
+comprehensions or generators, projections, and subscripts), each result's use,
+and operation or product classification, and each callable's wrapper status; do
+not load unrelated files.
+
 Use returned checks, tests, and assurances for their declared coverage, and
 perform remaining semantic-review work explicitly. Use only returned remedies;
 report a missing remedy rather than inventing repository policy.

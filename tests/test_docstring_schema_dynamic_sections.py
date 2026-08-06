@@ -2074,6 +2074,249 @@ def test_unknown_uppercase_keyword_consumer_does_not_create_product(
     assert "docstring.module-dependency-undocumented" not in entry_codes
 
 
+def test_inline_lambda_repo_result_is_product_of_nearest_named_callable(
+    tmp_path: Path,
+) -> None:
+    """A value-producing inline callback contributes its repo product to its owner."""
+    producer = "officina.common.repository_paths.repository_relative_path"
+    source = (
+        "from officina.common.repository_paths import repository_relative_path as produce\n\n"
+        + _function_source(
+            "entry",
+            _dependency_doc(
+                "Sort inputs with a repository-derived inline key.",
+                products=(producer,),
+            ),
+            "return sorted(['sample'], key=lambda item: produce(item))",
+        )
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.module-dependency-not-observed" not in entry_codes
+    assert "docstring.module-dependency-undocumented" not in entry_codes
+
+
+def test_lambda_parameter_shadow_prevents_repo_dependency_attribution(
+    tmp_path: Path,
+) -> None:
+    """A lambda parameter masks an enclosing repo alias inside the callback body."""
+    source = (
+        "from officina.common.repository_paths import repository_relative_path as produce\n\n"
+        + _function_source(
+            "entry",
+            _dependency_doc("Invoke a callback whose parameter shadows an import."),
+            "return (lambda produce: produce('sample'))(str)",
+        )
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+
+    assert not any(
+        issue.node_id == "entry"
+        and issue.code == "docstring.module-dependency-undocumented"
+        for issue in issues
+    )
+
+
+def test_lambda_shadowed_repo_consumer_does_not_promote_nested_repo_result(
+    tmp_path: Path,
+) -> None:
+    """A shadowed repo consumer leaves its nested repo result operational."""
+    producer = "officina.common.repository_paths.repository_relative_path"
+    source = (
+        "from officina.common.repository_paths import repository_relative_path as produce\n"
+        "from officina.common.repository_paths import normalize_repository_root as consume\n\n"
+        + _function_source(
+            "entry",
+            _dependency_doc(
+                "Invoke a callback that shadows a repository consumer.",
+                calls=(producer,),
+            ),
+            "(lambda consume: consume(produce('x')))(str)\nreturn None",
+        )
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.module-dependency-not-observed" not in entry_codes
+    assert "docstring.module-dependency-undocumented" not in entry_codes
+
+
+def test_named_nested_scopes_remain_pruned_from_parent_dependency_attribution(
+    tmp_path: Path,
+) -> None:
+    """Named nested functions and classes retain their own dependency scopes."""
+    outer_doc = _dependency_doc("Define nested repository consumers.")
+    source = (
+        "from officina.common.repository_paths import repository_relative_path as produce\n\n"
+        "def outer():\n"
+        "    \"\"\"\n"
+        f'{textwrap.indent(outer_doc, "    ")}\n'
+        "    \"\"\"\n"
+        "    def nested():\n"
+        "        return produce('function')\n"
+        "    class Nested:\n"
+        "        result = produce('class')\n"
+        "    return nested, Nested\n"
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+
+    assert not any(
+        issue.node_id == "outer"
+        and issue.code == "docstring.module-dependency-undocumented"
+        for issue in issues
+    )
+
+
+@pytest.mark.parametrize(
+    ("body", "calls"),
+    (
+        ("return [produce('x') for produce in callbacks]", ()),
+        (
+            "return [item for produce in produce() for item in produce]",
+            ("officina.common.repository_paths.repository_relative_path",),
+        ),
+    ),
+)
+def test_comprehension_targets_shadow_repo_aliases_after_iterator_evaluation(
+    tmp_path: Path,
+    body: str,
+    calls: tuple[str, ...],
+) -> None:
+    """A comprehension target shadows only expressions evaluated after binding."""
+    source = (
+        "from officina.common.repository_paths import repository_relative_path as produce\n\n"
+        + _function_source(
+            "entry",
+            _dependency_doc("Evaluate a comprehension with ordered bindings.", calls=calls),
+            body,
+        )
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.module-dependency-not-observed" not in entry_codes
+    assert "docstring.module-dependency-undocumented" not in entry_codes
+
+
+@pytest.mark.parametrize(
+    "expression",
+    (
+        "return [produce(item).name for item in items]",
+        "return tuple(produce(item)['name'] for item in items)",
+        "return {produce(item).name for item in items}",
+        "return {produce(item).name: item for item in items}",
+        "return {item: produce(item)['name'] for item in items}",
+    ),
+)
+def test_emitted_comprehension_projections_propagate_repo_products(
+    tmp_path: Path,
+    expression: str,
+) -> None:
+    """Emitted values carry repo results through attribute and subscript projections."""
+    producer = "officina.common.repository_paths.repository_relative_path"
+    source = (
+        "from officina.common.repository_paths import repository_relative_path as produce\n\n"
+        + _function_source(
+            "entry",
+            _dependency_doc(
+                "Project repository results from a comprehension.",
+                products=(producer,),
+            ),
+            expression,
+        )
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.module-dependency-not-observed" not in entry_codes
+    assert "docstring.module-dependency-undocumented" not in entry_codes
+
+
+@pytest.mark.parametrize(
+    "expression",
+    (
+        "return sorted(items, key=lambda item: produce(item) if item else fallback)",
+        "return [fallback if item else produce(item) for item in items]",
+    ),
+)
+def test_if_expression_results_propagate_repo_products(
+    tmp_path: Path,
+    expression: str,
+) -> None:
+    """Conditional callback and comprehension result branches carry repo products."""
+    producer = "officina.common.repository_paths.repository_relative_path"
+    source = (
+        "from officina.common.repository_paths import repository_relative_path as produce\n\n"
+        + _function_source(
+            "entry",
+            _dependency_doc(
+                "Carry a conditional repository result.",
+                products=(producer,),
+            ),
+            expression,
+        )
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.module-dependency-not-observed" not in entry_codes
+    assert "docstring.module-dependency-undocumented" not in entry_codes
+
+
+@pytest.mark.parametrize(
+    ("prefix", "expression"),
+    (
+        ("", "[item for item in produce()]"),
+        ("", "[item for item in items if produce(item)]"),
+        ("", "{item for item in produce()}"),
+        ("", "{item: item for item in items if produce(item)}"),
+        ("", "sorted(items, key=lambda item: fallback if produce(item) else item)"),
+        ("", "[item if produce(item) else fallback for item in items]"),
+        ("", "items[produce()]"),
+        ("", "produce()"),
+        ("", "iter(produce())"),
+        ("", "filter(None, produce())"),
+        ("import json\n", "json.dumps(produce())"),
+        ("import logging\n", "logging.info(produce())"),
+        ("", "external.consume(produce())"),
+        ("", "print(produce())"),
+    ),
+)
+def test_nonproduct_positions_keep_repo_results_as_operations(
+    tmp_path: Path,
+    prefix: str,
+    expression: str,
+) -> None:
+    """Iterators, filters, keys, bare calls, and non-repo sinks are operations."""
+    producer = "officina.common.repository_paths.repository_relative_path"
+    source = (
+        prefix
+        + "from officina.common.repository_paths import repository_relative_path as produce\n\n"
+        + _function_source(
+            "entry",
+            _dependency_doc(
+                "Use a repository operation outside a product position.",
+                calls=(producer,),
+            ),
+            f"{expression}\nreturn None",
+        )
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.module-dependency-not-observed" not in entry_codes
+    assert "docstring.module-dependency-undocumented" not in entry_codes
+
+
 def test_runtime_loader_rejects_unsupported_compact_structural_kind(tmp_path: Path) -> None:
     """Runtime parsing fails closed on an unknown compact structural kind."""
     policy_path = tmp_path / "docstring.standard.yaml"

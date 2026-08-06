@@ -198,6 +198,7 @@ do not add duplicate call declarations or edit the held file during this task.
 
 **Files:**
 
+- Modify: `skills/refactor-node/SKILL.md`
 - Modify: `skills/refactor-node/instructions/python-refactoring.md`
 - Modify: `src/officina/validators/docstring_validator.py`
 - Modify: `tests/test_docstring_schema_dynamic_sections.py`
@@ -212,11 +213,16 @@ do not add duplicate call declarations or edit the held file during this task.
    independently build a transient, relevance-filtered source ledger from the
    owned/private source and focused tests. Record branches,
    mutations/effects, exceptions, every repo call (including conditional aliases,
-   lambdas, comprehensions/generators, projections, and subscripts), result use,
-   and operation/product/wrapper classification. Do not require unrelated files.
+   lambdas, comprehensions/generators, projections, and subscripts), each
+   result's use and operation/product classification, and each callable's wrapper
+   status. Do not require unrelated files.
 3. Prove the instruction behavior with fresh-agent RED/GREEN pressure scenarios;
    do not use source-text grep as behavioral evidence. Validator correction
    remains mandatory after drafting rather than being replaced by “one pass.”
+   In the existing shared SKILL change contract, replace stop-only failure wording
+   with one concise invariant: diagnose and correct relevant validator failures
+   within approved scope, then rerun until green or a genuine ownership or
+   authorization blocker remains; never present known-unvalidated output as final.
 4. Add focused validator RED/GREEN tests for:
    - lambda-body repo calls attributed to the nearest named documented callable;
      a repo result returned by a value-producing inline callback such as
@@ -231,7 +237,8 @@ do not add duplicate call declarations or edit the held file during this task.
    the source ledger and semantic reviewer to validate branch-equivalent logical
    targets and honest `[implicit]` declarations; reopen enforcement only if a
    truthful declaration cannot pass without false attribution.
-6. Stage only the instruction, validator, and tests. Run the
+6. Stage only the shared skill contract, Python instruction, validator, tests,
+   and this review-driven plan/spec scope correction. Run the
    focused tests, consuming-agent scenarios, direct docstring checks, staged root
    validator, cached diff check, and independent instruction/validator reviews.
    Fix and repeat every gate before one focused commit.
