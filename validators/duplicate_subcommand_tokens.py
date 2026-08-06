@@ -47,8 +47,30 @@ from officina.common.blueprint_graph import (  # noqa: E402
 from officina.common.blueprint_inventory import BlueprintInventoryError  # noqa: E402
 
 
+REQUIRES_BLUEPRINT_GRAPH = True
+
+
 def _extract_args_prefix(value: Any) -> tuple[str, ...] | None:
-    """Return the fixed subcommand tokens declared by one interface value."""
+    """Return fixed subcommand tokens from one interface declaration.
+
+    Intent
+    ------
+    Read either the flat or process-binding args-prefix shape.
+
+    Rationale
+    ---------
+    Supporting both schema shapes keeps collision analysis independent of migration state.
+
+    Pseudocode
+    ----------
+    - if flat args prefix is valid:
+      - return flat tokens
+    - return valid process-binding tokens or none
+
+    Wraps
+    -----
+    - none
+    """
 
     if not isinstance(value, dict):
         return None
@@ -75,7 +97,24 @@ def _extract_args_prefix(value: Any) -> tuple[str, ...] | None:
 
 
 def _process_entry(value: Any) -> str | None:
-    """Return the ``process_binding.entry`` dispatch target, if declared."""
+    """Return one declared process-binding entry target.
+
+    Intent
+    ------
+    Extract a nonempty string entry from an interface declaration.
+
+    Rationale
+    ---------
+    Collision safety depends on all interfaces dispatching to the same concrete entry.
+
+    Pseudocode
+    ----------
+    - return nonempty process entry or none
+
+    Wraps
+    -----
+    - none
+    """
 
     if not isinstance(value, dict):
         return None
@@ -87,13 +126,30 @@ def _process_entry(value: Any) -> str | None:
 
 
 def _same_entry_for_all(ids: list[str], interfaces: dict) -> bool:
-    """True when every interface in ``ids`` shares one ``process_binding.entry``.
+    """Return whether all selected interfaces share one concrete entry.
 
-    Same-entry equality means the exact same Python dispatch target handles
-    every invocation carrying this token, so nothing is ever routed
-    ambiguously between two different handlers. Equality is transitive, so
-    a single set-size check covers any number of participants — no pairwise
-    reasoning required.
+    Intent
+    ------
+    Compare every selected process-binding entry through one transitive set check.
+
+    Rationale
+    ---------
+    One shared target handles every colliding token without ambiguous routing.
+
+    Pseudocode
+    ----------
+    - set entries = process entries for selected interfaces
+    - return entries contain one nonempty target
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._process_entry:
+      why:
+        constructs: "Builds each concrete entry included in the equality set."
     """
 
     entries = {_process_entry(interfaces[interface_id]) for interface_id in ids}
@@ -106,14 +162,36 @@ def _same_entry_for_all(ids: list[str], interfaces: dict) -> bool:
 def find_duplicate_fixed_subcommands(
     interfaces: dict,
 ) -> list[tuple[str, list[str]]]:
-    """Return fixed subcommand tokens declared by more than one interface.
+    """Return ambiguous fixed-token collisions in first-seen order.
 
-    ``interfaces`` maps interface identifiers to their declared contract
-    (either the flat ``{"args_prefix": [...]}`` shape or the real
-    ``{"process_binding": {"args_prefix": [...]}}`` shape). The result lists
-    each colliding token alongside the interface IDs that declare it, in
-    first-seen order, but only when the sharing interfaces do not all
-    declare the same ``process_binding.entry`` (see ``_same_entry_for_all``).
+    Intent
+    ------
+    Group interfaces by fixed prefix and retain repeated prefixes with different entries.
+
+    Rationale
+    ---------
+    Same-source collisions are safe only when one process entry handles every interface.
+
+    Pseudocode
+    ----------
+    - set interfaces_by_token = extracted prefixes grouped by identifier
+    - return repeated tokens whose interfaces do not share one entry
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._same_entry_for_all:
+      why:
+        computes: "Excludes repeated tokens routed to one shared process entry."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._extract_args_prefix:
+      why:
+        constructs: "Builds the fixed-prefix key for each interface declaration."
     """
 
     by_token: dict[tuple[str, ...], list[str]] = {}
@@ -130,7 +208,86 @@ def find_duplicate_fixed_subcommands(
     ]
 
 
+def validate_with_graph(repo_root: Path, graph: object) -> list[str]:
+    """Check fixed subcommands in one prepared repository graph.
+
+    Intent
+    ------
+    Scan behavioral sources and report different-entry collisions with stable ordering.
+
+    Rationale
+    ---------
+    Accepting the suite graph avoids rebuilding identical repository topology.
+
+    Pseudocode
+    ----------
+    - for behavioral_source in sorted graph nodes:
+      - set collisions = ambiguous fixed tokens in source interfaces
+    - return formatted collision findings
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .find_duplicate_fixed_subcommands:
+      why:
+        computes: "Provides ambiguous token groups formatted as source findings."
+    """
+
+    errors: list[str] = []
+    for source_id, source_node in sorted(graph.nodes.items()):
+        if source_node.node_type != "behavioral_source":
+            continue
+        raw_interfaces = source_node.declaration.get("interfaces")
+        if not isinstance(raw_interfaces, dict):
+            continue
+
+        for token, interface_ids in find_duplicate_fixed_subcommands(
+            raw_interfaces
+        ):
+            errors.append(
+                f"source {source_id!r}: duplicate fixed dispatcher subcommand "
+                f"token `{token}` used by interfaces: "
+                f"{', '.join(sorted(interface_ids))}"
+            )
+
+    return errors
+
+
 def validate(repo_root: Path) -> list[str]:
+    """Validate duplicate subcommands through a freshly loaded graph.
+
+    Intent
+    ------
+    Preserve the standalone compatibility path and its graph-load diagnostics.
+
+    Rationale
+    ---------
+    Direct callers do not participate in the pytest session graph fixture.
+
+    Pseudocode
+    ----------
+    - if repository has no skill blueprints:
+      - return no findings
+    - set graph = loaded repository blueprint graph
+    - return graph-backed collision findings
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .validate_with_graph:
+      why:
+        constructs: "Builds collision findings after standalone graph preparation."
+
+    officina.common.blueprint_graph.load_repository_blueprint_graph:
+      why:
+        constructs: "Builds the graph required by direct compatibility callers."
+    """
     errors: list[str] = []
     skills_root = repo_root / "skills"
     if not skills_root.is_dir() or not any(skills_root.glob("*/blueprint.yaml")):
@@ -154,27 +311,37 @@ def validate(repo_root: Path) -> list[str]:
     ) as exc:
         errors.append(str(exc))
         return errors
-
-    for source_id, source_node in sorted(graph.nodes.items()):
-        if source_node.node_type != "behavioral_source":
-            continue
-        raw_interfaces = source_node.declaration.get("interfaces")
-        if not isinstance(raw_interfaces, dict):
-            continue
-
-        for token, interface_ids in find_duplicate_fixed_subcommands(
-            raw_interfaces
-        ):
-            errors.append(
-                f"source {source_id!r}: duplicate fixed dispatcher subcommand "
-                f"token `{token}` used by interfaces: "
-                f"{', '.join(sorted(interface_ids))}"
-            )
-
-    return errors
+    return validate_with_graph(repo_root, graph)
 
 
 def main() -> int:
+    """Run standalone duplicate-subcommand validation.
+
+    Intent
+    ------
+    Print collision findings and expose a conventional process status.
+
+    Rationale
+    ---------
+    The script boundary supports direct maintainer diagnostics outside pytest.
+
+    Pseudocode
+    ----------
+    - set findings = repository duplicate-subcommand validation
+    - if findings exist:
+      - return failure status
+    - return success status
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .validate:
+      why:
+        constructs: "Builds the findings printed by the command-line boundary."
+    """
     repo_root = Path(__file__).resolve().parents[1]
     errors = validate(repo_root)
     if errors:

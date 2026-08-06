@@ -208,11 +208,19 @@ def test_selected_graph_consumers_share_one_automatic_blueprint_preflight(
             "def validate(repo_root): return ['duplicate topology error']\n",
             encoding="utf-8",
         )
+    (validators / "duplicate_subcommand_tokens.py").write_text(
+        "REQUIRES_BLUEPRINT_GRAPH = True\n"
+        "def validate_with_graph(repo_root, graph):\n"
+        "    return [] if graph == {'token': 'shared'} else ['wrong graph']\n"
+        "def validate(repo_root): return ['duplicate graph load']\n",
+        encoding="utf-8",
+    )
     _require_git_ok(GitTestRepository(repo).git("add", "."))
 
     results = _RUNNER.run_all(
         repo,
         validator_ids=[
+            "repo/duplicate_subcommand_tokens",
             "skill-maker/blueprint_relationships",
             "skill-maker/interface_ids",
         ],
@@ -262,7 +270,7 @@ def test_graph_preflight_errors_are_reported_only_by_blueprint_owner(
     tmp_path: Path,
 ) -> None:
     repo = tmp_path / "repo"
-    _initialize_runner_repository(repo)
+    validators = _initialize_runner_repository(repo)
     skill_validators = repo / "skills" / "skill-maker" / "validators"
     skill_validators.mkdir(parents=True)
     (skill_validators / "blueprints.py").write_text(
@@ -277,11 +285,18 @@ def test_graph_preflight_errors_are_reported_only_by_blueprint_owner(
             "def validate(repo_root): return ['duplicate topology error']\n",
             encoding="utf-8",
         )
+    (validators / "duplicate_subcommand_tokens.py").write_text(
+        "REQUIRES_BLUEPRINT_GRAPH = True\n"
+        "def validate_with_graph(repo_root, graph): return ['consumer ran']\n"
+        "def validate(repo_root): return ['duplicate topology error']\n",
+        encoding="utf-8",
+    )
     _require_git_ok(GitTestRepository(repo).git("add", "."))
 
     assert _RUNNER.run_all(
         repo,
         validator_ids=[
+            "repo/duplicate_subcommand_tokens",
             "skill-maker/blueprint_relationships",
             "skill-maker/interface_ids",
         ],
