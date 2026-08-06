@@ -165,8 +165,11 @@ show that product position with constructor/product call syntax:
 A repo-call result passed positionally or by keyword to another recognized
 repo-local call is also a product. Passing the same result to a builtin, stdlib,
 logging, or unresolved third-party consumer does not create that classification;
-existing return, raise, assignment, container, and collector positions remain
-products.
+return, raise, container, and collector positions remain products. Assignment
+also remains a product by default. A direct function-body local-name assignment
+is operational only when a bounded same-function scan proves the name is unused
+or used solely as an `if`, `while`, or `assert` control input; iteration, carrying,
+and ambiguous uses remain products.
 
 Dependency resolution follows lexical scope. Module imports are visible throughout
 the module, function-local imports are visible in that function, and nested closures

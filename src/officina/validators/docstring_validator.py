@@ -2249,6 +2249,146 @@ def _comprehension_iter_result_channels(
     return carried, carried
 
 
+def _assigned_name_is_proven_control_only(
+    call: ast.Call,
+    assignment: ast.Assign,
+    parents: Mapping[ast.AST, ast.AST],
+) -> bool:
+    """Return true only when a direct assigned call has exclusively control uses.
+
+    Intent
+    ------
+    Prove the narrow exception where one direct function-body statement stores
+    a repo result in a simple local used only by direct condition checks.
+
+    Rationale
+    ---------
+    Assignment remains a product by default. Downgrading only a direct, single-name
+    assignment with fully classified uses fixes control flags without guessing
+    across rebinding, nested scopes, iteration, or complex Python constructs.
+
+    Pseudocode
+    ----------
+    - if assignment is not a direct call into one simple name:
+      - return false
+    - set owner = nearest named function containing the assignment
+    - if assignment is not a direct statement in owner:
+      - return false
+    - for occurrence in owner:
+      - if target is declared global or nonlocal in owner:
+        - return false
+      - if same-name occurrence is earlier, rebound, deleted, nested, or scoped:
+        - return false
+      - set occurrence = occurrence through boolean comparison and unary-not wrappers
+      - if the wrapped occurrence is not an if, while, or assert input:
+        - return false
+    - if later code crosses try, with, match, or named-expression ambiguity:
+      - return false
+    - return true
+
+    Wraps
+    -----
+    - none
+    """
+    if (
+        len(assignment.targets) != 1
+        or not isinstance(assignment.targets[0], ast.Name)
+        or not (
+            assignment.value is call
+            or (
+                isinstance(assignment.value, ast.Await)
+                and assignment.value.value is call
+            )
+        )
+    ):
+        return False
+
+    target = assignment.targets[0]
+    owner = parents.get(assignment)
+    while owner is not None and not isinstance(
+        owner,
+        (ast.FunctionDef, ast.AsyncFunctionDef),
+    ):
+        owner = parents.get(owner)
+    if owner is None:
+        return False
+    if parents.get(assignment) is not owner:
+        return False
+
+    assignment_line = getattr(assignment, "lineno", 0)
+    ambiguous_nodes = (
+        ast.Try,
+        ast.TryStar,
+        ast.With,
+        ast.AsyncWith,
+        ast.Match,
+        ast.NamedExpr,
+    )
+    for candidate in ast.walk(owner):
+        if (
+            isinstance(candidate, (ast.Global, ast.Nonlocal))
+            and target.id in candidate.names
+        ):
+            declaration_owner = parents.get(candidate)
+            while declaration_owner is not None and not isinstance(
+                declaration_owner,
+                (ast.FunctionDef, ast.AsyncFunctionDef),
+            ):
+                declaration_owner = parents.get(declaration_owner)
+            if declaration_owner is owner:
+                return False
+        if (
+            isinstance(candidate, ambiguous_nodes)
+            and getattr(candidate, "lineno", 0) > assignment_line
+        ):
+            return False
+        if (
+            not isinstance(candidate, ast.Name)
+            or candidate.id != target.id
+            or candidate is target
+        ):
+            continue
+
+        current: ast.AST = candidate
+        parent = parents.get(current)
+        while parent is not None and parent is not owner:
+            if isinstance(
+                parent,
+                (
+                    ast.FunctionDef,
+                    ast.AsyncFunctionDef,
+                    ast.ClassDef,
+                    ast.Lambda,
+                    ast.ListComp,
+                    ast.SetComp,
+                    ast.DictComp,
+                    ast.GeneratorExp,
+                ),
+            ):
+                return False
+            if (
+                isinstance(parent, ast.UnaryOp)
+                and isinstance(parent.op, ast.Not)
+                and parent.operand is current
+            ) or isinstance(parent, (ast.BoolOp, ast.Compare)):
+                current = parent
+                parent = parents.get(parent)
+                continue
+            break
+
+        if getattr(candidate, "lineno", 0) < assignment_line:
+            return False
+        if not isinstance(candidate.ctx, ast.Load):
+            return False
+
+        if isinstance(parent, (ast.If, ast.While)) and parent.test is current:
+            continue
+        if isinstance(parent, ast.Assert) and parent.test is current:
+            continue
+        return False
+    return True
+
+
 def _call_result_is_product_position(
     call: ast.Call,
     parents: Mapping[ast.AST, ast.AST],
@@ -2286,6 +2426,9 @@ def _call_result_is_product_position(
     ._is_wrapped_call_node:
       why:
         computes: "is wrapped call node supplies repo-local behavior used by call result is product position; this edge is documented from an observed call in the body."
+    ._assigned_name_is_proven_control_only:
+      why:
+        computes: "Proves the narrow direct-assignment exception whose uses are exclusively control inputs."
     ._observed_call_is_repo_dependency:
       why:
         computes: "Checks whether an outer positional or keyword consumer is repo-local."
@@ -2429,6 +2572,8 @@ def _call_result_is_product_position(
     if isinstance(parent, ast.Assign) and (
         parent.value is value_node or _is_wrapped_call_node(parent.value, call)
     ):
+        if _assigned_name_is_proven_control_only(call, parent, parents):
+            return False
         return True
     if isinstance(parent, ast.AnnAssign) and (
         parent.value is value_node or _is_wrapped_call_node(parent.value, call)
@@ -3557,6 +3702,9 @@ def _iter_module_dependency_issues(
     ._single_repo_call_has_local_pseudocode_work:
       why:
         computes: "single repo call has local pseudocode work supplies repo-local behavior used by iter module dependency issues; this edge is documented from an observed call in the body."
+    ._repo_observed_calls:
+      why:
+        computes: "Filters calls used by dependency validation decisions without carrying that set as output."
 
     InstantiationsFromRepo
     ----------------------
@@ -3587,9 +3735,6 @@ def _iter_module_dependency_issues(
     ._normalize_dependency_name:
       why:
         constructs: "normalize dependency name produces a value carried by iter module dependency issues; this edge is documented from the observed product position in the body."
-    ._repo_observed_calls:
-      why:
-        constructs: "repo observed calls produces a value carried by iter module dependency issues; this edge is documented from the observed product position in the body."
     """
     observed_calls, observed_instantiations = _collect_dependency_targets(
         node=node,
@@ -5049,7 +5194,7 @@ def validate_module_docstrings(
         constructs: "Builds module-level diagnostics before callable checks run."
     ._checker_from_group:
       why:
-        constructs: "Builds the syntax and behavioral checker sequence selected by check_group."
+        constructs: "Builds the checker sequence whose iteration drives module validation."
     ._dedupe_docstring_issues:
       why:
         constructs: "Builds the final duplicate-free diagnostic tuple returned to callers."

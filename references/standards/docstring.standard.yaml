@@ -151,7 +151,10 @@ callable:
   # CallsFromRepo documents operational dependencies. InstantiationsFromRepo
   # documents product dependencies: dependencies whose returned/raised value is
   # carried forward as a semantic value, result, error, copy, serialization, or
-  # container. It is not limited to class constructors. Small-function profiles
+  # container. It is not limited to class constructors. Assignment is a product
+  # unless bounded same-function evidence proves a direct statement's local name
+  # is unused or used only by direct if, while, or assert control; ambiguity
+  # remains a product. Small-function profiles
   # may enable `docstring.instantiation-product-unshown` to require every
   # declared product edge to appear in constructor/product pseudocode form; large
   # orchestration functions can remain compact by documenting the product edge

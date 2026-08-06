@@ -246,6 +246,25 @@ do not add duplicate call declarations or edit the held file during this task.
    owning tests under corrected enforcement, then resume the one-file Task 1B
    review/commit gate.
 
+##### Task 1B0.2: Prove the narrow control-only assignment exception
+
+Keep v31 assignment classification conservative: assignment remains a product
+unless a bounded same-function scan proves that one direct function-body local
+is unused or used only by direct `if`, `while`, or `assert` control. Iteration,
+return, yield, raise, alias/container/projection, consumer/collector, rebinding,
+nested-scope, comprehension, and complex-control ambiguity remain products
+without a CFG.
+
+RED evidence was six expected operation/product mismatches with ten product
+controls already green. The one-helper implementation made all sixteen focused
+cases green. A conservative follow-up audit added eleven RED fixtures for
+scope declarations, nested assignment sites, earlier closure capture, loop
+back-edges, and iteration; the tightened helper made all twenty-six focused cases
+green. Initial validator self-validation exposed seven bounded diagnostics: three
+strict-pseudocode syntax findings and two paired dependency reclassifications.
+Restoring iteration as product reverted the checker-sequence reclassification;
+final validator and YAML-store selfchecks are both zero, with no broader migration.
+
 **Files and baseline finding counts:**
 
 - `src/officina/common/blueprint_graph.py` — 253

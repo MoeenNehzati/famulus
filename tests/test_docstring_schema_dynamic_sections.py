@@ -2445,6 +2445,153 @@ def test_nonproduct_positions_keep_repo_results_as_operations(
     assert "docstring.module-dependency-undocumented" not in entry_codes
 
 
+@pytest.mark.parametrize(
+    "body",
+    (
+        "result = produce()\nreturn None",
+        (
+            "self_matches = produce()\n"
+            "if not self_matches and not pruned_children:\n"
+            "    return None\n"
+            "return {}"
+        ),
+        "result = produce()\nif result:\n    pass\nreturn None",
+        "result = produce()\nwhile result:\n    break\nreturn None",
+        "result = produce()\nassert result\nreturn None",
+    ),
+)
+def test_simple_assigned_control_only_results_remain_operations(
+    tmp_path: Path,
+    body: str,
+) -> None:
+    """A bounded local scan may prove direct assigned uses are control-only."""
+    producer = "officina.common.repository_paths.repository_relative_path"
+    source = (
+        "from officina.common.repository_paths import repository_relative_path as produce\n\n"
+        + _function_source(
+            "entry",
+            _dependency_doc(
+                "Use one assigned repository result only for local control.",
+                calls=(producer,),
+            ),
+            body,
+        )
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.module-dependency-not-observed" not in entry_codes
+    assert "docstring.module-dependency-undocumented" not in entry_codes
+
+
+@pytest.mark.parametrize(
+    ("body", "uses_repo_consumer"),
+    (
+        ("result = produce()\nreturn result", False),
+        ("result = produce()\nreturn list(result)", False),
+        ("result = produce()\ndef helper():\n    return 1\nreturn result", False),
+        ("result = produce()\nwith context:\n    pass\nreturn result", False),
+        (
+            "result = produce()\ntry:\n    pass\nexcept Exception:\n    pass\nreturn result",
+            False,
+        ),
+        ("result = produce()\nconsume(result)\nreturn None", True),
+        ("items = []\nresult = produce()\nitems.append(result)\nreturn items", False),
+        ("result = produce()\nalias = result\nreturn alias", False),
+        ("result = produce()\ncontainer = [result]\nreturn container", False),
+        ("result = produce()\nif keep:\n    touch()\nreturn result", False),
+        ("global result\nresult = produce()\nif result:\n    pass\nreturn None", False),
+        (
+            "if keep:\n    result = produce()\n    if result:\n        pass\nreturn None",
+            False,
+        ),
+        (
+            "while keep:\n    result = produce()\n    if result:\n        pass\n    break\nreturn None",
+            False,
+        ),
+        (
+            "for item in items:\n    result = produce()\n    if result:\n        pass\nreturn None",
+            False,
+        ),
+        (
+            "with context:\n    result = produce()\n    if result:\n        pass\nreturn None",
+            False,
+        ),
+        (
+            "try:\n    result = produce()\n    if result:\n        pass\nexcept Exception:\n    pass\nreturn None",
+            False,
+        ),
+        (
+            "match key:\n    case 1:\n        result = produce()\n        if result:\n            pass\nreturn None",
+            False,
+        ),
+        (
+            "def closure():\n    return result\nresult = produce()\nif result:\n    pass\nclosure()\nreturn None",
+            False,
+        ),
+        (
+            "while keep:\n    print(result)\n    result = produce()\n    if result:\n        pass\nreturn None",
+            False,
+        ),
+        ("ids = produce()\nfor id_ in ids:\n    print(id_)\nreturn None", False),
+    ),
+)
+def test_uncertain_or_carrying_assigned_results_remain_products(
+    tmp_path: Path,
+    body: str,
+    uses_repo_consumer: bool,
+) -> None:
+    """Carrying and ambiguous assignment flows retain the existing product default."""
+    producer = "officina.common.repository_paths.repository_relative_path"
+    consumer = "officina.common.repository_paths.normalize_repository_root"
+    source = (
+        "from officina.common.repository_paths import repository_relative_path as produce\n"
+        "from officina.common.repository_paths import normalize_repository_root as consume\n\n"
+        + _function_source(
+            "entry",
+            _dependency_doc(
+                "Keep an assigned repository result as a semantic product.",
+                calls=(consumer,) if uses_repo_consumer else (),
+                products=(producer,),
+            ),
+            body,
+        )
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.module-dependency-not-observed" not in entry_codes
+    assert "docstring.module-dependency-undocumented" not in entry_codes
+
+
+def test_nonlocal_assigned_result_remains_a_product(tmp_path: Path) -> None:
+    """A nonlocal declaration prevents simple-local assignment proof."""
+    producer = "officina.common.repository_paths.repository_relative_path"
+    entry = _function_source(
+        "entry",
+        _dependency_doc(
+            "Keep a nonlocal repository result as a semantic product.",
+            products=(producer,),
+        ),
+        "nonlocal result\nresult = produce()\nif result:\n    pass\nreturn None",
+        indent="    ",
+    )
+    source = (
+        "from officina.common.repository_paths import repository_relative_path as produce\n\n"
+        "def outer():\n"
+        "    result = None\n"
+        f"{entry}"
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "outer.entry"}
+
+    assert "docstring.module-dependency-not-observed" not in entry_codes
+    assert "docstring.module-dependency-undocumented" not in entry_codes
+
+
 def test_runtime_loader_rejects_unsupported_compact_structural_kind(tmp_path: Path) -> None:
     """Runtime parsing fails closed on an unknown compact structural kind."""
     policy_path = tmp_path / "docstring.standard.yaml"
