@@ -40,7 +40,7 @@ Use the installed `dispatcher` command for these process-bound interfaces:
   - `dispatcher --caller-skill recurring-tasks recurring-tasks.interface.scripts-enable <name> [--jobs-file FILE] [--no-sync]`
 - `recurring-tasks.interface.scripts-ensure-agent-env` — Idempotently ensure recurring-tasks' systemd AI_AGENT_COMMAND_TEMPLATE is in place. Also run automatically by scripts-setup.
   - `dispatcher --caller-skill recurring-tasks recurring-tasks.interface.scripts-ensure-agent-env --repo-root DIR --home DIR --bin-dir DIR [--dry-run]`
-- `recurring-tasks.interface.scripts-healthcheck` — Run pre-flight and per-job health checks for all enabled recurring tasks; sends a desktop notification on failure.
+- `recurring-tasks.interface.scripts-healthcheck` — Run pre-flight and per-job health checks for all enabled recurring tasks and return nonzero when any check fails.
   - `dispatcher --caller-skill recurring-tasks recurring-tasks.interface.scripts-healthcheck`
 - `recurring-tasks.interface.scripts-job-utils` — Validate the legacy no-argument compatibility surface without changing job state.
   - `dispatcher --caller-skill recurring-tasks recurring-tasks.interface.scripts-job-utils ...`
@@ -141,7 +141,7 @@ Use the interfaces listed in the **Dispatcher Interfaces** block above. Key oper
 - **Enable/Disable:** `scripts-enable` and `scripts-disable` modify jobs.yaml and resync native scheduler entries.
 - **Test:** `scripts-test` runs a job immediately and reports whether it actually succeeded (see below — this is more than "did the scheduler accept the trigger").
 - **View logs:** `scripts-view-logs` tails job logs (default 50 lines).
-- **Check health:** `scripts-healthcheck` verifies all jobs are running and logs are fresh, and exits non-zero when any check fails. Sends a desktop notification on failure.
+- **Check health:** `recurring-tasks.interface.scripts-healthcheck` verifies scheduler registration, job activity, and run freshness, and exits nonzero when any check fails. Where an independent sentinel is supported, setup registers it separately and the sentinel shows a desktop popup after every failed check.
 
 ## Scheduling per platform
 
@@ -246,12 +246,13 @@ exit-code-only. This asymmetry is intentional, not an oversight — add a
 
 ### Healthcheck
 
-`scripts-healthcheck` runs pre-flight checks (native scheduler manager
-reachable, `AI_AGENT_COMMAND_TEMPLATE` set and resolvable) plus a per-job
-freshness/activity check, and sends a desktop notification when anything
-fails. Its process exit code reflects the outcome truthfully: `0` when every
-check passed, `1` when at least one failed — callers (cron, monitoring) can
-rely on the exit code alone without parsing its log.
+`recurring-tasks.interface.scripts-healthcheck` runs pre-flight checks (native
+scheduler manager reachable, `AI_AGENT_COMMAND_TEMPLATE` set and resolvable)
+plus per-job registration, freshness, and activity checks. Its process exit
+code reflects the outcome truthfully: `0` when every check passed, `1` when at
+least one failed. Setup also installs an independent four-hour sentinel where
+supported. The sentinel owns the desktop popup fallback, so launch failures
+that occur before the checker starts are still reported.
 
 ## Design Principles
 

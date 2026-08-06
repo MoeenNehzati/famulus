@@ -12,6 +12,8 @@ content:
 - blueprint_template\.py
 - certification_view\.py
 - codex_toml\.py
+- controller\.py
+- controller_protocol\.py
 - dates\.py
 - famulus_paths/__init__\.py
 - git_provenance\.py

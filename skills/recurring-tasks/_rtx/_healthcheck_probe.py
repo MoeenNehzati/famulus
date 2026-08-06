@@ -3,63 +3,111 @@
 Healthcheck for recurring tasks. Verifies jobs are healthy.
 Run periodically via cron (not systemd, so it works even if systemd breaks).
 """
-import json
+import os
 import shutil
-import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+SKILL_DIR = Path(__file__).parent
+REPO_ROOT = SKILL_DIR.parents[2]
+SRC_DIR = REPO_ROOT / "src"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
-SKILL_DIR = Path(__file__).parent
+SKILL_ROOT = SKILL_DIR.parent
 RTX_DIR = Path(__file__).resolve().parent
 if str(RTX_DIR) not in sys.path:
     sys.path.insert(0, str(RTX_DIR))
 
 if __package__:
     from ._jobs_config import load_jobs
-    from ._schedule_backend import ScheduleBackendUnsupported, platform_schedule_backend
+    from ._run_record import read_latest_run_record
+    from ._schedule_backend._linux_registration_check import check_job_configuration
+    from ._schedule_backend import (
+        ScheduleBackendUnsupported,
+        ScheduleContext,
+        ScheduleJob,
+        platform_schedule_backend,
+    )
 else:
     from _jobs_config import load_jobs  # noqa: E402
-    from _schedule_backend import ScheduleBackendUnsupported, platform_schedule_backend  # noqa: E402
+    from _run_record import read_latest_run_record  # noqa: E402
+    from _schedule_backend._linux_registration_check import (  # noqa: E402
+        check_job_configuration,
+    )
+    from _schedule_backend import (  # noqa: E402
+        ScheduleBackendUnsupported,
+        ScheduleContext,
+        ScheduleJob,
+        platform_schedule_backend,
+    )
 
 JOBS_FILE = SKILL_DIR / "jobs.yaml"
 LOG_DIR = SKILL_DIR / "logs"
-HEALTHCHECK_LOG = LOG_DIR / "healthcheck" / "run.log"
-
-
-NOTIFY_SCRIPT = Path(__file__).parent / "_assistant_desktop_notify.py"
-
-
-def notify_desktop(title: str, body: str, urgency: str = "normal") -> None:
-    """Send a cross-platform desktop notification via the sibling
-    assistant_desktop_notify.py script. Best-effort: never raises, and logs
-    a note if the tool isn't available."""
-    if not NOTIFY_SCRIPT.is_file():
-        log(f"  (desktop notification skipped: {NOTIFY_SCRIPT} not found)")
-        return
-    try:
-        subprocess.run(
-            [str(NOTIFY_SCRIPT), "--title", title, "--body", body, "--urgency", urgency],
-            capture_output=True,
-            timeout=10,
-        )
-    except Exception as e:
-        log(f"  (desktop notification failed: {e})")
+HEALTHCHECK_LOG = SKILL_ROOT / "logs" / "healthcheck" / "run.log"
 
 
 def log(msg: str) -> None:
-    """Log to healthcheck log file."""
-    HEALTHCHECK_LOG.parent.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now(timezone.utc).isoformat(timespec='seconds')
-    with open(HEALTHCHECK_LOG, "a") as f:
-        f.write(f"[{timestamp}] {msg}\n")
+    """Write one health-check report line.
+
+    Intent
+    ------
+    Persist manual reports while letting cron-owned stdout redirection persist scheduled reports exactly once.
+
+    Rationale
+    ---------
+    A single logging path avoids duplicate cron lines without losing durable output from direct invocations.
+
+    Pseudocode
+    ----------
+    - if invocation is not cron_managed:
+      - set persisted_report = timestamped_message
+    - set standard_output = message
+
+    Wraps
+    -----
+    - none
+    """
+    if not os.environ.get("RECURRING_TASKS_HEALTHCHECK_CRON"):
+        HEALTHCHECK_LOG.parent.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        with open(HEALTHCHECK_LOG, "a", encoding="utf-8") as report:
+            report.write(f"[{timestamp}] {msg}\n")
     print(msg)
 
 
 def check_systemd_manager() -> str | None:
-    """Verify the host scheduler manager. Returns a failure reason, or None if OK."""
+    """Return a scheduler-manager failure reason when unavailable.
+
+    Intent
+    ------
+    Confirm that the selected native per-user scheduler can answer health queries.
+
+    Rationale
+    ---------
+    Per-job evidence is unreliable when the owning scheduler manager is unavailable.
+
+    Pseudocode
+    ----------
+    - set reason = scheduler_manager_health
+    - if scheduler_backend_is_unsupported:
+      - set reason = unsupported_reason
+    - set healthcheck_report = reason_or_success
+    - return reason_or_none
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .log:
+      why:
+        writes: "Records the manager result in the durable health-check report before returning it to the aggregator."
+    """
     try:
         reason = platform_schedule_backend().check_manager()
     except ScheduleBackendUnsupported as e:
@@ -72,7 +120,38 @@ def check_systemd_manager() -> str | None:
 
 
 def check_environment() -> str | None:
-    """Verify AI_AGENT_COMMAND_TEMPLATE is set and resolves. Returns a failure reason, or None if OK."""
+    """Return an agent-command environment failure reason when invalid.
+
+    Intent
+    ------
+    Verify that the scheduler environment declares an agent command whose executable resolves on PATH.
+
+    Rationale
+    ---------
+    A healthy timer cannot run useful AI work when its configured agent launcher is absent or unresolved.
+
+    Pseudocode
+    ----------
+    - set template = scheduler_agent_command_template
+    - if scheduler_backend_is_unsupported:
+      - set healthcheck_report = unsupported_reason
+      - return failure
+    - if template is missing or executable is unresolved:
+      - set healthcheck_report = environment_failure
+      - return failure
+    - set healthcheck_report = environment_success
+    - return none
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .log:
+      why:
+        writes: "Records each environment diagnosis so a failed independent sentinel leaves actionable evidence."
+    """
     try:
         template = platform_schedule_backend().get_agent_command_template()
     except ScheduleBackendUnsupported as e:
@@ -97,8 +176,62 @@ def check_environment() -> str | None:
 
 
 def check_job(job: dict) -> str | None:
-    """Check if a job ran recently and succeeded. Returns a failure reason, or None if OK."""
+    """Return the first registration or execution failure for one job.
+
+    Intent
+    ------
+    Check native registration, log freshness, latest structured outcome, and scheduler activity for an enabled job.
+
+    Rationale
+    ---------
+    Fresh logs alone can mask stale units or failed runs, so health requires configuration and outcome evidence together.
+
+    Pseudocode
+    ----------
+    - set backend = selected_schedule_backend
+    - set schedule_context = configured_recurring_task_paths
+    - set reason = first_registration_or_execution_failure
+    - if reason exists:
+      - set healthcheck_report = reason
+      - return reason
+    - set healthcheck_report = job_success
+    - return none
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .log:
+      why:
+        writes: "Records the first decisive job-health result for operator diagnosis."
+
+    InstantiationsFromRepo
+    ----------------------
+    .parse_schedule_interval:
+      why:
+        constructs: "Converts the declared schedule into the freshness window used to classify the run log."
+    """
     name = job["name"]
+    backend = platform_schedule_backend()
+    context = ScheduleContext(
+        skill_dir=SKILL_DIR,
+        jobs_file=JOBS_FILE,
+        log_dir=LOG_DIR,
+    )
+    try:
+        reason = check_job_configuration(
+            backend_name=backend.name,
+            job=ScheduleJob.from_mapping(job),
+            context=context,
+        )
+    except ScheduleBackendUnsupported as exc:
+        reason = str(exc)
+    if reason:
+        log(f"  FAIL: {reason}")
+        return reason
+
     log_file = LOG_DIR / name / "run.log"
 
     if not log_file.exists():
@@ -118,8 +251,20 @@ def check_job(job: dict) -> str | None:
         log(f"  WARN: {reason}")
         return reason
 
+    latest_path = LOG_DIR / name / "latest.json"
+    latest = read_latest_run_record(log_dir=LOG_DIR, job_name=name)
+    if latest_path.exists() and latest is None:
+        reason = f"{name}: latest run record unreadable"
+        log(f"  FAIL: {reason}")
+        return reason
+    if latest is not None and latest.get("success") is not True:
+        detail = latest.get("reason") or "no failure reason recorded"
+        reason = f"{name}: latest run failed ({detail})"
+        log(f"  FAIL: {reason}")
+        return reason
+
     try:
-        is_active = platform_schedule_backend().check_job_active(name)
+        is_active = backend.check_job_active(name)
     except ScheduleBackendUnsupported as e:
         reason = str(e)
         log(f"  FAIL: {reason}")
@@ -135,7 +280,32 @@ def check_job(job: dict) -> str | None:
 
 
 def parse_schedule_interval(schedule: str) -> int:
-    """Estimate interval in minutes from cron expression."""
+    """Estimate a supported cron schedule interval in minutes.
+
+    Intent
+    ------
+    Produce a conservative freshness interval for hourly, stepped, and daily recurring schedules.
+
+    Rationale
+    ---------
+    Health checks need a simple duration threshold without duplicating the scheduler's full cron parser.
+
+    Pseudocode
+    ----------
+    - set minute = schedule_minute_field
+    - set hour = schedule_hour_field
+    - if minute or hour is stepped:
+      - return step_in_minutes
+    - if schedule is hourly:
+      - return sixty_minutes
+    - if schedule has a fixed hour:
+      - return one_day
+    - return sixty_minutes
+
+    Wraps
+    -----
+    - none
+    """
     parts = schedule.split()
     minute, hour = parts[0], parts[1]
 
@@ -151,13 +321,98 @@ def parse_schedule_interval(schedule: str) -> int:
 
 
 class Interface(PythonArgvMachineInterface):
+    """Expose the health checker through the Python machine interface.
+
+    Intent
+    ------
+    Bind dispatcher-provided arguments to the health-check command entrypoint.
+
+    Rationale
+    ---------
+    The shared runtime requires a typed interface object for process-bound execution.
+
+    Pseudocode
+    ----------
+    - set program_name = healthcheck_probe
+    - set interface_run = received_argv
+
+    Wraps
+    -----
+    - none
+    """
+
     prog = "healthcheck_probe.py"
 
     def run(self, argv: list[str]) -> int:
+        """Run the health-check command with explicit arguments.
+
+        Intent
+        ------
+        Forward machine-interface arguments to the command entrypoint and return its status.
+
+        Rationale
+        ---------
+        One forwarding method keeps direct and dispatcher-driven execution behavior identical.
+
+        Pseudocode
+        ----------
+        - return @.main(argv)
+
+        Wraps
+        -----
+        .main -> preprocess: receives machine-interface argv unchanged; postprocess: returns the health-check status unchanged; fixed_arguments: none
+        """
         return main(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run all enabled recurring-task health checks and return status.
+
+    Intent
+    ------
+    Aggregate scheduler, environment, and per-job failures into a durable report and truthful process exit code.
+
+    Rationale
+    ---------
+    Cron can independently notify on any nonzero result while operators retain the underlying reasons in one report.
+
+    Pseudocode
+    ----------
+    - if unexpected_arguments exist:
+      - return usage_failure
+    - set healthcheck_report = start_marker
+    - set jobs = loaded_job_configuration
+    - if configuration_load_fails:
+      - set healthcheck_report = configuration_failure
+      - return failure
+    - set failures = manager_and_environment_failures
+    - for job in enabled_jobs:
+      - set failures = failures_with_job_result
+    - set healthcheck_report = aggregate_result
+    - return failure_when_any_problem_else_success
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .log:
+      why:
+        writes: "Writes lifecycle markers and aggregate results to the health-check report."
+
+    InstantiationsFromRepo
+    ----------------------
+    .check_systemd_manager:
+      why:
+        constructs: "Produces the scheduler-manager failure value accumulated into the final status."
+    .check_environment:
+      why:
+        constructs: "Produces the agent-environment failure value accumulated into the final status."
+    .check_job:
+      why:
+        constructs: "Produces each enabled job's failure value accumulated into the final status."
+    """
     if argv:
         print(f"error: unexpected arguments: {' '.join(argv)}", file=sys.stderr)
         return 2
@@ -195,15 +450,8 @@ def main(argv: list[str] | None = None) -> int:
     # Report
     if problems == 0:
         log("OK: All checks passed")
-        notify_desktop("Recurring Tasks", "All checks passed", urgency="low")
     else:
         log(f"FAIL: {problems} problem(s) found")
-        MAX_LISTED = 5
-        listed = failures[:MAX_LISTED]
-        body = f"{problems} health check problem(s):\n" + "\n".join(f"- {f}" for f in listed)
-        if problems > MAX_LISTED:
-            body += f"\n(+{problems - MAX_LISTED} more - see healthcheck log)"
-        notify_desktop("Recurring Tasks", body, urgency="critical")
 
     log("=== healthcheck done ===\n")
     return 1 if problems > 0 else 0
