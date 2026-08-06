@@ -2272,6 +2272,134 @@ def test_if_expression_results_propagate_repo_products(
 
 
 @pytest.mark.parametrize(
+    "body",
+    (
+        "return [c for c in (produce(x) for x in xs) if c is not None]",
+        "result = [c for c in (produce(x) for x in xs) if c is not None]\nreturn result",
+        "return [c.attr for c in (produce(x) for x in xs)]",
+        "return [c[key] for c in (produce(x) for x in xs)]",
+        "return [(c,) for c in (produce(x) for x in xs)]",
+        "return [[c] for c in (produce(x) for x in xs)]",
+        "return [{'result': c} for c in (produce(x) for x in xs)]",
+        "return [c if keep else fallback for c in (produce(x) for x in xs)]",
+        "return [(c, label) for c in (produce(x) for x in xs) for label in labels]",
+        "return [left.attr for left, right in (produce(x) for x in xs)]",
+        "return [c for c in {produce(x): x for x in xs}]",
+        "return [d for d in {c: 0 for c in {produce(x): x for x in xs}}]",
+        "return list({produce(x): x for x in xs})",
+        "return tuple({produce(x): x for x in xs})",
+        "return set({produce(x): x for x in xs})",
+        "return frozenset({produce(x): x for x in xs})",
+        "return list([produce(x) for x in xs])",
+        "return tuple({produce(x) for x in xs})",
+        "return set(produce(x) for x in xs)",
+        "return frozenset(produce(x) for x in xs)",
+        "return dict({produce(x): x for x in xs})",
+        "return dict({x: produce(x) for x in xs})",
+        "return list(dict({produce(x): x for x in xs}))",
+        "return list({c: 0 for c in {produce(x): x for x in xs}})",
+    ),
+)
+def test_nested_generator_outputs_flow_through_value_preserving_bindings(
+    tmp_path: Path,
+    body: str,
+) -> None:
+    """Nested generator products survive identity-like outer binding uses."""
+    producer = "officina.common.repository_paths.repository_relative_path"
+    source = (
+        "from officina.common.repository_paths import repository_relative_path as produce\n\n"
+        + _function_source(
+            "entry",
+            _dependency_doc(
+                "Carry nested generator results into a returned collection.",
+                products=(producer,),
+            ),
+            body,
+        )
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.module-dependency-not-observed" not in entry_codes
+    assert "docstring.module-dependency-undocumented" not in entry_codes
+
+
+@pytest.mark.parametrize(
+    "body",
+    (
+        "return [c for c in produce()]",
+        "return [c for c in xs if produce(c)]",
+        "return xs[produce()]",
+        "return [mapping[c] for c in (produce(x) for x in xs)]",
+        "return [str(c) for c in (produce(x) for x in xs)]",
+        "return [0 for c in (produce(x) for x in xs)]",
+        "return [c for c in (produce(x) for x in xs) for c in other]",
+        "[c for c in (produce(x) for x in xs)]\nreturn None",
+        "return [x for x in (x for x in xs if produce(x))]",
+        "return [c for c in {x: produce(x) for x in xs}]",
+        "return [d for d in {0: c for c in {produce(x): x for x in xs}}]",
+        "return list({x: produce(x) for x in xs})",
+        "return tuple({x: produce(x) for x in xs})",
+        "return set({x: produce(x) for x in xs})",
+        "return frozenset({x: produce(x) for x in xs})",
+        "return list(dict({x: produce(x) for x in xs}))",
+        "return list({0: c for c in {produce(x): x for x in xs}})",
+    ),
+)
+def test_nested_generator_noncarriers_keep_repo_results_as_operations(
+    tmp_path: Path,
+    body: str,
+) -> None:
+    """Iterators, transforms, rebinding, filters, and bare outputs do not bridge."""
+    producer = "officina.common.repository_paths.repository_relative_path"
+    source = (
+        "from officina.common.repository_paths import repository_relative_path as produce\n\n"
+        + _function_source(
+            "entry",
+            _dependency_doc(
+                "Use a nested repository result outside a carried product path.",
+                calls=(producer,),
+            ),
+            body,
+        )
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.module-dependency-not-observed" not in entry_codes
+    assert "docstring.module-dependency-undocumented" not in entry_codes
+
+
+def test_nested_generator_identity_with_filter_separates_product_and_operation(
+    tmp_path: Path,
+) -> None:
+    """An identity output carries its producer while its filter remains operational."""
+    producer = "officina.common.repository_paths.repository_relative_path"
+    guard = "officina.common.repository_paths.normalize_repository_root"
+    source = (
+        "from officina.common.repository_paths import repository_relative_path as produce\n"
+        "from officina.common.repository_paths import normalize_repository_root as guard\n\n"
+        + _function_source(
+            "entry",
+            _dependency_doc(
+                "Filter nested repository products without transforming them.",
+                calls=(guard,),
+                products=(producer,),
+            ),
+            "return [c for c in (produce(x) for x in xs) if guard(c)]",
+        )
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.module-dependency-not-observed" not in entry_codes
+    assert "docstring.module-dependency-undocumented" not in entry_codes
+
+
+@pytest.mark.parametrize(
     ("prefix", "expression"),
     (
         ("", "[item for item in produce()]"),

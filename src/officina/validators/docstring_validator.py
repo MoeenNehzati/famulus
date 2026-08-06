@@ -2151,6 +2151,104 @@ def _is_wrapped_call_node(node: ast.AST, call: ast.Call) -> bool:
     return isinstance(node, ast.Await) and node.value is call
 
 
+def _comprehension_iter_result_channels(
+    clause: ast.comprehension,
+    owner: ast.ListComp | ast.SetComp | ast.DictComp | ast.GeneratorExp,
+) -> tuple[bool, bool]:
+    """Return output-carried and iteration-yielded provenance for one clause.
+
+    Intent
+    ------
+    Distinguish a target carried anywhere in an outer comprehension's product
+    from one carried through the channel that iterating that product exposes.
+
+    Rationale
+    ---------
+    List, set, and generator iteration exposes their emitted value, whereas dict
+    iteration exposes only keys. Preserving this channel prevents a value-only
+    dict dependency from leaking through a later iterator bridge.
+
+    Pseudocode
+    ----------
+    - target_names = _bound_target_names(clause target)
+    - for later_clause in later clauses:
+      - rebound_names = _bound_target_names(later clause target)
+      - set target_names = target_names minus rebound_names
+    - if target_names is empty:
+      - return false pair
+    - set pending = tagged output expressions
+    - while pending has expressions:
+      - set current = next tagged expression
+      - if current carries a target name:
+        - set carried_channels = carried channels plus current channel
+      - if current is a value-preserving context:
+        - set pending = pending plus tagged child expressions
+    - return output and iteration carry flags
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._bound_target_names:
+      why:
+        constructs: "Builds clause binding sets carried through later-target shadow removal."
+    """
+    target_names = _bound_target_names(clause.target)
+    clause_seen = False
+    for later_clause in owner.generators:
+        if clause_seen:
+            rebound_names = _bound_target_names(later_clause.target)
+            target_names.difference_update(rebound_names)
+        elif later_clause is clause:
+            clause_seen = True
+    if not clause_seen or not target_names:
+        return False, False
+
+    if isinstance(owner, ast.DictComp):
+        pending: list[tuple[str, ast.AST]] = [
+            ("key", owner.key),
+            ("value", owner.value),
+        ]
+    else:
+        pending = [("yielded", owner.elt)]
+
+    carried_channels: set[str] = set()
+    while pending:
+        channel, current = pending.pop()
+        if isinstance(current, ast.Name):
+            if current.id in target_names:
+                carried_channels.add(channel)
+            continue
+        if isinstance(current, (ast.Attribute, ast.Subscript, ast.Starred)):
+            pending.append((channel, current.value))
+            continue
+        if isinstance(current, ast.NamedExpr):
+            pending.append((channel, current.value))
+            continue
+        if isinstance(current, (ast.Tuple, ast.List, ast.Set)):
+            pending.extend((channel, element) for element in current.elts)
+            continue
+        if isinstance(current, ast.Dict):
+            pending.extend(
+                (channel, key) for key in current.keys if key is not None
+            )
+            pending.extend((channel, value) for value in current.values)
+            continue
+        if isinstance(current, ast.IfExp):
+            pending.extend(
+                (
+                    (channel, current.body),
+                    (channel, current.orelse),
+                )
+            )
+    if isinstance(owner, ast.DictComp):
+        return bool(carried_channels), "key" in carried_channels
+    carried = bool(carried_channels)
+    return carried, carried
+
+
 def _call_result_is_product_position(
     call: ast.Call,
     parents: Mapping[ast.AST, ast.AST],
@@ -2197,9 +2295,14 @@ def _call_result_is_product_position(
     ._normalize_dependency_name:
       why:
         constructs: "Builds normalized outer-consumer names before repo-local classification."
+    ._comprehension_iter_result_channels:
+      why:
+        constructs: "Builds outer-output and iteration-channel provenance for a comprehension bridge."
     """
     parent = parents.get(call)
     value_node: ast.AST = call
+    promoted_comprehension: ast.AST | None = None
+    promoted_iteration_carries_result = False
     if isinstance(parent, ast.Await):
         value_node = parent
         parent = parents.get(parent)
@@ -2224,12 +2327,36 @@ def _call_result_is_product_position(
             parent.elt is value_node
         ):
             value_node = parent
+            promoted_comprehension = parent
+            promoted_iteration_carries_result = True
             parent = parents.get(parent)
             continue
         if isinstance(parent, ast.DictComp) and value_node in (parent.key, parent.value):
+            promoted_iteration_carries_result = value_node is parent.key
             value_node = parent
+            promoted_comprehension = parent
             parent = parents.get(parent)
             continue
+        if (
+            isinstance(parent, ast.comprehension)
+            and parent.iter is value_node
+            and promoted_comprehension is value_node
+            and promoted_iteration_carries_result
+        ):
+            owner = parents.get(parent)
+            if isinstance(
+                owner,
+                (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp),
+            ):
+                output_carries, iteration_carries = (
+                    _comprehension_iter_result_channels(parent, owner)
+                )
+                if output_carries:
+                    value_node = owner
+                    promoted_comprehension = owner
+                    promoted_iteration_carries_result = iteration_carries
+                    parent = parents.get(owner)
+                    continue
         if isinstance(parent, ast.Lambda) and parent.body is value_node:
             return True
         if isinstance(parent, (ast.Tuple, ast.List, ast.Set, ast.Dict)):
@@ -2239,8 +2366,21 @@ def _call_result_is_product_position(
         if isinstance(parent, ast.Call) and value_node in tuple(parent.args):
             wrapper = _flatten_attribute_name(parent.func) or ""
             wrapper_tail = wrapper.rsplit(".", 1)[-1]
-            if wrapper_tail in {"tuple", "list", "set", "frozenset", "dict"}:
+            if wrapper_tail in {"tuple", "list", "set", "frozenset"}:
+                if (
+                    value_node is promoted_comprehension
+                    and not promoted_iteration_carries_result
+                ):
+                    break
                 value_node = parent
+                if promoted_comprehension is not None:
+                    promoted_comprehension = parent
+                parent = parents.get(parent)
+                continue
+            if wrapper_tail == "dict":
+                value_node = parent
+                if promoted_comprehension is not None:
+                    promoted_comprehension = parent
                 parent = parents.get(parent)
                 continue
             normalized_wrapper = _normalize_dependency_name(wrapper, import_aliases)
