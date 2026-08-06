@@ -633,6 +633,8 @@ def test_dependency_path_rule_accepts_allowed_absolute_and_relative(
       why: "Uses local helper."
     officina.common.repository_paths.repository_relative_path:
       why: "Uses an allowed absolute repo root."
+    validators.skill_runtime_files._registered_child_artifact:
+      why: "Uses an allowed repository-validator root."
 
     Dispatches
     ----------
@@ -1503,12 +1505,39 @@ def test_wraps_does_not_document_same_leaf_from_different_module(
     } <= entry_codes
 
 
-def test_wraps_and_calls_overlap_for_absolute_current_module_and_relative_target(
+@pytest.mark.parametrize(
+    ("relative_module_path", "absolute_target", "same_module"),
+    (
+        (
+            "src/officina/validators/docstring_validator.py",
+            "officina.validators.docstring_validator._helper",
+            True,
+        ),
+        (
+            "validators/docstring_validator.py",
+            "validators.docstring_validator._helper",
+            True,
+        ),
+        (
+            "src/officina/validators/docstring_validator.py",
+            "validators.docstring_validator._helper",
+            False,
+        ),
+        (
+            "validators/docstring_validator.py",
+            "officina.validators.docstring_validator._helper",
+            False,
+        ),
+    ),
+)
+def test_relative_and_absolute_targets_respect_current_module_package_root(
     tmp_path: Path,
+    relative_module_path: str,
+    absolute_target: str,
+    same_module: bool,
 ) -> None:
-    """Current-module absolute and local-relative spellings overlap exactly."""
+    """Local-relative targets overlap only within the path-derived package root."""
     relative_target = "._helper"
-    absolute_target = "officina.validators.docstring_validator._helper"
     helper = _function_source(
         "_helper",
         _dependency_doc("Provide the local result used by the wrapper fixture."),
@@ -1523,9 +1552,7 @@ def test_wraps_and_calls_overlap_for_absolute_current_module_and_relative_target
         ),
         "_helper()\nreturn None",
     )
-    module_path = (
-        tmp_path / "src" / "officina" / "validators" / "docstring_validator.py"
-    )
+    module_path = tmp_path / relative_module_path
     module_path.parent.mkdir(parents=True)
     module_path.write_text(helper + "\n" + entry, encoding="utf-8")
 
@@ -1535,11 +1562,49 @@ def test_wraps_and_calls_overlap_for_absolute_current_module_and_relative_target
         check_group="behavioral",
     )
 
-    assert any(
+    has_overlap = any(
         issue.node_id == "entry"
         and issue.code == "docstring.dependency-section-overlap"
         for issue in issues
     )
+    assert has_overlap is same_module
+
+
+@pytest.mark.parametrize(
+    ("import_statement", "product"),
+    (
+        (
+            "from validators.skill_runtime_files import _registered_child_artifact as produce",
+            "validators.skill_runtime_files._registered_child_artifact",
+        ),
+        (
+            "from .skill_runtime_files import _registered_child_artifact as produce",
+            ".skill_runtime_files._registered_child_artifact",
+        ),
+    ),
+)
+def test_direct_return_validator_helpers_are_observed_products(
+    tmp_path: Path,
+    import_statement: str,
+    product: str,
+) -> None:
+    """Absolute and relative validator helpers remain products when returned."""
+    source = import_statement + "\n\n" + _function_source(
+        "entry",
+        _dependency_doc(
+            "Return one repository validator helper result directly.",
+            products=(product,),
+        ),
+        "return produce(repo_root, graph)",
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.absolute-dependency-not-allowed" not in entry_codes
+    assert "docstring.repo-dependency-not-repo" not in entry_codes
+    assert "docstring.module-dependency-not-observed" not in entry_codes
+    assert "docstring.module-dependency-undocumented" not in entry_codes
 
 
 def test_implicit_relative_dependency_must_still_resolve(tmp_path: Path) -> None:
@@ -3295,6 +3360,38 @@ def test_projection_serialization_and_transform_chain_preserves_repo_product(
                 products=(producer,),
             ),
             "normalized = str(produce().get('description', '')).strip()\nreturn None",
+        )
+    )
+
+    issues = _validate_source(tmp_path, source, check_group="behavioral")
+    entry_codes = {issue.code for issue in issues if issue.node_id == "entry"}
+
+    assert "docstring.module-dependency-not-observed" not in entry_codes
+    assert "docstring.module-dependency-undocumented" not in entry_codes
+
+
+@pytest.mark.parametrize(
+    "body",
+    (
+        "lines = produce().splitlines()\nreturn lines",
+        "for line in produce().splitlines():\n    print(line)\nreturn None",
+    ),
+)
+def test_splitlines_preserves_repo_text_products(
+    tmp_path: Path,
+    body: str,
+) -> None:
+    """Splitting repository text preserves its product through value consumers."""
+    producer = "officina.common.repository_paths.repository_relative_path"
+    source = (
+        "from officina.common.repository_paths import repository_relative_path as produce\n\n"
+        + _function_source(
+            "entry",
+            _dependency_doc(
+                "Split repository text for assignment or direct iteration.",
+                products=(producer,),
+            ),
+            body,
         )
     )
 

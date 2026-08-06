@@ -71,7 +71,7 @@ _PSEUDOCODE_SKIP_TOKENS = {
 _DISPATCH_ID_RE = re.compile(
     r"(?<![A-Za-z0-9_.:-])(?:skills\.)?[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.interface\.[A-Za-z0-9_-]+(?![A-Za-z0-9_.:-])"
 )
-_VALUE_CARRYING_RECEIVER_METHODS = frozenset({"get", "strip"})
+_VALUE_CARRYING_RECEIVER_METHODS = frozenset({"get", "splitlines", "strip"})
 _VALUE_SERIALIZERS = frozenset({"str"})
 
 
@@ -2086,8 +2086,8 @@ def _declared_dependency_targets_match(
     module_path = path.parent if path.name == "__init__.py" else path.with_suffix("")
     module_parts = module_path.parts
     module_name = ""
-    for index in range(len(module_parts) - 1, -1, -1):
-        if module_parts[index] in allowed_abs:
+    for index, part in enumerate(module_parts):
+        if part in allowed_abs:
             module_name = ".".join(module_parts[index:])
             break
 

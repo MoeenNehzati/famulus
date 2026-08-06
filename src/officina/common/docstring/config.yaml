@@ -1,6 +1,7 @@
 allowed_abs:
   - officina
   - skills
+  - validators
 
 names_for_dependency_sections:
   calls: CallsFromRepo
