@@ -57,3 +57,18 @@ other skill, causing about 3.95 million escapes and searches. Compiling three
 repository-wide matchers once per validation reduced direct runtime from about
 6.7 seconds to 0.1 seconds. A fixture was unnecessary because the repeated work
 was inside one validator item.
+
+## Example: standard-document validation
+
+The standard-document validator used `jsonschema.validate` for every root and
+import. That convenience function selects a validator class and checks the same
+schema before each document validation. The repository adapter now prepares one
+schema-validator instance per repository scan and passes it through root and
+recursive import validation. It also retains `jsonschema.validate`'s best-error
+selection; using the prepared validator's first-error shortcut was faster but
+changed diagnostics. Correct direct runtime fell from about 6.6 seconds to a
+median of about 5.1 seconds.
+
+The existing document/error cache remains traversal-scoped. Reusing it across
+top-level roots could change cycle paths and error prefixes, so parsed-data or
+result reuse requires a separate semantics-preserving design.

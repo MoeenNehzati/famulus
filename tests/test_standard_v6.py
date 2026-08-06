@@ -407,6 +407,18 @@ def _write_standard(path: Path, value: dict) -> None:
     path.write_text(yaml.safe_dump(value, sort_keys=False))
 
 
+def test_validate_file_preserves_best_schema_error(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    standard = root / "standards" / "main.standard.yaml"
+    value = document()
+    value["standards"][0]["children"] = []
+    _write_standard(standard, value)
+
+    assert validate_file(standard, root=root) == [
+        "schema validation failed: [] is too short"
+    ]
+
+
 def _add_import(value: dict, artifact_path: str, imported_path: Path) -> None:
     value["artifacts"]["imported-standard"] = {
         "path": artifact_path,

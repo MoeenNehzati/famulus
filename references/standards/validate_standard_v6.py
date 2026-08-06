@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""Validate standard-v6 documents and their repository-bound dependencies."""
+
 from __future__ import annotations
 import argparse, hashlib, json, os, tempfile
 from pathlib import Path
@@ -9,12 +11,108 @@ OPTIONAL=('imports','domain_facts','schema_authorities','schema_authority_links'
 SEMANTIC={'family','rule','assertion','guidance','definition','procedure','step','evidence-claim'}
 
 def _schema():
+ """Load the standard-v6 JSON Schema with its runtime identity.
+
+ Intent
+ ------
+ Read the checked-in schema and replace its relative identity with an absolute file URI.
+
+ Rationale
+ ---------
+ The absolute identity keeps local fragment resolution anchored to the checked-in schema.
+
+ Pseudocode
+ ----------
+ - set schema = parsed standard-v6 schema
+ - set schema_identity = absolute schema file URI
+ - return schema
+
+ Wraps
+ -----
+ - none
+ """
  schema=json.loads((HERE/'standard-v6.schema.json').read_text(encoding='utf-8'))
  # The checked-in identity is repository-relative. Give jsonschema an absolute
  # runtime base so its legacy resolver keeps local fragment references local.
  schema['$id']=(HERE/'standard-v6.schema.json').resolve().as_uri()
  return schema
+def _prepare_schema_validator():
+ """Build one checked validator for the standard-v6 schema.
+
+ Intent
+ ------
+ Select the declared JSON Schema implementation, check the schema once, and instantiate it.
+
+ Rationale
+ ---------
+ A prepared instance avoids repeating validator selection and schema checking for every document.
+
+ Pseudocode
+ ----------
+ - set schema = loaded standard-v6 schema
+ - set validator_type = implementation selected for schema
+ - if schema is invalid for validator_type:
+   - raise schema error
+ - return validator instance for schema
+
+ Wraps
+ -----
+ - none
+
+ InstantiationsFromRepo
+ ----------------------
+ ._schema:
+   why:
+     constructs: "Builds the absolute-identity schema document supplied to validator selection, checking, and construction."
+ """
+ schema=_schema(); validator_type=jsonschema.validators.validator_for(schema); validator_type.check_schema(schema)
+ return validator_type(schema)
+def _validate_with_prepared_schema(document,schema_validator):
+ """Validate one document with preserved best-error selection.
+
+ Intent
+ ------
+ Run a prepared validator while selecting the same best matching error as jsonschema.validate.
+
+ Rationale
+ ---------
+ Preserving best-match selection keeps diagnostic messages and paths unchanged while reusing preparation.
+
+ Pseudocode
+ ----------
+ - set error = best matching error from document validation
+ - if error exists:
+   - raise error
+ - return none
+
+ Wraps
+ -----
+ - none
+ """
+ error=jsonschema.exceptions.best_match(schema_validator.iter_errors(document))
+ if error is not None:raise error
 def atomic_write(path,data):
+ """Replace one file atomically with the supplied bytes.
+
+ Intent
+ ------
+ Write and synchronize a sibling temporary file before replacing the destination.
+
+ Rationale
+ ---------
+ The temporary-file boundary prevents readers from observing a partial standards artifact.
+
+ Pseudocode
+ ----------
+ - set temporary_file = sibling file created for destination
+ - set temporary_file_bytes = data
+ - set synchronized_file = flushed temporary file
+ - set destination = temporary file replacement
+
+ Wraps
+ -----
+ - none
+ """
  path=Path(path); path.parent.mkdir(parents=True,exist_ok=True)
  fd,tmp=tempfile.mkstemp(prefix=path.name+'.',dir=path.parent)
  try:
@@ -23,15 +121,85 @@ def atomic_write(path,data):
  finally:
   if os.path.exists(tmp): os.unlink(tmp)
 def _maps(d):
+ """Populate optional standard-v6 mapping fields in place.
+
+ Intent
+ ------
+ Ensure every optional mapping field exists before semantic validation traverses it.
+
+ Rationale
+ ---------
+ Uniform empty mappings let later checks avoid field-specific missing-value branches.
+
+ Pseudocode
+ ----------
+ - for optional_field in optional mapping fields:
+   - set missing_field = empty mapping
+ - return document
+
+ Wraps
+ -----
+ - none
+ """
  for k in OPTIONAL: d.setdefault(k,{})
  return d
 def _fact_equal(left,right):
+ """Compare two domain facts without numeric type coercion.
+
+ Intent
+ ------
+ Require both identical Python types and equal values for imported fact compatibility.
+
+ Rationale
+ ---------
+ Python otherwise treats values such as one and one-point-zero as equal despite schema-level type differences.
+
+ Pseudocode
+ ----------
+ - set same_type = left type equals right type
+ - set same_value = left equals right
+ - return same type and same value
+
+ Wraps
+ -----
+ - none
+ """
  return type(left) is type(right) and left==right
 def evaluate_predicate(predicate,facts):
- """Evaluate an applicability predicate as ``true``, ``false``, or ``unknown``.
+ """Evaluate an applicability predicate with three-valued logic.
 
- Missing facts stay unknown so incomplete target inspection cannot silently
- remove a potentially applicable standard from a refactoring query.
+ Intent
+ ------
+ Resolve fact, negation, conjunction, and disjunction predicates to true, false, or unknown.
+
+ Rationale
+ ---------
+ Unknown propagation prevents missing repository facts from silently excluding applicable standards.
+
+ Pseudocode
+ ----------
+ - if predicate selects one fact:
+   - return fact comparison or unknown
+ - if predicate is negated:
+   - return inverted child state
+ - set child_states = recursively evaluated predicates
+ - return state selected by all or any semantics
+
+ Wraps
+ -----
+ - none
+
+ CallsFromRepo
+ -------------
+ ._fact_equal:
+   why:
+     computes: "Performs type-strict comparisons for fact equality and membership predicates."
+
+ InstantiationsFromRepo
+ ----------------------
+ .evaluate_predicate:
+   why:
+     constructs: "Builds child predicate states used by negation, conjunction, and disjunction."
  """
  if 'fact' in predicate:
   fact=predicate['fact']
@@ -49,11 +217,74 @@ def evaluate_predicate(predicate,facts):
  if 'true' in states:return 'true'
  return 'false' if all(state=='false' for state in states) else 'unknown'
 def _index(items,errors):
+ """Index semantic nodes and report duplicate identifiers.
+
+ Intent
+ ------
+ Walk standards, assertions, steps, and children into one kind-and-node lookup.
+
+ Rationale
+ ---------
+ One index supports consistent local and imported semantic reference checks.
+
+ Pseudocode
+ ----------
+ - set semantic_index = empty mapping
+ - for semantic_node in standards tree:
+   - set identifier_entry = kind and node or duplicate error
+ - return semantic index
+
+ Wraps
+ -----
+ - none
+ """
  out={}
  def add(k,i,n):
+  """Add one semantic identifier to the current index.
+
+  Intent
+  ------
+  Record a kind and node unless the identifier already exists.
+
+  Rationale
+  ---------
+  Duplicate identifiers must produce findings without overwriting the first declaration.
+
+  Pseudocode
+  ----------
+  - if identifier exists in semantic index:
+    - set duplicate_finding = identifier
+  - else:
+    - set semantic_index_entry = kind and node
+
+  Wraps
+  -----
+  - none
+  """
   if i in out: errors.append(f'duplicate semantic id {i}')
   else: out[i]=(k,n)
  def walk(xs):
+  """Walk semantic children into the current index.
+
+  Intent
+  ------
+  Index each node plus rule assertions, procedure steps, and nested children.
+
+  Rationale
+  ---------
+  Recursive traversal gives every supported semantic reference site one lookup surface.
+
+  Pseudocode
+  ----------
+  - for node in semantic nodes:
+    - set node_entry = kind identifier and node
+    - set nested_entries = assertions steps and children
+  - return none
+
+  Wraps
+  -----
+  - none
+  """
   for n in xs:
    add(n['kind'],n['id'],n)
    if n['kind']=='rule':
@@ -63,8 +294,50 @@ def _index(items,errors):
    walk(n.get('children',[]))
  walk(items); return out
 def _ancestry(items):
+ """Build ancestor chains for semantic identifiers.
+
+ Intent
+ ------
+ Walk the standards tree and record each node, assertion, and step parent chain.
+
+ Rationale
+ ---------
+ Ancestor data supports checks that depend on semantic containment.
+
+ Pseudocode
+ ----------
+ - set ancestry_index = empty mapping
+ - for semantic_node in standards tree:
+   - set identifier_ancestry = parent identifiers
+ - return ancestry index
+
+ Wraps
+ -----
+ - none
+ """
  out={}
  def walk(xs,parents):
+  """Walk semantic children while carrying parent identifiers.
+
+  Intent
+  ------
+  Record ancestry for nodes, assertions, steps, and descendants.
+
+  Rationale
+  ---------
+  Passing an immutable parent list keeps sibling ancestry independent.
+
+  Pseudocode
+  ----------
+  - for node in semantic nodes:
+    - set node_ancestry = parent identifiers
+    - set descendant_ancestry = parent identifiers plus node identifier
+  - return none
+
+  Wraps
+  -----
+  - none
+  """
   for n in xs:
    out[n['id']]=parents
    if n['kind']=='rule':
@@ -74,8 +347,68 @@ def _ancestry(items):
    walk(n.get('children',[]),parents+[n['id']])
  walk(items,[]);return out
 def _validate_document(document):
+ """Validate standard-v6 semantic references and relationships.
+
+ Intent
+ ------
+ Check identifiers, artifacts, relationships, evidence, lifecycle state, and local references after schema validation.
+
+ Rationale
+ ---------
+ Separating semantic checks from schema checks keeps each diagnostic layer explicit and ordered.
+
+ Pseudocode
+ ----------
+ - set document_maps = normalized optional mappings
+ - set semantic_index = indexed standards
+ - set findings = semantic relationship and reference checks
+ - return findings
+
+ Wraps
+ -----
+ - none
+
+ CallsFromRepo
+ -------------
+ .copy_document:
+   why:
+     computes: "Provides an isolated mutable document before optional mappings are inserted."
+
+ InstantiationsFromRepo
+ ----------------------
+ ._ancestry:
+   why:
+     constructs: "Builds the ancestry index currently computed alongside the semantic lookup; later checks do not consume it."
+ ._index:
+   why:
+     constructs: "Builds the semantic lookup and duplicate-identifier findings used by reference checks."
+ ._maps:
+   why:
+     constructs: "Populates optional mappings required by the semantic-check loops."
+ """
  d=_maps(copy_document(document)); e=[]; sem=_index(d['standards'],e); ancestry=_ancestry(d['standards'])
  def local(r,label):
+  """Validate one local semantic reference.
+
+  Intent
+  ------
+  Accept declared import aliases or require a matching local kind-and-identifier entry.
+
+  Rationale
+  ---------
+  All local reference sites must use the same dangling-reference rule.
+
+  Pseudocode
+  ----------
+  - if reference names imported document:
+    - set unknown_import_finding = absent alias
+    - return none
+  - set local_finding = missing or wrong-kind semantic reference
+
+  Wraps
+  -----
+  - none
+  """
   if r.get('document'):
    if r['document'] not in d['imports']: e.append(f"{label}: unknown import {r['document']}")
    return
@@ -104,7 +437,28 @@ def _validate_document(document):
     if any(y in graph and dfs(y) for y in graph[x]):return True
     visiting.remove(x);done.add(x);return False
    if any(dfs(x) for x in graph if x not in done):e.append(f'procedure {ident}: step dependency cycle')
- def status(n): return n.get('lifecycle','active'),n.get('resolution',{'state':'resolved'})
+ def status(n):
+  """Return lifecycle and resolution values with defaults.
+
+  Intent
+  ------
+  Supply active and resolved defaults when a node omits explicit lifecycle metadata.
+
+  Rationale
+  ---------
+  Central defaults keep lifecycle comparisons consistent across link checks.
+
+  Pseudocode
+  ----------
+  - set lifecycle = declared lifecycle or active
+  - set resolution = declared resolution or resolved
+  - return lifecycle and resolution
+
+  Wraps
+  -----
+  - none
+  """
+  return n.get('lifecycle','active'),n.get('resolution',{'state':'resolved'})
  for cid,c in d['evidence_claims'].items():
   sem[cid]=('evidence-claim',c)
   if c['artifact']['ref'] not in d['artifacts']:e.append(f'evidence_claims.{cid}.artifact: dangling artifact {c["artifact"]["ref"]}')
@@ -155,13 +509,59 @@ def _validate_document(document):
  return e
 
 def copy_document(d):
+ """Deep-copy one standard document before normalization.
+
+ Intent
+ ------
+ Create an independent mutable document for optional-map insertion and semantic checks.
+
+ Rationale
+ ---------
+ Callers must not observe validation-time normalization mutations.
+
+ Pseudocode
+ ----------
+ - set copied_document = deep copy of input document
+ - return copied document
+
+ Wraps
+ -----
+ - none
+ """
  import copy; return copy.deepcopy(d)
 def validate_document(document: dict, root: Path) -> list[str]:
- """Validate in-memory content, resolving declared import artifacts below root.
+ """Validate one in-memory standard-v6 document.
 
- Call validate_file when import digests and imported-document semantics must also
- be checked; this entry point proves that each declared import is locatable from
- the repository root instead of silently ignoring its filesystem contract.
+ Intent
+ ------
+ Apply schema validation, semantic validation, and import path checks relative to a repository root.
+
+ Rationale
+ ---------
+ This public boundary preserves stable ordered findings for callers that already parsed a document.
+
+ Pseudocode
+ ----------
+ - set schema_finding = standard-v6 validation result
+ - set semantic_findings = document relationship checks
+ - set import_findings = bounded root-relative import checks
+ - return findings
+
+ Wraps
+ -----
+ - none
+
+ CallsFromRepo
+ -------------
+ ._schema:
+   why:
+     computes: "Provides the standard-v6 schema passed to jsonschema validation."
+
+ InstantiationsFromRepo
+ ----------------------
+ ._validate_document:
+   why:
+     constructs: "Builds the ordered semantic findings appended before import path checks."
  """
  try:jsonschema.validate(document,_schema())
  except jsonschema.ValidationError as x:return [f'schema validation failed: {x.message}']
@@ -178,11 +578,56 @@ def validate_document(document: dict, root: Path) -> list[str]:
   if not target.is_file():errors.append(f'imports.{alias}: missing import file under root {root}')
  return errors
 def _select(lines,selector):
+ """Select bytes for one portable line-range source unit.
+
+ Intent
+ ------
+ Validate inclusive one-based line bounds and encode the selected lines with a final newline.
+
+ Rationale
+ ---------
+ Digest verification requires deterministic bytes and rejects unsupported selector kinds.
+
+ Pseudocode
+ ----------
+ - if selector is not line range:
+   - return unsupported selector finding
+ - if bounds are invalid:
+   - return range finding
+ - return selected UTF-8 bytes
+
+ Wraps
+ -----
+ - none
+ """
  if selector['kind']!='line-range': return None,'unsupported source selector for portable verifier'
  a,b=selector['start'],selector['end']
  if a<1 or b<a or b>len(lines): return None,'selector out of range'
  return ('\n'.join(lines[a-1:b])+'\n').encode(),None
 def _resolve_artifact_path(artifact, root, label):
+ """Resolve one safe repository-relative artifact path.
+
+ Intent
+ ------
+ Reject absolute, escaping, or missing artifact paths before filesystem access.
+
+ Rationale
+ ---------
+ All artifact consumers require the same repository containment boundary.
+
+ Pseudocode
+ ----------
+ - if artifact path is absolute:
+   - return absolute-path finding
+ - set target = resolved repository path
+ - if target escapes root or is missing:
+   - return bounded artifact finding
+ - return target
+
+ Wraps
+ -----
+ - none
+ """
  raw=Path(artifact['path'])
  if raw.is_absolute():return None,f'{label}: artifact path must be repository-relative'
  target=(root/raw).resolve()
@@ -190,6 +635,28 @@ def _resolve_artifact_path(artifact, root, label):
  if not target.is_file():return None,f'{label}: missing artifact file'
  return target,None
 def _resolve_json_pointer(value,pointer):
+ """Resolve one JSON Pointer against a loaded value.
+
+ Intent
+ ------
+ Decode pointer tokens and traverse mappings or arrays with bounded missing-token errors.
+
+ Rationale
+ ---------
+ Schema-authority selectors need deterministic pointer resolution without uncaught lookup failures.
+
+ Pseudocode
+ ----------
+ - if pointer selects whole value:
+   - return value
+ - for token in decoded pointer tokens:
+   - set current_value = mapped or indexed child
+ - return resolved value or bounded finding
+
+ Wraps
+ -----
+ - none
+ """
  if pointer == '': return value,None
  if not pointer.startswith('/'): return None,'must start with /'
  current=value
@@ -201,13 +668,72 @@ def _resolve_json_pointer(value,pointer):
    else:return None,f'cannot descend through {token!r}'
   except (KeyError,IndexError,ValueError):return None,f'missing token {token!r}'
  return current,None
-def validate_file(path,root=None,cache=None,_stack=None):
- path=Path(path).resolve(); root=Path(root).resolve() if root else path.parent.resolve(); cache={} if cache is None else cache; stack=list(_stack or [])
+def validate_file(path,root=None,cache=None,_stack=None,_schema_validator=None):
+ """Validate one standard-v6 file and its imported graph.
+
+ Intent
+ ------
+ Load a root document, apply schema and semantic checks, verify artifacts and digests, and recurse through imports.
+
+ Rationale
+ ---------
+ The function preserves ordered contextual findings while sharing only caller-scoped schema preparation.
+
+ Pseudocode
+ ----------
+ - set schema_validator = supplied prepared validator or newly prepared validator
+ - if path is cyclic or cached:
+   - return contextual findings
+ - set document = parsed standard file
+ - set findings = schema semantic artifact source and import checks
+ - return findings
+
+ Wraps
+ -----
+ - none
+
+ CallsFromRepo
+ -------------
+ .validate_file:
+   why:
+     computes: "Recursively produces findings for each validated imported document."
+ ._validate_with_prepared_schema:
+   why:
+     computes: "Raises the best matching schema error for root and imported documents."
+ ._prepare_schema_validator:
+   why:
+     computes: "Provides a checked schema validator when the caller did not supply one."
+ ._fact_equal:
+   why:
+     computes: "Compares inherited domain facts without numeric type coercion."
+
+ InstantiationsFromRepo
+ ----------------------
+ ._index:
+   why:
+     constructs: "Builds local and imported semantic lookups for external-reference resolution."
+ ._maps:
+   why:
+     constructs: "Populates optional mappings on root and imported documents before traversal."
+ ._select:
+   why:
+     constructs: "Builds deterministic source-unit bytes used for content-digest verification."
+ ._resolve_artifact_path:
+   why:
+     constructs: "Builds bounded repository artifact paths for authorities, sources, reviews, and imports."
+ ._resolve_json_pointer:
+   why:
+     constructs: "Builds selected schema-authority fragments or bounded pointer findings."
+ ._validate_document:
+   why:
+     constructs: "Builds the root document's schema-independent semantic findings."
+ """
+ path=Path(path).resolve(); root=Path(root).resolve() if root else path.parent.resolve(); cache={} if cache is None else cache; stack=list(_stack or []); schema_validator=_prepare_schema_validator() if _schema_validator is None else _schema_validator
  if path in stack:return ['import cycle: '+' -> '.join(map(str,stack+[path]))]
  if path in cache:return cache[path][1]
  try:d=yaml.safe_load(path.read_text(encoding='utf-8'))
  except Exception as x:return [f'cannot load document: {x}']
- try:jsonschema.validate(d,_schema())
+ try:_validate_with_prepared_schema(d,schema_validator)
  except jsonschema.ValidationError as x:return [f'schema validation failed: {x.message}']
  errors=_validate_document(d); d=_maps(d); stack.append(path)
  # A schema authority is not merely a named artifact: load the JSON Schema,
@@ -263,7 +789,7 @@ def validate_file(path,root=None,cache=None,_stack=None):
   if actual!=decl['digest']:errors.append(f'imports.{alias}: digest mismatch');continue
   try:child=yaml.safe_load(target.read_text(encoding='utf-8'))
   except Exception as exc:errors.append(f'imports.{alias}: cannot load imported document {target}: {exc}');continue
-  try:jsonschema.validate(child,_schema())
+  try:_validate_with_prepared_schema(child,schema_validator)
   except jsonschema.ValidationError as exc:errors.append(f'imports.{alias}: schema validation failed at {exc.json_path}: {exc.message}');continue
   child=_maps(child);imported[alias]=child
   for field in ('standard_version','revision'):
@@ -274,7 +800,7 @@ def validate_file(path,root=None,cache=None,_stack=None):
     errors.append(f'imports.{alias}.domain_facts: missing inherited fact {fact}')
    elif not _fact_equal(d['domain_facts'][fact],value):
     errors.append(f'imports.{alias}.domain_facts: conflicting fact {fact}')
-  errors.extend(f'imports.{alias}: {x}' for x in validate_file(target,root,cache,stack))
+  errors.extend(f'imports.{alias}: {x}' for x in validate_file(target,root,cache,stack,schema_validator))
  # Every external semantic reference site uses one resolver.
  refs=[]
  for lid,l in d['links'].items():refs += [(f'links.{lid}.source',l['source']),(f'links.{lid}.target',l['target'])]

@@ -22,10 +22,51 @@ NON_STANDARD_V6_PATHS = {
 
 
 def _display(path: Path) -> str:
+    """Render one repository-relative path in POSIX form.
+
+    Intent
+    ------
+    Convert Path values into stable slash-separated validator messages.
+
+    Rationale
+    ---------
+    Stable paths keep diagnostics identical across supported operating systems.
+
+    Pseudocode
+    ----------
+    - set display_path = POSIX representation of path
+    - return display path
+
+    Wraps
+    -----
+    - none
+    """
     return path.as_posix()
 
 
 def _load_tool(repo_root: Path, module_name: str):
+    """Load one standards tool from the validated repository.
+
+    Intent
+    ------
+    Create and execute an import specification for the repository-local tool module.
+
+    Rationale
+    ---------
+    Loading from the supplied repository root keeps validator behavior aligned with the files being checked.
+
+    Pseudocode
+    ----------
+    - set tool_path = repository standards tool path
+    - set module_specification = specification for tool path
+    - if loader is missing:
+      - raise import error
+    - return executed tool module
+
+    Wraps
+    -----
+    - none
+    """
     path = repo_root / "references" / "standards" / f"{module_name}.py"
     spec = importlib.util.spec_from_file_location(f"_standard_documents_{module_name}", path)
     if spec is None or spec.loader is None:
@@ -36,6 +77,40 @@ def _load_tool(repo_root: Path, module_name: str):
 
 
 def validate(repo_root: Path) -> list[str]:
+    """Validate canonical standards and generated Markdown views.
+
+    Intent
+    ------
+    Discover standard-v6 files, reuse one prepared schema validator, and preserve existing rendering and diagnostic order.
+
+    Rationale
+    ---------
+    One repository-scan boundary is the narrowest safe lifetime for immutable schema preparation.
+
+    Pseudocode
+    ----------
+    - set discovered_standards = sorted repository standard files
+    - set schema_validator = one prepared standard-v6 validator
+    - for standard in discovered standards:
+      - set findings = file validation and generated-view checks
+    - return findings
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._display:
+      why:
+        computes: "Formats repository-relative paths used in stable validator findings."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._load_tool:
+      why:
+        constructs: "Builds the repository-local validator and renderer modules used by the scan."
+    """
     repo_root = Path(repo_root)
     tooling_root = repo_root / "references" / "standards"
     if not tooling_root.is_dir():
@@ -59,13 +134,18 @@ def validate(repo_root: Path) -> list[str]:
     except (ImportError, OSError) as exc:
         return errors + [f"references/standards: cannot load standards tooling: {exc}"]
 
+    schema_validator = validator._prepare_schema_validator()
     for relative in sorted(discovered):
         path = repo_root / relative
         if relative in NON_STANDARD_V6_PATHS:
             continue
         errors.extend(
             f"{_display(relative)}: {error}"
-            for error in validator.validate_file(path, root=repo_root)
+            for error in validator.validate_file(
+                path,
+                root=repo_root,
+                _schema_validator=schema_validator,
+            )
         )
         try:
             document = yaml.safe_load(path.read_text(encoding="utf-8"))
