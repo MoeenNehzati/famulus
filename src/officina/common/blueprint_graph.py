@@ -39,13 +39,51 @@ from .repository_paths import (
 
 
 class BlueprintGraphError(ValueError):
-    """Raised when blueprint files cannot form a coherent repository graph."""
+    """Signal that blueprint declarations cannot form a coherent graph."""
 
 
 class BlueprintSchemaError(BlueprintGraphError):
-    """Raised when a graph node fails its concrete JSON Schema."""
+    """Describe one graph-node failure against its concrete JSON Schema.
+
+    Intent
+    ------
+    Preserve the blueprint path, JSON location, and schema diagnostic together.
+
+    Rationale
+    ---------
+    Schema failures need structured location fields for tooling as well as the
+    formatted message inherited from the general graph-error boundary.
+
+    Pseudocode
+    ----------
+    - set schema_failure = blueprint path plus JSON path plus diagnostic
+
+    Wraps
+    -----
+    - none
+    """
 
     def __init__(self, blueprint_path: Path, json_path: str, message: str) -> None:
+        """Initialize a structured blueprint schema failure.
+
+        Intent
+        ------
+        Record machine-readable schema location fields and format the exception.
+
+        Rationale
+        ---------
+        Keeping the original fields alongside the rendered text lets callers
+        inspect a failure without reparsing a human-oriented error message.
+
+        Pseudocode
+        ----------
+        - set schema_fields = blueprint_path json_path and message
+        - set exception_message = located schema diagnostic
+
+        Wraps
+        -----
+        - none
+        """
         self.blueprint_path = blueprint_path
         self.json_path = json_path
         self.schema_message = message
@@ -54,6 +92,8 @@ class BlueprintSchemaError(BlueprintGraphError):
 
 @dataclass(frozen=True)
 class BlueprintNode:
+    """Carry shallow-frozen node fields and a declaration treated as read-only."""
+
     node_id: str
     node_type: str
     version: int
@@ -64,6 +104,8 @@ class BlueprintNode:
 
 @dataclass(frozen=True)
 class BlueprintEdge:
+    """Carry one version-pinned relationship between graph identifiers."""
+
     relation: str
     source_id: str
     target_id: str
@@ -73,6 +115,8 @@ class BlueprintEdge:
 
 @dataclass(frozen=True)
 class InterfaceExport:
+    """Describe a source interface exposed directly or through a module facade."""
+
     interface_id: str
     version: int
     local_name: str
@@ -87,6 +131,8 @@ class InterfaceExport:
 
 @dataclass(frozen=True)
 class RoutedInterface:
+    """Describe one child interface materialized through a namespace route."""
+
     route_owner_id: str
     child_module_id: str
     interface_id: str
@@ -97,6 +143,8 @@ class RoutedInterface:
 
 @dataclass(frozen=True)
 class NamespaceRoute:
+    """Group one parent-to-child route with its materialized interfaces."""
+
     route_owner_id: str
     child_module_id: str
     child_version: int
@@ -106,6 +154,8 @@ class NamespaceRoute:
 
 @dataclass(frozen=True)
 class ExportDependencyEdge:
+    """Record one public export's direct dependency on another interface."""
+
     source_export_id: str
     target_interface_id: str
     target_version: int
@@ -113,6 +163,8 @@ class ExportDependencyEdge:
 
 @dataclass(frozen=True)
 class HelperEdge:
+    """Record one contract helper bound to a directly used interface."""
+
     source_export_id: str
     local_helper_id: str
     target_interface_id: str
@@ -122,6 +174,8 @@ class HelperEdge:
 
 @dataclass(frozen=True)
 class CertificationEdge:
+    """Record one node relationship that contributes certification evidence."""
+
     relation: str
     source_node_id: str
     target_node_id: str
@@ -130,6 +184,8 @@ class CertificationEdge:
 
 @dataclass(frozen=True)
 class RepositoryBlueprintGraph:
+    """Aggregate shallow-frozen graph fields with read-only-by-contract mappings."""
+
     nodes: Mapping[str, BlueprintNode]
     node_edges: tuple[BlueprintEdge, ...]
     exports: Mapping[str, InterfaceExport]
@@ -153,7 +209,7 @@ class RepositoryBlueprintGraph:
 
 @dataclass(frozen=True)
 class BlueprintDiagnostic:
-    """One non-fatal repository blueprint defect outside a dispatch closure."""
+    """Carry one non-fatal blueprint defect outside a dispatch closure."""
 
     code: str
     message: str
@@ -162,26 +218,111 @@ class BlueprintDiagnostic:
 
 @dataclass(frozen=True)
 class DispatchBlueprintGraph:
-    """A canonical graph sufficient for one dispatch plus unrelated warnings."""
+    """Pair a dispatch-sufficient graph with diagnostics outside its closure."""
 
     graph: RepositoryBlueprintGraph
     diagnostics: tuple[BlueprintDiagnostic, ...] = ()
 
 
 class RuntimeFileBinding:
-    """An opened regular file whose validation is bound to later use."""
+    """Own a retained descriptor whose validation remains bound to later use.
+
+    Intent
+    ------
+    Couple a safely opened runtime path, descriptor, and captured mode metadata.
+
+    Rationale
+    ---------
+    Retaining the validated descriptor prevents later reads or execution checks
+    from reopening a path whose components could have changed after validation.
+
+    Pseudocode
+    ----------
+    - set runtime_binding = validated path descriptor and file mode
+
+    Wraps
+    -----
+    - none
+    """
 
     def __init__(self, path: Path, fd: int, mode: int) -> None:
+        """Initialize ownership of an already validated runtime descriptor.
+
+        Intent
+        ------
+        Store the diagnostic path, open descriptor, and observed file mode.
+
+        Rationale
+        ---------
+        Construction does not reopen or revalidate the path; it transfers the
+        caller's retained descriptor into a small lifecycle owner.
+
+        Pseudocode
+        ----------
+        - set binding_fields = validated path descriptor and mode
+
+        Wraps
+        -----
+        - none
+        """
         self.path = path
         self.fd = fd
         self.mode = mode
 
     def close(self) -> None:
+        """Close the retained descriptor once and mark the binding closed.
+
+        Intent
+        ------
+        Release an open runtime descriptor without double-closing it later.
+
+        Rationale
+        ---------
+        Setting the descriptor sentinel after a successful close makes explicit
+        cleanup and destructor cleanup safely converge on one lifecycle state.
+
+        Pseudocode
+        ----------
+        - if retained descriptor is open:
+          - set descriptor_status = closed after releasing retained descriptor
+
+        Wraps
+        -----
+        - none
+        """
         if self.fd >= 0:
             os.close(self.fd)
             self.fd = -1
 
     def read_bytes(self) -> bytes:
+        """Read all bytes from the retained descriptor from its beginning.
+
+        Intent
+        ------
+        Return the bound file contents without reopening the validated path.
+
+        Rationale
+        ---------
+        Seeking before chunked reads makes repeated reads deterministic while
+        descriptor retention preserves the no-path-race guarantee.
+
+        Pseudocode
+        ----------
+        - if retained descriptor is closed:
+          - raise BlueprintGraphError
+        - set chunks = bytes read from the descriptor beginning through end of file
+        - return joined chunks
+
+        Wraps
+        -----
+        - none
+
+        InstantiationsFromRepo
+        ----------------------
+        .BlueprintGraphError:
+          why:
+            raises: "Reports an attempted read after the descriptor binding has been closed."
+        """
         if self.fd < 0:
             raise BlueprintGraphError(f"{self.path}: runtime input binding is closed")
         os.lseek(self.fd, 0, os.SEEK_SET)
@@ -191,6 +332,33 @@ class RuntimeFileBinding:
         return b"".join(chunks)
 
     def proc_path(self) -> str:
+        """Return the host descriptor path for the retained runtime file.
+
+        Intent
+        ------
+        Expose the open descriptor through the host's process-filesystem path.
+
+        Rationale
+        ---------
+        Consumers that must execute the exact validated file need a descriptor
+        path, and unsupported hosts must fail explicitly instead of reopening it.
+
+        Pseudocode
+        ----------
+        - if descriptor is closed or process descriptor paths are unavailable:
+          - raise BlueprintGraphError
+        - return process descriptor path
+
+        Wraps
+        -----
+        - none
+
+        InstantiationsFromRepo
+        ----------------------
+        .BlueprintGraphError:
+          why:
+            raises: "Reports that descriptor-backed execution cannot be provided for this binding."
+        """
         if self.fd < 0 or not Path("/proc/self/fd").is_dir():
             raise BlueprintGraphError(
                 f"{self.path}: descriptor-backed execution is unavailable on this host"
@@ -198,6 +366,34 @@ class RuntimeFileBinding:
         return f"/proc/self/fd/{self.fd}"
 
     def is_effectively_executable(self) -> bool:
+        """Check executable permission using effective IDs on the bound file.
+
+        Intent
+        ------
+        Determine whether the retained descriptor can be executed by this process.
+
+        Rationale
+        ---------
+        Effective-ID checks match runtime authority and using the descriptor path
+        keeps the decision attached to the file that was originally validated.
+
+        Pseudocode
+        ----------
+        - if effective-ID access checks are unavailable:
+          - raise BlueprintGraphError
+        - set descriptor_path = @proc_path()
+        - return executable access for descriptor_path under effective IDs
+
+        Wraps
+        -----
+        - none
+
+        InstantiationsFromRepo
+        ----------------------
+        .BlueprintGraphError:
+          why:
+            raises: "Reports hosts that cannot perform an effective-ID executable check."
+        """
         if os.access not in os.supports_effective_ids:
             raise BlueprintGraphError(
                 f"{self.path}: effective-ID executable checks are unavailable on this host"
@@ -205,6 +401,27 @@ class RuntimeFileBinding:
         return os.access(self.proc_path(), os.X_OK, effective_ids=True)
 
     def __del__(self) -> None:
+        """Best-effort close the retained descriptor during object finalization.
+
+        Intent
+        ------
+        Release descriptor ownership when callers omit explicit cleanup.
+
+        Rationale
+        ---------
+        Finalizers cannot safely propagate IO errors, so cleanup delegates to the
+        idempotent lifecycle method and suppresses only close-time OS failures.
+
+        Pseudocode
+        ----------
+        - set cleanup_attempt = close the retained descriptor when still open
+        - return none after cleanup or a suppressed operating-system error
+
+        Wraps
+        -----
+        - none
+
+        """
         try:
             self.close()
         except OSError:
@@ -218,7 +435,26 @@ _SCHEMA_FILES = {
 
 
 def _edge_key(edge: BlueprintEdge) -> tuple[str, str, str, int, str | None]:
-    """Return the canonical identity of one graph relationship."""
+    """Return the deterministic identity key for one blueprint edge.
+
+    Intent
+    ------
+    Normalize a graph relationship into fields suitable for stable sorting.
+
+    Rationale
+    ---------
+    Converting the optional marker to POSIX text makes graph order independent of
+    platform-specific path representation while preserving every edge component.
+
+    Pseudocode
+    ----------
+    - set marker_text = target marker as POSIX text or none
+    - return relation source target version and marker_text
+
+    Wraps
+    -----
+    - none
+    """
 
     return (
         edge.relation,
@@ -234,6 +470,25 @@ def _edge_key(edge: BlueprintEdge) -> tuple[str, str, str, int, str | None]:
 
 
 def _descriptor_safe_open_supported() -> bool:
+    """Detect support for descriptor-relative no-follow runtime traversal.
+
+    Intent
+    ------
+    Check the host primitives required to bind path validation to file use.
+
+    Rationale
+    ---------
+    The secure traversal algorithm depends jointly on POSIX descriptors,
+    no-follow flags, directory flags, and directory-relative open support.
+
+    Pseudocode
+    ----------
+    - return whether all descriptor-safe open primitives are supported
+
+    Wraps
+    -----
+    - none
+    """
     return (
         os.name == "posix"
         and hasattr(os, "O_NOFOLLOW")
@@ -243,12 +498,60 @@ def _descriptor_safe_open_supported() -> bool:
 
 
 def descriptor_safe_open_supported() -> bool:
-    """Return whether runtime inputs can be opened without path races."""
+    """Report whether runtime inputs can be opened without path races.
+
+    Intent
+    ------
+    Expose the host capability check as the public module predicate.
+
+    Rationale
+    ---------
+    Callers need to select safe runtime handling without depending on the private
+    feature-detection helper or duplicating its exact platform requirements.
+
+    Pseudocode
+    ----------
+    - return @_descriptor_safe_open_supported()
+
+    Wraps
+    -----
+    _descriptor_safe_open_supported -> preprocess: none; postprocess: returns the capability result unchanged; fixed_arguments: none
+
+    """
 
     return _descriptor_safe_open_supported()
 
 
 def _graph_repository_relative_path(path: Path, repo_root: Path) -> Path:
+    """Convert a runtime path to a repository-relative path or graph failure.
+
+    Intent
+    ------
+    Enforce repository containment while translating path errors to graph errors.
+
+    Rationale
+    ---------
+    Runtime graph callers should receive one domain exception even though the
+    shared path helper owns the lower-level equivalent-root containment logic.
+
+    Pseudocode
+    ----------
+    - set relative_path = repository-relative form of path
+    - return relative_path or raise BlueprintGraphError on failed containment
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .repository_paths.repository_relative_path:
+      why:
+        constructs: "Builds the confined repository-relative path while recognizing equivalent roots."
+    .BlueprintGraphError:
+      why:
+        raises: "Translates a repository containment failure into the graph-loader exception domain."
+    """
     try:
         return repository_relative_path(path, repo_root)
     except RepositoryPathError as exc:
@@ -262,6 +565,42 @@ def _runtime_relative_path(
     owner_root: Path,
     repo_root: Path,
 ) -> tuple[Path, Path]:
+    """Validate runtime ownership and return absolute and repository-relative paths.
+
+    Intent
+    ------
+    Confine one runtime input to both its owning root and the repository root.
+
+    Rationale
+    ---------
+    Descriptor traversal begins at the repository, but node authority is narrower;
+    validating both boundaries prevents a sibling node's file from being opened.
+
+    Pseudocode
+    ----------
+    - set absolute_paths = normalized repository owner and input paths
+    - set relative_path = input path relative to repository after owner validation
+    - return absolute input path and relative_path
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .repository_paths.equivalent_root_relative_path:
+      why:
+        validates: "Checks that the runtime input is contained by its owning root across equivalent paths."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._graph_repository_relative_path:
+      why:
+        constructs: "Builds the repository-relative traversal path after owner containment succeeds."
+    .BlueprintGraphError:
+      why:
+        raises: "Reports owner-boundary violations and inputs that do not name a file."
+    """
     repo_absolute = Path(os.path.abspath(repo_root))
     owner_absolute = Path(os.path.abspath(owner_root))
     path_absolute = Path(os.path.abspath(path))
@@ -285,6 +624,48 @@ def _open_runtime_descriptor(
     directory: bool = False,
     path_only: bool = False,
 ) -> RuntimeFileBinding:
+    """Open a confined runtime path through descriptor-relative no-follow traversal.
+
+    Intent
+    ------
+    Bind file or directory validation to a retained descriptor without path races.
+
+    Rationale
+    ---------
+    Walking each component relative to an already opened directory and rejecting
+    symlinks ensures later use refers to the exact regular file or directory checked.
+
+    Pseudocode
+    ----------
+    - set traversal_path = validated repository-relative runtime path
+    - for component in traversal_path:
+      - set current_descriptor = safely opened child descriptor
+    - if final descriptor has the wrong file type:
+      - raise BlueprintGraphError
+    - return RuntimeFileBinding for the retained final descriptor
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._descriptor_safe_open_supported:
+      why:
+        validates: "Checks that the host provides every primitive required for no-follow descriptor traversal."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._runtime_relative_path:
+      why:
+        constructs: "Builds the confined absolute and repository-relative paths used by descriptor traversal."
+    .RuntimeFileBinding:
+      why:
+        constructs: "Creates the lifecycle owner for the validated final descriptor and captured file mode."
+    .BlueprintGraphError:
+      why:
+        raises: "Reports unsupported hosts, unsafe components, wrong file types, and descriptor-open failures."
+    """
     if not _descriptor_safe_open_supported():
         raise BlueprintGraphError(
             f"{path}: descriptor-safe no-follow file access is unavailable on this host"
@@ -349,7 +730,37 @@ def open_runtime_file(
     *,
     executable: bool = False,
 ) -> RuntimeFileBinding:
-    """Open a contained regular file without following any path symlink."""
+    """Open a contained regular runtime file and optionally require executability.
+
+    Intent
+    ------
+    Return a retained safe binding, closing it before any executable-check failure.
+
+    Rationale
+    ---------
+    Executability must be checked on the validated descriptor rather than the path,
+    and failed checks must not leak the descriptor that established that identity.
+
+    Pseudocode
+    ----------
+    - set binding = safely opened runtime file descriptor
+    - set executable_check = optional permission decision on the retained binding
+    - raise BlueprintGraphError after closing a binding that fails executable_check
+    - return binding
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._open_runtime_descriptor:
+      why:
+        constructs: "Builds the retained regular-file binding, using path-only mode for executable checks."
+    .BlueprintGraphError:
+      why:
+        raises: "Reports a retained runtime file that does not satisfy the executable requirement."
+    """
 
     binding = _open_runtime_descriptor(
         path,
@@ -374,7 +785,34 @@ def open_runtime_python_package(
     owner_root: Path,
     repo_root: Path,
 ) -> tuple[RuntimeFileBinding, ...]:
-    """Open every Python source in a package tree through retained directories."""
+    """Open every Python source in a package tree through retained directories.
+
+    Intent
+    ------
+    Return safe retained bindings for regular ``.py`` files under one package root.
+
+    Rationale
+    ---------
+    Recursive descriptor-relative traversal rejects symlink components and closes
+    all partially accumulated bindings when any package member cannot be secured.
+
+    Pseudocode
+    ----------
+    - set package_root_binding = safely opened package directory
+    - set traversal = sorted descriptor-relative package walk without symlinks
+    - set source_bindings = retained regular Python file descriptors
+    - return source_bindings after closing the root directory descriptor
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._open_runtime_descriptor:
+      why:
+        constructs: "Builds the retained root-directory binding used for descriptor-relative package traversal."
+    """
 
     package_root = Path(os.path.abspath(package_root))
     root_binding = _open_runtime_descriptor(
@@ -399,6 +837,35 @@ def open_runtime_python_package(
     )
 
     def visit(directory_fd: int, relative_dir: Path) -> None:
+        """Recursively collect safe Python descriptors below one directory.
+
+        Intent
+        ------
+        Traverse child entries in stable order while rejecting symbolic links.
+
+        Rationale
+        ---------
+        Keeping each recursive step descriptor-relative prevents path substitution,
+        while filtering by suffix limits retained bindings to Python sources.
+
+        Pseudocode
+        ----------
+        - set child_entries = sorted directory entries classified without following links
+        - set retained_sources = recursive directories plus regular Python file bindings
+
+        Wraps
+        -----
+        - none
+
+        InstantiationsFromRepo
+        ----------------------
+        .RuntimeFileBinding:
+          why:
+            constructs: "Creates the retained binding appended for each validated Python source descriptor."
+        .BlueprintGraphError:
+          why:
+            raises: "Reports symbolic links, non-regular Python entries, and descriptor traversal failures."
+        """
         for name in sorted(os.listdir(directory_fd)):
             relative = relative_dir / name
             child_path = package_root / relative
@@ -458,7 +925,40 @@ def snapshot_runtime_python_package(
     *,
     allow_non_atomic: bool = False,
 ) -> tuple[tuple[Path, bytes], ...]:
-    """Snapshot confined Python sources through the shared native reader."""
+    """Snapshot confined Python sources through the shared native reader.
+
+    Intent
+    ------
+    Return sorted package source paths and bytes after rejecting link-like entries.
+
+    Rationale
+    ---------
+    Platforms without descriptor traversal still need a bounded package snapshot;
+    the shared reader supplies atomicity checks at each owner-confined file boundary.
+
+    Pseudocode
+    ----------
+    - set package_path = validated package root under owner and repository
+    - set package_entries = package walk results collected without following links
+    - set snapshots = regular Python paths paired with native-reader bytes
+    - return snapshots or raise BlueprintGraphError on unsafe traversal
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._runtime_relative_path:
+      why:
+        constructs: "Builds the absolute package path after enforcing owner and repository containment."
+    .atomic_files.read_regular_file_bytes:
+      why:
+        constructs: "Builds each source byte snapshot through the shared confined native-file reader."
+    .BlueprintGraphError:
+      why:
+        raises: "Reports link-like components and package walk or atomic-reader failures."
+    """
 
     package_absolute, _relative = _runtime_relative_path(
         package_root,
@@ -469,6 +969,25 @@ def snapshot_runtime_python_package(
     snapshots: list[tuple[Path, bytes]] = []
 
     def raise_walk_error(error: OSError) -> None:
+        """Re-raise an ``os.walk`` error for the outer graph-error boundary.
+
+        Intent
+        ------
+        Prevent package traversal from silently skipping unreadable directories.
+
+        Rationale
+        ---------
+        The snapshot contract must be complete, so the walk callback propagates its
+        original OS failure and lets the enclosing handler attach package context.
+
+        Pseudocode
+        ----------
+        - raise error
+
+        Wraps
+        -----
+        - none
+        """
         raise error
 
     try:
@@ -515,6 +1034,33 @@ _RUNTIME_PYTHON_PACKAGE_SNAPSHOT_VERSION = 1
 
 
 def _runtime_python_snapshot_path(value: object) -> str:
+    """Validate and return one canonical package-snapshot source path.
+
+    Intent
+    ------
+    Accept only normalized relative POSIX paths naming Python files below a root.
+
+    Rationale
+    ---------
+    Strict path shape prevents ambiguous encodings, traversal, rootless sources,
+    and cross-platform separator differences in signed snapshot payloads.
+
+    Pseudocode
+    ----------
+    - if snapshot path is not canonical confined Python text:
+      - raise BlueprintGraphError
+    - return snapshot path text
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .BlueprintGraphError:
+      why:
+        raises: "Reports empty, non-text, noncanonical, traversing, or non-Python snapshot paths."
+    """
     if not isinstance(value, str) or not value or "\x00" in value:
         raise BlueprintGraphError(
             "invalid package snapshot: source path must be a non-empty string"
@@ -538,7 +1084,42 @@ def encode_runtime_python_package_snapshot(
     snapshots: tuple[tuple[Path, bytes], ...],
     owner_root: Path,
 ) -> bytes:
-    """Encode one deterministic, path-confined Python package snapshot."""
+    """Encode one deterministic, path-confined Python package snapshot.
+
+    Intent
+    ------
+    Serialize sorted unique Python source records into canonical ASCII JSON bytes.
+
+    Rationale
+    ---------
+    Stable path normalization, base64, field order, and separators make equivalent
+    package contents produce identical snapshot bytes for hashing and transport.
+
+    Pseudocode
+    ----------
+    - set records = validated relative paths paired with canonical base64 sources
+    - set canonical_records = sorted unique records under one package root
+    - return canonical JSON bytes for format version and records
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._graph_repository_relative_path:
+      why:
+        computes: "Converts each source path into its owner-root-relative logical package path."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._runtime_python_snapshot_path:
+      why:
+        constructs: "Builds each validated canonical source path stored in the snapshot record."
+    .BlueprintGraphError:
+      why:
+        raises: "Reports invalid bytes, duplicate paths, empty snapshots, or multiple package roots."
+    """
 
     records: list[dict[str, str]] = []
     for source_path, source in snapshots:
@@ -582,9 +1163,61 @@ def encode_runtime_python_package_snapshot(
 def decode_runtime_python_package_snapshot(
     payload: bytes,
 ) -> tuple[tuple[str, bytes], ...]:
-    """Strictly decode a deterministic Python package snapshot."""
+    """Strictly decode a deterministic Python package snapshot.
+
+    Intent
+    ------
+    Return ordered logical paths and bytes only from one canonical snapshot form.
+
+    Rationale
+    ---------
+    Rejecting duplicate keys, extra fields, unsorted paths, and noncanonical base64
+    prevents semantically equivalent payload variants from bypassing byte identity.
+
+    Pseudocode
+    ----------
+    - set document = strict JSON decoded from payload
+    - set validated_document = exact format version fields and nonempty file list
+    - set decoded_sources = canonical ordered paths and decoded source bytes
+    - return decoded_sources
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._runtime_python_snapshot_path:
+      why:
+        constructs: "Builds each validated logical Python path while decoding ordered records."
+    .BlueprintGraphError:
+      why:
+        raises: "Reports malformed or noncanonical snapshot documents, paths, and source encodings."
+    """
 
     def reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        """Build a JSON object while rejecting duplicate member names.
+
+        Intent
+        ------
+        Preserve strict object identity during package snapshot decoding.
+
+        Rationale
+        ---------
+        Standard JSON decoding silently keeps one duplicate value, which would make
+        payload interpretation depend on parser behavior rather than canonical form.
+
+        Pseudocode
+        ----------
+        - set decoded_object = empty mapping
+        - for pair in pairs:
+          - set decoded_object = decoded_object extended by one unique pair
+        - return decoded_object
+
+        Wraps
+        -----
+        - none
+        """
         result: dict[str, object] = {}
         for key, value in pairs:
             if key in result:
@@ -669,6 +1302,33 @@ def decode_runtime_python_package_snapshot(
 
 
 def _positive_version(value: object, context: str) -> int:
+    """Return an integer version after enforcing the positive-version contract.
+
+    Intent
+    ------
+    Reject booleans, non-integers, zero, and negative version declarations.
+
+    Rationale
+    ---------
+    Central validation gives every graph relation the same pin semantics and a
+    contextual diagnostic instead of relying on Python's Boolean integer subtype.
+
+    Pseudocode
+    ----------
+    - if version is not a positive non-Boolean integer:
+      - raise BlueprintGraphError
+    - return version
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .BlueprintGraphError:
+      why:
+        raises: "Reports a version declaration outside the required positive-integer domain."
+    """
     if not isinstance(value, int) or isinstance(value, bool) or value < 1:
         raise BlueprintGraphError(f"{context}: version must be a positive integer")
     return value
@@ -680,6 +1340,35 @@ def _resolve_locator(
     context: str,
     repo_root: Path,
 ) -> Path:
+    """Resolve a blueprint locator within its declared repository boundary.
+
+    Intent
+    ------
+    Convert a module-root or repository-root locator to one confined path.
+
+    Rationale
+    ---------
+    Locator validation rejects absolute and parent-traversing inputs before graph
+    identity comparisons, preventing declarations from escaping their chosen base.
+
+    Pseudocode
+    ----------
+    - set locator_fields = validated mapping base and nonempty relative path
+    - set candidate_path = selected base plus locator path
+    - if candidate_path escapes selected base:
+      - raise BlueprintGraphError
+    - return candidate_path
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .BlueprintGraphError:
+      why:
+        raises: "Reports malformed, unsupported, absolute, traversing, or escaping blueprint locators."
+    """
     if not isinstance(locator, dict):
         raise BlueprintGraphError(f"{context}: blueprint locator must be a mapping")
     base = locator.get("base")
@@ -709,6 +1398,27 @@ def _resolve_locator(
 
 
 def _json_error_path(error: jsonschema.ValidationError) -> str:
+    """Render a JSON Schema diagnostic's absolute instance path.
+
+    Intent
+    ------
+    Produce a stable dollar-rooted path including a missing required property.
+
+    Rationale
+    ---------
+    ``jsonschema`` locates required-field errors at their parent, so extracting the
+    property name gives users the concrete declaration field that needs repair.
+
+    Pseudocode
+    ----------
+    - set path_parts = schema error absolute path
+    - set complete_parts = path_parts plus any missing required property name
+    - return dollar-rooted dotted and indexed path text
+
+    Wraps
+    -----
+    - none
+    """
     parts = list(error.absolute_path)
     if error.validator == "required":
         match = re.match(r"'([^']+)' is a required property", error.message)
@@ -721,7 +1431,47 @@ def _json_error_path(error: jsonschema.ValidationError) -> str:
 
 
 def _load_schema_validator(schema_path: Path) -> jsonschema.protocols.Validator:
-    """Load a concrete blueprint schema with ordinary local-reference resolution."""
+    """Load a concrete blueprint schema with local-reference resolution.
+
+    Intent
+    ------
+    Return a configured or ordinary validator for one concrete schema file.
+
+    Rationale
+    ---------
+    Schemas that declare configuration must use the configured loader, while plain
+    schemas retain local URI resolution; every loader failure becomes a located
+    schema error for consistent graph diagnostics.
+
+    Pseudocode
+    ----------
+    - if sibling configuration exists:
+      - return configured schema validator
+    - set plain_schema = parsed schema accepted only when no configuration is required
+    - return validator with local reference resolver
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .configured_schema.schema_requires_configuration:
+      why:
+        validates: "Checks whether a plain-loaded schema declares mandatory repository configuration."
+
+    InstantiationsFromRepo
+    ----------------------
+    .configured_schema.configured_validator:
+      why:
+        constructs: "Builds the configured JSON Schema validator when a sibling configuration is present."
+    .configured_schema.ConfiguredSchemaError:
+      why:
+        raises: "Represents a schema that requires configuration but has no sibling configuration file."
+    .BlueprintSchemaError:
+      why:
+        raises: "Wraps schema IO, decoding, compilation, resolution, and configuration failures with location context."
+    """
 
     schema_path = Path(os.path.abspath(schema_path))
     config_path = schema_path.parent / "config.yaml"
@@ -767,6 +1517,43 @@ def _declaration_schema_errors(
     *,
     expected_schema_version: int = 5,
 ) -> tuple[BlueprintSchemaError, ...]:
+    """Validate one node declaration and return its sorted concrete schema errors.
+
+    Intent
+    ------
+    Enforce schema version and node type before validating with a cached schema.
+
+    Rationale
+    ---------
+    Selecting the concrete schema explicitly prevents unknown node kinds from being
+    filtered away, while validator caching keeps repository-wide loads efficient.
+
+    Pseudocode
+    ----------
+    - set schema_selection = validated schema version and supported node type
+    - set validator = cached or newly loaded concrete node validator
+    - set schema_errors = validator findings sorted by JSON path and message
+    - return located BlueprintSchemaError records for schema_errors
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._json_error_path:
+      why:
+        constructs: "Builds stable instance paths carried into sorting keys and returned schema diagnostics."
+    ._load_schema_validator:
+      why:
+        constructs: "Builds and caches the concrete validator selected for the declaration's node type."
+    .BlueprintSchemaError:
+      why:
+        constructs: "Creates each returned located schema diagnostic and wraps validator-resolution failures."
+    .BlueprintGraphError:
+      why:
+        raises: "Reports unsupported repository schema versions and typed node kinds before schema validation."
+    """
     schema_version = declaration.get("schema_version")
     node_type = declaration.get("node_type")
     if schema_version != expected_schema_version:
@@ -808,6 +1595,25 @@ def _declaration_schema_errors(
 
 
 def _is_forbidden_content_artifact(path: Path) -> bool:
+    """Identify blueprint and certificate artifacts excluded from node content.
+
+    Intent
+    ------
+    Protect canonical declarations and generated assurance files from content ownership.
+
+    Rationale
+    ---------
+    Those artifacts define or attest the node rather than belonging to its authored
+    behavioral content, so hashing them as content would create circular authority.
+
+    Pseudocode
+    ----------
+    - return whether path names a blueprint marker or certificate directory
+
+    Wraps
+    -----
+    - none
+    """
     name = path.name
     return (
         name == "blueprint.yaml"
@@ -817,6 +1623,26 @@ def _is_forbidden_content_artifact(path: Path) -> bool:
 
 
 def _regular_files_beneath(root: Path) -> tuple[Path, ...]:
+    """Return sorted regular files beneath a root without following directory links.
+
+    Intent
+    ------
+    Enumerate candidate owned files while excluding symlinked directory subtrees.
+
+    Rationale
+    ---------
+    Ownership matching needs a deterministic physical-file inventory and must not
+    let a content regex cross its module boundary through a symbolic link.
+
+    Pseudocode
+    ----------
+    - set regular_files = regular entries from a no-follow recursive walk
+    - return regular_files in sorted order
+
+    Wraps
+    -----
+    - none
+    """
     files: list[Path] = []
     for directory, directory_names, file_names in os.walk(
         root,
@@ -845,7 +1671,47 @@ def resolved_node_content_paths(
     *,
     excluded_module_roots: tuple[Path, ...] = (),
 ) -> tuple[Path, ...]:
-    """Resolve regular files in one node's module-local ownership scope."""
+    """Resolve regular files in one node's module-local ownership scope.
+
+    Intent
+    ------
+    Apply every declared content regex to confined candidates and require the gateway.
+
+    Rationale
+    ---------
+    Fail-closed matching prevents stale patterns, declaration artifacts, nested child
+    roots, and missing gateways from entering a node's direct ownership set.
+
+    Pseudocode
+    ----------
+    - set ownership_contract = validated node version owner root and content patterns
+    - set candidates = regular owner files outside excluded child roots
+    - set matched_paths = full regex matches for every required pattern
+    - set content_check = matched_paths contain no forbidden artifact and include the gateway
+    - return matched_paths in sorted order
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .repository_paths.equivalent_root_relative_path:
+      why:
+        validates: "Checks that the node ownership root lies within the repository across equivalent roots."
+    ._regular_files_beneath:
+      why:
+        reads: "Enumerates regular candidate files without following symlinked directory subtrees."
+    ._is_forbidden_content_artifact:
+      why:
+        validates: "Identifies matched declaration and certificate artifacts that cannot be node content."
+
+    InstantiationsFromRepo
+    ----------------------
+    .BlueprintGraphError:
+      why:
+        raises: "Reports invalid ownership roots, patterns, matches, artifacts, and gateway coverage."
+    """
 
     if node.declaration.get("schema_version") not in {4, 5}:
         raise BlueprintGraphError(
@@ -916,7 +1782,39 @@ def authored_node_input_paths(
     node: BlueprintNode,
     repo_root: Path | None = None,
 ) -> tuple[Path, ...]:
-    """Return the authored blueprint and resolved content files for one node."""
+    """Return the authored blueprint and resolved content files for one node.
+
+    Intent
+    ------
+    Form the complete deterministic authored-input set used for node assurance.
+
+    Rationale
+    ---------
+    Callers may omit the repository root only where the node's registered layout
+    makes it unambiguous; otherwise inference fails rather than broadening ownership.
+
+    Pseudocode
+    ----------
+    - set repository_root = supplied root or root inferred from registered layout
+    - set authored_inputs = blueprint marker plus resolved node content
+    - return authored_inputs in sorted unique order
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .resolved_node_content_paths:
+      why:
+        reads: "Resolves the regular files matched by the node's declared ownership patterns."
+
+    InstantiationsFromRepo
+    ----------------------
+    .BlueprintGraphError:
+      why:
+        raises: "Reports a node layout from which the repository root cannot be inferred safely."
+    """
 
     if repo_root is None:
         owner_root = Path(os.path.abspath(node.module_root))
@@ -940,7 +1838,42 @@ def validate_runtime_file_path(
     owner_root: Path,
     repo_root: Path,
 ) -> Path:
-    """Validate one confined regular runtime file on the current platform."""
+    """Validate one confined regular runtime file on the current platform.
+
+    Intent
+    ------
+    Return the absolute path only after owner confinement and native regular-file checks.
+
+    Rationale
+    ---------
+    The shared reader enforces platform-appropriate atomicity and link handling while
+    this boundary translates its failures into repository graph diagnostics.
+
+    Pseudocode
+    ----------
+    - set absolute_path = runtime path validated under owner and repository roots
+    - set file_check = strict regular-file read of absolute_path
+    - return absolute_path or raise BlueprintGraphError
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .atomic_files.read_regular_file_bytes:
+      why:
+        validates: "Checks that the confined runtime input is a stable regular file on the current platform."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._runtime_relative_path:
+      why:
+        constructs: "Builds the absolute confined path after enforcing both ownership boundaries."
+    .BlueprintGraphError:
+      why:
+        raises: "Translates atomic-reader and operating-system failures into graph diagnostics."
+    """
 
     path_absolute, _relative = _runtime_relative_path(
         path,
@@ -963,6 +1896,39 @@ def _node_from_document(
     *,
     expected_schema_version: int,
 ) -> BlueprintNode:
+    """Construct one typed graph node from an already parsed blueprint document.
+
+    Intent
+    ------
+    Validate node identity and gateway shape before producing a shallow-frozen node record.
+
+    Rationale
+    ---------
+    Inventory parsing and concrete schema validation are separate stages, so graph
+    construction retains defensive checks before trusting fields used as index keys.
+
+    Pseudocode
+    ----------
+    - set node_identity = validated nonempty identifier and supported node type
+    - set gateway_path = declared gateway beneath the document module root
+    - return BlueprintNode with validated positive version and declaration
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._positive_version:
+      why:
+        constructs: "Builds the validated positive node version stored in the graph record."
+    .BlueprintNode:
+      why:
+        constructs: "Creates the shallow-frozen graph node whose declaration dictionary remains read-only by contract."
+    .BlueprintGraphError:
+      why:
+        raises: "Reports missing identifiers and unsupported typed node declarations."
+    """
     declaration = dict(document.declaration)
     node_id = declaration.get("id")
     node_type = declaration.get("node_type")
@@ -991,6 +1957,25 @@ def _node_from_document(
 
 
 def _v4_node_from_document(document: Any) -> BlueprintNode:
+    """Construct a version-4 graph node from one parsed inventory document.
+
+    Intent
+    ------
+    Bind the shared node-construction routine to the legacy schema version.
+
+    Rationale
+    ---------
+    Keeping the version pin in one adapter makes version-4 graph assembly explicit
+    without duplicating identity, gateway, and version validation.
+
+    Pseudocode
+    ----------
+    - return @_node_from_document(document with expected schema version four)
+
+    Wraps
+    -----
+    _node_from_document -> preprocess: supplies the parsed document; postprocess: returns the constructed node unchanged; fixed_arguments: expected_schema_version=4
+    """
     return _node_from_document(document, expected_schema_version=4)
 
 
@@ -1001,7 +1986,60 @@ def load_module_blueprint(
     schema_root: Path | None = None,
     expected_schema_version: int = 4,
 ) -> BlueprintNode:
-    """Load and validate one exact module marker without scanning siblings."""
+    """Load and validate one exact module marker without scanning siblings.
+
+    Intent
+    ------
+    Return a confined module node whose marker, schema, gateway, and content are valid.
+
+    Rationale
+    ---------
+    Installer and runtime callers sometimes know the precise module root; avoiding a
+    repository scan isolates unrelated defects while retaining full node validation.
+
+    Pseudocode
+    ----------
+    - set module_location = validated expected version and repository-contained module root
+    - set declaration = strict YAML marker normalized into the JSON domain
+    - set schema_findings = concrete-schema validation results for declaration
+    - set module_node = graph node constructed from the parsed document
+    - set authored_file_checks = strict validation results for every authored input
+    - return module_node
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .atomic_files.read_regular_file_bytes:
+      why:
+        reads: "Reads the exact module marker through the strict owner-confined regular-file boundary."
+    .authored_node_input_paths:
+      why:
+        reads: "Enumerates the marker and resolved content that comprise the module's authored inputs."
+    .validate_runtime_file_path:
+      why:
+        validates: "Checks every authored input as a confined stable regular file before returning the node."
+
+    InstantiationsFromRepo
+    ----------------------
+    .blueprint_inventory._normalize_json:
+      why:
+        transforms: "Converts the strict YAML mapping into the canonical JSON-compatible declaration domain."
+    .blueprint_inventory.BlueprintDocument:
+      why:
+        constructs: "Creates the inventory document used by the shared node-construction boundary."
+    ._declaration_schema_errors:
+      why:
+        constructs: "Builds any concrete schema failures for the exact marker declaration."
+    ._node_from_document:
+      why:
+        constructs: "Creates the shallow-frozen module node while retaining its mutable declaration mapping by read-only convention."
+    .BlueprintGraphError:
+      why:
+        raises: "Reports invalid versions, paths, documents, node kinds, identifiers, and authored inputs."
+    """
 
     if expected_schema_version not in {4, 5}:
         raise ValueError("expected_schema_version must be 4 or 5")
@@ -1087,6 +2125,28 @@ def _reject_export_cycles(
     exports: Mapping[str, InterfaceExport],
     edges: tuple[ExportDependencyEdge, ...],
 ) -> None:
+    """Reject cycles in the directed public-export dependency graph.
+
+    Intent
+    ------
+    Verify that every export dependency chain terminates without revisiting a node.
+
+    Rationale
+    ---------
+    Runtime callable authority must be acyclic so resolution and certification have
+    a finite deterministic dependency order.
+
+    Pseudocode
+    ----------
+    - set export_children = adjacency lists derived from dependency edges
+    - set traversal_result = depth-first checks over every export
+    - raise BlueprintGraphError when an active export is revisited
+
+    Wraps
+    -----
+    - none
+
+    """
     children: dict[str, list[str]] = {interface_id: [] for interface_id in exports}
     for edge in edges:
         children[edge.source_export_id].append(edge.target_interface_id)
@@ -1094,6 +2154,34 @@ def _reject_export_cycles(
     visited: set[str] = set()
 
     def visit(interface_id: str) -> None:
+        """Depth-first traverse one export while detecting an active revisit.
+
+        Intent
+        ------
+        Mark one export and all sorted descendants complete or raise with its cycle.
+
+        Rationale
+        ---------
+        Separate active and completed sets distinguish a genuine back edge from a
+        shared dependency already proven acyclic.
+
+        Pseudocode
+        ----------
+        - if interface is active:
+          - raise BlueprintGraphError with the cycle path
+        - set child_checks = traversal results for sorted incomplete children
+        - set interface_status = complete
+
+        Wraps
+        -----
+        - none
+
+        InstantiationsFromRepo
+        ----------------------
+        .BlueprintGraphError:
+          why:
+            raises: "Reports the active traversal segment that closes an export dependency cycle."
+        """
         if interface_id in visiting:
             start = visiting.index(interface_id)
             cycle = visiting[start:] + [interface_id]
@@ -1118,6 +2206,32 @@ def _require_platform_compatibility(
     *,
     context: str,
 ) -> None:
+    """Require a target node on every platform supported by its source.
+
+    Intent
+    ------
+    Reject cross-node dependencies that narrow an explicitly supported platform set.
+
+    Rationale
+    ---------
+    A source promising support on a host cannot depend on a target that declines that
+    host; absent structured support metadata remains backward-compatible and unchecked.
+
+    Pseudocode
+    ----------
+    - set platform_check = comparison of each source-enabled platform with target support
+    - raise BlueprintGraphError for a missing target platform
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .BlueprintGraphError:
+      why:
+        raises: "Reports the target node and required platform that violate compatibility."
+    """
     source_support = source.declaration.get("platform_support")
     target_support = target.declaration.get("platform_support")
     if not isinstance(source_support, Mapping) or not isinstance(
@@ -1137,6 +2251,28 @@ def _reject_certification_cycles(
     node_ids: set[str],
     edges: tuple[CertificationEdge, ...],
 ) -> None:
+    """Reject cycles among node relationships that affect certification.
+
+    Intent
+    ------
+    Ensure certification dependencies over known nodes form an acyclic graph.
+
+    Rationale
+    ---------
+    Node hashes can depend only on a finite prior evidence set; a cycle would make
+    certificate construction recursive and prevent a stable assurance order.
+
+    Pseudocode
+    ----------
+    - set certification_children = known-node adjacency lists from evidence edges
+    - set traversal_result = depth-first checks over every certification node
+    - raise BlueprintGraphError when traversal returns to an active node
+
+    Wraps
+    -----
+    - none
+
+    """
     children: dict[str, list[str]] = {node_id: [] for node_id in node_ids}
     for edge in edges:
         if edge.source_node_id in children and edge.target_node_id in children:
@@ -1145,6 +2281,34 @@ def _reject_certification_cycles(
     visited: set[str] = set()
 
     def visit(node_id: str) -> None:
+        """Depth-first traverse one certification node and its sorted targets.
+
+        Intent
+        ------
+        Complete one node's evidence dependency walk or identify its active cycle.
+
+        Rationale
+        ---------
+        The active stack preserves a readable cycle path, while the completed set
+        prevents repeated traversal of shared acyclic dependencies.
+
+        Pseudocode
+        ----------
+        - if node is active:
+          - raise BlueprintGraphError with the active cycle
+        - set child_checks = traversal results for sorted incomplete certification children
+        - set node_status = complete
+
+        Wraps
+        -----
+        - none
+
+        InstantiationsFromRepo
+        ----------------------
+        .BlueprintGraphError:
+          why:
+            raises: "Reports the active traversal segment that closes a certification cycle."
+        """
         if node_id in visiting:
             start = visiting.index(node_id)
             cycle = visiting[start:] + [node_id]
@@ -1168,6 +2332,34 @@ def _v4_local_ids(
     *,
     context: str,
 ) -> tuple[set[str], list[Mapping[str, Any]]]:
+    """Collect unique local identifiers and mapping entries from a v4 list.
+
+    Intent
+    ------
+    Return valid mapping entries while rejecting duplicate string identifiers.
+
+    Rationale
+    ---------
+    Contract sections share local reference semantics, and one collector keeps their
+    duplicate checks consistent while tolerating schema-handled nonmapping entries.
+
+    Pseudocode
+    ----------
+    - set identifiers = unique string ids from mapping entries
+    - set mappings = all mapping entries in original order
+    - raise BlueprintGraphError on a duplicate identifier
+    - return identifiers and mappings
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .BlueprintGraphError:
+      why:
+        raises: "Reports duplicate local identifiers within the named v4 contract section."
+    """
     entries = values if isinstance(values, list) else []
     identifiers: set[str] = set()
     mappings: list[Mapping[str, Any]] = []
@@ -1193,6 +2385,32 @@ def _require_v4_local_ref(
     context: str,
     kind: str,
 ) -> None:
+    """Require a string v4 reference to name an identifier in its local set.
+
+    Intent
+    ------
+    Reject only present string references that do not resolve in the supplied domain.
+
+    Rationale
+    ---------
+    Schema validation owns field typing and presence, while this graph check enforces
+    semantic links among arguments, outputs, outcomes, effects, helpers, and IO.
+
+    Pseudocode
+    ----------
+    - if reference is text and absent from valid identifiers:
+      - raise BlueprintGraphError with context and reference kind
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .BlueprintGraphError:
+      why:
+        raises: "Reports the unresolved local reference together with its contract context and kind."
+    """
     if isinstance(value, str) and value not in valid:
         raise BlueprintGraphError(f"{context}: unknown {kind} {value!r}")
 
@@ -1201,6 +2419,33 @@ def _walk_v4_contract(
     value: object,
     path: tuple[str, ...] = (),
 ) -> list[tuple[tuple[str, ...], str, object]]:
+    """Enumerate mapping fields recursively with their v4 contract paths.
+
+    Intent
+    ------
+    Return every mapping field and recurse through nested mappings and lists.
+
+    Rationale
+    ---------
+    Reference validation applies to fields at several schema depths, so a generic
+    path walk avoids coupling semantic checks to every concrete contract container.
+
+    Pseudocode
+    ----------
+    - set discovered_fields = current mapping fields with their parent paths
+    - set discovered_fields = discovered_fields plus recursively collected child fields
+    - return discovered_fields
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._walk_v4_contract:
+      why:
+        constructs: "Builds the recursively discovered field records contributed by nested mapping and list children."
+    """
     found: list[tuple[tuple[str, ...], str, object]] = []
     if isinstance(value, Mapping):
         for key, child in value.items():
@@ -1214,6 +2459,32 @@ def _walk_v4_contract(
 
 
 def _validate_v4_internal_path(value: object, *, context: str) -> None:
+    """Reject absolute or parent-traversing paths inside a v4 contract.
+
+    Intent
+    ------
+    Enforce portable repository-internal syntax for any string path field examined.
+
+    Rationale
+    ---------
+    Drive prefixes, backslashes, absolute paths, and parent segments could make one
+    declaration resolve differently across hosts or escape its intended boundary.
+
+    Pseudocode
+    ----------
+    - if path text is absolute platform-specific or parent-traversing:
+      - raise BlueprintGraphError with field context
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .BlueprintGraphError:
+      why:
+        raises: "Reports an internal contract path that is nonportable or escapes through parent traversal."
+    """
     if not isinstance(value, str):
         return
     path = PurePosixPath(value)
@@ -1231,6 +2502,33 @@ def _validate_v4_internal_path(value: object, *, context: str) -> None:
 def _v4_authority_claims(
     modules: Mapping[str, BlueprintNode],
 ) -> tuple[tuple[str, str, str, re.Pattern[str] | None], ...]:
+    """Compile module filesystem authority declarations into comparable claims.
+
+    Intent
+    ------
+    Return module id, match kind, path text, and optional compiled regular expression.
+
+    Rationale
+    ---------
+    Contract and nested-authority checks need one normalized claim representation;
+    compiling regexes once also surfaces malformed authority before overlap analysis.
+
+    Pseudocode
+    ----------
+    - set authority_claims = normalized exact and regex filesystem claims
+    - set compiled_claims = exact claims plus successfully compiled regex claims
+    - return authority_claims in module declaration order
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .BlueprintGraphError:
+      why:
+        raises: "Reports an invalid filesystem-authority regular expression with its declaration index."
+    """
     claims: list[tuple[str, str, str, re.Pattern[str] | None]] = []
     for module_id, module in sorted(modules.items()):
         authority = module.declaration.get("authority")
@@ -1272,6 +2570,50 @@ def _validate_v4_interface_contract(
         ...,
     ],
 ) -> None:
+    """Validate semantic references and effects within one version-4 contract.
+
+    Intent
+    ------
+    Enforce local identifier integrity, effect symmetry, safe paths, and authority.
+
+    Rationale
+    ---------
+    JSON Schema establishes shape, but references among arguments, helpers, IO,
+    outcomes, and effects require graph-aware checks against module ownership.
+
+    Pseudocode
+    ----------
+    - set local_indexes = contract arguments conditions outputs outcomes helpers effects and IO
+    - set reference_checks = every nested local reference resolved against local_indexes
+    - set effect_checks = output IO direction and outcome effect symmetry decisions
+    - set authority_checks = safe filesystem writes outside neighboring claims
+    - raise BlueprintGraphError for any failed semantic check
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._walk_v4_contract:
+      why:
+        reads: "Enumerates nested contract fields so every semantic local reference can be checked."
+    ._require_v4_local_ref:
+      why:
+        validates: "Checks nested argument, IO, helper, output, outcome, and effect references against their local indexes."
+    ._validate_v4_internal_path:
+      why:
+        validates: "Rejects nonportable or escaping filesystem paths before authority comparison."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._v4_local_ids:
+      why:
+        constructs: "Builds the unique identifier sets and ordered mapping entries for each contract section."
+    .BlueprintGraphError:
+      why:
+        raises: "Reports invalid references, effect symmetry, IO direction, helper routes, paths, and foreign authority writes."
+    """
     contract = declaration.get("contract")
     if not isinstance(contract, Mapping):
         return
@@ -1507,6 +2849,47 @@ def _build_source_relationships(
         tuple[str, str],
     ],
 ) -> dict[str, tuple[tuple[str, int], ...]]:
+    """Build source dependency, interface-use, and certification relationships.
+
+    Intent
+    ------
+    Validate each source's direct pins and append normalized graph edges.
+
+    Rationale
+    ---------
+    Versioned source and interface declarations share locator and certification
+    consequences, while version-specific interface authorization stays injectable.
+
+    Pseudocode
+    ----------
+    - for source in sorted sources:
+      - set dependency_edges = validated source pins and canonical locators
+      - set interface_edges = resolver-approved direct interface uses
+      - set certification_edges = target source evidence for both relation kinds
+    - return interface uses grouped by source
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._positive_version:
+      why:
+        constructs: "Builds validated version pins for each declared source dependency and interface use."
+    ._resolve_locator:
+      why:
+        constructs: "Builds the confined canonical blueprint path for each direct source dependency."
+    .BlueprintEdge:
+      why:
+        constructs: "Creates containment-independent graph edges for source and interface relationships."
+    .CertificationEdge:
+      why:
+        constructs: "Creates the node evidence dependency associated with each validated source or interface use."
+    .BlueprintGraphError:
+      why:
+        raises: "Reports malformed declarations, missing targets, stale versions, and noncanonical locators."
+    """
     interface_uses_by_source: dict[str, tuple[tuple[str, int], ...]] = {}
     for source_id, source in sorted(sources.items()):
         raw_dependencies = source.declaration.get("dependencies", [])
@@ -1620,6 +3003,44 @@ def _build_export_relationships(
     exports: Mapping[str, InterfaceExport],
     interface_uses_by_source: Mapping[str, tuple[tuple[str, int], ...]],
 ) -> tuple[list[ExportDependencyEdge], list[HelperEdge]]:
+    """Derive export dependency and helper edges from effective source uses.
+
+    Intent
+    ------
+    Link each export to directly used public interfaces and valid contract helpers.
+
+    Rationale
+    ---------
+    Helpers may target only the implementing source's effective direct interface set,
+    keeping export authority narrow and preventing undeclared transitive capability.
+
+    Pseudocode
+    ----------
+    - for export in sorted exports:
+      - set direct_uses = implementing source interface uses
+      - set export_edges = public targets among direct_uses
+      - set helper_edges = valid helper bindings whose targets occur in direct_uses
+    - return export_edges and helper_edges
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._positive_version:
+      why:
+        constructs: "Builds each validated helper target version before matching the source's direct uses."
+    .ExportDependencyEdge:
+      why:
+        constructs: "Creates an export edge for each directly used target that is itself public."
+    .HelperEdge:
+      why:
+        constructs: "Creates the helper binding record after validating its direct interface target."
+    .BlueprintGraphError:
+      why:
+        raises: "Reports malformed helpers, missing identifiers, and helper targets outside effective direct uses."
+    """
     export_edges: list[ExportDependencyEdge] = []
     helper_edges: list[HelperEdge] = []
     for export_id, export in sorted(exports.items()):
@@ -1678,6 +3099,82 @@ def _load_v4_repository_blueprint_graph(
     *,
     schema_root: Path,
 ) -> RepositoryBlueprintGraph:
+    """Assemble and validate the complete legacy version-4 repository graph.
+
+    Intent
+    ------
+    Produce canonical v4 nodes, exports, dependencies, ownership, and assurance edges.
+
+    Rationale
+    ---------
+    The legacy model separates modules and behavioral sources but still requires exact
+    containment, private/public access, platform compatibility, and exclusive content.
+
+    Pseudocode
+    ----------
+    - set nodes = schema-validated unique v4 nodes from inventory documents
+    - set containment = modules paired with exactly owned behavioral sources
+    - set interfaces_and_exports = validated source interfaces and module exports
+    - set relationship_edges = source uses export dependencies helpers and certification
+    - set file_owners = exclusive module and source content ownership
+    - set cycle_checks = certification and export dependency acyclicity results
+    - return RepositoryBlueprintGraph with sorted canonical indexes
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._validate_v4_interface_contract:
+      why:
+        validates: "Checks semantic references, effects, paths, and authority for every source-owned interface contract."
+    .resolved_node_content_paths:
+      why:
+        reads: "Resolves module and source content sets used to establish direct file ownership."
+    ._reject_certification_cycles:
+      why:
+        validates: "Rejects recursive node evidence relationships before returning the graph."
+    ._reject_export_cycles:
+      why:
+        validates: "Rejects recursive public callable authority before returning the graph."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._declaration_schema_errors:
+      why:
+        constructs: "Builds concrete schema findings for every inventory document before graph indexing."
+    ._v4_node_from_document:
+      why:
+        constructs: "Creates each validated version-four graph node from its inventory document."
+    ._resolve_locator:
+      why:
+        constructs: "Builds canonical contained-source marker paths for exact identity comparison."
+    ._v4_authority_claims:
+      why:
+        constructs: "Builds normalized filesystem authority claims used during interface contract validation."
+    ._positive_version:
+      why:
+        constructs: "Builds validated interface and dependency version values throughout v4 assembly."
+    .InterfaceExport:
+      why:
+        constructs: "Creates each public module binding to its contained source interface."
+    .BlueprintEdge:
+      why:
+        constructs: "Creates node relationships for module containment and source interface dependencies."
+    ._build_source_relationships:
+      why:
+        constructs: "Builds direct source uses and their node and certification edge records."
+    ._build_export_relationships:
+      why:
+        constructs: "Builds public export dependency and contract-helper edge records."
+    .RepositoryBlueprintGraph:
+      why:
+        constructs: "Creates the final sorted v4 graph with ownership and dependency indexes."
+    .BlueprintGraphError:
+      why:
+        raises: "Reports all v4 schema, identity, containment, access, ownership, version, and cycle defects."
+    """
     validators: dict[str, jsonschema.protocols.Validator] = {}
     nodes: dict[str, BlueprintNode] = {}
     for document in documents:
@@ -1900,6 +3397,44 @@ def _load_v4_repository_blueprint_graph(
         interface_id: str,
         version: int,
     ) -> tuple[str, str]:
+        """Resolve one v4 interface use under privacy, access, version, and platform rules.
+
+        Intent
+        ------
+        Return the graph relation and implementing source for an allowed direct use.
+
+        Rationale
+        ---------
+        Private interfaces are module-local, while exports apply caller admission and
+        platform compatibility before their implementing source becomes a dependency.
+
+        Pseudocode
+        ----------
+        - if interface is private:
+          - return private-use relation and source after module and version checks
+        - if interface is exported:
+          - return export-use relation and source after access and platform checks
+        - raise BlueprintGraphError for an unresolved or disallowed interface
+
+        Wraps
+        -----
+        - none
+
+        CallsFromRepo
+        -------------
+        ._require_platform_compatibility:
+          why:
+            validates: "Checks that an exported target supports every platform promised by the caller source."
+
+        InstantiationsFromRepo
+        ----------------------
+        ._positive_version:
+          why:
+            constructs: "Builds the actual private-interface version compared with the requested pin."
+        .BlueprintGraphError:
+          why:
+            raises: "Reports cross-module private use, stale pins, denied exports, missing access, and unknown interfaces."
+        """
         if interface_id in source_interfaces:
             target_source, target_declaration = source_interfaces[interface_id]
             if source_modules[target_source.node_id] != source_modules[source_id]:
@@ -2082,6 +3617,39 @@ def _v5_topology(
     dict[str, str],
     dict[str, tuple[str, ...]],
 ]:
+    """Resolve registered version-5 module parents, children, segments, and ancestry.
+
+    Intent
+    ------
+    Validate exact child markers and return deterministic nested-module topology indexes.
+
+    Rationale
+    ---------
+    Version-5 namespaces and ownership depend on registered hierarchy rather than raw
+    directories, so duplicate parents, local segments, and cycles must fail closed.
+
+    Pseudocode
+    ----------
+    - set parent_child_indexes = exact registered child locators and local segments
+    - set ancestry_index = recursively resolved root-to-module ancestry for every module
+    - return sorted parents children local segments and ancestry indexes
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._resolve_locator:
+      why:
+        validates: "Resolves each declared child locator for exact comparison with the canonical module marker."
+
+    InstantiationsFromRepo
+    ----------------------
+    .BlueprintGraphError:
+      why:
+        raises: "Reports malformed child maps, noncanonical locators, duplicate parents or segments, containment failures, and cycles."
+    """
     modules_by_marker = {
         Path(os.path.abspath(module.blueprint_path)): module_id
         for module_id, module in modules.items()
@@ -2143,6 +3711,35 @@ def _v5_topology(
     visiting: list[str] = []
 
     def resolve_ancestry(module_id: str) -> tuple[str, ...]:
+        """Resolve and cache one module's root-to-self ancestry tuple.
+
+        Intent
+        ------
+        Follow registered parents recursively while detecting a registration cycle.
+
+        Rationale
+        ---------
+        Memoization avoids repeated parent walks, and the active stack retains the exact
+        cycle sequence needed for a useful topology diagnostic.
+
+        Pseudocode
+        ----------
+        - return cached ancestry when available
+        - raise BlueprintGraphError if module is active in the current parent walk
+        - set ancestry = parent ancestry extended by module or module alone at a root
+        - set ancestry_cache = ancestry_cache extended by resolved ancestry
+        - return ancestry
+
+        Wraps
+        -----
+        - none
+
+        InstantiationsFromRepo
+        ----------------------
+        .BlueprintGraphError:
+          why:
+            raises: "Reports the active parent chain when registered module ancestry contains a cycle."
+        """
         existing = ancestry.get(module_id)
         if existing is not None:
             return existing
@@ -2181,6 +3778,41 @@ def _v5_sources(
     modules: Mapping[str, BlueprintNode],
     sources: Mapping[str, BlueprintNode],
 ) -> tuple[dict[str, tuple[str, ...]], dict[str, str]]:
+    """Resolve version-5 behavioral-source containment for every module.
+
+    Intent
+    ------
+    Validate canonical source markers, namespaces, roots, and single ownership.
+
+    Rationale
+    ---------
+    Source declarations share a module root with their owner and must be contained
+    exactly once so private interfaces and direct content ownership remain unambiguous.
+
+    Pseudocode
+    ----------
+    - set source_markers = canonical behavioral-source identifiers by absolute marker
+    - for module in sorted modules:
+      - set contained_sources = exact namespaced source locators owned by module
+    - set containment_check = every source owned exactly once under its canonical module root
+    - return module-to-sources and source-to-module indexes
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._resolve_locator:
+      why:
+        validates: "Resolves each declared source marker for exact comparison with canonical source inventory."
+
+    InstantiationsFromRepo
+    ----------------------
+    .BlueprintGraphError:
+      why:
+        raises: "Reports malformed source maps, wrong namespaces or roots, duplicate containment, and orphan sources."
+    """
     sources_by_marker = {
         Path(os.path.abspath(source.blueprint_path)): source_id
         for source_id, source in sources.items()
@@ -2246,6 +3878,29 @@ def _v5_authority_claims_overlap(
     first: tuple[str, re.Pattern[str] | None],
     second: tuple[str, re.Pattern[str] | None],
 ) -> bool:
+    """Conservatively decide whether two filesystem authority claims can overlap.
+
+    Intent
+    ------
+    Prove disjointness for exact-versus-regex cases and fail closed for two regexes.
+
+    Rationale
+    ---------
+    General Python regular-expression intersection is unavailable here, so nested
+    authority may proceed only when simple matching proves the claims do not intersect.
+
+    Pseudocode
+    ----------
+    - if both claims are exact:
+      - return whether paths are equal
+    - if one claim is exact:
+      - return whether the other regex matches it
+    - return true for two regular-expression claims
+
+    Wraps
+    -----
+    - none
+    """
     first_match, first_pattern = first
     second_match, second_pattern = second
     if first_pattern is None and second_pattern is None:
@@ -2266,6 +3921,42 @@ def _validate_v5_nested_authority(
     modules: Mapping[str, BlueprintNode],
     module_ancestry: Mapping[str, tuple[str, ...]],
 ) -> None:
+    """Reject overlapping filesystem authority between ancestor and descendant modules.
+
+    Intent
+    ------
+    Compare every nested module claim with each claim held by its registered ancestors.
+
+    Rationale
+    ---------
+    Nested modules need exclusive mutation authority; an unresolved regex intersection
+    is treated as overlap because silently shared authority would be unsafe.
+
+    Pseudocode
+    ----------
+    - set claims_by_module = normalized filesystem claims for every module
+    - set overlap_checks = descendant claims compared with every registered ancestor claim
+    - raise BlueprintGraphError for any possible overlap
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._v4_authority_claims:
+      why:
+        reads: "Normalizes each module's exact and regex filesystem claims for ancestry comparison."
+    ._v5_authority_claims_overlap:
+      why:
+        validates: "Conservatively decides whether one ancestor and descendant claim can intersect."
+
+    InstantiationsFromRepo
+    ----------------------
+    .BlueprintGraphError:
+      why:
+        raises: "Reports the ancestor, descendant, and claim paths whose authority can overlap."
+    """
     mutable_claims: dict[
         str,
         list[tuple[str, re.Pattern[str] | None]],
@@ -2299,7 +3990,33 @@ def _validate_v5_managed_skill_code_boundaries(
     sources: Mapping[str, BlueprintNode],
     module_sources: Mapping[str, tuple[str, ...]],
 ) -> None:
-    """Keep executable behavior inside each managed skill's `_rtx` child."""
+    """Keep executable behavior inside each managed skill's ``_rtx`` child.
+
+    Intent
+    ------
+    Restrict repository-managed skill parents to Markdown sources without process bindings.
+
+    Rationale
+    ---------
+    The registered runtime child owns executable implementation; enforcing that boundary
+    prevents a discoverable parent from acquiring a second, ambiguous runtime surface.
+
+    Pseudocode
+    ----------
+    - set managed_parents = repository skill modules with skill discovery
+    - set source_checks = Markdown gateways without process bindings for managed_parents
+    - raise BlueprintGraphError when source_checks fail
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .BlueprintGraphError:
+      why:
+        raises: "Reports executable gateways or process bindings declared directly by a managed skill parent."
+    """
 
     for module_id, module in sorted(modules.items()):
         discovery = module.declaration.get("discovery")
@@ -2347,6 +4064,49 @@ def _v5_interfaces_and_exports(
     module_children: Mapping[str, tuple[str, ...]],
     module_local_segments: Mapping[str, str],
 ) -> tuple[dict[str, InterfaceExport], dict[str, InterfaceExport]]:
+    """Build version-5 source interfaces, direct exports, and child facades.
+
+    Intent
+    ------
+    Resolve every public interface to a validated source or one direct ``_rtx`` export.
+
+    Rationale
+    ---------
+    Direct exports own access while facades preserve the terminal source declaration and
+    may cross only the registered runtime-child boundary, keeping indirection bounded.
+
+    Pseudocode
+    ----------
+    - set source_interfaces = validated namespaced interfaces for all sources
+    - set direct_exports = module exports bound to interfaces owned by that module
+    - set facade_exports = version-matched exports targeting one direct runtime child
+    - return sorted source interface and public export indexes
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._validate_v4_interface_contract:
+      why:
+        validates: "Applies shared semantic contract checks to every version-five source interface."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._v4_authority_claims:
+      why:
+        constructs: "Builds the normalized module authority set supplied to interface contract validation."
+    ._positive_version:
+      why:
+        constructs: "Builds validated source-interface and facade target versions during export resolution."
+    .InterfaceExport:
+      why:
+        constructs: "Creates source interface, direct export, and bounded runtime-child facade records."
+    .BlueprintGraphError:
+      why:
+        raises: "Reports invalid interface namespaces, export ownership, facade targets, versions, and child structure."
+    """
     authority_claims = _v4_authority_claims(modules)
     source_interfaces: dict[str, InterfaceExport] = {}
     for source_id, source in sorted(sources.items()):
@@ -2511,6 +4271,29 @@ def _v5_namespace_routes(
     dict[tuple[str, str], NamespaceRoute],
     tuple[RoutedInterface, ...],
 ]:
+    """Materialize recursive child namespace routes and routed interface records.
+
+    Intent
+    ------
+    Compute each module's outward interface surface from direct exports and selected children.
+
+    Rationale
+    ---------
+    Route declarations may expose all or a version-pinned subset of a child's outward
+    surface, so recursive resolution must detect cycles and duplicate public identifiers.
+
+    Pseudocode
+    ----------
+    - set direct_surfaces = public exports grouped by owning module
+    - set route_surfaces = recursively materialized child selections and access filters
+    - set routed_interfaces = flattened stable records from all route materializations
+    - return route index and routed_interfaces
+
+    Wraps
+    -----
+    - none
+
+    """
     direct_exports: dict[str, dict[str, InterfaceExport]] = {
         module_id: {} for module_id in modules
     }
@@ -2522,6 +4305,44 @@ def _v5_namespace_routes(
     visiting: list[str] = []
 
     def outward_surface(module_id: str) -> dict[str, InterfaceExport]:
+        """Resolve and cache one module's complete outward interface surface.
+
+        Intent
+        ------
+        Merge direct exports with validated selections from registered child routes.
+
+        Rationale
+        ---------
+        Recursive caching handles deep namespace routing efficiently, while an active
+        stack detects route cycles before partially materialized surfaces are retained.
+
+        Pseudocode
+        ----------
+        - return cached outward surface when available
+        - set surface = direct exports for module
+        - set surface = surface extended by version-checked child selections
+        - set outward_surface_cache = outward_surface_cache extended by surface
+        - return surface or raise BlueprintGraphError on route conflicts
+
+        Wraps
+        -----
+        - none
+
+        InstantiationsFromRepo
+        ----------------------
+        ._positive_version:
+          why:
+            constructs: "Builds validated child-module and selected-interface version pins for this surface."
+        .RoutedInterface:
+          why:
+            constructs: "Creates each materialized interface record selected from a child outward surface."
+        .NamespaceRoute:
+          why:
+            constructs: "Creates the cached route record for one validated child surface selection."
+        .BlueprintGraphError:
+          why:
+            raises: "Reports cycles, invalid surfaces, stale pins, private selections, access mismatches, and duplicates."
+        """
         existing = outward_surfaces.get(module_id)
         if existing is not None:
             return existing
@@ -2671,6 +4492,40 @@ def _v5_content_ownership(
     module_sources: Mapping[str, tuple[str, ...]],
     module_children: Mapping[str, tuple[str, ...]],
 ) -> dict[Path, str]:
+    """Assign version-5 direct file ownership across nested modules and sources.
+
+    Intent
+    ------
+    Resolve content below each module while pruning children and enforcing source exclusivity.
+
+    Rationale
+    ---------
+    Deepest registered ownership wins across modules, and sibling sources inside one
+    module must remain disjoint subsets of their owner's nonchild content.
+
+    Pseudocode
+    ----------
+    - set module_content = each module's matched files excluding direct child roots
+    - set source_content = each contained source's matched files under the same exclusions
+    - set ownership_checks = no blueprint inclusion source escape or sibling source overlap
+    - return direct file owners with source matches preferred over module remainder
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .resolved_node_content_paths:
+      why:
+        reads: "Resolves each module and source content set while pruning registered child module roots."
+
+    InstantiationsFromRepo
+    ----------------------
+    .BlueprintGraphError:
+      why:
+        raises: "Reports blueprint inclusion, source escape from module content, and sibling source overlap."
+    """
     blueprint_paths = {
         Path(os.path.abspath(node.blueprint_path)) for node in nodes.values()
     }
@@ -2738,6 +4593,26 @@ def _v5_content_ownership(
 def _unique_certification_edges(
     edges: list[CertificationEdge],
 ) -> tuple[CertificationEdge, ...]:
+    """Deduplicate and deterministically order certification dependency edges.
+
+    Intent
+    ------
+    Return one edge per relation, endpoints, and target-version identity.
+
+    Rationale
+    ---------
+    Multiple graph derivations may establish the same assurance dependency; collapsing
+    them avoids duplicate hashing inputs while stable order preserves reproducibility.
+
+    Pseudocode
+    ----------
+    - set unique_edges = last edge for each certification identity tuple
+    - return unique_edges sorted by source relation target and version
+
+    Wraps
+    -----
+    - none
+    """
     unique = {
         (
             edge.relation,
@@ -2766,6 +4641,96 @@ def _load_v5_repository_blueprint_graph(
     *,
     schema_root: Path,
 ) -> RepositoryBlueprintGraph:
+    """Assemble and validate the canonical version-5 repository blueprint graph.
+
+    Intent
+    ------
+    Produce nested topology, interfaces, routes, ownership, authorization, and evidence.
+
+    Rationale
+    ---------
+    Version 5 combines registered module hierarchy with behavioral-source boundaries;
+    construction sequences dependent indexes before authorization and cycle validation.
+
+    Pseudocode
+    ----------
+    - set nodes = schema-validated unique v5 nodes from inventory documents
+    - set topology_sources = registered hierarchy and exact source containment
+    - set interfaces_routes = source interfaces exports facades and namespace routes
+    - set provisional_graph = indexes needed for authorization declaration validation
+    - set authorization_declarations = validated against provisional_graph
+    - set dependency_edges = authorized source uses export helpers and certification relations
+    - set file_owners = deepest registered module and source content ownership
+    - set cycle_checks = certification and export dependency acyclicity results
+    - return complete RepositoryBlueprintGraph
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._validate_v5_nested_authority:
+      why:
+        validates: "Checks that no descendant module can overlap a registered ancestor's filesystem authority."
+    ._validate_v5_managed_skill_code_boundaries:
+      why:
+        validates: "Checks that managed skill parents keep executable behavior and process bindings in their runtime child."
+    .blueprint_authorization._validate_authorization_declarations:
+      why:
+        validates: "Checks every version-five authorization declaration against the provisional topology and export indexes."
+    ._reject_certification_cycles:
+      why:
+        validates: "Rejects recursive assurance dependencies in the completed version-five node graph."
+    ._reject_export_cycles:
+      why:
+        validates: "Rejects recursive public callable authority in the completed version-five export graph."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._declaration_schema_errors:
+      why:
+        constructs: "Builds concrete schema findings for each version-five inventory document before indexing."
+    ._node_from_document:
+      why:
+        constructs: "Creates each shallow-frozen typed node while retaining declaration mappings under a read-only contract."
+    ._v5_topology:
+      why:
+        constructs: "Builds parent, child, local-segment, and ancestry indexes for registered modules."
+    ._v5_sources:
+      why:
+        constructs: "Builds exact behavioral-source containment indexes for all modules and sources."
+    ._v5_interfaces_and_exports:
+      why:
+        constructs: "Builds source interfaces, direct public exports, and runtime-child facade exports."
+    ._v5_namespace_routes:
+      why:
+        constructs: "Builds recursive namespace routes and flattened routed interface records."
+    .RepositoryBlueprintGraph:
+      why:
+        constructs: "Creates both the provisional authorization view and the final complete graph result."
+    .BlueprintEdge:
+      why:
+        constructs: "Creates module containment, source containment, route, facade, and interface-use node edges."
+    .CertificationEdge:
+      why:
+        constructs: "Creates evidence dependencies for containment, routes, facades, sources, and interfaces."
+    ._unique_certification_edges:
+      why:
+        constructs: "Builds the duplicate-free deterministic evidence edge tuple at provisional and final stages."
+    ._build_source_relationships:
+      why:
+        constructs: "Builds authorized direct source and interface relationships plus their evidence edges."
+    ._build_export_relationships:
+      why:
+        constructs: "Builds export-level direct authority and contract helper relationships."
+    ._v5_content_ownership:
+      why:
+        constructs: "Builds deepest registered direct file ownership across modules and behavioral sources."
+    .BlueprintGraphError:
+      why:
+        raises: "Reports version-five schema, topology, source, authorization, ownership, dependency, and cycle defects."
+    """
     validators: dict[str, jsonschema.protocols.Validator] = {}
     nodes: dict[str, BlueprintNode] = {}
     for document in documents:
@@ -2992,6 +4957,49 @@ def _load_v5_repository_blueprint_graph(
         interface_id: str,
         version: int,
     ) -> tuple[str, str]:
+        """Resolve one v5 interface use through private or public authorization rules.
+
+        Intent
+        ------
+        Return the relation and implementing source for an allowed version-pinned use.
+
+        Rationale
+        ---------
+        Private interfaces remain module-local, whereas exports delegate admission to
+        canonical authorization resolution and then require source platform compatibility.
+
+        Pseudocode
+        ----------
+        - if interface is private:
+          - return private-use relation and source after ownership and version checks
+        - if interface is exported:
+          - set authorization_request = AuthorizationRequest for caller source interface and version
+          - set authorization_result = resolve_interface_authorization for provisional graph and authorization_request
+          - return export-use relation and authorized implementing source from authorization_result
+        - raise BlueprintGraphError for unresolved or denied uses
+
+        Wraps
+        -----
+        - none
+
+        CallsFromRepo
+        -------------
+        ._require_platform_compatibility:
+          why:
+            validates: "Checks the authorized implementing source against every platform promised by the caller source."
+
+        InstantiationsFromRepo
+        ----------------------
+        .blueprint_authorization.AuthorizationRequest:
+          why:
+            constructs: "Creates the canonical authorization request from the caller module, source, interface, and version."
+        .blueprint_authorization.resolve_interface_authorization:
+          why:
+            constructs: "Builds the authorization decision and implementing-source result used by public interface resolution."
+        .BlueprintGraphError:
+          why:
+            raises: "Reports cross-module private use, stale versions, authorization denial, and unresolved interfaces."
+        """
         private = source_interfaces.get(interface_id)
         if private is not None:
             if private.module_node_id != source_modules[source_id]:
@@ -3099,11 +5107,50 @@ def _load_v5_repository_blueprint_graph(
 
 
 def _declared_interface_references(value: JsonValue) -> tuple[str, ...]:
-    """Return interface identifiers conservatively referenced by a declaration."""
+    """Return interface identifiers conservatively referenced by a declaration.
+
+    Intent
+    ------
+    Find nested ``interface`` fields that contain canonical interface identifiers.
+
+    Rationale
+    ---------
+    Dispatch closure selection must include possible providers before full schema and
+    graph validation, so traversal intentionally accepts any JSON-shaped declaration.
+
+    Pseudocode
+    ----------
+    - set referenced_interfaces = interface identifiers found by recursive JSON traversal
+    - return referenced_interfaces in sorted unique order
+
+    Wraps
+    -----
+    - none
+    """
 
     found: set[str] = set()
 
     def visit(item: JsonValue) -> None:
+        """Collect interface fields recursively from one JSON declaration fragment.
+
+        Intent
+        ------
+        Traverse lists and mappings while ignoring scalar declaration values.
+
+        Rationale
+        ---------
+        A local recursive walker shares the enclosing result set without exposing a
+        broader helper API for a dispatch-closure-specific conservative scan.
+
+        Pseudocode
+        ----------
+        - set nested_scan = recursive visits for list items or mapping members
+        - set found = found plus any canonical interface field on this mapping
+
+        Wraps
+        -----
+        - none
+        """
         if isinstance(item, list):
             for child in item:
                 visit(child)
@@ -3121,11 +5168,50 @@ def _declared_interface_references(value: JsonValue) -> tuple[str, ...]:
 
 
 def _declared_absolute_caller_references(value: JsonValue) -> tuple[str, ...]:
-    """Return absolute module IDs named by access-policy caller lists."""
+    """Return absolute module IDs named by nested access-policy caller lists.
+
+    Intent
+    ------
+    Collect nonrelative callers that may be required by a selected dispatch closure.
+
+    Rationale
+    ---------
+    Authorization validation needs the named caller modules present even when the
+    declaration carrying their access policy belongs to another selected module.
+
+    Pseudocode
+    ----------
+    - set caller_modules = absolute allowed callers found by recursive JSON traversal
+    - return caller_modules in sorted unique order
+
+    Wraps
+    -----
+    - none
+    """
 
     found: set[str] = set()
 
     def visit(item: JsonValue) -> None:
+        """Collect absolute allowed callers recursively from one JSON fragment.
+
+        Intent
+        ------
+        Descend through lists and mappings and add nonrelative caller strings.
+
+        Rationale
+        ---------
+        Access policies may occur at several declaration depths, so the closure scan
+        must not rely on a single schema location before the selected graph is loaded.
+
+        Pseudocode
+        ----------
+        - set nested_scan = recursive visits for list items or mapping members
+        - set found = found plus nonrelative strings from allowed caller lists
+
+        Wraps
+        -----
+        - none
+        """
         if isinstance(item, list):
             for child in item:
                 visit(child)
@@ -3147,7 +5233,28 @@ def _declared_absolute_caller_references(value: JsonValue) -> tuple[str, ...]:
 
 
 def _declared_source_dependencies(value: JsonValue) -> tuple[str, ...]:
-    """Return behavioral-source IDs named by direct dependency declarations."""
+    """Return behavioral-source IDs named by direct dependency declarations.
+
+    Intent
+    ------
+    Extract unique textual source targets from a declaration's dependency list.
+
+    Rationale
+    ---------
+    Dispatch closure expansion needs only provider ownership at this stage; concrete
+    schema and version checks remain the responsibility of subsequent graph loading.
+
+    Pseudocode
+    ----------
+    - if declaration or dependency list has the wrong container type:
+      - return empty tuple
+    - set source_ids = textual source fields from mapping dependencies
+    - return source_ids in sorted unique order
+
+    Wraps
+    -----
+    - none
+    """
 
     if not isinstance(value, dict):
         return ()
@@ -3172,7 +5279,47 @@ def _dispatch_document_closure(
     caller_module_id: str,
     interface_id: str,
 ) -> tuple[tuple[BlueprintDocument, ...], frozenset[Path]]:
-    """Select a conservative module-family closure for one dispatch request."""
+    """Select a conservative module-family closure for one dispatch request.
+
+    Intent
+    ------
+    Return all documents needed to validate a caller, target export, and their dependencies.
+
+    Rationale
+    ---------
+    Scoped dispatch may ignore proven-unrelated defects only after conservatively closing
+    over parents, children, providers, access callers, and direct source dependencies.
+
+    Pseudocode
+    ----------
+    - set indexes = documents by node module root export owner child and parent
+    - set dispatch_endpoints = existing caller module and target export owner
+    - set selected_modules = fixed-point expansion through family and declared dependencies
+    - set availability_check = every selected module present in inventory
+    - return documents under selected module roots and the selected roots
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._declared_interface_references:
+      why:
+        reads: "Finds conservatively referenced interface providers while expanding selected module declarations."
+    ._declared_source_dependencies:
+      why:
+        reads: "Finds direct behavioral-source dependencies whose owning modules must join the closure."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._declared_absolute_caller_references:
+      why:
+        constructs: "Builds the absolute access-policy caller set added to the selected module closure."
+    .BlueprintGraphError:
+      why:
+        raises: "Reports duplicate identities, invalid parentage, missing callers, exports, or referenced modules."
+    """
 
     nodes: dict[str, BlueprintDocument] = {}
     module_documents: dict[str, BlueprintDocument] = {}
@@ -3291,7 +5438,55 @@ def load_dispatch_blueprint_graph(
     interface_id: str,
     schema_root: Path | None = None,
 ) -> DispatchBlueprintGraph:
-    """Load one dispatch closure while warning on proven-unrelated defects."""
+    """Load one dispatch closure while warning on proven-unrelated defects.
+
+    Intent
+    ------
+    Prefer the full canonical graph, then recover a valid conservative closure if needed.
+
+    Rationale
+    ---------
+    A dispatch should not fail because of an invalid unrelated module, but any inventory
+    issue touching the selected closure remains fatal and unrelated defects stay visible.
+
+    Pseudocode
+    ----------
+    - set full_graph = attempted canonical version-five repository load
+    - if full_graph succeeds:
+      - return DispatchBlueprintGraph containing full_graph
+    - set inventory = tolerant blueprint collection and dispatch closure selection
+    - set issue_partition = fatal selected issues and nonfatal unrelated issues
+    - set scoped_graph = validated version-five graph from selected documents
+    - return DispatchBlueprintGraph with scoped_graph and unrelated diagnostics
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .load_repository_blueprint_graph:
+      why:
+        constructs: "Builds the preferred complete graph carried directly into the successful dispatch result."
+    .blueprint_inventory.collect_blueprints:
+      why:
+        constructs: "Builds tolerant inventory evidence used to distinguish selected from unrelated defects."
+    ._dispatch_document_closure:
+      why:
+        constructs: "Builds the conservative document and module-root selection for the requested dispatch."
+    ._load_v5_repository_blueprint_graph:
+      why:
+        constructs: "Builds the canonical graph from only the selected closure documents after issue screening."
+    .BlueprintDiagnostic:
+      why:
+        constructs: "Creates each nonfatal diagnostic preserved for a proven-unrelated blueprint defect."
+    .DispatchBlueprintGraph:
+      why:
+        constructs: "Creates the public result pairing the selected graph with any unrelated diagnostics."
+    .BlueprintGraphError:
+      why:
+        raises: "Reports inventory defects that cannot be proven outside the selected dispatch closure."
+    """
 
     root = Path(repo_root).resolve()
     try:
@@ -3370,7 +5565,44 @@ def load_repository_blueprint_graph(
     schema_root: Path | None = None,
     expected_schema_version: int = 5,
 ) -> RepositoryBlueprintGraph:
-    """Load one explicit repository-wide graph; v5 is canonical."""
+    """Load one explicit repository-wide graph with version 5 as the default.
+
+    Intent
+    ------
+    Inventory one repository version and dispatch construction to its canonical loader.
+
+    Rationale
+    ---------
+    Requiring every document to match the requested version prevents mixed semantics,
+    while schema-root fallback keeps installed runtime loading independent of checkout layout.
+
+    Pseudocode
+    ----------
+    - set version_request = supported requested schema version
+    - set documents = inventory blueprints restricted to requested version
+    - set version_check = every declaration version equal to version_request
+    - set concrete_schema_root = supplied repository or installed fallback schema directory
+    - return version-specific repository graph built from documents
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .blueprint_inventory.iter_blueprints:
+      why:
+        constructs: "Builds the strict inventory document sequence for the requested repository version."
+    ._load_v5_repository_blueprint_graph:
+      why:
+        constructs: "Builds the canonical version-five graph when the requested version is five."
+    ._load_v4_repository_blueprint_graph:
+      why:
+        constructs: "Builds the compatibility version-four graph when explicitly requested."
+    .BlueprintGraphError:
+      why:
+        raises: "Reports a blueprint document whose declared version differs from the repository graph request."
+    """
 
     if expected_schema_version not in {4, 5}:
         raise ValueError("expected_schema_version must be 4 or 5")
@@ -3425,7 +5657,28 @@ def load_repository_blueprint_graph(
 
 
 def repository_schema_version(repo_root: Path) -> int:
-    """Return the canonical repository schema version, defaulting legacy trees to v4."""
+    """Return the repository schema version, defaulting markerless legacy trees to four.
+
+    Intent
+    ------
+    Read the canonical blueprint marker and accept only supported graph versions.
+
+    Rationale
+    ---------
+    Older repositories predate the marker, so absence has a defined compatibility value;
+    malformed or unsupported declarations must remain explicit configuration failures.
+
+    Pseudocode
+    ----------
+    - set marker_document = parsed canonical blueprint marker when present
+    - return four when marker is absent
+    - raise ValueError when marker cannot be read or names an unsupported version
+    - return marker schema version
+
+    Wraps
+    -----
+    - none
+    """
 
     marker = (
         Path(repo_root)
@@ -3458,7 +5711,34 @@ def resolve_export(
     interface_id: str,
     version: int | None = None,
 ) -> tuple[BlueprintNode, BlueprintNode, InterfaceExport]:
-    """Resolve one public export to its module and behavioral source."""
+    """Resolve one public export to its module and behavioral source.
+
+    Intent
+    ------
+    Return the owning module, implementing source, and export after optional version checks.
+
+    Rationale
+    ---------
+    Public resolution rejects module identifiers and stale pins, and verifies that the
+    export's recorded source still exists with the required behavioral-source node type.
+
+    Pseudocode
+    ----------
+    - set export_identity = callable public export for interface_id
+    - set binding_check = optional version agreement and behavioral-source binding
+    - set implementing_source = behavioral-source node named by export
+    - return owning module implementing_source and export
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .BlueprintGraphError:
+      why:
+        raises: "Reports noncallable modules, unknown exports, stale versions, and missing source bindings."
+    """
 
     if interface_id in graph.nodes and graph.nodes[interface_id].node_type == "module":
         raise BlueprintGraphError(f"module id {interface_id!r} is not callable")
@@ -3488,7 +5768,33 @@ def runtime_authority_for_export(
     graph: RepositoryBlueprintGraph,
     interface_id: str,
 ) -> tuple[str, ...]:
-    """Return the selected export's direct callable-interface authority."""
+    """Return the selected export's direct callable-interface authority.
+
+    Intent
+    ------
+    Validate the export and list only interfaces named by its outgoing export edges.
+
+    Rationale
+    ---------
+    Runtime authority derives from the implementing source's effective direct uses,
+    not from transitive dependencies or every interface present in the repository graph.
+
+    Pseudocode
+    ----------
+    - set export_resolution = @resolve_export(graph interface_id)
+    - set direct_authority = target interfaces on outgoing edges for interface_id
+    - return direct_authority in sorted order
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .resolve_export:
+      why:
+        validates: "Confirms that the requested identifier resolves to a callable export before edge selection."
+    """
 
     resolve_export(graph, interface_id)
     return tuple(
