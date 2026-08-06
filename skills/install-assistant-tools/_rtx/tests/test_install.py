@@ -99,6 +99,48 @@ def test_scaffold_failure_stops_install_before_later_phases(tmp_path, monkeypatc
 # ── Managed-runtime candidate wiring (Task 7) ────────────────────────────────
 
 
+def test_non_interactive_install_defaults_to_excluding_optional_dependencies(tmp_path, monkeypatch):
+    """Non-interactive installs must not silently pull in large, single-skill
+    dependencies (e.g. pdf-to-markdown's OCR/ML models, several GB) -- the
+    user has to opt in explicitly, either interactively or via
+    --include-optional-deps."""
+    calls = []
+    monkeypatch.setattr(install.scaffold, "run", lambda **kw: None)
+    monkeypatch.setattr(install.launchers, "run", lambda **kw: None)
+    monkeypatch.setattr(
+        install.managed_runtime,
+        "build_candidate_release",
+        lambda **kwargs: calls.append(kwargs),
+    )
+    monkeypatch.setattr(install.managed_runtime, "optional_python_packages", lambda *a, **kw: ("marker-pdf",))
+
+    install.run(
+        home=tmp_path, dry_run=False, non_interactive=True,
+        dev_mode=False, agents=[], default_llm="claude",
+    )
+
+    assert calls[0]["include_optional_dependencies"] is False
+
+
+def test_non_interactive_install_honors_explicit_include_optional_deps(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(install.scaffold, "run", lambda **kw: None)
+    monkeypatch.setattr(install.launchers, "run", lambda **kw: None)
+    monkeypatch.setattr(
+        install.managed_runtime,
+        "build_candidate_release",
+        lambda **kwargs: calls.append(kwargs),
+    )
+
+    install.run(
+        home=tmp_path, dry_run=False, non_interactive=True,
+        dev_mode=False, agents=[], default_llm="claude",
+        include_optional_dependencies=True,
+    )
+
+    assert calls[0]["include_optional_dependencies"] is True
+
+
 def test_phase_entry_builds_candidate_before_scaffold(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(install.scaffold, "run", lambda **kw: calls.append(("scaffold", kw)))

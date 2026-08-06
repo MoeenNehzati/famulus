@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -12,9 +13,13 @@ from officina.common import atomic_files
 from officina.install.managed_runtime import (
     ManagedRuntimeError,
     _venv_python_bin,
+    _venv_site_packages,
     build_candidate_release,
     declared_python_packages,
+    optional_python_packages,
 )
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 REAL_MANIFEST = Path(__file__).resolve().parents[1] / "references" / "blueprint" / "runtime_dependencies.json"
 UV_BIN = shutil.which("uv")
@@ -67,6 +72,34 @@ def test_declared_python_packages_rejects_unsupported_schema_version(tmp_path):
     manifest.write_text(json.dumps({"version": 2, "skills": {}}))
     with pytest.raises(ManagedRuntimeError):
         declared_python_packages(manifest, platform="linux")
+
+
+def test_declared_python_packages_include_optional_false_excludes_marker_pdf():
+    """marker-pdf pulls in the full torch/transformers/CUDA stack (several
+    GB) for pdf-to-markdown's OCR models alone -- the "core" set (what a
+    fresh install gets by default) excludes it; every other real declared
+    package stays."""
+    core = declared_python_packages(REAL_MANIFEST, platform="linux", include_optional=False)
+    assert "marker-pdf" not in core
+    assert core == (
+        "bibtexparser",
+        "cryptography>=44.0.1",
+        "dateparser",
+        "jsonschema>=4",
+        "keyring",
+        "PyYAML>=6",
+        "rich",
+    )
+
+
+def test_declared_python_packages_include_optional_true_is_the_default():
+    assert declared_python_packages(REAL_MANIFEST, platform="linux") == declared_python_packages(
+        REAL_MANIFEST, platform="linux", include_optional=True
+    )
+
+
+def test_optional_python_packages_returns_just_the_deferred_set():
+    assert optional_python_packages(REAL_MANIFEST, platform="linux") == ("marker-pdf",)
 
 
 def test_venv_python_bin_posix_is_bin_python():
@@ -134,6 +167,26 @@ def test_build_candidate_release_creates_venv_then_one_batch_pip_install(monkeyp
     assert pip_call[4] == str(pointer.python_bin)
     assert python_dir_call == [str(FAKE_UV_BIN), "python", "dir"]
     assert pointer.python_bin.exists()
+
+
+def test_build_candidate_release_include_optional_dependencies_false_excludes_marker_pdf(monkeypatch, tmp_path):
+    calls: list = []
+    monkeypatch.setattr(
+        "subprocess.run", fake_uv_subprocess_run(calls, trusted_python_dir=tmp_path / "uv-python-store")
+    )
+
+    build_candidate_release(
+        runtime_root=tmp_path / "runtime",
+        manifest_path=REAL_MANIFEST,
+        platform="linux",
+        uv_bin=FAKE_UV_BIN,
+        python_version="3.11",
+        include_optional_dependencies=False,
+    )
+
+    pip_call = calls[1]
+    assert "marker-pdf" not in pip_call
+    assert "bibtexparser" in pip_call  # a core (non-optional) package is still requested
 
 
 def test_build_candidate_release_provisions_venv_before_installing_packages(monkeypatch, tmp_path):
@@ -286,8 +339,8 @@ def test_deploy_resolver_writes_through_atomic_replace_bytes_not_plain_copy(monk
 @pytest.mark.skipif(UV_BIN is None, reason="uv is not installed on this machine")
 def test_build_candidate_release_end_to_end_with_real_uv(tmp_path):
     """Integration test against the real uv binary (no mocking): proves the
-    venv-creation + batch-install + activation flow actually works, not just
-    that mocked call shapes look right."""
+    venv-creation + batch-install + officina-self-install + activation flow
+    actually works, not just that mocked call shapes look right."""
     manifest = tmp_path / "runtime_dependencies.json"
     manifest.write_text(json.dumps({
         "version": 1,
@@ -324,3 +377,16 @@ def test_build_candidate_release_end_to_end_with_real_uv(tmp_path):
         p.name.startswith("rich") for p in (pointer.runtime_source / "venv").rglob("rich*")
     )
     assert site_packages_has_rich
+
+    site_packages = _venv_site_packages(pointer.runtime_source / "venv", platform="linux", python_version="3.11")
+    assert (site_packages / "officina" / "__init__.py").is_file()
+    # Clean env (no inherited PYTHONPATH from whatever ran this test itself)
+    # so this actually proves the release venv resolves `officina` from its
+    # own copied site-packages, not a source tree the test runner happens to
+    # have on its own PYTHONPATH.
+    result = subprocess.run(
+        [str(pointer.python_bin), "-c", "import officina; print(officina.__file__)"],
+        capture_output=True, text=True, env={"PATH": os.environ.get("PATH", "")},
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(site_packages / "officina" / "__init__.py")

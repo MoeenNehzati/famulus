@@ -137,7 +137,9 @@ def _ensure_managed_uv(*, info, paths, platform_name: str) -> int:
     return 0
 
 
-def _build_managed_runtime_candidate(*, repo_root: Path, home: Path) -> int:
+def _build_managed_runtime_candidate(
+    *, repo_root: Path, home: Path, include_optional_dependencies: bool
+) -> int:
     """Build and activate a managed-runtime candidate release before scaffold
     runs, so the dispatcher/invoke-skill launchers scaffold.run installs have
     a real release to exec into as soon as they exist on disk.
@@ -169,6 +171,14 @@ def _build_managed_runtime_candidate(*, repo_root: Path, home: Path) -> int:
     if uv_status:
         return uv_status
 
+    if not include_optional_dependencies:
+        deferred = managed_runtime.optional_python_packages(manifest_path, platform=platform_name)
+        if deferred:
+            log(
+                "Skipping optional heavy dependencies (re-run install later to add "
+                f"them): {', '.join(deferred)}"
+            )
+
     log("Building managed-runtime candidate release...")
     try:
         managed_runtime.build_candidate_release(
@@ -177,6 +187,8 @@ def _build_managed_runtime_candidate(*, repo_root: Path, home: Path) -> int:
             platform=platform_name,
             uv_bin=paths.uv_bin,
             python_version=info.managed_python,
+            repo_root=repo_root,
+            include_optional_dependencies=include_optional_dependencies,
         )
     except (managed_runtime.ManagedRuntimeError, runtime_pointer.RuntimePointerError) as exc:
         log(f"Managed-runtime candidate build failed: {exc}")
@@ -253,8 +265,21 @@ def run(
     default_llm: str | None = None,
     google_services: list[str] | None = None,
     gmail_nickname: str | None = None,
+    include_optional_dependencies: bool | None = None,
 ) -> int:
     home = home or Path.home()
+
+    if include_optional_dependencies is None:
+        if non_interactive:
+            include_optional_dependencies = False
+        else:
+            include_optional_dependencies = _prompt_yes_no(
+                "Some skills need large optional dependencies (e.g. pdf-to-markdown's "
+                "OCR/ML models -- several GB). Install them now? If you skip this, "
+                "you can install them later, if you end up needing that skill, by "
+                "re-running install with --include-optional-deps.",
+                default=False,
+            )
 
     if dev_mode is None:
         if non_interactive:
@@ -281,7 +306,9 @@ def run(
     if dry_run:
         log("(dry-run) Would build and activate a managed-runtime candidate release.")
     else:
-        candidate_status = _build_managed_runtime_candidate(repo_root=repo_root, home=home)
+        candidate_status = _build_managed_runtime_candidate(
+            repo_root=repo_root, home=home, include_optional_dependencies=include_optional_dependencies
+        )
         if candidate_status:
             log()
             log("Installation stopped because the managed-runtime candidate build failed.")
@@ -354,6 +381,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     mode.add_argument("--dev-mode", dest="dev_mode", action="store_true", default=None)
     mode.add_argument("--no-dev-mode", dest="dev_mode", action="store_false")
     parser.add_argument("--repo-path", metavar="DIR")
+    optional_deps = parser.add_mutually_exclusive_group()
+    optional_deps.add_argument(
+        "--include-optional-deps", dest="include_optional_dependencies",
+        action="store_true", default=None,
+        help="Also install large, single-skill dependencies (e.g. pdf-to-markdown's "
+        "OCR/ML models). Defaults to skipping them.",
+    )
+    optional_deps.add_argument(
+        "--no-optional-deps", dest="include_optional_dependencies", action="store_false",
+    )
     parser.add_argument("--agents", metavar="LIST",
         help="Comma-separated subset of: " + ",".join(ALL_AGENTS))
     parser.add_argument("--default-llm", choices=["claude", "codex"])
@@ -391,6 +428,7 @@ def main(argv: list[str] | None = None) -> int:
         default_llm=args.default_llm,
         google_services=google_services,
         gmail_nickname=args.gmail_nickname,
+        include_optional_dependencies=args.include_optional_dependencies,
     )
 
 

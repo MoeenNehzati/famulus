@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -16,12 +17,38 @@ from officina.install.runtime_pointer import RuntimePointerError, activate_relea
 
 SRC_DIR = Path(__file__).resolve().parents[1] / "src"
 RESOLVER_SOURCE = SRC_DIR / "officina" / "install" / "resolvers" / "launch.py"
+REAL_MANIFEST = Path(__file__).resolve().parents[1] / "references" / "blueprint" / "runtime_dependencies.json"
 UV_BIN = shutil.which("uv")
 
 
 def _resolver_argv(runtime_root: Path, *extra: str) -> list[str]:
     resolver_path = runtime_root / "bootstrap" / "resolvers" / "v1" / "launch.py"
     return [str(resolver_path), *extra]
+
+
+def _manifest_without_heavy_ml_deps(tmp_path: Path) -> Path:
+    """Write a copy of the real dependency manifest with `marker-pdf`
+    (which pulls in `transformers` and a large model-weight download chain)
+    dropped, keeping every other real declared dependency.
+
+    Tests that exec into the real officina package need its actual
+    transitive imports (e.g. jsonschema, PyYAML -- see officina/common's
+    schema/blueprint modules) satisfied, so an empty stub manifest isn't
+    enough; but installing the real manifest verbatim risks filling local
+    disk on a constrained dev machine and is slow. This keeps the real
+    dependency set (so it stays correct if officina's own imports change)
+    while excluding the one entry that's disproportionately heavy.
+    """
+    data = json.loads(REAL_MANIFEST.read_text())
+    for skill in data.get("skills", {}).values():
+        for interface in skill.get("interfaces", {}).values():
+            interface["dependencies"] = [
+                dep for dep in interface.get("dependencies", [])
+                if not (dep.get("kind") == "python-package" and dep.get("name") == "marker-pdf")
+            ]
+    manifest_path = tmp_path / "runtime_dependencies.no-marker-pdf.json"
+    manifest_path.write_text(json.dumps(data))
+    return manifest_path
 
 
 def _deploy_managed_uv(runtime_root: Path) -> Path:
@@ -278,17 +305,15 @@ def test_resolver_containment_check_matches_real_runtime_pointer_implementation(
         f"(real_error={real_error!r}, resolver_error={resolver_error!r})"
     )
     if expect_accept:
-        # The two implementations deliberately return different (but each
-        # internally consistent) shapes on acceptance: the real
-        # implementation preserves the original (root-normalized, not
-        # leaf-resolved) path so a stored pointer keeps referring to the
-        # venv location, while the resolver returns the fully resolved leaf
-        # so it can exec straight into the real interpreter. Cross-checking
-        # accept/reject agreement (above) is what guards against drift in
-        # the security-relevant containment decision; the return shapes are
-        # allowed to differ.
+        # Both implementations now return the same shape on acceptance: the
+        # validated *entry* path (root-normalized, not leaf-resolved), never
+        # the resolved leaf -- execing (or storing a pointer to) the resolved
+        # base-interpreter target would bypass the venv's own pyvenv.cfg and
+        # site-packages entirely. Trust validation still fully resolves the
+        # symlink chain internally; only the returned/exec'd path differs.
         assert real_result is not None
-        assert resolver_result == path.resolve()
+        assert resolver_result == real_result
+        assert resolver_result == path
 
 
 # ── Real end-to-end smoke tests ──────────────────────────────────────────────
@@ -333,10 +358,12 @@ def test_resolver_end_to_end_execs_into_real_uv_managed_interpreter_with_clean_e
 
     assert result.returncode == 0, result.stderr
     assert "ModuleNotFoundError" not in result.stderr
-    # The resolver execs into the fully resolved interpreter target (real
-    # uv-store path), not the venv's symlink path, so sys.executable in the
-    # launched process reports the resolved target.
-    assert result.stdout.strip() == str(pointer.python_bin.resolve())
+    # The resolver execs into the venv's own entry path (its bin/python
+    # symlink), not the fully resolved base-interpreter target -- resolving
+    # it would bypass venv/pyvenv.cfg discovery and silently lose the venv's
+    # site-packages. sys.executable in the launched process reports that
+    # unresolved entry path.
+    assert result.stdout.strip() == str(pointer.python_bin)
 
 
 # famulus-skip: category=capability-unavailable; reason=requires a real uv binary on PATH; alternate=mocked tests above cover main()'s pointer-resolution and trusted-roots logic without uv installed
@@ -348,10 +375,9 @@ def test_build_candidate_release_auto_deploys_resolver_with_clean_env(tmp_path):
     test_resolver_end_to_end_execs_into_real_uv_managed_interpreter_with_clean_env
     above, this test deliberately does NOT call _deploy_resolver -- proving
     the deployment happens automatically -- and invokes the resolver
-    directly (not the full dispatcher shim, which still hits
-    ModuleNotFoundError for officina.dispatcher.cli since that package isn't
-    pip-installed into the managed venv; that is a separate, deliberate
-    design decision, not this test's concern) with a clean environment.
+    directly rather than the full dispatcher shim (covered separately by
+    test_generated_dispatcher_shim_reaches_the_real_release_interpreter_with_clean_env
+    below) with a clean environment.
     """
     runtime_root = tmp_path / "runtime"
     manifest = tmp_path / "runtime_dependencies.json"
@@ -384,7 +410,7 @@ def test_build_candidate_release_auto_deploys_resolver_with_clean_env(tmp_path):
 
     assert result.returncode == 0, result.stderr
     assert "ModuleNotFoundError" not in result.stderr
-    assert result.stdout.strip() == str(pointer.python_bin.resolve())
+    assert result.stdout.strip() == str(pointer.python_bin)
 
 
 # famulus-skip: category=capability-unavailable; reason=requires a real uv binary on PATH; alternate=mocked tests above cover main()'s pointer-resolution and trusted-roots logic without uv installed
@@ -394,14 +420,15 @@ def test_generated_dispatcher_shim_reaches_the_real_release_interpreter_with_cle
     a clean environment: a real uv-managed release is built and activated
     (build_candidate_release deploys the dependency-free resolver and its
     trust sidecar at its fixed path as part of that activation -- see
-    test_build_candidate_release_auto_deploys_resolver_with_clean_env above),
-    and the exact shim content _unix_dispatcher_content produces is written
-    and executed. The release venv has no `officina` package installed (that
-    wiring is a separately scoped, later task), so success here means
-    getting all the way through pointer resolution and exec into the release
-    interpreter with no PYTHONPATH help -- the only expected failure is
-    ModuleNotFoundError for officina.dispatcher.cli itself, raised by the
-    release interpreter, never a resolver-side error.
+    test_build_candidate_release_auto_deploys_resolver_with_clean_env above,
+    and installs `officina` itself into the release venv -- see
+    managed_runtime._install_officina_self), and the exact shim content
+    _unix_dispatcher_content produces is written and executed with no argv,
+    no PYTHONPATH, and no other officina-specific env var. Success here means
+    getting all the way through pointer resolution, exec into the release
+    interpreter, and into officina.dispatcher.cli's own argument parsing --
+    which then fails on missing required arguments (this test passes none),
+    not on failing to find the module.
     """
     sys.path.insert(
         0,
@@ -414,13 +441,16 @@ def test_generated_dispatcher_shim_reaches_the_real_release_interpreter_with_cle
 
     home = tmp_path / "home"
     runtime_root = home / ".local" / "share" / "famulus" / "runtime"
-    manifest = tmp_path / "runtime_dependencies.json"
-    manifest.write_text(json.dumps({"version": 1, "skills": {}}))
-
+    # Uses the real dependency manifest, minus marker-pdf (see
+    # _manifest_without_heavy_ml_deps): officina's own code is now loaded
+    # into the release venv and imports third-party packages (e.g.
+    # jsonschema) at module load, same as it would in a real deployment --
+    # a stub manifest with no declared packages would fail with a spurious
+    # ModuleNotFoundError unrelated to what this test checks.
     managed_uv = _deploy_managed_uv(runtime_root)
     build_candidate_release(
         runtime_root=runtime_root,
-        manifest_path=manifest,
+        manifest_path=_manifest_without_heavy_ml_deps(tmp_path),
         platform="linux",
         uv_bin=managed_uv,
         python_version="3.11",
@@ -435,11 +465,23 @@ def test_generated_dispatcher_shim_reaches_the_real_release_interpreter_with_cle
     dispatcher.write_text(content, encoding="utf-8")
     dispatcher.chmod(0o755)
 
-    # No PYTHONPATH injected.
-    result = subprocess.run([str(dispatcher)], capture_output=True, text=True)
+    # Explicit clean env, not just "no PYTHONPATH set in this test": whatever
+    # ran this test process itself may have its own PYTHONPATH (e.g. to make
+    # a non-editable-installed `officina` importable for collection), and
+    # subprocess.run inherits the parent env by default -- an inherited
+    # PYTHONPATH pointing at src/ would make this subprocess resolve
+    # `officina` from the source tree instead of proving the release venv's
+    # own copy resolves it standalone, silently defeating the point of this
+    # test.
+    result = subprocess.run(
+        [str(dispatcher)], capture_output=True, text=True, env={"PATH": os.environ.get("PATH", "")}
+    )
 
     assert result.returncode != 0
     assert "RuntimePointerError" not in result.stderr
     assert "famulus launcher:" not in result.stderr
-    assert "ModuleNotFoundError" in result.stderr
-    assert "officina" in result.stderr
+    assert "ModuleNotFoundError" not in result.stderr
+    # Reached officina.dispatcher.cli's own argparse, which fails because
+    # this test passes no arguments -- proof execution got all the way in,
+    # not evidence of a bug.
+    assert "--caller-skill" in result.stderr

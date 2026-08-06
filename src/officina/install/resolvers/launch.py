@@ -44,8 +44,9 @@ def _is_relative_to(path: Path, other: Path) -> bool:
 def _require_contained_or_trusted(
     path: Path, *, root: Path, trusted_roots: tuple[Path, ...], label: str
 ) -> Path:
-    """Return ``path`` fully resolved, or raise if it escapes ``root`` and
-    every entry in ``trusted_roots``.
+    """Validate ``path`` against ``root``/``trusted_roots`` and return the
+    validated *entry* path (not its resolved target), or raise if it escapes
+    ``root`` and every entry in ``trusted_roots``.
 
     ``path`` itself (its parent directory chain) must physically live under
     ``root``, without dereferencing the leaf. If the leaf is a symlink, its
@@ -69,12 +70,23 @@ def _require_contained_or_trusted(
         raise ResolverError(
             f"{label} resolves outside runtime_root and all trusted roots: {path} -> {resolved_leaf}"
         )
-    return resolved_leaf
+    # Preserve the validated venv entry path for exec. python_bin is
+    # typically a venv's bin/python symlink into uv's shared interpreter
+    # store; execing the *resolved* base-interpreter target directly starts
+    # a bare interpreter that never finds venv/pyvenv.cfg (pyvenv.cfg
+    # discovery walks up from the invoked path's own directory, which for
+    # the resolved target is the shared store, not the venv), so it silently
+    # loses the venv's site-packages -- including officina itself. Exec-ing
+    # the unresolved entry path instead keeps the venv association intact;
+    # trust validation above still fully resolves the symlink chain first,
+    # so this is not a security regression, only a change in what gets exec'd.
+    return path
 
 
 def _load_current_pointer(runtime_root: Path, *, trusted_roots: tuple[Path, ...]) -> Path:
-    """Read current.json beneath ``runtime_root`` and return its validated,
-    fully resolved ``python_bin`` path."""
+    """Read current.json beneath ``runtime_root`` and return its validated
+    ``python_bin`` entry path (unresolved -- see
+    ``_require_contained_or_trusted``)."""
     pointer_path = runtime_root / "current.json"
     if not pointer_path.exists():
         raise ResolverError(f"no current.json at {pointer_path}")

@@ -16,6 +16,7 @@ import json
 import os
 import re
 import secrets
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -58,14 +59,21 @@ def _package_spec(name: str, version: str | None) -> str:
     return f"{name}=={version}"
 
 
-def declared_python_packages(manifest_path: Path, *, platform: str) -> tuple[str, ...]:
-    """Return the deduplicated, sorted pip install specs for every
-    python-package dependency declared for ``platform`` in the real v1
-    runtime_dependencies.json manifest.
+# Packages declared in runtime_dependencies.json that are large and needed by
+# only a single feature skill, not by officina/dispatcher or core skill
+# functionality generally. marker-pdf (pdf-to-markdown's OCR models) pulls in
+# the full torch/transformers/CUDA stack -- several GB -- for a capability
+# most installs never touch. This is a pure installer-policy decision (what
+# to install by default), not a property of the manifest itself, so it's kept
+# here rather than as a new field on the schema-validated manifest.
+_OPTIONAL_HEAVY_PACKAGE_NAMES = frozenset({"marker-pdf"})
 
-    The first version constraint seen for a given package name (case-folded)
-    wins; later, less-specific ("any") duplicates for the same package are
-    ignored.
+
+def _iter_declared_dependencies(manifest_path: Path, *, platform: str):
+    """Yield ``(name, version)`` for every python-package dependency declared
+    for ``platform`` in the real v1 runtime_dependencies.json manifest,
+    before dedup/spec-building. Shared by ``declared_python_packages`` and
+    ``optional_python_packages`` so both read the manifest the same way.
     """
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     if payload.get("version") != 1:
@@ -76,7 +84,6 @@ def declared_python_packages(manifest_path: Path, *, platform: str) -> tuple[str
     if not isinstance(skills, dict):
         raise ManagedRuntimeError("runtime_dependencies.json 'skills' must be an object")
 
-    seen: dict[str, str] = {}
     for skill in skills.values():
         interfaces = skill.get("interfaces", {}) if isinstance(skill, dict) else {}
         if not isinstance(interfaces, dict):
@@ -94,10 +101,44 @@ def declared_python_packages(manifest_path: Path, *, platform: str) -> tuple[str
                 name = dependency.get("name")
                 if not isinstance(name, str) or not name:
                     continue
-                key = name.casefold()
-                seen.setdefault(key, _package_spec(name, dependency.get("version")))
+                yield name, dependency.get("version")
+
+
+def declared_python_packages(
+    manifest_path: Path, *, platform: str, include_optional: bool = True
+) -> tuple[str, ...]:
+    """Return the deduplicated, sorted pip install specs for every
+    python-package dependency declared for ``platform`` in the real v1
+    runtime_dependencies.json manifest.
+
+    The first version constraint seen for a given package name (case-folded)
+    wins; later, less-specific ("any") duplicates for the same package are
+    ignored.
+
+    ``include_optional=False`` excludes ``_OPTIONAL_HEAVY_PACKAGE_NAMES``
+    (see that constant) -- the "core" set installed by default; pass
+    ``include_optional=True`` (the default, matching historical behavior) to
+    get the full set instead.
+    """
+    seen: dict[str, str] = {}
+    for name, version in _iter_declared_dependencies(manifest_path, platform=platform):
+        key = name.casefold()
+        if not include_optional and key in _OPTIONAL_HEAVY_PACKAGE_NAMES:
+            continue
+        seen.setdefault(key, _package_spec(name, version))
 
     return tuple(sorted(seen.values(), key=str.casefold))
+
+
+def optional_python_packages(manifest_path: Path, *, platform: str) -> tuple[str, ...]:
+    """Return just the declared pip install specs considered optional/heavy
+    (see ``_OPTIONAL_HEAVY_PACKAGE_NAMES``) -- the packages the "core" set
+    excludes. Lets a caller tell the user what's being deferred before
+    deciding whether to include them.
+    """
+    full = set(declared_python_packages(manifest_path, platform=platform, include_optional=True))
+    core = set(declared_python_packages(manifest_path, platform=platform, include_optional=False))
+    return tuple(sorted(full - core, key=str.casefold))
 
 
 def _run_uv(argv: list[str], *, timeout: float | None = None) -> subprocess.CompletedProcess:
@@ -184,6 +225,48 @@ def _venv_python_bin(venv_dir: Path, *, platform: str) -> Path:
     return venv_dir / "bin" / "python"
 
 
+def _venv_site_packages(venv_dir: Path, *, platform: str, python_version: str) -> Path:
+    """Return the site-packages directory a real ``uv venv --python ... venv_dir``
+    creates for ``platform``, mirroring ``_venv_python_bin``'s platform branch.
+    """
+    if platform == "windows":
+        return venv_dir / "Lib" / "site-packages"
+    return venv_dir / "lib" / f"python{python_version}" / "site-packages"
+
+
+def _install_officina_self(*, repo_root: Path, venv_dir: Path, platform: str, python_version: str) -> None:
+    """Copy the running ``officina`` package itself into the release venv.
+
+    The batch dependency install above only installs what
+    ``runtime_dependencies.json`` declares -- third-party packages officina's
+    own code needs at runtime. ``officina`` is not, and should not be, one of
+    those entries (it isn't published anywhere the batch installer could
+    fetch it from); without this step every release venv would provision
+    successfully and then fail with ``ModuleNotFoundError: No module named
+    'officina'`` the moment ``dispatcher`` (or anything else) tries to exec
+    into it, since ``dispatcher`` always runs as ``-m officina.dispatcher.cli``
+    against the release's own interpreter.
+
+    A plain directory copy (not ``uv pip install <repo_root>``) is used
+    deliberately: officina ships non-.py package data (blueprint.yaml files,
+    certification records, schemas) that a wheel build would need explicit
+    packaging config to carry, and a copy needs none of that. Each release
+    gets its own independent snapshot, not a live link back to the source
+    tree, matching how the declared third-party dependencies are pinned
+    per-release rather than shared.
+    """
+    source = repo_root / "src" / "officina"
+    if not source.is_dir():
+        raise ManagedRuntimeError(f"officina source not found at {source}")
+    destination = _venv_site_packages(venv_dir, platform=platform, python_version=python_version) / "officina"
+    try:
+        if destination.exists():
+            shutil.rmtree(destination)
+        shutil.copytree(source, destination, ignore=shutil.ignore_patterns("__pycache__"))
+    except OSError as exc:
+        raise ManagedRuntimeError(f"could not install officina into the release venv: {exc}") from exc
+
+
 def _new_release_id() -> str:
     timestamp = time.strftime("%Y-%m-%dT%H-%M-%SZ", time.gmtime())
     return f"{timestamp}-{secrets.token_hex(3)}"
@@ -266,23 +349,41 @@ def build_candidate_release(
     platform: str,
     uv_bin: Path,
     python_version: str,
+    repo_root: Path | None = None,
+    include_optional_dependencies: bool = True,
 ) -> RuntimePointer:
     """Create a new release directory, provision its managed interpreter,
-    install its declared Python dependencies in a single atomic batch, and
-    activate it.
+    install its declared Python dependencies in a single atomic batch,
+    install officina itself into the venv, and activate the release.
 
     ``python_version`` should be the pinned ``managed_python.preferred``
     value from install-info.toml (see officina.install.install_info); it is
     passed straight through to ``uv venv --python``.
 
+    ``repo_root`` is the checkout whose ``src/officina`` gets copied into the
+    release venv (see ``_install_officina_self``). Defaults to the repo this
+    very module lives in, which is correct for plugin-mode installs (no
+    separate live checkout) and for callers that don't otherwise care; a
+    dev-mode install passes the user's explicit checkout path instead.
+
+    ``include_optional_dependencies`` controls whether large, single-skill
+    packages (see ``_OPTIONAL_HEAVY_PACKAGE_NAMES``) are installed. Defaults
+    to ``True`` here so existing/lower-level callers keep today's behavior;
+    ``_phase_entry.py``'s interactive install flow defaults the *user-facing*
+    choice to ``False`` and passes the result through explicitly.
+
     On any failure (bad manifest, failed venv creation, failed batch
-    install, or failed resolver deployment), no release is activated:
-    current.json is left untouched and no new pointer is written. The
-    dependency-free launcher resolver and its trust sidecar are deployed
-    *before* activation for exactly this reason: a deployment failure must
-    prevent activation, not follow it.
+    install, failed officina self-install, or failed resolver deployment),
+    no release is activated: current.json is left untouched and no new
+    pointer is written. The dependency-free launcher resolver and its trust
+    sidecar are deployed *before* activation for exactly this reason: a
+    deployment failure must prevent activation, not follow it.
     """
-    packages = declared_python_packages(manifest_path, platform=platform)
+    if repo_root is None:
+        repo_root = Path(__file__).resolve().parents[3]
+    packages = declared_python_packages(
+        manifest_path, platform=platform, include_optional=include_optional_dependencies
+    )
     release_id = _new_release_id()
     release_dir = runtime_root / "releases" / release_id
     release_dir.mkdir(parents=True, exist_ok=True)
@@ -291,6 +392,7 @@ def build_candidate_release(
 
     _create_release_venv(uv_bin=uv_bin, venv_dir=venv_dir, python_version=python_version)
     _run_dependency_install(uv_bin=uv_bin, python_bin=python_bin, packages=packages)
+    _install_officina_self(repo_root=repo_root, venv_dir=venv_dir, platform=platform, python_version=python_version)
 
     trusted_interpreter_roots = (_uv_python_install_dir(uv_bin),)
     _deploy_resolver(runtime_root=runtime_root, trusted_interpreter_roots=trusted_interpreter_roots)
