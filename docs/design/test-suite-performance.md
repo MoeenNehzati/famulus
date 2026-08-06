@@ -81,3 +81,12 @@ The platform-neutral validator computed the same repository-relative path
 during discovery and again for every line. Carrying it forward from discovery
 reduced five-run call time from 2.50--3.06 seconds to 2.31--2.48 seconds. The
 small gain shows that file reading and content matching remain the dominant work.
+
+## Example: regex preparation
+
+The runtime-documentation validator rebuilt up to four regex objects per stem
+for each Markdown file and two more per scanned line. A lazy per-skill pattern
+table removed that repetition,
+but Python's regex cache had already limited its cost: median call time moved
+from 0.33 to 0.30 seconds. Count repeated preparation, but confirm that removing
+it changes the measured bottleneck.

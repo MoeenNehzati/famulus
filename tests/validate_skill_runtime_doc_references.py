@@ -26,6 +26,54 @@ def test_public_interface_name_passes(tmp_path: Path) -> None:
     assert _mod.validate(tmp_path) == []
 
 
+def test_runtime_patterns_are_prepared_once_per_stem(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    skill = _skill(tmp_path)
+    (skill / "_rtx" / "_Other_Helper.py").write_text("", encoding="utf-8")
+    (skill / "SKILL.md").write_text("first\nsecond\n", encoding="utf-8")
+    (skill / "README.md").write_text("third\nfourth\n", encoding="utf-8")
+    original_stem_patterns = _mod._stem_patterns
+    original_suffix_patterns = _mod._suffix_patterns_for_stem
+    stem_calls: list[str] = []
+    suffix_calls: list[str] = []
+
+    def counted_stem_patterns(stem: str):
+        stem_calls.append(stem)
+        return original_stem_patterns(stem)
+
+    def counted_suffix_patterns(stem: str):
+        suffix_calls.append(stem)
+        return original_suffix_patterns(stem)
+
+    monkeypatch.setattr(_mod, "_stem_patterns", counted_stem_patterns)
+    monkeypatch.setattr(_mod, "_suffix_patterns_for_stem", counted_suffix_patterns)
+
+    assert _mod.validate(tmp_path) == []
+    assert stem_calls == ["_Calendar_Gateway", "_Other_Helper"]
+    assert suffix_calls == ["_Calendar_Gateway", "_Other_Helper"]
+
+
+def test_runtime_findings_keep_pass_and_stem_order(tmp_path: Path) -> None:
+    skill = _skill(tmp_path)
+    (skill / "_rtx" / "_Other_Helper.py").write_text("", encoding="utf-8")
+    (skill / "README.md").write_text(
+        "_rtx scripts/legacy.py _Calendar_Gateway.py _Other_Helper.py "
+        "calendar gateway other helper\nother helper\n",
+        encoding="utf-8",
+    )
+
+    assert _mod.validate(tmp_path) == [
+        "skills/demo-skill/README.md:1: skill-facing Markdown must not mention `_rtx`",
+        "skills/demo-skill/README.md:1: skill-facing Markdown must not mention old runtime path `scripts/legacy.py`",
+        "skills/demo-skill/README.md:1: skill-facing Markdown must not mention runtime file `_Calendar_Gateway.py`",
+        "skills/demo-skill/README.md:1: skill-facing Markdown must not mention runtime file `_Other_Helper.py`",
+        "skills/demo-skill/README.md:1: skill-facing Markdown must not mention private runtime name `_Calendar_Gateway`",
+        "skills/demo-skill/README.md:2: skill-facing Markdown must not mention private runtime name `_Other_Helper`",
+    ]
+
+
 def test_private_runtime_directory_name_is_rejected(tmp_path: Path) -> None:
     skill = _skill(tmp_path)
     (skill / "SKILL.md").write_text("Run _rtx directly.\n", encoding="utf-8")

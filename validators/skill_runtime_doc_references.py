@@ -29,6 +29,27 @@ _OLD_RUNTIME_PATH_RE = re.compile(
 )
 
 def _iter_skill_markdown(repo_root: Path):
+    """Yield eligible skill Markdown paths in stable repository order.
+
+    Intent
+    ------
+    Discover public Markdown content with repository-relative identities.
+
+    Rationale
+    ---------
+    Runtime implementation directories and nonpublic content must remain excluded.
+
+    Pseudocode
+    ----------
+    - for skill in sorted skill directories:
+      - for path in sorted Markdown descendants:
+        - if path is eligible:
+          - return path and relative path
+
+    Wraps
+    -----
+    - none
+    """
     skills_root = repo_root / "skills"
     if not skills_root.is_dir():
         return
@@ -46,6 +67,27 @@ def _runtime_stems_for_skill(
     skill_dir: Path,
     graph: object | None,
 ) -> list[str]:
+    """Return private runtime stems owned directly by one skill.
+
+    Intent
+    ------
+    Inventory runtime names that public Markdown must not expose.
+
+    Rationale
+    ---------
+    Registered child artifacts and conventional support files are separate nodes or exemptions.
+
+    Pseudocode
+    ----------
+    - for path in sorted runtime descendants:
+      - if path is an eligible direct runtime artifact:
+        - set stems = stems plus directory name or file stem
+    - return sorted stems
+
+    Wraps
+    -----
+    - none
+    """
     rtx_dir = skill_dir / RTX_DIR_NAME
     if not rtx_dir.is_dir():
         return []
@@ -67,6 +109,27 @@ def _runtime_stems_for_skill(
 
 
 def _stem_patterns(stem: str) -> list[re.Pattern[str]]:
+    """Build normalized private-name matchers for one runtime stem.
+
+    Intent
+    ------
+    Match private, public, spaced, and hyphenated forms of multiword names.
+
+    Rationale
+    ---------
+    Public prose can leak an implementation name without using its exact filename spelling.
+
+    Pseudocode
+    ----------
+    - set words = nonempty public stem components
+    - if fewer than two words:
+      - return no patterns
+    - return four boundary-aware case-insensitive patterns
+
+    Wraps
+    -----
+    - none
+    """
     public_stem = stem.lstrip("_")
     words = [word for word in public_stem.split("_") if word]
     if len(words) < 2:
@@ -84,13 +147,51 @@ def _stem_patterns(stem: str) -> list[re.Pattern[str]]:
 
 
 def _public_markdown_text(path: Path, text: str) -> str:
-    """Return hand-authored public text for runtime-leak scanning."""
+    """Return hand-authored public text for runtime-leak scanning.
+
+    Intent
+    ------
+    Exclude generated skill-document sections while retaining other Markdown verbatim.
+
+    Rationale
+    ---------
+    Generated sections describe machinery and are validated through their own source.
+
+    Pseudocode
+    ----------
+    - if path is not a skill entry document:
+      - return original text
+    - return hand-authored skill body
+
+    Wraps
+    -----
+    - none
+    """
     if path.name != "SKILL.md":
         return text
     return hand_authored_skill_body(text)
 
 
 def _suffix_patterns_for_stem(stem: str) -> list[re.Pattern[str]]:
+    """Build runtime-filename matchers for one private stem.
+
+    Intent
+    ------
+    Match private and public stem spellings followed by an allowed runtime suffix.
+
+    Rationale
+    ---------
+    Explicit runtime filenames reveal private implementation artifacts.
+
+    Pseudocode
+    ----------
+    - set public = stem without leading underscores
+    - return private and public suffix-aware patterns
+
+    Wraps
+    -----
+    - none
+    """
     public_stem = re.escape(stem.lstrip("_"))
     private_stem = re.escape(stem)
     return [
@@ -100,6 +201,51 @@ def _suffix_patterns_for_stem(stem: str) -> list[re.Pattern[str]]:
 
 
 def _validate(repo_root: Path, graph: object | None) -> list[str]:
+    """Return private runtime references found in public skill Markdown.
+
+    Intent
+    ------
+    Scan eligible Markdown with one lazily prepared pattern table per skill.
+
+    Rationale
+    ---------
+    Pattern reuse removes file- and line-level preparation without changing finding order.
+
+    Pseudocode
+    ----------
+    - set stems = runtime stems grouped by skill
+    - for path in eligible skill Markdown:
+      - if skill patterns are not prepared:
+        - set patterns = matchers for skill runtime stems
+      - for line in public text:
+        - set findings = findings plus ordered runtime-reference matches
+    - return findings
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._iter_skill_markdown:
+      why:
+        computes: "Provides public Markdown files in stable order."
+    ._stem_patterns:
+      why:
+        computes: "Provides normalized private-name matchers."
+    ._public_markdown_text:
+      why:
+        computes: "Provides the hand-authored text scanned for each document."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._runtime_stems_for_skill:
+      why:
+        constructs: "Builds each skill runtime-name inventory."
+    ._suffix_patterns_for_stem:
+      why:
+        constructs: "Builds runtime-filename matchers."
+    """
     errors: list[str] = []
     skills_root = repo_root / "skills"
     if not skills_root.is_dir():
@@ -110,14 +256,29 @@ def _validate(repo_root: Path, graph: object | None) -> list[str]:
         for skill_dir in sorted(skills_root.iterdir())
         if skill_dir.is_dir() and skill_dir.name != ".system"
     }
+    patterns_by_skill: dict[
+        str,
+        tuple[
+            list[tuple[str, list[re.Pattern[str]]]],
+            list[tuple[str, re.Pattern[str]]],
+        ],
+    ] = {}
 
     for path, rel_path in _iter_skill_markdown(repo_root):
         skill_name = rel_path.parts[1]
-        stem_patterns = [
-            (stem, pattern)
-            for stem in stems_by_skill.get(skill_name, [])
-            for pattern in _stem_patterns(stem)
-        ]
+        if skill_name not in patterns_by_skill:
+            stems = stems_by_skill.get(skill_name, [])
+            suffix_patterns = [
+                (stem, _suffix_patterns_for_stem(stem))
+                for stem in stems
+            ]
+            stem_patterns = [
+                (stem, pattern)
+                for stem in stems
+                for pattern in _stem_patterns(stem)
+            ]
+            patterns_by_skill[skill_name] = suffix_patterns, stem_patterns
+        suffix_patterns, stem_patterns = patterns_by_skill[skill_name]
         try:
             text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
@@ -132,8 +293,8 @@ def _validate(repo_root: Path, graph: object | None) -> list[str]:
                     f"{rel_path}:{lineno}: skill-facing Markdown must not mention old runtime path "
                     f"`{old_path.group(0)}`"
                 )
-            for stem in stems_by_skill.get(skill_name, []):
-                for suffix_pattern in _suffix_patterns_for_stem(stem):
+            for stem, stem_suffix_patterns in suffix_patterns:
+                for suffix_pattern in stem_suffix_patterns:
                     suffix_match = suffix_pattern.search(line)
                     if suffix_match:
                         errors.append(
@@ -153,14 +314,89 @@ def _validate(repo_root: Path, graph: object | None) -> list[str]:
 
 
 def validate_with_graph(repo_root: Path, graph: object) -> list[str]:
+    """Validate runtime references with a prepared repository graph.
+
+    Intent
+    ------
+    Reuse graph ownership data supplied by the consolidated validator suite.
+
+    Rationale
+    ---------
+    Suite execution should not reconstruct canonical repository topology.
+
+    Pseudocode
+    ----------
+    - return runtime-reference findings using supplied graph
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._validate:
+      why:
+        constructs: "Builds runtime-reference findings."
+    """
     return _validate(repo_root, graph)
 
 
 def validate(repo_root: Path) -> list[str]:
+    """Validate runtime references without graph ownership exclusions.
+
+    Intent
+    ------
+    Preserve the standalone compatibility entry point.
+
+    Rationale
+    ---------
+    Direct validation remains usable when no prepared graph is available.
+
+    Pseudocode
+    ----------
+    - return runtime-reference findings without graph
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._validate:
+      why:
+        constructs: "Builds standalone runtime-reference findings."
+    """
     return _validate(repo_root, None)
 
 
 def main() -> int:
+    """Run standalone runtime-reference validation and print findings.
+
+    Intent
+    ------
+    Expose conventional command-line output and status.
+
+    Rationale
+    ---------
+    Maintainer automation can invoke the validator outside pytest.
+
+    Pseudocode
+    ----------
+    - set findings = repository runtime-reference validation
+    - if findings exist:
+      - return failure status
+    - return success status
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .validate:
+      why:
+        constructs: "Builds findings printed by the command-line boundary."
+    """
     repo_root = Path(__file__).resolve().parents[1]
     errors = validate(repo_root)
     if errors:
