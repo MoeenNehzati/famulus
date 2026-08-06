@@ -1,4 +1,4 @@
-"""Integration tests for lists.py subcommands. All tests operate on local temp files."""
+"""Black-box CLI tests for local list behavior and serialized cloud mutations."""
 import os
 import subprocess
 import sys
@@ -12,9 +12,9 @@ LISTS_PY = Path(__file__).parent.parent / "_yaml_store.py"
 REPO_SRC = Path(__file__).resolve().parents[4] / "src"
 SCRIPTS_DIR = LISTS_PY.parent
 
-# A valid todo YAML used by multiple tests.
-# Domain categories (Work, Personal) must have exactly the 6 task-list subcategories.
-# Writing is at index 3; Tasks (with Book dentist) is at index 4.
+# A valid revision-less todo document reused by local and fake-cloud tests.
+# Work has the six base subcategories; Personal adds Shop as its seventh.
+# Work/Writing is index 3; Personal/Tasks (with Book dentist) is index 4.
 TODO_YAML = """\
 schema: todo
 name: todo
@@ -58,6 +58,7 @@ categories:
 
 
 def run(args: list[str], stdin: str | None = None) -> subprocess.CompletedProcess:
+    """Invoke the YAML-store CLI with test import paths and captured text streams."""
     env = os.environ.copy()
     env["PYTHONPATH"] = os.pathsep.join([str(REPO_SRC), str(SCRIPTS_DIR)])
     return subprocess.run(
@@ -71,6 +72,7 @@ def run(args: list[str], stdin: str | None = None) -> subprocess.CompletedProces
 
 @pytest.fixture
 def todo_file(tmp_path):
+    """Write the shared revision-less document to a temporary local list path."""
     f = tmp_path / "todo.yaml"
     f.write_text(TODO_YAML)
     return f
@@ -85,9 +87,8 @@ def test_init_creates_valid_yaml(tmp_path):
     data = yaml.safe_load(f.read_text())
     assert data["schema"] == "todo"
     assert data["name"] == "todo"
-    # A fresh list is seeded with usable default domain categories rather
-    # than an empty list (feedback item 23) -- see
-    # test_init_seeds_default_categories_for_todo_schema for the details.
+    # Structured action schemas seed usable domains rather than an empty list;
+    # the dedicated seed tests below verify the exact child-name vocabularies.
     assert data["categories"]
 
 
@@ -137,9 +138,7 @@ _WORK_SUBCATEGORY_NAMES = {"Replies", "Payments", "Reading", "Writing", "Tasks",
 
 
 def _assert_default_domain_categories(data: dict) -> None:
-    """Shared assertion for the todo/triage default-category seed: both
-    "Personal" and "Work" domains present, each with its exact required
-    subcategory set."""
+    """Assert Personal and Work seeds have their exact schema-defined child names."""
     category_names = [c["name"] for c in data["categories"]]
     assert "Personal" in category_names
     assert "Work" in category_names
@@ -214,9 +213,7 @@ def test_gen_id_avoids_collisions(tmp_path):
 # ── read ──────────────────────────────────────────────────────────────────────
 
 def _flatten_entries(node) -> list[dict]:
-    """Walk a filtered-read result (nested dict or list) and collect every
-    entry dict found anywhere in it, for assertions that don't care about the
-    surrounding category/parent-entry structure."""
+    """Collect nested entries in traversal order while ignoring their containers."""
     entries: list[dict] = []
     if isinstance(node, dict):
         if "id" in node and "title" in node:
@@ -709,15 +706,13 @@ def test_describe_schema_unknown_schema_errors():
     assert "not-a-schema" in result.stderr
 
 
-# ── optimistic-concurrency revision check (feedback items 24/25) ──────────────
+# ── optimistic concurrency and local mutation locking ───────────────────────────
 #
-# TODO_YAML has no `revision` field, matching every pre-existing list file on
-# disk today -- a missing revision is treated as revision 0 so this feature
-# is opt-in and doesn't disturb any file that predates it.
+# TODO_YAML omits `revision` to exercise the compatibility path: the runtime
+# treats a missing value as revision zero, so guarded writes remain opt-in.
 
 def test_update_without_expected_revision_still_works(todo_file):
-    """Backward compat: callers that never pass --expected-revision behave
-    exactly as before -- the check is opt-in, not mandatory."""
+    """Verify updates remain valid when no expected-revision guard is supplied."""
     result = run(["update", str(todo_file)], stdin="- id: a3f2b9\n  state: complete\n")
     assert result.returncode == 0, result.stderr
     data = yaml.safe_load(todo_file.read_text())
@@ -764,15 +759,7 @@ def test_update_rejects_stale_expected_revision(todo_file):
 
 
 def test_update_rejects_stale_revision_from_a_prior_completed_write(todo_file):
-    """Sequential regression test (writer1 fully completes before writer2
-    starts -- NOT a concurrency test): a writer whose --expected-revision no
-    longer matches because a previous, already-finished write moved the
-    revision on must be rejected, not silently clobber that prior write. The
-    file on disk must be exactly the first writer's result -- no
-    partial/corrupt write from the rejected second attempt. For an actual
-    concurrent race that exercises the lock (two processes alive at the same
-    time, racing through the check-to-write gap), see
-    test_update_concurrent_writers_are_serialized_by_the_lock below."""
+    """Reject a stale writer after an earlier guarded write has fully completed."""
     writer1 = run(
         ["update", str(todo_file), "--expected-revision", "0"],
         stdin="- id: a3f2b9\n  state: complete\n",
@@ -800,21 +787,7 @@ def test_update_rejects_stale_revision_from_a_prior_completed_write(todo_file):
 
 
 def test_update_concurrent_writers_are_serialized_by_the_lock(todo_file):
-    """Genuinely concurrent race, not sequential: writer1 is started and,
-    while it is INSIDE its lock-held critical section -- past check_revision,
-    before its save (via the LIST_MANAGER_TEST_RACE_DELAY test hook) --
-    writer2 is started without waiting for writer1 to finish. Both are alive
-    at the same time and both target --expected-revision 0, so their
-    check-then-write windows would genuinely interleave if the mutation were
-    only an optimistic check with no lock (writer2's load+check could happen
-    before writer1's save, and both would then pass the check and both
-    write). This is exactly the gap a bare revision check narrows but does
-    not close.
-
-    Proves the file lock closes it: writer2's load_yaml() cannot even begin
-    until writer1 releases the lock (i.e. has already saved), so writer2
-    always observes the post-writer1 revision and is correctly rejected --
-    it can never race through and clobber writer1's write."""
+    """Prove overlapping guarded local updates serialize through the final save."""
     env = os.environ.copy()
     env["PYTHONPATH"] = os.pathsep.join([str(REPO_SRC), str(SCRIPTS_DIR)])
     env["LIST_MANAGER_TEST_RACE_DELAY"] = "1.0"
@@ -868,14 +841,7 @@ def test_update_concurrent_writers_are_serialized_by_the_lock(todo_file):
 # famulus-skip: category=platform-contract; reason=this test holds the lock sidecar directly via fcntl.flock, which only exists on os.name == "posix"; alternate=file_lock()'s os.name == "nt" branch shares the same bounded-retry-with-deadline structure exercised here, just via msvcrt instead of fcntl
 @pytest.mark.skipif(os.name != "posix", reason="holds the lock directly via fcntl.flock")
 def test_update_lock_acquisition_times_out_with_clear_error(todo_file):
-    """A HUNG-but-alive lock holder (stuck network call, deadlock -- not a
-    crash, which releases the OS lock automatically) must not make a later
-    invocation stall silently forever. Hold the `<file>.lock` sidecar
-    exclusively (simulating a stuck writer that has acquired the lock but
-    never releases it) and confirm a second acquisition attempt -- using
-    LIST_MANAGER_TEST_LOCK_TIMEOUT_S to shrink the real 30s default down to
-    well under a second -- fails fast with a clear, actionable error instead
-    of hanging."""
+    """Bound a second writer's wait while a live process holds the list sidecar lock."""
     import fcntl
 
     lock_path = todo_file.with_name(todo_file.name + ".lock")
@@ -947,32 +913,14 @@ def test_delete_rejects_stale_expected_revision_no_write(todo_file):
     assert todo_file.read_text() == before
 
 
-# ── cloud-mode concurrency (the fresh-tempdir race) ─────────────────────────
+# ── cloud mutation locking ────────────────────────────────────────────────
 #
-# --cloud mode downloads the cloud list to a FRESH tempfile.mkdtemp() path on
-# every invocation (see main()). The per-command file_lock() is keyed on that
-# unique local temp path, so it serializes nothing across two independent
-# --cloud processes -- each gets its own lock sidecar that no other process
-# will ever contend for. Before the fix: two overlapping --cloud writers can
-# both download the same cloud revision, both pass check_revision, and the
-# second upload silently clobbers the first's change.
+# Each cloud invocation downloads to a fresh temporary path, so a lock keyed
+# by that path cannot coordinate separate writers. One shared, name-keyed lock
+# spans download, mutation, and upload to prevent lost updates.
 
 def test_cloud_concurrent_writers_are_serialized_across_processes(tmp_path):
-    """Genuinely concurrent race (not a sequential simulation): two real
-    subprocess invocations of lists.py --cloud race against a shared fake
-    "cloud" backend (LIST_MANAGER_TEST_CLOUD_DIR, see _cloud_transport.py's
-    _test_cloud_dir()), each still going through its own private
-    tempfile.mkdtemp() download path exactly as production does. writer1 is
-    held inside its critical section (past check_revision, before its save --
-    via LIST_MANAGER_TEST_RACE_DELAY) while writer2, with no delay, is
-    started and races to download+mutate+upload the same cloud list before
-    writer1 finishes.
-
-    Proves the fix serializes the two: writer2 cannot even begin its download
-    until writer1's whole download-mutate-upload sequence has completed, so
-    it always observes the post-writer1 revision and is correctly rejected --
-    it never gets a window to race through and clobber writer1's write.
-    """
+    """Prove cloud writers serialize across the complete download-to-upload cycle."""
     cloud_dir = tmp_path / "cloud"
     cloud_dir.mkdir()
     (cloud_dir / "todo.yaml").write_text(TODO_YAML)
