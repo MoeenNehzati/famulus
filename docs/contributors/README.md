@@ -13,7 +13,7 @@ The skill system is built around a small set of explicit authored surfaces:
 
 Start with these architecture and contract references:
 
-- [docs/skill-blueprints.md](../skill-blueprints.md)
+- [docs/officina/skill-blueprints.md](../officina/skill-blueprints.md)
 - [references/blueprint/schema.json](../../references/blueprint/schema.json)
 - [references/blueprint/template.yaml](../../references/blueprint/template.yaml)
 - Layered [node standards](../../references/node-standards/node.standard.yaml), queried through `refactor-node`
@@ -75,7 +75,7 @@ These skills support general software projects and repositories.
 
 ## Where To Go Next
 
-- [docs/scaffolding/README.md](../scaffolding/README.md) — long-form explanation of the scaffolding layer and why it exists
+- [docs/officina/scaffolding/README.md](../officina/scaffolding/README.md) — long-form explanation of the scaffolding layer and why it exists
 - [docs/contributors/documentation-system.md](documentation-system.md) — how doc generation and doc validation work
 - [TESTING.md](../../TESTING.md) — hook order, CI behavior, and Python test-suite boundaries
 - [references/blueprint/README.md](../../references/blueprint/README.md) — blueprint reference index

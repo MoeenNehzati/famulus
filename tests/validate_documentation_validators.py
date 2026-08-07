@@ -90,7 +90,7 @@ def _seed_docs(repo_root: Path) -> None:
                 "",
                 "### Recommended: plugin install",
                 "",
-                "[docs/installation.md](docs/installation.md)",
+                "[docs/officina/installation.md](docs/officina/installation.md)",
                 "",
                 "## Featured Workflows",
                 "",
@@ -154,10 +154,10 @@ def _seed_docs(repo_root: Path) -> None:
                 "dispatcher --caller-skill <caller> <callee>.interface.<name> [args...]",
                 "python3 validators/runner.py",
                 ".githooks/pre-commit",
-                "docs/skill-blueprints.md",
+                "docs/officina/skill-blueprints.md",
                 "references/blueprint/schema.json",
                 "references/blueprint/template.yaml",
-                "docs/scaffolding/README.md",
+                "docs/officina/scaffolding/README.md",
                 "docs/contributors/documentation-system.md",
                 "## Software Development",
                 "<!-- BEGIN AUTO-GENERATED DOCS: software-development -->",
@@ -184,9 +184,9 @@ def _seed_docs(repo_root: Path) -> None:
             ]
         ),
     )
-    _write(repo_root / "docs/scaffolding/README.md", "# Scaffolding\n")
+    _write(repo_root / "docs/officina/scaffolding/README.md", "# Scaffolding\n")
     _write(repo_root / "references/blueprint/README.md", "# Blueprint Reference\n")
-    _write(repo_root / "docs/skill-blueprints.md", "# Skill Blueprints\n")
+    _write(repo_root / "docs/officina/skill-blueprints.md", "# Skill Blueprints\n")
     _write(repo_root / "references/blueprint/schema.json", "{}\n")
     _write(repo_root / "references/blueprint/template.yaml", "discovery: {}\n")
 
@@ -225,10 +225,10 @@ def test_readme_validator_rejects_contributor_blueprint_doc(tmp_path: Path) -> N
     repo_root = _make_repo(tmp_path)
     readme = repo_root / "README.md"
     readme.write_text(
-        readme.read_text(encoding="utf-8") + "\n[Blueprints](docs/skill-blueprints.md)\n",
+        readme.read_text(encoding="utf-8") + "\n[Blueprints](docs/officina/skill-blueprints.md)\n",
         encoding="utf-8",
     )
 
     errors = validate_readme(repo_root)
 
-    assert any("docs/skill-blueprints.md" in error for error in errors)
+    assert any("docs/officina/skill-blueprints.md" in error for error in errors)

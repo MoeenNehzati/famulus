@@ -13,9 +13,9 @@ discovery, and certification.
 
 More specialized documents refine this architecture:
 
-- `docs/skill-blueprints.md` explains concrete blueprint authoring;
-- `docs/certification_and_drift.md` defines certificate lifecycle and drift;
-- `docs/blueprint_search.md` defines graph-query behavior.
+- `docs/officina/skill-blueprints.md` explains concrete blueprint authoring;
+- `docs/officina/certification_and_drift.md` defines certificate lifecycle and drift;
+- `docs/officina/blueprint_search.md` defines graph-query behavior.
 
 ## Nodes
 
@@ -59,7 +59,7 @@ The certifier derives each node's certification inputs from ownership, Git
 state, non-configurable safety rules, and one projectwide ordered policy at
 `references/certification/node-hash-policy.yaml`. The policy is validated by
 the central `src/officina/common/configuration.schema.json`; its exact syntax
-and examples belong in the existing `docs/certification_and_drift.md`. The old
+and examples belong in the existing `docs/officina/certification_and_drift.md`. The old
 `references/certification/node-hash-policy.schema.json` remains only as frozen
 certification-basis evidence for historical records.
 
@@ -405,7 +405,7 @@ edges. A Boolean `autodiscoverable` flag alone is insufficient because it does
 not explain how discovery occurs.
 
 The authoritative meanings and selection rules for configured discovery values
-are documented in [Blueprint discovery metadata](contributors/blueprint-discovery-metadata.md).
+are documented in [Blueprint discovery metadata](blueprint-discovery-metadata.md).
 The schema guarantees structural validity and mechanically decidable
 cross-field rules. Semantic review remains responsible for whether a valid
 domain or topic truthfully describes the module.

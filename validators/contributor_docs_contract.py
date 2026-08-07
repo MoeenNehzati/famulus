@@ -13,10 +13,10 @@ _README_REQUIRED = (
     "dispatcher --caller-skill <caller> <callee>.interface.<name> [args...]",
     "validators/runner.py",
     ".githooks/pre-commit",
-    "docs/skill-blueprints.md",
+    "docs/officina/skill-blueprints.md",
     "references/blueprint/schema.json",
     "references/blueprint/template.yaml",
-    "docs/scaffolding/README.md",
+    "docs/officina/scaffolding/README.md",
     "docs/contributors/documentation-system.md",
 )
 
@@ -31,6 +31,39 @@ _DOC_SYSTEM_REQUIRED = (
 
 
 def validate(repo_root: Path) -> list[str]:
+    """Report contributor documentation that is missing, stale, or incomplete.
+
+    Intent
+    ------
+    Keep the contributor entry points current with the live blueprint graph.
+
+    Rationale
+    ---------
+    Comparing the guide against a fresh rendering catches coverage blocks that
+    drifted from the live blueprints, which a snippet check alone would miss.
+
+    Pseudocode
+    ----------
+    - set errors = empty error list
+    - if neither docs nor skills exists:
+      - return an empty error list
+    - if the contributor guide is not a regular file:
+      - set errors = errors plus a missing-guide error
+    - else:
+      - set actual = contributor guide contents
+      - set rendered = contributor guide re-rendered with fresh coverage blocks
+      - if actual differs from rendered:
+        - set errors = errors plus a stale-coverage-block error
+      - for snippet in README_REQUIRED:
+        - set errors = errors plus a missing-snippet error when absent
+    - set errors = errors plus the documentation-system doc findings
+    - return errors
+
+    Wraps
+    -----
+    - none
+    """
+
     errors: list[str] = []
     if not (repo_root / "docs").exists() and not (repo_root / "skills").exists():
         return []

@@ -1,7 +1,7 @@
 # Installation Guide
 
 This document is the detailed, user-facing companion to
-[skills/install-assistant-tools/SKILL.md](../skills/install-assistant-tools/SKILL.md). That file tells the assistant how
+[skills/install-assistant-tools/SKILL.md](../../skills/install-assistant-tools/SKILL.md). That file tells the assistant how
 to *run* the installer conversationally; this file is for a human (or an
 assistant debugging a broken install) who wants to understand exactly what
 each script does, what every flag means, and how to diagnose a problem.
@@ -12,7 +12,7 @@ here via `dispatcher`. Read this file directly only when something needs
 closer inspection than the conversational flow gives you.
 
 If the commands are already installed and you just want to know how to use
-`assistant`, `collab`, `coauthor`, or `tw`, start with [docs/launchers.md](launchers.md).
+`assistant`, `collab`, `coauthor`, or `tw`, start with [docs/launchers.md](../launchers.md).
 
 Important distinction:
 
@@ -101,7 +101,7 @@ Only runs if you said yes to dev mode and gave a repo path. Installs:
   directory and links each repo skill into it individually, preserving its
   runtime-owned `.system` directory. Codex profile configs are also linked.
 - Dev-mode session hooks in `~/.claude/settings.local.json` and
-  `~/.codex/config.toml`, driven by the registry in [llmhooks/registry.py](../llmhooks/registry.py).
+  `~/.codex/config.toml`, driven by the registry in [llmhooks/registry.py](../../llmhooks/registry.py).
 - `git config core.hooksPath .githooks` in the repo (skipped with a note if
   the given path isn't actually a git checkout).
 - `$AI` in your shell rc, pointing at the repo root.

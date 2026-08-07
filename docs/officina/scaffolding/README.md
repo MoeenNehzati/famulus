@@ -2,7 +2,7 @@
 
 This document describes the repository machinery that keeps modules explicit,
 composable, and checkable. Start with
-[`skills/skill-maker/`](../../skills/skill-maker/): it owns blueprint
+[`skills/skill-maker/`](../../../skills/skill-maker/): it owns blueprint
 synchronization and the skill-system validators.
 
 ## Authored surfaces
@@ -34,7 +34,7 @@ are certification state.
 
 ## Generated views
 
-[`skills/skill-maker/_rtx/_blueprint_syncer.py`](../../skills/skill-maker/_rtx/_blueprint_syncer.py)
+[`skills/skill-maker/_rtx/_blueprint_syncer.py`](../../../skills/skill-maker/_rtx/_blueprint_syncer.py)
 derives:
 
 - blueprint contract and interface blocks in `SKILL.md`;
@@ -113,5 +113,5 @@ When changing the architecture or schema:
 - [Skill blueprints](../skill-blueprints.md)
 - [Certification and drift](../certification_and_drift.md)
 - [Blueprint search](../blueprint_search.md)
-- [Blueprint schemas](../../references/blueprint/README.md)
-- [Layered node standards](../../references/node-standards/node.standard.yaml)
+- [Blueprint schemas](../../../references/blueprint/README.md)
+- [Layered node standards](../../../references/node-standards/node.standard.yaml)

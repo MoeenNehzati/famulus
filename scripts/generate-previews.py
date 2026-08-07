@@ -419,6 +419,27 @@ hr {
 
 
 def _pandoc_exists() -> bool:
+    """Report whether the pandoc converter can be invoked on this host.
+
+    Intent
+    ------
+    Gate preview generation on the external converter being callable.
+
+    Rationale
+    ---------
+    Probing once with the version banner discarded fails fast instead of
+    surfacing a pandoc error part-way through rendering.
+
+    Pseudocode
+    ----------
+    - set completed = pandoc version probe with output discarded
+    - return whether completed returncode is zero
+
+    Wraps
+    -----
+    - none
+    """
+
     return subprocess.run(
         ["pandoc", "--version"],
         stdout=subprocess.DEVNULL,
@@ -428,11 +449,63 @@ def _pandoc_exists() -> bool:
 
 
 def _base_href(path: Path) -> str:
+    """Return the directory file URI a preview resolves relative links against.
+
+    Intent
+    ------
+    Give generated HTML a base URI so repository-relative links stay clickable.
+
+    Rationale
+    ---------
+    A base URI without a trailing slash makes the browser resolve links against
+    the parent directory, so the slash is normalized here rather than at each
+    call site.
+
+    Pseudocode
+    ----------
+    - set href = absolute file URI for the resolved path
+    - if href does not end with a slash:
+      - set href = href with a trailing slash appended
+    - return href
+
+    Wraps
+    -----
+    - none
+    """
+
     href = path.resolve().as_uri()
     return href if href.endswith("/") else href + "/"
 
 
 def _with_base_href(header_html: str, base_path: Path) -> str:
+    """Bind one preview header template to its base directory URI.
+
+    Intent
+    ------
+    Bind a header template to the directory its relative links resolve against.
+
+    Rationale
+    ---------
+    Substituting only the first occurrence keeps the marker's meaning positional
+    so later literal text in the template is never rewritten.
+
+    Pseudocode
+    ----------
+    - set base = @_base_href(base_path)
+    - set header = header_html with its first base marker replaced by base
+    - return header
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._base_href:
+      why:
+        computes: "Derives the directory file URI substituted into the header."
+    """
+
     return header_html.replace("__BASE_HREF__", _base_href(base_path), 1)
 
 
@@ -443,6 +516,31 @@ def _render_preview(
     metadata_key: str,
     metadata_value: str,
 ) -> None:
+    """Render one Markdown file to a standalone HTML preview via pandoc.
+
+    Intent
+    ------
+    Produce a reviewable HTML rendering without leaving a partial file behind.
+
+    Rationale
+    ---------
+    Pandoc writes to a temporary sibling that replaces the output only after a
+    successful conversion, so a failed run cannot leave a truncated preview in
+    place. The header include is removed whether or not conversion succeeds.
+
+    Pseudocode
+    ----------
+    - set tmp_output = output_path with a temporary suffix appended
+    - set header_path = temporary file holding header_html
+    - set completed = pandoc conversion of markdown_path into tmp_output
+    - set output_path = tmp_output replacing the previous preview
+    - set header_path = unlinked once conversion finishes
+
+    Wraps
+    -----
+    - none
+    """
+
     BUILD_DIR.mkdir(parents=True, exist_ok=True)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_output = output_path.with_suffix(output_path.suffix + ".tmp")
@@ -470,6 +568,38 @@ def _render_preview(
 
 
 def generate_readme_preview() -> Path:
+    """Render the repository README to its HTML preview and return the path.
+
+    Intent
+    ------
+    Give maintainers a local rendering of the README as readers will see it.
+
+    Rationale
+    ---------
+    The README's relative links point at repository paths, so its preview is
+    based at the repository root rather than at the build directory.
+
+    Pseudocode
+    ----------
+    - set output_path = README preview path under the build directory
+    - set header = @_with_base_href(README_HEADER, REPO_ROOT)
+    - @_render_preview(README source, output_path, header, title metadata)
+    - return output_path
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._with_base_href:
+      why:
+        computes: "Binds the README header to the repository-root base URI."
+    ._render_preview:
+      why:
+        writes: "Renders the README source into its standalone HTML preview."
+    """
+
     output_path = BUILD_DIR / "README-preview.html"
     _render_preview(
         REPO_ROOT / "README.md",
@@ -482,11 +612,43 @@ def generate_readme_preview() -> Path:
 
 
 def generate_scaffolding_preview() -> Path:
+    """Render the scaffolding guide to its HTML preview and return the path.
+
+    Intent
+    ------
+    Give maintainers a local rendering of the scaffolding documentation.
+
+    Rationale
+    ---------
+    The scaffolding guide's links are relative to its own directory, so its
+    preview is based there rather than at the repository root.
+
+    Pseudocode
+    ----------
+    - set output_path = scaffolding preview path under the build directory
+    - set header = @_with_base_href(SCAFFOLDING_HEADER, scaffolding directory)
+    - @_render_preview(scaffolding source, output_path, header, pagetitle metadata)
+    - return output_path
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._with_base_href:
+      why:
+        computes: "Binds the scaffolding header to that document's base URI."
+    ._render_preview:
+      why:
+        writes: "Renders the scaffolding source into its standalone HTML preview."
+    """
+
     output_path = BUILD_DIR / "scaffolding-preview.html"
     _render_preview(
-        REPO_ROOT / "docs/scaffolding/README.md",
+        REPO_ROOT / "docs/officina/scaffolding/README.md",
         output_path,
-        _with_base_href(SCAFFOLDING_HEADER, REPO_ROOT / "docs/scaffolding"),
+        _with_base_href(SCAFFOLDING_HEADER, REPO_ROOT / "docs/officina/scaffolding"),
         "pagetitle",
         "Famulus scaffolding preview",
     )
@@ -494,6 +656,54 @@ def generate_scaffolding_preview() -> Path:
 
 
 def main() -> int:
+    """Generate the selected previews and report their repository-relative paths.
+
+    Intent
+    ------
+    Expose preview generation as a command with an explicit target selection.
+
+    Rationale
+    ---------
+    Checking the converter before any rendering keeps a missing pandoc a single
+    diagnosed failure rather than a partial set of previews.
+
+    Pseudocode
+    ----------
+    - set args = parsed command-line arguments
+    - set available = @_pandoc_exists()
+    - if available is false:
+      - return 1
+    - set generated = empty path list
+    - if args target selects the readme:
+      - readme_path = generate_readme_preview()
+      - set generated = generated plus readme_path
+    - if args target selects the scaffolding guide:
+      - scaffolding_path = generate_scaffolding_preview()
+      - set generated = generated plus scaffolding_path
+    - for path in generated:
+      - set reported = path relative to REPO_ROOT
+    - return 0
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._pandoc_exists:
+      why:
+        validates: "Confirms the external converter is callable before rendering."
+
+    InstantiationsFromRepo
+    ----------------------
+    .generate_readme_preview:
+      why:
+        constructs: "Produces the README preview and its output path."
+    .generate_scaffolding_preview:
+      why:
+        constructs: "Produces the scaffolding preview and its output path."
+    """
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--target",

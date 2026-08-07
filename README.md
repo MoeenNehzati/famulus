@@ -13,7 +13,7 @@ At its core is a standard skill organization schema that keeps skills coherent a
 
 ### Recommended: plugin install
 
-Start by installing Famulus as a plugin for your host. That is the fastest way to make the skill suite available. If you want to edit skills or share one live checkout across hosts, see [docs/installation.md](docs/installation.md).
+Start by installing Famulus as a plugin for your host. That is the fastest way to make the skill suite available. If you want to edit skills or share one live checkout across hosts, see [docs/officina/installation.md](docs/officina/installation.md).
 
 Claude Code:
 
@@ -39,7 +39,7 @@ python3 <FAMULUS_DIR>/skills/install-assistant-tools/_rtx/_install_scaffold.py -
 
 Pass `--home DIR`, `--bin-dir DIR`, and `--shell-rc FILE` when provisioning into a custom environment.
 
-For development mode, repair flows, and more installation detail, see [docs/installation.md](docs/installation.md).
+For development mode, repair flows, and more installation detail, see [docs/officina/installation.md](docs/officina/installation.md).
 
 ## Platform Support
 

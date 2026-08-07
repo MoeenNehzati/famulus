@@ -69,7 +69,7 @@ The wrapper also has `shell` and `raw` templates:
 
 ## Installation
 
-These launchers are installed through the Phase 1 installer described in [docs/installation.md](installation.md).
+These launchers are installed through the Phase 1 installer described in [docs/officina/installation.md](officina/installation.md).
 
 That installer:
 
@@ -80,4 +80,4 @@ That installer:
 - creates the default worker directories for `assistant`, `collab`, and `coauthor`
 - installs `tw` / `tmux-workspace` when the platform supports tmux
 
-If you want the installation and repair details, use [docs/installation.md](installation.md). This page is about how to use the launchers once they exist.
+If you want the installation and repair details, use [docs/officina/installation.md](officina/installation.md). This page is about how to use the launchers once they exist.
