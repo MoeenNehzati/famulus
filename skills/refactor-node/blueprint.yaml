@@ -3,14 +3,11 @@ authority:
   suggested_permissions:
     bash: []
     network: []
-children:
-  refactor-node-rtx:
-    base: module-root
-    path: _rtx/blueprint.yaml
+children: {}
 content:
-- (?:SKILL\.md|instructions/(?:instruction|python)\-refactoring\.md|tests/test_(?:refactor_node_routing|query_standards)\.py)
-description: Resolves repository nodes and selected sub-scopes to language-specific,
-  behavior-preserving refactoring interfaces.
+- (?:SKILL\.md|instructions/(?:instruction|python)\-refactoring\.md|tests/test_refactor_node_routing\.py)
+description: Classifies selected refactoring scopes, queries their explicit standard
+  roots, and routes them to language-specific behavior-preserving interfaces.
 discovery:
   mechanism: skill
   catalog:
@@ -31,13 +28,6 @@ exports:
       allow_all_modules: true
       allowed_callers: []
     source_interface: refactor-node.source.gateway.interface.default
-  refactor-node.interface.query-standards:
-    access:
-      allow_all_modules: true
-      allowed_callers: []
-    facade_interface:
-      interface: refactor-node-rtx.interface.query-standards
-      version: 4
   refactor-node.interface.refactor-instructions:
     access:
       allow_all_modules: true
@@ -68,4 +58,4 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/instructions-python-refactoring.yaml
-version: 5
+version: 6

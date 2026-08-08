@@ -27,6 +27,7 @@ content:
 - repository_paths\.py
 - secret_store\.py
 - standard_extractor\.py
+- standard_query\.py
 - toml_io\.py
 description: Shared, narrowly exported Python helpers for secure file updates, project
   date keys, OAuth JSON, credential storage, and controlled TOML access.
@@ -174,8 +175,15 @@ exports:
     access:
       allow_all_modules: false
       allowed_callers:
-      - refactor-node-rtx
+      - common
     source_interface: common.source.standard-extractor.interface.python-api
+  common.interface.query-standard:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - refactor-node
+      - skill-maker
+    source_interface: common.source.standard-query.interface.query-standard
   common.interface.toml-io:
     access:
       allow_all_modules: false
@@ -267,8 +275,12 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/standard-extractor.yaml
+  common.source.standard-query:
+    blueprint:
+      base: module-root
+      path: blueprints/standard-query.yaml
   common.source.toml-io:
     blueprint:
       base: module-root
       path: blueprints/toml-io.yaml
-version: 4
+version: 5

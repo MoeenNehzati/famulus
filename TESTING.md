@@ -92,6 +92,29 @@ Two execution details matter:
 
 The Python tests run from the working tree, not from a staged mirror.
 
+The centralized check runner executes the selected validators and pytest groups.
+Its `--jobs` option controls parallel pytest workers; the default is two-thirds
+of the machine's logical CPUs.
+
+## Performance Benchmarks
+
+Measure any command and record process-tree resource use:
+
+```bash
+scripts/benchmark-command.py --output /tmp/checks.json -- \
+  python3 repo_checks.py --suite precommit --jobs 8
+```
+
+Run repeated, cache-controlled measurements of the centralized precommit suite:
+
+```bash
+scripts/benchmark-precommit.py --repo . --output /tmp/precommit.json \
+  --runs 3 --cache warm --jobs 8
+```
+
+`benchmark-precommit.py` calls `benchmark-command.py`; it does not duplicate
+suite discovery or execution policy from `officina.repository_checks`.
+
 ## GitHub Actions
 
 [`.github/workflows/python-tests.yml`](.github/workflows/python-tests.yml) runs on `push` and `pull_request` for `master` and `main`.
