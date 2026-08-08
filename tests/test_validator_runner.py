@@ -752,3 +752,24 @@ def test_run_all_isolates_unmerged_index_and_restores_git_environment(
     assert os.environ["GIT_OBJECT_DIRECTORY"] == "/sentinel/object-dir"
     assert GitTestRepository(repo).git("ls-files", "--stage", "-z").stdout == index_before
     assert GitTestRepository(repo).git("symbolic-ref", "HEAD").stdout == head_before
+
+
+def test_run_all_excludes_only_requested_validator(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    validators = _initialize_runner_repository(repo)
+    (validators / "included.py").write_text(
+        "def validate(repo_root): return ['included finding']\n",
+        encoding="utf-8",
+    )
+    (validators / "excluded.py").write_text(
+        "def validate(repo_root): return ['excluded finding']\n",
+        encoding="utf-8",
+    )
+    _require_git_ok(GitTestRepository(repo).git("add", "."))
+
+    results = _RUNNER.run_all(
+        repo,
+        excluded_validator_ids=["repo/excluded"],
+    )
+
+    assert results == {"repo/included": ["included finding"]}

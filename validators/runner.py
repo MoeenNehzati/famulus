@@ -925,6 +925,7 @@ def _validator_paths(
 def _selected_validator_paths(
     repo_root: Path,
     validator_ids: Sequence[str] | None,
+    excluded_validator_ids: Sequence[str] | None = None,
 ) -> tuple[tuple[str, Path], ...]:
     """Resolve an optional validator-ID selection against the staged catalog.
 
@@ -940,6 +941,7 @@ def _selected_validator_paths(
     ----------
     - set available_validators = discovered canonical validator paths
     - set selected_ids = validated requested ids or all available ids
+    - set selected_ids = selected_ids without validated excluded ids
     - return selected id and path pairs in lexical order
 
     Wraps
@@ -956,8 +958,16 @@ def _selected_validator_paths(
         raises: "Reports duplicate requested identifiers or identifiers absent from the catalog."
     """
     available = _validator_paths(repo_root)
+    excluded = tuple(excluded_validator_ids or ())
+    if len(set(excluded)) != len(excluded):
+        raise ValidatorRunnerError("duplicate validator exclusion")
+    unknown_excluded = sorted(set(excluded) - set(available))
+    if unknown_excluded:
+        raise ValidatorRunnerError(
+            "unknown excluded validator: " + ", ".join(unknown_excluded)
+        )
     if validator_ids is None:
-        selected = tuple(sorted(available))
+        selected = tuple(sorted(set(available) - set(excluded)))
     else:
         if len(set(validator_ids)) != len(validator_ids):
             raise ValidatorRunnerError("duplicate validator selection")
@@ -966,7 +976,7 @@ def _selected_validator_paths(
             raise ValidatorRunnerError(
                 "unknown validator: " + ", ".join(unknown)
             )
-        selected = tuple(sorted(validator_ids))
+        selected = tuple(sorted(set(validator_ids) - set(excluded)))
     return tuple((validator_id, available[validator_id]) for validator_id in selected)
 
 
@@ -1065,6 +1075,7 @@ def _run_tracked_validators(
     tracked_root: Path,
     display_root: Path,
     validator_ids: Sequence[str] | None,
+    excluded_validator_ids: Sequence[str] | None,
     staged_paths: Sequence[str],
 ) -> dict[str, list[str]]:
     """Execute selected validators inside one isolated staged repository view.
@@ -1120,6 +1131,7 @@ def _run_tracked_validators(
     selected_paths = _selected_validator_paths(
         tracked_root,
         validator_ids,
+        excluded_validator_ids,
     )
     loaded = {
         validator_id: _load_validator(validator_id, path)
@@ -1409,6 +1421,7 @@ def _run_tracked_child(
     mirror_root: Path,
     isolated_git_dir: Path,
     validator_ids: Sequence[str] | None,
+    excluded_validator_ids: Sequence[str] | None,
     staged_paths: Sequence[str],
 ) -> dict[str, list[str]]:
     """Run the staged validator runner in a separate isolated Python process.
@@ -1484,6 +1497,8 @@ def _run_tracked_child(
         ]
         for validator_id in validator_ids or ():
             command.extend(("--validator", validator_id))
+        for validator_id in excluded_validator_ids or ():
+            command.extend(("--exclude-validator", validator_id))
         completed = subprocess.run(
             command,
             cwd=mirror_root,
@@ -1530,6 +1545,7 @@ def _run_tracked_child(
 def run_all(
     repo_root: Path = REPO_ROOT,
     validator_ids: Sequence[str] | None = None,
+    excluded_validator_ids: Sequence[str] | None = None,
 ) -> dict[str, list[str]]:
     """Run validators from and against the exact staged repository view.
 
@@ -1591,6 +1607,7 @@ def run_all(
             mirror_root,
             isolated_git_dir,
             validator_ids,
+            excluded_validator_ids,
             staged_paths,
         )
     finally:
@@ -1604,6 +1621,7 @@ def _write_tracked_result(
     display_root: Path,
     result_path: Path,
     validator_ids: Sequence[str] | None,
+    excluded_validator_ids: Sequence[str] | None,
     staged_paths_file: Path,
 ) -> int:
     """Execute child validators and serialize their result for the parent.
@@ -1643,6 +1661,7 @@ def _write_tracked_result(
             tracked_root,
             display_root,
             validator_ids,
+            excluded_validator_ids,
             staged_paths,
         )
         result_path.write_text(
@@ -1727,6 +1746,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo-root", type=Path, default=REPO_ROOT)
     parser.add_argument("--validator", action="append", dest="validator_ids")
+    parser.add_argument(
+        "--exclude-validator",
+        action="append",
+        dest="excluded_validator_ids",
+    )
     parser.add_argument("--tracked-root", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--display-root", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--result-path", type=Path, help=argparse.SUPPRESS)
@@ -1748,6 +1772,7 @@ def main(argv: list[str] | None = None) -> int:
             args.display_root.resolve(),
             args.result_path,
             args.validator_ids,
+            args.excluded_validator_ids,
             args.staged_paths_file,
         )
     if (
@@ -1763,6 +1788,7 @@ def main(argv: list[str] | None = None) -> int:
         results = run_all(
             repo_root=args.repo_root,
             validator_ids=args.validator_ids,
+            excluded_validator_ids=args.excluded_validator_ids,
         )
     except ValidatorRunnerError as exc:
         print(f"error: {exc}", file=sys.stderr)
