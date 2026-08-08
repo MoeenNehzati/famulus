@@ -228,6 +228,8 @@ Whether a run counts as successful is decided by combining two signals:
 1. The literal process exit code. A non-zero exit (or a process that never
    spawned at all — missing executable, permission denied, etc.) always
    fails the run.
+   `success.ignore_exit_codes` can list non-zero codes to treat as non-blocking
+   in healthcheck only.
 2. An optional self-reported inner status. Some jobs write their own
    `state/status.json` (`{"result": "ok" | "error" | "warning", ...}`) as
    part of an existing status-tracking mechanism of their own; jobs.yaml's
@@ -236,6 +238,9 @@ Whether a run counts as successful is decided by combining two signals:
    matters because most jobs have no such self-reported status file, and
    requiring one they never write would make every run of theirs report
    failure.
+   `success.ignore_exit_log_patterns` can list regex patterns that must appear
+   in the recent run log to classify one of those exit-code failures as a
+   tolerated transient condition.
 
 In the shipped `jobs.yaml`, one job (the inbox-triage job, run at 3am)
 declares `success: {require_inner_status: ok}` because it already maintains

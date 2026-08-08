@@ -235,7 +235,23 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "require_inner_status": {"$ref": "#/definitions/nonEmptyString"}
+            "require_inner_status": {"$ref": "#/definitions/nonEmptyString"},
+            "ignore_exit_codes": {
+              "oneOf": [
+                {"type": "integer"},
+                {
+                  "type": "array",
+                  "items": {"type": "integer"},
+                  "uniqueItems": true
+                }
+              ]
+            },
+            "ignore_exit_log_patterns": {
+              "type": "array",
+              "items": {"$ref": "#/definitions/nonEmptyString"},
+              "minItems": 1,
+              "uniqueItems": true
+            }
           }
         }
       }

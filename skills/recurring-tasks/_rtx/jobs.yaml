@@ -10,6 +10,10 @@ jobs:
   # be checked beyond a bare exit code.
   success:
     require_inner_status: ok
+    ignore_exit_codes: [1]
+    ignore_exit_log_patterns:
+      - "You've hit your usage limit"
+      - "Please try again"
 - name: daily-plan
   description: Generate or show today's daily plan, including potential-actions triage
   command: invoke-skill daily-plan

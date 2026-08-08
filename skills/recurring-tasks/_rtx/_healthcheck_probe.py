@@ -5,6 +5,7 @@ Run periodically via cron (not systemd, so it works even if systemd breaks).
 """
 import os
 import shutil
+import re
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -48,6 +49,7 @@ else:
 JOBS_FILE = SKILL_DIR / "jobs.yaml"
 LOG_DIR = SKILL_DIR / "logs"
 HEALTHCHECK_LOG = SKILL_ROOT / "logs" / "healthcheck" / "run.log"
+_DEFAULT_TOLERANCE_TAIL_BYTES = 32768
 
 
 def log(msg: str) -> None:
@@ -77,6 +79,127 @@ def log(msg: str) -> None:
         with open(HEALTHCHECK_LOG, "a", encoding="utf-8") as report:
             report.write(f"[{timestamp}] {msg}\n")
     print(msg)
+
+
+def _read_log_tail(path: Path, *, max_bytes: int = _DEFAULT_TOLERANCE_TAIL_BYTES) -> str:
+    """Read a bounded suffix of a file for heuristic failure classification.
+
+    Intent
+    ------
+    Return only the newest part of a potentially large log file so failure heuristics are fast.
+
+    Rationale
+    ---------
+    Unbounded reads can be expensive for long-running job logs and can
+    miss only by memory pressure; a bounded read keeps checks predictable.
+
+    Pseudocode
+    ----------
+    - if path is not readable:
+      - return ""
+    - set size = file_size_bytes(path)
+    - set offset = max(size - max_bytes, 0)
+    - set payload = read_file_range(path, offset)
+    - set decoded_tail_text = decode(payload, errors="replace")
+    - return decoded_tail_text
+
+    Wraps
+    -----
+    - none
+    """
+    try:
+        with open(path, "rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            if size > max_bytes:
+                handle.seek(size - max_bytes)
+            return handle.read().decode("utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+def _allowed_failure_pattern(job: dict, latest: dict, log_file: Path) -> str | None:
+    """Return a matched policy pattern when the latest failure should be tolerated.
+
+    Intent
+    ------
+    Apply per-job policy overrides to decide whether a failing run should be treated as tolerated.
+
+    Rationale
+    ---------
+    Some jobs fail with known, acceptable exit codes and log motifs, and repeatedly
+    failing on those cases should not block the global health check.
+
+    Pseudocode
+    ----------
+    - set contract = job.get("success") or {}
+    - set ignore_exit_codes = contract.get("ignore_exit_codes")
+    - set ignore_patterns = contract.get("ignore_exit_log_patterns")
+    - set process_exit_code = int_or_none(latest.get("process_exit_code"))
+    - if latest.get("success") is true:
+      - return none
+    - if process_exit_code is none:
+      - return none
+    - if process_exit_code == 0:
+      - return none
+    - if ignore_patterns is none:
+      - return none
+    - set first_match = first_pattern_match(ignore_patterns, _read_log_tail(log_file))
+    - if first_match is none:
+      - return none
+    - return first_match
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._read_log_tail:
+      why:
+        constructs: "Provides a bounded log tail to avoid expensive reads before regex scanning."
+    """
+    if latest.get("success") is True:
+        return None
+
+    contract = job.get("success") or {}
+    ignore_exit_codes = contract.get("ignore_exit_codes")
+    ignore_patterns = contract.get("ignore_exit_log_patterns")
+
+    if not ignore_patterns or not isinstance(ignore_patterns, list):
+        return None
+    if not ignore_patterns:
+        return None
+
+    try:
+        process_exit_code = int(latest.get("process_exit_code"))
+    except (TypeError, ValueError):
+        process_exit_code = None
+    if process_exit_code == 0:
+        return None
+
+    if ignore_exit_codes is not None:
+        if not isinstance(ignore_exit_codes, list):
+            ignore_exit_codes = [ignore_exit_codes]
+        normalized_codes = set()
+        for item in ignore_exit_codes:
+            try:
+                normalized_codes.add(int(item))
+            except (TypeError, ValueError):
+                continue
+        if not normalized_codes or process_exit_code not in normalized_codes:
+            return None
+
+    log_tail = _read_log_tail(log_file)
+    for pattern in ignore_patterns:
+        if not isinstance(pattern, str):
+            continue
+        try:
+            if re.search(pattern, log_tail):
+                return pattern
+        except re.error:
+            continue
+    return None
 
 
 def check_systemd_manager() -> str | None:
@@ -212,6 +335,9 @@ def check_job(job: dict) -> str | None:
     .parse_schedule_interval:
       why:
         constructs: "Converts the declared schedule into the freshness window used to classify the run log."
+    ._allowed_failure_pattern:
+      why:
+        constructs: "Classifies selected non-zero failure outcomes as tolerated instead of hard failures."
     """
     name = job["name"]
     backend = platform_schedule_backend()
@@ -258,6 +384,18 @@ def check_job(job: dict) -> str | None:
         log(f"  FAIL: {reason}")
         return reason
     if latest is not None and latest.get("success") is not True:
+        allowed_failure = _allowed_failure_pattern(
+            job=job,
+            latest=latest,
+            log_file=log_file,
+        )
+        if allowed_failure is not None:
+            detail = latest.get("reason") or "no failure reason recorded"
+            log(
+                "  WARN: "
+                f"{name}: latest run failed ({detail}); tolerated by policy ({allowed_failure})"
+            )
+            return None
         detail = latest.get("reason") or "no failure reason recorded"
         reason = f"{name}: latest run failed ({detail})"
         log(f"  FAIL: {reason}")
