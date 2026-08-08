@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# tw-break: save current pane position to TW_PANE_STACK, then break it out.
+# Called via: tmux bind-key b run-shell "/path/to/tw-break"
+set -euo pipefail
+
+# _tw_compute_position pane_left pane_top pane_width pane_height win_width win_height
+# Outputs: "H|before|<size%>" or "H|after|<size%>" or "V|before|..." or "V|after|..."
+_tw_compute_position() {
+    local pane_left="$1" pane_top="$2" pane_width="$3" pane_height="$4"
+    local win_width="$5" win_height="$6"
+    local split position size
+
+    if [ "$pane_width" -lt "$win_width" ]; then
+        split="H"
+        size=$(( pane_width * 100 / win_width ))
+        (( size < 1 )) && size=1
+        if [ "$pane_left" -eq 0 ]; then position="before"; else position="after"; fi
+    else
+        split="V"
+        size=$(( pane_height * 100 / win_height ))
+        (( size < 1 )) && size=1
+        if [ "$pane_top" -eq 0 ]; then position="before"; else position="after"; fi
+    fi
+    echo "${split}|${position}|${size}"
+}
+
+# _tw_stack_push current_stack new_entry → new_stack string
+_tw_stack_push() {
+    local stack="$1" entry="$2"
+    if [ -z "$stack" ]; then echo "$entry"; else echo "$entry $stack"; fi
+}
+
+_tw_main() {
+    local window_id pane_left pane_top pane_width pane_height win_width win_height
+    window_id=$(tmux display-message -p "#{window_id}")
+    pane_left=$(tmux display-message -p "#{pane_left}")
+    pane_top=$(tmux display-message -p "#{pane_top}")
+    pane_width=$(tmux display-message -p "#{pane_width}")
+    pane_height=$(tmux display-message -p "#{pane_height}")
+    win_width=$(tmux display-message -p "#{window_width}")
+    win_height=$(tmux display-message -p "#{window_height}")
+
+    # Guard: if pane is zoomed, pane dimensions equal window dimensions — check first
+    local zoomed
+    zoomed=$(tmux display-message -p "#{window_zoomed_flag}")
+    if [ "$zoomed" -eq 1 ]; then
+        tmux display-message "tw: unzoom (prefix+z) before breaking"
+        exit 0
+    fi
+
+    # Guard: if pane fills the entire window, there is no split to record
+    if [ "$pane_width" -eq "$win_width" ] && [ "$pane_height" -eq "$win_height" ]; then
+        tmux display-message "tw: pane fills entire window — nothing to break"
+        exit 0
+    fi
+
+    local pos
+    pos=$(_tw_compute_position "$pane_left" "$pane_top" "$pane_width" "$pane_height" \
+                                "$win_width" "$win_height")
+
+    # Generate unique saved window name using tmux pane ID (server-unique)
+    local pane_id
+    pane_id=$(tmux display-message -p "#{pane_id}")
+    local saved_name="tw-saved-${pane_id#%}"  # strip leading % from %3 → tw-saved-3
+
+    # Entry format: saved-name|split|position|size|source-window-id (@N)
+    # source-window-id is LAST; using @N avoids name-matching issues entirely
+    local entry="${saved_name}|${pos}|${window_id}"
+
+    # Push onto session stack — AFTER break-pane succeeds, to avoid a dangling
+    # stack entry if break-pane fails
+    # Break pane out without following first
+    tmux break-pane -d -n "$saved_name"
+
+    # Only update stack if break-pane succeeded
+    local current_stack raw
+    raw=$(tmux show-environment TW_PANE_STACK 2>/dev/null || echo "-TW_PANE_STACK")
+    if [[ "$raw" == -* ]]; then current_stack=""; else current_stack="${raw#TW_PANE_STACK=}"; fi
+
+    local new_stack
+    new_stack=$(_tw_stack_push "$current_stack" "$entry")
+    tmux set-environment TW_PANE_STACK "$new_stack"
+}
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    _tw_main "$@"
+fi

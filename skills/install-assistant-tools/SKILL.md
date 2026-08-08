@@ -64,6 +64,10 @@ bin/
   collab             Python launcher — claude --agent collab or codex --profile collab
   coauthor           Python launcher — claude --agent coauthor or codex --profile coauthor
   tmux-workspace     Bash script for tw / tmux-workspace (Unix only)
+  tw-break           Break a pane into its own window and remember its layout
+  tw-join            Restore the most recently broken pane to its source window
+  tw-monitor         Toggle a compact btop pane in the current window
+  tw-help            Show searchable tmux-workspace key-binding help
   shared runtime     Shared launcher logic used by the three launchers above.
                      Resolves its own repository root from the installed
                      launcher location (works in plugin mode too, with no $AI
@@ -303,6 +307,25 @@ The uninstall entry point removes the current managed hook registrations too:
 It understands both the legacy `hooks/inject_dispatcher_context.py` command and
 the current explicit `llmhooks/inject_dispatcher_context.py --claude/--codex`
 commands.
+
+## tmux workspace pane controls
+
+Each new `tw` session installs prefix-required bindings for temporary workspace
+reconfiguration:
+
+- `prefix+e` opens a stateless scratch shell popup.
+- `prefix+b` breaks the current pane into its own window without following it
+  and pushes its source window, side, and approximate size onto a session-local
+  LIFO stack.
+- `prefix+j` restores the most recently broken pane, preferring its original
+  window and falling back safely when that window no longer exists.
+- `prefix+@` performs tmux's raw horizontal join without using the saved stack.
+- `prefix+m` toggles a compact `btop` monitor pane on the right.
+- `prefix+h` opens searchable binding help when `fzf` is available and plain
+  help otherwise.
+
+The existing `prefix+!` tmux break-and-follow binding remains unchanged. The
+`llm` template also starts `btop` in its dedicated `logs` window.
 
 ## Updating Scripts
 

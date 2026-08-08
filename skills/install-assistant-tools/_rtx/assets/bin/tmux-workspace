@@ -28,6 +28,15 @@ Examples:
   $prog shell scratch
   $prog raw -- list-sessions
   $prog raw -- attach -t paper
+
+Key bindings (set on each new session):
+  prefix+e   scratch popup (stateless shell overlay)
+  prefix+b   break current pane to its own window, save position to stack
+  prefix+j   restore last broken pane back (LIFO stack)
+  prefix+@   raw join: pull last active window into current as h-split
+  prefix+m   toggle slim btop monitor pane on the right
+  prefix+h   searchable key-binding help
+  prefix+!   (tmux default) break-and-follow without stack
 EOUSAGE
 }
 
@@ -130,6 +139,8 @@ fi
 
 # Apply global options (idempotent — safe to run on each new session).
 tmux_do set-option -g status on
+tmux_do set-option -g status-left '#[fg=colour244][#{session_name}] ctrl-b h: help  #[default]'
+tmux_do set-option -g status-left-length 44
 tmux_do set-option -g status-right '#{?client_prefix,#[bg=red fg=white] PREFIX ,}#{?window_zoomed_flag,#[bg=yellow fg=black] ZOOM ,} %H:%M'
 
 # Resolve path to companion scripts (works through symlinks).
@@ -140,6 +151,18 @@ tmux_do bind-key e display-popup -E -w 80% -h 50% -x C -y C
 
 # prefix+@ — raw join: pull last active window into current as h-split
 tmux_do bind-key '@' join-pane -s '!' -h
+
+# prefix+b — smart break-and-stay (saves position to stack)
+tmux_do bind-key b run-shell "'$_tw_bin/tw-break'"
+
+# prefix+j — smart join (pops stack, restores position)
+tmux_do bind-key j run-shell "'$_tw_bin/tw-join'"
+
+# prefix+m — monitor toggle (slim btop pane on right)
+tmux_do bind-key m run-shell "'$_tw_bin/tw-monitor'"
+
+# prefix+h — help popup (key bindings cheatsheet)
+tmux_do bind-key h run-shell "'$_tw_bin/tw-help'"
 
 case "$template" in
   llm)

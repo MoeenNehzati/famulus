@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# tw-monitor: toggle a slim btop pane on the right of the current window.
+# Called via: tmux bind-key m run-shell "/path/to/tw-monitor"
+set -euo pipefail
+
+_tw_main() {
+    # Require btop
+    if ! command -v btop >/dev/null 2>&1; then
+        tmux display-message "tw: btop not found"
+        exit 0
+    fi
+
+    # Find a monitor pane in the current window (tagged via @tw_role user variable,
+    # not pane_title — btop may overwrite the title via OSC escape sequences).
+    local monitor_pane
+    monitor_pane=$(tmux list-panes -F "#{pane_id} #{@tw_role}" \
+                   | awk '$2 == "monitor" {print $1}')
+
+    if [ -n "$monitor_pane" ]; then
+        # Pane is visible — remove it
+        tmux kill-pane -t "$monitor_pane"
+    else
+        # Pane is not visible — add slim btop on the right
+        local original_pane
+        original_pane=$(tmux display-message -p "#{pane_id}")
+
+        local new_pane
+        # -p 1 = compact preset (cpu only); 33% gives ~40 cols on a typical terminal
+        if ! new_pane=$(tmux split-window -h -l 33% -P -F "#{pane_id}" "btop -p 1" 2>/dev/null); then
+            tmux display-message "tw: terminal too narrow for monitor pane"
+            exit 0
+        fi
+        tmux set-option -p -t "$new_pane" @tw_role "monitor"
+        # Return focus to the pane that was active before the split
+        tmux select-pane -t "$original_pane"
+    fi
+}
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    _tw_main "$@"
+fi
