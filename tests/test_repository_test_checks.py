@@ -38,6 +38,98 @@ def test_runner_supplies_repo_src_pythonpath() -> None:
     ]
 
 
+def test_runner_adds_exact_xdist_worker_count_for_parallel_jobs() -> None:
+    assert runner._pytest_args(verbose=False, jobs=4) == [
+        "-o",
+        "pythonpath=src",
+        "-q",
+        "-n",
+        "4",
+        "--dist",
+        "worksteal",
+    ]
+
+
+def test_default_jobs_uses_two_thirds_of_logical_cpus(monkeypatch) -> None:
+    monkeypatch.setattr(runner.os, "cpu_count", lambda: 12)
+    assert runner._default_jobs() == 8
+
+    monkeypatch.setattr(runner.os, "cpu_count", lambda: 1)
+    assert runner._default_jobs() == 1
+
+    monkeypatch.setattr(runner.os, "cpu_count", lambda: None)
+    assert runner._default_jobs() == 1
+
+
+def _deselected_tests(args: list[str]) -> set[str]:
+    return {
+        args[index + 1]
+        for index, argument in enumerate(args[:-1])
+        if argument == "--deselect"
+    }
+
+
+def test_precommit_defers_installation_chrome_and_docstring_tests() -> None:
+    deselected = _deselected_tests(
+        runner._suite_pytest_args("precommit", verbose=False)
+    )
+
+    assert runner.INSTALLATION_TESTS <= deselected
+    assert runner.CHROME_TESTS <= deselected
+    assert runner.DOCSTRING_TESTS <= deselected
+
+
+def test_prepush_restores_installation_and_chrome_but_defers_docstrings() -> None:
+    deselected = _deselected_tests(
+        runner._suite_pytest_args("pre-push", verbose=False)
+    )
+
+    assert deselected == runner.DOCSTRING_TESTS
+
+
+def test_docstring_validator_is_reserved_for_full_unless_explicit(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    calls: list[tuple[tuple[str, ...], tuple[str, ...]]] = []
+
+    def run_all(*, repo_root, validator_ids, excluded_validator_ids):
+        calls.append((tuple(validator_ids), tuple(excluded_validator_ids)))
+        return {}
+
+    monkeypatch.setattr(runner._validator_snapshot, "run_all", run_all)
+    monkeypatch.setattr(
+        runner._validator_snapshot,
+        "_render_findings",
+        lambda _results: 0,
+    )
+    monkeypatch.setattr(
+        runner,
+        "SUITE_PHASES",
+        {
+            "precommit": (("validators", None),),
+            "pre-push": (("validators", None),),
+            "full": (("validators", None),),
+        },
+    )
+
+    assert runner.run_suite(tmp_path, "precommit") == 0
+    assert runner.run_suite(tmp_path, "pre-push") == 0
+    assert runner.run_suite(tmp_path, "full") == 0
+    assert runner.run_suite(
+        tmp_path,
+        "pre-push",
+        validator_ids=("repo/docstrings",),
+    ) == 0
+
+    assert calls == [
+        ((), ("repo/docstrings",)),
+        ((), ("repo/docstrings",)),
+        ((), ()),
+        (("repo/docstrings",), ()),
+    ]
+
+
 def mkdir(path: Path) -> None:
     path.mkdir(parents=True)
 

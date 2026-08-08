@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import copy
 from dataclasses import dataclass
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -24,10 +25,38 @@ PRECOMMIT_EXCLUDED_TEST_DIRS = {
     "skills/install-assistant-tools/_rtx/tests",
     "skills/install-assistant-tools/tests",
 }
+INSTALLATION_TESTS = {
+    "tests/test_install_lifecycle.py",
+    "tests/test_officina_famulus_paths.py",
+    "tests/test_officina_install_info.py",
+    "tests/test_officina_launcher_entry.py",
+    "tests/test_officina_managed_runtime.py",
+    "tests/test_officina_runtime_pointer.py",
+    "tests/test_officina_uv_bootstrap.py",
+}
+CHROME_TESTS = {
+    "tests/test_visualization_browser.py",
+    "tests/test_visualization_containment_edges_browser.py",
+    "tests/test_visualization_inspector_and_bezier_browser.py",
+    "tests/test_visualization_projection_arrangements_browser.py",
+    "tests/test_visualization_projection_browser.py",
+}
+DOCSTRING_TESTS = {
+    "tests/test_docstring_schema_dynamic_sections.py",
+    "tests/test_docstrings_validator.py",
+}
 PRECOMMIT_EXCLUDED_TESTS = {
     "tests/test_nested_module_migration.py::"
     "TestNestedModuleMigrationContract::"
     "test_repository_inventory_matches_reviewed_v5_cutover_surface",
+    *INSTALLATION_TESTS,
+    *CHROME_TESTS,
+    *DOCSTRING_TESTS,
+}
+PREPUSH_EXCLUDED_TESTS = DOCSTRING_TESTS
+SUITE_EXCLUDED_VALIDATORS = {
+    "precommit": {"repo/docstrings"},
+    "pre-push": {"repo/docstrings"},
 }
 PORTABILITY_TESTS = (
     "tests/test_officina_atomic_files.py::test_secure_append_creates_then_appends_complete_framed_records",
@@ -842,13 +871,13 @@ SUITE_PHASES = {
     "validators": (("validators", None),),
     "tests": (("tests", "full"),),
     "precommit": (("validators", None), ("tests", "precommit")),
-    "pre-push": (("validators", None), ("tests", "full")),
+    "pre-push": (("validators", None), ("tests", "pre-push")),
     "portability": (("tests", "portability"),),
     "full": (("validators", None), ("tests", "full")),
 }
 
 
-def _pytest_args(*, verbose: bool) -> list[str]:
+def _pytest_args(*, verbose: bool, jobs: int = 1) -> list[str]:
     """Build the common pytest arguments for repository test phases.
 
     Intent
@@ -862,16 +891,33 @@ def _pytest_args(*, verbose: bool) -> list[str]:
     Pseudocode
     ----------
     - set pytest_arguments = source path option and selected verbosity
+    - if jobs is greater than one:
+      - set pytest_arguments = arguments plus xdist worker configuration
     - return pytest_arguments
 
     Wraps
     -----
     - none
     """
-    return ["-o", "pythonpath=src", "-v" if verbose else "-q"]
+    args = ["-o", "pythonpath=src", "-v" if verbose else "-q"]
+    if jobs > 1:
+        args.extend(["-n", str(jobs), "--dist", "worksteal"])
+    return args
 
 
-def _suite_pytest_args(name: str, *, verbose: bool) -> list[str]:
+def _default_jobs() -> int:
+    """Use two thirds of the host's reported logical CPUs for shared tests."""
+
+    logical_cpus = os.cpu_count() or 1
+    return max(1, (logical_cpus * 2) // 3)
+
+
+def _suite_pytest_args(
+    name: str,
+    *,
+    verbose: bool,
+    jobs: int = 1,
+) -> list[str]:
     """Build pytest arguments for one named ordinary-test suite.
 
     Intent
@@ -899,9 +945,12 @@ def _suite_pytest_args(name: str, *, verbose: bool) -> list[str]:
       why:
         constructs: "Builds the common pytest argument list extended by this suite."
     """
-    args = _pytest_args(verbose=verbose)
+    args = _pytest_args(verbose=verbose, jobs=jobs)
     if name == "precommit":
         for test in sorted(PRECOMMIT_EXCLUDED_TESTS):
+            args.extend(["--deselect", test])
+    elif name == "pre-push":
+        for test in sorted(PREPUSH_EXCLUDED_TESTS):
             args.extend(["--deselect", test])
     return args
 
@@ -983,7 +1032,7 @@ def _execution_groups(test_dirs: list[str]) -> list[list[str]]:
     return ([shared] if shared else []) + [[path] for path in nested]
 
 
-def _run_test_suite(name: str, *, verbose: bool) -> int:
+def _run_test_suite(name: str, *, verbose: bool, jobs: int = 1) -> int:
     """Execute every pytest process group for one ordinary-test suite.
 
     Intent
@@ -996,8 +1045,9 @@ def _run_test_suite(name: str, *, verbose: bool) -> int:
 
     Pseudocode
     ----------
-    - set pytest_arguments = arguments for named suite
     - for group in resolved execution groups:
+      - set group_jobs = requested jobs for shared groups or one for isolated groups
+      - set pytest_arguments = arguments for named suite and group jobs
       - set group_status = pytest subprocess status
       - if group_status is nonzero:
         - return group_status
@@ -1022,8 +1072,13 @@ def _run_test_suite(name: str, *, verbose: bool) -> int:
       why:
         constructs: "Builds the pytest arguments used by each process group."
     """
-    pytest_args = _suite_pytest_args(name, verbose=verbose)
     for group in _execution_groups(_resolve_suite(name)):
+        group_jobs = jobs if len(group) > 1 else 1
+        pytest_args = _suite_pytest_args(
+            name,
+            verbose=verbose,
+            jobs=group_jobs,
+        )
         completed = subprocess.run(
             [sys.executable, "-m", "pytest", *pytest_args, *group],
             cwd=REPO_ROOT,
@@ -1039,6 +1094,7 @@ def run_suite(
     suite: str,
     *,
     verbose: bool = False,
+    jobs: int = 1,
     validator_ids: Sequence[str] = (),
     excluded_validator_ids: Sequence[str] = (),
 ) -> int:
@@ -1083,11 +1139,19 @@ def run_suite(
     root = Path(repo_root).resolve()
     for phase, test_suite in SUITE_PHASES[suite]:
         if phase == "validators":
+            tier_exclusions = (
+                ()
+                if validator_ids
+                else SUITE_EXCLUDED_VALIDATORS.get(suite, ())
+            )
+            effective_exclusions = tuple(
+                dict.fromkeys((*tier_exclusions, *excluded_validator_ids))
+            )
             try:
                 results = _validator_snapshot.run_all(
                     repo_root=root,
                     validator_ids=validator_ids,
-                    excluded_validator_ids=excluded_validator_ids,
+                    excluded_validator_ids=effective_exclusions,
                 )
             except _validator_snapshot.ValidatorRunnerError as exc:
                 print(f"error: {exc}", file=sys.stderr)
@@ -1097,7 +1161,11 @@ def run_suite(
             previous_root = globals()["REPO_ROOT"]
             globals()["REPO_ROOT"] = root
             try:
-                status = _run_test_suite(str(test_suite), verbose=verbose)
+                status = _run_test_suite(
+                    str(test_suite),
+                    verbose=verbose,
+                    jobs=jobs,
+                )
             finally:
                 globals()["REPO_ROOT"] = previous_root
         if status:
@@ -1166,11 +1234,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Use verbose pytest output for ordinary test phases.",
     )
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        default=_default_jobs(),
+        help=(
+            "Run shared ordinary tests with exactly N pytest workers "
+            "(default: two thirds of logical CPUs)."
+        ),
+    )
     parser.add_argument("--tracked-root", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--display-root", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--result-path", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--staged-paths-file", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
+    if args.jobs < 1:
+        parser.error("--jobs must be at least 1")
     if args.tracked_root is not None:
         if (
             args.display_root is None
@@ -1200,6 +1279,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.repo_root,
         args.suite,
         verbose=args.verbose,
+        jobs=args.jobs,
         validator_ids=args.validator_ids or (),
         excluded_validator_ids=args.excluded_validator_ids or (),
     )

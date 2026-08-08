@@ -11,7 +11,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from officina.common.blueprint_graph import load_repository_blueprint_graph
+from officina.common.blueprint_graph import (
+    RepositoryBlueprintGraph,
+    load_repository_blueprint_graph,
+)
 from officina.common.blueprint_inventory import BlueprintInventoryError
 from officina.common.process_binding_compiler import gateway_language_name
 import officina.runtime.python_machine_interface as python_interface
@@ -101,6 +104,12 @@ def _runner_interfaces(
         expected_schema_version=expected_schema_version,
         schema_root=schema_root,
     )
+    return _runner_interfaces_from_graph(graph)
+
+
+def _runner_interfaces_from_graph(
+    graph: RepositoryBlueprintGraph,
+) -> list[RouteSmokeCase]:
     cases: list[RouteSmokeCase] = []
     for export_id, export in sorted(graph.exports.items()):
         if export.source_node_id is None:
@@ -117,6 +126,43 @@ def _runner_interfaces(
     return cases
 
 
+def _route_smoke_specifications(
+    graph: RepositoryBlueprintGraph,
+    cases: tuple[RouteSmokeCase, ...],
+) -> tuple[tuple[Path, python_interface.PythonProcessTarget], ...]:
+    specifications: list[
+        tuple[Path, python_interface.PythonProcessTarget]
+    ] = []
+    for case in cases:
+        export = graph.exports[case.target]
+        source = graph.nodes[export.source_node_id]
+        gateway = source.declaration["gateway"]
+        binding = export.declaration["process_binding"]
+        module_id = graph.source_modules[source.node_id]
+        logical_package = python_interface.logical_python_package_name(module_id)
+        module_path = Path(gateway["path"])
+        physical_parts = (
+            module_path.parent.parts
+            if module_path.name == "__init__.py"
+            else (*module_path.parent.parts, module_path.stem)
+        )
+        suffix = ".".join(
+            part for part in physical_parts if part not in {"", "."}
+        )
+        target = python_interface.PythonProcessTarget(
+            module_path,
+            binding["entry"],
+            logical_package=logical_package,
+            logical_entrypoint=(
+                logical_package
+                if not suffix
+                else f"{logical_package}.{suffix}"
+            ),
+        )
+        specifications.append((source.module_root, target))
+    return tuple(specifications)
+
+
 def _route_smoke_cases(
     repo_root: Path = REPO_ROOT,
     *,
@@ -127,6 +173,35 @@ def _route_smoke_cases(
         repo_root,
         expected_schema_version=expected_schema_version,
         schema_root=schema_root,
+    )
+
+
+@pytest.fixture(scope="module")
+def live_repository_graph() -> RepositoryBlueprintGraph:
+    """Load the immutable live repository graph once for this test module."""
+
+    return load_repository_blueprint_graph(REPO_ROOT)
+
+
+@pytest.fixture(scope="module")
+def live_runner_interfaces(
+    live_repository_graph: RepositoryBlueprintGraph,
+) -> tuple[RouteSmokeCase, ...]:
+    """Reuse one graph when discovering all live Python runner exports."""
+
+    return tuple(_runner_interfaces_from_graph(live_repository_graph))
+
+
+@pytest.fixture(scope="module")
+def live_route_smoke_specifications(
+    live_repository_graph: RepositoryBlueprintGraph,
+    live_runner_interfaces: tuple[RouteSmokeCase, ...],
+) -> tuple[tuple[Path, python_interface.PythonProcessTarget], ...]:
+    """Build the complete live route-smoke manifest once from the shared graph."""
+
+    return _route_smoke_specifications(
+        live_repository_graph,
+        live_runner_interfaces,
     )
 
 
@@ -312,51 +387,25 @@ def test_route_smoke_does_not_fall_back_when_v4_inventory_is_malformed(
         )
 
 
-def test_live_blueprints_have_runner_interfaces_to_smoke_or_skip() -> None:
-    if not _runner_interfaces():
+def test_live_blueprints_have_runner_interfaces_to_smoke_or_skip(
+    live_runner_interfaces: tuple[RouteSmokeCase, ...],
+) -> None:
+    if not live_runner_interfaces:
         # famulus-skip: category=empty-contract; reason=no live runner-backed machine interfaces exist; alternate=route-smoke extraction unit tests cover discovery logic
         pytest.skip(f"no machine interfaces currently invoke {RUNNER_MODULE}")
 
-    assert _runner_interfaces()
+    assert live_runner_interfaces
 
 
-def test_python_machine_runner_interfaces_accept_route_smoke() -> None:
-    cases = _route_smoke_cases()
-    if not cases:
+def test_python_machine_runner_interfaces_accept_route_smoke(
+    live_runner_interfaces: tuple[RouteSmokeCase, ...],
+    live_route_smoke_specifications: tuple[
+        tuple[Path, python_interface.PythonProcessTarget], ...
+    ],
+) -> None:
+    if not live_runner_interfaces:
         # famulus-skip: category=empty-contract; reason=no python_machine_interface interfaces exist; alternate=route-smoke extraction unit tests cover case selection
         pytest.skip("no python_machine_interface machine interfaces currently exist")
-
-    graph = load_repository_blueprint_graph(REPO_ROOT)
-    specifications: list[
-        tuple[Path, python_interface.PythonProcessTarget]
-    ] = []
-    for case in cases:
-        export = graph.exports[case.target]
-        source = graph.nodes[export.source_node_id]
-        gateway = source.declaration["gateway"]
-        binding = export.declaration["process_binding"]
-        module_id = graph.source_modules[source.node_id]
-        logical_package = python_interface.logical_python_package_name(module_id)
-        module_path = Path(gateway["path"])
-        physical_parts = (
-            module_path.parent.parts
-            if module_path.name == "__init__.py"
-            else (*module_path.parent.parts, module_path.stem)
-        )
-        suffix = ".".join(
-            part for part in physical_parts if part not in {"", "."}
-        )
-        target = python_interface.PythonProcessTarget(
-            module_path,
-            binding["entry"],
-            logical_package=logical_package,
-            logical_entrypoint=(
-                logical_package
-                if not suffix
-                else f"{logical_package}.{suffix}"
-            ),
-        )
-        specifications.append((source.module_root, target))
 
     batch_tracer = getattr(
         python_interface,
@@ -365,6 +414,6 @@ def test_python_machine_runner_interfaces_accept_route_smoke() -> None:
     )
     assert callable(batch_tracer)
     try:
-        batch_tracer(REPO_ROOT, specifications)
+        batch_tracer(REPO_ROOT, live_route_smoke_specifications)
     except python_interface.PythonRouteSmokeTraceError as exc:
         pytest.fail(f"certification route-smoke batch failed:\n{exc}")

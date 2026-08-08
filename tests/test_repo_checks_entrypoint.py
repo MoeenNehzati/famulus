@@ -29,7 +29,7 @@ def test_named_suites_have_one_internal_phase_plan() -> None:
         "validators": (("validators", None),),
         "tests": (("tests", "full"),),
         "precommit": (("validators", None), ("tests", "precommit")),
-        "pre-push": (("validators", None), ("tests", "full")),
+        "pre-push": (("validators", None), ("tests", "pre-push")),
         "portability": (("tests", "portability"),),
         "full": (("validators", None), ("tests", "full")),
     }
@@ -50,6 +50,7 @@ def test_root_entrypoint_exposes_named_suites() -> None:
     assert "precommit" in completed.stdout
     assert "pre-push" in completed.stdout
     assert "validators" in completed.stdout
+    assert "--jobs" in completed.stdout
 
 
 def test_legacy_execution_entrypoints_are_removed() -> None:
