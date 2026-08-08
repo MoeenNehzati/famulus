@@ -98,3 +98,21 @@ def test_benchmark_can_return_process_tree_samples_for_attribution(
         assert all(row["rss_kb"] >= 0 for row in samples)
     else:
         assert metrics["process_tree_samples"] is None
+
+
+def test_timing_mode_disables_process_tree_sampling(monkeypatch, tmp_path: Path) -> None:
+    benchmark = _load_benchmark_module()
+    monkeypatch.setattr(
+        benchmark,
+        "_process_rows",
+        lambda _page_kb: (_ for _ in ()).throw(AssertionError("sampled")),
+    )
+
+    metrics = benchmark.benchmark_command(
+        [sys.executable, "-c", "pass"],
+        log_path=tmp_path / "command.log",
+        sample_process_tree=False,
+    )
+
+    assert metrics["capabilities"]["linux_process_tree_sampling"] is False
+    assert metrics["peak_sampled_tree_rss_kb"] is None

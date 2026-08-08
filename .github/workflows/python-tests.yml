@@ -28,19 +28,16 @@ jobs:
           python-version: '3.11'
 
       - name: Install test dependencies
-        run: python3 -m pip install pytest pyyaml jsonschema keyring "cryptography>=44.0.1"
+        run: python3 -m pip install pytest pytest-xdist pyyaml jsonschema keyring "cryptography>=44.0.1"
 
       - name: Install Claude and Codex CLIs
         run: npm install -g @anthropic-ai/claude-code @openai/codex
 
-      - name: Run repo validators
-        run: python3 repo_checks.py --suite validators
+      - name: Run repository checks
+        run: python3 repo_checks.py --suite full --verbose
 
       - name: Run portability sentinel
         run: python3 repo_checks.py --suite portability --verbose
-
-      - name: Run Python test suite
-        run: python3 repo_checks.py --suite tests --verbose
 
       - name: Run native keyring smoke
         if: always() && (matrix.os == 'macos-latest' || matrix.os == 'windows-latest')

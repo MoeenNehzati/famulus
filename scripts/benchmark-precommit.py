@@ -60,6 +60,8 @@ def run_benchmarks(
     runs: int,
     cache: str,
     jobs: int,
+    sequential: bool = False,
+    measure_resources: bool = False,
 ) -> dict[str, object]:
     """Measure repeated centralized precommit-suite executions."""
     if runs < 1:
@@ -87,6 +89,8 @@ def run_benchmarks(
         "--jobs",
         str(jobs),
     ]
+    if sequential:
+        command.append("--sequential")
 
     measurements: list[dict[str, Any]] = []
     for index in range(1, runs + 1):
@@ -103,7 +107,8 @@ def run_benchmarks(
             log_path=artifact_root / f"run-{index}.log",
             cwd=repo_root,
             env=environment,
-            record_samples=True,
+            record_samples=measure_resources,
+            sample_process_tree=measure_resources,
         )
         after = _staged_fingerprint(repo_root)
         measurements.append(
@@ -126,6 +131,8 @@ def run_benchmarks(
         "host": _host_metadata(),
         "cache_condition": cache,
         "jobs": jobs,
+        "scheduler": "sequential" if sequential else "pooled",
+        "measurement_mode": "resources" if measure_resources else "timing",
         "runs_requested": runs,
         "command": command,
         "runs": measurements,
@@ -143,6 +150,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--runs", required=True, type=int)
     parser.add_argument("--cache", required=True, choices=("cold", "warm"))
     parser.add_argument("--jobs", type=int, default=default_jobs())
+    parser.add_argument("--sequential", action="store_true")
+    parser.add_argument("--measure-resources", action="store_true")
     return parser.parse_args(argv)
 
 
@@ -155,6 +164,8 @@ def main(argv: list[str] | None = None) -> int:
         runs=args.runs,
         cache=args.cache,
         jobs=args.jobs,
+        sequential=args.sequential,
+        measure_resources=args.measure_resources,
     )
     return 1 if any(
         run["classification"] == "diagnostic" for run in result["runs"]

@@ -5,10 +5,14 @@ from __future__ import annotations
 import argparse
 import copy
 from dataclasses import dataclass
+import importlib.util
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
+import tempfile
+import time
 from types import ModuleType
 from typing import Callable, Sequence
 
@@ -67,6 +71,15 @@ PORTABILITY_TESTS = (
     "tests/test_officina_blueprint_graph.py::test_content_ownership_accepts_equivalent_repository_alias",
     "tests/test_repository_validator_checks.py::test_run_all_isolates_unmerged_index_and_restores_git_environment",
 )
+
+
+@dataclass(frozen=True)
+class CheckTask:
+    """Describe one existing isolated pytest process for shared scheduling."""
+
+    id: str
+    argv: tuple[str, ...]
+    slots: int
 
 
 @dataclass(frozen=True)
@@ -912,6 +925,15 @@ def _default_jobs() -> int:
     return max(1, (logical_cpus * 2) // 3)
 
 
+def _pytest_xdist_available() -> bool:
+    """Report whether pytest-xdist is installed in the current Python.
+
+    This allows an explicit CLI/error path when parallel budgeting is requested.
+    """
+
+    return importlib.util.find_spec("xdist") is not None
+
+
 def _suite_pytest_args(
     name: str,
     *,
@@ -1032,6 +1054,262 @@ def _execution_groups(test_dirs: list[str]) -> list[list[str]]:
     return ([shared] if shared else []) + [[path] for path in nested]
 
 
+def _shared_test_jobs(jobs: int) -> int:
+    """Reserve one quarter of the worker budget for isolated pytest tasks."""
+
+    if jobs <= 1:
+        return 1
+    return jobs - max(1, jobs // 4)
+
+
+def _run_validator_task(
+    repo_root: Path,
+    *,
+    validator_ids: Sequence[str] = (),
+    excluded_validator_ids: Sequence[str] = (),
+) -> int:
+    """Run the existing complete validator snapshot lifecycle as one task."""
+
+    try:
+        results = _validator_snapshot.run_all(
+            repo_root=Path(repo_root).resolve(),
+            validator_ids=validator_ids,
+            excluded_validator_ids=excluded_validator_ids,
+        )
+    except _validator_snapshot.ValidatorRunnerError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    return _validator_snapshot._render_findings(results)
+
+
+def _build_check_tasks(
+    repo_root: Path,
+    suite: str,
+    *,
+    verbose: bool,
+    jobs: int,
+    validator_ids: Sequence[str],
+    excluded_validator_ids: Sequence[str],
+) -> list[CheckTask]:
+    """Build one queue from the existing validator and test execution groups."""
+
+    root = Path(repo_root).resolve()
+    tasks: list[CheckTask] = []
+    phases = SUITE_PHASES[suite]
+    if any(phase == "validators" for phase, _test_suite in phases):
+        tier_exclusions = (
+            ()
+            if validator_ids
+            else SUITE_EXCLUDED_VALIDATORS.get(suite, ())
+        )
+        effective_exclusions = tuple(
+            dict.fromkeys((*tier_exclusions, *excluded_validator_ids))
+        )
+        argv = [
+            sys.executable,
+            str(REPO_ROOT / "repo_checks.py"),
+            "--internal-run-validators",
+            "--repo-root",
+            str(root),
+        ]
+        for validator_id in validator_ids:
+            argv.extend(["--validator", validator_id])
+        for validator_id in effective_exclusions:
+            argv.extend(["--exclude-validator", validator_id])
+        tasks.append(CheckTask("validators", tuple(argv), 1))
+
+    test_suite = next(
+        (test_suite for phase, test_suite in phases if phase == "tests"),
+        None,
+    )
+    if test_suite is None:
+        return tasks
+    previous_root = globals()["REPO_ROOT"]
+    globals()["REPO_ROOT"] = root
+    try:
+        groups = _execution_groups(_resolve_suite(str(test_suite)))
+        shared_jobs = _shared_test_jobs(jobs)
+        for group in groups:
+            isolated = len(group) == 1 and "/_rtx/tests" in group[0]
+            group_jobs = 1 if isolated else shared_jobs
+            task_id = f"tests:{group[0]}" if isolated else "tests:shared"
+            argv = (
+                sys.executable,
+                "-m",
+                "pytest",
+                *_suite_pytest_args(
+                    str(test_suite),
+                    verbose=verbose,
+                    jobs=group_jobs,
+                ),
+                *group,
+            )
+            tasks.append(CheckTask(task_id, tuple(argv), group_jobs))
+    finally:
+        globals()["REPO_ROOT"] = previous_root
+    return tasks
+
+
+def _terminate_task_process(process: subprocess.Popen[object]) -> None:
+    """Terminate one task process and its process group after interruption."""
+
+    if process.poll() is not None:
+        return
+    try:
+        if os.name == "posix":
+            os.killpg(process.pid, signal.SIGTERM)
+        else:
+            process.terminate()
+        process.wait(timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        if process.poll() is None:
+            if os.name == "posix":
+                os.killpg(process.pid, signal.SIGKILL)
+            else:
+                process.kill()
+            process.wait()
+
+
+def _run_check_tasks(
+    tasks: Sequence[CheckTask],
+    *,
+    repo_root: Path,
+    jobs: int,
+    pooled: bool,
+) -> int:
+    """Run check tasks with one bounded first-fitting process coordinator."""
+
+    if any(task.slots > jobs for task in tasks):
+        raise ValueError("check task requires more worker slots than --jobs")
+    pending = list(enumerate(tasks))
+    active: dict[
+        int,
+        tuple[subprocess.Popen[object], CheckTask, object, object, Path, Path, float],
+    ] = {}
+    results: dict[int, tuple[int, float]] = {}
+    admission_open = True
+    root = Path(repo_root).resolve()
+    with tempfile.TemporaryDirectory(prefix="officina-checks-") as temp_dir:
+        output_root = Path(temp_dir)
+        try:
+            while pending or active:
+                if admission_open:
+                    while pending and (pooled or not active):
+                        used = sum(
+                            task.slots
+                            for _process, task, _stdout, _stderr, _out_path, _err_path, _start
+                            in active.values()
+                        )
+                        available = jobs - used
+                        fitting = next(
+                            (
+                                position
+                                for position, (_index, task) in enumerate(pending)
+                                if task.slots <= available
+                            ),
+                            None,
+                        )
+                        if fitting is None:
+                            break
+                        index, task = pending.pop(fitting)
+                        stdout_path = output_root / f"{index:04d}.stdout.log"
+                        stderr_path = output_root / f"{index:04d}.stderr.log"
+                        stdout_log = stdout_path.open("w", encoding="utf-8")
+                        stderr_log = stderr_path.open("w", encoding="utf-8")
+                        popen_kwargs: dict[str, object] = {
+                            "stdout": stdout_log,
+                            "stderr": stderr_log,
+                            "cwd": root,
+                        }
+                        if os.name == "posix":
+                            popen_kwargs["start_new_session"] = True
+                        else:
+                            popen_kwargs["creationflags"] = (
+                                subprocess.CREATE_NEW_PROCESS_GROUP
+                            )
+                        command = list(task.argv)
+                        if command[1:3] == ["-m", "pytest"]:
+                            cache_dir = output_root / "pytest-cache" / f"{index:04d}"
+                            command[3:3] = ["-o", f"cache_dir={cache_dir}"]
+                        process = subprocess.Popen(command, **popen_kwargs)
+                        start = time.monotonic()
+                        print(f"START task={task.id} slots={task.slots}")
+                        active[index] = (
+                            process,
+                            task,
+                            stdout_log,
+                            stderr_log,
+                            stdout_path,
+                            stderr_path,
+                            start,
+                        )
+
+                completed = []
+                for index, (
+                    process,
+                    task,
+                    stdout_log,
+                    stderr_log,
+                    stdout_path,
+                    stderr_path,
+                    start,
+                ) in active.items():
+                    status = process.poll()
+                    if status is None:
+                        continue
+                    stdout_log.close()
+                    stderr_log.close()
+                    results[index] = (int(status), time.monotonic() - start)
+                    completed.append(index)
+                    if status:
+                        admission_open = False
+                for index in completed:
+                    active.pop(index)
+                if active and not completed:
+                    time.sleep(0.01)
+                if not active and not admission_open:
+                    break
+        except KeyboardInterrupt:
+            for (
+                process,
+                _task,
+                stdout_log,
+                stderr_log,
+                _stdout_path,
+                _stderr_path,
+                _start,
+            ) in active.values():
+                _terminate_task_process(process)
+                stdout_log.close()
+                stderr_log.close()
+            return 130
+
+        for index, task in enumerate(tasks):
+            if index not in results:
+                continue
+            stdout_path = output_root / f"{index:04d}.stdout.log"
+            stderr_path = output_root / f"{index:04d}.stderr.log"
+            exit_code, duration = results[index]
+            print(
+                f"== {task.id} == exit={exit_code} "
+                f"duration_seconds={duration:.2f}"
+            )
+            stdout = stdout_path.read_text(encoding="utf-8", errors="replace")
+            stderr = stderr_path.read_text(encoding="utf-8", errors="replace")
+            if stdout:
+                print(stdout, end="" if stdout.endswith("\n") else "\n")
+            if stderr:
+                print(
+                    stderr,
+                    end="" if stderr.endswith("\n") else "\n",
+                    file=sys.stderr,
+                )
+        for index in range(len(tasks)):
+            if results.get(index) and (results[index][0] != 0):
+                return results[index][0]
+    return 0
+
+
 def _run_test_suite(name: str, *, verbose: bool, jobs: int = 1) -> int:
     """Execute every pytest process group for one ordinary-test suite.
 
@@ -1097,6 +1375,7 @@ def run_suite(
     jobs: int = 1,
     validator_ids: Sequence[str] = (),
     excluded_validator_ids: Sequence[str] = (),
+    pooled: bool | None = None,
 ) -> int:
     """Run one named repository verification suite.
 
@@ -1137,6 +1416,25 @@ def run_suite(
     """
 
     root = Path(repo_root).resolve()
+    if jobs > 1 and not _pytest_xdist_available():
+        raise RuntimeError(
+            "pytest-xdist is required for --jobs > 1; install pytest-xdist"
+        )
+    if pooled is not False:
+        tasks = _build_check_tasks(
+            root,
+            suite,
+            verbose=verbose,
+            jobs=jobs,
+            validator_ids=validator_ids,
+            excluded_validator_ids=excluded_validator_ids,
+        )
+        return _run_check_tasks(
+            tasks,
+            repo_root=root,
+            jobs=jobs,
+            pooled=pooled,
+        )
     for phase, test_suite in SUITE_PHASES[suite]:
         if phase == "validators":
             tier_exclusions = (
@@ -1239,10 +1537,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         type=int,
         default=_default_jobs(),
         help=(
-            "Run shared ordinary tests with exactly N pytest workers "
+            "Use a total budget of N pytest workers across selected checks "
             "(default: two thirds of logical CPUs)."
         ),
     )
+    parser.add_argument(
+        "--internal-run-validators",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument("--sequential", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--tracked-root", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--display-root", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--result-path", type=Path, help=argparse.SUPPRESS)
@@ -1250,6 +1554,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.jobs < 1:
         parser.error("--jobs must be at least 1")
+    if args.jobs > 1 and not _pytest_xdist_available():
+        parser.error(
+            "--jobs > 1 requires pytest-xdist; install with `pip install pytest-xdist`"
+        )
+    if args.internal_run_validators:
+        return _run_validator_task(
+            args.repo_root,
+            validator_ids=tuple(args.validator_ids or ()),
+            excluded_validator_ids=tuple(args.excluded_validator_ids or ()),
+        )
     if args.tracked_root is not None:
         if (
             args.display_root is None
@@ -1282,4 +1596,5 @@ def main(argv: Sequence[str] | None = None) -> int:
         jobs=args.jobs,
         validator_ids=args.validator_ids or (),
         excluded_validator_ids=args.excluded_validator_ids or (),
+        pooled=not args.sequential,
     )

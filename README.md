@@ -169,7 +169,7 @@ These checks are for contributors working on the repository, not for ordinary pl
 
 - `python3 scripts/generate-doc-artifacts.py` — regenerate generated documentation artifacts and embedded coverage blocks.
 - `python3 repo_checks.py --suite validators` — run the repository's documentation and contract validators.
-- `python3 repo_checks.py --suite tests --verbose` — run the full Python test suite, including installation tests.
+- `python3 repo_checks.py --suite full --verbose` — run the full Python suite, including installation tests.
 
 Hook order, CI behavior, and test-suite boundaries are documented in [TESTING.md](TESTING.md).
 

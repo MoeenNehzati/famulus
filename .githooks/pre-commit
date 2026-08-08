@@ -44,8 +44,5 @@ else
     exit 1
 fi
 
-# TEMPORARY: keep docstring policy available but suspend staged enforcement
-# while the historical feature branches are integrated. Remove the exclusion
-# after that integration and its docstring remediation are complete.
-python3 "$REPO_ROOT/repo_checks.py" --suite precommit \
-    --exclude-validator repo/docstrings
+# Enforcement remains centrally profile-driven by the repo_checks precommit profile.
+python3 "$REPO_ROOT/repo_checks.py" --suite precommit

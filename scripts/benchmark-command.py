@@ -232,6 +232,7 @@ def benchmark_command(
     cwd: Path | None = None,
     env: Mapping[str, str] | None = None,
     record_samples: bool = False,
+    sample_process_tree: bool = True,
 ) -> dict[str, object]:
     """Run one command and return wall, CPU, concurrency, and OS metrics.
 
@@ -294,7 +295,7 @@ def benchmark_command(
     if sample_interval_seconds <= 0:
         raise ValueError("sample_interval_seconds must be positive")
 
-    proc_constants = _linux_proc_constants()
+    proc_constants = _linux_proc_constants() if sample_process_tree else None
     before = _usage_snapshot()
     start = time.monotonic()
     seen: dict[int, str] = {}
@@ -438,6 +439,7 @@ def main() -> int:
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--log", required=True, type=Path)
     parser.add_argument("--interval", type=float, default=0.02)
+    parser.add_argument("--no-sampling", action="store_true")
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     command = args.command[1:] if args.command[:1] == ["--"] else args.command
@@ -448,6 +450,7 @@ def main() -> int:
         command,
         log_path=args.log,
         sample_interval_seconds=args.interval,
+        sample_process_tree=not args.no_sampling,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(metrics, indent=2) + "\n", encoding="utf-8")

@@ -10,10 +10,10 @@ Run the named local pre-commit suite:
 python3 repo_checks.py --suite precommit
 ```
 
-Run the full Python suite, including installation tests:
+Run the full Python suite (validators + tests), including installation tests:
 
 ```bash
-python3 repo_checks.py --suite tests --verbose
+python3 repo_checks.py --suite full --verbose
 ```
 
 Run the fast cross-platform boundary sentinel:
@@ -130,15 +130,14 @@ Each job runs, in order:
 1. checkout
 2. Node setup
 3. Python setup
-4. `pip install pytest pyyaml jsonschema keyring`
+4. `pip install pytest pytest-xdist pyyaml jsonschema keyring`
 5. install Claude and Codex CLIs
-6. `python3 repo_checks.py --suite validators`
+6. `python3 repo_checks.py --suite full --verbose`
 7. `python3 repo_checks.py --suite portability --verbose`
-8. `python3 repo_checks.py --suite tests --verbose`
-9. macOS and Windows only: `FAMULUS_REQUIRE_NATIVE_KEYRING=1 python3 -m pytest -q tests/test_officina_secret_store.py::test_default_backend_native_roundtrip_when_available`
-10. macOS and Windows only: `FAMULUS_RUN_SCHEDULER_SMOKE=1 python3 -m pytest -q skills/recurring-tasks/_rtx/tests/test_scheduler_live_smoke.py`
+8. macOS and Windows only: `FAMULUS_REQUIRE_NATIVE_KEYRING=1 python3 -m pytest -q tests/test_officina_secret_store.py::test_default_backend_native_roundtrip_when_available`
+9. macOS and Windows only: `FAMULUS_RUN_SCHEDULER_SMOKE=1 python3 -m pytest -q skills/recurring-tasks/_rtx/tests/test_scheduler_live_smoke.py`
 
-Validators and tests intentionally share the same CI worker so setup happens once per operating system.
+Validators, full tests, and portability checks intentionally share the same CI worker so setup happens once per operating system.
 
 The native keyring smoke is optional in normal local runs and strict in CI on
 macOS and Windows. Without `FAMULUS_REQUIRE_NATIVE_KEYRING=1`, the default

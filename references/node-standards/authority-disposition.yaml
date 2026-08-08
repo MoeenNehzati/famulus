@@ -55,8 +55,8 @@ migration_audit:
     source_semantic_items: 238
     same_id_items: 164
     source_semantic_id_digest: sha256:54059558b8150329ea0de5abf35c1d4dd5a6e8012fc8fd3512ab59200776be84
-    exact_unchanged_leaf_items: 46
-    exact_unchanged_leaf_digest: sha256:015b6d0e1a968751f8388eabeefea6c1a15779236bca4754758a5ed07b569a8a
+    exact_unchanged_leaf_items: 45
+    exact_unchanged_leaf_digest: sha256:763cc686f031ab595ff4fb7b5232e38714018c7f6ef7c99b5b8b352732763183
     duplicate_items: 0
     unresolved_items: 0
     economy_retirements:
@@ -185,6 +185,10 @@ migration_audit:
       - skill-guidelines.cross-platform-tools.requirement-004#separate-process-target
       - skill-guidelines.cross-platform-tools.requirement-004#composite-target-migration-only
     rewritten_same_id_leaves:
+      skill-guidelines.validator-test-conventions.guidance-002: Rebound validator discovery guidance
+        from the deleted runner to the unified repository check runner.
+      skill-guidelines.validator-test-conventions.requirement-001#source-block: Rebound the sole public
+        validator execution path to repo_checks.py while preserving staged-mirror isolation.
       skill-guidelines.injection-lifecycle.requirement-001#source-block: Removed enforcement-path prose;
         retained the prohibition on hand-editing derived artifacts.
       skill-guidelines.personal-override-structure.requirement-001#source-block: Removed the duplicated

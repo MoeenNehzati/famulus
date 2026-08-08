@@ -56,7 +56,9 @@ class ClaudeInstallTests(unittest.TestCase):
             run_command(
                 [
                     sys.executable,
-                    str(REPO_ROOT / "validators" / "runner.py"),
+                    str(REPO_ROOT / "repo_checks.py"),
+                    "--suite",
+                    "validators",
                     "--validator",
                     "skill-maker/skill_metadata",
                     "--validator",
