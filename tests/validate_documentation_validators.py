@@ -6,11 +6,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from docs_tooling import render as docs_render  # noqa: E402
 from docs_tooling.render import generate_all  # noqa: E402
 from validators.contributor_docs_contract import validate as validate_contributor_docs  # noqa: E402
 from validators.generated_skill_docs import validate as validate_skill_docs  # noqa: E402
 from validators.readme_user_contract import validate as validate_readme  # noqa: E402
-from validators.user_docs_cover_blueprints import validate as validate_user_docs  # noqa: E402
+from validators import user_docs_cover_blueprints as user_docs_validator  # noqa: E402
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -152,7 +153,7 @@ def _seed_docs(repo_root: Path) -> None:
                 "blueprint.yaml",
                 "python3 skills/skill-maker/_rtx/_blueprint_syncer.py",
                 "dispatcher --caller-skill <caller> <callee>.interface.<name> [args...]",
-                "python3 validators/runner.py",
+                "python3 repo_checks.py --suite validators",
                 ".githooks/pre-commit",
                 "docs/officina/skill-blueprints.md",
                 "references/blueprint/schema.json",
@@ -208,9 +209,33 @@ def _make_repo(tmp_path: Path) -> Path:
 def test_documentation_validators_accept_clean_repo(tmp_path: Path) -> None:
     repo_root = _make_repo(tmp_path)
     assert validate_readme(repo_root) == []
-    assert validate_user_docs(repo_root) == []
+    assert user_docs_validator.validate(repo_root) == []
     assert validate_contributor_docs(repo_root) == []
     assert validate_skill_docs(repo_root) == []
+
+
+def test_user_docs_validator_constructs_catalog_once(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repo_root = _make_repo(tmp_path)
+    calls = 0
+    real_load_catalog = user_docs_validator.load_catalog
+
+    def counted_load_catalog(root: Path):
+        nonlocal calls
+        calls += 1
+        return real_load_catalog(root)
+
+    monkeypatch.setattr(
+        user_docs_validator,
+        "load_catalog",
+        counted_load_catalog,
+    )
+    monkeypatch.setattr(docs_render, "load_catalog", counted_load_catalog)
+
+    assert user_docs_validator.validate(repo_root) == []
+    assert calls == 1
 
 
 def test_readme_validator_flags_missing_skill_index_link(tmp_path: Path) -> None:

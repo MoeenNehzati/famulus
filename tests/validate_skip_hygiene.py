@@ -1,8 +1,13 @@
 """Tests for validators/skip_hygiene.py."""
 from __future__ import annotations
 
+import ast
 import importlib.util
 from pathlib import Path
+
+import pytest
+
+from officina.common.python_source_cache import PythonSourceCache
 
 _VALIDATOR = Path(__file__).resolve().parents[1] / "validators" / "skip_hygiene.py"
 _spec = importlib.util.spec_from_file_location("skip_hygiene", _VALIDATOR)
@@ -29,6 +34,55 @@ def test_unannotated_pytest_skip_is_rejected(tmp_path: Path) -> None:
     errors = _mod.validate(tmp_path)
 
     assert any("test skip must have a nearby" in error for error in errors)
+
+
+def test_injected_cache_preserves_findings_and_ast(tmp_path: Path) -> None:
+    path = _write_test(tmp_path, "import pytest\npytest.skip('no')\n")
+    expected = _mod.validate(tmp_path)
+    source_cache = PythonSourceCache(tmp_path)
+    _source, tree = source_cache.read_parse(path)
+    before = ast.dump(tree, include_attributes=True)
+
+    assert _mod._validate(tmp_path, source_cache) == expected
+    assert ast.dump(tree, include_attributes=True) == before
+
+
+def test_injected_cache_preserves_syntax_error_finding(tmp_path: Path) -> None:
+    _write_test(tmp_path, "if:\n")
+
+    assert _mod._validate(
+        tmp_path,
+        PythonSourceCache(tmp_path),
+    ) == _mod.validate(tmp_path)
+
+
+def test_injected_cache_preserves_unicode_error(tmp_path: Path) -> None:
+    path = tmp_path / "tests" / "test_demo.py"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"\xff")
+
+    with pytest.raises(UnicodeDecodeError) as direct:
+        _mod.validate(tmp_path)
+    with pytest.raises(UnicodeDecodeError) as injected:
+        _mod._validate(tmp_path, PythonSourceCache(tmp_path))
+
+    assert direct.value.args == injected.value.args
+
+
+def test_injected_cache_preserves_os_error(tmp_path: Path, monkeypatch) -> None:
+    missing = tmp_path / "tests" / "test_missing.py"
+    monkeypatch.setattr(
+        _mod,
+        "_iter_python_test_files",
+        lambda _root: iter([(missing, Path("tests/test_missing.py"))]),
+    )
+
+    with pytest.raises(FileNotFoundError) as direct:
+        _mod.validate(tmp_path)
+    with pytest.raises(FileNotFoundError) as injected:
+        _mod._validate(tmp_path, PythonSourceCache(tmp_path))
+
+    assert direct.value.args == injected.value.args
 
 
 def test_annotated_skipif_decorator_passes(tmp_path: Path) -> None:

@@ -157,7 +157,7 @@ interfaces:
           content: blueprint synchronization and repository validators
           id: write-5
           medium: subprocess
-          path: $repo/validators/runner.py
+          path: $repo/repo_checks.py
           path_match: exact
           reason: Run certifier-owned structural checks and the declared blueprint-sync
             call before signing.

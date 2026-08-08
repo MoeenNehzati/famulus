@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from validators import personal_info as module_under_test  # noqa: E402
 from validators.personal_info import validate  # noqa: E402
 
 
@@ -15,6 +16,41 @@ def test_empty_repo_passes(tmp_path: Path) -> None:
 def test_clean_file_passes(tmp_path: Path) -> None:
     (tmp_path / "notes.md").write_text("Nothing personal here.\n")
     assert validate(tmp_path) == []
+
+
+def test_allow_patterns_are_scrubbed_only_for_token_candidates(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    (tmp_path / "doc.md").write_text(
+        "clean\nMoeenNehzati\nstill clean\n/home/moeen\n"
+    )
+    original_scrub = module_under_test._scrub
+    scrubbed: list[str] = []
+
+    def recording_scrub(text: str) -> str:
+        scrubbed.append(text)
+        return original_scrub(text)
+
+    monkeypatch.setattr(module_under_test, "_scrub", recording_scrub)
+
+    assert validate(tmp_path) == [
+        "doc.md:4: contains personal-info token 'moeen'"
+    ]
+    assert scrubbed == ["MoeenNehzati", "/home/moeen"]
+
+
+def test_allowed_identifier_overlap_preserves_path_and_line_order(tmp_path: Path) -> None:
+    (tmp_path / "MoeenNehzati.md").write_text("clean\n")
+    (tmp_path / "MoeenNehzati-seyed.md").write_text(
+        "MoeenNehzati and /home/NEHZATI\nseyed\n"
+    )
+
+    assert validate(tmp_path) == [
+        "MoeenNehzati-seyed.md: file path contains a personal-info token",
+        "MoeenNehzati-seyed.md:1: contains personal-info token 'NEHZATI'",
+        "MoeenNehzati-seyed.md:2: contains personal-info token 'seyed'",
+    ]
 
 
 def test_token_in_content_detected(tmp_path: Path) -> None:

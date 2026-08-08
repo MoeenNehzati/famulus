@@ -1394,14 +1394,14 @@ def test_completeness_findings_block_structural_draft_signing(
 def _passed_mechanical_result() -> certifier.CommandResult:
     return certifier.CommandResult(
         name="validators",
-        command=[sys.executable, "validators/runner.py"],
+        command=[sys.executable, "repo_checks.py", "--suite", "validators"],
         exit_code=0,
         stdout="",
         stderr="",
     )
 
 
-def test_mechanical_gate_runs_only_the_validator_runner(
+def test_mechanical_gate_runs_only_the_repository_checks_entrypoint(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1424,7 +1424,7 @@ def test_mechanical_gate_runs_only_the_validator_runner(
     assert calls == [
         (
             "validators",
-            [sys.executable, "validators/runner.py"],
+            [sys.executable, "repo_checks.py", "--suite", "validators"],
             tmp_path,
         )
     ]

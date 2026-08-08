@@ -4,6 +4,7 @@ import importlib.util
 import shutil
 from pathlib import Path
 
+import jsonschema
 import yaml
 
 
@@ -45,6 +46,25 @@ def _copy_standard_repo(tmp_path: Path) -> Path:
 def test_repository_canonical_standards_are_valid_and_fresh():
     validator = _load_validator()
     assert validator.validate(ROOT) == []
+
+
+def test_repository_validation_prepares_the_v6_schema_once(tmp_path, monkeypatch):
+    repo = _copy_standard_repo(tmp_path)
+    original_validator_for = jsonschema.validators.validator_for
+    preparation_count = 0
+
+    def counting_validator_for(schema, *args, **kwargs):
+        nonlocal preparation_count
+        if isinstance(schema, dict) and str(schema.get("$id", "")).endswith(
+            "/standard-v6.schema.json"
+        ):
+            preparation_count += 1
+        return original_validator_for(schema, *args, **kwargs)
+
+    monkeypatch.setattr(jsonschema.validators, "validator_for", counting_validator_for)
+
+    assert _load_validator().validate(repo) == []
+    assert preparation_count == 1
 
 
 def test_accepts_utf8_standards_and_crlf_views_under_windows_default_encoding(

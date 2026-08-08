@@ -100,7 +100,7 @@ interfaces:
           - text
           id: write-3
           medium: subprocess
-          path: $repo/{skills/skill-maker/_rtx/_blueprint_syncer.py,validators/runner.py,tests,skills/<skill-name>/tests}
+          path: $repo/{skills/skill-maker/_rtx/_blueprint_syncer.py,repo_checks.py,tests,skills/<skill-name>/tests}
           path_match: glob
           reason: Verify branch safety, contract synchronization, and behavior before
             reporting completion.

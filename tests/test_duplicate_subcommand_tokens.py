@@ -1,8 +1,52 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import yaml
 
 from validators.duplicate_subcommand_tokens import find_duplicate_fixed_subcommands
+
+
+def test_graph_entry_reuses_supplied_repository_graph(tmp_path, monkeypatch):
+    from validators import duplicate_subcommand_tokens as module_under_test
+
+    interfaces = {
+        "fixture.interface.one": {
+            "process_binding": {"args_prefix": ["same"], "entry": "One"}
+        },
+        "fixture.interface.two": {
+            "process_binding": {"args_prefix": ["same"], "entry": "Two"}
+        },
+    }
+    graph = SimpleNamespace(
+        nodes={
+            "fixture.source": SimpleNamespace(
+                node_type="behavioral_source",
+                declaration={"interfaces": interfaces},
+            )
+        }
+    )
+    load_count = 0
+
+    def load_graph(*args, **kwargs):
+        nonlocal load_count
+        load_count += 1
+        return graph
+
+    monkeypatch.setattr(module_under_test, "load_repository_blueprint_graph", load_graph)
+
+    skill = tmp_path / "skills" / "fixture"
+    skill.mkdir(parents=True)
+    (skill / "blueprint.yaml").write_text("{}\n", encoding="utf-8")
+
+    expected = [
+        "source 'fixture.source': duplicate fixed dispatcher subcommand token "
+        "`same` used by interfaces: fixture.interface.one, fixture.interface.two"
+    ]
+    assert module_under_test.REQUIRES_BLUEPRINT_GRAPH is True
+    assert module_under_test.validate_with_graph(tmp_path, graph) == expected
+    assert load_count == 0
+    assert module_under_test.validate(tmp_path) == expected
+    assert load_count == 1
 
 
 def test_no_duplicates_in_clean_module():
@@ -65,17 +109,7 @@ def test_ignores_interfaces_without_args_prefix():
 
 
 def test_validate_does_not_flag_same_token_across_different_source_files():
-    """Regression test: interfaces in different behavioral-source files never
-    share one dispatcher process, so the same args_prefix token in two
-    different source files within the same module must NOT be flagged.
-
-    This mirrors the real repository state: list-manager's `create-entry`
-    subcommand is shared by the `cloud-create-entry`/`create-entry` interface
-    pair (same source file, same process_binding.entry, disambiguated by the
-    real dispatch target rather than by argv re-derivation) and, similarly,
-    `init`/`read`/`update`; email-client's `list` token is shared across two
-    genuinely different source files (accounts-list vs mail-list).
-    """
+    """Do not report equal tokens declared by separate behavioral sources."""
     from validators.duplicate_subcommand_tokens import validate
 
     repo_root = Path(__file__).resolve().parents[1]
@@ -91,11 +125,7 @@ def test_validate_does_not_flag_same_token_across_different_source_files():
 def test_validate_still_flags_same_source_file_different_entry_duplicate(
     tmp_path, monkeypatch
 ):
-    """True-positive regression: two interfaces sharing one source file's
-    own interfaces mapping AND a different process_binding.entry are
-    genuinely ambiguous — two different Python dispatch targets could both
-    claim the same token — and must still be flagged.
-    """
+    """Report one source token claimed by different process entries."""
     import yaml as yaml_module
 
     from validators import duplicate_subcommand_tokens as module_under_test
@@ -153,12 +183,7 @@ def test_validate_still_flags_same_source_file_different_entry_duplicate(
 
 
 def test_same_entry_with_different_required_flags_is_not_flagged():
-    """Mirrors the real list-manager `create-entry`/`cloud-create-entry`
-    pair: same token, same process_binding.entry (one Python class handles
-    both), but different required_flags (`--cloud` distinguishes the two
-    documented contracts at the call site). Same-entry alone is the sound
-    invariant here, so this must NOT be flagged regardless of the flags.
-    """
+    """Accept one shared process entry despite different required flags."""
     interfaces = {
         "list-manager.source.rtx-yaml-store.interface.cloud-create-entry": {
             "process_binding": {
@@ -179,12 +204,7 @@ def test_same_entry_with_different_required_flags_is_not_flagged():
 
 
 def test_same_entry_with_identical_required_flags_is_not_flagged():
-    """Same entry, same token, and identical (or absent) required_flags is
-    still not flagged: the dispatcher's real routing property is the
-    explicit process_binding.entry target, not argv re-derivation, so one
-    shared handler is safe no matter how its own patterns are documented.
-    This also covers interfaces with no patterns/required_flags at all.
-    """
+    """Accept one shared process entry with identical or absent flag rules."""
     interfaces = {
         "a": {
             "process_binding": {

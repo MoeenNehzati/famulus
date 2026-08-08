@@ -3,6 +3,9 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import re
+
+import pytest
 
 _VALIDATOR = (
     Path(__file__).resolve().parents[1]
@@ -61,3 +64,74 @@ def test_direct_cross_skill_cx_path_flagged(tmp_path: Path) -> None:
     errors = _mod.validate(tmp_path)
 
     assert any("target-skill" in error for error in errors)
+
+
+def test_multiple_direct_paths_report_alphabetically_first_skill(
+    tmp_path: Path,
+) -> None:
+    skills = tmp_path / "skills"
+    caller = skills / "caller-skill"
+    alpha = skills / "alpha-skill"
+    zeta = skills / "zeta-skill"
+    for skill in (caller, alpha, zeta):
+        skill.mkdir(parents=True)
+        (skill / "blueprint.yaml").write_text(f"name: {skill.name}\n")
+    script = caller / "_rtx" / "run.py"
+    script.parent.mkdir()
+    script.write_text(
+        "use ../zeta-skill/_rtx/run.py and ../alpha-skill/_rtx/run.py\n"
+    )
+
+    assert _mod.validate(tmp_path) == [
+        "skills/caller-skill/_rtx/run.py:1: direct cross-skill runtime path "
+        "to alpha-skill is forbidden"
+    ]
+
+
+def test_sys_path_violation_keeps_per_skill_order_before_later_direct_path(
+    tmp_path: Path,
+) -> None:
+    skills = tmp_path / "skills"
+    caller = skills / "caller-skill"
+    alpha = skills / "alpha-skill"
+    zeta = skills / "zeta-skill"
+    for skill in (caller, alpha, zeta):
+        skill.mkdir(parents=True)
+        (skill / "blueprint.yaml").write_text(f"name: {skill.name}\n")
+    script = caller / "_rtx" / "run.py"
+    script.parent.mkdir()
+    script.write_text(
+        "sys.path.insert(0, 'skills/alpha-skill'); "
+        "use('../zeta-skill/_rtx/run.py')\n"
+    )
+
+    assert _mod.validate(tmp_path) == [
+        "skills/caller-skill/_rtx/run.py:1: cross-skill sys.path insertion "
+        "to alpha-skill is forbidden"
+    ]
+
+
+def test_boundary_matchers_are_compiled_once_per_validation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    skills = tmp_path / "skills"
+    caller = skills / "caller-skill"
+    target = skills / "target-skill"
+    for skill in (caller, target):
+        skill.mkdir(parents=True)
+        (skill / "blueprint.yaml").write_text(f"name: {skill.name}\n")
+    script = caller / "_rtx" / "run.py"
+    script.parent.mkdir()
+    script.write_text("\n".join(f"value_{index} = {index}" for index in range(100)))
+    compiled_patterns: list[str] = []
+    real_compile = re.compile
+
+    def counted_compile(pattern: str, flags: int = 0) -> re.Pattern[str]:
+        compiled_patterns.append(pattern)
+        return real_compile(pattern, flags)
+
+    monkeypatch.setattr(_mod.re, "compile", counted_compile)
+
+    assert _mod.validate(tmp_path) == []
+    assert len(compiled_patterns) == 3

@@ -11,7 +11,7 @@ _README_REQUIRED = (
     "blueprint.yaml",
     "python3 skills/skill-maker/_rtx/_blueprint_syncer.py",
     "dispatcher --caller-skill <caller> <callee>.interface.<name> [args...]",
-    "validators/runner.py",
+    "repo_checks.py",
     ".githooks/pre-commit",
     "docs/officina/skill-blueprints.md",
     "references/blueprint/schema.json",
@@ -31,39 +31,30 @@ _DOC_SYSTEM_REQUIRED = (
 
 
 def validate(repo_root: Path) -> list[str]:
-    """Report contributor documentation that is missing, stale, or incomplete.
+    """Validate generated contributor documentation and required references.
 
     Intent
     ------
-    Keep the contributor entry points current with the live blueprint graph.
+    Check the contributor guide and documentation-system page as one contract.
 
     Rationale
     ---------
-    Comparing the guide against a fresh rendering catches coverage blocks that
-    drifted from the live blueprints, which a snippet check alone would miss.
+    Generated coverage and canonical command references must remain synchronized.
 
     Pseudocode
     ----------
-    - set errors = empty error list
-    - if neither docs nor skills exists:
-      - return an empty error list
-    - if the contributor guide is not a regular file:
-      - set errors = errors plus a missing-guide error
-    - else:
-      - set actual = contributor guide contents
-      - set rendered = contributor guide re-rendered with fresh coverage blocks
-      - if actual differs from rendered:
-        - set errors = errors plus a stale-coverage-block error
-      - for snippet in README_REQUIRED:
-        - set errors = errors plus a missing-snippet error when absent
-    - set errors = errors plus the documentation-system doc findings
-    - return errors
+    - set errors = empty finding list
+    - if documentation and skills roots are absent:
+      - return errors
+    - set contributor_findings = generated coverage and required snippet findings
+    - set system_findings = documentation-system required snippet findings
+    - return errors plus contributor_findings plus system_findings
 
     Wraps
     -----
     - none
-    """
 
+    """
     errors: list[str] = []
     if not (repo_root / "docs").exists() and not (repo_root / "skills").exists():
         return []

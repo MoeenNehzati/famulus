@@ -537,6 +537,41 @@ def test_load_module_blueprint_is_exact_and_ignores_invalid_siblings(
     assert node.declaration["schema_version"] == 4
 
 
+def test_load_module_blueprints_reuses_one_schema_validator(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_v4_module(tmp_path, "first-skill", allow_callers=[])
+    _write_v4_module(tmp_path, "second-skill", allow_callers=[])
+    first = tmp_path / "skills" / "first-skill"
+    second = tmp_path / "skills" / "second-skill"
+    loaded_schema_names: list[str] = []
+    real_load_schema_validator = blueprint_graph._load_schema_validator
+
+    def counted_load_schema_validator(schema_path: Path):
+        loaded_schema_names.append(schema_path.name)
+        return real_load_schema_validator(schema_path)
+
+    monkeypatch.setattr(
+        blueprint_graph,
+        "_load_schema_validator",
+        counted_load_schema_validator,
+    )
+
+    nodes = blueprint_graph.load_module_blueprints(
+        tmp_path,
+        (first, second),
+        schema_root=SCHEMA_ROOT,
+        expected_schema_version=4,
+    )
+
+    assert tuple(node.node_id for node in nodes) == (
+        "first-skill",
+        "second-skill",
+    )
+    assert loaded_schema_names == ["module.schema.json"]
+
+
 def test_v4_same_module_export_dependency_targets_its_source_without_cycle(
     tmp_path: Path,
 ) -> None:

@@ -13,7 +13,9 @@ from test_support.git_repository import GitTestRepository
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
-_RUNNER_PATH = _REPO_ROOT / "validators" / "runner.py"
+_RUNNER_PATH = _REPO_ROOT / "src" / "officina" / "_validator_snapshot.py"
+_REPO_CHECKS_PATH = _REPO_ROOT / "repo_checks.py"
+_CHECKS_IMPL_PATH = _REPO_ROOT / "src" / "officina" / "repository_checks.py"
 _SPEC = importlib.util.spec_from_file_location("validator_runner_under_test", _RUNNER_PATH)
 assert _SPEC is not None and _SPEC.loader is not None
 _RUNNER = importlib.util.module_from_spec(_SPEC)
@@ -28,8 +30,25 @@ def _initialize_runner_repository(repo: Path) -> Path:
     repository = GitTestRepository.create(repo)
     validators = repo / "validators"
     validators.mkdir(parents=True)
-    shutil.copy2(_RUNNER_PATH, validators / "runner.py")
-    _require_git_ok(repository.git("add", "validators/runner.py"))
+    officina = repo / "src" / "officina"
+    common = officina / "common"
+    common.mkdir(parents=True)
+    shutil.copy2(_RUNNER_PATH, officina / "_validator_snapshot.py")
+    shutil.copy2(_CHECKS_IMPL_PATH, officina / "repository_checks.py")
+    shutil.copy2(_REPO_ROOT / "src" / "officina" / "__init__.py", officina / "__init__.py")
+    shutil.copy2(_REPO_ROOT / "src" / "officina" / "common" / "__init__.py", common / "__init__.py")
+    shutil.copy2(
+        _REPO_ROOT / "src" / "officina" / "common" / "test_discovery.py",
+        common / "test_discovery.py",
+    )
+    source_cache = (
+        _REPO_ROOT / "src" / "officina" / "common" / "python_source_cache.py"
+    )
+    shutil.copy2(source_cache, common / "python_source_cache.py")
+    shutil.copy2(_REPO_CHECKS_PATH, repo / "repo_checks.py")
+    _require_git_ok(
+        repository.git("add", "repo_checks.py", "src/officina")
+    )
     return validators
 
 
@@ -78,6 +97,89 @@ def test_run_all_returns_canonical_ids_and_rejects_unknown_selection(
     }
     with pytest.raises(_RUNNER.ValidatorRunnerError, match="unknown validator"):
         _RUNNER.run_all(repo, validator_ids=["repo/missing"])
+
+
+def test_run_all_collects_validators_as_pytest_functions_with_fixtures(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    validators = _initialize_runner_repository(repo)
+    (validators / "fixture_probe.py").write_text(
+        "def validate(repo_root, request):\n"
+        "    errors = []\n"
+        "    if request.node.name != 'repo/fixture_probe':\n"
+        "        errors.append(f'unexpected pytest node: {request.node.name}')\n"
+        "    if repo_root != request.config.rootpath:\n"
+        "        errors.append('repo_root fixture does not match pytest root')\n"
+        "    return errors\n",
+        encoding="utf-8",
+    )
+    _require_git_ok(GitTestRepository(repo).git("add", "."))
+
+    assert _RUNNER.run_all(
+        repo,
+        validator_ids=["repo/fixture_probe"],
+    ) == {}
+
+
+def test_run_all_reuses_module_fixture_and_aggregates_validator_items(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    validators = _initialize_runner_repository(repo)
+    evidence = tmp_path / "fixture-calls"
+    (validators / "multi_item.py").write_text(
+        "from pathlib import Path\n"
+        "import pytest\n"
+        f"EVIDENCE = Path({str(evidence)!r})\n"
+        "@pytest.fixture(scope='module')\n"
+        "def prepared(repo_root):\n"
+        "    prior = EVIDENCE.read_text() if EVIDENCE.exists() else ''\n"
+        "    EVIDENCE.write_text(prior + 'x')\n"
+        "    return 'prepared' if repo_root.is_dir() else 'missing'\n"
+        "def test_first(prepared): return [f'first:{prepared}']\n"
+        "def test_second(prepared): return [f'second:{prepared}']\n"
+        "def validate(repo_root): return ['legacy fallback ran']\n",
+        encoding="utf-8",
+    )
+    _require_git_ok(GitTestRepository(repo).git("add", "."))
+
+    assert _RUNNER.run_all(repo, validator_ids=["repo/multi_item"]) == {
+        "repo/multi_item": ["first:prepared", "second:prepared"]
+    }
+    assert evidence.read_text(encoding="utf-8") == "x"
+
+
+def test_run_all_shares_python_source_cache_only_within_one_session(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    validators = _initialize_runner_repository(repo)
+    (repo / "shared.py").write_text("value = 1\n", encoding="utf-8")
+    (validators / "a_cache_writer.py").write_text(
+        "def test_cache_starts_empty(repo_root, python_source_cache):\n"
+        "    if python_source_cache._entries:\n"
+        "        return ['cache did not start empty']\n"
+        "    python_source_cache.read_parse(repo_root / 'shared.py')\n"
+        "    return []\n"
+        "def validate(repo_root): return ['legacy fallback ran']\n",
+        encoding="utf-8",
+    )
+    (validators / "b_cache_reader.py").write_text(
+        "def test_cache_reuses_prior_parse(repo_root, python_source_cache):\n"
+        "    before = len(python_source_cache._entries)\n"
+        "    python_source_cache.read_parse(repo_root / 'shared.py')\n"
+        "    after = len(python_source_cache._entries)\n"
+        "    return [] if (before, after) == (1, 1) else "
+        "[f'unexpected cache sizes: {(before, after)}']\n"
+        "def validate(repo_root): return ['legacy fallback ran']\n",
+        encoding="utf-8",
+    )
+    _require_git_ok(GitTestRepository(repo).git("add", "."))
+
+    selected = ["repo/a_cache_writer", "repo/b_cache_reader"]
+    assert _RUNNER.run_all(repo, validator_ids=selected) == {}
+    assert _RUNNER.run_all(repo, validator_ids=selected) == {}
 
 
 def test_skill_validator_discovery_supports_each_layout_with_explicit_ids(
@@ -142,11 +244,19 @@ def test_selected_graph_consumers_share_one_automatic_blueprint_preflight(
             "def validate(repo_root): return ['duplicate topology error']\n",
             encoding="utf-8",
         )
+    (validators / "duplicate_subcommand_tokens.py").write_text(
+        "REQUIRES_BLUEPRINT_GRAPH = True\n"
+        "def validate_with_graph(repo_root, graph):\n"
+        "    return [] if graph == {'token': 'shared'} else ['wrong graph']\n"
+        "def validate(repo_root): return ['duplicate graph load']\n",
+        encoding="utf-8",
+    )
     _require_git_ok(GitTestRepository(repo).git("add", "."))
 
     results = _RUNNER.run_all(
         repo,
         validator_ids=[
+            "repo/duplicate_subcommand_tokens",
             "skill-maker/blueprint_relationships",
             "skill-maker/interface_ids",
         ],
@@ -196,7 +306,7 @@ def test_graph_preflight_errors_are_reported_only_by_blueprint_owner(
     tmp_path: Path,
 ) -> None:
     repo = tmp_path / "repo"
-    _initialize_runner_repository(repo)
+    validators = _initialize_runner_repository(repo)
     skill_validators = repo / "skills" / "skill-maker" / "validators"
     skill_validators.mkdir(parents=True)
     (skill_validators / "blueprints.py").write_text(
@@ -211,17 +321,57 @@ def test_graph_preflight_errors_are_reported_only_by_blueprint_owner(
             "def validate(repo_root): return ['duplicate topology error']\n",
             encoding="utf-8",
         )
+    (validators / "duplicate_subcommand_tokens.py").write_text(
+        "REQUIRES_BLUEPRINT_GRAPH = True\n"
+        "def validate_with_graph(repo_root, graph): return ['consumer ran']\n"
+        "def validate(repo_root): return ['duplicate topology error']\n",
+        encoding="utf-8",
+    )
     _require_git_ok(GitTestRepository(repo).git("add", "."))
 
     assert _RUNNER.run_all(
         repo,
         validator_ids=[
+            "repo/duplicate_subcommand_tokens",
             "skill-maker/blueprint_relationships",
             "skill-maker/interface_ids",
         ],
     ) == {
         "skill-maker/blueprints": ["topology error"],
     }
+
+
+def test_fixture_backed_graph_consumer_obeys_preflight_error_gating(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    _initialize_runner_repository(repo)
+    skill_validators = repo / "skills" / "skill-maker" / "validators"
+    skill_validators.mkdir(parents=True)
+    sentinel = tmp_path / "consumer-ran"
+    (skill_validators / "blueprints.py").write_text(
+        "def preflight(repo_root): return ['topology error'], None\n"
+        "def validate(repo_root): return ['duplicate topology error']\n",
+        encoding="utf-8",
+    )
+    (skill_validators / "fixture_consumer.py").write_text(
+        "from pathlib import Path\n"
+        "REQUIRES_BLUEPRINT_GRAPH = True\n"
+        f"SENTINEL = Path({str(sentinel)!r})\n"
+        "def test_graph_consumer(repo_root, python_source_cache):\n"
+        "    SENTINEL.write_text('ran')\n"
+        "    return ['consumer ran']\n"
+        "def validate_with_graph(repo_root, graph): return ['legacy ran']\n"
+        "def validate(repo_root): return ['duplicate topology error']\n",
+        encoding="utf-8",
+    )
+    _require_git_ok(GitTestRepository(repo).git("add", "."))
+
+    assert _RUNNER.run_all(
+        repo,
+        validator_ids=["skill-maker/fixture_consumer"],
+    ) == {"skill-maker/blueprints": ["topology error"]}
+    assert not sentinel.exists()
 
 
 def test_selected_graph_consumer_is_a_noop_when_preflight_has_no_graph(
@@ -334,7 +484,7 @@ def test_run_all_rejects_an_unknown_module_without_validate(tmp_path: Path) -> N
 def test_run_all_imports_staged_transitive_dependencies(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     validators = _initialize_runner_repository(repo)
-    (repo / "src").mkdir()
+    (repo / "src").mkdir(exist_ok=True)
     helper = repo / "src" / "validator_helper.py"
     helper.write_text("VALUE = 'staged'\n", encoding="utf-8")
     (validators / "dependency_probe.py").write_text(
@@ -378,7 +528,13 @@ def test_staged_validator_receives_eligible_paths_with_unborn_head(
     assert json.loads(observation.read_text(encoding="utf-8")) == [
         "module.py",
         "notes.txt",
-        "validators/runner.py",
+        "repo_checks.py",
+        "src/officina/__init__.py",
+        "src/officina/_validator_snapshot.py",
+        "src/officina/common/__init__.py",
+        "src/officina/common/python_source_cache.py",
+        "src/officina/common/test_discovery.py",
+        "src/officina/repository_checks.py",
         "validators/staged_probe.py",
     ]
 

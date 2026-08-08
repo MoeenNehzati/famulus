@@ -15,6 +15,9 @@ from test_support.git_repository import GitTestRepository
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 from validators.cross_platform import validate  # noqa: E402
+from validators import cross_platform as module_under_test  # noqa: E402
+from officina.common import python_source_cache as cache_module  # noqa: E402
+from officina.common.python_source_cache import PythonSourceCache  # noqa: E402
 
 
 def _copy_module(repo_root: Path, source_name: str = "get-weather") -> Path:
@@ -41,6 +44,30 @@ def _write_yaml(path: Path, value: dict) -> None:
 
 def test_empty_repo_passes(tmp_path: Path) -> None:
     assert validate(tmp_path) == []
+
+
+def test_overlapping_internal_passes_parse_one_python_file_once(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    path = tmp_path / "skills" / "demo" / "shared.py"
+    path.parent.mkdir(parents=True)
+    path.write_text("value = 1\n", encoding="utf-8")
+    original_parse = cache_module.ast.parse
+    parse_calls: list[str] = []
+
+    def counting_parse(source: str, *, filename: str):
+        parse_calls.append(filename)
+        return original_parse(source, filename=filename)
+
+    monkeypatch.setattr(cache_module.ast, "parse", counting_parse)
+
+    assert module_under_test._validate(
+        tmp_path,
+        None,
+        PythonSourceCache(tmp_path),
+    ) == []
+    assert parse_calls == [str(path)]
 
 
 def test_clean_python_module_passes(tmp_path: Path) -> None:
@@ -453,7 +480,7 @@ def test_composite_runner_permission_is_rejected_in_generated_projection(
 def test_runner_reports_cross_platform_errors(tmp_path: Path) -> None:
     repository = GitTestRepository.initialize_existing_empty(tmp_path)
     (tmp_path / "validators").mkdir()
-    shutil.copy2(REPO_ROOT / "validators" / "runner.py", tmp_path / "validators")
+    shutil.copy2(REPO_ROOT / "repo_checks.py", tmp_path / "repo_checks.py")
     shutil.copy2(
         REPO_ROOT / "validators" / "cross_platform.py",
         tmp_path / "validators",
@@ -478,12 +505,14 @@ def test_runner_reports_cross_platform_errors(tmp_path: Path) -> None:
     runtime.mkdir(parents=True)
     (runtime / "run.sh").write_text("#!/bin/sh\necho hi\n", encoding="utf-8")
     repository.git("add", ".")
-    runner = REPO_ROOT / "validators" / "runner.py"
+    runner = tmp_path / "repo_checks.py"
 
     result = subprocess.run(
         [
             sys.executable,
             str(runner),
+            "--suite",
+            "validators",
             "--repo-root",
             str(tmp_path),
             "--validator",

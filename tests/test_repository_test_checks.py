@@ -2,13 +2,20 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import sys
 
 
-MODULE_PATH = Path(__file__).resolve().parents[1] / "scripts" / "run-python-tests.py"
+MODULE_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "src"
+    / "officina"
+    / "repository_checks.py"
+)
 SPEC = importlib.util.spec_from_file_location("run_python_tests", MODULE_PATH)
 assert SPEC is not None
 runner = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
+sys.modules[SPEC.name] = runner
 SPEC.loader.exec_module(runner)
 
 
@@ -19,7 +26,7 @@ EXPECTED_PORTABILITY_TESTS = (
     "tests/test_officina_git_provenance.py::test_git_test_repository_preserves_exact_bytes_under_ambient_autocrlf",
     "skills/recurring-tasks/_rtx/tests/test_schedule_backend.py::test_linux_sync_writes_units_and_enables_timer",
     "tests/test_officina_blueprint_graph.py::test_content_ownership_accepts_equivalent_repository_alias",
-    "tests/test_validator_runner.py::test_run_all_isolates_unmerged_index_and_restores_git_environment",
+    "tests/test_repository_validator_checks.py::test_run_all_isolates_unmerged_index_and_restores_git_environment",
 )
 
 
@@ -122,12 +129,47 @@ def test_ci_runs_portability_between_validators_and_full_suite() -> None:
         / "python-tests.yml"
     ).read_text(encoding="utf-8")
 
-    validator = workflow.index("python3 validators/runner.py")
+    validator = workflow.index(
+        "python3 repo_checks.py --suite validators"
+    )
     portability = workflow.index(
-        "python3 scripts/run-python-tests.py --suite portability --verbose"
+        "python3 repo_checks.py --suite portability --verbose"
     )
     full = workflow.index(
-        "python3 scripts/run-python-tests.py --suite full --verbose"
+        "python3 repo_checks.py --suite tests --verbose"
     )
 
     assert validator < portability < full
+
+
+def test_precommit_hook_uses_the_combined_root_suite() -> None:
+    hook = (
+        Path(__file__).resolve().parents[1]
+        / ".githooks"
+        / "pre-commit"
+    ).read_text(encoding="utf-8")
+
+    assert (
+        'python3 "$REPO_ROOT/repo_checks.py" --suite precommit'
+        in hook
+    )
+    assert '"$REPO_ROOT/validators/runner.py"' not in hook
+    assert '"$REPO_ROOT/scripts/run-python-tests.py"' not in hook
+
+
+def test_skill_hooks_select_validators_through_root_checks() -> None:
+    expected = {
+        "check-blueprints": "skill-maker/blueprints",
+        "check-dependencies": "skill-maker/dependencies",
+        "check-names": "skill-maker/names",
+        "check-runtime-files": "repo/skill_runtime_files",
+    }
+    hook_root = Path(__file__).resolve().parents[1] / ".githooks" / "skill"
+
+    for name, validator_id in expected.items():
+        hook = (hook_root / name).read_text(encoding="utf-8")
+        assert (
+            'repo_checks.py" --suite validators --validator '
+            f"{validator_id}"
+        ) in hook
+        assert "validators/runner.py" not in hook

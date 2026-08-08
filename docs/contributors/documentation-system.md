@@ -115,7 +115,7 @@ The key validators are:
 Run them through:
 
 ```bash
-python3 validators/runner.py
+python3 repo_checks.py --suite validators
 ```
 
 ## Adding a New Doc Contract

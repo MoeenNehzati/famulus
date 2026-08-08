@@ -1807,7 +1807,7 @@ The enclosing writer needs byte-preserving status records so it can distinguish 
 
 Pseudocode
 ----------
-- status = %officina.common.git_provenance.run_git(status_command)
+- set status = Git status command result
 - raise %.CertificationError(status_unavailable)
 - return records_from(status)
 
@@ -3312,7 +3312,7 @@ def run_v4_mechanical_checks(
 
     result = run_local_command(
         "validators",
-        [sys.executable, "validators/runner.py"],
+        [sys.executable, "repo_checks.py", "--suite", "validators"],
         repo_root=repo_root,
     )
     if not result.passed:
