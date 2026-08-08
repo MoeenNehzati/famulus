@@ -527,21 +527,21 @@ units:
   targets:
   - target_ref: skill-refactoring.remedies.declare-fix-category
     field: /steps/0/instruction
-    expected: Use a typed enum value from `references/blueprint/schema.json`; see `docs/skill-blueprints.md` for the architecture overview.
+    expected: Use a typed enum value from `references/blueprint/schema.json`.
 - source: skill-refactoring-catalog.md
   line: 21
   text: values in `references/blueprint/schema.json`. See `docs/skill-blueprints.md` for
   targets:
   - target_ref: skill-refactoring.remedies.declare-fix-category
     field: /steps/0/instruction
-    expected: Use a typed enum value from `references/blueprint/schema.json`; see `docs/skill-blueprints.md` for the architecture overview.
+    expected: Use a typed enum value from `references/blueprint/schema.json`.
 - source: skill-refactoring-catalog.md
   line: 22
   text: the blueprint architecture overview.
   targets:
   - target_ref: skill-refactoring.remedies.declare-fix-category
     field: /steps/0/instruction
-    expected: Use a typed enum value from `references/blueprint/schema.json`; see `docs/skill-blueprints.md` for the architecture overview.
+    expected: Use a typed enum value from `references/blueprint/schema.json`.
 - source: skill-refactoring-catalog.md
   line: 23
   text: '**Risk:** None.'

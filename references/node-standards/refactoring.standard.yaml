@@ -1,6 +1,6 @@
 schema_version: 6
 standard_version: 2.0.0
-revision: 3
+revision: 4
 id: node-standards.refactoring
 canonical_path: references/node-standards/refactoring.standard.yaml
 title: Node Refactoring Standard
@@ -137,7 +137,7 @@ standards:
             applies_when: *instruction-module
             summary: Set or correct `category` in `blueprint.yaml`.
             ordered: true
-            steps: [{kind: step, id: set-category, instruction: "Use a typed enum value from `references/blueprint/schema.json`; see `docs/skill-blueprints.md` for the architecture overview."}]
+            steps: [{kind: step, id: set-category, instruction: "Use a typed enum value from `references/blueprint/schema.json`."}]
             invariants: []
             risk: {level: low, statement: "None."}
           - kind: procedure

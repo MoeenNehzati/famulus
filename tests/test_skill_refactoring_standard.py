@@ -173,6 +173,17 @@ def test_standard_validates_and_has_explicit_canonical_path():
     assert validator.validate_file(STANDARD, ROOT) == []
 
 
+def test_category_remedy_uses_schema_without_documentation_dependency():
+    document = load_standard()
+    remedy = semantic_nodes(document)[
+        "skill-refactoring.remedies.declare-fix-category"
+    ]
+
+    assert remedy["steps"][0]["instruction"] == (
+        "Use a typed enum value from `references/blueprint/schema.json`."
+    )
+
+
 def test_every_immutable_source_unit_has_exact_or_documented_fidelity():
     document = load_standard()
     nodes = semantic_nodes(document)

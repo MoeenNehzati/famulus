@@ -1,6 +1,6 @@
 schema_version: 6
 standard_version: 1.0.0
-revision: 15
+revision: 16
 id: node-standards.python-behavioral-source
 canonical_path: references/node-standards/python-behavioral-source.standard.yaml
 title: Python Behavioral Source Standard
@@ -9,16 +9,16 @@ imports:
   behavioral-source:
     standard_id: node-standards.behavioral-source
     standard_version: 1.0.0
-    revision: 11
-    digest: sha256:c0c383959dadc327463767b0cc3d8c52989a429a9b485187419b41f1f45c692d
+    revision: 12
+    digest: sha256:3db602780d57965664580830118b5b6f4d69289a4d33c65cc2f03c7aa6477cd4
     artifact:
       kind: artifact
       ref: artifact.behavioral-source-standard
   python-node:
     standard_id: node-standards.python-node
     standard_version: 1.0.0
-    revision: 15
-    digest: sha256:662662de8c0cb47e4491c1705110a3c528ed64624c5f6348cb91b3a47a2e0569
+    revision: 16
+    digest: sha256:032751ec1fc95caf2f72408844379b314fe933dc3e107f7df78114a3b8d2e9c1
     artifact:
       kind: artifact
       ref: artifact.python-node-standard

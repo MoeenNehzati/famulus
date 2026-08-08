@@ -14,7 +14,7 @@ source_authorities:
     last_digest: sha256:f84eb2662c3e318ac0d4732daf3116114de84b6fa623ded8261333c7bfc6738f
     status: migrated
     replacement: references/node-standards/refactoring.standard.yaml
-    replacement_digest: sha256:f20606020255d3c6e638aff8ff345befd3783b7163a8e51b0b40a65e91304a37
+    replacement_digest: sha256:bce7f4d94bb60c90f04cca76fd40b1adda053a2a3b1d0bc5c2e84b8fea4e454e
     disposition: Diagnostic signals and remedies moved into the node-standards closure;
       analogy-only labels were retired because they do not affect diagnosis or repair.
   interface-design:
