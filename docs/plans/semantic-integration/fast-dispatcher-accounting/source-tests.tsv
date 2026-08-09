@@ -1,0 +1,65 @@
+status	path	disposition	slice	assertion-map
+M	skills/connect-google/_rtx/tests/test_connect_google_llm_routing.py	adapted	S6	preserve module behavior under canonical v6 IDs
+M	skills/connect-google/_rtx/tests/test_service_delegation.py	adapted	S6	preserve module behavior under canonical v6 IDs
+M	skills/daily-plan/_rtx/tests/test_dispatch_contract.py	adapted	S6	preserve module behavior under canonical v6 IDs
+M	skills/email-triage/_rtx/tests/test_fetch_filtered_envelopes.py	adapted	S6	preserve module behavior under canonical v6 IDs
+M	skills/email-triage/tests/test_llm_routing.py	adapted	S6	preserve module behavior under canonical v6 IDs
+M	skills/email-triage/tests/test_rescan.py	adapted	S6	preserve module behavior under canonical v6 IDs
+M	skills/install-assistant-tools/_rtx/tests/install_test_utils.py	adapted	S4,S6	preserve target installer runtime contracts while adding direct v6 runtime
+M	skills/install-assistant-tools/_rtx/tests/test_claude_github_install.py	adapted	S4,S6	preserve target installer runtime contracts while adding direct v6 runtime
+M	skills/install-assistant-tools/_rtx/tests/test_codex_install.py	adapted	S4,S6	preserve target installer runtime contracts while adding direct v6 runtime
+M	skills/install-assistant-tools/_rtx/tests/test_google_onboarding.py	adapted	S4,S6	preserve target installer runtime contracts while adding direct v6 runtime
+M	skills/install-assistant-tools/_rtx/tests/test_scaffold.py	adapted	S4,S6	preserve target installer runtime contracts while adding direct v6 runtime
+M	skills/list-manager/_rtx/tests/test_skill_contract.py	adapted	S6	preserve module behavior under canonical v6 IDs
+M	skills/recurring-tasks/_rtx/tests/test_job_executor.py	adapted	S6	preserve module behavior under canonical v6 IDs
+M	skills/recurring-tasks/_rtx/tests/test_schedule_backend.py	adapted	S6	preserve module behavior under canonical v6 IDs
+M	skills/refactor-node/tests/test_query_standards.py	adapted	S2	make current target-native tooling and validators v6-aware
+M	skills/refactor-node/tests/test_refactor_node_routing.py	adapted	S2	make current target-native tooling and validators v6-aware
+M	skills/skill-certifier/_rtx/tests/test_certifier.py	adapted	S2	make current target-native tooling and validators v6-aware
+M	skills/skill-drift/_rtx/tests/test_drift_check.py	adapted	S2	make current target-native tooling and validators v6-aware
+M	skills/skill-maker/_rtx/tests/test_blueprint_tools.py	adapted	S2	make current target-native tooling and validators v6-aware
+M	tests/conftest.py	adapted	S6	preserve module behavior under canonical v6 IDs
+A	tests/fixtures/blueprint_v6/direct-routing/alpha.v6.yaml	adapted	S1	validate v6 schema and exact repository configuration
+A	tests/fixtures/blueprint_v6/direct-routing/beta.v6.yaml	adapted	S1	validate v6 schema and exact repository configuration
+A	tests/fixtures/blueprint_v6/direct-routing/leaf.v6.yaml	adapted	S1	validate v6 schema and exact repository configuration
+A	tests/fixtures/blueprint_v6/direct-routing/root.v6.yaml	adapted	S1	validate v6 schema and exact repository configuration
+A	tests/fixtures/blueprint_v6/direct-routing/source.v6.yaml	adapted	S1	validate v6 schema and exact repository configuration
+A	tests/fixtures/blueprint_v6/direct-routing/unrelated.v6.yaml	adapted	S1	validate v6 schema and exact repository configuration
+M	tests/test_blueprint_catalog_schema.py	adapted	S1	validate v6 schema and exact repository configuration
+M	tests/test_blueprint_inventory.py	adapted	S6	preserve module behavior under canonical v6 IDs
+M	tests/test_blueprint_schema_metadata.py	adapted	S1	validate v6 schema and exact repository configuration
+A	tests/test_direct_blueprint_v6_schemas.py	adapted	S1	validate v6 schema and exact repository configuration
+D	tests/test_dispatcher_catalog.py	adapted	S3,S4,S7	partitioned in deleted-dispatcher-test-assertions.tsv
+A	tests/test_dispatcher_direct_authorization.py	adapted	S3,S7	preserve public dispatch authorization binding diagnostics and dry-run behavior
+A	tests/test_dispatcher_direct_blueprints.py	adapted	S3,S7	preserve public dispatch authorization binding diagnostics and dry-run behavior
+A	tests/test_dispatcher_performance.py	preserved	S5,S7	preserve source resolver and checkout CLI thresholds plus scale independence
+M	tests/test_dispatcher_route_smoke.py	adapted	S3,S7	preserve public dispatch authorization binding diagnostics and dry-run behavior
+M	tests/test_docs_catalog.py	adapted	S6	preserve module behavior under canonical v6 IDs
+M	tests/test_install_lifecycle.py	adapted	S4,S6	preserve target installer runtime contracts while adding direct v6 runtime
+M	tests/test_interface_injection_migration.py	adapted	S6	preserve module behavior under canonical v6 IDs
+M	tests/test_interface_projection.py	adapted	S6	preserve module behavior under canonical v6 IDs
+M	tests/test_nested_module_migration.py	adapted	S6	preserve module behavior under canonical v6 IDs
+M	tests/test_nested_module_v5_schemas.py	adapted	S6	preserve module behavior under canonical v6 IDs
+M	tests/test_node_certification_hashing.py	adapted	S2	make current target-native tooling and validators v6-aware
+M	tests/test_officina_blueprint_authorization.py	adapted	S2	make current target-native tooling and validators v6-aware
+M	tests/test_officina_blueprint_graph.py	adapted	S6	preserve module behavior under canonical v6 IDs
+M	tests/test_officina_blueprint_template.py	adapted	S6	preserve module behavior under canonical v6 IDs
+M	tests/test_officina_certification_hashing.py	adapted	S2	make current target-native tooling and validators v6-aware
+D	tests/test_officina_dispatcher.py	adapted	S3,S4,S7	partitioned in deleted-dispatcher-test-assertions.tsv
+M	tests/test_officina_git_provenance.py	adapted	S4,S6	preserve target installer runtime contracts while adding direct v6 runtime
+M	tests/test_officina_launcher_entry.py	adapted	S4,S6	preserve target installer runtime contracts while adding direct v6 runtime
+M	tests/test_officina_managed_runtime.py	adapted	S4,S6	preserve target installer runtime contracts while adding direct v6 runtime
+M	tests/test_officina_python_machine_interface.py	adapted	S4,S6	preserve target installer runtime contracts while adding direct v6 runtime
+A	tests/test_officina_repository_configuration.py	adapted	S1	validate v6 schema and exact repository configuration
+M	tests/test_officina_runtime_pointer.py	adapted	S4,S6	preserve target installer runtime contracts while adding direct v6 runtime
+M	tests/test_run_python_tests.py	adapted	S2	translate v6 collection and exclusion assertions into unified repository checks never restore old runner
+M	tests/test_standard_consumers.py	adapted	S6	preserve module behavior under canonical v6 IDs
+M	tests/test_visualization_browser.py	adapted	S8	retain target browser stability behavior do not import unrelated stale allowance
+M	tests/validate_blueprints.py	adapted	S2	make current target-native tooling and validators v6-aware
+M	tests/validate_dependencies.py	adapted	S2	make current target-native tooling and validators v6-aware
+M	tests/validate_dispatch_caller_module.py	adapted	S2	make current target-native tooling and validators v6-aware
+M	tests/validate_documentation_validators.py	adapted	S2	make current target-native tooling and validators v6-aware
+M	tests/validate_interface_ids.py	adapted	S2	make current target-native tooling and validators v6-aware
+M	tests/validate_skill_md_dispatch.py	adapted	S2	make current target-native tooling and validators v6-aware
+M	tests/validate_skill_runtime_doc_references.py	adapted	S2	make current target-native tooling and validators v6-aware
+D	tests/test_dispatcher_snapshot.py	adapted	S3,S4,S7	partitioned in deleted-dispatcher-test-assertions.tsv
