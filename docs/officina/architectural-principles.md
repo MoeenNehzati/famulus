@@ -382,9 +382,10 @@ boundary crossed on the way to that interface may impose another restriction.
 Namespace routing does not copy interfaces into an ancestor. It provides a
 controlled route to the identity owned by the descendant.
 
-A facade may preserve a parent-owned public name while delegating behavior to a
-child. It preserves names, not permissions. The original caller and the
-terminal target remain visible, and both parent and child restrictions apply.
+An ancestor may expose a route to a descendant's canonical interface ID, but
+it may not rename or copy that interface. Officina has no facade aliases:
+callers address the module that owns the export, and every crossed namespace
+may only narrow the terminal export's authority.
 
 ### 4.4 One resolution
 

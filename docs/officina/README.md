@@ -140,9 +140,9 @@ from a dependency.
 
 ### Shared code — [`src/officina/`](../../src/officina/)
 
-- `dispatcher/` — the boundary through which one node invokes another node's
-  exported interface: route catalog, core resolution, CLI, per-platform
-  process handling
+- `dispatcher/` — the direct, read-only boundary through which one node invokes
+  another node's exported interface: bounded blueprint resolution,
+  authorization, CLI, and per-platform process handling
 - `runtime/` — execution of Python machine interfaces in their own process
 - `common/` — the shared machinery: blueprint graph, inventory, template and
   authorization; certificate records, hashing and views; configured-schema
@@ -210,6 +210,8 @@ Then, depending on what you need:
 
 - [Architecture](architecture.md) — how the principles are implemented:
   nodes, gateways, blueprints, interfaces, discovery, and the graph
+- [Dispatcher](dispatcher.md) — direct route resolution, authorization,
+  execution, failures, and performance budgets
 - [Certification and Drift](certification_and_drift.md) — certificate
   lifecycle, drift evaluation, and what makes a certificate stale
 - [Skill Blueprints](skill-blueprints.md) — authoring blueprints in practice

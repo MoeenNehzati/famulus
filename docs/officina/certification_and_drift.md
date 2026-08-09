@@ -1,8 +1,8 @@
 # Certification and Drift
 
-This document defines the live version-5 certification contract. Version-4
-schemas remain only as immutable converter input under
-`references/blueprint/migrations/v4/`.
+This document defines the live version-6 certification contract. Version-4 and
+version-5 schemas remain immutable migration and regression inputs under
+`references/blueprint/migrations/`.
 
 Certification is repository-bound. The public certifier requires an explicit
 reviewed repository and commit and derives the complete certifiable graph from
@@ -12,7 +12,7 @@ graph.
 
 ## Nodes and dependencies
 
-Version 5 has two authored node types:
+Version 6 has two authored node types:
 
 - A `module` owns discovery, filesystem authority, contained behavioral
   sources, and exported interfaces.
@@ -20,7 +20,7 @@ Version 5 has two authored node types:
   intrinsic interface contracts, source dependencies, and interface uses.
 
 The blueprint graph derives certification dependencies from source use,
-private-interface use, module-export use, namespace routing, facades, topology
+private-interface use, module-export use, namespace routing, topology
 proofs, and cross-owner contract references. Containment assigns ownership but
 adds no certification edge. An edge records the target node and its exact
 version. A node's local hash does not recursively include dependency bytes;
@@ -34,7 +34,7 @@ never add graph edges.
 
 ## Structural validity and certifiability
 
-A version-5 blueprint may be structurally valid before it is certifiable.
+A version-6 blueprint may be structurally valid before it is certifiable.
 Structural validation requires canonical identity, a resolvable whole-file
 gateway, containment and relationship shape, safe paths, and closed shapes for
 every semantic value that is present. It does not manufacture semantic facts
@@ -144,7 +144,7 @@ dependency hash without changing the dependent's local node hash.
 payload:
   certificate_schema_version: 2
   subject:
-    id: example-skill-rtx.source.runtime
+    id: example-skill._rtx.source.runtime
     node_type: behavioral_source
     version: 1
     blueprint_path: skills/example-skill/_rtx/blueprints/runtime.yaml
@@ -158,7 +158,7 @@ payload:
   dependencies: []
   certification_basis_hash: sha256:...
   certifier:
-    interface: skill-certifier.interface.certify
+    interface: skill-certifier._rtx.interface.certify
     version: 1
     node_hash: sha256:...
     source_commit: ...
@@ -177,20 +177,18 @@ value is valid base64. `certified_at` is informational and never establishes
 currentness.
 
 Each dependency entry contains `relation`, `target`, `version`, and
-`node_hash`. V5 dependency relations are `uses-source`,
+`node_hash`. Version-6 dependency relations are `uses-source`,
 `uses-private-interface`, `uses-export`, `references-cross-owner-contract`,
-`contains-source`, `routes-child-namespace`, `routes-terminal-module`,
-`facades-child-export`, and `facades-implementing-source`. The payload contains
+`contains-source`, `routes-child-namespace`, and `routes-terminal-module`. The payload contains
 no separate dependency-certificate hash.
 
-Containment and route/facade topology are certificate dependencies in v5:
+Containment and route topology are certificate dependencies in version 6:
 module certificates depend on contained sources, parent namespace routes
-depend on the routed child module, and facades depend on both the child export
-and the implementing terminal source. A `uses-export` dependency targets the
-exact behavioral source implementing the export. Runtime admission separately
-requires the current exporting-module certificate, so boundary identity and
-access remain protected without making every consumer depend on every source in
-that module.
+depend on the routed child module. A `uses-export` dependency targets the exact
+behavioral source implementing the export. The exporting-module certificate
+separately records boundary identity and access without making every consumer
+depend on every source in that module. Live dispatcher authorization reads the
+relevant blueprints directly and treats certificate currentness as advisory.
 
 The certifier identity contains its exported interface and version, its node
 hash, and its source commit. `certification_basis_hash` is the single digest
@@ -287,17 +285,19 @@ Secure atomic writes are the default. A caller may explicitly opt into the
 existing non-atomic fallback when the host cannot provide the secure primitive;
 the certifier never selects that fallback silently.
 
-The dispatcher derives one repository-backed certification view. In ordinary
-operation it admits only exports whose module and implementing source have
-current certificates. The same view admits exact self-certification of
-`skill-certifier` when its certification closure has no history or has
-appendable history: every existing log in the closure must be canonical,
-schema-valid, signature-valid, and unbroken, although its final signing key may
-be inactive, and existing logs must form a dependency-first prefix of the exact
-closure. An empty closure history or a valid partial prefix may resume through
-this path. Corrupt history, a non-prefix gap, a wrong-subject entry, or missing
-verification material fails closed. The only uncertified mechanical subcall
-admitted is the existing read-only blueprint synchronization check.
+Dispatcher authorization is independent of certificate currentness. If a
+preverified in-memory status view is available, dispatcher consults only the
+caller ancestry, crossed target namespaces, terminal module, and implementing
+source and emits bounded diagnostics. Missing, stale, expired, malformed, or
+unavailable status is warning-only: it cannot grant authority, deny an
+otherwise valid route, trigger certification work, or cause repository reads.
+
+Certification workflows retain their own fail-closed rules. In particular,
+self-certification may resume only from empty history or a canonical,
+signature-valid, unbroken dependency-first prefix of the exact closure.
+Corrupt history, a non-prefix gap, a wrong-subject entry, or missing
+verification material blocks certification even though it does not block an
+otherwise authorized dispatcher route.
 
 This is a cooperative same-user contract, not filesystem isolation between
 same-UID processes. A malicious process running as the same OS user may access

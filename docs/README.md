@@ -11,6 +11,8 @@ Officina is and routes to everything below.
   normative rules
 - [Architecture](./officina/architecture.md) — how the principles are
   implemented
+- [Dispatcher](./officina/dispatcher.md) — direct routing, authorization, and
+  launch behavior
 - [Certification and Drift](./officina/certification_and_drift.md)
 - [Skill Blueprints](./officina/skill-blueprints.md)
 - [Blueprint Search](./officina/blueprint_search.md)

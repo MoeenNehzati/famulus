@@ -1,6 +1,6 @@
 # Famulus Architecture
 
-> **Status:** Adopted version-5 architecture. The live schemas, validators, and
+> **Status:** Adopted version-6 architecture. The live schemas, validators, and
 > implementation provide the executable details of this contract.
 
 ## Scope
@@ -177,8 +177,10 @@ Schema validity and certification are distinct. A schema-valid blueprint may
 be an uncertified draft: it must have enough identity, gateway, containment,
 and relationship structure to enter the graph, but semantic facts that cannot
 be recovered mechanically may still be absent. Absence never means approval
-or an implicit default. It is a certifier finding, and a node without a current
-certificate is unavailable to the runtime.
+or an implicit default. It is a certifier finding. Runtime routing and
+authorization remain fail-closed on blueprint policy, while missing, expired,
+stale, malformed, unavailable, or unknown certification status is surfaced as
+a warning and does not deny an otherwise authorized invocation.
 
 Migration therefore has two stages. The converter losslessly moves every
 authored fact into the generic module, source, interface, process-binding, and
@@ -305,38 +307,23 @@ mechanism is a language-native import. An authored non-invocation reference may
 instead create an exact cross-module source dependency, but does not bypass
 module authority or expose the target source as a public Famulus interface.
 
-### Dispatcher route catalog
+### Direct dispatcher resolution
 
-Repository discovery, schema validation, graph construction, and certificate
-currentness derivation are validation work, not per-invocation work. After the
-canonical resolver admits a version 5 request, the dispatcher stores a compact
-route graph and final certification decision in its user cache. The route key
-contains the canonical repository, immediate caller module, and requested
-interface. The cached graph retains only the caller/target ancestry, crossed
-namespace gates, implementing source, interface contracts, and authorization
-facts needed to replay that hop.
+The operational contract and examples are collected in
+[Dispatcher](dispatcher.md).
 
-Every entry is data-only JSON decoded through an explicit type allowlist. It is
-bound to the blueprint, schema, runtime-source, certification-basis, and
-certificate inputs that produced it. A changed, missing, malformed, wrongly
-rooted, or unsupported entry is a cache miss and canonical resolution runs
-again; stale state is never authoritative. An uncertified decision is also
-short-lived so a newly issued certificate is observed without manual cache
-management. Cache failure cannot admit a request or prevent an otherwise valid
-uncached request.
+The launcher supplies the exact repository configuration path. That file owns
+the ordered module roots. The dispatcher derives caller and target paths from
+their dotted module IDs, opens only their registered ancestry and the selected
+behavioral-source blueprint, evaluates crossed namespace and terminal access
+policies, compiles the process binding, and launches it.
 
-Catalog recovery is visible in the ordinary structured warning stream. A
-successful canonical rebuild after a missing, stale, malformed, or unavailable
-lookup emits `dispatcher-catalog-rebuilt` with the lookup status. Failure to
-persist the rebuilt graph or its certification decision emits
-`dispatcher-catalog-write-failed`; execution continues because cache
-persistence is not an authorization boundary. A fresh cache hit emits neither
-warning.
-
-The catalog is route-scoped rather than repository-global. This preserves the
-rule that a defect proven outside the requested dispatch closure is a warning,
-not a blocker. It also preserves hop-local identity: no caller chain or
-propagated privilege is stored or passed to the next module.
+Host dispatch is read-only and fail-closed. It does not inventory roots, load a
+repository-wide graph, inspect Git, derive certification, repair blueprints,
+synchronize generated artifacts, build a manifest, cache a route, or write
+routing state. Missing, malformed, ambiguous, or unauthorized relevant state
+is an error. Certification currentness is separate and warning-only; it cannot
+grant permission or deny an otherwise authorized route.
 
 Modules may register direct child modules. Registration establishes physical
 containment and makes the child addressable inside the registered subtree; it
@@ -345,15 +332,9 @@ declaration routes selected child or descendant interface IDs across the parent
 boundary without renaming them. Every target-side boundary crossed from outside
 its subtree needs its own namespace route.
 
-A parent may separately export a facade under a parent-owned interface ID. A
-facade derives one exact child export's contract and version; it cannot export
-a private child interface. The external caller must pass the facade policy,
-then the facade-owning parent is the immediate caller checked by the child
-export. A facade may therefore admit callers that the child does not name, but
-only when the child admits the facade owner. Direct access to the child export
-is a distinct request: a parent or sibling already inside the registered
-subtree does not cross the common parent's outward namespace filter, but still
-needs authorization from the child.
+Version 6 has no facade exports. A callable interface is exported by the module
+that owns it. A parent can expose the child's existing fully qualified ID
+through an explicit namespace route, but cannot rename it or copy its contract.
 
 Caller allowlists use either globally unique module IDs or Python-style
 leading-dot references resolved against the certified registration tree.
@@ -364,19 +345,19 @@ Thus `A/B` may call `A/C` only when `A/C` is public or names `A`, `A/B`, or an
 ancestor of `A/B`. An empty false allowlist is private to the owning module;
 the owner always admits itself.
 
-The interaction path for a facade call is:
+The interaction path for a nested call is:
 
 ```text
 calling behavioral-source gateway
   -> declared cross-module interface use
-  -> parent facade export
-  -> parent module calls child module export
+  -> each crossed parent namespace route
+  -> child module export
   -> child behavioral-source gateway
 ```
 
 The dispatcher or equivalent boundary mechanism checks the immediate caller at
-each direct export, namespace route, facade, and terminal export. After a
-namespace owner or facade accepts a call, that owner—not the original upstream
+each namespace route and the terminal export. After a namespace owner accepts
+a call, that owner—not the original upstream
 caller—is the caller of the next hop. No caller chain or source identity is
 propagated as permission. Source-level `uses_interfaces` agreement is a static
 graph invariant; the public dispatcher does not need to trust a caller-supplied
@@ -417,7 +398,6 @@ Combining the blueprints produces the repository graph. The graph contains:
 - module-containment edges;
 - registered-child and namespace-route edges;
 - interface-definition and module-export edges;
-- parent-facade to child-export edges;
 - behavioral-source dependency edges;
 - interface-use edges;
 - access-control relationships;
