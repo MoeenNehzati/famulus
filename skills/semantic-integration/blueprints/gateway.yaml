@@ -1,0 +1,195 @@
+content:
+- SKILL\.md
+- references/git/run\-ledger\-template\.md
+dependencies: []
+description: Guides gated semantic branch reconstruction with exhaustive source accounting,
+  bounded assurance, and controlled Git closure.
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: semantic-integration.source.gateway
+interfaces:
+  semantic-integration.source.gateway.interface.default:
+    contract:
+      arguments:
+        closure:
+          default: merge
+          description: Final attachment policy, either merge or rebase.
+          required: false
+          sensitivity: public
+          type:
+            kind: string
+            sensitivity: public
+        request:
+          default: ''
+          description: Optional integration constraints, known risks, or required evidence.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+        source-branch:
+          description: Immutable branch whose intended effects must be exhaustively resolved.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+        target-branch:
+          description: Branch whose frozen tip is authoritative and whose ref remains protected until approved closure.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+      caller_warnings: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: Explicit target and source branch roles, closure choice, constraints,
+            approvals, and repository context.
+          formats:
+          - text
+          id: request
+          medium: prompt
+          sensitivity: user-private
+          system: agent-runtime
+        - access: read
+          content: Git refs, history, worktrees, changed files, source evidence,
+            target architecture, and repository validation contracts.
+          formats:
+          - git-metadata
+          - markdown
+          - source-code
+          - text
+          id: repository
+          medium: local-filesystem
+          reason: Establish exhaustive source accounting and target-preserving reconstruction.
+          sensitivity: user-private
+          system: filesystem
+        - access: read
+          content: Reusable semantic-integration run ledger structure.
+          formats:
+          - markdown
+          id: ledger-template
+          medium: local-filesystem
+          path: references/git/run-ledger-template.md
+          path_match: exact
+          reason: Maintain concise phase, accounting, approval, timing, and assurance state.
+          sensitivity: public
+          system: filesystem
+        writes:
+        - access: write
+          content: Approval requests, progress reports, assurance findings, and final result.
+          formats:
+          - markdown
+          id: response
+          medium: prompt
+          sensitivity: derived-private
+          system: agent-runtime
+        - access: write
+          content: User-approved run ledger, integration branch changes, validation
+            evidence, recovery refs, commits, and final target closure.
+          formats:
+          - git-metadata
+          - markdown
+          - source-code
+          - text
+          id: repository-updates
+          medium: local-filesystem
+          sensitivity: user-private
+          system: filesystem
+      execution:
+        consistency:
+          snapshot: Each phase is derived from frozen input tips and the latest approved ledger state.
+        effects:
+        - action: update
+          confirmation_evidence:
+            kind: output
+            output_ref: response
+          direct_io_ref: repository-updates
+          id: repository-change
+          may_occur_in_outcomes:
+          - integrated
+          - clarification-required
+          reversibility:
+            compensatable: Recovery refs and the isolated integration branch preserve
+              the frozen inputs and permit a reviewed manual correction before closure.
+          value_source:
+            kind: output
+            output_ref: response
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            per_effect_only: Each semantic slice, recovery ref, and closure commit is
+              a separate reviewed Git effect rather than one repository-wide transaction.
+          concurrent_invocations:
+            unsafe: Concurrent integrations against the same refs or worktree can invalidate
+              frozen-tip and ledger assumptions.
+          idempotency:
+            non_idempotent: Repeating a completed mutation can create duplicate refs or commits;
+              inspect the ledger and repository state before resuming.
+          on_uncertain_completion:
+            verify_then_decide: Inspect the current branch, refs, worktree, ledger, and commit
+              graph before deciding whether to resume or repair.
+          partial_effects_on_failure:
+            possible: Completed semantic slices and recovery refs may remain when a later
+              slice, validation gate, or closure fails.
+          rollback_on_failure:
+            unavailable: Do not reset or rewrite history automatically; preserve verified
+              checkpoints and use recovery evidence for an explicitly approved repair.
+        state_effect: mutating
+        verification:
+        - direct_io_ref: repository-updates
+          method: direct-io-state
+      helpers: []
+      interaction:
+        channel: tty
+        mode: interactive
+        unattended_outcome: clarification-required
+      outcomes:
+      - caller_action: Review the completed accounting, validation, ancestry, and residual risks.
+        class: success
+        effects:
+        - repository-change
+        id: integrated
+        outputs:
+        - response
+      - caller_action: Supply a missing branch role, approve a mandatory gate, or resolve
+          an architectural or preservation decision.
+        class: refusal
+        effects:
+        - repository-change
+        id: clarification-required
+        outputs:
+        - response
+      outputs:
+      - audience: human
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Concise gated progress, assurance evidence, and final semantic-integration result.
+        direct_io_ref: response
+        empty: Never empty on success.
+        id: response
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Reconstruct every accepted source effect against an authoritative target
+      through a gated, audited integration branch.
+    usage: target-branch=<branch> source-branch=<branch> [closure=merge|rebase]
+      [request=<constraints>]
+    version: 1
+node_type: behavioral_source
+schema_version: 5
+uses_interfaces:
+- interface: git-workflow.interface.default
+  version: 1
+version: 1

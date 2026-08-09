@@ -40,6 +40,10 @@ The graph gives a visual overview of the live skill set. The sections below are 
 
 ## Software Development
 
+### Featured
+
+- `semantic-integration` — Two diverged Git branches must be combined by preserving source intent against the target's current architecture rather than replaying patches mechanically, especially after failed merges, broad conflicts, or architectural drift _(topics: repository-workflow; activated by: user request, skill workflow)_
+
 ### Listed
 
 - `git-workflow` — Branch-safety checks and commit hygiene for any repo _(topics: repository-workflow; activated by: user request, skill workflow)_

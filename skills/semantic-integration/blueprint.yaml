@@ -1,0 +1,40 @@
+authority:
+  owns_filesystem: []
+  suggested_permissions:
+    bash: []
+    network: []
+children: {}
+content:
+- (?:SKILL\.md|references/git/run\-ledger\-template\.md)
+description: Reconstructs and audits source-branch intent against a target branch's
+  current architecture before controlled Git closure.
+discovery:
+  mechanism: skill
+  catalog:
+    domain: software-development
+    topics:
+    - repository-workflow
+    visibility: featured
+  activated_by:
+  - user-request
+  - skill-workflow
+  persistent_modifier: false
+exports:
+  semantic-integration.interface.default:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: semantic-integration.source.gateway.interface.default
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: semantic-integration
+namespace_exports: {}
+node_type: module
+schema_version: 5
+sources:
+  semantic-integration.source.gateway:
+    blueprint:
+      base: module-root
+      path: blueprints/gateway.yaml
+version: 1

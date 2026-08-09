@@ -565,6 +565,7 @@ GRAPH_SPECS: dict[str, dict] = {
                 "development",
                 [
                     node("git-workflow", "git-workflow", **VIOLET),
+                    node("semantic-integration", "semantic-integration", width=214, **VIOLET),
                     group(
                         "skill",
                         "skill",
@@ -636,7 +637,8 @@ GRAPH_SPECS: dict[str, dict] = {
             {"source": "skill-certifier", "target": "skill-drift", "hidden": True},
             {"source": "skill-drift", "target": "skill-maker", "hidden": True},
             {"source": "skill-maker", "target": "update-standards", "hidden": True},
-            {"source": "git-workflow", "target": "hook-maker", "hidden": True},
+            {"source": "git-workflow", "target": "semantic-integration", "hidden": True},
+            {"source": "semantic-integration", "target": "hook-maker", "hidden": True},
             {"source": "update-standards", "target": "initialize-tdd", "hidden": True},
             {"source": "initialize-tdd", "target": "cloud-files", "hidden": True},
             {"source": "cloud-files", "target": "fix-bisync", "hidden": True},

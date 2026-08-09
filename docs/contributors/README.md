@@ -71,6 +71,7 @@ These skills support general software projects and repositories.
 
 - `git-workflow` — Branch-safety checks and commit hygiene for any repo
 - `initialize-tdd` — Scaffold a staged, approval-gated TDD project
+- `semantic-integration` — Two diverged Git branches must be combined by preserving source intent against the target's current architecture rather than replaying patches mechanically, especially after failed merges, broad conflicts, or architectural drift
 <!-- END AUTO-GENERATED DOCS: software-development -->
 
 ## Where To Go Next
