@@ -44,6 +44,63 @@ def _staged_fingerprint(repo_root: Path) -> str:
     return hashlib.sha256(staged).hexdigest()
 
 
+def _tracked_worktree_fingerprint(repo_root: Path) -> str:
+    """Hash unstaged tracked content used by one benchmark observation.
+
+    Intent
+    ------
+    Detect working-tree input drift around cache priming and measured executions.
+
+    Rationale
+    ---------
+    A stable commit and staged index do not prove that ordinary tests saw identical
+    tracked working-tree content.
+
+    Pseudocode
+    ----------
+    - set tracked_diff = binary unstaged tracked diff
+    - set fingerprint = SHA-256 hash of tracked_diff
+    - return fingerprint
+
+    Wraps
+    -----
+    ._git_output -> preprocess: request the binary tracked diff; postprocess: hash returned bytes; fixed_arguments: diff and --binary
+    """
+    tracked = _git_output(repo_root, "diff", "--binary")
+    return hashlib.sha256(tracked).hexdigest()
+
+
+def _cache_environment(cache_root: Path) -> dict[str, str]:
+    """Build one explicit cache environment for prime and measured runs.
+
+    Intent
+    ------
+    Point Python, XDG, and uv caches at one benchmark-owned root.
+
+    Rationale
+    ---------
+    Warm-cache comparisons require the untimed prime and every observation to use
+    exactly the same cache locations.
+
+    Pseudocode
+    ----------
+    - set cache_root = existing benchmark cache directory
+    - set environment = current process environment
+    - set environment = environment with benchmark-owned Python XDG and uv cache paths
+    - return environment
+
+    Wraps
+    -----
+    - none
+    """
+    cache_root.mkdir(parents=True, exist_ok=True)
+    environment = os.environ.copy()
+    environment["PYTHONPYCACHEPREFIX"] = str(cache_root / "pycache")
+    environment["XDG_CACHE_HOME"] = str(cache_root / "xdg")
+    environment["UV_CACHE_DIR"] = str(cache_root / "uv")
+    return environment
+
+
 def _host_metadata() -> dict[str, object]:
     """Return stable host facts relevant to performance comparisons."""
     return {
@@ -63,7 +120,65 @@ def run_benchmarks(
     sequential: bool = False,
     measure_resources: bool = False,
 ) -> dict[str, object]:
-    """Measure repeated centralized precommit-suite executions."""
+    """Measure repeated centralized precommit-suite executions.
+
+    Intent
+    ------
+    Produce reproducible scheduler observations without allowing repository drift to
+    masquerade as a performance change.
+
+    Rationale
+    ---------
+    Paired comparisons require identical commands, cache conditions, repository
+    inputs, and measurement settings for every recorded run.
+
+    Pseudocode
+    ----------
+    - set command = centralized precommit runner with scheduler and worker options
+    - if cache condition is warm:
+      - set prime_result = untimed command execution with benchmark cache paths
+      - if prime_result failed or changed repository state:
+        - raise invalid benchmark error
+    - for run in requested runs:
+      - set repository_before = staged and tracked fingerprints
+      - set metrics = measured command execution
+      - set repository_after = staged and tracked fingerprints
+      - set measurements = measurements plus metrics and drift indicators
+    - set benchmark_record = benchmark metadata and measurements
+    - set output_artifact = benchmark_record serialized at output path
+    - return benchmark_record
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._cache_environment:
+      why:
+        computes: "Supplies identical cache paths to prime and measured commands."
+    ._git_output:
+      why:
+        computes: "Supplies the exact commit recorded in benchmark metadata."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._load_script:
+      why:
+        constructs: "Builds the reusable command-measurement module."
+    ._cache_environment:
+      why:
+        constructs: "Builds each benchmark subprocess environment."
+    ._staged_fingerprint:
+      why:
+        constructs: "Builds staged-state identities around each execution."
+    ._tracked_worktree_fingerprint:
+      why:
+        constructs: "Builds tracked-working-tree identities around each execution."
+    ._host_metadata:
+      why:
+        constructs: "Builds host facts needed to interpret measurements."
+    """
     if runs < 1:
         raise ValueError("runs must be positive")
     if jobs < 1:
@@ -92,16 +207,36 @@ def run_benchmarks(
     if sequential:
         command.append("--sequential")
 
+    if cache == "warm":
+        staged_before_prime = _staged_fingerprint(repo_root)
+        tracked_before_prime = _tracked_worktree_fingerprint(repo_root)
+        warmup = subprocess.run(
+            command,
+            cwd=repo_root,
+            env=_cache_environment(cache_root),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        if warmup.returncode:
+            raise RuntimeError(
+                f"warm-cache prime failed with exit code {warmup.returncode}"
+            )
+        staged_after_prime = _staged_fingerprint(repo_root)
+        tracked_after_prime = _tracked_worktree_fingerprint(repo_root)
+        if (
+            staged_before_prime != staged_after_prime
+            or tracked_before_prime != tracked_after_prime
+        ):
+            raise RuntimeError("warm-cache prime changed repository state")
+
     measurements: list[dict[str, Any]] = []
     for index in range(1, runs + 1):
         if cache == "cold":
             shutil.rmtree(cache_root, ignore_errors=True)
-        cache_root.mkdir(parents=True, exist_ok=True)
-        environment = os.environ.copy()
-        environment["PYTHONPYCACHEPREFIX"] = str(cache_root / "pycache")
-        environment["XDG_CACHE_HOME"] = str(cache_root / "xdg")
-        environment["UV_CACHE_DIR"] = str(cache_root / "uv")
-        before = _staged_fingerprint(repo_root)
+        environment = _cache_environment(cache_root)
+        staged_before = _staged_fingerprint(repo_root)
+        tracked_before = _tracked_worktree_fingerprint(repo_root)
         metrics = benchmark.benchmark_command(
             command,
             log_path=artifact_root / f"run-{index}.log",
@@ -110,16 +245,20 @@ def run_benchmarks(
             record_samples=measure_resources,
             sample_process_tree=measure_resources,
         )
-        after = _staged_fingerprint(repo_root)
+        staged_after = _staged_fingerprint(repo_root)
+        tracked_after = _tracked_worktree_fingerprint(repo_root)
         measurements.append(
             {
                 "run": index,
                 "classification": (
                     "acceptance" if int(metrics["returncode"]) == 0 else "diagnostic"
                 ),
-                "staged_fingerprint_before": before,
-                "staged_fingerprint_after": after,
-                "staged_state_changed": before != after,
+                "staged_fingerprint_before": staged_before,
+                "staged_fingerprint_after": staged_after,
+                "staged_state_changed": staged_before != staged_after,
+                "tracked_worktree_fingerprint_before": tracked_before,
+                "tracked_worktree_fingerprint_after": tracked_after,
+                "tracked_worktree_changed": tracked_before != tracked_after,
                 "metrics": metrics,
             }
         )

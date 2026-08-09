@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -56,10 +57,24 @@ def test_run_benchmarks_invokes_centralized_runner(monkeypatch, tmp_path: Path) 
             return {"returncode": 0, "wall_seconds": 1.25}
 
     monkeypatch.setattr(benchmark, "_load_script", lambda *args: FakeBenchmark)
+    monkeypatch.setattr(benchmark.platform, "platform", lambda: "test-platform")
+    warmups = []
+    monkeypatch.setattr(
+        benchmark.subprocess,
+        "run",
+        lambda command, **kwargs: warmups.append((command, kwargs))
+        or SimpleNamespace(returncode=0),
+    )
     monkeypatch.setattr(
         benchmark,
         "_git_output",
-        lambda repo_root, *args: b"commit\n" if args[0] == "rev-parse" else b"",
+        lambda repo_root, *args: (
+            b"commit\n"
+            if args[0] == "rev-parse"
+            else b"staged"
+            if "--cached" in args
+            else b"tracked"
+        ),
     )
     output = tmp_path / "results" / "precommit.json"
 
@@ -78,7 +93,11 @@ def test_run_benchmarks_invokes_centralized_runner(monkeypatch, tmp_path: Path) 
         "--jobs",
         "4",
     ]
+    assert len(warmups) == 1
+    assert warmups[0][0] == calls[0][0]
     assert result["runs"][0]["classification"] == "acceptance"
+    assert result["runs"][0]["staged_state_changed"] is False
+    assert result["runs"][0]["tracked_worktree_changed"] is False
     assert json.loads(output.read_text(encoding="utf-8"))["jobs"] == 4
 
 
@@ -99,6 +118,12 @@ def test_run_benchmarks_selects_sequential_timing_mode(
             return {"returncode": 0, "wall_seconds": 1.0}
 
     monkeypatch.setattr(benchmark, "_load_script", lambda *args: FakeBenchmark)
+    monkeypatch.setattr(benchmark.platform, "platform", lambda: "test-platform")
+    monkeypatch.setattr(
+        benchmark.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0),
+    )
     monkeypatch.setattr(
         benchmark,
         "_git_output",
@@ -119,3 +144,37 @@ def test_run_benchmarks_selects_sequential_timing_mode(
     assert calls[0][1]["sample_process_tree"] is False
     assert calls[0][1]["record_samples"] is False
     assert result["scheduler"] == "sequential"
+
+
+def test_warm_cache_prime_rejects_repository_state_drift(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    benchmark = load_module()
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "repo_checks.py").write_text("", encoding="utf-8")
+    (tmp_path / "scripts" / "benchmark-command.py").write_text("", encoding="utf-8")
+    fingerprints = iter(
+        (b"staged-before", b"tracked", b"staged-after", b"tracked")
+    )
+
+    monkeypatch.setattr(benchmark, "_load_script", lambda *args: object())
+    monkeypatch.setattr(
+        benchmark.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0),
+    )
+    monkeypatch.setattr(
+        benchmark,
+        "_git_output",
+        lambda repo_root, *args: next(fingerprints),
+    )
+
+    with pytest.raises(RuntimeError, match="prime changed repository state"):
+        benchmark.run_benchmarks(
+            repo_root=tmp_path,
+            output=tmp_path / "result.json",
+            runs=1,
+            cache="warm",
+            jobs=4,
+        )

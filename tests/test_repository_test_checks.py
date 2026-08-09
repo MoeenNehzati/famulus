@@ -365,6 +365,26 @@ def test_pooled_runner_fills_budget_and_stops_admission_after_failure(
     assert FakeProcess.peak_active == 2
 
 
+def test_windows_process_tree_termination_uses_taskkill_tree_mode(monkeypatch) -> None:
+    calls = []
+
+    class FakeProcess:
+        pid = 4312
+
+    monkeypatch.setattr(
+        runner.subprocess,
+        "run",
+        lambda command, **kwargs: calls.append((command, kwargs)),
+    )
+
+    runner._terminate_windows_process_tree(FakeProcess(), force=False)
+    runner._terminate_windows_process_tree(FakeProcess(), force=True)
+
+    assert calls[0][0] == ["taskkill", "/PID", "4312", "/T"]
+    assert calls[1][0] == ["taskkill", "/PID", "4312", "/T", "/F"]
+    assert all(call[1]["check"] is False for call in calls)
+
+
 def test_sequential_control_uses_the_same_check_tasks(
     tmp_path: Path,
     monkeypatch,

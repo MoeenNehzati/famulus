@@ -75,7 +75,27 @@ PORTABILITY_TESTS = (
 
 @dataclass(frozen=True)
 class CheckTask:
-    """Describe one existing isolated pytest process for shared scheduling."""
+    """Describe one isolated pytest process admitted by the shared scheduler.
+
+    Intent
+    ------
+    Keep the stable task identity, complete child command, and worker-lease cost in
+    the smallest object needed by the coordinator.
+
+    Rationale
+    ---------
+    Scheduling process groups rather than pytest items preserves existing test and
+    validator isolation while allowing every group to share one bounded budget.
+
+    Pseudocode
+    ----------
+    - set task = immutable identifier, child argument vector, and positive slot cost
+    - return task
+
+    Wraps
+    -----
+    - none
+    """
 
     id: str
     argv: tuple[str, ...]
@@ -919,16 +939,52 @@ def _pytest_args(*, verbose: bool, jobs: int = 1) -> list[str]:
 
 
 def _default_jobs() -> int:
-    """Use two thirds of the host's reported logical CPUs for shared tests."""
+    """Return the default total pytest-worker lease budget.
+
+    Intent
+    ------
+    Use two thirds of detected logical CPUs while retaining a usable minimum.
+
+    Rationale
+    ---------
+    Reserving host capacity limits contention from pytest controllers and unrelated
+    processes without requiring machine-specific configuration.
+
+    Pseudocode
+    ----------
+    - set logical_cpus = detected logical CPUs or one
+    - set jobs = two thirds of logical_cpus with minimum one
+    - return jobs
+
+    Wraps
+    -----
+    - none
+    """
 
     logical_cpus = os.cpu_count() or 1
     return max(1, (logical_cpus * 2) // 3)
 
 
 def _pytest_xdist_available() -> bool:
-    """Report whether pytest-xdist is installed in the current Python.
+    """Return whether parallel pytest execution is available.
 
-    This allows an explicit CLI/error path when parallel budgeting is requested.
+    Intent
+    ------
+    Fail before task construction when parallel execution lacks pytest-xdist.
+
+    Rationale
+    ---------
+    Detecting the missing plugin in a child process would produce a less actionable
+    argument failure after scheduling has started.
+
+    Pseudocode
+    ----------
+    - set xdist_spec = import specification for xdist
+    - return whether xdist_spec exists
+
+    Wraps
+    -----
+    - none
     """
 
     return importlib.util.find_spec("xdist") is not None
@@ -1055,7 +1111,29 @@ def _execution_groups(test_dirs: list[str]) -> list[list[str]]:
 
 
 def _shared_test_jobs(jobs: int) -> int:
-    """Reserve one quarter of the worker budget for isolated pytest tasks."""
+    """Return the deterministic lease allocation for the shared pytest task.
+
+    Intent
+    ------
+    Leave bounded capacity for validator and isolated runtime tasks when parallelism
+    is available, while preserving one-worker execution for a serial budget.
+
+    Rationale
+    ---------
+    A static allocation avoids adaptive scheduling machinery and prevents the large
+    shared task from consuming every lease before smaller isolated tasks can start.
+
+    Pseudocode
+    ----------
+    - if jobs <= one:
+      - return one
+    - set reserved_jobs = at least one and otherwise one quarter of jobs
+    - return jobs minus reserved_jobs
+
+    Wraps
+    -----
+    - none
+    """
 
     if jobs <= 1:
         return 1
@@ -1068,7 +1146,40 @@ def _run_validator_task(
     validator_ids: Sequence[str] = (),
     excluded_validator_ids: Sequence[str] = (),
 ) -> int:
-    """Run the existing complete validator snapshot lifecycle as one task."""
+    """Run the complete staged validator lifecycle inside the private worker.
+
+    Intent
+    ------
+    Preserve one validator snapshot session while exposing it as a schedulable child
+    process with conventional repository-check exit codes.
+
+    Rationale
+    ---------
+    Keeping snapshot capture and finding rendering inside one worker avoids recursive
+    scheduling and retains staged-index isolation.
+
+    Pseudocode
+    ----------
+    - set validator_results = selected validators run against one staged snapshot
+    - if validator snapshot infrastructure fails:
+      - set error_output = infrastructure failure text written to stderr
+      - return infrastructure failure status
+    - set status = rendered validator findings
+    - return status
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .officina._validator_snapshot.run_all:
+      why:
+        constructs: "Builds findings from the complete staged validator session."
+    .officina._validator_snapshot._render_findings:
+      why:
+        constructs: "Builds the canonical validator process status and output."
+    """
 
     try:
         results = _validator_snapshot.run_all(
@@ -1091,7 +1202,53 @@ def _build_check_tasks(
     validator_ids: Sequence[str],
     excluded_validator_ids: Sequence[str],
 ) -> list[CheckTask]:
-    """Build one queue from the existing validator and test execution groups."""
+    """Build one deterministic queue from existing validator and test groups.
+
+    Intent
+    ------
+    Translate resolved suite policy into process-level tasks without introducing a
+    second collection or test-inventory abstraction.
+
+    Rationale
+    ---------
+    Reusing the established validator session, shared pytest group, and isolated
+    ``_rtx`` groups preserves coverage and import boundaries during parallelization.
+
+    Pseudocode
+    ----------
+    - set tasks = validator worker when the suite includes validators
+    - set test_targets = resolved ordinary tests for the suite
+    - set execution_groups = shared tests and isolated runtime roots
+    - for execution_group in execution_groups:
+      - set task = command and worker leases for execution_group
+      - set tasks = tasks plus task
+    - return tasks in deterministic admission order
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._resolve_suite:
+      why:
+        computes: "Supplies profile-resolved ordinary test targets."
+    ._suite_pytest_args:
+      why:
+        computes: "Supplies pytest arguments for each process group."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._execution_groups:
+      why:
+        constructs: "Builds the preserved shared and isolated process groups."
+    ._shared_test_jobs:
+      why:
+        constructs: "Builds the shared task's deterministic worker allocation."
+    .CheckTask:
+      why:
+        constructs: "Builds each process-level scheduling unit."
+    """
 
     root = Path(repo_root).resolve()
     tasks: list[CheckTask] = []
@@ -1150,8 +1307,83 @@ def _build_check_tasks(
     return tasks
 
 
+def _terminate_windows_process_tree(
+    process: subprocess.Popen[object],
+    *,
+    force: bool,
+) -> None:
+    """Ask the native tree terminator to stop a controller and all descendants.
+
+    Intent
+    ------
+    Match POSIX process-group cleanup for pytest controllers that may own xdist,
+    browser, or other descendant processes.
+
+    Rationale
+    ---------
+    Single-process termination APIs affect only the controller on this platform;
+    the native tree operation traverses every process created beneath its PID.
+
+    Pseudocode
+    ----------
+    - set command = taskkill for process PID with tree traversal enabled
+    - if force is enabled:
+      - set command = command plus forced termination
+    - set taskkill_result = command run with output suppressed
+    - return none
+
+    Wraps
+    -----
+    - none
+    """
+
+    command = ["taskkill", "/PID", str(process.pid), "/T"]
+    if force:
+        command.append("/F")
+    subprocess.run(
+        command,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+
+
 def _terminate_task_process(process: subprocess.Popen[object]) -> None:
-    """Terminate one task process and its process group after interruption."""
+    """Terminate one active task process group after coordinator interruption.
+
+    Intent
+    ------
+    Stop the complete task tree, wait for child cleanup, and escalate only when the
+    initial termination does not complete within five seconds.
+
+    Rationale
+    ---------
+    The coordinator owns temporary logs and cache directories that cannot be cleaned
+    safely while pytest, xdist, or browser descendants remain alive.
+
+    Pseudocode
+    ----------
+    - return when the task already exited
+    - if platform is POSIX:
+      - set termination = process-group termination signal
+    - else:
+      - set termination = native process-tree termination
+    - set completion = process wait with five-second timeout
+    - if termination or wait fails:
+      - set forced_termination = process-group or process-tree kill
+      - set completion = process wait without timeout
+    - return none
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._terminate_windows_process_tree:
+      why:
+        computes: "Terminates all descendants when POSIX group signals are unavailable."
+    """
 
     if process.poll() is not None:
         return
@@ -1159,14 +1391,14 @@ def _terminate_task_process(process: subprocess.Popen[object]) -> None:
         if os.name == "posix":
             os.killpg(process.pid, signal.SIGTERM)
         else:
-            process.terminate()
+            _terminate_windows_process_tree(process, force=False)
         process.wait(timeout=5)
     except (OSError, subprocess.TimeoutExpired):
         if process.poll() is None:
             if os.name == "posix":
                 os.killpg(process.pid, signal.SIGKILL)
             else:
-                process.kill()
+                _terminate_windows_process_tree(process, force=True)
             process.wait()
 
 
@@ -1177,7 +1409,45 @@ def _run_check_tasks(
     jobs: int,
     pooled: bool,
 ) -> int:
-    """Run check tasks with one bounded first-fitting process coordinator."""
+    """Run all check tasks through one bounded first-fitting coordinator.
+
+    Intent
+    ------
+    Share a total pytest-worker lease budget across validators, compatible tests, and
+    isolated runtime groups while preserving deterministic reporting.
+
+    Rationale
+    ---------
+    A rolling process scheduler overlaps existing isolation groups without replacing
+    pytest collection, validator snapshots, or item-level reporting.
+
+    Pseudocode
+    ----------
+    - if any task exceeds the invocation budget:
+      - raise invalid task budget error
+    - set pending = tasks in original order
+    - while pending tasks or active tasks exist:
+      - set admitted_task = first pending task fitting available leases
+      - set active = active plus admitted_task process
+      - set completed = active processes with exit status
+      - if any completed task failed:
+        - set admission_open = false
+    - if coordinator is interrupted:
+      - set cleanup = every active process group terminated
+      - return interrupted status
+    - set replay = completed output in original task order
+    - return the first nonzero result in deterministic task order
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._terminate_task_process:
+      why:
+        computes: "Cleans up complete active task trees after interruption."
+    """
 
     if any(task.slots > jobs for task in tasks):
         raise ValueError("check task requires more worker slots than --jobs")
@@ -1402,6 +1672,12 @@ def run_suite(
     -----
     - none
 
+    CallsFromRepo
+    -------------
+    ._pytest_xdist_available:
+      why:
+        computes: "Confirms that a parallel worker budget can be executed."
+
     InstantiationsFromRepo
     ----------------------
     .officina._validator_snapshot.run_all:
@@ -1413,6 +1689,12 @@ def run_suite(
     ._run_test_suite:
       why:
         constructs: "Builds the ordinary-test phase status for the selected suite."
+    ._build_check_tasks:
+      why:
+        constructs: "Builds the unified validator-and-test scheduling queue."
+    ._run_check_tasks:
+      why:
+        constructs: "Builds the pooled suite status from task process results."
     """
 
     root = Path(repo_root).resolve()
@@ -1494,11 +1776,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     -----
     .run_suite -> preprocess: parse and validate CLI arguments; postprocess: return child status; fixed_arguments: none
 
+    CallsFromRepo
+    -------------
+    ._default_jobs:
+      why:
+        computes: "Supplies the parser's default worker budget."
+    ._pytest_xdist_available:
+      why:
+        computes: "Validates explicit parallel worker requests before dispatch."
+
     InstantiationsFromRepo
     ----------------------
     .officina._validator_snapshot._write_tracked_result:
       why:
         constructs: "Builds the private staged-child result payload and status."
+    ._run_validator_task:
+      why:
+        constructs: "Builds the private validator-worker process status."
     """
 
     parser = argparse.ArgumentParser(description=__doc__)

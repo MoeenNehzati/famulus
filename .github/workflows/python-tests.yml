@@ -34,7 +34,9 @@ jobs:
         run: npm install -g @anthropic-ai/claude-code @openai/codex
 
       - name: Run repository checks
-        run: python3 repo_checks.py --suite full --verbose
+        # Keep cross-platform full execution on the rollback path until pooled
+        # process-tree and resource certification has passed on every matrix OS.
+        run: python3 repo_checks.py --suite full --verbose --sequential
 
       - name: Run portability sentinel
         run: python3 repo_checks.py --suite portability --verbose
