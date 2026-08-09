@@ -83,15 +83,38 @@ def _require_contained_or_trusted(
     return path
 
 
-def _load_current_pointer(runtime_root: Path, *, trusted_roots: tuple[Path, ...]) -> Path:
+def _require_repository_config(path: Path) -> Path:
+    """Validate the activation-vetted config path without importing Officina."""
+
+    if not path.is_absolute():
+        raise ResolverError(f"repository_config must be an absolute path: {path}")
+    current = Path(path.anchor)
+    for part in path.parts[1:]:
+        current /= part
+        if current.is_symlink():
+            raise ResolverError(f"repository_config contains a symlink: {current}")
+    if not path.is_file():
+        raise ResolverError(f"repository_config is not a regular file: {path}")
+    return path
+
+
+def _load_current_pointer(
+    runtime_root: Path, *, trusted_roots: tuple[Path, ...]
+) -> Path | tuple[Path, Path]:
     """Read current.json beneath ``runtime_root`` and return its validated
     ``python_bin`` entry path (unresolved -- see
     ``_require_contained_or_trusted``)."""
     pointer_path = runtime_root / "current.json"
     if not pointer_path.exists():
         raise ResolverError(f"no current.json at {pointer_path}")
-    payload = json.loads(pointer_path.read_text())
-    if payload.get("schema_version") != 1:
+    try:
+        payload = json.loads(pointer_path.read_text())
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise ResolverError(f"cannot read current.json: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise ResolverError("current.json must contain a JSON object")
+    schema_version = payload.get("schema_version")
+    if schema_version not in {1, 2}:
         raise ResolverError(
             f"unsupported current.json schema_version: {payload.get('schema_version')!r}"
         )
@@ -103,9 +126,18 @@ def _load_current_pointer(runtime_root: Path, *, trusted_roots: tuple[Path, ...]
     # runtime_source is never allowed to resolve outside runtime_root -- only
     # python_bin may land in a trusted interpreter store.
     _require_contained_or_trusted(runtime_source, root=runtime_root, trusted_roots=(), label="runtime_source")
-    return _require_contained_or_trusted(
+    validated_python = _require_contained_or_trusted(
         python_bin, root=runtime_root, trusted_roots=trusted_roots, label="python_bin"
     )
+    if schema_version == 1:
+        return validated_python
+    try:
+        repository_config = _require_repository_config(
+            Path(payload["repository_config"])
+        )
+    except (KeyError, TypeError) as exc:
+        raise ResolverError(f"current.json missing required key: {exc}") from exc
+    return validated_python, repository_config
 
 
 def _trusted_interpreter_roots() -> tuple[Path, ...]:
@@ -140,12 +172,31 @@ def main(argv: list[str]) -> int:
     """
     runtime_root = Path(argv[0]).resolve().parents[3]
     try:
-        python_bin = _load_current_pointer(runtime_root, trusted_roots=_trusted_interpreter_roots())
+        loaded_pointer = _load_current_pointer(
+            runtime_root, trusted_roots=_trusted_interpreter_roots()
+        )
+        if isinstance(loaded_pointer, tuple):
+            python_bin, repository_config = loaded_pointer
+        else:
+            python_bin = loaded_pointer
+            repository_config = None
     except ResolverError as exc:
         print(f"famulus launcher: {exc}", file=sys.stderr)
         return 1
 
-    os.execv(str(python_bin), [str(python_bin), *argv[1:]])
+    forwarded = list(argv[1:])
+    if repository_config is not None and forwarded[:2] == [
+        "-m",
+        "officina.dispatcher.cli",
+    ]:
+        if "--repository-config" in forwarded:
+            print(
+                "famulus launcher: repository_config cannot be overridden",
+                file=sys.stderr,
+            )
+            return 1
+        forwarded[2:2] = ["--repository-config", str(repository_config)]
+    os.execv(str(python_bin), [str(python_bin), *forwarded])
     return 1  # pragma: no cover - os.execv never returns on success
 
 

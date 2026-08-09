@@ -107,6 +107,7 @@ class RuntimeDispatchContext:
     caller_module_id: str | None = None
     caller_source_id: str | None = None
     repo_root: Path | None = None
+    repository_config: Path | None = None
 
 
 _RUNTIME_DISPATCH_CONTEXT_ATTRIBUTE = "_officina_runtime_dispatch_context"
@@ -118,6 +119,7 @@ def set_runtime_dispatch_context(
     caller_module_id: str | None = None,
     caller_source_id: str | None = None,
     repo_root: Path | None = None,
+    repository_config: Path | None = None,
 ) -> None:
     """Attach dispatcher-resolved runtime identity to one loaded interface."""
 
@@ -128,6 +130,7 @@ def set_runtime_dispatch_context(
             caller_module_id=caller_module_id,
             caller_source_id=caller_source_id,
             repo_root=repo_root,
+            repository_config=repository_config,
         ),
     )
 
@@ -1130,6 +1133,7 @@ class PythonMachineInterface:
             target_version=call.version,
             certification_view=None,
             host_caller=False,
+            repository_config=context.repository_config,
         )
         return _run_resolved_invocation(
             resolved,

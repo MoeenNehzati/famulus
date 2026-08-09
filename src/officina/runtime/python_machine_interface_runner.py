@@ -87,6 +87,108 @@ class _BoundPackageFinder(importlib.abc.MetaPathFinder, importlib.abc.Loader):
         exec(compile(source, logical_path, "exec"), module.__dict__)
 
 
+class _LazyConfinedPackageFinder(importlib.abc.MetaPathFinder, importlib.abc.Loader):
+    """Resolve one synthetic package from exact, no-follow module-root probes."""
+
+    def __init__(self, module_root: Path, logical_package: str) -> None:
+        self.module_root = Path(os.path.abspath(module_root))
+        self.logical_package = logical_package
+        self._resolved: dict[str, tuple[Path | None, bool]] = {}
+
+    def _regular(self, path: Path) -> bool:
+        try:
+            relative = path.relative_to(self.module_root)
+        except ValueError as exc:
+            raise ImportError(f"{path}: import escaped the confined module root") from exc
+        current = self.module_root
+        for part in relative.parts:
+            current /= part
+            try:
+                metadata = current.lstat()
+            except FileNotFoundError:
+                return False
+            except OSError as exc:
+                raise ImportError(f"cannot inspect confined import {current}") from exc
+            if stat.S_ISLNK(metadata.st_mode):
+                raise ImportError(f"confined import contains a symlink: {current}")
+        return stat.S_ISREG(path.stat().st_mode)
+
+    def find_spec(self, fullname: str, path=None, target=None):
+        if fullname == self.logical_package:
+            init_path = self.module_root / "__init__.py"
+            resolved = (init_path, True) if self._regular(init_path) else (None, True)
+        elif fullname.startswith(f"{self.logical_package}."):
+            suffix = fullname[len(self.logical_package) + 1 :].split(".")
+            if not all(part.isidentifier() for part in suffix):
+                raise ImportError(f"invalid confined module name: {fullname}")
+            package_path = self.module_root.joinpath(*suffix, "__init__.py")
+            module_path = self.module_root.joinpath(*suffix).with_suffix(".py")
+            package_exists = self._regular(package_path)
+            module_exists = self._regular(module_path)
+            if package_exists and module_exists:
+                raise ImportError(f"ambiguous confined module: {fullname}")
+            if package_exists:
+                resolved = (package_path, True)
+            elif module_exists:
+                resolved = (module_path, False)
+            else:
+                raise ImportError(f"{fullname}: module is outside the confined package")
+        else:
+            return None
+        self._resolved[fullname] = resolved
+        return importlib.util.spec_from_loader(fullname, self, is_package=resolved[1])
+
+    def create_module(self, spec):
+        return None
+
+    def exec_module(self, module: ModuleType) -> None:
+        path, is_package = self._resolved[module.__name__]
+        module.__file__ = str(path) if path is not None else str(self.module_root)
+        if is_package:
+            module.__path__ = []
+        if path is None:
+            return
+        source = read_regular_file_bytes(
+            path,
+            allowed_root=self.module_root,
+            allow_non_atomic=False,
+        )
+        saved_sys_path = list(sys.path)
+        try:
+            exec(compile(source, str(path), "exec"), module.__dict__)
+            if sys.path != saved_sys_path:
+                raise ImportError(f"{module.__name__}: gateway mutated sys.path")
+        finally:
+            sys.path[:] = saved_sys_path
+
+
+@contextmanager
+def _lazy_confined_package_imports(
+    module_root: Path,
+    logical_package: str,
+) -> Iterator[None]:
+    """Install a per-invocation exact-path finder and clear its module cache."""
+
+    finder = _LazyConfinedPackageFinder(module_root, logical_package)
+    saved = {
+        name: module
+        for name, module in sys.modules.items()
+        if name == logical_package or name.startswith(f"{logical_package}.")
+    }
+    for name in tuple(saved):
+        del sys.modules[name]
+    sys.meta_path.insert(0, finder)
+    try:
+        yield
+    finally:
+        if finder in sys.meta_path:
+            sys.meta_path.remove(finder)
+        for name in tuple(sys.modules):
+            if name == logical_package or name.startswith(f"{logical_package}."):
+                del sys.modules[name]
+        sys.modules.update(saved)
+
+
 _BOUND_PACKAGE_SOURCES_ATTRIBUTE = "_officina_bound_package_sources"
 _BOUND_LOGICAL_PACKAGE_ATTRIBUTE = "_officina_bound_logical_package"
 _BOUND_MODULE_ROOT_ATTRIBUTE = "_officina_bound_module_root"
@@ -531,6 +633,7 @@ def load_interface(
     logical_entrypoint: str | None = None,
     physical_package_prefix: str | None = None,
     _package_sources: dict[str, tuple[bytes, str, bool]] | None = None,
+    _lazy_confined: bool = False,
 ) -> PythonMachineInterface:
     """Load a Python machine-interface binding from separate target fields."""
 
@@ -547,7 +650,12 @@ def load_interface(
     if not module_path.is_absolute():
         module_path = Path.cwd() / module_path
     confined_sources = None
-    if source_fd is None and not package_files and _package_sources is None:
+    if (
+        source_fd is None
+        and not package_files
+        and _package_sources is None
+        and not _lazy_confined
+    ):
         confined_sources = _load_confined_package_sources(
             module_path,
             logical_package=target.logical_package,
@@ -555,15 +663,20 @@ def load_interface(
     active_sources = _package_sources or confined_sources
 
     def instantiate() -> PythonMachineInterface:
-        module = _load_module_from_path(
-            module_path,
-            source_fd,
-            package_files,
-            package_sources=active_sources,
-            logical_package=target.logical_package,
-            logical_entrypoint=target.logical_entrypoint,
-            physical_package_prefix=physical_package_prefix,
-        )
+        if _lazy_confined:
+            if target.logical_entrypoint is None:
+                raise InterfaceLoadError("lazy confined loading requires logical identity")
+            module = importlib.import_module(target.logical_entrypoint)
+        else:
+            module = _load_module_from_path(
+                module_path,
+                source_fd,
+                package_files,
+                package_sources=active_sources,
+                logical_package=target.logical_package,
+                logical_entrypoint=target.logical_entrypoint,
+                physical_package_prefix=physical_package_prefix,
+            )
         interface_type = getattr(module, target.process_entry, None)
         if interface_type is None:
             raise InterfaceLoadError(
@@ -671,6 +784,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     runtime_caller_module_id: str | None = None
     runtime_caller_source_id: str | None = None
     runtime_repo_root: Path | None = None
+    runtime_repository_config: Path | None = None
+    confined_module_root: Path | None = None
     private_options = {
         "--source-fd",
         "--package-file",
@@ -682,6 +797,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--runtime-caller-module-id",
         "--runtime-caller-source-id",
         "--runtime-repo-root",
+        "--runtime-repository-config",
+        "--confined-module-root",
     }
     while argv and argv[0] in private_options:
         option = argv.pop(0)
@@ -737,6 +854,18 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return 2
             runtime_repo_root = Path(argv.pop(0)).resolve()
             continue
+        if option == "--runtime-repository-config":
+            if runtime_repository_config is not None:
+                print("error: duplicate runtime repository config", file=sys.stderr)
+                return 2
+            runtime_repository_config = Path(argv.pop(0))
+            continue
+        if option == "--confined-module-root":
+            if confined_module_root is not None:
+                print("error: duplicate confined module root", file=sys.stderr)
+                return 2
+            confined_module_root = Path(argv.pop(0))
+            continue
         try:
             descriptor = int(argv.pop(0))
         except ValueError:
@@ -788,6 +917,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             caller_module_id=runtime_caller_module_id,
             caller_source_id=runtime_caller_source_id,
             repo_root=runtime_repo_root,
+            repository_config=runtime_repository_config,
         )
         return run_python_machine_interface(interface, interface_argv)
 
@@ -829,6 +959,26 @@ def main(argv: Sequence[str] | None = None) -> int:
                     logical_entrypoint=logical_entrypoint,
                     physical_package_prefix=physical_package_prefix,
                     _package_sources=sources,
+                )
+                return run_loaded_interface(interface)
+        if confined_module_root is not None:
+            if logical_package is None:
+                print("error: confined module root requires logical package", file=sys.stderr)
+                return 2
+            if confined_module_root.resolve() != Path.cwd().resolve():
+                print("error: confined module root must equal cwd", file=sys.stderr)
+                return 2
+            with _lazy_confined_package_imports(
+                confined_module_root,
+                logical_package,
+            ):
+                interface = load_interface(
+                    gateway_path,
+                    process_entry,
+                    logical_package=logical_package,
+                    logical_entrypoint=logical_entrypoint,
+                    physical_package_prefix=physical_package_prefix,
+                    _lazy_confined=True,
                 )
                 return run_loaded_interface(interface)
         interface = load_interface(

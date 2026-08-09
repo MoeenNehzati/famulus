@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from officina.common import toml_io
 from officina.common.blueprint_graph import (
     BlueprintGraphError,
     BlueprintNode,
@@ -1180,7 +1181,24 @@ def _resolve_dispatch(
     certification_view: CertificationView | None = None,
     graph: RepositoryBlueprintGraph | None = None,
     host_caller: bool = False,
+    repository_config: Path | None = None,
 ) -> ResolvedInvocation:
+    if repository_config is not None:
+        from officina.dispatcher.direct_runtime import (
+            _resolve_dispatch as resolve_direct_dispatch,
+        )
+
+        return resolve_direct_dispatch(
+            caller_skill=caller_skill,
+            caller_source_id=caller_source_id,
+            target=target,
+            args=args,
+            stdin_requested=stdin_requested,
+            repo_root=repo_root,
+            target_version=target_version,
+            host_caller=host_caller,
+            repository_config=repository_config,
+        )
     args = args or []
     if not caller_skill.strip():
         raise InvalidRequestError(
@@ -1223,6 +1241,7 @@ def resolve_dispatch(
     stdin_requested: bool = False,
     repo_root: Path | None = None,
     target_version: int | None = None,
+    repository_config: Path | None = None,
 ) -> ResolvedInvocation:
     """Resolve one certified host-skill request."""
 
@@ -1235,6 +1254,7 @@ def resolve_dispatch(
         target_version=target_version,
         certification_view=None,
         host_caller=True,
+        repository_config=repository_config,
     )
 
 
@@ -1249,8 +1269,14 @@ def _resolve_dispatch_metadata_for_trace(
     target_version: int | None = None,
     certification_view: CertificationView,
     graph: RepositoryBlueprintGraph | None = None,
+    repository_config: Path | None = None,
 ) -> ResolvedInvocationMetadata:
     """Private route-smoke resolver with a trace-only certification view."""
+
+    if repository_config is None and getattr(graph, "schema_version", None) == 6:
+        candidate = get_repo_root(repo_root) / toml_io.repository_config_filename()
+        if candidate.is_file():
+            repository_config = candidate
 
     with _resolve_dispatch(
         caller_skill=caller_module_id,
@@ -1262,6 +1288,7 @@ def _resolve_dispatch_metadata_for_trace(
         target_version=target_version,
         certification_view=certification_view,
         graph=graph,
+        repository_config=repository_config,
     ) as resolved:
         return resolved.metadata()
 
@@ -1276,6 +1303,7 @@ def _resolve_host_dispatch_metadata(
     target_version: int | None = None,
     certification_view: CertificationView | None = None,
     graph: RepositoryBlueprintGraph | None = None,
+    repository_config: Path | None = None,
 ) -> ResolvedInvocationMetadata:
     """Resolve one host request, admitting only discoverable v5 parents."""
 
@@ -1289,6 +1317,7 @@ def _resolve_host_dispatch_metadata(
         certification_view=certification_view,
         graph=graph,
         host_caller=True,
+        repository_config=repository_config,
     ) as resolved:
         return resolved.metadata()
 
@@ -1301,6 +1330,7 @@ def resolve_dispatch_metadata(
     stdin_requested: bool = False,
     repo_root: Path | None = None,
     target_version: int | None = None,
+    repository_config: Path | None = None,
 ) -> ResolvedInvocationMetadata:
     """Resolve policy and return metadata after deterministically closing bindings."""
 
@@ -1311,6 +1341,7 @@ def resolve_dispatch_metadata(
         stdin_requested=stdin_requested,
         repo_root=repo_root,
         target_version=target_version,
+        repository_config=repository_config,
     ) as resolved:
         return resolved.metadata()
 
@@ -1370,6 +1401,7 @@ def dispatch(
     text: bool | None = None,
     repo_root: Path | None = None,
     target_version: int | None = None,
+    repository_config: Path | None = None,
 ) -> subprocess.CompletedProcess[Any]:
     """Resolve and execute a declared module interface."""
 
@@ -1380,6 +1412,7 @@ def dispatch(
         stdin_requested=stdin is not None,
         repo_root=repo_root,
         target_version=target_version,
+        repository_config=repository_config,
     )
     return _run_resolved_invocation(
         resolved,
@@ -1404,6 +1437,7 @@ def _dispatch_host(
     repo_root: Path | None = None,
     target_version: int | None = None,
     warning_handler: Callable[[InvocationDiagnostic], None] | None = None,
+    repository_config: Path | None = None,
 ) -> subprocess.CompletedProcess[Any]:
     """Resolve and execute a host request from a discoverable parent skill."""
 
@@ -1415,6 +1449,7 @@ def _dispatch_host(
         repo_root=repo_root,
         target_version=target_version,
         host_caller=True,
+        repository_config=repository_config,
     )
     if warning_handler is not None:
         for diagnostic in resolved.diagnostics:

@@ -6,6 +6,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from officina.common.atomic_files import atomic_replace_bytes
+from officina.common.repository_configuration import (
+    RepositoryConfigurationError,
+    load_repository_configuration,
+)
 
 
 class RuntimePointerError(Exception):
@@ -17,6 +21,7 @@ class RuntimePointer:
     release_id: str
     runtime_source: Path
     python_bin: Path
+    repository_config: Path | None = None
 
 
 def _pointer_path(runtime_root: Path) -> Path:
@@ -111,8 +116,14 @@ def load_current_pointer(
     path = _pointer_path(runtime_root)
     if not path.exists():
         raise RuntimePointerError(f"no current.json at {path}")
-    payload = json.loads(path.read_text())
-    if payload.get("schema_version") != 1:
+    try:
+        payload = json.loads(path.read_text())
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise RuntimePointerError(f"cannot read current.json: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise RuntimePointerError("current.json must contain a JSON object")
+    schema_version = payload.get("schema_version")
+    if schema_version not in {1, 2}:
         raise RuntimePointerError(
             f"unsupported current.json schema_version: {payload.get('schema_version')!r}"
         )
@@ -126,7 +137,26 @@ def load_current_pointer(
         python_bin, root=runtime_root, trusted_roots=trusted_interpreter_roots, label="python_bin"
     )
     _require_contained(runtime_source, root=runtime_root, label="runtime_source")
-    return RuntimePointer(release_id=release_id, runtime_source=runtime_source, python_bin=python_bin)
+    repository_config = None
+    if schema_version == 2:
+        try:
+            repository_config = Path(payload["repository_config"])
+            validated = load_repository_configuration(repository_config)
+        except KeyError as exc:
+            raise RuntimePointerError(
+                f"current.json missing required key: {exc}"
+            ) from exc
+        except (TypeError, RepositoryConfigurationError) as exc:
+            raise RuntimePointerError(
+                f"invalid repository_config: {exc}"
+            ) from exc
+        repository_config = validated.config_path
+    return RuntimePointer(
+        release_id=release_id,
+        runtime_source=runtime_source,
+        python_bin=python_bin,
+        repository_config=repository_config,
+    )
 
 
 def activate_release(
@@ -134,6 +164,7 @@ def activate_release(
     runtime_root: Path,
     release_dir: Path,
     python_bin: Path,
+    repository_config: Path | None = None,
     trusted_interpreter_roots: tuple[Path, ...] = (),
 ) -> RuntimePointer:
     """Atomically point current.json at ``release_dir``'s ``python_bin``.
@@ -159,13 +190,26 @@ def activate_release(
     if not python_bin.exists():
         raise RuntimePointerError(f"candidate python_bin does not exist: {python_bin}")
     runtime_root.mkdir(parents=True, exist_ok=True)
-    pointer = RuntimePointer(release_id=release_dir.name, runtime_source=release_dir, python_bin=python_bin)
+    if repository_config is not None:
+        try:
+            validated_config = load_repository_configuration(repository_config)
+        except RepositoryConfigurationError as exc:
+            raise RuntimePointerError(f"invalid repository_config: {exc}") from exc
+        repository_config = validated_config.config_path
+    pointer = RuntimePointer(
+        release_id=release_dir.name,
+        runtime_source=release_dir,
+        python_bin=python_bin,
+        repository_config=repository_config,
+    )
     payload = {
-        "schema_version": 1,
+        "schema_version": 2 if repository_config is not None else 1,
         "release_id": pointer.release_id,
         "runtime_source": str(pointer.runtime_source),
         "python_bin": str(pointer.python_bin),
     }
+    if repository_config is not None:
+        payload["repository_config"] = str(repository_config)
     atomic_replace_bytes(
         _pointer_path(runtime_root),
         json.dumps(payload, indent=2).encode("utf-8"),

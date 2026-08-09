@@ -9,6 +9,11 @@ import yaml
 
 from officina.common.repository_configuration import RepositoryConfiguration
 from officina.dispatcher.direct_authorization import resolve_direct_invocation
+from officina.dispatcher.direct_runtime import (
+    _dispatch_host,
+    _resolve_host_dispatch_metadata,
+    resolve_dispatch_metadata,
+)
 from officina.dispatcher.errors import (
     DirectBlueprintError,
     UnauthorizedCallerError,
@@ -509,3 +514,94 @@ def test_certification_status_is_warning_only(tmp_path: Path) -> None:
     )
     assert any(item.code == "certification-expired" for item in invocation.diagnostics)
 
+def test_host_metadata_uses_explicit_config_without_legacy_routing(
+    tmp_path: Path,
+) -> None:
+    configuration = _repository(tmp_path, terminal_access=_access(public=True))
+
+    resolved = _resolve_host_dispatch_metadata(
+        caller_skill="root",
+        target=INTERFACE_ID,
+        args=[],
+        target_version=None,
+        repository_config=configuration.config_path,
+    )
+
+    assert resolved.schema_version == 6
+    assert resolved.python_target is not None
+
+
+def test_public_metadata_api_accepts_exact_repository_config(tmp_path: Path) -> None:
+    configuration = _repository(tmp_path, terminal_access=_access(public=True))
+
+    resolved = resolve_dispatch_metadata(
+        caller_skill="root",
+        target=INTERFACE_ID,
+        args=[],
+        repository_config=configuration.config_path,
+    )
+
+    assert resolved.target == INTERFACE_ID
+
+
+def test_host_executes_direct_route_with_explicit_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configuration = _repository(tmp_path, terminal_access=_access(public=True))
+    monkeypatch.setenv("PYTHONPATH", str(Path(__file__).resolve().parents[1] / "src"))
+
+    completed = _dispatch_host(
+        caller_skill="root",
+        target=INTERFACE_ID,
+        args=[],
+        repository_config=configuration.config_path,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0
+    assert completed.stdout == "direct-ok\n"
+    assert completed.stderr == ""
+
+
+def test_host_execution_cannot_import_sibling_from_ambient_pythonpath(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configuration = _repository(tmp_path, terminal_access=_access(public=True))
+    modules = configuration.module_roots[0]
+    sibling = modules / "root" / "beta"
+    (sibling / "secret.py").write_text("message = 'leaked-sibling'\n")
+    gateway = modules / "root" / "alpha" / "leaf" / "runtime.py"
+    gateway.write_text(
+        gateway.read_text().replace("from .helper import message", "from secret import message")
+    )
+    source_root = Path(__file__).resolve().parents[1] / "src"
+    monkeypatch.setenv("PYTHONPATH", f"{sibling}:{source_root}")
+
+    completed = _dispatch_host(
+        caller_skill="root",
+        target=INTERFACE_ID,
+        args=[],
+        repository_config=configuration.config_path,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode != 0
+    assert "leaked-sibling" not in completed.stdout
+
+
+def test_host_rejects_private_child_caller_identity(tmp_path: Path) -> None:
+    configuration = _repository(tmp_path, terminal_access=_access(public=True))
+
+    with pytest.raises(DirectBlueprintError) as caught:
+        _resolve_host_dispatch_metadata(
+            caller_skill="root.alpha.leaf",
+            target=INTERFACE_ID,
+            args=[],
+            repository_config=configuration.config_path,
+        )
+
+    assert caught.value.code == "dispatcher.host_caller_invalid"

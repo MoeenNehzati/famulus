@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 
 from .core import (
     InvocationDiagnostic,
@@ -33,6 +34,11 @@ def parse_cli() -> argparse.Namespace:
             "/tmp/todo.yaml --file /tmp/todo-updates.yaml"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--repository-config",
+        type=Path,
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--caller-skill",
@@ -82,6 +88,7 @@ def main() -> int:
                 target=target,
                 args=script_args,
                 stdin_requested=args.stdin,
+                repository_config=args.repository_config,
             ).as_payload()
             print(json.dumps(payload, indent=2, sort_keys=True))
             return 0
@@ -95,6 +102,7 @@ def main() -> int:
             capture_output=True,
             check=False,
             warning_handler=_print_warning,
+            repository_config=args.repository_config,
         )
     except InvocationError as exc:
         if args.error_format == "json" and hasattr(exc, "as_payload"):

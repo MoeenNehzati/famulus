@@ -21,7 +21,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from officina.common import atomic_files
+from officina.common import atomic_files, toml_io
 from officina.install.runtime_pointer import RuntimePointer, activate_release
 
 _VERSION_OPERATOR_RE = re.compile(r"^(==|>=|<=|!=|~=|>|<)")
@@ -381,6 +381,8 @@ def build_candidate_release(
     """
     if repo_root is None:
         repo_root = Path(__file__).resolve().parents[3]
+    repo_root = Path(repo_root).resolve()
+    repository_config = repo_root / toml_io.repository_config_filename()
     packages = declared_python_packages(
         manifest_path, platform=platform, include_optional=include_optional_dependencies
     )
@@ -400,6 +402,7 @@ def build_candidate_release(
         runtime_root=runtime_root,
         release_dir=release_dir,
         python_bin=python_bin,
+        repository_config=repository_config,
         trusted_interpreter_roots=trusted_interpreter_roots,
     )
 
