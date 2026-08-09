@@ -547,6 +547,30 @@ def test_recurring_tasks_public_job_edit_facades_project_complete_usage() -> Non
         ]
 
 
+def test_live_list_read_and_graph_server_exports_match_their_cli_contracts() -> None:
+    graph = _load_v5_projection_graph(REPO_ROOT)
+
+    list_export = graph.exports["list-manager-rtx.interface.read-list"]
+    assert list_export.declaration["usage"] == "<file> [filters] [--sort FIELD]"
+
+    graph_export = graph.exports[
+        "math-dependency-graph-rtx.interface.scripts-serve-graph"
+    ]
+    assert graph_export.declaration["process_binding"]["patterns"] == [
+        {
+            "allowed_flags": ["--directory", "--host", "--port"],
+            "flag_patterns": {
+                "--directory": "^.+$",
+                "--host": "^.+$",
+                "--port": "^(?:[1-9]|[1-9][0-9]{1,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$",
+            },
+            "max_positionals": 0,
+            "min_positionals": 0,
+            "name": "owner",
+        }
+    ]
+
+
 def test_v5_projection_follows_helper_closure_through_facade(
     tmp_path: Path,
 ) -> None:

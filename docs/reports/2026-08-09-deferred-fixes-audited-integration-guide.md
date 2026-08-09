@@ -404,8 +404,8 @@ For every slice, complete one row per source regression-test file.
 
 | Slice | Source test and objective | Resulting test or exact equivalent | Direct focused result | Unified-runner collection evidence |
 |---|---|---|---|---|
-| list contract | `test_lists.py`: unfiltered reads sort requested fields, put missing values last, and compare short/long strings consistently | Same three named regression tests retained | 3 passed in 0.33s | unified commit hook collected 135 list-manager tests; all passed |
-| graph-server contract | `test_graph_server.py`: reject ports 0 and 65536; accept 65535 | Same three parameterized assertions retained | 3 passed in 0.02s with repository source path | pending commit hook |
+| list contract | `test_lists.py`: unfiltered reads sort requested fields, put missing values last, and compare short/long strings consistently; shared projection test verifies exported usage | Same three named regressions plus joint list/graph projection test retained | 3 behavioral tests passed in 0.33s; projection passed in 1.06s | unified commit hook collected 135 list-manager tests; all passed |
+| graph-server contract | `test_graph_server.py`: reject ports 0 and 65536; accept 65535; shared projection test verifies flags and positionals | Same three parameterized assertions plus joint list/graph projection test retained | 3 behavioral tests passed in 0.02s; projection passed in 1.06s | unified hook collected nine math-graph tests; all passed |
 | recurring metadata/catalog/inventory | Source increments the exact live graph inventory by one; blueprint ownership and dependencies are executable contracts | Adapted current-master count from 217 to 218, canonical blueprint check, and existing recurring-task suite | blueprint check and focused inventory test passed | pending commit hook |
 
 A green `full` run does not prove that a nested skill-owned test was collected.
