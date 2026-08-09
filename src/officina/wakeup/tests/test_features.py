@@ -12,6 +12,7 @@ from officina.wakeup.claude_codex_cli import main
 from officina.wakeup.claude_codex_service import run_due, schedule
 from officina.wakeup.doctor import collect_diagnostics
 from officina.wakeup.locking import LockUnavailable, locked_file
+from officina.wakeup.policies import auto_scheduled_sessions
 from officina.wakeup.providers import provider_for
 from officina.wakeup.claude_codex_sessions import latest_rate_limit
 from officina.wakeup.store import append_job
@@ -215,6 +216,13 @@ def _claude_transcript(root: Path, session_id: str, cwd: Path) -> Path:
     return path
 
 
+def _directory_symlink_or_skip(link: Path, target: Path) -> None:
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except (NotImplementedError, OSError) as error:
+        pytest.skip(f"directory symlinks are unavailable: {error}")
+
+
 def test_cli_applies_default_delay_and_coalesces_duplicate_commands(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -254,6 +262,131 @@ def test_cli_can_enable_check_and_disable_auto_scheduling(
     assert main(["auto", "status", *target]) == 0
     assert "disabled" in capsys.readouterr().out
     assert json.loads((tmp_path / "state" / "session-policies.json").read_text()) == {}
+
+
+@pytest.mark.parametrize(
+    ("initial_contents", "expected_state"),
+    [
+        (None, "disabled"),
+        ('{"claude:11111111-2222-4333-8444-555555555555":{"auto_schedule":true}}\n', "enabled"),
+    ],
+)
+def test_cli_auto_status_leaves_policy_storage_unchanged(
+    initial_contents: str | None,
+    expected_state: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    session_id = "11111111-2222-4333-8444-555555555555"
+    _claude_transcript(tmp_path / "claude", session_id, tmp_path)
+    monkeypatch.setenv("LLM_WAKEUP_CLAUDE_DIR", str(tmp_path / "claude"))
+    monkeypatch.setenv("LLM_WAKEUP_HOME", str(tmp_path / "state"))
+    state_root = tmp_path / "state"
+    policy_path = state_root / "session-policies.json"
+    before: dict[str, bytes] | None = None
+    if initial_contents is not None:
+        state_root.mkdir(parents=True)
+        policy_path.write_text(initial_contents, encoding="utf-8")
+        (state_root / "unrelated-state.bin").write_bytes(b"preserve exactly\x00")
+        before = {
+            str(path.relative_to(state_root)): path.read_bytes()
+            for path in state_root.rglob("*")
+            if path.is_file()
+        }
+
+    assert main(["auto", "status", "claude", session_id]) == 0
+
+    assert expected_state in capsys.readouterr().out
+    if initial_contents is None:
+        assert not state_root.exists()
+    else:
+        after = {
+            str(path.relative_to(state_root)): path.read_bytes()
+            for path in state_root.rglob("*")
+            if path.is_file()
+        }
+        assert after == before
+
+
+def test_cli_auto_status_preserves_non_directory_state_root_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    session_id = "11111111-2222-4333-8444-555555555555"
+    _claude_transcript(tmp_path / "claude", session_id, tmp_path)
+    monkeypatch.setenv("LLM_WAKEUP_CLAUDE_DIR", str(tmp_path / "claude"))
+    state_root = tmp_path / "state"
+    state_root.write_bytes(b"not a directory")
+    monkeypatch.setenv("LLM_WAKEUP_HOME", str(state_root))
+
+    with pytest.raises(FileExistsError):
+        main(["auto", "status", "claude", session_id])
+
+    assert state_root.read_bytes() == b"not a directory"
+
+
+def test_cli_auto_status_reads_through_directory_symlink_without_writes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    session_id = "11111111-2222-4333-8444-555555555555"
+    _claude_transcript(tmp_path / "claude", session_id, tmp_path)
+    monkeypatch.setenv("LLM_WAKEUP_CLAUDE_DIR", str(tmp_path / "claude"))
+    target_root = tmp_path / "real-state"
+    target_root.mkdir()
+    (target_root / "session-policies.json").write_text(
+        f'{{"claude:{session_id}":{{"auto_schedule":true}}}}\n',
+        encoding="utf-8",
+    )
+    (target_root / "unrelated-state.bin").write_bytes(b"preserve exactly\x00")
+    state_root = tmp_path / "state"
+    _directory_symlink_or_skip(state_root, target_root)
+    monkeypatch.setenv("LLM_WAKEUP_HOME", str(state_root))
+    before = {
+        str(path.relative_to(target_root)): path.read_bytes()
+        for path in target_root.rglob("*")
+        if path.is_file()
+    }
+
+    assert main(["auto", "status", "claude", session_id]) == 0
+
+    assert "enabled" in capsys.readouterr().out
+    after = {
+        str(path.relative_to(target_root)): path.read_bytes()
+        for path in target_root.rglob("*")
+        if path.is_file()
+    }
+    assert state_root.is_symlink()
+    assert after == before
+
+
+def test_cli_auto_status_preserves_dangling_state_root_symlink_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    session_id = "11111111-2222-4333-8444-555555555555"
+    _claude_transcript(tmp_path / "claude", session_id, tmp_path)
+    monkeypatch.setenv("LLM_WAKEUP_CLAUDE_DIR", str(tmp_path / "claude"))
+    missing_target = tmp_path / "missing-state"
+    state_root = tmp_path / "state"
+    _directory_symlink_or_skip(state_root, missing_target)
+    monkeypatch.setenv("LLM_WAKEUP_HOME", str(state_root))
+
+    with pytest.raises(FileExistsError):
+        main(["auto", "status", "claude", session_id])
+
+    assert state_root.is_symlink()
+    assert not missing_target.exists()
+
+
+def test_auto_scheduled_sessions_does_not_create_policy_storage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state_root = tmp_path / "state"
+    monkeypatch.setenv("LLM_WAKEUP_HOME", str(state_root))
+
+    assert auto_scheduled_sessions("claude") == ()
+    assert not state_root.exists()
 
 
 @pytest.mark.parametrize("provider", ["claude", "codex"])

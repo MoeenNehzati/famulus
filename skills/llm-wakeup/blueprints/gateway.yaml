@@ -2,7 +2,8 @@ content:
 - SKILL\.md
 dependencies: []
 description: Selects automatic-policy, inferred-scheduling, or explicit-scheduling
-  behavior from the user's wakeup request and reports the resulting target and time.
+  behavior from the user's wakeup request and reports the resulting target plus
+  policy state or scheduled time.
 gateway:
   language: Markdown
   path: SKILL.md
