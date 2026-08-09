@@ -143,6 +143,7 @@ reports remain conversational and do not create additional documentation work.
 | Timestamp | Total elapsed | Slice | Slice elapsed | Requirements closed/total | Tests mapped/passing/collected | Planned/unplanned paths | Variance | Decision |
 |---|---:|---|---:|---:|---:|---:|---|---|
 | 2026-08-09 12:38 EDT | about 6m | list contract | about 3m | 4/4 | 3/3/collected | 5/0 | on time | commit slice |
+| 2026-08-09 12:42 EDT | about 10m | graph-server contract | about 3m | 4/4 | 3/3/pending commit hook | 4/0 | on time | commit slice |
 
 ## Current-master preservation ledger
 
@@ -403,6 +404,7 @@ For every slice, complete one row per source regression-test file.
 | Slice | Source test and objective | Resulting test or exact equivalent | Direct focused result | Unified-runner collection evidence |
 |---|---|---|---|---|
 | list contract | `test_lists.py`: unfiltered reads sort requested fields, put missing values last, and compare short/long strings consistently | Same three named regression tests retained | 3 passed in 0.33s | unified commit hook collected 135 list-manager tests; all passed |
+| graph-server contract | `test_graph_server.py`: reject ports 0 and 65536; accept 65535 | Same three parameterized assertions retained | 3 passed in 0.02s with repository source path | pending commit hook |
 
 A green `full` run does not prove that a nested skill-owned test was collected.
 Deleting a source test requires naming the exact replacement assertion.
