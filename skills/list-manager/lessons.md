@@ -86,7 +86,7 @@
 
 **Lesson:** YAML natively parses an unquoted ISO date into a Python `datetime.date`. JSON Schema has no date type — a "date" is a `string` with `format: date` (see `schemas/types/task_entry.json`, `action.json`). So a YAML-native date object fails the `type: string` check, with a confusing message. Quoted dates (`'2026-07-05'`) load as strings and pass. Because `update` validates the **whole document** before saving, a single unquoted date (or any missing required field) blocks *every* edit to that list.
 
-**Use/Avoid:** Coerce `date`/`datetime` → ISO string at the YAML↔schema boundary. `lists.py` does this in `normalize_dates()`, called from `load_yaml` and at the top of `validate_list`. Do not "fix" this by loosening the schema to accept non-strings — keep `type: string, format: date` and normalize the data. Any code path that writes a list without going through `lists.py` (e.g. another skill writing directly via cloud-files) can reintroduce the problem.
+**Use/Avoid:** Coerce `date`/`datetime` → ISO string at the YAML↔schema boundary. The public list-manager read and update interfaces normalize these values before schema validation. Do not "fix" this by loosening the schema to accept non-strings — keep `type: string, format: date` and normalize the data. Bypassing the public list-manager interfaces (e.g. another skill writing directly via cloud-files) can reintroduce the problem.
 
 ---
 

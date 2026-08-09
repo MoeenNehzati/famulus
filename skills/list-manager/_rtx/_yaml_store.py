@@ -605,11 +605,8 @@ def _prune_category(cat: dict, filters: list[tuple[str, str, str]]) -> dict | No
 
 def _entry_sort_key(entry: dict, sort_field: str):
     if sort_field not in entry:
-        return float('inf')  # missing values sort last
-    v = entry[sort_field]
-    if isinstance(v, str) and len(v) >= 10:
-        return (v, 0)  # YYYY-MM-DD sorts lexicographically (earlier dates first)
-    return v
+        return (1, None)  # missing values sort last without cross-type comparison
+    return (0, entry[sort_field])
 
 
 def _sort_tree(node, sort_field: str) -> None:
@@ -799,13 +796,12 @@ def cmd_read(args: argparse.Namespace) -> None:
         else:
             print(content, end="")
 
-    if not args.filters:
-        emit(yaml.dump(data, allow_unicode=True, default_flow_style=False, sort_keys=False))
-        return
-
-    filters = parse_filters(args.filters)
-    validate_filter_values(filters, data.get("schema", ""))
-    matches = collect_matching_entries(data, filters)
+    if args.filters:
+        filters = parse_filters(args.filters)
+        validate_filter_values(filters, data.get("schema", ""))
+        matches = collect_matching_entries(data, filters)
+    else:
+        matches = data
 
     # Sort if requested. Sorting recurses into every entries/children list in
     # the (possibly nested, ancestor-preserving) result, since a match may now

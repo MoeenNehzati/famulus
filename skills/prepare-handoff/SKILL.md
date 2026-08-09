@@ -120,7 +120,6 @@ Good lessons are concrete, technical, and local to the work. Prefer items such a
 - which validation, test, or inspection actually exposed the issue
 - which constraint or tradeoff shaped the final direction
 
-Do not write vague guidance, generic best practices, motivational summaries, or high-level takeaways that would not change what a future developer actually does in this repo.
 When known, prefer naming exact files, tests, commands, tools, or interfaces rather than describing them abstractly.
 
 Write lessons to `lessons/YYYY-MM-DD.md` using the local date for the repo/session. If that dated file already exists, append to it.
@@ -133,8 +132,6 @@ For each lesson, make the action consequence explicit. Prefer entries shaped as:
 - Observation: concrete fact learned
 - Impact: why it matters technically
 - Use/Avoid/Best bet: what the next developer should do differently
-
-Before writing a lesson, ask: if someone knew this at the start, would they avoid a real mistake, dead end, wrong assumption, or wasted debugging time? If not, do not write it.
 
 ### 5. Propose Memory Candidates
 

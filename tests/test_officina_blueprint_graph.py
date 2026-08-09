@@ -429,6 +429,49 @@ def test_content_ownership_accepts_equivalent_repository_alias(
     ) == content
 
 
+def test_content_ownership_excludes_python_caches_but_keeps_authored_fixtures(
+    tmp_path: Path,
+) -> None:
+    module = tmp_path / "modules" / "demo"
+    tests = module / "tests"
+    fixtures = tests / "fixtures"
+    nested = tests / "nested"
+    cache = tests / "__pycache__"
+    fixtures.mkdir(parents=True)
+    nested.mkdir()
+    cache.mkdir()
+    gateway = tests / "test_worker.py"
+    nested_test = nested / "test_nested.py"
+    json_fixture = fixtures / "case.json"
+    binary_fixture = fixtures / "payload.bin"
+    gateway.write_text("", encoding="utf-8")
+    nested_test.write_text("", encoding="utf-8")
+    json_fixture.write_text("{}\n", encoding="utf-8")
+    binary_fixture.write_bytes(b"fixture\x00data")
+    (cache / "accidental.py").write_text("", encoding="utf-8")
+    (cache / "test_worker.cpython-313.pyc").write_bytes(b"cache")
+    (tests / "standalone.pyc").write_bytes(b"cache")
+    node = BlueprintNode(
+        node_id="demo",
+        node_type="module",
+        version=1,
+        module_root=module,
+        blueprint_path=module / "blueprint.yaml",
+        gateway_path=gateway,
+        declaration={
+            "schema_version": 5,
+            "content": [r"tests/.*"],
+        },
+    )
+
+    assert resolved_node_content_paths(node, tmp_path) == (
+        json_fixture,
+        binary_fixture,
+        nested_test,
+        gateway,
+    )
+
+
 def test_v4_repository_graph_uses_one_generic_export_and_direct_ownership(
     tmp_path: Path,
 ) -> None:

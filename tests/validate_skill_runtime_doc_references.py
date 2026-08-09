@@ -5,6 +5,8 @@ import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
 
+import yaml
+
 _VALIDATOR = Path(__file__).resolve().parents[1] / "validators" / "skill_runtime_doc_references.py"
 _spec = importlib.util.spec_from_file_location("skill_runtime_doc_references", _VALIDATOR)
 _mod = importlib.util.module_from_spec(_spec)
@@ -19,11 +21,169 @@ def _skill(tmp_path: Path) -> Path:
     return skill
 
 
+def _source_export() -> dict[str, object]:
+    return {
+        "source_interface": "demo-skill.source.gateway.interface.calendar-gateway",
+        "access": {"allow_all_modules": True, "allowed_callers": []},
+    }
+
+
+def _facade_export() -> dict[str, object]:
+    return {
+        "facade_interface": {
+            "interface": "demo-runtime.interface.calendar-gateway",
+            "version": 1,
+        },
+        "access": {"allow_all_modules": False, "allowed_callers": []},
+    }
+
+
+def _write_module_blueprint(
+    skill: Path,
+    export_id: str,
+    export_declaration: object,
+    *,
+    schema_version: int = 5,
+) -> None:
+    document = {
+        "schema_version": schema_version,
+        "node_type": "module",
+        "id": "demo-skill",
+        "version": 1,
+        "gateway": {"language": "Markdown", "path": "SKILL.md"},
+        "content": [r"SKILL\.md"],
+        "authority": {"owns_filesystem": []},
+        "sources": {},
+        "children": {},
+        "namespace_exports": {},
+        "exports": {export_id: export_declaration},
+    }
+    (skill / "blueprint.yaml").write_text(
+        yaml.safe_dump(document, sort_keys=False),
+        encoding="utf-8",
+    )
+
+
 def test_public_interface_name_passes(tmp_path: Path) -> None:
     skill = _skill(tmp_path)
     (skill / "SKILL.md").write_text("Use the `read-calendar` interface.\n", encoding="utf-8")
 
     assert _mod.validate(tmp_path) == []
+
+
+def test_declared_public_interface_id_may_match_private_runtime_stem(tmp_path: Path) -> None:
+    skill = _skill(tmp_path)
+    _write_module_blueprint(
+        skill,
+        "demo-skill.interface.calendar-gateway",
+        _source_export(),
+    )
+    (skill / "SKILL.md").write_text(
+        "Use `demo-skill.interface.calendar-gateway`.\n",
+        encoding="utf-8",
+    )
+
+    assert _mod.validate(tmp_path) == []
+
+
+def test_declared_facade_interface_id_may_match_private_runtime_stem(
+    tmp_path: Path,
+) -> None:
+    skill = _skill(tmp_path)
+    _write_module_blueprint(
+        skill,
+        "demo-skill.interface.calendar-gateway",
+        _facade_export(),
+    )
+    (skill / "SKILL.md").write_text(
+        "Use `demo-skill.interface.calendar-gateway`.\n",
+        encoding="utf-8",
+    )
+
+    assert _mod.validate(tmp_path) == []
+
+
+def test_empty_export_declaration_cannot_mask_private_runtime_stem(tmp_path: Path) -> None:
+    skill = _skill(tmp_path)
+    _write_module_blueprint(
+        skill,
+        "demo-skill.interface.calendar-gateway",
+        {},
+    )
+    (skill / "SKILL.md").write_text(
+        "Use `demo-skill.interface.calendar-gateway`.\n",
+        encoding="utf-8",
+    )
+
+    errors = _mod.validate(tmp_path)
+
+    assert any("private runtime name `_Calendar_Gateway`" in error for error in errors)
+
+
+def test_malformed_export_declaration_cannot_mask_private_runtime_stem(
+    tmp_path: Path,
+) -> None:
+    skill = _skill(tmp_path)
+    malformed = _source_export()
+    malformed.pop("access")
+    _write_module_blueprint(
+        skill,
+        "demo-skill.interface.calendar-gateway",
+        malformed,
+    )
+    (skill / "SKILL.md").write_text(
+        "Use `demo-skill.interface.calendar-gateway`.\n",
+        encoding="utf-8",
+    )
+
+    errors = _mod.validate(tmp_path)
+
+    assert any("private runtime name `_Calendar_Gateway`" in error for error in errors)
+
+
+def test_noncanonical_export_cannot_mask_private_runtime_stem(tmp_path: Path) -> None:
+    skill = _skill(tmp_path)
+    _write_module_blueprint(skill, "calendar-gateway", _source_export())
+    (skill / "SKILL.md").write_text("Use `calendar-gateway`.\n", encoding="utf-8")
+
+    errors = _mod.validate(tmp_path)
+
+    assert any("private runtime name `_Calendar_Gateway`" in error for error in errors)
+
+
+def test_malformed_module_blueprint_cannot_mask_private_runtime_stem(tmp_path: Path) -> None:
+    skill = _skill(tmp_path)
+    _write_module_blueprint(
+        skill,
+        "demo-skill.interface.calendar-gateway",
+        _source_export(),
+        schema_version=4,
+    )
+    (skill / "SKILL.md").write_text(
+        "Use `demo-skill.interface.calendar-gateway`.\n",
+        encoding="utf-8",
+    )
+
+    errors = _mod.validate(tmp_path)
+
+    assert any("private runtime name `_Calendar_Gateway`" in error for error in errors)
+
+
+def test_public_id_does_not_mask_adjacent_private_runtime_stem(tmp_path: Path) -> None:
+    skill = _skill(tmp_path)
+    _write_module_blueprint(
+        skill,
+        "demo-skill.interface.calendar-gateway",
+        _facade_export(),
+    )
+    (skill / "SKILL.md").write_text(
+        "Use `demo-skill.interface.calendar-gateway`, not `calendar-gateway`.\n",
+        encoding="utf-8",
+    )
+
+    errors = _mod.validate(tmp_path)
+
+    assert any("private runtime name `_Calendar_Gateway`" in error for error in errors)
 
 
 def test_runtime_patterns_are_prepared_once_per_stem(

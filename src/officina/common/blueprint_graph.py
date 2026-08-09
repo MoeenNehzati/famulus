@@ -1938,6 +1938,8 @@ def resolved_node_content_paths(
         path
         for path in _regular_files_beneath(owner_root)
         if not any(path.is_relative_to(child_root) for child_root in excluded)
+        and "__pycache__" not in path.relative_to(owner_root).parts
+        and not path.name.endswith(".pyc")
     )
     relative_candidates = {
         path: path.relative_to(owner_root).as_posix() for path in candidates

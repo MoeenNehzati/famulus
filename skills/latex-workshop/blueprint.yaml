@@ -12,8 +12,9 @@ authority:
 children: {}
 content:
 - SKILL\.md
-description: Reconstructs and runs the effective VS Code LaTeX Workshop build for
-  a target TeX document, then reads artifacts from the configured output location.
+description: Use when a user wants to compile, rebuild, or troubleshoot a TeX/LaTeX
+  document and the build should match VS Code LaTeX Workshop settings, recipes,
+  and output-directory conventions.
 discovery:
   mechanism: skill
   catalog:

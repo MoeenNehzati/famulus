@@ -271,6 +271,8 @@ interfaces:
         max_positionals: 1
         min_positionals: 1
         name: token-or-calendars
+        notes: >-
+          `token` — Mint a bearer token only for an explicitly scoped one-off API operation; `calendars` — list accessible calendar IDs, roles, and names.
         positional_patterns:
           '0': ^(token|calendars)$
       - allow_stdin: false
@@ -287,6 +289,8 @@ interfaces:
         max_positionals: 1
         min_positionals: 1
         name: create-calendar
+        notes: >-
+          `create-calendar --summary TEXT [--description TEXT] [--color-id ID] [--timezone TZ]` — Timezone defaults to the local IANA zone.
         positional_patterns:
           '0': ^create-calendar$
         required_flags:
@@ -306,6 +310,8 @@ interfaces:
         max_positionals: 1
         min_positionals: 1
         name: agenda
+        notes: >-
+          `agenda [--calendar ID] [--all-calendars] [--from ISO] [--to ISO] [--days N]` — Calendar defaults to primary and the window to today in local time; ISO datetimes require a UTC offset; --days extends from --from or today; --all-calendars merges and time-sorts.
         positional_patterns:
           '0': ^agenda$
       - allow_stdin: false
@@ -323,6 +329,8 @@ interfaces:
         max_positionals: 2
         min_positionals: 2
         name: search
+        notes: >-
+          `search QUERY [--calendar ID] [--all-calendars] [--from ISO] [--to ISO] [--days N]` — Calendar defaults to primary and the window to the previous 7 days through the next 30 days; ISO datetimes require a UTC offset; --days extends from --from or today; --all-calendars merges and time-sorts.
         positional_patterns:
           '0': ^search$
       - allow_stdin: false
@@ -335,6 +343,8 @@ interfaces:
         max_positionals: 1
         min_positionals: 1
         name: get
+        notes: >-
+          `get --event-id ID [--calendar ID]` — Calendar defaults to primary.
         positional_patterns:
           '0': ^get$
         required_flags:
@@ -360,6 +370,8 @@ interfaces:
         max_positionals: 1
         min_positionals: 1
         name: create
+        notes: >-
+          `create --summary TEXT --start ISO --end ISO [--calendar ID] [--description TEXT] [--location TEXT] [--timezone TZ] [--all-day]` — Calendar defaults to primary and timezone to the local IANA zone; timed ISO values require a UTC offset; all-day end dates are exclusive.
         positional_patterns:
           '0': ^create$
         required_flags:
@@ -388,6 +400,8 @@ interfaces:
         max_positionals: 1
         min_positionals: 1
         name: update
+        notes: >-
+          `update --event-id ID [--calendar ID] [--summary TEXT] [--description TEXT] [--location TEXT] [--start ISO] [--end ISO] [--timezone TZ]` — Calendar defaults to primary; timed ISO values require a UTC offset; supply at least one changed field.
         positional_patterns:
           '0': ^update$
         required_flags:
@@ -402,6 +416,8 @@ interfaces:
         max_positionals: 1
         min_positionals: 1
         name: delete
+        notes: >-
+          `delete --event-id ID [--calendar ID]` — Calendar defaults to primary.
         positional_patterns:
           '0': ^delete$
         required_flags:
@@ -418,12 +434,14 @@ interfaces:
         max_positionals: 1
         min_positionals: 1
         name: move
+        notes: >-
+          `move --event-id ID --to CALENDAR_ID [--from CALENDAR_ID]` — Source calendar defaults to primary.
         positional_patterns:
           '0': ^move$
         required_flags:
         - --event-id
         - --to
-    usage: <command> [options]
+    usage: <mode shown below>
     version: 1
 node_type: behavioral_source
 platform_support:

@@ -62,6 +62,20 @@ def _write(path: Path, policies: dict[str, dict]) -> None:
             temporary.unlink(missing_ok=True)
 
 
+def _read_policies() -> dict[str, dict]:
+    """Read the policy registry without creating persistent state."""
+
+    root = data_dir()
+    try:
+        root.lstat()
+    except FileNotFoundError:
+        pass
+    else:
+        if not root.is_dir():
+            root.mkdir(parents=True, exist_ok=True)
+    return _read(root / "session-policies.json")
+
+
 @contextmanager
 def _locked_policies() -> Iterator[dict[str, dict]]:
     """Yield the mutable registry while holding its independent write lock."""
@@ -92,21 +106,19 @@ def set_auto_schedule(provider: str, session_id: str, enabled: bool) -> None:
 def auto_schedule_enabled(provider: str, session_id: str) -> bool:
     """Return whether automatic scheduling is enabled for one conversation."""
 
-    with _locked_policies() as policies:
-        record = policies.get(_policy_key(provider, session_id), {})
-        return record.get("auto_schedule") is True
+    record = _read_policies().get(_policy_key(provider, session_id), {})
+    return record.get("auto_schedule") is True
 
 
 def auto_scheduled_sessions(provider: str) -> tuple[str, ...]:
     """Return session identifiers explicitly opted into automatic wakeups."""
 
     prefix = f"{provider}:"
-    with _locked_policies() as policies:
-        return tuple(
-            key.removeprefix(prefix)
-            for key, record in policies.items()
-            if key.startswith(prefix) and record.get("auto_schedule") is True
-        )
+    return tuple(
+        key.removeprefix(prefix)
+        for key, record in _read_policies().items()
+        if key.startswith(prefix) and record.get("auto_schedule") is True
+    )
 
 
 __all__ = [

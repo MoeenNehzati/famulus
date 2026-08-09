@@ -388,15 +388,26 @@ def resolve_entry(config: CloudFilesConfig, base_id: str, relpath: str) -> Remot
     )
 
 
-def resolve_base_id(config: CloudFilesConfig, *, use_llm_root: bool) -> str:
+def resolve_base_id(
+    config: CloudFilesConfig,
+    *,
+    use_llm_root: bool,
+    create: bool,
+) -> str:
+    """Return the selected Drive root ID without hiding a remote mutation.
+
+    ``create`` applies only to the configured LLM root: read and delete paths
+    pass ``False`` so their declared effects stay non-creating, while upload
+    paths pass ``True`` so first use can initialize that root.
+    """
     if not use_llm_root:
         return "root"
     llm_root = config.remote_llm_root.rstrip("/")
-    return resolve_folder_path(config, "root", llm_root, create=True)
+    return resolve_folder_path(config, "root", llm_root, create=create)
 
 
 def download_bytes(config: CloudFilesConfig, relpath: str, *, use_llm_root: bool) -> bytes:
-    base_id = resolve_base_id(config, use_llm_root=use_llm_root)
+    base_id = resolve_base_id(config, use_llm_root=use_llm_root, create=False)
     entry = resolve_entry(config, base_id, relpath)
     if entry.is_dir:
         raise CloudFilesError(f"path is a folder: {relpath}; use list instead")
@@ -419,7 +430,7 @@ def read_text(config: CloudFilesConfig, relpath: str, *, use_llm_root: bool) -> 
 
 def list_entries(config: CloudFilesConfig, relpath: str, *, use_llm_root: bool) -> list[str]:
     normalized = validate_relpath(relpath, allow_empty=True)
-    base_id = resolve_base_id(config, use_llm_root=use_llm_root)
+    base_id = resolve_base_id(config, use_llm_root=use_llm_root, create=False)
     folder_id = (
         resolve_folder_path(config, base_id, normalized, create=False)
         if normalized
@@ -459,7 +470,7 @@ def upload_bytes(
     source_name: str | None = None,
     use_llm_root: bool = True,
 ) -> None:
-    base_id = resolve_base_id(config, use_llm_root=use_llm_root)
+    base_id = resolve_base_id(config, use_llm_root=use_llm_root, create=True)
     normalized = validate_relpath(relpath)
     parts = split_relpath(normalized)
     parent_path = "/".join(parts[:-1])
@@ -526,7 +537,7 @@ def delete_file(
     *,
     use_llm_root: bool = True,
 ) -> None:
-    base_id = resolve_base_id(config, use_llm_root=use_llm_root)
+    base_id = resolve_base_id(config, use_llm_root=use_llm_root, create=False)
     info = resolve_file(config, base_id, relpath)
     if info.get("mimeType") == FOLDER_MIME_TYPE:
         raise CloudFilesError(f"path is a folder: {relpath}")
@@ -607,7 +618,7 @@ def expand_remote_sources(
     *,
     use_llm_root: bool,
 ) -> list[RemoteEntry]:
-    base_id = resolve_base_id(config, use_llm_root=use_llm_root)
+    base_id = resolve_base_id(config, use_llm_root=use_llm_root, create=False)
     sources: dict[str, RemoteEntry] = {}
     for spec in source_specs:
         pattern, _dir_hint = parse_llm_spec(spec, allow_glob=True)
@@ -655,7 +666,7 @@ def resolve_remote_target(
     use_llm_root: bool,
 ) -> str:
     dest_relpath, dir_hint = parse_llm_spec(raw_dest_spec, allow_empty=True)
-    base_id = resolve_base_id(config, use_llm_root=use_llm_root)
+    base_id = resolve_base_id(config, use_llm_root=use_llm_root, create=True)
     use_as_dir = multiple_sources or dir_hint
     existing: RemoteEntry | None = None
     if dest_relpath:
@@ -737,7 +748,7 @@ def cp_entrypoint(args: Sequence[str], *, use_llm_root: bool) -> int:
 def ls_entrypoint(args: Sequence[str], *, use_llm_root: bool) -> int:
     config = load_config()
     specs = list(args) or [LLM_PREFIX]
-    base_id = resolve_base_id(config, use_llm_root=use_llm_root)
+    base_id = resolve_base_id(config, use_llm_root=use_llm_root, create=False)
     for spec in specs:
         pattern, _dir_hint = parse_llm_spec(spec, allow_empty=True, allow_glob=True)
         if not pattern:

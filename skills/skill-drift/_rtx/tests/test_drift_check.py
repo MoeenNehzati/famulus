@@ -513,6 +513,33 @@ def test_active_plugin_with_malformed_version_metadata_fails_with_remediation(
     ) in message
 
 
+def test_empty_active_plugin_graph_uses_schema_neutral_diagnostic(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = checker.SkillSource(
+        source="claude",
+        package_root=tmp_path,
+        skills_root=tmp_path / "skills",
+        plugin_id="demo@market",
+        plugin_version="2",
+    )
+    monkeypatch.setattr(checker, "observed_skill_sources", lambda: [source])
+    monkeypatch.setattr(
+        checker,
+        "load_repository_blueprint_graph",
+        lambda *_args, **_kwargs: SimpleNamespace(nodes={}),
+    )
+    args = SimpleNamespace(skills_root=None, repo_root=checker.REPO_ROOT)
+
+    with pytest.raises(checker.DriftCheckError) as captured:
+        checker.requested_skill_sources(args)
+
+    message = str(captured.value)
+    assert "installed blueprint graph has no registered nodes" in message
+    assert "v4 nodes" not in message
+
+
 @pytest.mark.parametrize(
     "command",
     [

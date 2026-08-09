@@ -43,6 +43,25 @@ class CloudFilesTests(unittest.TestCase):
         self.assertEqual(stdout.getvalue(), "hello\n")
         read_text.assert_called_once_with(config, "notes/todo.md", use_llm_root=True)
 
+    def test_read_missing_llm_root_does_not_attempt_creation(self) -> None:
+        config = cloud_files.CloudFilesConfig(
+            remote_llm_root="assistant/",
+            timeout_seconds=45,
+            credentials_path=Path("/tmp/creds.json"),
+        )
+        with mock.patch.object(cloud_files, "list_children", return_value=[]):
+            with mock.patch.object(
+                cloud_files,
+                "create_folder",
+                side_effect=AssertionError("read attempted to create a remote folder"),
+            ):
+                with self.assertRaises(FileNotFoundError):
+                    cloud_files.read_text(
+                        config,
+                        "notes/todo.md",
+                        use_llm_root=True,
+                    )
+
     def test_write_reads_stdin_and_targets_llm_root(self) -> None:
         config = cloud_files.CloudFilesConfig(
             remote_llm_root="assistant/",

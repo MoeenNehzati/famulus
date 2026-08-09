@@ -311,7 +311,9 @@ def requested_skill_sources(args: argparse.Namespace) -> list[SkillSource]:
                 schema_root=source.package_root / "references" / "blueprint",
             )
             if not graph.nodes:
-                raise DriftCheckError("installed blueprint graph has no v4 nodes")
+                raise DriftCheckError(
+                    "installed blueprint graph has no registered nodes"
+                )
         except (OSError, TypeError, ValueError, DriftCheckError) as exc:
             raise DriftCheckError(
                 "unsupported active plugin "

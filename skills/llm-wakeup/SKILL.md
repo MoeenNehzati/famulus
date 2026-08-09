@@ -43,7 +43,11 @@ Pass `message` and `delay` only when the user supplies them. Otherwise preserve
 the interface defaults.
 
 Do not guess a provider, session, alias, or reset time after an interface reports
-ambiguity. Ask for the missing explicit value or route to `explicit-schedule`.
+ambiguity. For `auto-policy`, ask for the missing provider or canonical session
+and retry `auto-policy`. For `infer-schedule`, ask for the missing explicit value;
+when provider, session, and reset are all explicit, route to `explicit-schedule`.
 
-Report the resolved provider, canonical session, and local scheduled time from
-the interface result. Report failures plainly without claiming a wakeup exists.
+For `auto-policy`, report the resolved provider, canonical session, and policy
+state. For `infer-schedule` and `explicit-schedule`, report the resolved
+provider, canonical session, and local scheduled time. Report failures plainly
+without claiming a wakeup exists.

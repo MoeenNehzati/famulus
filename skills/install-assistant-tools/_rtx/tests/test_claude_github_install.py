@@ -30,11 +30,13 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 from install_test_utils import (  # noqa: E402
     REPO_ROOT,
+    build_minimal_managed_runtime_release,
     claude_env,
     contains_dispatcher_context,
     expected_skills,
     github_owner_repo,
     install_minimum_scaffold,
+    managed_runtime_uv_bin,
     prepend_path,
     read_json,
     run_command,
@@ -136,6 +138,14 @@ class ClaudeGithubInstallTests(unittest.TestCase):
                 tmp_root,
                 home=home,
                 env=plugin_env,
+            )
+            if managed_runtime_uv_bin() is None:
+                # famulus-skip: category=capability-unavailable; reason=the installed dispatcher health check requires a real managed-runtime release; alternate=unit tests cover resolver and launcher behavior without uv
+                self.skipTest("uv is not installed on this machine")
+            build_minimal_managed_runtime_release(
+                home=home,
+                tmp_root=tmp_root,
+                repo_root=installed_path,
             )
             plugin_env = prepend_path(plugin_env, scaffold_bin)
             run_command(["dispatcher", "--help"], env=plugin_env)

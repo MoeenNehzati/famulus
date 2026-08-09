@@ -140,7 +140,7 @@ interfaces:
           atomicity:
             per_effect_only: The complete policy registry is replaced atomically.
           concurrent_invocations:
-            safe: Advisory locking serializes policy readers and writers.
+            safe: Advisory locking serializes policy writers; atomic replacement lets readers observe a complete old or new registry.
           idempotency:
             idempotent: Repeating on, off, or status converges to the same policy state and output.
           on_uncertain_completion:

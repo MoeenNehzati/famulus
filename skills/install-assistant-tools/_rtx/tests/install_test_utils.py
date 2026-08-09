@@ -241,18 +241,17 @@ def managed_runtime_uv_bin() -> str | None:
     return shutil.which("uv")
 
 
-def build_minimal_managed_runtime_release(*, home: Path, tmp_root: Path) -> None:
-    """Build and activate a real managed-runtime candidate release (empty
-    dependency manifest -- no third-party packages needed) under ``home``,
-    deploying the dependency-free launcher resolver and its trust sidecar as
-    a side effect of build_candidate_release (see officina.install.
-    managed_runtime._deploy_resolver). This makes a generated dispatcher
-    shim's resolver hop succeed; the release venv still has no `officina`
-    package installed (that's a separate, deliberate scope decision -- see
-    _install_scaffold.install_python_packages's docstring), so `dispatcher
-    --help` still fails, but with a ModuleNotFoundError raised by the release
-    interpreter after control has already transferred there, never a
-    resolver-side "no such file" or containment error.
+def build_minimal_managed_runtime_release(
+    *, home: Path, tmp_root: Path, repo_root: Path | None = None
+) -> None:
+    """Build and activate a minimal real managed-runtime candidate release.
+
+    The generated dependency manifest supplies the core packages required by
+    dispatcher imports while excluding optional-heavy packages. The build also
+    deploys the stable resolver and copies ``repo_root/src/officina`` into the
+    release venv, so a generated ``dispatcher --help`` launcher must complete
+    successfully. ``repo_root`` defaults to the live repository; a plugin-
+    install test passes its installed snapshot to verify packaged code.
 
     Callers must guard on managed_runtime_uv_bin() first and skip if it is
     None.
@@ -264,8 +263,8 @@ def build_minimal_managed_runtime_release(*, home: Path, tmp_root: Path) -> None
     assert uv_bin is not None, "build_minimal_managed_runtime_release requires a real uv binary"
 
     paths = resolve_famulus_paths(platform=sys.platform, home=home)
-    manifest = tmp_root / "managed-runtime-empty-manifest.json"
-    manifest.write_text(json.dumps({"version": 1, "skills": {}}), encoding="utf-8")
+    selected_repo_root = repo_root or REPO_ROOT
+    manifest = selected_repo_root / "references" / "blueprint" / "runtime_dependencies.json"
     platform_name = {"darwin": "macos", "win32": "windows"}.get(sys.platform, "linux")
     build_candidate_release(
         runtime_root=paths.runtime_root,
@@ -273,6 +272,8 @@ def build_minimal_managed_runtime_release(*, home: Path, tmp_root: Path) -> None
         platform=platform_name,
         uv_bin=Path(uv_bin),
         python_version="3.11",
+        repo_root=selected_repo_root,
+        include_optional_dependencies=False,
     )
 
 

@@ -83,14 +83,16 @@ This skill owns Google Drive transport. Other skills should call this skill's
 scripts rather than speaking to the Drive API directly.
 
 Install-time config lives at `~/.config/cloud-files/config.json`.
-OAuth credentials live at `~/.config/cloud-files/credentials.json`.
+Legacy OAuth credentials live at `~/.config/cloud-files/credentials.json`.
 
-For initial Google setup or reauthorization, use
-`connect-google.interface.default` to install or reuse the shared Desktop OAuth
-client, then return here for Drive authorization. This skill invokes its own
-`cloud-files.interface.setup-oauth` interface with
-`--from-json ~/.config/connect-google/client.json` and owns Drive credentials,
-verification, and failures.
+For shared Google setup or Drive reauthorization, first invoke
+`connect-google.interface.default`. Inspect its combined-authorization result.
+When Drive was granted, bind the returned opaque `credential_id` with
+`cloud-files.interface.use-google-credential`, using the same registry home.
+
+Use `cloud-files.interface.setup-oauth` only as the legacy fallback for a
+cloud-files configuration that has not adopted a shared credential. It accepts
+the Google Desktop-client JSON and performs a separate Drive authorization flow.
 
 ## 1. Preapproved LLM-root operations
 

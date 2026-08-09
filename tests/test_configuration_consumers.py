@@ -9,6 +9,7 @@ import sys
 
 import pytest
 
+from officina.common.blueprint_graph import load_repository_blueprint_graph
 from officina.common.certification_hashing import (
     CertificationHashError,
     load_node_hash_policy,
@@ -76,6 +77,27 @@ def test_recurring_jobs_shared_loader_validates_documents(tmp_path: Path) -> Non
 
     with pytest.raises(ConfiguredSchemaError, match="invalid configuration"):
         jobs_config.load_jobs(path)
+
+
+def test_recurring_jobs_config_helper_has_direct_owner_and_import_dependencies() -> None:
+    graph = load_repository_blueprint_graph(REPO_ROOT)
+    helper = REPO_ROOT / "skills/recurring-tasks/_rtx/_jobs_config.py"
+    source_id = "recurring-tasks-rtx.source.rtx-jobs-config"
+
+    assert graph.direct_file_owners[helper] == source_id
+    consumers = {
+        "recurring-tasks-rtx.source.rtx-healthcheck-probe",
+        "recurring-tasks-rtx.source.rtx-job-control",
+        "recurring-tasks-rtx.source.rtx-job-executor",
+        "recurring-tasks-rtx.source.rtx-job-utils",
+        "recurring-tasks-rtx.source.rtx-unit-writer",
+    }
+    actual = {
+        edge.source_id
+        for edge in graph.node_edges
+        if edge.relation == "uses-source" and edge.target_id == source_id
+    }
+    assert actual == consumers
 
 
 def test_cloud_files_config_rejects_unknown_fields(tmp_path: Path) -> None:

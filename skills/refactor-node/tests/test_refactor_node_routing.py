@@ -175,6 +175,75 @@ def test_router_declares_exact_standard_leaf_mapping_and_closure_rules() -> None
     assert "remedied-by" in normalized
 
 
+def test_router_discovers_implementation_children_before_explicit_query() -> None:
+    skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+    preflight = " ".join(
+        skill.partition("## Preflight")[2]
+        .partition("## Standards retrieval")[0]
+        .split()
+    )
+
+    assert "implementation child" in preflight
+    assert "before querying policy" in preflight.lower()
+    assert "common.interface.query-standard" in preflight
+    assert "inferred target" in preflight
+
+
+def test_router_verifies_current_query_provenance_fields() -> None:
+    skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+    preflight = " ".join(
+        skill.partition("## Preflight")[2].partition("## Standards retrieval")[0].split()
+    )
+
+    for field in (
+        "caller",
+        "target",
+        "repository root",
+        "selected standard path",
+        "task facts",
+        "view",
+        "refs",
+    ):
+        assert field in preflight
+    assert "refactor-node.interface.query-standards" not in skill
+
+
+def test_router_requires_preservation_evidence_and_review_gates() -> None:
+    skill = " ".join(
+        (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8").split()
+    )
+
+    for requirement in (
+        "preservation map",
+        "reverse consumers",
+        "canonical evidence",
+        "supplemental change-relevant evidence",
+        "semantic review",
+        "exact diff against the preservation map",
+        "An unvalidated move is non-final",
+    ):
+        assert requirement in skill
+
+
+def test_instruction_routes_extend_the_preservation_map() -> None:
+    instruction = " ".join(
+        (SKILL_ROOT / "instructions/instruction-refactoring.md")
+        .read_text(encoding="utf-8")
+        .split()
+    )
+    python = " ".join(
+        (SKILL_ROOT / "instructions/python-refactoring.md")
+        .read_text(encoding="utf-8")
+        .split()
+    )
+
+    assert "Extend the router's preservation map" in instruction
+    assert "predicate, branch outcome, fallback or recovery" in instruction
+    assert "producer output through authorized consumer invocation" in instruction
+    assert "Extend the router map" in python
+    assert "focused or reverse integration evidence" in python
+
+
 def test_each_mutating_route_handles_approved_reentry() -> None:
     for relative in (
         "instructions/python-refactoring.md",
