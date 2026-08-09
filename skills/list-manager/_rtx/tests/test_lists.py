@@ -242,6 +242,53 @@ def test_read_unfiltered_returns_full_doc(todo_file):
     assert len(data["categories"]) == 2
 
 
+def test_read_unfiltered_applies_requested_sort(todo_file):
+    data = yaml.safe_load(todo_file.read_text())
+    writing = data["categories"][0]["categories"][3]
+    writing["entries"][0]["deadline"] = "2026-07-20"
+    todo_file.write_text(yaml.safe_dump(data, sort_keys=False))
+
+    result = run(["read", str(todo_file), "--sort", "deadline"])
+
+    assert result.returncode == 0, result.stderr
+    sorted_data = yaml.safe_load(result.stdout)
+    sorted_writing = sorted_data["categories"][0]["categories"][3]
+    assert [entry["id"] for entry in sorted_writing["entries"]] == [
+        "b7c1e2",
+        "a3f2b9",
+    ]
+
+
+def test_read_unfiltered_sort_places_missing_values_last(todo_file):
+    result = run(["read", str(todo_file), "--sort", "location"])
+
+    assert result.returncode == 0, result.stderr
+    sorted_data = yaml.safe_load(result.stdout)
+    sorted_writing = sorted_data["categories"][0]["categories"][3]
+    assert [entry["id"] for entry in sorted_writing["entries"]] == [
+        "a3f2b9",
+        "b7c1e2",
+    ]
+
+
+def test_read_unfiltered_sort_compares_short_and_long_strings(todo_file):
+    data = yaml.safe_load(todo_file.read_text())
+    writing = data["categories"][0]["categories"][3]
+    writing["entries"][0]["title"] = "Long title here"
+    writing["entries"][1]["title"] = "A"
+    todo_file.write_text(yaml.safe_dump(data, sort_keys=False))
+
+    result = run(["read", str(todo_file), "--sort", "title"])
+
+    assert result.returncode == 0, result.stderr
+    sorted_data = yaml.safe_load(result.stdout)
+    sorted_writing = sorted_data["categories"][0]["categories"][3]
+    assert [entry["id"] for entry in sorted_writing["entries"]] == [
+        "b7c1e2",
+        "a3f2b9",
+    ]
+
+
 def test_read_filter_exact_match(todo_file):
     result = run(["read", str(todo_file), "state=incomplete"])
     assert result.returncode == 0, result.stderr
