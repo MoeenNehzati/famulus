@@ -147,6 +147,7 @@ reports remain conversational and do not create additional documentation work.
 | 2026-08-09 12:46 EDT | about 14m | recurring metadata/catalog/inventory | about 4m | 6/6 | blueprint and inventory checks passed/pending hook | 11/0 | on time | commit slice |
 | 2026-08-09 12:52 EDT | about 20m | wakeup behavior | about 5m | 5/5 | 6/6/pending hook | 6/0 | on time | commit slice |
 | 2026-08-09 12:54 EDT | about 22m | skill-drift diagnostics | about 2m | 2/2 | 1/1/pending hook | 3/0 | on time | commit slice |
+| 2026-08-09 12:58 EDT | about 26m | cloud route matrix | about 4m | 3/3 | 2/2/pending hook | 3/0 | on time | commit slice |
 
 ## Current-master preservation ledger
 
@@ -411,6 +412,7 @@ For every slice, complete one row per source regression-test file.
 | recurring metadata/catalog/inventory | Source increments the exact live graph inventory by one; blueprint ownership and dependencies are executable contracts | Adapted current-master count from 217 to 218, canonical blueprint check, and existing recurring-task suite | blueprint check and focused inventory test passed | pending commit hook |
 | wakeup behavior | `test_features.py`: policy status preserves absent, existing, non-directory, directory-symlink, and dangling-symlink state; scheduled-session reads do not create storage | Same six focused assertions retained | 6 passed in 0.07s | pending commit hook |
 | skill-drift diagnostics | `test_drift_check.py`: an empty active-plugin graph reports schema-neutral language | Same named regression retained | 1 passed in 0.12s | pending commit hook |
+| cloud route matrix | `test_cloud_files.py`: missing-root reads do not create folders; existing write test retains creating route | New read regression plus existing write-path test | 2 passed in 0.05s | pending commit hook |
 
 A green `full` run does not prove that a nested skill-owned test was collected.
 Deleting a source test requires naming the exact replacement assertion.
