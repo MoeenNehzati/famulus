@@ -7,15 +7,10 @@ import json
 import sys
 from pathlib import Path
 
-from .core import (
-    InvocationDiagnostic,
-    InvocationError,
-    _dispatch_host,
-    _resolve_host_dispatch_metadata,
-)
+from .errors import InvocationError
 
 
-def _print_warning(diagnostic: InvocationDiagnostic) -> None:
+def _print_warning(diagnostic) -> None:
     subject = f" [{diagnostic.subject}]" if diagnostic.subject is not None else ""
     print(
         f"warning: {diagnostic.code}: {diagnostic.message}{subject}",
@@ -80,6 +75,17 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
+
+    if args.repository_config is not None:
+        from .direct_runtime import (
+            _dispatch_host,
+            _resolve_host_dispatch_metadata,
+        )
+    else:
+        from .core import (
+            _dispatch_host,
+            _resolve_host_dispatch_metadata,
+        )
 
     try:
         if args.dry_run:

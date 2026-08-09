@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping
+from typing import TYPE_CHECKING, Any, Mapping
 
-from officina.common.blueprint_authorization import AuthorizationResult
-from officina.runtime.python_machine_interface import PythonProcessTarget
+if TYPE_CHECKING:
+    from officina.common.blueprint_authorization import AuthorizationResult
+    from officina.runtime.python_machine_interface import PythonProcessTarget
 
 
 @dataclass(frozen=True)

@@ -75,7 +75,7 @@ def _deselected_tests(args: list[str]) -> set[str]:
     }
 
 
-def test_precommit_defers_installation_chrome_and_docstring_tests() -> None:
+def test_precommit_defers_installation_chrome_docstring_and_performance_tests() -> None:
     deselected = _deselected_tests(
         runner._suite_pytest_args("precommit", verbose=False)
     )
@@ -83,14 +83,15 @@ def test_precommit_defers_installation_chrome_and_docstring_tests() -> None:
     assert runner.INSTALLATION_TESTS <= deselected
     assert runner.CHROME_TESTS <= deselected
     assert runner.DOCSTRING_TESTS <= deselected
+    assert runner.PERFORMANCE_TESTS <= deselected
 
 
-def test_prepush_restores_installation_and_chrome_but_defers_docstrings() -> None:
+def test_prepush_restores_installation_and_chrome_but_defers_slow_tests() -> None:
     deselected = _deselected_tests(
         runner._suite_pytest_args("pre-push", verbose=False)
     )
 
-    assert deselected == runner.DOCSTRING_TESTS
+    assert deselected == runner.DOCSTRING_TESTS | runner.PERFORMANCE_TESTS
 
 
 def test_docstring_validator_is_reserved_for_full_unless_explicit(

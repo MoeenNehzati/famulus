@@ -49,6 +49,7 @@ DOCSTRING_TESTS = {
     "tests/test_docstring_schema_dynamic_sections.py",
     "tests/test_docstrings_validator.py",
 }
+PERFORMANCE_TESTS = {"tests/test_dispatcher_performance.py"}
 PRECOMMIT_EXCLUDED_TESTS = {
     "tests/test_nested_module_migration.py::"
     "TestNestedModuleMigrationContract::"
@@ -56,8 +57,9 @@ PRECOMMIT_EXCLUDED_TESTS = {
     *INSTALLATION_TESTS,
     *CHROME_TESTS,
     *DOCSTRING_TESTS,
+    *PERFORMANCE_TESTS,
 }
-PREPUSH_EXCLUDED_TESTS = DOCSTRING_TESTS
+PREPUSH_EXCLUDED_TESTS = DOCSTRING_TESTS | PERFORMANCE_TESTS
 SUITE_EXCLUDED_VALIDATORS = {
     "precommit": {"repo/docstrings"},
     "pre-push": {"repo/docstrings"},
@@ -1290,18 +1292,33 @@ def _build_check_tasks(
             isolated = len(group) == 1 and "/_rtx/tests" in group[0]
             group_jobs = 1 if isolated else shared_jobs
             task_id = f"tests:{group[0]}" if isolated else "tests:shared"
+            pytest_args = _suite_pytest_args(
+                str(test_suite),
+                verbose=verbose,
+                jobs=group_jobs,
+            )
+            if test_suite == "full" and not isolated:
+                for test in sorted(PERFORMANCE_TESTS):
+                    pytest_args.extend(["--deselect", test])
             argv = (
                 sys.executable,
                 "-m",
                 "pytest",
-                *_suite_pytest_args(
-                    str(test_suite),
-                    verbose=verbose,
-                    jobs=group_jobs,
-                ),
+                *pytest_args,
                 *group,
             )
             tasks.append(CheckTask(task_id, tuple(argv), group_jobs))
+        if test_suite == "full":
+            performance_argv = (
+                sys.executable,
+                "-m",
+                "pytest",
+                *_pytest_args(verbose=verbose, jobs=1),
+                *sorted(PERFORMANCE_TESTS),
+            )
+            tasks.append(
+                CheckTask("tests:performance", performance_argv, max(1, jobs))
+            )
     finally:
         globals()["REPO_ROOT"] = previous_root
     return tasks
