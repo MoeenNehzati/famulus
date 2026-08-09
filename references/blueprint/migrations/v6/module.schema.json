@@ -1,0 +1,111 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "module.schema.json",
+  "title": "Direct-Routing Module Blueprint",
+  "description": "Closed version 6 contract for path-derived module identity, explicit child registration, namespace routing, and source-owned exports.",
+  "type": "object",
+  "required": ["schema_version", "node_type", "id", "version", "gateway", "content", "authority", "sources", "children", "namespace_exports", "exports"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 6},
+    "node_type": {"const": "module"},
+    "id": {"$ref": "common.schema.json#/definitions/moduleId"},
+    "version": {"$ref": "common.schema.json#/definitions/interfaceVersion"},
+    "description": {"type": "string", "minLength": 1},
+    "gateway": {"$ref": "common.schema.json#/definitions/gateway"},
+    "content": {"$ref": "common.schema.json#/definitions/contentPatterns"},
+    "discovery": {"$ref": "../../module.schema.json#/definitions/discovery"},
+    "authority": {"$ref": "#/definitions/authority"},
+    "sources": {
+      "type": "object",
+      "propertyNames": {"$ref": "common.schema.json#/definitions/behavioralSourceId"},
+      "additionalProperties": {"$ref": "common.schema.json#/definitions/sourceContainment"}
+    },
+    "children": {
+      "type": "object",
+      "propertyNames": {"$ref": "common.schema.json#/definitions/localModuleSegment"},
+      "additionalProperties": {"type": "object", "maxProperties": 0}
+    },
+    "namespace_exports": {
+      "type": "object",
+      "propertyNames": {"$ref": "common.schema.json#/definitions/localModuleSegment"},
+      "additionalProperties": {"$ref": "#/definitions/namespaceExport"}
+    },
+    "exports": {
+      "type": "object",
+      "propertyNames": {"$ref": "common.schema.json#/definitions/exportInterfaceId"},
+      "additionalProperties": {"$ref": "#/definitions/sourceExport"}
+    }
+  },
+  "definitions": {
+    "authority": {
+      "type": "object",
+      "required": ["owns_filesystem"],
+      "additionalProperties": false,
+      "properties": {
+        "owns_filesystem": {"$ref": "common.schema.json#/definitions/v4FilesystemOwnershipList"},
+        "suggested_permissions": {"$ref": "../../module.schema.json#/definitions/suggestedPermissions"}
+      }
+    },
+    "access": {
+      "type": "object",
+      "required": ["allow_all_modules", "allowed_callers"],
+      "additionalProperties": false,
+      "properties": {
+        "allow_all_modules": {"type": "boolean"},
+        "allowed_callers": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "common.schema.json#/definitions/callerReference"}
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"allow_all_modules": {"const": true}}},
+          "then": {"properties": {"allowed_callers": {"maxItems": 0}}}
+        }
+      ]
+    },
+    "sourceExport": {
+      "type": "object",
+      "required": ["source_interface", "access"],
+      "additionalProperties": false,
+      "properties": {
+        "source_interface": {"$ref": "common.schema.json#/definitions/sourceInterfaceId"},
+        "access": {"$ref": "#/definitions/access"}
+      }
+    },
+    "namespaceSurface": {
+      "type": "object",
+      "required": ["only"],
+      "additionalProperties": false,
+      "properties": {
+        "only": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {"$ref": "common.schema.json#/definitions/exportInterfaceId"},
+          "additionalProperties": {"$ref": "common.schema.json#/definitions/interfaceVersion"}
+        }
+      }
+    },
+    "namespaceExport": {
+      "type": "object",
+      "required": ["version", "access", "surface"],
+      "additionalProperties": false,
+      "properties": {
+        "version": {"$ref": "common.schema.json#/definitions/interfaceVersion"},
+        "access": {"$ref": "#/definitions/access"},
+        "surface": {"$ref": "#/definitions/namespaceSurface"},
+        "interface_access": {
+          "type": "object",
+          "propertyNames": {"$ref": "common.schema.json#/definitions/exportInterfaceId"},
+          "additionalProperties": {"$ref": "#/definitions/access"}
+        }
+      }
+    }
+  },
+  "x-famulus": {
+    "gateway_policy": "whole-file",
+    "export_version": "derived-from-source-interface"
+  }
+}

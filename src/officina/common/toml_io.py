@@ -79,6 +79,12 @@ def profile_config_filename(agent: str) -> str:
     return f"{agent}.config.toml"
 
 
+def repository_config_filename() -> str:
+    """Return the single repository configuration filename."""
+
+    return "officina.toml"
+
+
 def iter_profile_configs(directory: Path | str):
     """Yield tracked profile TOML files in a directory."""
     for path in sorted(Path(directory).iterdir()):

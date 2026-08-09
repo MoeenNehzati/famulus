@@ -1,0 +1,83 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "common.schema.json",
+  "title": "Version 6 Blueprint Common Definitions",
+  "definitions": {
+    "interfaceVersion": {"$ref": "../../common.schema.json#/definitions/interfaceVersion"},
+    "localModuleSegment": {
+      "type": "string",
+      "pattern": "^(?!(?:interface|source)$)(?:_rtx|[a-z0-9]+(?:-[a-z0-9]+)*)$"
+    },
+    "moduleId": {
+      "type": "string",
+      "pattern": "^(?!(?:interface|source)(?:\\.|$))[a-z0-9]+(?:-[a-z0-9]+)*(?:\\.(?:_rtx|(?!(?:interface|source)(?:\\.|$))[a-z0-9]+(?:-[a-z0-9]+)*))*$",
+      "not": {"pattern": "-rtx(?:\\.|$)"}
+    },
+    "relativeModuleReference": {"$ref": "../../common.schema.json#/definitions/relativeModuleReference"},
+    "callerReference": {
+      "oneOf": [
+        {"$ref": "#/definitions/moduleId"},
+        {"$ref": "#/definitions/relativeModuleReference"}
+      ]
+    },
+    "behavioralSourceId": {
+      "type": "string",
+      "pattern": "^(?!(?:interface|source)(?:\\.|$))[a-z0-9]+(?:-[a-z0-9]+)*(?:\\.(?:_rtx|(?!(?:interface|source)(?:\\.|$))[a-z0-9]+(?:-[a-z0-9]+)*))*\\.source\\.[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "not": {"pattern": "-rtx(?:\\.|$)"}
+    },
+    "sourceInterfaceId": {
+      "type": "string",
+      "pattern": "^(?!(?:interface|source)(?:\\.|$))[a-z0-9]+(?:-[a-z0-9]+)*(?:\\.(?:_rtx|(?!(?:interface|source)(?:\\.|$))[a-z0-9]+(?:-[a-z0-9]+)*))*\\.source\\.[a-z0-9]+(?:-[a-z0-9]+)*\\.interface\\.[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "not": {"pattern": "-rtx(?:\\.|$)"}
+    },
+    "exportInterfaceId": {
+      "type": "string",
+      "pattern": "^(?!(?:interface|source)(?:\\.|$))[a-z0-9]+(?:-[a-z0-9]+)*(?:\\.(?:_rtx|(?!(?:interface|source)(?:\\.|$))[a-z0-9]+(?:-[a-z0-9]+)*))*\\.interface\\.[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "not": {"pattern": "-rtx(?:\\.|$)"}
+    },
+    "interfaceId": {
+      "oneOf": [
+        {"$ref": "#/definitions/sourceInterfaceId"},
+        {"$ref": "#/definitions/exportInterfaceId"}
+      ]
+    },
+    "contentPatterns": {"$ref": "../../common.schema.json#/definitions/contentPatterns"},
+    "gateway": {"$ref": "../../common.schema.json#/definitions/gateway"},
+    "contractReference": {"$ref": "../../common.schema.json#/definitions/contractReference"},
+    "platformSupport": {"$ref": "../../common.schema.json#/definitions/platformSupport"},
+    "runtimeDependencies": {"$ref": "../../common.schema.json#/definitions/runtimeDependencies"},
+    "v4FilesystemOwnershipList": {"$ref": "../../common.schema.json#/definitions/v4FilesystemOwnershipList"},
+    "v6BlueprintLocator": {"$ref": "../../common.schema.json#/definitions/v5BlueprintLocator"},
+    "sourceContainment": {
+      "type": "object",
+      "required": ["blueprint"],
+      "additionalProperties": false,
+      "properties": {"blueprint": {"$ref": "#/definitions/v6BlueprintLocator"}}
+    },
+    "sourceDependency": {
+      "type": "object",
+      "required": ["source", "version", "blueprint", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "source": {"$ref": "#/definitions/behavioralSourceId"},
+        "version": {"$ref": "#/definitions/interfaceVersion"},
+        "blueprint": {"$ref": "#/definitions/v6BlueprintLocator"},
+        "reason": {"type": "string", "minLength": 1}
+      }
+    },
+    "interfaceUse": {
+      "type": "object",
+      "required": ["interface", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "interface": {"$ref": "#/definitions/interfaceId"},
+        "version": {"$ref": "#/definitions/interfaceVersion"}
+      }
+    },
+    "interfaceUseList": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/definitions/interfaceUse"}
+    }
+  }
+}

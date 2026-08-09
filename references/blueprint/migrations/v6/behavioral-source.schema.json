@@ -1,0 +1,58 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "behavioral-source.schema.json",
+  "title": "Direct-Routing Behavioral Source Blueprint",
+  "description": "Closed version 6 contract for source-owned behavior beneath a dotted module identity.",
+  "type": "object",
+  "required": ["schema_version", "node_type", "id", "version", "gateway", "content", "dependencies", "uses_interfaces", "interfaces"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 6},
+    "node_type": {"const": "behavioral_source"},
+    "id": {"$ref": "common.schema.json#/definitions/behavioralSourceId"},
+    "version": {"$ref": "common.schema.json#/definitions/interfaceVersion"},
+    "description": {"type": "string", "minLength": 1},
+    "gateway": {"$ref": "common.schema.json#/definitions/gateway"},
+    "content": {"$ref": "common.schema.json#/definitions/contentPatterns"},
+    "contract_references": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "common.schema.json#/definitions/contractReference"}
+    },
+    "platform_support": {"$ref": "common.schema.json#/definitions/platformSupport"},
+    "runtime_dependencies": {"$ref": "common.schema.json#/definitions/runtimeDependencies"},
+    "dependencies": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "common.schema.json#/definitions/sourceDependency"}
+    },
+    "uses_interfaces": {"$ref": "common.schema.json#/definitions/interfaceUseList"},
+    "interfaces": {
+      "type": "object",
+      "propertyNames": {"$ref": "common.schema.json#/definitions/sourceInterfaceId"},
+      "additionalProperties": {"$ref": "#/definitions/interface"}
+    }
+  },
+  "dependencies": {
+    "platform_support": ["runtime_dependencies"],
+    "runtime_dependencies": ["platform_support"]
+  },
+  "definitions": {
+    "interface": {
+      "type": "object",
+      "required": ["version"],
+      "additionalProperties": false,
+      "properties": {
+        "version": {"$ref": "common.schema.json#/definitions/interfaceVersion"},
+        "description": {"type": "string", "minLength": 1},
+        "usage": {"type": "string"},
+        "contract": {"$ref": "../../caller-contract.schema.json#/definitions/v4Contract"},
+        "process_binding": {"$ref": "../../caller-contract.schema.json#/definitions/v4ProcessBinding"}
+      }
+    }
+  },
+  "x-famulus": {
+    "gateway_policy": "whole-file",
+    "allowed_edge_types": ["behavioral_source", "interface"]
+  }
+}

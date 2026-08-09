@@ -1,0 +1,26 @@
+schema_version: 6
+node_type: module
+id: root.alpha.leaf
+version: 1
+gateway:
+  path: __init__.py
+  language: Python
+content:
+- __init__\.py
+authority:
+  owns_filesystem: []
+sources:
+  root.alpha.leaf.source.runtime:
+    blueprint:
+      base: module-root
+      path: blueprints/runtime.yaml
+children: {}
+namespace_exports: {}
+exports:
+  root.alpha.leaf.interface.execute:
+    source_interface: root.alpha.leaf.source.runtime.interface.execute
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - root.alpha
+      - ..beta

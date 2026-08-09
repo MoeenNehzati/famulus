@@ -390,3 +390,10 @@ and the 55-row deleted-suite assertion partition. The target-history auditor
 confirmed target-native tooling order, unified-runner preservation, additive
 recurring-tasks configuration, installer contracts, manifest sequencing, and
 target-movement rules. Both reported no unresolved planning findings.
+
+## Progress log
+
+| Slice | Accounting resolved | Evidence | Integration commit | Status |
+|---|---|---|---|---|
+| `S0` | Frozen refs; 14 source commits; 426 source paths; 184 target commits; 263 target paths; 89 overlaps; 64 source test artifacts; 55 deleted-suite assertions | Clean 8-worker target baseline and two independent Gate 2 audits | `ac138b0` | complete |
+| `S1` | `E01`, `E02`; additive `T01`/`T07` configuration preservation | 50 focused repository-configuration, v6-schema, and configuration-consumer tests passed | S1 checkpoint containing this row | complete |

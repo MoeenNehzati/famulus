@@ -1,0 +1,34 @@
+schema_version: 6
+node_type: module
+id: root
+version: 1
+gateway:
+  path: SKILL.md
+  language: Markdown
+content:
+- SKILL\.md
+authority:
+  owns_filesystem: []
+sources: {}
+children:
+  alpha: {}
+  beta: {}
+namespace_exports:
+  alpha:
+    version: 1
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    surface:
+      only:
+        root.alpha.leaf.interface.execute: 3
+  beta:
+    version: 1
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - root.alpha
+    surface:
+      only:
+        root.beta.interface.inspect: 1
+exports: {}
