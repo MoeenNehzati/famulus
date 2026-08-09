@@ -114,7 +114,7 @@ schema_version: 5
 uses_interfaces:
 - interface: daily-plan.interface.default
   version: 1
-- interface: find-handoff-candidates.interface.default
+- interface: find-handoff-candidates.interface.scan
   version: 1
 - interface: list-manager.interface.default
   version: 1

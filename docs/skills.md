@@ -26,7 +26,7 @@ The graph gives a visual overview of the live skill set. The sections below are 
 
 - `bib-audit` — Audit a `.bib` file for validity, style, external metadata, and duplicates _(topics: scholarly-documents, research-writing; activated by: user request, skill workflow)_
 - `formal-prose-review` — Polish grammar, tone, and concision in technical prose without touching the math _(topics: research-writing, scholarly-documents; activated by: user request, skill workflow)_
-- `latex-workshop` — Follow VS Code LaTeX Workshop build behavior for TeX/LaTeX documents _(topics: scholarly-documents, research-writing; activated by: user request, skill workflow)_
+- `latex-workshop` — A user wants to compile, rebuild, or troubleshoot a TeX/LaTeX document and the build should match VS Code LaTeX Workshop settings, recipes, and output-directory conventions _(topics: scholarly-documents, research-writing; activated by: user request, skill workflow)_
 - `math-dependency-graph` — Extract an assumptions-to-results dependency graph from a LaTeX document _(topics: mathematical-reasoning, visualization, scholarly-documents; activated by: user request, skill workflow)_
 - `notation-review` — Mathematical notation needs review for lightness, unification, reuse across scopes, or semantic transparency _(topics: mathematical-reasoning, research-writing; activated by: user request, skill workflow)_
 - `proof-audit` — Audit a proof for soundness, coherence, hidden assumptions, and redundancy _(topics: mathematical-reasoning, research-writing, scholarly-documents; activated by: user request, skill workflow)_
