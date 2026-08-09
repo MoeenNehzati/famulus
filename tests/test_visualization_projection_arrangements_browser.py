@@ -110,9 +110,18 @@ def run_case(name, entities, assertions):
       )).filter(path => path.style.display !== "none" && (!type || path.dataset.edgeType === type));
       const one = (source, target, type = null) => paths(source, target, type)[0] || null;
       const check = (condition, message) => { if (!condition) throw new Error(message); };
+      const waitForNode = async id => {
+        const deadline = Date.now() + 3000;
+        while (Date.now() < deadline) {
+          const candidate = node(id);
+          if (candidate) return candidate;
+          await delay(25);
+        }
+        throw new Error(`missing node ${id}`);
+      };
       const hide = async id => {
-        check(node(id), `missing node ${id}`);
-        node(id).dispatchEvent(new MouseEvent("dblclick", {bubbles: true}));
+        const target = await waitForNode(id);
+        target.dispatchEvent(new MouseEvent("dblclick", {bubbles: true}));
         await delay(70);
       };
       const restore = async id => {
