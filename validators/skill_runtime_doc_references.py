@@ -36,6 +36,15 @@ _OLD_RUNTIME_PATH_RE = re.compile(
     re.IGNORECASE,
 )
 _PUBLIC_INTERFACE_NAME_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+_MODULE_ID = r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:\.[a-z_][a-z0-9_-]*)*"
+_CANONICAL_INTERFACE_RE = re.compile(
+    rf"\b{_MODULE_ID}\."
+    r"(?:"
+    r"interface\.[a-z][a-z0-9]*(?:-[a-z0-9]+)*"
+    r"|source\.[a-z][a-z0-9]*(?:-[a-z0-9]+)*"
+    r"\.interface\.[a-z][a-z0-9]*(?:-[a-z0-9]+)*"
+    r")(?:@[1-9][0-9]*)?\b"
+)
 
 
 def _is_same_skill_public_interface(skill_name: str, interface_id: object) -> bool:
@@ -455,11 +464,12 @@ def _validate(repo_root: Path, graph: object | None) -> list[str]:
             continue
         lines = _public_markdown_text(path, text).splitlines()
         for lineno, line in enumerate(lines, start=1):
+            prose_without_interface_ids = _CANONICAL_INTERFACE_RE.sub("", line)
             stem_scan_line = _mask_declared_public_interfaces(
                 line,
                 public_interfaces_by_skill.get(skill_name, frozenset()),
             )
-            if RTX_DIR_NAME in line:
+            if RTX_DIR_NAME in prose_without_interface_ids:
                 errors.append(f"{rel_path}:{lineno}: skill-facing Markdown must not mention `{RTX_DIR_NAME}`")
             old_path = _OLD_RUNTIME_PATH_RE.search(line)
             if old_path:

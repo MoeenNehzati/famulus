@@ -117,7 +117,7 @@ def load_blueprints(
         else (
             BLUEPRINT_SCHEMA_ROOT
             if schema_version == 5
-            else BLUEPRINT_SCHEMA_ROOT / "migrations" / "v4"
+            else BLUEPRINT_SCHEMA_ROOT / "migrations" / f"v{schema_version}"
         )
     )
     try:
@@ -767,7 +767,7 @@ class Interface(PythonMachineInterface):
         parser.add_argument(
             "--schema-version",
             type=int,
-            choices=(4, 5),
+            choices=(4, 5, 6),
             default=5,
             help="Select the explicit repository blueprint generation.",
         )

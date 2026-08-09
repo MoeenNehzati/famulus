@@ -48,9 +48,9 @@ def repository_schema_version(repo_root: Path) -> int:
             f"{marker}: cannot determine repository schema version"
         ) from exc
     version = document.get("schema_version") if isinstance(document, dict) else None
-    if version not in {4, 5}:
+    if version not in {4, 5, 6}:
         raise ValueError(
-            f"{marker}: repository schema version must be 4 or 5"
+            f"{marker}: repository schema version must be 4, 5, or 6"
         )
     return int(version)
 
@@ -184,8 +184,10 @@ def preflight(
     skills_root = repo_root / "skills"
     blueprint_template = repo_root / "references" / "blueprint" / "template.yaml"
     schema_root = repo_root / "references" / "blueprint"
-    if expected_schema_version == 4:
-        schema_root = schema_root / "migrations" / "v4"
+    if expected_schema_version != 5:
+        schema_root = (
+            schema_root / "migrations" / f"v{expected_schema_version}"
+        )
 
     if not skills_root.is_dir():
         return errors, None
@@ -245,8 +247,9 @@ def validate_with_graph(
     )
     if sync_script.is_file():
         sync_command = [sys.executable, str(sync_script), "--check"]
-        if graph.schema_version == 5:
-            sync_command.extend(("--schema-version", "5"))
+        sync_command.extend(
+            ("--schema-version", str(graph.schema_version))
+        )
         result = subprocess.run(
             sync_command,
             cwd=repo_root,

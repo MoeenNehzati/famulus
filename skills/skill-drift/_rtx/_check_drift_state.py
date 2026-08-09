@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 RTX_DIR = Path(__file__).resolve().parent
-if str(RTX_DIR) not in sys.path:
+if not __package__ and str(RTX_DIR) not in sys.path:
     sys.path.insert(0, str(RTX_DIR))
 
 if __package__:
@@ -83,7 +83,15 @@ def _v4_repository_state(
             schema_root=(
                 root / "references" / "blueprint"
                 if expected_schema_version == 4
-                else None
+                else (
+                    root
+                    / "references"
+                    / "blueprint"
+                    / "migrations"
+                    / f"v{expected_schema_version}"
+                    if expected_schema_version != 5
+                    else None
+                )
             ),
             allow_non_atomic=allow_non_atomic,
         )
@@ -97,7 +105,11 @@ def _v4_repository_state(
         (
             root / "references" / "blueprint"
             if expected_schema_version == 5
-            else root / "references" / "blueprint" / "migrations" / "v4"
+            else root
+            / "references"
+            / "blueprint"
+            / "migrations"
+            / f"v{expected_schema_version}"
         ),
         dict(derived.certifier_identity),
     )
@@ -120,7 +132,15 @@ def _derive_v4_repository_state(
             schema_root=(
                 root / "references" / "blueprint"
                 if expected_schema_version == 4
-                else None
+                else (
+                    root
+                    / "references"
+                    / "blueprint"
+                    / "migrations"
+                    / f"v{expected_schema_version}"
+                    if expected_schema_version != 5
+                    else None
+                )
             ),
             allow_non_atomic=allow_non_atomic,
         )
@@ -387,7 +407,15 @@ def _derive_for_source(
             schema_root=(
                 source.package_root / "references" / "blueprint"
                 if expected_schema_version == 4
-                else None
+                else (
+                    source.package_root
+                    / "references"
+                    / "blueprint"
+                    / "migrations"
+                    / f"v{expected_schema_version}"
+                    if expected_schema_version != 5
+                    else None
+                )
             ),
         )
     except (CertificationHashError, RepositoryCertificationError, OSError, ValueError) as exc:
@@ -423,7 +451,7 @@ def reports_for_scopes(
                 )
             derived = cache[key]
             node_ids = _module_node_ids(derived.graph, skill_name)
-            if expected_schema_version == 5 and not node_ids:
+            if expected_schema_version in {5, 6} and not node_ids:
                 continue
             found.add(skill_name)
             if not node_ids:
@@ -480,7 +508,7 @@ def hash_reports_for_scopes(
                     )
                 derived = cache[key]
                 node_ids = _module_node_ids(derived.graph, skill_name)
-                if expected_schema_version == 5 and not node_ids:
+                if expected_schema_version in {5, 6} and not node_ids:
                     continue
                 found.add(skill_name)
                 if not node_ids:

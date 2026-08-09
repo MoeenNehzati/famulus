@@ -1578,12 +1578,17 @@ def _verify_executing_candidate_certifier(
     ]
     if len(owners) != 1:
         raise CertificationError("executing certifier bytes have no unique candidate owner")
+    expected_owner = {
+        5: "skill-certifier-rtx",
+        6: "skill-certifier._rtx",
+    }.get(graph.schema_version)
     if (
-        graph.schema_version == 5
-        and graph.source_modules.get(owners[0]) != "skill-certifier-rtx"
+        expected_owner is not None
+        and graph.source_modules.get(owners[0]) != expected_owner
     ):
         raise CertificationError(
-            "executing v5 certifier source must belong to skill-certifier-rtx"
+            f"executing v{graph.schema_version} certifier source must belong to "
+            f"{expected_owner}"
         )
     executing_digest = "sha256:" + hashlib.sha256(executing.read_bytes()).hexdigest()
     owner_state = states.get(owners[0])
@@ -1770,7 +1775,7 @@ def _certify_v4_repository(
     """
 
     root = Path(repo_root).resolve()
-    if expected_schema_version not in {4, 5}:
+    if expected_schema_version not in {4, 5, 6}:
         raise CertificationError(
             f"unsupported certification schema version: {expected_schema_version}"
         )
@@ -1868,7 +1873,11 @@ officina.common.git_provenance.run_git:
         else (
             root / "references" / "blueprint"
             if expected_schema_version == 5
-            else root / "references" / "blueprint" / "migrations" / "v4"
+            else root
+            / "references"
+            / "blueprint"
+            / "migrations"
+            / f"v{expected_schema_version}"
         )
     )
     policy_path = root / CANONICAL_NODE_HASH_POLICY
