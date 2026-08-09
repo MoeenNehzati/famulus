@@ -89,9 +89,10 @@ def test_run_git_sanitizes_ambient_routing_and_config(
     monkeypatch.setattr(git_provenance.subprocess, "run", fake_run)
 
     # famulus-raw-git: category=run-git-contract; reason=the test instruments the production run_git boundary itself
-    result = run_git(tmp_path, "status", "--short", check=False)
+    result = run_git(tmp_path, "status", "--short", check=False, timeout=30)
 
     assert result.returncode == 0
+    assert observed["timeout"] == 30
     command = observed["command"]
     assert isinstance(command, list)
     assert command == [

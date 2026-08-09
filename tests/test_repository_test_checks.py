@@ -28,7 +28,7 @@ SPEC.loader.exec_module(runner)
 EXPECTED_PORTABILITY_TESTS = (
     "tests/test_officina_atomic_files.py::test_secure_append_creates_then_appends_complete_framed_records",
     "tests/test_officina_atomic_files.py::test_windows_native_secure_create_replace_append_and_acl",
-    "tests/test_officina_dispatcher.py::test_python_process_target_keeps_gateway_and_entry_separate",
+    "tests/test_dispatcher_direct_authorization.py::test_direct_python_process_target_keeps_gateway_and_entry_separate",
     "tests/test_officina_git_provenance.py::test_git_test_repository_preserves_exact_bytes_under_ambient_autocrlf",
     "skills/recurring-tasks/_rtx/tests/test_schedule_backend.py::test_linux_sync_writes_units_and_enables_timer",
     "tests/test_officina_blueprint_graph.py::test_content_ownership_accepts_equivalent_repository_alias",

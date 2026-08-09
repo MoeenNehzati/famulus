@@ -121,23 +121,25 @@ def _load_current_pointer(
     try:
         python_bin = Path(payload["python_bin"])
         runtime_source = Path(payload["runtime_source"])
-    except KeyError as exc:
+    except (KeyError, TypeError) as exc:
         raise ResolverError(f"current.json missing required key: {exc}") from exc
     # runtime_source is never allowed to resolve outside runtime_root -- only
     # python_bin may land in a trusted interpreter store.
     _require_contained_or_trusted(runtime_source, root=runtime_root, trusted_roots=(), label="runtime_source")
-    validated_python = _require_contained_or_trusted(
+    _require_contained_or_trusted(
         python_bin, root=runtime_root, trusted_roots=trusted_roots, label="python_bin"
     )
-    if schema_version == 1:
-        return validated_python
-    try:
-        repository_config = _require_repository_config(
-            Path(payload["repository_config"])
-        )
-    except (KeyError, TypeError) as exc:
-        raise ResolverError(f"current.json missing required key: {exc}") from exc
-    return validated_python, repository_config
+    repository_config = None
+    if schema_version == 2:
+        try:
+            repository_config = _require_repository_config(
+                Path(payload["repository_config"])
+            )
+        except (KeyError, TypeError) as exc:
+            raise ResolverError(f"current.json missing required key: {exc}") from exc
+    if repository_config is None:
+        return python_bin
+    return python_bin, repository_config
 
 
 def _trusted_interpreter_roots() -> tuple[Path, ...]:

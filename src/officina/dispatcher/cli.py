@@ -7,10 +7,15 @@ import json
 import sys
 from pathlib import Path
 
-from .errors import InvocationError
+from .direct_runtime import (
+    InvocationDiagnostic,
+    InvocationError,
+    _dispatch_host,
+    _resolve_host_dispatch_metadata,
+)
 
 
-def _print_warning(diagnostic) -> None:
+def _print_warning(diagnostic: InvocationDiagnostic) -> None:
     subject = f" [{diagnostic.subject}]" if diagnostic.subject is not None else ""
     print(
         f"warning: {diagnostic.code}: {diagnostic.message}{subject}",
@@ -24,8 +29,8 @@ def parse_cli() -> argparse.Namespace:
         epilog=(
             "Examples:\n"
             "  dispatcher --dry-run --caller-skill daily-plan "
-            "list-manager.interface.read-list /tmp/todo.yaml state=incomplete\n"
-            "  dispatcher --caller-skill daily-plan list-manager.interface.update-list "
+            "list-manager._rtx.interface.read-list /tmp/todo.yaml state=incomplete\n"
+            "  dispatcher --caller-skill daily-plan list-manager._rtx.interface.update-list "
             "/tmp/todo.yaml --file /tmp/todo-updates.yaml"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -75,17 +80,6 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
-
-    if args.repository_config is not None:
-        from .direct_runtime import (
-            _dispatch_host,
-            _resolve_host_dispatch_metadata,
-        )
-    else:
-        from .core import (
-            _dispatch_host,
-            _resolve_host_dispatch_metadata,
-        )
 
     try:
         if args.dry_run:

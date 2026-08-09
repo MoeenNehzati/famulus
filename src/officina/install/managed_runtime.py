@@ -1,4 +1,4 @@
-"""Build a versioned managed-runtime candidate release from the real v1
+"""Build a versioned managed-runtime candidate release from the supported
 runtime_dependencies.json manifest, installing all declared Python
 dependencies in one atomic batch instead of ambient, best-effort per-package
 pip calls.
@@ -12,6 +12,7 @@ ahead-of-managed-runtime ecosystem ambient package installs.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -22,6 +23,7 @@ import time
 from pathlib import Path
 
 from officina.common import atomic_files, toml_io
+from officina.common.git_provenance import run_git
 from officina.install.runtime_pointer import RuntimePointer, activate_release
 
 _VERSION_OPERATOR_RE = re.compile(r"^(==|>=|<=|!=|~=|>|<)")
@@ -71,12 +73,12 @@ _OPTIONAL_HEAVY_PACKAGE_NAMES = frozenset({"marker-pdf"})
 
 def _iter_declared_dependencies(manifest_path: Path, *, platform: str):
     """Yield ``(name, version)`` for every python-package dependency declared
-    for ``platform`` in the real v1 runtime_dependencies.json manifest,
+    for ``platform`` in a supported runtime_dependencies.json manifest,
     before dedup/spec-building. Shared by ``declared_python_packages`` and
     ``optional_python_packages`` so both read the manifest the same way.
     """
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if payload.get("version") != 1:
+    if payload.get("version") not in {1, 2}:
         raise ManagedRuntimeError(
             f"unsupported runtime_dependencies.json version: {payload.get('version')!r}"
         )
@@ -108,7 +110,7 @@ def declared_python_packages(
     manifest_path: Path, *, platform: str, include_optional: bool = True
 ) -> tuple[str, ...]:
     """Return the deduplicated, sorted pip install specs for every
-    python-package dependency declared for ``platform`` in the real v1
+    python-package dependency declared for ``platform`` in a supported
     runtime_dependencies.json manifest.
 
     The first version constraint seen for a given package name (case-folded)
@@ -203,6 +205,158 @@ def _run_dependency_install(*, uv_bin: Path, python_bin: Path, packages: tuple[s
         raise ManagedRuntimeError(
             f"dependency install failed (exit {result.returncode}): {result.stderr.strip()}"
         )
+
+
+def _packaged_source_revision(repo_root: Path) -> str:
+    """Fingerprint the source inputs used to build the Officina wheel.
+
+    Plugin managers install a copied source tree without its ``.git``
+    directory.  In that environment there is no commit ID to record, so the
+    managed-runtime artifact records a stable 160-bit prefix of a SHA-256
+    digest instead.  The digest covers the build configuration and every
+    non-generated regular file beneath the configured ``officina`` package,
+    with repository-relative POSIX paths separating otherwise-identical
+    bytes. Python bytecode caches are excluded because importing the copied
+    plugin may create them before the wheel build and their bytes are
+    machine-specific, not source identity.
+
+    Symlinks and special files are rejected rather than followed: a packaged
+    runtime must be reproducible from self-contained, regular wheel inputs.
+    The wheel's separate SHA-256 remains the authoritative identity of the
+    exact built artifact.
+    """
+    pyproject_access = toml_io.open(repo_root, "pyproject.toml")
+    pyproject = pyproject_access.path
+    source_root = repo_root / "src" / "officina"
+    if pyproject.is_symlink() or not pyproject.is_file():
+        raise ManagedRuntimeError(
+            f"could not identify Officina packaged source: not a regular file: {pyproject}"
+        )
+    if source_root.is_symlink() or not source_root.is_dir():
+        raise ManagedRuntimeError(
+            f"could not identify Officina packaged source: not a directory: {source_root}"
+        )
+    with pyproject_access as stream:
+        pyproject_bytes = stream.read().encode("utf-8")
+
+    source_files: list[Path] = []
+    for path in source_root.rglob("*"):
+        if path.is_symlink():
+            raise ManagedRuntimeError(
+                f"could not identify Officina packaged source: symlink is forbidden: {path}"
+            )
+        if path.is_dir():
+            continue
+        if not path.is_file():
+            raise ManagedRuntimeError(
+                f"could not identify Officina packaged source: not a regular file: {path}"
+            )
+        relative_to_source = path.relative_to(source_root)
+        if "__pycache__" in relative_to_source.parts or path.suffix in {
+            ".pyc",
+            ".pyo",
+        }:
+            continue
+        source_files.append(path)
+    if not source_files:
+        raise ManagedRuntimeError(
+            f"could not identify Officina packaged source: no package files under {source_root}"
+        )
+
+    digest = hashlib.sha256()
+    for path in (pyproject, *sorted(source_files)):
+        relative_path = path.relative_to(repo_root).as_posix().encode("utf-8")
+        content = pyproject_bytes if path == pyproject else path.read_bytes()
+        content_digest = hashlib.sha256(content).digest()
+        digest.update(len(relative_path).to_bytes(8, "big"))
+        digest.update(relative_path)
+        digest.update(content_digest)
+    return digest.hexdigest()[:40]
+
+
+def _source_revision(repo_root: Path) -> str:
+    """Return the Git commit or a deterministic packaged-source fingerprint."""
+    try:
+        result = run_git(
+            repo_root,
+            "rev-parse",
+            "--show-toplevel",
+            "HEAD",
+            check=False,
+            timeout=30,
+        )
+        output_lines = result.stdout.decode("utf-8", errors="strict").splitlines()
+    except (OSError, subprocess.TimeoutExpired, UnicodeError):
+        return _packaged_source_revision(repo_root)
+    if result.returncode == 0 and len(output_lines) == 2:
+        reported_root, revision = output_lines
+        try:
+            owns_source = Path(reported_root).resolve() == repo_root.resolve()
+        except OSError:
+            owns_source = False
+        if owns_source and re.fullmatch(r"[0-9a-f]{40}", revision):
+            return revision
+    return _packaged_source_revision(repo_root)
+
+
+def _build_officina_wheel(
+    *, uv_bin: Path, python_bin: Path, repo_root: Path, artifact_dir: Path
+) -> tuple[Path, str, str]:
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    result = _run_uv(
+        [
+            str(uv_bin), "build", "--wheel", "--no-build-isolation",
+            "--python", str(python_bin), "--out-dir", str(artifact_dir),
+            str(repo_root),
+        ],
+        timeout=_dependency_install_timeout_seconds(),
+    )
+    if result.returncode != 0:
+        raise ManagedRuntimeError(
+            f"Officina wheel build failed (exit {result.returncode}): {result.stderr.strip()}"
+        )
+    wheels = tuple(artifact_dir.glob("famulus_officina-*.whl"))
+    if len(wheels) != 1:
+        raise ManagedRuntimeError(
+            f"Officina wheel build produced {len(wheels)} matching artifacts; expected 1"
+        )
+    wheel = wheels[0]
+    return wheel, hashlib.sha256(wheel.read_bytes()).hexdigest(), _source_revision(repo_root)
+
+
+def _run_candidate_probe(argv: list[str]) -> None:
+    env = dict(os.environ)
+    env.pop("PYTHONPATH", None)
+    env.pop("PYTHONHOME", None)
+    env["PYTHONNOUSERSITE"] = "1"
+    try:
+        result = subprocess.run(
+            argv,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="strict",
+            env=env,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ManagedRuntimeError(f"candidate runtime probe failed to run: {exc}") from exc
+    if result.returncode != 0:
+        raise ManagedRuntimeError(
+            f"candidate runtime probe failed (exit {result.returncode}): {result.stderr.strip()}"
+        )
+
+
+def _validate_candidate_runtime(*, python_bin: Path) -> None:
+    _run_candidate_probe(
+        [
+            str(python_bin), "-I", "-c",
+            "import yaml; assert yaml.CSafeLoader; import officina.dispatcher.cli",
+        ]
+    )
+    _run_candidate_probe(
+        [str(python_bin), "-I", "-m", "officina.dispatcher.cli", "--help"]
+    )
 
 
 def _venv_python_bin(venv_dir: Path, *, platform: str) -> Path:

@@ -192,6 +192,30 @@ def test_terminal_access_accepts_self_exact_ancestor_and_public(
     assert invocation.authorization.allowed
 
 
+def test_direct_python_process_target_keeps_gateway_and_entry_separate(
+    tmp_path: Path,
+) -> None:
+    configuration = _repository(tmp_path, terminal_access=_access(public=True))
+
+    invocation = resolve_direct_invocation(
+        configuration=configuration,
+        caller_module_id="outsider",
+        interface_id=INTERFACE_ID,
+        interface_version=3,
+        argv=[],
+        stdin_requested=False,
+    )
+
+    assert invocation.python_target is not None
+    assert invocation.python_target.gateway_path == Path("runtime.py")
+    assert invocation.python_target.process_entry == "Interface"
+    python_target = invocation.as_payload()["python_target"]
+    assert isinstance(python_target, dict)
+    assert python_target["gateway_path"] == "runtime.py"
+    assert python_target["process_entry"] == "Interface"
+    assert all("runtime.py:Interface" not in token for token in invocation.command)
+
+
 def test_allowed_module_admits_descendants_but_not_unrelated_callers(tmp_path: Path) -> None:
     configuration = _repository(
         tmp_path,

@@ -430,15 +430,24 @@ class CodexInstallTests(unittest.TestCase):
             # plugin-mode ($AI unset), not whatever happens to be exported
             # in the environment running this test.
             launcher_env.pop("AI", None)
-            # The managed release contains both the stable resolver and a
-            # snapshot of Officina itself, so the generated dispatcher must
-            # transfer into the managed interpreter and complete normally.
+            # "dispatcher" now execs into the stable managed-runtime resolver
+            # (officina.install.resolvers.launch) instead of running
+            # self-contained against this repo checkout. install_cmd above
+            # went through the real _phase_entry.py, which builds and
+            # activates a managed-runtime candidate release (deploying the
+            # resolver and its trusted-roots.json sidecar as part of that
+            # activation) before scaffold ever runs, so the resolver hop now
+            # succeeds. Unlike the deliberately minimal resolver-only fixtures,
+            # this real installer path supplies repo_root, builds and installs
+            # the Officina wheel, and must expose a working dispatcher CLI.
             dispatcher_result = run_command(
                 platform_shell_command("dispatcher", ["--help"]),
                 env=launcher_env,
                 cwd=workdir,
             )
-            self.assertIn("usage:", dispatcher_result.stdout.lower())
+            self.assertEqual(dispatcher_result.returncode, 0, dispatcher_result.stderr)
+            self.assertIn("usage: dispatcher", dispatcher_result.stdout)
+            self.assertIn("Invoke a skill machine interface", dispatcher_result.stdout)
             for agent in ("assistant", "collab", "coauthor"):
                 command = platform_shell_command(
                     agent,

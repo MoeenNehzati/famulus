@@ -11,11 +11,16 @@ from pathlib import Path
 
 import yaml
 
-from officina.common.repository_configuration import RepositoryConfiguration
+from officina.common.repository_configuration import (
+    RepositoryConfiguration,
+    load_repository_configuration,
+)
 from officina.dispatcher.direct_authorization import resolve_direct_invocation
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+LIVE_CONFIG = REPO_ROOT / "officina.toml"
+LIVE_TARGET = "daily-plan._rtx.interface.plan-storage"
 CALLER = "pilot"
 TARGET = "pilot._rtx.interface.run"
 
@@ -149,6 +154,25 @@ def test_warm_direct_resolution_median_is_below_50_ms(tmp_path: Path) -> None:
     assert statistics.median(_milliseconds(samples)) < 50
 
 
+def test_live_inventory_warm_resolution_median_is_below_50_ms() -> None:
+    configuration = load_repository_configuration(LIVE_CONFIG)
+    samples = []
+    for _ in range(15):
+        started = time.perf_counter_ns()
+        resolve_direct_invocation(
+            configuration=configuration,
+            caller_module_id="daily-plan",
+            interface_id=LIVE_TARGET,
+            interface_version=None,
+            argv=["--route-smoke"],
+            stdin_requested=False,
+            host_caller=True,
+        )
+        samples.append(time.perf_counter_ns() - started)
+
+    assert statistics.median(_milliseconds(samples)) < 50
+
+
 def test_resolution_work_ignores_unrelated_modules(
     tmp_path: Path,
     monkeypatch,
@@ -214,6 +238,37 @@ def test_fresh_checkout_cli_meets_reference_budget(tmp_path: Path) -> None:
         CALLER,
         "--dry-run",
         TARGET,
+    ]
+    samples = []
+    for _ in range(10):
+        started = time.perf_counter_ns()
+        completed = subprocess.run(
+            command,
+            cwd=REPO_ROOT / "src",
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        samples.append(time.perf_counter_ns() - started)
+        assert completed.returncode == 0, completed.stderr
+
+    elapsed_ms = _milliseconds(samples)
+    assert statistics.median(elapsed_ms) < 100
+    assert _p95(elapsed_ms) < 150
+
+
+def test_live_inventory_fresh_cli_meets_reference_budget() -> None:
+    command = [
+        sys.executable,
+        "-m",
+        "officina.dispatcher.cli",
+        "--repository-config",
+        str(LIVE_CONFIG),
+        "--caller-skill",
+        "daily-plan",
+        "--dry-run",
+        LIVE_TARGET,
+        "--route-smoke",
     ]
     samples = []
     for _ in range(10):
