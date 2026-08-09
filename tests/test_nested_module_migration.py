@@ -284,7 +284,6 @@ class TestNestedModuleMigrationContract:
             "skill-certifier",
             "skill-drift",
             "skill-maker",
-            "refactor-node",
         }
         assert plan.is_noop
         assert child_modules == set()
