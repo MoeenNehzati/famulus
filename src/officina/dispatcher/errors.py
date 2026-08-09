@@ -61,6 +61,20 @@ class BlueprintInvalidError(DispatcherError):
     code = "dispatcher.blueprint_invalid"
 
 
+class DirectBlueprintError(DispatcherError):
+    """Direct route lookup found invalid or ambiguous relevant state."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str,
+        target_module_id: str = "",
+    ) -> None:
+        self.code = code
+        super().__init__(message, target_module_id=target_module_id)
+
+
 class ModuleNotCallableError(DispatcherError):
     """The requested target resolves to a module id, not a callable export."""
 
@@ -96,10 +110,12 @@ class UnauthorizedCallerError(DispatcherError):
         caller_module_id: str,
         target_module_id: str,
         interface_id: str,
+        diagnostic: str | None = None,
     ) -> None:
         self.interface_id = interface_id
+        suffix = f" [{diagnostic}]" if diagnostic else ""
         super().__init__(
-            f"{caller_module_id} is not an allowed caller of {interface_id}",
+            f"{caller_module_id} is not an allowed caller of {interface_id}{suffix}",
             caller_module_id=caller_module_id,
             target_module_id=target_module_id,
         )
@@ -183,6 +199,7 @@ __all__ = [
     "DispatcherError",
     "InvalidRequestError",
     "BlueprintInvalidError",
+    "DirectBlueprintError",
     "ModuleNotCallableError",
     "CallerNotFoundError",
     "InterfaceUseUndeclaredError",
