@@ -44,8 +44,8 @@ by ancestry and rollback merges.
 3. Create `integration/deferred-fixes` from exact current `master`.
 4. Implement the semantic slices below as separate commits. Use the source
    commits as evidence, not as patches that must be replayed literally.
-5. Add `Source-Commit:` trailers naming every branch commit represented by
-   each integration commit.
+5. Record every represented branch commit in the source-resolution ledger.
+   `Source-Commit:` trailers may duplicate that mapping but are not required.
 6. At every slice, map each source regression test to a resulting test, execute
    it directly, and prove that the unified repository runner collects it.
 7. Regenerate standards, blueprints, contract blocks, catalogs, and inventories
@@ -152,6 +152,10 @@ reports remain conversational and do not create additional documentation work.
 | 2026-08-09 13:12 EDT | about 40m | TDD guidance | about 2m | 5/5 | 3/3/pending hook | 2/0 | on time | commit slice |
 | 2026-08-09 13:17 EDT | about 45m | installer guidance | about 5m | 7/7 | blueprint check passed/pending hook | 2/0 | on time | commit slice |
 | 2026-08-09 13:25 EDT | about 53m | refactoring workflow 10A | about 8m | 8/8 | 15/15/pending hook | 5/0 | on time | commit sub-slice |
+| 2026-08-09 13:15 EDT | about 41m active | refactoring standards 10B | about 12m | 4/4 | 86/86/collected; shared 1371 passed | 14/0 | one keyed-pin correction | commit sub-slice |
+| 2026-08-09 14:20 EDT | about 50m active | small guidance corrections | about 8m active | 4/4 | 10/10/collected; shared 1371 passed | 8/0 | declared process interface after hook finding | commit slice |
+| 2026-08-09 14:22 EDT | about 56m active | ownership cache exclusion | about 3m | 3/3 | 50/50/collected; shared 1372 passed | 2/0 | on time | commit slice |
+| 2026-08-09 14:25 EDT | about 60m active | source-ledger catch-up | about 3m | 2/2 | 19/19/collected; shared 1373 passed | 4/0 | rejected stale migration expectation | close source accounting |
 
 ## Current-master preservation ledger
 
@@ -413,14 +417,17 @@ For every slice, complete one row per source regression-test file.
 |---|---|---|---|---|
 | list contract | `test_lists.py`: unfiltered reads sort requested fields, put missing values last, and compare short/long strings consistently; shared projection test verifies exported usage | Same three named regressions plus joint list/graph projection test retained | 3 behavioral tests passed in 0.33s; projection passed in 1.06s | unified commit hook collected 135 list-manager tests; all passed |
 | graph-server contract | `test_graph_server.py`: reject ports 0 and 65536; accept 65535; shared projection test verifies flags and positionals | Same three parameterized assertions plus joint list/graph projection test retained | 3 behavioral tests passed in 0.02s; projection passed in 1.06s | unified hook collected nine math-graph tests; all passed |
-| recurring metadata/catalog/inventory | Source increments the exact live graph inventory by one; blueprint ownership and dependencies are executable contracts | Adapted current-master count from 217 to 218, canonical blueprint check, and existing recurring-task suite | blueprint check and focused inventory test passed | pending commit hook |
-| wakeup behavior | `test_features.py`: policy status preserves absent, existing, non-directory, directory-symlink, and dangling-symlink state; scheduled-session reads do not create storage | Same six focused assertions retained | 6 passed in 0.07s | pending commit hook |
-| skill-drift diagnostics | `test_drift_check.py`: an empty active-plugin graph reports schema-neutral language | Same named regression retained | 1 passed in 0.12s | pending commit hook |
-| cloud route matrix | `test_cloud_files.py`: missing-root reads do not create folders; existing write test retains creating route | New read regression plus existing write-path test | 2 passed in 0.05s | pending commit hook |
-| Google service contracts | Service delegation, Calendar process metadata/guidance, and schema-validated public-interface masking including malformed and adjacent-token negatives | Final-state branch tests retained; validator adapted to master's prepared graph/matcher implementation | 18 validator, 9 delegation, and 2 Calendar tests passed | pending commit hook |
-| TDD guidance | Existing initialize-tdd suite plus preservation review of design, tests, implementation, documentation, overwrite, bootstrap, and no-commit gates | Branch final guidance retained | 3 passed in 0.09s | pending commit hook |
-| installer guidance | Source has no regression-test change; preservation map covers mode, phases, dry-run, conflicts, completion/failure handling, and current `tw` controls | Branch final guidance plus master `tw` contract | canonical blueprint check passed; installation runtime tests deferred to pre-push tier | pending commit hook |
-| refactoring workflow 10A | Current explicit-query architecture plus child discovery, query provenance, evidence classification, preservation maps, exact-diff and semantic-review gates | Four current-architecture routing regressions plus existing routing and consumer contracts | 15 focused checks passed in 0.13s | pending commit hook |
+| recurring metadata/catalog/inventory | Source increments the exact live graph inventory by one; blueprint ownership and dependencies are executable contracts | Adapted current-master count from 217 to 218, direct-owner/import test, canonical blueprint check, and existing recurring-task suite | blueprint and inventory checks plus 19-test catch-up passed | unified hooks collected the shared ownership test and 174 recurring-task tests; all passed |
+| wakeup behavior | `test_features.py`: policy status preserves absent, existing, non-directory, directory-symlink, and dangling-symlink state; scheduled-session reads do not create storage | Same six focused assertions retained | 6 passed in 0.07s | unified hook passed shared and skill-owned checks |
+| skill-drift diagnostics | `test_drift_check.py`: an empty active-plugin graph reports schema-neutral language | Same named regression retained | 1 passed in 0.12s | unified hook collected 20 skill-drift tests; all passed |
+| cloud route matrix | `test_cloud_files.py`: missing-root reads do not create folders; existing write test retains creating route | New read regression plus existing write-path test | 2 passed in 0.05s | unified hook collected 32 cloud-files tests; all passed |
+| Google service contracts | Service delegation, Calendar process metadata/guidance, and schema-validated public-interface masking including malformed and adjacent-token negatives | Final-state branch tests retained; validator adapted to master's prepared graph/matcher implementation | 18 validator, 9 delegation, and 2 Calendar tests passed | unified hooks passed shared, connect-google, and g-calendar suites |
+| TDD guidance | Existing initialize-tdd suite plus preservation review of design, tests, implementation, documentation, overwrite, bootstrap, and no-commit gates | Branch final guidance retained | 3 passed in 0.09s | unified hook collected three initialize-tdd tests; all passed |
+| installer guidance | Source has no regression-test change; preservation map covers mode, phases, dry-run, conflicts, completion/failure handling, and current `tw` controls | Branch final guidance plus master `tw` contract | canonical blueprint check passed | unified hook passed; installation runtime tests remain assigned to pre-push |
+| refactoring workflow 10A | Current explicit-query architecture plus child discovery, query provenance, evidence classification, preservation maps, exact-diff and semantic-review gates | Four current-architecture routing regressions plus existing routing and consumer contracts | 15 focused checks passed in 0.13s | unified hook passed validators and shared tests |
+| refactoring standards 10B | New ordering assertions require preservation mapping, isolated structural moves, and validation before finality | Fresh revision/digest closure plus source-map and consumer expectations | 86 focused standards checks passed | unified hook passed validators and 1371 shared tests |
+| small guidance corrections | Preserve positive handoff filters, canonical dependency calls, branch safety, and trigger-only LaTeX activation | Final live guidance plus declared `find-handoff-candidates.interface.scan` dependency | 10 catalog/trigger checks passed | unified hook passed validators and 1371 shared tests |
+| ownership cache exclusion | Exclude `__pycache__` components and `.pyc` files without excluding authored fixtures | Same branch regression adapted to current graph implementation | 50 blueprint-graph tests passed | unified hook collected the regression; 1372 shared tests passed |
 
 A green `full` run does not prove that a nested skill-owned test was collected.
 Deleting a source test requires naming the exact replacement assertion.
@@ -429,26 +436,26 @@ Deleting a source test requires naming the exact replacement assertion.
 
 | Source commit | Status | Resulting slice/commit | Evidence |
 |---|---|---|---|
-| `873d63a` | pending | | |
+| `873d63a` | adapted | slices 1-5 and recurring catch-up / `7fb4333`, `a9b6bbe`, `8fc94e3`, `3b74a0e`, `469e638`, `9207f85`, `0f926c9` | list, graph, wakeup, drift, recurring ownership/catalog, and projection checks passed; stale nested-migration set reduction rejected because master owns the listed `_rtx` children |
 | `12e007e` | integrated | cloud route matrix / `f8108e0` | focused and unified cloud tests passed |
 | `13f99ce` | adapted | Google service contracts / `5cab8a0` | final-state delegation and unified checks passed |
 | `6daf9a0` | adapted | Google service contracts / `5cab8a0` | Calendar, validator, and unified checks passed |
-| `ff8a3ab` | pending | | |
-| `3ce3cd3` | adapted | installer guidance / pending slice commit | branch simplification combined with current `tw` contract |
+| `ff8a3ab` | integrated | TDD guidance / `39f8670` | focused initialize-tdd and unified checks passed |
+| `3ce3cd3` | adapted | installer guidance / `aa24252` | branch simplification combined with current `tw` contract; unified checks passed |
 | `2901238` | adapted | Google service contracts / `5cab8a0` | closing delegation, masking, and unified checks passed |
-| `ab3f91c` | pending | | |
-| `738f66f` | pending | | |
-| `1934f2d` | pending | | |
-| `f038629` | pending | | |
-| `bbaace9` | pending | | |
+| `ab3f91c` | adapted | refactoring workflow and standards / `579f17c`, `ef892b7` | current explicit-query workflow plus fresh revision/digest cascade passed 86 focused checks and unified validation |
+| `738f66f` | integrated | small guidance / `d6a59ed` | repeated negatives removed; positive selection criteria retained |
+| `1934f2d` | adapted | small guidance / `d6a59ed` | canonical interfaces named and process-bound scan dependency declared |
+| `f038629` | adapted | refactoring workflow / `579f17c` | implementation-child inspection preserved under current query architecture |
+| `bbaace9` | integrated | small guidance / `d6a59ed` | rationale removed while named-branch requirement retained |
 | `9c6e2d6` | integrated | wakeup behavior / `469e638` | six focused and unified wakeup checks passed |
-| `29166b2` | pending | | |
-| `0bea7c6` | pending | | |
-| `66e2b4c` | pending | | |
-| `799e062` | pending | | |
-| `cc1dfde` | pending | | |
-| `cac5ba9` | pending | | |
-| `64fac71` | pending | | |
+| `29166b2` | integrated | ownership cache exclusion / `fd40cbb` | 50 focused graph tests and unified collection passed |
+| `0bea7c6` | rejected with reason | historical plan only | unique acceptance evidence retained in this guide; historical plan not imported |
+| `66e2b4c` | adapted | refactoring workflow / `579f17c` | provenance/evidence goals preserved without deleted ownership inference |
+| `799e062` | adapted | small guidance / `d6a59ed` | trigger-only text synchronized across blueprint, skill, catalog, and user docs |
+| `cc1dfde` | integrated | refactoring workflow / `579f17c` | exact-diff and semantic-review gates retained |
+| `cac5ba9` | rejected with reason | historical calibration record | assurance limitations and repaired gate regression are represented by focused/unified evidence and ledger entries |
+| `64fac71` | rejected with reason | historical plan closure only | no product behavior or unique acceptance evidence |
 
 ## Final audit gates
 
