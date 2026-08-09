@@ -2,8 +2,9 @@ content:
 - SKILL\.md
 - references/git/run\-ledger\-template\.md
 dependencies: []
-description: Guides gated semantic branch reconstruction with exhaustive source accounting,
-  bounded assurance, and controlled Git closure.
+description: Guides complicated, high-divergence branch reconstruction with exhaustive
+  source accounting, bounded assurance, and vacuous-merge closure; it is not an
+  ordinary merge or rebase workflow.
 gateway:
   language: Markdown
   path: SKILL.md
@@ -12,14 +13,6 @@ interfaces:
   semantic-integration.source.gateway.interface.default:
     contract:
       arguments:
-        closure:
-          default: merge
-          description: Final attachment policy, either merge or rebase.
-          required: false
-          sensitivity: public
-          type:
-            kind: string
-            sensitivity: public
         request:
           default: ''
           description: Optional integration constraints, known risks, or required evidence.
@@ -29,14 +22,14 @@ interfaces:
             kind: string
             sensitivity: user-private
         source-branch:
-          description: Immutable branch whose intended effects must be exhaustively resolved.
+          description: Second branch whose frozen effects must be exhaustively resolved and recreated against target.
           required: true
           sensitivity: user-private
           type:
             kind: string
             sensitivity: user-private
         target-branch:
-          description: Branch whose frozen tip is authoritative and whose ref remains protected until approved closure.
+          description: First branch whose frozen tip and current architecture are authoritative and whose ref remains protected until approved closure.
           required: true
           sensitivity: user-private
           type:
@@ -47,8 +40,8 @@ interfaces:
         network: []
         reads:
         - access: read
-          content: Explicit target and source branch roles, closure choice, constraints,
-            approvals, and repository context.
+          content: Explicit target and source branch roles, constraints, approvals,
+            and repository context.
           formats:
           - text
           id: request
@@ -182,10 +175,8 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Reconstruct every accepted source effect against an authoritative target
-      through a gated, audited integration branch.
-    usage: target-branch=<branch> source-branch=<branch> [closure=merge|rebase]
-      [request=<constraints>]
+    description: Recreate every accepted effect during a complicated, high-divergence integration against the first branch's authoritative architecture, then record source ancestry through a mandatory vacuous merge.
+    usage: target-branch=<branch> source-branch=<branch> [request=<constraints>]
     version: 1
 node_type: behavioral_source
 schema_version: 5

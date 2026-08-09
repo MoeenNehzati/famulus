@@ -1,6 +1,6 @@
 ---
 name: semantic-integration
-description: Use when two diverged Git branches must be combined by preserving source intent against the target's current architecture rather than replaying patches mechanically, especially after failed merges, broad conflicts, or architectural drift.
+description: Use when a complicated Git integration between substantially diverged branches requires reconstructing source intent against the target's current architecture, especially after failed merges, broad conflicts, or architectural drift; do not use for ordinary conflict-free merges or rebases.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->
@@ -23,7 +23,7 @@ Public Interfaces:
 Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `semantic-integration.interface.default` — Reconstruct every accepted source effect against an authoritative target through a gated, audited integration branch.
+- `semantic-integration.interface.default` — Recreate every accepted effect during a complicated, high-divergence integration against the first branch's authoritative architecture, then record source ancestry through a mandatory vacuous merge.
 <!-- END BLUEPRINT INTERFACES -->
 # Semantic integration
 
@@ -39,9 +39,29 @@ every observable source effect as evidence that must be resolved. Keep source
 unchanged and do not move target until the approved closure. Do not silently
 select only changes that appear relevant.
 
+## Core mechanism
+
+The first branch is `target`; the second branch is `source`. The mechanism is:
+
+1. Create an isolated integration branch from target.
+2. Determine what source intended and account for every observable source effect.
+3. Recreate each accepted effect as new commits against target's current
+   architecture. Do not merge source content into the integration tree.
+4. Prove that the reconstructed tree preserves accepted source behavior and
+   target guarantees.
+5. Create a vacuous merge on the integration branch whose tree remains exactly
+   the reconstructed tree and whose second parent is the frozen source tip.
+6. Validate that exact merge commit, obtain closure approval, and fast-forward
+   target to it.
+
+Thus semantic reconstruction combines content; the final vacuous merge changes
+only ancestry. It records which frozen source history was integrated without
+mechanically applying that history's tree or patches.
+
 Read `references/git/run-ledger-template.md` at the start. Keep one concise run
-ledger at a user-approved location and update it at phase boundaries. The ledger
-is the workflow state and preservation proof, not a transcript of commands.
+ledger at a user-approved location and update it at phase boundaries, after each
+slice, and whenever a stall or deviation changes the plan. The ledger is the
+workflow state and preservation proof, not a transcript of commands.
 
 ## Inputs
 
@@ -51,8 +71,12 @@ Require explicit roles:
   authoritative.
 - `source`: branch whose intended effects must be preserved, adapted,
   superseded, or explicitly rejected.
-- `closure`: `merge` by default, or `rebase` when the user wants the semantic
-  integration commits replayed onto the latest target before attachment.
+
+Closure is not selectable: semantic integration always finishes through a
+vacuous merge commit that retains the semantic integration tree and records the
+frozen source tip as its other parent. Rebasing is permitted only to refresh the
+isolated semantic commits onto an approved target tip before constructing that
+merge marker; it never substitutes for merge closure.
 
 Never infer the roles from branch order or names. Never rewrite either branch.
 Keep source fixed and do not move target before approved closure.
@@ -145,6 +169,8 @@ expected conflict areas. Do not edit integration content until approved.
 For each approved slice:
 
 1. Reconstruct accepted behavior against the target's current architecture.
+   Express every content change as a new semantic integration commit; never use
+   a content merge or mechanical cherry-pick from source as a shortcut.
 2. Treat source tests as requirements: carry them over, adapt them, replace them
    with stronger coverage, or obtain approval to reject them.
 3. Run the cheapest focused check capable of testing the slice.
@@ -189,19 +215,21 @@ verdict. If independent agents are unavailable, perform two explicitly separate
 passes and record the lack of independence as a residual limitation requiring
 explicit user acceptance at Gate 3. Resolve findings with focused checks.
 
-Prepare the exact closure candidate before final validation. First establish the
+Prepare the exact vacuous-merge candidate before final validation. First establish the
 approved target tip. If target moved from its frozen tip, stop, inventory and
 approve the new target and overlap effects, then rebase only the semantic
 integration commits onto that tip and refresh affected slice evidence and both
 audits. The resulting semantic tip must contain every approved target effect
 before candidate construction.
 
-- For `merge`, first record source ancestry on the integration branch with an
-  ancestry-only merge and prove its tree is unchanged. From the approved target
-  tip, create a temporary closure-candidate branch and explicitly merge the
-  integration branch. Prove that candidate tree equals the integration tree.
-- For `rebase`, the semantic integration tip based on the approved target is the
-  closure candidate; source remains a nonancestor.
+On the integration branch, create one vacuous merge whose first parent is the
+completed semantic integration tip and whose second parent is the frozen source
+tip. Use an ancestry-recording strategy that keeps the current integration tree,
+such as `git merge -s ours --no-ff <frozen-source>`; do not confuse this with the
+`-X ours` conflict preference. Prove that the candidate tree exactly equals its
+first-parent tree and that the approved target tip is an ancestor of the first
+parent. The merge message must name the frozen source tip, semantic integration
+tip, and run ledger. This vacuous merge commit is the closure candidate.
 
 Refresh affected accounting and both audits after any rebase conflict or newly
 approved target delta. Record the exact closure-candidate commit and tree, then
@@ -214,18 +242,18 @@ invalidates those results and Gate 3; refresh them before closure.
 ### Gate 3 - closure authority
 
 Present accounting completeness, audit findings and resolutions, final validation,
-residual risks, elapsed time, and exact proposed closure. Do not alter target
+residual risks, elapsed time, and exact proposed vacuous-merge closure. Do not alter target
 history until the user approves.
 
 ## Phase 5: Close
 
 Verify that target still names the approved tip, then fast-forward it to the exact
 tested closure candidate. This fast-forward is the only permitted target mutation
-and must create no post-gate commit. For `merge`, verify the approved explicit
-merge commit and source ancestry. For `rebase`, verify that source remains a
-nonancestor and retain its recovery ref.
+and must create no post-gate commit. Verify the vacuous merge's parents, unchanged
+tree, source pointer, target ancestry, and message evidence before and after the
+fast-forward.
 
-After either closure verify that target equals the tested closure-candidate commit
+After closure verify that target equals the tested closure-candidate commit
 and tree, expected ancestry holds, the worktree is clean, and recovery evidence
 remains available. Do not delete branches or push without separate explicit
 authorization.

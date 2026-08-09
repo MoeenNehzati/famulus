@@ -14,8 +14,7 @@ logs.
 | Frozen source commit | |
 | Merge base | |
 | Integration branch | |
-| Closure-candidate branch | |
-| Closure (`merge` or `rebase`) | |
+| Closure | vacuous merge commit (required) |
 | Portable bundle, if any | |
 | Started | |
 | Active-time estimate | |
@@ -143,15 +142,20 @@ Include clean textual applications; they still require semantic review.
 |---|---|---|---|---|---|
 | Focused affected subsystems | | | | | |
 | Repository integration gate | | | | | |
-| Push-equivalent gate | | | | | |
+| Push-equivalent gate, if repository policy requires it | | | | | |
 
 ## Closure
 
 | Check | Evidence | Result |
 |---|---|---|
+| Closure candidate is a vacuous merge commit | | pending |
+| First parent is semantic integration tip | | pending |
+| Second parent is frozen source tip | | pending |
+| Approved target tip is an ancestor of first parent | | pending |
+| Candidate tree equals first-parent tree | | pending |
+| Merge message names source tip, semantic tip, and ledger | | pending |
 | Target equals tested closure-candidate commit and tree | | pending |
 | Target fast-forward created no post-gate commit | | pending |
-| Ancestry-only merge changed no files | | pending or not applicable |
 | Expected ancestry holds | | pending |
 | Worktree clean | | pending |
 | Recovery refs retained | | pending |
@@ -165,6 +169,8 @@ Include clean textual applications; they still require semantic review.
 
 - Target commit:
 - Integration commit:
-- Source ancestry status:
+- Vacuous merge commit:
+- Vacuous merge parents:
+- Tree-equality evidence:
 - Branch deletion authorized separately: no
 - Push authorized separately: no

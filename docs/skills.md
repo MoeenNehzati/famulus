@@ -42,7 +42,7 @@ The graph gives a visual overview of the live skill set. The sections below are 
 
 ### Featured
 
-- `semantic-integration` — Two diverged Git branches must be combined by preserving source intent against the target's current architecture rather than replaying patches mechanically, especially after failed merges, broad conflicts, or architectural drift _(topics: repository-workflow; activated by: user request, skill workflow)_
+- `semantic-integration` — A complicated Git integration between substantially diverged branches requires reconstructing source intent against the target's current architecture, especially after failed merges, broad conflicts, or architectural drift; do not use for ordinary conflict-free merges or rebases _(topics: repository-workflow; activated by: user request, skill workflow)_
 
 ### Listed
 

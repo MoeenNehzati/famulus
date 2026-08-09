@@ -6,8 +6,9 @@ authority:
 children: {}
 content:
 - (?:SKILL\.md|references/git/run\-ledger\-template\.md)
-description: Reconstructs and audits source-branch intent against a target branch's
-  current architecture before controlled Git closure.
+description: Handles complicated, high-divergence Git integrations by reconstructing
+  and auditing source intent against the target's current architecture; ordinary
+  conflict-free merges and rebases remain normal Git operations.
 discovery:
   mechanism: skill
   catalog:
