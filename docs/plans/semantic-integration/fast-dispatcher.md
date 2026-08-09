@@ -257,7 +257,8 @@ collects it.
 |---|---|---|---|---:|---:|
 | `S0` | Isolate, recover, inventory, and baseline | Git refs, worktree, ledger, repository runner | Frozen refs, exact inventories, bounded baselines | 20 min | 40 min |
 | `S1` | Establish v6 and exact repository configuration additively | `officina.toml`, schemas, common configuration | Configuration and schema tests, including recurring success policy | 35 min | 70 min |
-| `S2` | Make current target-native tooling understand v6 | unified runner, validators, standard query, certifier, drift, refactoring | Tooling, validator, collection, and dependency tests | 45 min | 90 min |
+| `S2a` | Make target graph primitives understand explicit v6 inputs while v5 remains live | graph, inventory, authorization | v6 topology, schema, inventory, and authorization tests | 45 min | 90 min |
+| `S2b` | Make current target-native consumers understand v6 | unified runner, validators, standard query, certifier, drift, refactoring | Tooling, validator, collection, and dependency tests | 45 min | 90 min |
 | `S3` | Resolve and authorize only the requested route | dispatcher locator, authorization, binding compilation, CLI | Direct lookup/authorization/public API tests and read accounting | 70 min | 140 min |
 | `S4` | Launch through current target installer/runtime contracts | confined runtime, managed runtime, resolver, pilot manifest | Installer matrix, runtime, copied source, host-specific evidence | 60 min | 120 min |
 | `S5` | Prove correctness and source-scope speed on a representative v6 pilot | pilot modules and focused fixtures | Resolver, checkout CLI, installed launcher, execution smoke, scale probe | 45 min | 90 min |
@@ -397,3 +398,4 @@ target-movement rules. Both reported no unresolved planning findings.
 |---|---|---|---|---|
 | `S0` | Frozen refs; 14 source commits; 426 source paths; 184 target commits; 263 target paths; 89 overlaps; 64 source test artifacts; 55 deleted-suite assertions | Clean 8-worker target baseline and two independent Gate 2 audits | `ac138b0` | complete |
 | `S1` | `E01`, `E02`; additive `T01`/`T07` configuration preservation | 50 focused repository-configuration, v6-schema, and configuration-consumer tests passed | S1 checkpoint containing this row | complete |
+| `S2a` | Explicit v6 graph, inventory, and shared authorization support; live v5 defaults preserved | 128 focused v6 topology plus complete graph, inventory, and authorization tests passed | S2a checkpoint containing this row | complete |

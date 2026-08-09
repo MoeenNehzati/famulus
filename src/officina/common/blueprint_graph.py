@@ -1915,9 +1915,9 @@ def resolved_node_content_paths(
         constructs: "Supplies dependency position 1, BlueprintGraphError, while transforming node, repo root, excluded module roots into the resolved node content paths value."
     """
 
-    if node.declaration.get("schema_version") not in {4, 5}:
+    if node.declaration.get("schema_version") not in {4, 5, 6}:
         raise BlueprintGraphError(
-            f"{node.blueprint_path}: content resolution requires schema_version 4 or 5"
+            f"{node.blueprint_path}: content resolution requires schema_version 4, 5, or 6"
         )
     repo_root = Path(os.path.abspath(repo_root))
     owner_root = Path(os.path.abspath(node.module_root))
@@ -2245,8 +2245,8 @@ def _load_module_blueprint(
         constructs: "Supplies dependency position 5,  declaration schema errors, while transforming repo root, module root, schema root, expected schema version into the load module blueprint value."
     """
 
-    if expected_schema_version not in {4, 5}:
-        raise ValueError("expected_schema_version must be 4 or 5")
+    if expected_schema_version not in {4, 5, 6}:
+        raise ValueError("expected_schema_version must be 4, 5, or 6")
 
     repository = Path(os.path.abspath(repo_root))
     module = Path(os.path.abspath(module_root))
@@ -2316,7 +2316,11 @@ def _load_module_blueprint(
     )
     if node.node_type != "module":
         raise BlueprintGraphError(f"{marker}: exact module marker must declare node_type module")
-    if node.node_id != module.name:
+    if (
+        node.node_id != module.name
+        if expected_schema_version < 6
+        else node.node_id.rsplit(".", 1)[-1] != module.name
+    ):
         raise BlueprintGraphError(
             f"{marker}: module id {node.node_id!r} must match its directory"
         )
@@ -4148,6 +4152,67 @@ def _v5_topology(
     )
 
 
+def _v6_topology(
+    modules: Mapping[str, BlueprintNode],
+) -> tuple[
+    dict[str, str | None],
+    dict[str, tuple[str, ...]],
+    dict[str, str],
+    dict[str, tuple[str, ...]],
+]:
+    """Derive v6 topology from dotted identity and empty child registrations."""
+
+    parents: dict[str, str | None] = {}
+    children: dict[str, list[str]] = {module_id: [] for module_id in modules}
+    local_segments: dict[str, str] = {}
+    for module_id, module in sorted(modules.items()):
+        parent_id, separator, segment = module_id.rpartition(".")
+        parents[module_id] = parent_id if separator else None
+        if separator:
+            parent = modules.get(parent_id)
+            if parent is None:
+                raise BlueprintGraphError(
+                    f"{module.blueprint_path}: missing parent module {parent_id!r}"
+                )
+            if module.module_root != parent.module_root / segment:
+                raise BlueprintGraphError(
+                    f"{module.blueprint_path}: module path must match dotted identity {module_id!r}"
+                )
+            registrations = parent.declaration.get("children")
+            if not isinstance(registrations, Mapping) or registrations.get(segment) != {}:
+                raise BlueprintGraphError(
+                    f"{module.blueprint_path}: parent {parent_id!r} must register child segment {segment!r}"
+                )
+            children[parent_id].append(module_id)
+            local_segments[module_id] = segment
+        elif module.module_root.name != module_id:
+            raise BlueprintGraphError(
+                f"{module.blueprint_path}: top-level module id must match directory name"
+            )
+    for parent_id, parent in sorted(modules.items()):
+        registrations = parent.declaration.get("children")
+        if not isinstance(registrations, Mapping):
+            raise BlueprintGraphError(f"{parent.blueprint_path}: children must be a mapping")
+        expected = {local_segments[child_id] for child_id in children[parent_id]}
+        if set(registrations) != expected:
+            raise BlueprintGraphError(
+                f"{parent.blueprint_path}: child registrations do not match direct descendants"
+            )
+    ancestry = {
+        module_id: tuple(
+            ".".join(module_id.split(".")[:index])
+            for index in range(1, len(module_id.split(".")) + 1)
+        )
+        for module_id in modules
+    }
+    return (
+        dict(sorted(parents.items())),
+        {key: tuple(sorted(value)) for key, value in sorted(children.items())},
+        dict(sorted(local_segments.items())),
+        dict(sorted(ancestry.items())),
+    )
+
+
 def _v5_sources(
     root: Path,
     modules: Mapping[str, BlueprintNode],
@@ -4438,6 +4503,8 @@ def _v5_interfaces_and_exports(
     source_modules: Mapping[str, str],
     module_children: Mapping[str, tuple[str, ...]],
     module_local_segments: Mapping[str, str],
+    *,
+    allow_facades: bool = True,
 ) -> tuple[dict[str, InterfaceExport], dict[str, InterfaceExport]]:
     """Transform modules, sources, source modules, module children into the v5 interfaces and exports result used by the blueprint graph.
 
@@ -4580,6 +4647,10 @@ def _v5_interfaces_and_exports(
                 )
                 continue
             facade = export_declaration.get("facade_interface")
+            if not allow_facades:
+                raise BlueprintGraphError(
+                    f"{module.blueprint_path}: export {export_id!r} must bind a contained source interface"
+                )
             if not isinstance(facade, Mapping):
                 raise BlueprintGraphError(
                     f"{module.blueprint_path}: export {export_id!r} must be "
@@ -4643,6 +4714,8 @@ def _v5_namespace_routes(
     modules: Mapping[str, BlueprintNode],
     exports: Mapping[str, InterfaceExport],
     module_children: Mapping[str, tuple[str, ...]],
+    *,
+    direct_segments: bool = False,
 ) -> tuple[
     dict[tuple[str, str], NamespaceRoute],
     tuple[RoutedInterface, ...],
@@ -4751,7 +4824,12 @@ def _v5_namespace_routes(
                 f"{modules[module_id].blueprint_path}: "
                 "namespace_exports must be a mapping"
             )
-        for child_id, declaration in sorted(raw_routes.items()):
+        for raw_child_id, declaration in sorted(raw_routes.items()):
+            child_id = (
+                f"{module_id}.{raw_child_id}"
+                if direct_segments
+                else raw_child_id
+            )
             if (
                 not isinstance(child_id, str)
                 or not isinstance(declaration, dict)
@@ -4777,6 +4855,10 @@ def _v5_namespace_routes(
             if not isinstance(raw_surface, Mapping):
                 raise BlueprintGraphError(
                     f"{module_id}: namespace route {child_id} has invalid surface"
+                )
+            if direct_segments and "all" in raw_surface:
+                raise BlueprintGraphError(
+                    f"{module_id}: namespace route {child_id} requires explicit only surface"
                 )
             if raw_surface.get("all") is True:
                 selected = dict(child_surface)
@@ -5031,6 +5113,7 @@ def _load_v5_repository_blueprint_graph(
     documents: tuple[Any, ...],
     *,
     schema_root: Path,
+    schema_version: int = 5,
 ) -> RepositoryBlueprintGraph:
     """Load v5 repository blueprint graph.
 
@@ -5126,11 +5209,11 @@ def _load_v5_repository_blueprint_graph(
             dict(document.declaration),
             schema_root,
             validators,
-            expected_schema_version=5,
+            expected_schema_version=schema_version,
         )
         if errors:
             raise errors[0]
-        node = _node_from_document(document, expected_schema_version=5)
+        node = _node_from_document(document, expected_schema_version=schema_version)
         previous = nodes.get(node.node_id)
         if previous is not None:
             raise BlueprintGraphError(
@@ -5151,11 +5234,11 @@ def _load_v5_repository_blueprint_graph(
     }
     if not modules:
         raise BlueprintGraphError(
-            "version 5 repository graph requires at least one module"
+            f"version {schema_version} repository graph requires at least one module"
         )
     if len(modules) + len(sources) != len(nodes):
         raise BlueprintGraphError(
-            "version 5 repository graph permits only module and "
+            f"version {schema_version} repository graph permits only module and "
             "behavioral_source nodes"
         )
 
@@ -5164,29 +5247,36 @@ def _load_v5_repository_blueprint_graph(
         module_children,
         module_local_segments,
         module_ancestry,
-    ) = _v5_topology(root, modules)
+    ) = (
+        _v6_topology(modules)
+        if schema_version == 6
+        else _v5_topology(root, modules)
+    )
     _validate_v5_nested_authority(modules, module_ancestry)
     module_sources, source_modules = _v5_sources(
         root,
         modules,
         sources,
     )
-    _validate_v5_managed_skill_code_boundaries(
-        modules,
-        sources,
-        module_sources,
-    )
+    if schema_version == 5:
+        _validate_v5_managed_skill_code_boundaries(
+            modules,
+            sources,
+            module_sources,
+        )
     source_interfaces, exports = _v5_interfaces_and_exports(
         modules,
         sources,
         source_modules,
         module_children,
         module_local_segments,
+        allow_facades=schema_version == 5,
     )
     namespace_routes, routed_interfaces = _v5_namespace_routes(
         modules,
         exports,
         module_children,
+        direct_segments=schema_version == 6,
     )
 
     node_edges: list[BlueprintEdge] = []
@@ -5316,7 +5406,7 @@ def _load_v5_repository_blueprint_graph(
         helper_edges=(),
         certification_edges=_unique_certification_edges(certification_edges),
         module_sources=module_sources,
-        schema_version=5,
+        schema_version=schema_version,
         source_modules=source_modules,
         source_interfaces=source_interfaces,
         module_parents=module_parents,
@@ -5471,7 +5561,7 @@ def _load_v5_repository_blueprint_graph(
         certification_edges=certification_edge_tuple,
         module_sources=module_sources,
         direct_file_owners=direct_file_owners,
-        schema_version=5,
+        schema_version=schema_version,
         source_modules=source_modules,
         source_interfaces=source_interfaces,
         module_parents=module_parents,
@@ -5983,8 +6073,8 @@ def load_repository_blueprint_graph(
         constructs: "Supplies dependency position 4, BlueprintGraphError, while transforming repo root, schema root, expected schema version into the load repository blueprint graph value."
     """
 
-    if expected_schema_version not in {4, 5}:
-        raise ValueError("expected_schema_version must be 4 or 5")
+    if expected_schema_version not in {4, 5, 6}:
+        raise ValueError("expected_schema_version must be 4, 5, or 6")
     root = Path(repo_root).resolve()
     documents = tuple(
         iter_inventory_blueprints(
@@ -6008,7 +6098,7 @@ def load_repository_blueprint_graph(
         else (
             root / "references" / "blueprint"
             if expected_schema_version == 5
-            else root / "references" / "blueprint" / "migrations" / "v4"
+            else root / "references" / "blueprint" / "migrations" / f"v{expected_schema_version}"
         )
     )
     if not (selected_schema_root / "module.schema.json").is_file():
@@ -6019,14 +6109,15 @@ def load_repository_blueprint_graph(
             / (
                 Path()
                 if expected_schema_version == 5
-                else Path("migrations") / "v4"
+                else Path("migrations") / f"v{expected_schema_version}"
             )
         )
-    if expected_schema_version == 5:
+    if expected_schema_version in {5, 6}:
         return _load_v5_repository_blueprint_graph(
             root,
             documents,
             schema_root=selected_schema_root,
+            schema_version=expected_schema_version,
         )
     return _load_v4_repository_blueprint_graph(
         root,
@@ -6077,9 +6168,9 @@ def repository_schema_version(repo_root: Path) -> int:
         if isinstance(document, dict)
         else None
     )
-    if version not in {4, 5}:
+    if version not in {4, 5, 6}:
         raise ValueError(
-            f"{marker}: repository schema version must be 4 or 5"
+            f"{marker}: repository schema version must be 4, 5, or 6"
         )
     return int(version)
 

@@ -11,6 +11,8 @@ import jsonschema
 import pytest
 import yaml
 
+from officina.common.blueprint_graph import load_repository_blueprint_graph
+
 
 ROOT = Path(__file__).resolve().parents[1]
 V6_ROOT = ROOT / "references" / "blueprint" / "migrations" / "v6"
@@ -226,3 +228,108 @@ def test_v6_direct_routing_fixtures_validate() -> None:
     ]
     for path in fixture_paths:
         assert _errors(yaml.safe_load(path.read_text(encoding="utf-8"))) == [], path
+
+
+def _write_v6_graph_fixture(repo: Path) -> None:
+    placements = {
+        "root.v6.yaml": "skills/root/blueprint.yaml",
+        "alpha.v6.yaml": "skills/root/alpha/blueprint.yaml",
+        "beta.v6.yaml": "skills/root/beta/blueprint.yaml",
+        "leaf.v6.yaml": "skills/root/alpha/leaf/blueprint.yaml",
+        "source.v6.yaml": "skills/root/alpha/leaf/blueprints/runtime.yaml",
+        "unrelated.v6.yaml": "skills/unrelated/blueprint.yaml",
+    }
+    for fixture, relative in placements.items():
+        target = repo / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes((FIXTURE_ROOT / fixture).read_bytes())
+    beta_path = repo / "skills/root/beta/blueprint.yaml"
+    beta = yaml.safe_load(beta_path.read_text(encoding="utf-8"))
+    beta["content"].append(r"inspect\.py")
+    beta["sources"] = {
+        "root.beta.source.inspector": {
+            "blueprint": {"base": "module-root", "path": "blueprints/inspector.yaml"}
+        }
+    }
+    beta["exports"]["root.beta.interface.inspect"]["access"]["allowed_callers"] = [
+        "root",
+        "..alpha",
+    ]
+    beta_path.write_text(yaml.safe_dump(beta, sort_keys=False), encoding="utf-8")
+    leaf_path = repo / "skills/root/alpha/leaf/blueprint.yaml"
+    leaf = yaml.safe_load(leaf_path.read_text(encoding="utf-8"))
+    leaf["content"].append(r"runtime\.py")
+    leaf["exports"]["root.alpha.leaf.interface.execute"]["access"][
+        "allowed_callers"
+    ] = ["root.alpha", "root.beta"]
+    leaf_path.write_text(yaml.safe_dump(leaf, sort_keys=False), encoding="utf-8")
+    inspector = repo / "skills/root/beta/blueprints/inspector.yaml"
+    inspector.parent.mkdir(parents=True, exist_ok=True)
+    inspector.write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": 6,
+                "node_type": "behavioral_source",
+                "id": "root.beta.source.inspector",
+                "version": 1,
+                "gateway": {"path": "inspect.py", "language": "Python>=3.11"},
+                "content": [r"inspect\.py"],
+                "dependencies": [],
+                "uses_interfaces": [],
+                "interfaces": {
+                    "root.beta.source.inspector.interface.inspect": {"version": 1}
+                },
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    for relative in (
+        "skills/root/SKILL.md",
+        "skills/root/alpha/__init__.py",
+        "skills/root/beta/__init__.py",
+        "skills/root/beta/inspect.py",
+        "skills/root/alpha/leaf/__init__.py",
+        "skills/root/alpha/leaf/runtime.py",
+        "skills/unrelated/SKILL.md",
+    ):
+        path = repo / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("# fixture\n", encoding="utf-8")
+
+
+def test_v6_offline_graph_derives_direct_topology_without_facades(
+    tmp_path: Path,
+) -> None:
+    _write_v6_graph_fixture(tmp_path)
+
+    graph = load_repository_blueprint_graph(
+        tmp_path,
+        expected_schema_version=6,
+        schema_root=V6_ROOT,
+    )
+
+    assert graph.schema_version == 6
+    assert graph.module_parents["root.alpha.leaf"] == "root.alpha"
+    assert graph.module_local_segments["root.alpha.leaf"] == "leaf"
+    assert "root.alpha.leaf.interface.execute" in graph.exports
+    assert not any(edge.relation.startswith("facades-") for edge in graph.node_edges)
+    assert ("root", "root.alpha") in graph.namespace_routes
+
+
+def test_v6_offline_inventory_rejects_unregistered_physical_child(
+    tmp_path: Path,
+) -> None:
+    _write_v6_graph_fixture(tmp_path)
+    root_path = tmp_path / "skills/root/blueprint.yaml"
+    document = yaml.safe_load(root_path.read_text(encoding="utf-8"))
+    del document["children"]["alpha"]
+    del document["namespace_exports"]["alpha"]
+    root_path.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
+
+    with pytest.raises(Exception, match="unregistered nested module"):
+        load_repository_blueprint_graph(
+            tmp_path,
+            expected_schema_version=6,
+            schema_root=V6_ROOT,
+        )
