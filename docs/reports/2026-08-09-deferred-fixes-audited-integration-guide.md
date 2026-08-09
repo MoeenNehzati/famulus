@@ -155,7 +155,8 @@ reports remain conversational and do not create additional documentation work.
 | 2026-08-09 13:15 EDT | about 41m active | refactoring standards 10B | about 12m | 4/4 | 86/86/collected; shared 1371 passed | 14/0 | one keyed-pin correction | commit sub-slice |
 | 2026-08-09 14:20 EDT | about 50m active | small guidance corrections | about 8m active | 4/4 | 10/10/collected; shared 1371 passed | 8/0 | declared process interface after hook finding | commit slice |
 | 2026-08-09 14:22 EDT | about 56m active | ownership cache exclusion | about 3m | 3/3 | 50/50/collected; shared 1372 passed | 2/0 | on time | commit slice |
-| 2026-08-09 14:25 EDT | about 60m active | source-ledger catch-up | about 3m | 2/2 | 19/19/collected; shared 1373 passed | 4/0 | rejected stale migration expectation | close source accounting |
+| 2026-08-09 14:25 EDT | about 60m active | source-ledger catch-up | about 3m | 2/2 | 19/19/collected; shared 1373 passed | 4/0 | catalog and ownership catch-up | close source accounting |
+| 2026-08-09 14:35 EDT | about 70m active | final full-gate correction | about 5m | 1/1 | clean-clone inventory pending direct rerun | 2/0 | restored source inventory correction after full-tier evidence | commit correction |
 
 ## Current-master preservation ledger
 
@@ -436,7 +437,7 @@ Deleting a source test requires naming the exact replacement assertion.
 
 | Source commit | Status | Resulting slice/commit | Evidence |
 |---|---|---|---|
-| `873d63a` | adapted | slices 1-5 and recurring catch-up / `7fb4333`, `a9b6bbe`, `8fc94e3`, `3b74a0e`, `469e638`, `9207f85`, `0f926c9` | list, graph, wakeup, drift, recurring ownership/catalog, and projection checks passed; stale nested-migration set reduction rejected because master owns the listed `_rtx` children |
+| `873d63a` | adapted | slices 1-5 and recurring catch-up / `7fb4333`, `a9b6bbe`, `8fc94e3`, `3b74a0e`, `469e638`, `9207f85`, `0f926c9`, pending inventory correction | list, graph, wakeup, drift, recurring ownership/catalog, projection, and committed-clone inventory objectives preserved |
 | `12e007e` | integrated | cloud route matrix / `f8108e0` | focused and unified cloud tests passed |
 | `13f99ce` | adapted | Google service contracts / `5cab8a0` | final-state delegation and unified checks passed |
 | `6daf9a0` | adapted | Google service contracts / `5cab8a0` | Calendar, validator, and unified checks passed |

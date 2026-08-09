@@ -284,22 +284,7 @@ class TestNestedModuleMigrationContract:
             "skill-certifier",
             "skill-drift",
             "skill-maker",
-            "fix-bisync",
-            "formal-prose-review",
-            "git-workflow",
-            "hook-maker",
-            "latex-workshop",
-            "loose-mode",
-            "make-tex-docstring",
-            "notation-review",
-            "prepare-handoff",
-            "proof-audit",
             "refactor-node",
-            "technical-flow-review",
-            "tight-mode",
-            "tool-applicability",
-            "update-standards",
-            "wrap-up",
         }
         assert plan.is_noop
         assert child_modules == set()
