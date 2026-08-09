@@ -25,29 +25,29 @@ content:
 - __init__\.py
 description: Code module for the skill-drift skill.
 exports:
-  skill-drift-rtx.interface.compute-hashes:
+  skill-drift._rtx.interface.compute-hashes:
     access:
       allow_all_modules: true
       allowed_callers: []
-    source_interface: skill-drift-rtx.source.rtx-check-drift-state.interface.compute-hashes
-  skill-drift-rtx.interface.drift-status:
+    source_interface: skill-drift._rtx.source.rtx-check-drift-state.interface.compute-hashes
+  skill-drift._rtx.interface.drift-status:
     access:
       allow_all_modules: true
       allowed_callers: []
-    source_interface: skill-drift-rtx.source.rtx-check-drift-state.interface.drift-status
+    source_interface: skill-drift._rtx.source.rtx-check-drift-state.interface.drift-status
 gateway:
   language: Python>=3.11
   path: __init__.py
-id: skill-drift-rtx
+id: skill-drift._rtx
 namespace_exports: {}
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
-  skill-drift-rtx.source.rtx-check-drift-state:
+  skill-drift._rtx.source.rtx-check-drift-state:
     blueprint:
       base: module-root
       path: blueprints/rtx-check-drift-state.yaml
-  skill-drift-rtx.source.rtx-skill-sources-init:
+  skill-drift._rtx.source.rtx-skill-sources-init:
     blueprint:
       base: module-root
       path: blueprints/rtx-skill-sources-init.yaml

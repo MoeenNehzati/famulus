@@ -1,0 +1,18 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "schema.json",
+  "title": "Famulus Blueprint Schema",
+  "description": "Canonical runtime gateway for version-5 modules and behavioral sources.",
+  "oneOf": [
+    {"$ref": "module.schema.json"},
+    {"$ref": "behavioral-source.schema.json"}
+  ],
+  "x-famulus": {
+    "authoring": "Author schema version 5 and select the module or behavioral_source node schema with node_type. Older formats are migration inputs only.",
+    "validation_rules": [
+      "typed-blueprints-bind-regular-files",
+      "typed-edges-resolve-and-pin-versions",
+      "pooled-reviews-are-not-graph-inputs"
+    ]
+  }
+}

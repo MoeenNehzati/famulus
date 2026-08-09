@@ -817,7 +817,7 @@ def _reconcile_v6_topology(
 def collect_blueprints(
     repo_root: Path,
     *,
-    expected_schema_version: int = 5,
+    expected_schema_version: int = 6,
     skip_parse_errors: bool = False,
 ) -> BlueprintInventoryResult:
     if expected_schema_version not in {4, 5, 6}:

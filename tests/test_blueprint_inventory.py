@@ -474,17 +474,32 @@ def test_v5_inventory_follows_registered_children_recursively(tmp_path: Path) ->
     }
 
 
-def test_canonical_inventory_defaults_to_v5(tmp_path: Path) -> None:
-    root = _copy_v5_inventory_fixture("registered", tmp_path)
+def test_canonical_inventory_defaults_to_v6(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    _write(
+        root / "modules" / "outer" / "blueprint.yaml",
+        yaml.safe_dump(
+            {
+                "schema_version": 6,
+                "node_type": "module",
+                "id": "outer",
+                "version": 1,
+                "description": "Synthetic v6 module.",
+                "gateway": {"path": "README.md", "language": "Markdown"},
+                "content": [r"README\.md"],
+                "authority": {"owns_filesystem": []},
+                "sources": {},
+                "children": {},
+                "namespace_exports": {},
+                "exports": {},
+            },
+            sort_keys=False,
+        ),
+    )
 
     result = _canonical_collect_blueprints(root)
 
-    assert [document.node_id for document in result.documents] == [
-        "outer",
-        "middle",
-        "leaf",
-        "leaf.source.worker",
-    ]
+    assert [document.node_id for document in result.documents] == ["outer"]
 
 
 def test_v5_inventory_rejects_unregistered_nested_marker(tmp_path: Path) -> None:

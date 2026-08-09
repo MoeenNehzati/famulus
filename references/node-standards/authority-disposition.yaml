@@ -56,7 +56,7 @@ migration_audit:
     same_id_items: 164
     source_semantic_id_digest: sha256:54059558b8150329ea0de5abf35c1d4dd5a6e8012fc8fd3512ab59200776be84
     exact_unchanged_leaf_items: 45
-    exact_unchanged_leaf_digest: sha256:763cc686f031ab595ff4fb7b5232e38714018c7f6ef7c99b5b8b352732763183
+    exact_unchanged_leaf_digest: sha256:ba79ca62d9b4c85d2b70a859e6f4d59b350da28b6612919f1854c163c994bea9
     duplicate_items: 0
     unresolved_items: 0
     economy_retirements:

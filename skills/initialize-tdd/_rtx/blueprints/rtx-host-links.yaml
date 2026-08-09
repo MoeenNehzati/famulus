@@ -7,9 +7,9 @@ description: Discovers every sibling compatibility-alias helper by filename, loa
 gateway:
   language: Python
   path: _host_links.py
-id: initialize-tdd-rtx.source.rtx-host-links
+id: initialize-tdd._rtx.source.rtx-host-links
 interfaces:
-  initialize-tdd-rtx.source.rtx-host-links.interface.setup-compat-aliases:
+  initialize-tdd._rtx.source.rtx-host-links.interface.setup-compat-aliases:
     contract:
       arguments:
         project-dir:
@@ -153,6 +153,6 @@ platform_support:
   macos: true
   windows: true
 runtime_dependencies: []
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

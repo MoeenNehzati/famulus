@@ -8,16 +8,16 @@ dependencies:
     path: blueprints/jobs-config.yaml
   reason: Owns the live-probe helper that reads and temporarily rewrites the shared
     jobs configuration.
-  source: recurring-tasks-rtx.source.jobs-config
+  source: recurring-tasks._rtx.source.jobs-config
   version: 1
 description: Owns package support plus internal execution, live-probe, and desktop-notification
   helpers used by recurring-task interfaces.
 gateway:
   language: Python
   path: __init__.py
-id: recurring-tasks-rtx.source.rtx-init
+id: recurring-tasks._rtx.source.rtx-init
 interfaces: {}
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

@@ -4,11 +4,11 @@ Scans emails received since the last triage run. Extracts action items and route
 
 Use `email-client.interface.default` to read and send email. Use `list-manager.interface.default` to read and update destination lists.
 
-**IMPORTANT: Never ask the user for a lookback period or watermark date. The date always comes from the `email-triage.interface.scripts-get-cutoff` interface. If that interface emits a warning or fails, report it to the user — but do not ask them to supply a date instead.**
+**IMPORTANT: Never ask the user for a lookback period or watermark date. The date always comes from the `email-triage._rtx.interface.scripts-get-cutoff` interface. If that interface emits a warning or fails, report it to the user — but do not ask them to supply a date instead.**
 
-**Decision logging:** After every classification, invoke the `email-triage.interface.scripts-log-decision` interface:
+**Decision logging:** After every classification, invoke the `email-triage._rtx.interface.scripts-log-decision` interface:
 
-`email-triage.interface.scripts-log-decision <account> <id> "<from>" "<subject>" <DECISION> "<reason>"`
+`email-triage._rtx.interface.scripts-log-decision <account> <id> "<from>" "<subject>" <DECISION> "<reason>"`
 
 `DECISION` values: `SKIP` (subject-only skip) · `NO_ACTION` (body read, nothing to do) · `TODO` (added to todo) · `POTENTIAL` (added to triage) · `DEDUP` (already exists in destination)
 `reason` = one sentence explaining the classification. Log: `triage.log`
@@ -26,14 +26,14 @@ do not assume or hardcode which ones exist. Triage every account it returns.
 
 Two interface calls per account:
 
-1. `email-triage.interface.scripts-get-cutoff` — the coarse lookback date (day-level; IMAP can't filter finer than a day). Its own call — the date is short, fine to see.
-2. `email-triage.interface.fetch-filtered-envelopes` with the account and that cutoff date. This composite interface fetches through the declared mail-list boundary and applies the exact watermark filter internally. Only its filtered result enters your context; never fetch unfiltered envelopes separately.
+1. `email-triage._rtx.interface.scripts-get-cutoff` — the coarse lookback date (day-level; IMAP can't filter finer than a day). Its own call — the date is short, fine to see.
+2. `email-triage._rtx.interface.fetch-filtered-envelopes` with the account and that cutoff date. This composite interface fetches through the declared mail-list boundary and applies the exact watermark filter internally. Only its filtered result enters your context; never fetch unfiltered envelopes separately.
 
 Run this per account returned by `accounts-list`, in parallel across accounts.
 
 Reading always goes through `email-client.interface.default`'s `mail-list`/`mail-read` interfaces — never call an IMAP CLI directly.
 
-If `email-triage.interface.fetch-filtered-envelopes` prints `(no new emails for …)`, skip that account in later steps. If stderr contains a `WARNING:` line, include it in the Step 5 report.
+If `email-triage._rtx.interface.fetch-filtered-envelopes` prints `(no new emails for …)`, skip that account in later steps. If stderr contains a `WARNING:` line, include it in the Step 5 report.
 
 Each envelope is JSON: `id`, `flags` (IMAP flags — absence of `\Seen` means unread, `\Answered` means replied), `subject`, `from`, `date`, `message_id`.
 
@@ -42,7 +42,7 @@ Each envelope is JSON: `id`, `flags` (IMAP flags — absence of `\Seen` means un
 **Never skip** if the subject suggests a message is waiting on a portal ("you have a message", "new message", "someone replied") — a human sent it; classify as Type 3 in Step 2.
 
 **Manual historical rescan (operator-invoked, not part of a normal triage run):**
-`email-triage.interface.fetch-filtered-envelopes` also accepts `--rescan-after
+`email-triage._rtx.interface.fetch-filtered-envelopes` also accepts `--rescan-after
 <ISO cutoff>` and `--dedup-against <todo|triage>`, for backfilling after a bug or
 bootstrapping onto an account without editing the watermark file by hand.
 `--rescan-after` replaces the stored watermark for that one call only (the real
@@ -80,7 +80,7 @@ and targeting:
 
 **Follow-up commitments** (any type): if a prior reply contains an explicit promise (e.g. "I'll send you X in July"), add to `todo` regardless of type.
 
-**Log every email read at this step** — one `email-triage.interface.scripts-log-decision` call per email with its classification (`NO_ACTION`, `TODO`, `POTENTIAL`) and one sentence why. Log `NO_ACTION` even when nothing is added.
+**Log every email read at this step** — one `email-triage._rtx.interface.scripts-log-decision` call per email with its classification (`NO_ACTION`, `TODO`, `POTENTIAL`) and one sentence why. Log `NO_ACTION` even when nothing is added.
 
 ---
 
@@ -183,17 +183,17 @@ the *same* run id for every finalize call attempted in this run, including
 retries. A fresh triage run (a new invocation of this skill) must mint a new
 run id.
 
-If any `list-manager.interface.default` add/update in Step 4 failed (e.g. a validation error), invoke `email-triage.interface.scripts-mark-failure "<reason>"` and stop — do not invoke the finalization interface below. This keeps next run's lookback window covering the emails that didn't get filed, and surfaces the failure as a desktop notification via the scheduled health check.
+If any `list-manager.interface.default` add/update in Step 4 failed (e.g. a validation error), invoke `email-triage._rtx.interface.scripts-mark-failure "<reason>"` and stop — do not invoke the finalization interface below. This keeps next run's lookback window covering the emails that didn't get filed, and surfaces the failure as a desktop notification via the scheduled health check.
 
 After the failure's cause has been fixed, an operator may invoke
-`email-triage.interface.scripts-clear-failure "<recovery reason>"` before starting
+`email-triage._rtx.interface.scripts-clear-failure "<recovery reason>"` before starting
 a fresh triage run. This clears only the latched error; it never advances the
 watermark. Never clear a failure automatically in the same run that recorded
 it.
 
 Otherwise, after a successful run, invoke:
 
-1. `email-triage.interface.scripts-finalize-triage` with the run id from above
+1. `email-triage._rtx.interface.scripts-finalize-triage` with the run id from above
    and the counts from Step 5 (total scanned, added to todo, added to triage,
    skipped, deduped, accounts). This single call records the counters and then
    advances the watermark, in that order, as one step — it refuses to advance

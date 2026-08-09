@@ -150,8 +150,8 @@ def test_composite_declares_mail_list_dispatch_boundary() -> None:
     module = _load_runtime()
 
     call = module.Interface.dispatches["mail-list"]
-    assert call.caller_skill in {"email-triage", "email-triage-rtx"}
+    assert call.caller_skill in {"email-triage", "email-triage._rtx"}
     assert (call.target_skill, call.interface) == (
-        "email-client",
+        "email-client._rtx",
         "mail-list",
     )

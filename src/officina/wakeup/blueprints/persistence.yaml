@@ -1,16 +1,17 @@
-schema_version: 5
+schema_version: 6
 id: wakeup.source.persistence
 version: 1
 node_type: behavioral_source
-description: Persist wakeup jobs, per-session policies, monitor markers, and cross-platform state with locking.
+description: Persist wakeup jobs, per-session policies, monitor markers, and cross-platform
+  state with locking.
 gateway:
   language: Python
   path: store.py
 content:
-  - store\.py
-  - locking\.py
-  - policies\.py
-  - linux_osx_windows\.py
+- store\.py
+- locking\.py
+- policies\.py
+- linux_osx_windows\.py
 dependencies: []
 interfaces: {}
 uses_interfaces: []

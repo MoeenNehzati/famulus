@@ -110,10 +110,10 @@ interfaces:
     description: Primary LLM-facing skill instructions.
     version: 1
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces:
-- interface: bib-audit.interface.scripts-bib-similarity
+- interface: bib-audit._rtx.interface.scripts-bib-similarity
   version: 1
-- interface: bib-audit.interface.scripts-bib-validate-bibtex
+- interface: bib-audit._rtx.interface.scripts-bib-validate-bibtex
   version: 1
 version: 1

@@ -41,7 +41,7 @@ def _write_skill(
         encoding="utf-8",
     )
     blueprint = {
-        "schema_version": 5,
+        "schema_version": 6,
         "node_type": "module",
         "id": name,
         "version": 1,

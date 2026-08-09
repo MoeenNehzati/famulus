@@ -5,34 +5,34 @@ dependencies:
     base: module-root
     path: blueprints/rtx-email-accounts.yaml
   reason: Imports Python source from _rtx/_email_accounts.py.
-  source: email-client-rtx.source.rtx-email-accounts
+  source: email-client._rtx.source.rtx-email-accounts
   version: 1
 - blueprint:
     base: module-root
     path: blueprints/rtx-imap-gateway.yaml
   reason: Imports Python source from _rtx/_imap_gateway.py.
-  source: email-client-rtx.source.rtx-imap-gateway
+  source: email-client._rtx.source.rtx-imap-gateway
   version: 1
 - blueprint:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
-  source: email-client-rtx.source.rtx-init
+  source: email-client._rtx.source.rtx-init
   version: 1
 - blueprint:
     base: module-root
     path: blueprints/rtx-smtp-transport.yaml
   reason: Imports Python source from _rtx/_smtp_transport.py.
-  source: email-client-rtx.source.rtx-smtp-transport
+  source: email-client._rtx.source.rtx-smtp-transport
   version: 1
 description: Python source for explicit live IMAP authentication, SMTP authentication,
   and optional self-send smoke checks against a registered account.
 gateway:
   language: Python
   path: _email_smoke.py
-id: email-client-rtx.source.rtx-email-smoke
+id: email-client._rtx.source.rtx-email-smoke
 interfaces:
-  email-client-rtx.source.rtx-email-smoke.interface.live-smoke:
+  email-client._rtx.source.rtx-email-smoke.interface.live-smoke:
     contract:
       arguments:
         account:
@@ -272,6 +272,6 @@ runtime_dependencies:
     windows: true
   reason: Reads account credentials from the host credential store during live checks.
   version: any
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

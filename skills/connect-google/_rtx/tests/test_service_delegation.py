@@ -17,14 +17,22 @@ def exported_interface(
     skill: str, canonical_id: str
 ) -> tuple[dict[str, object], dict[str, object], dict[str, object]]:
     module_root = SKILLS / skill
-    root = load(module_root / "blueprint.yaml")
-    assert root["schema_version"] == 5
+    module = load(module_root / "blueprint.yaml")
+    module_id = canonical_id.split(".interface.", 1)[0]
+    current_id = skill
+    for segment in module_id.split(".")[1:]:
+        assert segment in module["children"]
+        module_root /= segment
+        module = load(module_root / "blueprint.yaml")
+        current_id = f"{current_id}.{segment}"
+        assert module["id"] == current_id
+    assert module["schema_version"] == 6
     source, interface = _resolve_export(
         module_root,
-        root,
+        module,
         canonical_id,
     )
-    return root, source, interface
+    return module, source, interface
 
 
 def _resolve_export(
@@ -74,7 +82,7 @@ def test_email_interfaces_are_not_exposed_to_connect_google() -> None:
         "accounts-use-google-credential",
         "live-smoke",
     ):
-        canonical_id = f"email-client.interface.{interface}"
+        canonical_id = f"email-client._rtx.interface.{interface}"
         root, _, _ = exported_interface("email-client", canonical_id)
         access = root["exports"][canonical_id]["access"]
         assert access["allow_all_modules"] is False
@@ -84,16 +92,16 @@ def test_email_interfaces_are_not_exposed_to_connect_google() -> None:
 def test_google_service_gateways_delegate_to_connect_google() -> None:
     expected_interfaces = {
         "cloud-files": (
-            "cloud-files.interface.use-google-credential",
-            "cloud-files.interface.setup-oauth",
+            "cloud-files._rtx.interface.use-google-credential",
+            "cloud-files._rtx.interface.setup-oauth",
         ),
         "g-calendar": (
-            "g-calendar.interface.use-google-credential",
-            "g-calendar.interface.setup-oauth",
+            "g-calendar._rtx.interface.use-google-credential",
+            "g-calendar._rtx.interface.setup-oauth",
         ),
         "email-client": (
-            "email-client.interface.accounts-use-google-credential",
-            "email-client.interface.accounts-setup-oauth",
+            "email-client._rtx.interface.accounts-use-google-credential",
+            "email-client._rtx.interface.accounts-setup-oauth",
         ),
     }
     for skill, service_interfaces in expected_interfaces.items():
@@ -111,7 +119,7 @@ def test_google_service_gateways_delegate_to_connect_google() -> None:
 
 def test_authorization_contract_hands_opaque_credential_to_service_owners() -> None:
     _, _, authorize = exported_interface(
-        "connect-google", "connect-google.interface.authorize-services"
+        "connect-google", "connect-google._rtx.interface.authorize-services"
     )
     result = next(
         output for output in authorize["contract"]["outputs"] if output["id"] == "result"
@@ -127,9 +135,9 @@ def test_authorization_contract_hands_opaque_credential_to_service_owners() -> N
     assert "use-google-credential" in authorized["caller_action"]
 
     expected = {
-        "cloud-files": "cloud-files.interface.use-google-credential",
-        "g-calendar": "g-calendar.interface.use-google-credential",
-        "email-client": "email-client.interface.accounts-use-google-credential",
+        "cloud-files": "cloud-files._rtx.interface.use-google-credential",
+        "g-calendar": "g-calendar._rtx.interface.use-google-credential",
+        "email-client": "email-client._rtx.interface.accounts-use-google-credential",
     }
     for skill, interface_id in expected.items():
         _, _, interface = exported_interface(skill, interface_id)
@@ -142,7 +150,7 @@ def test_email_guidance_routes_shared_credential_and_legacy_fallback() -> None:
     shared = next(
         paragraph
         for paragraph in paragraphs
-        if "email-client.interface.accounts-use-google-credential" in paragraph
+        if "email-client._rtx.interface.accounts-use-google-credential" in paragraph
     )
     assert "connect-google.interface.default" in shared
     assert "credential_id" in shared
@@ -150,7 +158,7 @@ def test_email_guidance_routes_shared_credential_and_legacy_fallback() -> None:
     legacy = next(
         paragraph
         for paragraph in paragraphs
-        if "email-client.interface.accounts-setup-oauth" in paragraph
+        if "email-client._rtx.interface.accounts-setup-oauth" in paragraph
     )
     assert "per-account" in legacy
     assert "fallback" in legacy
@@ -162,7 +170,7 @@ def test_cloud_guidance_routes_shared_credential_and_legacy_fallback() -> None:
     shared = next(
         paragraph
         for paragraph in paragraphs
-        if "cloud-files.interface.use-google-credential" in paragraph
+        if "cloud-files._rtx.interface.use-google-credential" in paragraph
     )
     assert "connect-google.interface.default" in shared
     assert "credential_id" in shared
@@ -171,7 +179,7 @@ def test_cloud_guidance_routes_shared_credential_and_legacy_fallback() -> None:
     legacy = next(
         paragraph
         for paragraph in paragraphs
-        if "cloud-files.interface.setup-oauth" in paragraph
+        if "cloud-files._rtx.interface.setup-oauth" in paragraph
     )
     assert "legacy" in legacy
     assert "fallback" in legacy
@@ -179,9 +187,9 @@ def test_cloud_guidance_routes_shared_credential_and_legacy_fallback() -> None:
 
 def test_cloud_shared_credential_route_allows_owning_gateway() -> None:
     root, _, _ = exported_interface(
-        "cloud-files", "cloud-files.interface.use-google-credential"
+        "cloud-files", "cloud-files._rtx.interface.use-google-credential"
     )
-    access = root["exports"]["cloud-files.interface.use-google-credential"]["access"]
+    access = root["exports"]["cloud-files._rtx.interface.use-google-credential"]["access"]
     assert "cloud-files" in access["allowed_callers"]
 
 
@@ -190,10 +198,10 @@ def test_calendar_gateway_declares_complete_oauth_route_invariants() -> None:
 
     assert {edge["interface"] for edge in gateway["uses_interfaces"]} == {
         "connect-google.interface.default",
-        "g-calendar.interface.ensure-oauth",
-        "g-calendar.interface.scripts-gcal",
-        "g-calendar.interface.setup-oauth",
-        "g-calendar.interface.use-google-credential",
+        "g-calendar._rtx.interface.ensure-oauth",
+        "g-calendar._rtx.interface.scripts-gcal",
+        "g-calendar._rtx.interface.setup-oauth",
+        "g-calendar._rtx.interface.use-google-credential",
     }
 
 
@@ -205,9 +213,9 @@ def test_installer_does_not_depend_on_connect_google() -> None:
 
 def test_service_setup_exports_still_exist() -> None:
     expected = {
-        "cloud-files": "cloud-files.interface.setup-oauth",
-        "g-calendar": "g-calendar.interface.setup-oauth",
-        "email-client": "email-client.interface.accounts-setup-oauth",
+        "cloud-files": "cloud-files._rtx.interface.setup-oauth",
+        "g-calendar": "g-calendar._rtx.interface.setup-oauth",
+        "email-client": "email-client._rtx.interface.accounts-setup-oauth",
     }
     for skill, interface in expected.items():
         root, source, contract = exported_interface(skill, interface)

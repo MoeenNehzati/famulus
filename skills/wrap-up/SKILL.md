@@ -16,7 +16,7 @@ Skill Version: 2
 
 Uses Interfaces:
 - `wrap-up.source.gateway -> daily-plan.interface.default@1`
-- `wrap-up.source.gateway -> find-handoff-candidates.interface.scan@1`
+- `wrap-up.source.gateway -> find-handoff-candidates._rtx.interface.scan@1`
 - `wrap-up.source.gateway -> list-manager.interface.default@1`
 - `wrap-up.source.gateway -> prepare-handoff.interface.default@1`
 
@@ -122,7 +122,7 @@ add it to the appropriate list. Infer the list from context; default to `todo`.
 
 ## 7. Flag sessions needing handoff
 
-Invoke `find-handoff-candidates.interface.scan` (default: trailing 2 days, so a session touched yesterday still surfaces even if this didn't run yesterday) to get a JSON array of session records. Every record returned already needs attention — the scan decides this via the gap-since-last-handoff threshold, including sessions with `handoff_status: complete` that had substantial new work afterward. Do not re-filter by `handoff_status`, and do not open, read, or summarize any flagged session's transcript content; this step is a pure relay of the interface's structured output, not an LLM judgment call.
+Invoke `find-handoff-candidates._rtx.interface.scan` (default: trailing 2 days, so a session touched yesterday still surfaces even if this didn't run yesterday) to get a JSON array of session records. Every record returned already needs attention — the scan decides this via the gap-since-last-handoff threshold, including sessions with `handoff_status: complete` that had substantial new work afterward. Do not re-filter by `handoff_status`, and do not open, read, or summarize any flagged session's transcript content; this step is a pure relay of the interface's structured output, not an LLM judgment call.
 
 Before adding anything, invoke `list-manager.interface.default` to read the current `triage` list and collect every `session_id` already present in an existing entry's description (any state — undecided, accepted, or rejected). Because the scan window overlaps across days, the same session can appear in more than one day's scan; skip any record whose `session_id` is already in that set — do not create a second triage entry for a session already tracked there.
 

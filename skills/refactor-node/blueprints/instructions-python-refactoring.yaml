@@ -12,8 +12,9 @@ interfaces:
     contract:
       arguments:
         request:
-          description: Resolved owner node, selected Python scope, validated standard closure,
-            behavioral characterization, repository constraints, objective, and any approval to apply a proposal.
+          description: Resolved owner node, selected Python scope, validated standard
+            closure, behavioral characterization, repository constraints, objective,
+            and any approval to apply a proposal.
           required: true
           sensitivity: user-private
           type:
@@ -22,8 +23,8 @@ interfaces:
       caller_warnings:
       - external-side-effect: Approved moves may edit, move, create, or remove files
           within the selected ownership boundary.
-      - external-side-effect: Remove code only after proving it orphaned within
-          the authorized scope; preserve uncertain external interfaces.
+      - external-side-effect: Remove code only after proving it orphaned within the
+          authorized scope; preserve uncertain external interfaces.
       direct_io:
         network: []
         reads:
@@ -37,7 +38,8 @@ interfaces:
           system: agent-runtime
         - access: read
           content: Selected Python source, callers, tests, repository instructions,
-            query-resolved ownership metadata, history when relevant, and current diff.
+            query-resolved ownership metadata, history when relevant, and current
+            diff.
           formats:
           - python
           - markdown
@@ -51,8 +53,8 @@ interfaces:
           sensitivity: user-private
         writes:
         - access: write
-          content: Characterization, evidence, proposal, approval request, exact
-            diff, verification result, and stop reason.
+          content: Characterization, evidence, proposal, approval request, exact diff,
+            verification result, and stop reason.
           formats:
           - markdown
           id: response
@@ -105,8 +107,8 @@ interfaces:
         lifecycle: finite
         mutation_safety:
           atomicity:
-            per_effect_only: Each structural move and its generated consequences
-              are verified before another move begins.
+            per_effect_only: Each structural move and its generated consequences are
+              verified before another move begins.
           concurrent_invocations:
             unsafe: Concurrent edits can invalidate characterization, scope, or verification.
           idempotency:
@@ -161,8 +163,8 @@ interfaces:
         id: partial
         outputs:
         - response
-      - caller_action: Resolve the reported ownership, baseline, instruction, or
-          verification failure before retrying.
+      - caller_action: Resolve the reported ownership, baseline, instruction, or verification
+          failure before retrying.
         class: error
         effects: []
         id: failed
@@ -191,6 +193,6 @@ interfaces:
       Python OOD refactoring move at a time.
     version: 1
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

@@ -5,16 +5,16 @@ dependencies:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
-  source: recurring-tasks-rtx.source.rtx-init
+  source: recurring-tasks._rtx.source.rtx-init
   version: 1
 description: Writes the recurring-job agent command environment and, on the real Linux
   home, updates the live systemd user manager.
 gateway:
   language: Python
   path: _ensure_agent_env.py
-id: recurring-tasks-rtx.source.rtx-ensure-agent-env
+id: recurring-tasks._rtx.source.rtx-ensure-agent-env
 interfaces:
-  recurring-tasks-rtx.source.rtx-ensure-agent-env.interface.scripts-ensure-agent-env:
+  recurring-tasks._rtx.source.rtx-ensure-agent-env.interface.scripts-ensure-agent-env:
     contract:
       arguments:
         bin-dir:
@@ -218,6 +218,6 @@ runtime_dependencies:
     windows: false
   reason: Owns the user manager environment updated for recurring-task jobs.
   version: any
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

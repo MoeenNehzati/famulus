@@ -16,20 +16,20 @@ content:
 - __init__\.py
 description: Code module for the get-weather skill.
 exports:
-  get-weather-rtx.interface.scripts-weather:
+  get-weather._rtx.interface.scripts-weather:
     access:
       allow_all_modules: true
       allowed_callers: []
-    source_interface: get-weather-rtx.source.rtx-weather-client.interface.scripts-weather
+    source_interface: get-weather._rtx.source.rtx-weather-client.interface.scripts-weather
 gateway:
   language: Python>=3.11
   path: __init__.py
-id: get-weather-rtx
+id: get-weather._rtx
 namespace_exports: {}
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
-  get-weather-rtx.source.rtx-weather-client:
+  get-weather._rtx.source.rtx-weather-client:
     blueprint:
       base: module-root
       path: blueprints/rtx-weather-client.yaml

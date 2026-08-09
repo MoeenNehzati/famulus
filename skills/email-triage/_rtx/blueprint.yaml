@@ -95,115 +95,115 @@ content:
 - tests/.*
 description: Code module for the email-triage skill.
 exports:
-  email-triage-rtx.interface.fetch-filtered-envelopes:
+  email-triage._rtx.interface.fetch-filtered-envelopes:
     access:
       allow_all_modules: false
       allowed_callers:
       - email-triage
-    source_interface: email-triage-rtx.source.rtx-mail-envelope-stream.interface.fetch-filtered-envelopes
-  email-triage-rtx.interface.scripts-finalize-triage:
+    source_interface: email-triage._rtx.source.rtx-mail-envelope-stream.interface.fetch-filtered-envelopes
+  email-triage._rtx.interface.scripts-finalize-triage:
     access:
       allow_all_modules: false
       allowed_callers:
       - email-triage
-    source_interface: email-triage-rtx.source.rtx-finalize-run.interface.scripts-finalize-triage
-  email-triage-rtx.interface.scripts-clear-failure:
+    source_interface: email-triage._rtx.source.rtx-finalize-run.interface.scripts-finalize-triage
+  email-triage._rtx.interface.scripts-clear-failure:
     access:
       allow_all_modules: false
       allowed_callers:
       - email-triage
-    source_interface: email-triage-rtx.source.rtx-failure-clearer.interface.scripts-clear-failure
-  email-triage-rtx.interface.scripts-filter-envelopes:
+    source_interface: email-triage._rtx.source.rtx-failure-clearer.interface.scripts-clear-failure
+  email-triage._rtx.interface.scripts-filter-envelopes:
     access:
       allow_all_modules: false
       allowed_callers:
       - email-triage
-    source_interface: email-triage-rtx.source.rtx-envelope-gate.interface.scripts-filter-envelopes
-  email-triage-rtx.interface.scripts-get-cutoff:
+    source_interface: email-triage._rtx.source.rtx-envelope-gate.interface.scripts-filter-envelopes
+  email-triage._rtx.interface.scripts-get-cutoff:
     access:
       allow_all_modules: false
       allowed_callers:
       - email-triage
-    source_interface: email-triage-rtx.source.rtx-watermark-floor.interface.scripts-get-cutoff
-  email-triage-rtx.interface.scripts-log-decision:
+    source_interface: email-triage._rtx.source.rtx-watermark-floor.interface.scripts-get-cutoff
+  email-triage._rtx.interface.scripts-log-decision:
     access:
       allow_all_modules: false
       allowed_callers:
       - email-triage
-    source_interface: email-triage-rtx.source.rtx-decision-sink.interface.scripts-log-decision
-  email-triage-rtx.interface.scripts-mark-failure:
+    source_interface: email-triage._rtx.source.rtx-decision-sink.interface.scripts-log-decision
+  email-triage._rtx.interface.scripts-mark-failure:
     access:
       allow_all_modules: false
       allowed_callers:
       - email-triage
-    source_interface: email-triage-rtx.source.rtx-failure-sentinel.interface.scripts-mark-failure
-  email-triage-rtx.interface.scripts-prune-log:
+    source_interface: email-triage._rtx.source.rtx-failure-sentinel.interface.scripts-mark-failure
+  email-triage._rtx.interface.scripts-prune-log:
     access:
       allow_all_modules: false
       allowed_callers:
       - email-triage
-    source_interface: email-triage-rtx.source.rtx-log-compactor.interface.scripts-prune-log
-  email-triage-rtx.interface.scripts-update-watermark:
+    source_interface: email-triage._rtx.source.rtx-log-compactor.interface.scripts-prune-log
+  email-triage._rtx.interface.scripts-update-watermark:
     access:
       allow_all_modules: false
       allowed_callers:
       - email-triage
-    source_interface: email-triage-rtx.source.rtx-watermark-writer.interface.scripts-update-watermark
-  email-triage-rtx.interface.scripts-write-metrics:
+    source_interface: email-triage._rtx.source.rtx-watermark-writer.interface.scripts-update-watermark
+  email-triage._rtx.interface.scripts-write-metrics:
     access:
       allow_all_modules: false
       allowed_callers:
       - email-triage
-    source_interface: email-triage-rtx.source.rtx-write-metrics.interface.scripts-write-metrics
+    source_interface: email-triage._rtx.source.rtx-write-metrics.interface.scripts-write-metrics
 gateway:
   language: Python>=3.11
   path: __init__.py
-id: email-triage-rtx
+id: email-triage._rtx
 namespace_exports: {}
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
-  email-triage-rtx.source.rtx-decision-sink:
+  email-triage._rtx.source.rtx-decision-sink:
     blueprint:
       base: module-root
       path: blueprints/rtx-decision-sink.yaml
-  email-triage-rtx.source.rtx-envelope-gate:
+  email-triage._rtx.source.rtx-envelope-gate:
     blueprint:
       base: module-root
       path: blueprints/rtx-envelope-gate.yaml
-  email-triage-rtx.source.rtx-failure-clearer:
+  email-triage._rtx.source.rtx-failure-clearer:
     blueprint:
       base: module-root
       path: blueprints/rtx-failure-clearer.yaml
-  email-triage-rtx.source.rtx-failure-sentinel:
+  email-triage._rtx.source.rtx-failure-sentinel:
     blueprint:
       base: module-root
       path: blueprints/rtx-failure-sentinel.yaml
-  email-triage-rtx.source.rtx-finalize-run:
+  email-triage._rtx.source.rtx-finalize-run:
     blueprint:
       base: module-root
       path: blueprints/rtx-finalize-run.yaml
-  email-triage-rtx.source.rtx-init:
+  email-triage._rtx.source.rtx-init:
     blueprint:
       base: module-root
       path: blueprints/rtx-init.yaml
-  email-triage-rtx.source.rtx-log-compactor:
+  email-triage._rtx.source.rtx-log-compactor:
     blueprint:
       base: module-root
       path: blueprints/rtx-log-compactor.yaml
-  email-triage-rtx.source.rtx-mail-envelope-stream:
+  email-triage._rtx.source.rtx-mail-envelope-stream:
     blueprint:
       base: module-root
       path: blueprints/rtx-mail-envelope-stream.yaml
-  email-triage-rtx.source.rtx-watermark-floor:
+  email-triage._rtx.source.rtx-watermark-floor:
     blueprint:
       base: module-root
       path: blueprints/rtx-watermark-floor.yaml
-  email-triage-rtx.source.rtx-watermark-writer:
+  email-triage._rtx.source.rtx-watermark-writer:
     blueprint:
       base: module-root
       path: blueprints/rtx-watermark-writer.yaml
-  email-triage-rtx.source.rtx-write-metrics:
+  email-triage._rtx.source.rtx-write-metrics:
     blueprint:
       base: module-root
       path: blueprints/rtx-write-metrics.yaml

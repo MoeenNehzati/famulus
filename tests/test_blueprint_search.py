@@ -295,11 +295,11 @@ def test_v4_default_search_result_uses_generic_node_metadata(tmp_path: Path) -> 
     ]
 
 
-def test_v5_search_exposes_current_skill_drift_registered_descriptions() -> None:
+def test_v6_search_exposes_current_skill_drift_registered_descriptions() -> None:
     rows = _canonical_search_blueprints(
         REPO_ROOT,
         {
-            "schema_version": 5,
+            "schema_version": 6,
             "filter": {
                 "any": [
                     {"path": "id", "op": "eq", "value": "skill-drift"},

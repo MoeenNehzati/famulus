@@ -5,16 +5,16 @@ dependencies:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
-  source: install-assistant-tools-rtx.source.rtx-init
+  source: install-assistant-tools._rtx.source.rtx-init
   version: 1
 description: Links Claude and Codex configuration directories to a development checkout
   and installs repository hook configuration where supported.
 gateway:
   language: Python
   path: _config_bridge.py
-id: install-assistant-tools-rtx.source.rtx-config-bridge
+id: install-assistant-tools._rtx.source.rtx-config-bridge
 interfaces:
-  install-assistant-tools-rtx.source.rtx-config-bridge.interface.scripts-dev-link:
+  install-assistant-tools._rtx.source.rtx-config-bridge.interface.scripts-dev-link:
     contract:
       arguments:
         options:
@@ -194,7 +194,7 @@ runtime_dependencies:
     windows: true
   reason: Configures repository hook settings during development installs.
   version: any
-schema_version: 5
+schema_version: 6
 uses_interfaces:
 - interface: common.interface.codex-toml
   version: 1

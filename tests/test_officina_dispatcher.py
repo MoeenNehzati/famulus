@@ -23,9 +23,13 @@ from v5_blueprint_fixtures import copy_v5_fixture_tree
 
 
 V5_SCHEMA_ROOT = (
-    Path(__file__).resolve().parents[1] / "references" / "blueprint"
+    Path(__file__).resolve().parents[1]
+    / "references"
+    / "blueprint"
+    / "migrations"
+    / "v5"
 )
-V4_SCHEMA_ROOT = V5_SCHEMA_ROOT / "migrations" / "v4"
+V4_SCHEMA_ROOT = V5_SCHEMA_ROOT.parent / "v4"
 V5_AUTHORIZATION_FIXTURE = (
     Path(__file__).parent / "fixtures" / "blueprint_v5" / "authorization"
 )

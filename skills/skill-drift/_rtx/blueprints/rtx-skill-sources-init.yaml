@@ -10,9 +10,9 @@ description: Discovers installed skill roots from Codex, Claude direct installs,
 gateway:
   language: Python
   path: _skill_sources/__init__.py
-id: skill-drift-rtx.source.rtx-skill-sources-init
+id: skill-drift._rtx.source.rtx-skill-sources-init
 interfaces: {}
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

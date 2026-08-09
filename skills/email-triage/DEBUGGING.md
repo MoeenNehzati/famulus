@@ -73,13 +73,13 @@ Then invoke email-triage again to process emails from the past week.
 
 ```bash
 # See active timers
-dispatcher --caller-skill recurring-tasks recurring-tasks.interface.scripts-status
+dispatcher --caller-skill recurring-tasks recurring-tasks._rtx.interface.scripts-status
 
 # View email-triage job logs
-dispatcher --caller-skill recurring-tasks recurring-tasks.interface.scripts-view-logs email-triage --lines 50
+dispatcher --caller-skill recurring-tasks recurring-tasks._rtx.interface.scripts-view-logs email-triage --lines 50
 
 # Test the job immediately
-dispatcher --caller-skill recurring-tasks recurring-tasks.interface.scripts-test email-triage
+dispatcher --caller-skill recurring-tasks recurring-tasks._rtx.interface.scripts-test email-triage
 ```
 
 ### See detailed email decisions

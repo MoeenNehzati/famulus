@@ -17,13 +17,13 @@ class Interface(PythonMachineInterface):
     prog = "fetch-filtered-envelopes"
     dispatches = {
         "mail-list": DispatchCall(
-            caller_module_id="email-triage-rtx",
-            target_module_id="email-client",
+            caller_module_id="email-triage._rtx",
+            target_module_id="email-client._rtx",
             interface="mail-list",
         ),
         "list-read": DispatchCall(
-            caller_module_id="email-triage-rtx",
-            target_module_id="list-manager",
+            caller_module_id="email-triage._rtx",
+            target_module_id="list-manager._rtx",
             interface="cloud-read",
         ),
     }
@@ -50,7 +50,7 @@ class Interface(PythonMachineInterface):
                 "Destination list name to filter rescan candidates against by "
                 "source.message_id before returning them: envelopes whose message_id "
                 "already appears on an entry in that list are dropped. Reads the "
-                "destination list via list-manager.interface.cloud-read; does not "
+                "destination list via list-manager._rtx.interface.cloud-read; does not "
                 "mutate it. Primarily useful with --rescan-after."
             ),
         )

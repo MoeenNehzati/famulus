@@ -1,9 +1,7 @@
 authority:
   owns_filesystem: []
 children:
-  recurring-tasks-rtx:
-    base: module-root
-    path: _rtx/blueprint.yaml
+  _rtx: {}
 content:
 - (?:\.gitignore|SKILL\.md|lessons/2026\-07\-06\.md)
 description: Defines, installs, controls, and health-checks recurring assistant jobs
@@ -27,83 +25,61 @@ exports:
       allow_all_modules: true
       allowed_callers: []
     source_interface: recurring-tasks.source.gateway.interface.default
-  recurring-tasks.interface.scripts-disable:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: recurring-tasks-rtx.interface.scripts-disable
-      version: 1
-  recurring-tasks.interface.scripts-enable:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: recurring-tasks-rtx.interface.scripts-enable
-      version: 1
-  recurring-tasks.interface.scripts-ensure-agent-env:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: recurring-tasks-rtx.interface.scripts-ensure-agent-env
-      version: 1
-  recurring-tasks.interface.scripts-healthcheck:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: recurring-tasks-rtx.interface.scripts-healthcheck
-      version: 1
-  recurring-tasks.interface.scripts-job-utils:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: recurring-tasks-rtx.interface.scripts-job-utils
-      version: 1
-  recurring-tasks.interface.scripts-setup:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: recurring-tasks-rtx.interface.scripts-setup
-      version: 1
-  recurring-tasks.interface.scripts-status:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: recurring-tasks-rtx.interface.scripts-status
-      version: 1
-  recurring-tasks.interface.scripts-sync:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: recurring-tasks-rtx.interface.scripts-sync
-      version: 1
-  recurring-tasks.interface.scripts-test:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: recurring-tasks-rtx.interface.scripts-test
-      version: 1
-  recurring-tasks.interface.scripts-view-logs:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: recurring-tasks-rtx.interface.scripts-view-logs
-      version: 1
 gateway:
   language: Markdown
   path: SKILL.md
 id: recurring-tasks
-namespace_exports: {}
+namespace_exports:
+  _rtx:
+    version: 1
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    surface:
+      only:
+        recurring-tasks._rtx.interface.scripts-disable: 1
+        recurring-tasks._rtx.interface.scripts-enable: 1
+        recurring-tasks._rtx.interface.scripts-ensure-agent-env: 1
+        recurring-tasks._rtx.interface.scripts-healthcheck: 1
+        recurring-tasks._rtx.interface.scripts-job-utils: 1
+        recurring-tasks._rtx.interface.scripts-setup: 1
+        recurring-tasks._rtx.interface.scripts-status: 1
+        recurring-tasks._rtx.interface.scripts-sync: 1
+        recurring-tasks._rtx.interface.scripts-test: 1
+        recurring-tasks._rtx.interface.scripts-view-logs: 1
+    interface_access:
+      recurring-tasks._rtx.interface.scripts-disable:
+        allow_all_modules: false
+        allowed_callers: []
+      recurring-tasks._rtx.interface.scripts-enable:
+        allow_all_modules: false
+        allowed_callers: []
+      recurring-tasks._rtx.interface.scripts-ensure-agent-env:
+        allow_all_modules: false
+        allowed_callers: []
+      recurring-tasks._rtx.interface.scripts-healthcheck:
+        allow_all_modules: false
+        allowed_callers: []
+      recurring-tasks._rtx.interface.scripts-job-utils:
+        allow_all_modules: false
+        allowed_callers: []
+      recurring-tasks._rtx.interface.scripts-setup:
+        allow_all_modules: false
+        allowed_callers: []
+      recurring-tasks._rtx.interface.scripts-status:
+        allow_all_modules: false
+        allowed_callers: []
+      recurring-tasks._rtx.interface.scripts-sync:
+        allow_all_modules: false
+        allowed_callers: []
+      recurring-tasks._rtx.interface.scripts-test:
+        allow_all_modules: false
+        allowed_callers: []
+      recurring-tasks._rtx.interface.scripts-view-logs:
+        allow_all_modules: false
+        allowed_callers: []
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
   recurring-tasks.source.gateway:
     blueprint:

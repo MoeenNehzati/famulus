@@ -98,10 +98,10 @@ interfaces:
       checks.
     version: 1
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces:
-- interface: skill-drift.interface.compute-hashes
+- interface: skill-drift._rtx.interface.compute-hashes
   version: 1
-- interface: skill-drift.interface.drift-status
+- interface: skill-drift._rtx.interface.drift-status
   version: 1
 version: 2

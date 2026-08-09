@@ -85,14 +85,14 @@ interfaces:
     description: Primary LLM-facing skill instructions.
     version: 1
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces:
-- interface: daily-plan.interface.mutate-plan
+- interface: daily-plan._rtx.interface.mutate-plan
   version: 1
-- interface: daily-plan.interface.orchestrate
+- interface: daily-plan._rtx.interface.orchestrate
   version: 1
-- interface: daily-plan.interface.plan-storage
+- interface: daily-plan._rtx.interface.plan-storage
   version: 1
-- interface: daily-plan.interface.render-plan
+- interface: daily-plan._rtx.interface.render-plan
   version: 1
 version: 1

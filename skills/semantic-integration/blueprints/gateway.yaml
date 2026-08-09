@@ -179,7 +179,7 @@ interfaces:
     usage: target-branch=<branch> source-branch=<branch> [request=<constraints>]
     version: 1
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces:
 - interface: git-workflow.interface.default
   version: 1

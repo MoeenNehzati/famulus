@@ -28,22 +28,12 @@ def _source_export() -> dict[str, object]:
     }
 
 
-def _facade_export() -> dict[str, object]:
-    return {
-        "facade_interface": {
-            "interface": "demo-runtime.interface.calendar-gateway",
-            "version": 1,
-        },
-        "access": {"allow_all_modules": False, "allowed_callers": []},
-    }
-
-
 def _write_module_blueprint(
     skill: Path,
     export_id: str,
     export_declaration: object,
     *,
-    schema_version: int = 5,
+    schema_version: int = 6,
 ) -> None:
     document = {
         "schema_version": schema_version,
@@ -77,23 +67,6 @@ def test_declared_public_interface_id_may_match_private_runtime_stem(tmp_path: P
         skill,
         "demo-skill.interface.calendar-gateway",
         _source_export(),
-    )
-    (skill / "SKILL.md").write_text(
-        "Use `demo-skill.interface.calendar-gateway`.\n",
-        encoding="utf-8",
-    )
-
-    assert _mod.validate(tmp_path) == []
-
-
-def test_declared_facade_interface_id_may_match_private_runtime_stem(
-    tmp_path: Path,
-) -> None:
-    skill = _skill(tmp_path)
-    _write_module_blueprint(
-        skill,
-        "demo-skill.interface.calendar-gateway",
-        _facade_export(),
     )
     (skill / "SKILL.md").write_text(
         "Use `demo-skill.interface.calendar-gateway`.\n",
@@ -174,7 +147,7 @@ def test_public_id_does_not_mask_adjacent_private_runtime_stem(tmp_path: Path) -
     _write_module_blueprint(
         skill,
         "demo-skill.interface.calendar-gateway",
-        _facade_export(),
+        _source_export(),
     )
     (skill / "SKILL.md").write_text(
         "Use `demo-skill.interface.calendar-gateway`, not `calendar-gateway`.\n",
@@ -241,6 +214,18 @@ def test_private_runtime_directory_name_is_rejected(tmp_path: Path) -> None:
     errors = _mod.validate(tmp_path)
 
     assert any("must not mention `_rtx`" in error for error in errors)
+
+
+def test_dotted_child_interface_id_is_not_a_runtime_path_reference(
+    tmp_path: Path,
+) -> None:
+    skill = _skill(tmp_path)
+    (skill / "SKILL.md").write_text(
+        "Use `demo-skill._rtx.interface.read-calendar@1`.\n",
+        encoding="utf-8",
+    )
+
+    assert _mod.validate(tmp_path) == []
 
 
 def test_suffix_qualified_runtime_file_is_rejected(tmp_path: Path) -> None:

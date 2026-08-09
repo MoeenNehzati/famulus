@@ -86,8 +86,8 @@ interfaces:
     description: Primary LLM-facing skill instructions.
     version: 1
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces:
-- interface: get-weather.interface.scripts-weather
+- interface: get-weather._rtx.interface.scripts-weather
   version: 1
 version: 1

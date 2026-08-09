@@ -5,40 +5,40 @@ dependencies:
     base: module-root
     path: blueprints/rtx-agent-launchers.yaml
   reason: Imports Python source from _rtx/_agent_launchers.py.
-  source: install-assistant-tools-rtx.source.rtx-agent-launchers
+  source: install-assistant-tools._rtx.source.rtx-agent-launchers
   version: 1
 - blueprint:
     base: module-root
     path: blueprints/rtx-config-bridge.yaml
   reason: Imports Python source from _rtx/_config_bridge.py.
-  source: install-assistant-tools-rtx.source.rtx-config-bridge
+  source: install-assistant-tools._rtx.source.rtx-config-bridge
   version: 1
 - blueprint:
     base: module-root
     path: blueprints/rtx-google-onboarding.yaml
   reason: Imports Python source from _rtx/_google_onboarding.py.
-  source: install-assistant-tools-rtx.source.rtx-google-onboarding
+  source: install-assistant-tools._rtx.source.rtx-google-onboarding
   version: 1
 - blueprint:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
-  source: install-assistant-tools-rtx.source.rtx-init
+  source: install-assistant-tools._rtx.source.rtx-init
   version: 1
 - blueprint:
     base: module-root
     path: blueprints/rtx-install-scaffold.yaml
   reason: Imports Python source from _rtx/_install_scaffold.py.
-  source: install-assistant-tools-rtx.source.rtx-install-scaffold
+  source: install-assistant-tools._rtx.source.rtx-install-scaffold
   version: 1
 description: Runs the phase-one installer sequence after obtaining the development-mode
   choice from the caller.
 gateway:
   language: Python
   path: _phase_entry.py
-id: install-assistant-tools-rtx.source.rtx-phase-entry
+id: install-assistant-tools._rtx.source.rtx-phase-entry
 interfaces:
-  install-assistant-tools-rtx.source.rtx-phase-entry.interface.scripts-install:
+  install-assistant-tools._rtx.source.rtx-phase-entry.interface.scripts-install:
     contract:
       arguments:
         options:
@@ -190,7 +190,7 @@ runtime_dependencies:
     windows: true
   reason: Configures repository hook settings during development installs.
   version: any
-schema_version: 5
+schema_version: 6
 uses_interfaces:
 - interface: common.interface.famulus-paths
   version: 1

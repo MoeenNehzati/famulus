@@ -5,16 +5,16 @@ dependencies:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
-  source: find-handoff-candidates-rtx.source.rtx-init
+  source: find-handoff-candidates._rtx.source.rtx-init
   version: 1
 description: Scans configured session transcripts mechanically for exact handoff sentinels
   and reports sessions whose post-handoff conversation gap meets the selected threshold.
 gateway:
   language: Python
   path: _handoff_scan.py
-id: find-handoff-candidates-rtx.source.rtx-handoff-scan
+id: find-handoff-candidates._rtx.source.rtx-handoff-scan
 interfaces:
-  find-handoff-candidates-rtx.source.rtx-handoff-scan.interface.scan:
+  find-handoff-candidates._rtx.source.rtx-handoff-scan.interface.scan:
     contract:
       arguments:
         date:
@@ -159,6 +159,6 @@ platform_support:
   macos: true
   windows: true
 runtime_dependencies: []
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

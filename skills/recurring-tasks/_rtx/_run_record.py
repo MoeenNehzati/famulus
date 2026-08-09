@@ -26,16 +26,10 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-RTX_DIR = Path(__file__).resolve().parent
-SRC_DIR = RTX_DIR.parents[2] / "src"
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
-
-from officina.common import atomic_files  # noqa: E402
+from officina.common import atomic_files
 
 
 @dataclass(frozen=True)

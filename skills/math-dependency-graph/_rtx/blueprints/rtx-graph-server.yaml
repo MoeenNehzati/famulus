@@ -5,16 +5,16 @@ dependencies:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
-  source: math-dependency-graph-rtx.source.rtx-init
+  source: math-dependency-graph._rtx.source.rtx-init
   version: 1
 description: Serves one graph directory through a no-cache local HTTP server until
   interrupted.
 gateway:
   language: Python
   path: _graph_server.py
-id: math-dependency-graph-rtx.source.rtx-graph-server
+id: math-dependency-graph._rtx.source.rtx-graph-server
 interfaces:
-  math-dependency-graph-rtx.source.rtx-graph-server.interface.scripts-serve-graph:
+  math-dependency-graph._rtx.source.rtx-graph-server.interface.scripts-serve-graph:
     contract:
       arguments:
         directory:
@@ -157,6 +157,6 @@ platform_support:
   macos: true
   windows: true
 runtime_dependencies: []
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

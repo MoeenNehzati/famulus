@@ -1,9 +1,7 @@
 authority:
   owns_filesystem: []
 children:
-  bib-audit-rtx:
-    base: module-root
-    path: _rtx/blueprint.yaml
+  _rtx: {}
 content:
 - (?:SKILL\.md|test/test_biblatex\.bib|test/test_modification\.bib|test/test_modification\.tex|test/test_multifile_main\.tex|test/test_multifile_section\.tex|test/test_natbib\.bib|test/test_natbib_commands\.tex)
 description: Audits bibliography files for local validity, metadata conflicts, duplicate
@@ -26,27 +24,29 @@ exports:
       allow_all_modules: true
       allowed_callers: []
     source_interface: bib-audit.source.gateway.interface.default
-  bib-audit.interface.scripts-bib-similarity:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: bib-audit-rtx.interface.scripts-bib-similarity
-      version: 1
-  bib-audit.interface.scripts-bib-validate-bibtex:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: bib-audit-rtx.interface.scripts-bib-validate-bibtex
-      version: 1
 gateway:
   language: Markdown
   path: SKILL.md
 id: bib-audit
-namespace_exports: {}
+namespace_exports:
+  _rtx:
+    version: 1
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    surface:
+      only:
+        bib-audit._rtx.interface.scripts-bib-similarity: 1
+        bib-audit._rtx.interface.scripts-bib-validate-bibtex: 1
+    interface_access:
+      bib-audit._rtx.interface.scripts-bib-similarity:
+        allow_all_modules: false
+        allowed_callers: []
+      bib-audit._rtx.interface.scripts-bib-validate-bibtex:
+        allow_all_modules: false
+        allowed_callers: []
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
   bib-audit.source.gateway:
     blueprint:

@@ -5,16 +5,16 @@ dependencies:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
-  source: daily-plan-rtx.source.rtx-init
+  source: daily-plan._rtx.source.rtx-init
   version: 1
 description: Extracts named marker blocks from a plan into files or reassembles a
   plan using edited block files.
 gateway:
   language: Python
   path: _render_plan.py
-id: daily-plan-rtx.source.rtx-render-plan
+id: daily-plan._rtx.source.rtx-render-plan
 interfaces:
-  daily-plan-rtx.source.rtx-render-plan.interface.render-plan:
+  daily-plan._rtx.source.rtx-render-plan.interface.render-plan:
     contract:
       arguments:
         dir:
@@ -213,6 +213,6 @@ platform_support:
   macos: false
   windows: false
 runtime_dependencies: []
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

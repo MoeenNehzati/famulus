@@ -19,7 +19,7 @@ _mod = importlib.util.module_from_spec(_spec)
 assert _spec.loader is not None
 _spec.loader.exec_module(_mod)
 _REPO_ROOT = Path(__file__).resolve().parents[1]
-_V5_SCHEMA_ROOT = _REPO_ROOT / "references" / "blueprint"
+_V5_SCHEMA_ROOT = _REPO_ROOT / "references" / "blueprint" / "migrations" / "v5"
 _V5_FIXTURE = _REPO_ROOT / "tests" / "fixtures" / "blueprint_v5" / "authorization"
 
 

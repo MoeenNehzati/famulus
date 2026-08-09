@@ -6,9 +6,9 @@ description: Parses bibliography entries and ranks every pair by shared identifi
 gateway:
   language: Python
   path: _reference_pairs.py
-id: bib-audit-rtx.source.rtx-reference-pairs
+id: bib-audit._rtx.source.rtx-reference-pairs
 interfaces:
-  bib-audit-rtx.source.rtx-reference-pairs.interface.scripts-bib-similarity:
+  bib-audit._rtx.source.rtx-reference-pairs.interface.scripts-bib-similarity:
     contract:
       arguments:
         bibfile:
@@ -157,6 +157,6 @@ runtime_dependencies:
     windows: true
   reason: Parses BibTeX entries more accurately than the fallback parser.
   version: any
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

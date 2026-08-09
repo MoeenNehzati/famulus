@@ -5,16 +5,16 @@ dependencies:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
-  source: list-manager-rtx.source.rtx-init
+  source: list-manager._rtx.source.rtx-init
   version: 1
 description: Python source that caches cloud-list category paths and refreshes them
   through the cloud-files list-read interface.
 gateway:
   language: Python
   path: _category_cache.py
-id: list-manager-rtx.source.rtx-category-cache
+id: list-manager._rtx.source.rtx-category-cache
 interfaces:
-  list-manager-rtx.source.rtx-category-cache.interface.cloud-list-categories:
+  list-manager._rtx.source.rtx-category-cache.interface.cloud-list-categories:
     contract:
       arguments:
         name:
@@ -179,10 +179,10 @@ runtime_dependencies:
     windows: true
   reason: Reads cloud list YAML and stores local category-cache YAML.
   version: '>=6'
-schema_version: 5
+schema_version: 6
 uses_interfaces:
-- interface: cloud-files.interface.lists-read
+- interface: cloud-files._rtx.interface.lists-read
   version: 1
-- interface: cloud-files.interface.lists-write
+- interface: cloud-files._rtx.interface.lists-write
   version: 1
 version: 1

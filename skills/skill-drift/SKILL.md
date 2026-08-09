@@ -11,31 +11,23 @@ Activation: user-request, skill-workflow; persistent modifier: no
 
 Skill Version: 2
 
-Uses Interfaces: none
+Uses Interfaces:
+- `skill-drift.source.gateway -> skill-drift._rtx.interface.compute-hashes@1`
+- `skill-drift.source.gateway -> skill-drift._rtx.interface.drift-status@1`
 
 Public Interfaces:
-- `skill-drift.interface.compute-hashes`
 - `skill-drift.interface.default`
-- `skill-drift.interface.drift-status`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Dispatcher Interfaces:
-
-Use the installed `dispatcher` command for these process-bound interfaces:
-- `skill-drift.interface.compute-hashes` — Compute canonical certification-basis and v5 node hashes for exact or installed modules.
-  - `dispatcher --caller-skill skill-drift skill-drift.interface.compute-hashes compute-hashes [target ...] [--skill-root ROOT] [--json]`
-- `skill-drift.interface.drift-status` — Read signed certificate currentness for exact or installed v5 modules without writing certification state.
-  - `dispatcher --caller-skill skill-drift skill-drift.interface.drift-status status [target ...] [--all] [--skill-root ROOT] [--json]`
 
 Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
 - `skill-drift.interface.default` — Instructions for exact-target certificate drift and canonical node-hash checks.
 <!-- END BLUEPRINT INTERFACES -->
-Use `skill-drift.interface.drift-status` to read signed certificate
-currentness and `skill-drift.interface.compute-hashes` to read the canonical
+Use `skill-drift._rtx.interface.drift-status` to read signed certificate
+currentness and `skill-drift._rtx.interface.compute-hashes` to read the canonical
 certification-basis and node hashes.
 
 Both routes accept only canonical v5 repository graphs. They derive state through the

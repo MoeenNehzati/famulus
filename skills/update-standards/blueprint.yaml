@@ -33,7 +33,7 @@ gateway:
 id: update-standards
 namespace_exports: {}
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
   update-standards.source.gateway:
     blueprint:

@@ -16,7 +16,7 @@ from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 SKILL_DIR = Path(__file__).parent
 SKILL_ROOT = SKILL_DIR.parent
 RTX_DIR = Path(__file__).resolve().parent
-if str(RTX_DIR) not in sys.path:
+if not __package__ and str(RTX_DIR) not in sys.path:
     sys.path.insert(0, str(RTX_DIR))
 
 if __package__:

@@ -418,7 +418,7 @@ def load_catalog(repo_root: Path) -> list[SkillInfo]:
     validate_blueprint = prepare_module_blueprint_loader(
         repo_root,
         schema_root=repo_root / "references" / "blueprint",
-        expected_schema_version=5,
+        expected_schema_version=6,
     )
     skills: list[SkillInfo] = []
     for blueprint_path in sorted((repo_root / "skills").glob("*/blueprint.yaml")):

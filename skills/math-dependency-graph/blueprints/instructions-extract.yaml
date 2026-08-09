@@ -1,7 +1,8 @@
 content:
 - instructions/extract\.md
 dependencies: []
-description: Owns semantic extraction of direct mathematical dependencies from source documents into canonical graph JSON.
+description: Owns semantic extraction of direct mathematical dependencies from source
+  documents into canonical graph JSON.
 gateway:
   language: Markdown
   path: instructions/extract.md
@@ -11,7 +12,8 @@ interfaces:
     contract:
       arguments:
         request:
-          description: Source document content, requested scope, and output-path constraints for dependency extraction.
+          description: Source document content, requested scope, and output-path constraints
+            for dependency extraction.
           required: true
           sensitivity: user-private
           type:
@@ -38,7 +40,8 @@ interfaces:
           sensitivity: derived-private
       execution:
         consistency:
-          snapshot: Every entity, relationship, and evidence item is derived from the source snapshot supplied for this run.
+          snapshot: Every entity, relationship, and evidence item is derived from
+            the source snapshot supplied for this run.
         effects:
         - action: create
           confirmation_evidence:
@@ -50,18 +53,22 @@ interfaces:
           - extracted
           - extracted-with-gaps
           reversibility:
-            reversible: Delete the generated JSON artifact without changing the source document.
+            reversible: Delete the generated JSON artifact without changing the source
+              document.
           value_source:
             argument_ref: request
             kind: argument
         lifecycle: finite
         mutation_safety:
           atomicity:
-            atomic: The interface completes one canonical JSON artifact before returning its path.
+            atomic: The interface completes one canonical JSON artifact before returning
+              its path.
           concurrent_invocations:
-            unsafe: Concurrent extraction to the same requested path can overwrite an artifact.
+            unsafe: Concurrent extraction to the same requested path can overwrite
+              an artifact.
           idempotency:
-            idempotent: Re-extracting the same source snapshot and scope produces an equivalent graph artifact.
+            idempotent: Re-extracting the same source snapshot and scope produces
+              an equivalent graph artifact.
           on_uncertain_completion:
             verify_then_decide: Validate the requested JSON path before retrying extraction.
           partial_effects_on_failure:
@@ -100,7 +107,9 @@ interfaces:
         cardinality:
           maximum: 1
           minimum: 1
-        description: Filesystem path to a schema-version-2 canonical graph whose entities carry valid nested connects_to edges, direct mathematical dependencies, and evidence.
+        description: Filesystem path to a schema-version-2 canonical graph whose entities
+          carry valid nested connects_to edges, direct mathematical dependencies,
+          and evidence.
         direct_io_ref: write-1
         empty: Never empty on success.
         id: graph-json
@@ -113,9 +122,10 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Extracts a notation-faithful direct mathematical dependency graph into canonical JSON.
+    description: Extracts a notation-faithful direct mathematical dependency graph
+      into canonical JSON.
     version: 1
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

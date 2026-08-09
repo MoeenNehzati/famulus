@@ -13,22 +13,14 @@ Skill Version: 5
 
 Uses Interfaces:
 - `skill-maker.source.gateway -> common.interface.query-standard@1`
+- `skill-maker.source.gateway -> skill-maker._rtx.interface.sync-blueprints@1`
 
 Public Interfaces:
 - `skill-maker.interface.default`
-- `skill-maker.interface.sync-blueprints`
 <!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Dispatcher Interfaces:
-
-Use the installed `dispatcher` command for these process-bound interfaces:
-- `skill-maker.interface.sync-blueprints` — Validate every skill blueprint and either check or refresh generated SKILL.md contract blocks and the runtime-dependency manifest.
-  - `dispatcher --caller-skill skill-maker skill-maker.interface.sync-blueprints [--check]`
-  - sync: Refresh generated files from blueprint.yaml.
-  - check: Validate blueprints and fail if generated files are out of sync.
 
 Instruction Interfaces:
 

@@ -83,28 +83,28 @@ interfaces:
     description: Primary LLM-facing skill instructions.
     version: 1
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces:
 - interface: install-assistant-tools.interface.default
   version: 2
-- interface: recurring-tasks.interface.scripts-disable
+- interface: recurring-tasks._rtx.interface.scripts-disable
   version: 1
-- interface: recurring-tasks.interface.scripts-enable
+- interface: recurring-tasks._rtx.interface.scripts-enable
   version: 1
-- interface: recurring-tasks.interface.scripts-ensure-agent-env
+- interface: recurring-tasks._rtx.interface.scripts-ensure-agent-env
   version: 1
-- interface: recurring-tasks.interface.scripts-healthcheck
+- interface: recurring-tasks._rtx.interface.scripts-healthcheck
   version: 1
-- interface: recurring-tasks.interface.scripts-job-utils
+- interface: recurring-tasks._rtx.interface.scripts-job-utils
   version: 1
-- interface: recurring-tasks.interface.scripts-setup
+- interface: recurring-tasks._rtx.interface.scripts-setup
   version: 1
-- interface: recurring-tasks.interface.scripts-status
+- interface: recurring-tasks._rtx.interface.scripts-status
   version: 1
-- interface: recurring-tasks.interface.scripts-sync
+- interface: recurring-tasks._rtx.interface.scripts-sync
   version: 1
-- interface: recurring-tasks.interface.scripts-test
+- interface: recurring-tasks._rtx.interface.scripts-test
   version: 1
-- interface: recurring-tasks.interface.scripts-view-logs
+- interface: recurring-tasks._rtx.interface.scripts-view-logs
   version: 1
 version: 1

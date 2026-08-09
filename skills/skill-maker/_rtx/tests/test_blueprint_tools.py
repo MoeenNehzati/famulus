@@ -24,7 +24,7 @@ from v5_blueprint_fixtures import copy_v5_fixture_tree
 
 SYNCER_PATH = REPO_ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py"
 BLUEPRINT_TEMPLATE = REPO_ROOT / "references" / "blueprint" / "template.yaml"
-V5_SCHEMA_ROOT = REPO_ROOT / "references" / "blueprint"
+V5_SCHEMA_ROOT = REPO_ROOT / "references" / "blueprint" / "migrations" / "v5"
 V5_AUTHORIZATION_FIXTURE = (
     REPO_ROOT / "tests" / "fixtures" / "blueprint_v5" / "authorization"
 )
@@ -91,10 +91,10 @@ def _copy_v5_managed_skill(repo_root: Path) -> tuple[Path, dict[str, object]]:
     return root, dependency
 
 
-def test_blueprint_template_is_canonical_v5_module() -> None:
+def test_blueprint_template_is_canonical_v6_module() -> None:
     manifest = yaml.safe_load(BLUEPRINT_TEMPLATE.read_text(encoding="utf-8"))
 
-    assert manifest["schema_version"] == 5
+    assert manifest["schema_version"] == 6
     assert manifest["node_type"] == "module"
     assert manifest["children"] == {}
     assert manifest["namespace_exports"] == {}
@@ -178,8 +178,8 @@ def test_v5_generated_views_are_parent_only_and_derive_facade_contract(
     assert "`demo.interface.execute` — Execute the demo." in interfaces
     assert "dispatcher --caller-skill demo demo.interface.execute" in interfaces
     assert set(manifest["skills"]) == {"demo"}
-    assert manifest["skills"]["demo"]["interfaces"]["execute"] == {
-        "id": "demo.interface.execute",
+    assert manifest["version"] == 2
+    assert manifest["skills"]["demo"]["interfaces"]["demo.interface.execute"] == {
         "dependencies": [dependency],
     }
 
@@ -316,11 +316,69 @@ def test_runtime_dependency_manifest_uses_export_source_closure(syncer) -> None:
 
     manifest = syncer.generated_runtime_dependencies_manifest(blueprints)
 
-    assert manifest["skills"]["demo-skill"]["interfaces"]["run"] == {
-        "id": "demo-skill.interface.run",
+    assert manifest["version"] == 2
+    assert manifest["skills"]["demo-skill"]["interfaces"]["demo-skill.interface.run"] == {
         "dependencies": [dependency],
     }
     assert manifest["all"]["python-package"] == ["PyYAML"]
+
+
+def test_runtime_dependency_manifest_v2_keeps_all_descendant_interface_ids(syncer) -> None:
+    """Canonical IDs prevent equal child-local names from overwriting, and
+    aggregation follows ownership rather than namespace exposure."""
+    dependencies = {
+        "demo._rtx": {
+            "kind": "python-package", "name": "PyYAML", "version": ">=6",
+            "platforms": {"linux": True, "macos": True, "windows": True},
+            "reason": "Private child parser.",
+        },
+        "demo.worker": {
+            "kind": "python-package", "name": "rich", "version": "any",
+            "platforms": {"linux": True, "macos": True, "windows": True},
+            "reason": "Worker output.",
+        },
+    }
+    exports = {}
+    nodes = {}
+    for owner, dependency in dependencies.items():
+        source_id = f"{owner}.source.runner"
+        interface_id = f"{owner}.interface.run"
+        nodes[source_id] = SimpleNamespace(
+            node_id=source_id,
+            declaration={"runtime_dependencies": [dependency]},
+        )
+        exports[interface_id] = SimpleNamespace(
+            module_node_id=owner,
+            local_name="run",
+            source_node_id=source_id,
+            declaration={"process_binding": {"kind": "process"}},
+        )
+    graph = SimpleNamespace(
+        exports=exports,
+        nodes=nodes,
+        node_edges=(),
+        module_ancestry={
+            "demo": ("demo",),
+            "demo._rtx": ("demo", "demo._rtx"),
+            "demo.worker": ("demo", "demo.worker"),
+        },
+    )
+    blueprints = {
+        "demo": syncer.ModuleBlueprint(
+            "demo", Path("skills/demo/blueprint.yaml"),
+            {"schema_version": 6, "node_type": "module", "id": "demo"}, graph,
+        )
+    }
+
+    manifest = syncer.generated_runtime_dependencies_manifest(blueprints)
+
+    interfaces = manifest["skills"]["demo"]["interfaces"]
+    assert set(interfaces) == {
+        "demo._rtx.interface.run",
+        "demo.worker.interface.run",
+    }
+    assert interfaces["demo._rtx.interface.run"]["dependencies"] == [dependencies["demo._rtx"]]
+    assert interfaces["demo.worker.interface.run"]["dependencies"] == [dependencies["demo.worker"]]
 
 
 def test_consumer_blocks_use_root_and_named_gateway_placement(
@@ -427,3 +485,27 @@ def test_generated_used_interface_block_is_deterministic(syncer) -> None:
     assert first == second
     assert first.startswith(syncer.USED_INTERFACES_START)
     assert first.endswith(f"{syncer.USED_INTERFACES_END}\n")
+
+
+def test_sync_does_not_create_dispatch_routing_state(
+    tmp_path: Path,
+    syncer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_root, _dependency = _copy_v5_managed_skill(tmp_path / "repo")
+    skill_file = repo_root / "skills" / "demo" / "SKILL.md"
+    skill_file.write_text(
+        "---\nname: demo\ndescription: Test fixture.\n---\n\nInstructions.\n",
+        encoding="utf-8",
+    )
+    manifest = repo_root / "references" / "blueprint" / "runtime_dependencies.json"
+    manifest.parent.mkdir(parents=True)
+    monkeypatch.setattr(syncer, "REPO_ROOT", repo_root)
+    monkeypatch.setattr(syncer, "SKILLS_ROOT", repo_root / "skills")
+    monkeypatch.setattr(syncer, "RUNTIME_DEPENDENCIES_PATH", manifest)
+    data_home = tmp_path / "data"
+    monkeypatch.setenv("XDG_DATA_HOME", str(data_home))
+
+    assert syncer.run_sync(check_only=False, schema_version=5) == 0
+    assert syncer.run_sync(check_only=True, schema_version=5) == 0
+    assert not data_home.exists()

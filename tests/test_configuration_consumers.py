@@ -82,15 +82,15 @@ def test_recurring_jobs_shared_loader_validates_documents(tmp_path: Path) -> Non
 def test_recurring_jobs_config_helper_has_direct_owner_and_import_dependencies() -> None:
     graph = load_repository_blueprint_graph(REPO_ROOT)
     helper = REPO_ROOT / "skills/recurring-tasks/_rtx/_jobs_config.py"
-    source_id = "recurring-tasks-rtx.source.rtx-jobs-config"
+    source_id = "recurring-tasks._rtx.source.rtx-jobs-config"
 
     assert graph.direct_file_owners[helper] == source_id
     consumers = {
-        "recurring-tasks-rtx.source.rtx-healthcheck-probe",
-        "recurring-tasks-rtx.source.rtx-job-control",
-        "recurring-tasks-rtx.source.rtx-job-executor",
-        "recurring-tasks-rtx.source.rtx-job-utils",
-        "recurring-tasks-rtx.source.rtx-unit-writer",
+        "recurring-tasks._rtx.source.rtx-healthcheck-probe",
+        "recurring-tasks._rtx.source.rtx-job-control",
+        "recurring-tasks._rtx.source.rtx-job-executor",
+        "recurring-tasks._rtx.source.rtx-job-utils",
+        "recurring-tasks._rtx.source.rtx-unit-writer",
     }
     actual = {
         edge.source_id

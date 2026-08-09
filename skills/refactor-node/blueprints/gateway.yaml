@@ -1,8 +1,8 @@
 content:
 - SKILL\.md
 dependencies: []
-description: Classifies a selected scope, queries its explicit standard root, and
-  routes supported gateway languages to their refactoring interfaces.
+description: Resolves a whole node or owned sub-scope and routes supported gateway
+  languages to their refactoring interfaces.
 gateway:
   language: Markdown
   path: SKILL.md
@@ -12,8 +12,8 @@ interfaces:
     contract:
       arguments:
         request:
-          description: Refactoring request naming a node or repository artifact,
-            optional narrower scope, objective, and constraints.
+          description: Refactoring request naming a node or repository artifact, optional
+            narrower scope, objective, and constraints.
           required: true
           sensitivity: user-private
           type:
@@ -34,7 +34,7 @@ interfaces:
           sensitivity: user-private
           system: agent-runtime
         - access: read
-          content: Standard-query result, selected source content, scoped instructions, callers,
+          content: Query result, selected source content, scoped instructions, callers,
             tests, and current diff.
           formats:
           - markdown
@@ -44,13 +44,18 @@ interfaces:
           - text
           id: repository-state
           medium: repository-filesystem
-          reason: Use caller-known scope and an explicitly selected standard closure
-            while inspecting observable behavior.
+          reason: Consume query-resolved ownership and inspect observable behavior
+            without reconstructing the blueprint graph.
           sensitivity: user-private
         writes:
         - access: write
           content: Approved behavior-preserving changes within returned owner scopes.
-          formats: [markdown, yaml, json, python, text]
+          formats:
+          - markdown
+          - yaml
+          - json
+          - python
+          - text
           id: repository-write
           medium: repository-filesystem
           reason: Apply only a proposal approved through the selected language route.
@@ -66,7 +71,7 @@ interfaces:
           system: agent-runtime
       execution:
         consistency:
-          live: Use the selected scope plus explicit standard-query results for applicability,
+          live: Use the standards query result for ownership, language, applicability,
             evidence, and remedies.
         effects:
         - action: update
@@ -75,9 +80,11 @@ interfaces:
             output_ref: response
           direct_io_ref: repository-write
           id: routed-repository-change
-          may_occur_in_outcomes: [routed]
+          may_occur_in_outcomes:
+          - routed
           reversibility:
-            reversible: Restore only the failed current move after inspecting the exact diff.
+            reversible: Restore only the failed current move after inspecting the
+              exact diff.
           value_source:
             argument_ref: request
             kind: argument
@@ -88,13 +95,16 @@ interfaces:
           concurrent_invocations:
             unsafe: Concurrent edits can invalidate scope, characterization, or verification.
           idempotency:
-            non_idempotent: Repeating a routed refactoring can duplicate or further alter state.
+            non_idempotent: Repeating a routed refactoring can duplicate or further
+              alter state.
           on_uncertain_completion:
-            verify_then_decide: Inspect the exact diff and verification evidence before proceeding.
+            verify_then_decide: Inspect the exact diff and verification evidence before
+              proceeding.
           partial_effects_on_failure:
             possible: Earlier verified moves may remain when a later move fails.
           rollback_on_failure:
-            available: Revert only the failed current move without disturbing unrelated work.
+            available: Revert only the failed current move without disturbing unrelated
+              work.
         state_effect: mutating
         verification:
         - method: output-schema
@@ -109,7 +119,8 @@ interfaces:
       outcomes:
       - caller_action: Review the resolved scope and routed proposal.
         class: success
-        effects: [routed-repository-change]
+        effects:
+        - routed-repository-change
         id: routed
         outputs:
         - response
@@ -150,11 +161,11 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Classify the selected scope, query its explicit standard root, then
-      invoke the supported refactoring route without crossing scope boundaries.
+    description: Resolve node ownership and gateway language, then invoke the supported
+      refactoring route without crossing scope boundaries.
     version: 1
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces:
 - interface: common.interface.query-standard
   version: 1
@@ -162,4 +173,4 @@ uses_interfaces:
   version: 1
 - interface: refactor-node.source.python-refactoring.interface.refactor-python
   version: 1
-version: 5
+version: 4

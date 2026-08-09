@@ -5,34 +5,34 @@ dependencies:
     base: module-root
     path: blueprints/rtx-jobs-config.yaml
   reason: Imports the shared validated jobs configuration loader.
-  source: recurring-tasks-rtx.source.rtx-jobs-config
+  source: recurring-tasks._rtx.source.rtx-jobs-config
   version: 1
 - blueprint:
     base: module-root
     path: blueprints/jobs-config.yaml
   reason: Reads the shared jobs configuration while generating scheduler entries.
-  source: recurring-tasks-rtx.source.jobs-config
+  source: recurring-tasks._rtx.source.jobs-config
   version: 1
 - blueprint:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
-  source: recurring-tasks-rtx.source.rtx-init
+  source: recurring-tasks._rtx.source.rtx-init
   version: 1
 - blueprint:
     base: module-root
     path: blueprints/rtx-schedule-backend-init.yaml
   reason: Imports Python source from _rtx/_schedule_backend/__init__.py, _rtx/_schedule_backend/_linux_backend.py.
-  source: recurring-tasks-rtx.source.rtx-schedule-backend-init
+  source: recurring-tasks._rtx.source.rtx-schedule-backend-init
   version: 1
 description: Reconciles jobs.yaml with native per-user scheduler entries for the current
   host.
 gateway:
   language: Python
   path: _unit_writer.py
-id: recurring-tasks-rtx.source.rtx-unit-writer
+id: recurring-tasks._rtx.source.rtx-unit-writer
 interfaces:
-  recurring-tasks-rtx.source.rtx-unit-writer.interface.scripts-sync:
+  recurring-tasks._rtx.source.rtx-unit-writer.interface.scripts-sync:
     contract:
       arguments:
         jobs-file:
@@ -236,6 +236,6 @@ runtime_dependencies:
     windows: true
   reason: Provides the per-user scheduler that loads generated entries.
   version: any
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

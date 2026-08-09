@@ -1,10 +1,9 @@
 {
-  "version": 1,
+  "version": 2,
   "skills": {
     "bib-audit": {
       "interfaces": {
-        "scripts-bib-similarity": {
-          "id": "bib-audit.interface.scripts-bib-similarity",
+        "bib-audit._rtx.interface.scripts-bib-similarity": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -19,8 +18,7 @@
             }
           ]
         },
-        "scripts-bib-validate-bibtex": {
-          "id": "bib-audit.interface.scripts-bib-validate-bibtex",
+        "bib-audit._rtx.interface.scripts-bib-validate-bibtex": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -39,8 +37,7 @@
     },
     "cloud-files": {
       "interfaces": {
-        "ensure-oauth": {
-          "id": "cloud-files.interface.ensure-oauth",
+        "cloud-files._rtx.interface.ensure-oauth": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -55,8 +52,7 @@
             }
           ]
         },
-        "lists-delete": {
-          "id": "cloud-files.interface.lists-delete",
+        "cloud-files._rtx.interface.lists-delete": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -71,8 +67,7 @@
             }
           ]
         },
-        "lists-read": {
-          "id": "cloud-files.interface.lists-read",
+        "cloud-files._rtx.interface.lists-read": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -87,8 +82,7 @@
             }
           ]
         },
-        "lists-write": {
-          "id": "cloud-files.interface.lists-write",
+        "cloud-files._rtx.interface.lists-write": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -103,8 +97,7 @@
             }
           ]
         },
-        "plans-delete": {
-          "id": "cloud-files.interface.plans-delete",
+        "cloud-files._rtx.interface.plans-delete": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -119,8 +112,7 @@
             }
           ]
         },
-        "plans-read": {
-          "id": "cloud-files.interface.plans-read",
+        "cloud-files._rtx.interface.plans-read": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -135,8 +127,7 @@
             }
           ]
         },
-        "plans-write": {
-          "id": "cloud-files.interface.plans-write",
+        "cloud-files._rtx.interface.plans-write": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -151,8 +142,7 @@
             }
           ]
         },
-        "setup-oauth": {
-          "id": "cloud-files.interface.setup-oauth",
+        "cloud-files._rtx.interface.setup-oauth": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -167,8 +157,7 @@
             }
           ]
         },
-        "use-google-credential": {
-          "id": "cloud-files.interface.use-google-credential",
+        "cloud-files._rtx.interface.use-google-credential": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -183,8 +172,7 @@
             }
           ]
         },
-        "write-config": {
-          "id": "cloud-files.interface.write-config",
+        "cloud-files._rtx.interface.write-config": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -203,8 +191,7 @@
     },
     "connect-google": {
       "interfaces": {
-        "authorize-services": {
-          "id": "connect-google.interface.authorize-services",
+        "connect-google._rtx.interface.authorize-services": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -219,8 +206,7 @@
             }
           ]
         },
-        "client-status": {
-          "id": "connect-google.interface.client-status",
+        "connect-google._rtx.interface.client-status": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -235,8 +221,7 @@
             }
           ]
         },
-        "install-client": {
-          "id": "connect-google.interface.install-client",
+        "connect-google._rtx.interface.install-client": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -255,8 +240,7 @@
     },
     "daily-plan": {
       "interfaces": {
-        "mutate-plan": {
-          "id": "daily-plan.interface.mutate-plan",
+        "daily-plan._rtx.interface.mutate-plan": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -469,8 +453,7 @@
             }
           ]
         },
-        "orchestrate": {
-          "id": "daily-plan.interface.orchestrate",
+        "daily-plan._rtx.interface.orchestrate": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -683,8 +666,7 @@
             }
           ]
         },
-        "plan-storage": {
-          "id": "daily-plan.interface.plan-storage",
+        "daily-plan._rtx.interface.plan-storage": {
           "dependencies": [
             {
               "kind": "binary",
@@ -897,8 +879,7 @@
             }
           ]
         },
-        "render-plan": {
-          "id": "daily-plan.interface.render-plan",
+        "daily-plan._rtx.interface.render-plan": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -1104,8 +1085,7 @@
     },
     "email-client": {
       "interfaces": {
-        "accounts-add": {
-          "id": "email-client.interface.accounts-add",
+        "email-client._rtx.interface.accounts-add": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -1153,8 +1133,7 @@
             }
           ]
         },
-        "accounts-list": {
-          "id": "email-client.interface.accounts-list",
+        "email-client._rtx.interface.accounts-list": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -1202,8 +1181,7 @@
             }
           ]
         },
-        "accounts-remove": {
-          "id": "email-client.interface.accounts-remove",
+        "email-client._rtx.interface.accounts-remove": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -1251,8 +1229,7 @@
             }
           ]
         },
-        "accounts-set-password": {
-          "id": "email-client.interface.accounts-set-password",
+        "email-client._rtx.interface.accounts-set-password": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -1300,8 +1277,7 @@
             }
           ]
         },
-        "accounts-setup-oauth": {
-          "id": "email-client.interface.accounts-setup-oauth",
+        "email-client._rtx.interface.accounts-setup-oauth": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -1349,8 +1325,7 @@
             }
           ]
         },
-        "accounts-update": {
-          "id": "email-client.interface.accounts-update",
+        "email-client._rtx.interface.accounts-update": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -1398,8 +1373,7 @@
             }
           ]
         },
-        "accounts-use-google-credential": {
-          "id": "email-client.interface.accounts-use-google-credential",
+        "email-client._rtx.interface.accounts-use-google-credential": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -1447,8 +1421,7 @@
             }
           ]
         },
-        "live-smoke": {
-          "id": "email-client.interface.live-smoke",
+        "email-client._rtx.interface.live-smoke": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -1529,8 +1502,7 @@
             }
           ]
         },
-        "mail-attachments": {
-          "id": "email-client.interface.mail-attachments",
+        "email-client._rtx.interface.mail-attachments": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -1589,8 +1561,7 @@
             }
           ]
         },
-        "mail-folders": {
-          "id": "email-client.interface.mail-folders",
+        "email-client._rtx.interface.mail-folders": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -1649,8 +1620,7 @@
             }
           ]
         },
-        "mail-list": {
-          "id": "email-client.interface.mail-list",
+        "email-client._rtx.interface.mail-list": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -1709,8 +1679,7 @@
             }
           ]
         },
-        "mail-read": {
-          "id": "email-client.interface.mail-read",
+        "email-client._rtx.interface.mail-read": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -1769,8 +1738,7 @@
             }
           ]
         },
-        "mail-save-attachments": {
-          "id": "email-client.interface.mail-save-attachments",
+        "email-client._rtx.interface.mail-save-attachments": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -1829,8 +1797,7 @@
             }
           ]
         },
-        "send-email": {
-          "id": "email-client.interface.send-email",
+        "email-client._rtx.interface.send-email": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -1893,8 +1860,7 @@
     },
     "email-triage": {
       "interfaces": {
-        "fetch-filtered-envelopes": {
-          "id": "email-triage.interface.fetch-filtered-envelopes",
+        "email-triage._rtx.interface.fetch-filtered-envelopes": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -1905,7 +1871,7 @@
                 "macos": true,
                 "windows": true
               },
-              "reason": "Parses the destination list YAML fetched via list-manager.interface.cloud-read for --dedup-against."
+              "reason": "Parses the destination list YAML fetched via list-manager._rtx.interface.cloud-read for --dedup-against."
             },
             {
               "kind": "python-package",
@@ -2118,60 +2084,48 @@
             }
           ]
         },
-        "scripts-clear-failure": {
-          "id": "email-triage.interface.scripts-clear-failure",
+        "email-triage._rtx.interface.scripts-clear-failure": {
           "dependencies": []
         },
-        "scripts-filter-envelopes": {
-          "id": "email-triage.interface.scripts-filter-envelopes",
+        "email-triage._rtx.interface.scripts-filter-envelopes": {
           "dependencies": []
         },
-        "scripts-finalize-triage": {
-          "id": "email-triage.interface.scripts-finalize-triage",
+        "email-triage._rtx.interface.scripts-finalize-triage": {
           "dependencies": []
         },
-        "scripts-get-cutoff": {
-          "id": "email-triage.interface.scripts-get-cutoff",
+        "email-triage._rtx.interface.scripts-get-cutoff": {
           "dependencies": []
         },
-        "scripts-log-decision": {
-          "id": "email-triage.interface.scripts-log-decision",
+        "email-triage._rtx.interface.scripts-log-decision": {
           "dependencies": []
         },
-        "scripts-mark-failure": {
-          "id": "email-triage.interface.scripts-mark-failure",
+        "email-triage._rtx.interface.scripts-mark-failure": {
           "dependencies": []
         },
-        "scripts-prune-log": {
-          "id": "email-triage.interface.scripts-prune-log",
+        "email-triage._rtx.interface.scripts-prune-log": {
           "dependencies": []
         },
-        "scripts-update-watermark": {
-          "id": "email-triage.interface.scripts-update-watermark",
+        "email-triage._rtx.interface.scripts-update-watermark": {
           "dependencies": []
         },
-        "scripts-write-metrics": {
-          "id": "email-triage.interface.scripts-write-metrics",
+        "email-triage._rtx.interface.scripts-write-metrics": {
           "dependencies": []
         }
       }
     },
     "find-handoff-candidates": {
       "interfaces": {
-        "calibrate": {
-          "id": "find-handoff-candidates.interface.calibrate",
+        "find-handoff-candidates._rtx.interface.calibrate": {
           "dependencies": []
         },
-        "scan": {
-          "id": "find-handoff-candidates.interface.scan",
+        "find-handoff-candidates._rtx.interface.scan": {
           "dependencies": []
         }
       }
     },
     "g-calendar": {
       "interfaces": {
-        "ensure-oauth": {
-          "id": "g-calendar.interface.ensure-oauth",
+        "g-calendar._rtx.interface.ensure-oauth": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -2186,8 +2140,7 @@
             }
           ]
         },
-        "scripts-gcal": {
-          "id": "g-calendar.interface.scripts-gcal",
+        "g-calendar._rtx.interface.scripts-gcal": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -2202,12 +2155,10 @@
             }
           ]
         },
-        "setup-oauth": {
-          "id": "g-calendar.interface.setup-oauth",
+        "g-calendar._rtx.interface.setup-oauth": {
           "dependencies": []
         },
-        "use-google-credential": {
-          "id": "g-calendar.interface.use-google-credential",
+        "g-calendar._rtx.interface.use-google-credential": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -2226,24 +2177,21 @@
     },
     "get-weather": {
       "interfaces": {
-        "scripts-weather": {
-          "id": "get-weather.interface.scripts-weather",
+        "get-weather._rtx.interface.scripts-weather": {
           "dependencies": []
         }
       }
     },
     "initialize-tdd": {
       "interfaces": {
-        "setup-compat-aliases": {
-          "id": "initialize-tdd.interface.setup-compat-aliases",
+        "initialize-tdd._rtx.interface.setup-compat-aliases": {
           "dependencies": []
         }
       }
     },
     "install-assistant-tools": {
       "interfaces": {
-        "scripts-dev-link": {
-          "id": "install-assistant-tools.interface.scripts-dev-link",
+        "install-assistant-tools._rtx.interface.scripts-dev-link": {
           "dependencies": [
             {
               "kind": "binary",
@@ -2258,8 +2206,7 @@
             }
           ]
         },
-        "scripts-install": {
-          "id": "install-assistant-tools.interface.scripts-install",
+        "install-assistant-tools._rtx.interface.scripts-install": {
           "dependencies": [
             {
               "kind": "binary",
@@ -2329,12 +2276,10 @@
             }
           ]
         },
-        "scripts-launchers": {
-          "id": "install-assistant-tools.interface.scripts-launchers",
+        "install-assistant-tools._rtx.interface.scripts-launchers": {
           "dependencies": []
         },
-        "scripts-scaffold": {
-          "id": "install-assistant-tools.interface.scripts-scaffold",
+        "install-assistant-tools._rtx.interface.scripts-scaffold": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -2364,8 +2309,7 @@
     },
     "list-manager": {
       "interfaces": {
-        "beautify-list": {
-          "id": "list-manager.interface.beautify-list",
+        "list-manager._rtx.interface.beautify-list": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -2402,8 +2346,7 @@
             }
           ]
         },
-        "cloud-create-entry": {
-          "id": "list-manager.interface.cloud-create-entry",
+        "list-manager._rtx.interface.cloud-create-entry": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -2572,8 +2515,7 @@
             }
           ]
         },
-        "cloud-delete": {
-          "id": "list-manager.interface.cloud-delete",
+        "list-manager._rtx.interface.cloud-delete": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -2742,8 +2684,7 @@
             }
           ]
         },
-        "cloud-init": {
-          "id": "list-manager.interface.cloud-init",
+        "list-manager._rtx.interface.cloud-init": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -2912,8 +2853,7 @@
             }
           ]
         },
-        "cloud-list-categories": {
-          "id": "list-manager.interface.cloud-list-categories",
+        "list-manager._rtx.interface.cloud-list-categories": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -2939,8 +2879,7 @@
             }
           ]
         },
-        "cloud-read": {
-          "id": "list-manager.interface.cloud-read",
+        "list-manager._rtx.interface.cloud-read": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -3109,8 +3048,7 @@
             }
           ]
         },
-        "cloud-read-beautify": {
-          "id": "list-manager.interface.cloud-read-beautify",
+        "list-manager._rtx.interface.cloud-read-beautify": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -3312,8 +3250,7 @@
             }
           ]
         },
-        "cloud-update": {
-          "id": "list-manager.interface.cloud-update",
+        "list-manager._rtx.interface.cloud-update": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -3482,8 +3419,7 @@
             }
           ]
         },
-        "create-entry": {
-          "id": "list-manager.interface.create-entry",
+        "list-manager._rtx.interface.create-entry": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -3652,8 +3588,7 @@
             }
           ]
         },
-        "describe-schema": {
-          "id": "list-manager.interface.describe-schema",
+        "list-manager._rtx.interface.describe-schema": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -3822,8 +3757,7 @@
             }
           ]
         },
-        "generate-id": {
-          "id": "list-manager.interface.generate-id",
+        "list-manager._rtx.interface.generate-id": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -3992,8 +3926,7 @@
             }
           ]
         },
-        "init-list": {
-          "id": "list-manager.interface.init-list",
+        "list-manager._rtx.interface.init-list": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -4162,8 +4095,7 @@
             }
           ]
         },
-        "migrate-markdown": {
-          "id": "list-manager.interface.migrate-markdown",
+        "list-manager._rtx.interface.migrate-markdown": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -4211,8 +4143,7 @@
             }
           ]
         },
-        "read-beautify": {
-          "id": "list-manager.interface.read-beautify",
+        "list-manager._rtx.interface.read-beautify": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -4414,8 +4345,7 @@
             }
           ]
         },
-        "read-list": {
-          "id": "list-manager.interface.read-list",
+        "list-manager._rtx.interface.read-list": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -4584,8 +4514,7 @@
             }
           ]
         },
-        "update-list": {
-          "id": "list-manager.interface.update-list",
+        "list-manager._rtx.interface.update-list": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -4758,24 +4687,20 @@
     },
     "math-dependency-graph": {
       "interfaces": {
-        "scripts-build-math-dependency-graph": {
-          "id": "math-dependency-graph.interface.scripts-build-math-dependency-graph",
+        "math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph": {
           "dependencies": []
         },
-        "scripts-extract-mathjax-macros": {
-          "id": "math-dependency-graph.interface.scripts-extract-mathjax-macros",
+        "math-dependency-graph._rtx.interface.scripts-extract-mathjax-macros": {
           "dependencies": []
         },
-        "scripts-serve-graph": {
-          "id": "math-dependency-graph.interface.scripts-serve-graph",
+        "math-dependency-graph._rtx.interface.scripts-serve-graph": {
           "dependencies": []
         }
       }
     },
     "pdf-to-markdown": {
       "interfaces": {
-        "scripts-check-marker-models": {
-          "id": "pdf-to-markdown.interface.scripts-check-marker-models",
+        "pdf-to-markdown._rtx.interface.scripts-check-marker-models": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -4790,16 +4715,14 @@
             }
           ]
         },
-        "scripts-fetch-arxiv-source": {
-          "id": "pdf-to-markdown.interface.scripts-fetch-arxiv-source",
+        "pdf-to-markdown._rtx.interface.scripts-fetch-arxiv-source": {
           "dependencies": []
         }
       }
     },
     "recurring-tasks": {
       "interfaces": {
-        "scripts-disable": {
-          "id": "recurring-tasks.interface.scripts-disable",
+        "recurring-tasks._rtx.interface.scripts-disable": {
           "dependencies": [
             {
               "kind": "binary",
@@ -5089,8 +5012,7 @@
             }
           ]
         },
-        "scripts-enable": {
-          "id": "recurring-tasks.interface.scripts-enable",
+        "recurring-tasks._rtx.interface.scripts-enable": {
           "dependencies": [
             {
               "kind": "binary",
@@ -5380,8 +5302,7 @@
             }
           ]
         },
-        "scripts-ensure-agent-env": {
-          "id": "recurring-tasks.interface.scripts-ensure-agent-env",
+        "recurring-tasks._rtx.interface.scripts-ensure-agent-env": {
           "dependencies": [
             {
               "kind": "binary",
@@ -5407,8 +5328,7 @@
             }
           ]
         },
-        "scripts-healthcheck": {
-          "id": "recurring-tasks.interface.scripts-healthcheck",
+        "recurring-tasks._rtx.interface.scripts-healthcheck": {
           "dependencies": [
             {
               "kind": "binary",
@@ -5511,12 +5431,10 @@
             }
           ]
         },
-        "scripts-job-utils": {
-          "id": "recurring-tasks.interface.scripts-job-utils",
+        "recurring-tasks._rtx.interface.scripts-job-utils": {
           "dependencies": []
         },
-        "scripts-setup": {
-          "id": "recurring-tasks.interface.scripts-setup",
+        "recurring-tasks._rtx.interface.scripts-setup": {
           "dependencies": [
             {
               "kind": "binary",
@@ -5572,17 +5490,6 @@
                 "windows": false
               },
               "reason": "Loads generated user scheduler entries."
-            },
-            {
-              "kind": "binary",
-              "name": "notify-send",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": false,
-                "windows": false
-              },
-              "reason": "Delivers the independent sentinel's failure popup."
             },
             {
               "kind": "binary",
@@ -5817,8 +5724,7 @@
             }
           ]
         },
-        "scripts-status": {
-          "id": "recurring-tasks.interface.scripts-status",
+        "recurring-tasks._rtx.interface.scripts-status": {
           "dependencies": [
             {
               "kind": "binary",
@@ -6108,8 +6014,7 @@
             }
           ]
         },
-        "scripts-sync": {
-          "id": "recurring-tasks.interface.scripts-sync",
+        "recurring-tasks._rtx.interface.scripts-sync": {
           "dependencies": [
             {
               "kind": "binary",
@@ -6201,8 +6106,7 @@
             }
           ]
         },
-        "scripts-test": {
-          "id": "recurring-tasks.interface.scripts-test",
+        "recurring-tasks._rtx.interface.scripts-test": {
           "dependencies": [
             {
               "kind": "binary",
@@ -6492,8 +6396,7 @@
             }
           ]
         },
-        "scripts-view-logs": {
-          "id": "recurring-tasks.interface.scripts-view-logs",
+        "recurring-tasks._rtx.interface.scripts-view-logs": {
           "dependencies": [
             {
               "kind": "binary",
@@ -6787,8 +6690,7 @@
     },
     "regenerate-blueprints": {
       "interfaces": {
-        "regenerate-blueprint": {
-          "id": "regenerate-blueprints.interface.regenerate-blueprint",
+        "regenerate-blueprints._rtx.interface.regenerate-blueprint": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -6818,8 +6720,7 @@
     },
     "skill-certifier": {
       "interfaces": {
-        "certify": {
-          "id": "skill-certifier.interface.certify",
+        "skill-certifier._rtx.interface.certify": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -6860,8 +6761,7 @@
     },
     "skill-drift": {
       "interfaces": {
-        "compute-hashes": {
-          "id": "skill-drift.interface.compute-hashes",
+        "skill-drift._rtx.interface.compute-hashes": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -6887,8 +6787,7 @@
             }
           ]
         },
-        "drift-status": {
-          "id": "skill-drift.interface.drift-status",
+        "skill-drift._rtx.interface.drift-status": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -6918,8 +6817,7 @@
     },
     "skill-maker": {
       "interfaces": {
-        "sync-blueprints": {
-          "id": "skill-maker.interface.sync-blueprints",
+        "skill-maker._rtx.interface.sync-blueprints": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -6953,7 +6851,6 @@
       "git",
       "journalctl",
       "launchctl",
-      "notify-send",
       "rclone",
       "schtasks",
       "systemctl"

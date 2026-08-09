@@ -264,6 +264,6 @@ runtime_dependencies:
     windows: true
   reason: Implements Ed25519 key and signature primitives.
   version: '>=44.0.1'
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

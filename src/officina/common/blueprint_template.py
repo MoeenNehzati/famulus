@@ -176,7 +176,7 @@ def write_repository_managed_skill_blueprints(
     persistent_modifier: bool,
     repo_root: str | Path = ".",
     schema_root: str | Path | None = None,
-    schema_version: int = 5,
+    schema_version: int = 6,
     include_code_child: bool = False,
 ) -> tuple[Path, ...]:
     """Create a v5 or v6 skill blueprint and optional `_rtx` child."""
@@ -219,8 +219,8 @@ def write_repository_managed_skill_blueprints(
         if schema_root is not None
         else (
             root / "references" / "blueprint"
-            if schema_version == 5
-            else root / "references" / "blueprint" / "migrations" / "v6"
+            if schema_version == 6
+            else root / "references" / "blueprint" / "migrations" / f"v{schema_version}"
         )
     )
     if not (selected_schema_root / "module.schema.json").is_file():
@@ -231,8 +231,8 @@ def write_repository_managed_skill_blueprints(
         )
         selected_schema_root = (
             canonical_schema_root
-            if schema_version == 5
-            else canonical_schema_root / "migrations" / "v6"
+            if schema_version == 6
+            else canonical_schema_root / "migrations" / f"v{schema_version}"
         )
     schema = load_schema(selected_schema_root / "module.schema.json")
     child_id = (
@@ -357,8 +357,8 @@ def _default_schema_path(repo_root: Path, blueprint: object | None = None) -> Pa
         schema_name = _AUTHORING_SCHEMA_BY_TYPE.get(node_type)
         if schema_name is not None:
             schema_root = repo_root / "references" / "blueprint"
-            if schema_version == 6:
-                schema_root = schema_root / "migrations" / "v6"
+            if schema_version != 6:
+                schema_root = schema_root / "migrations" / f"v{schema_version}"
             return schema_root / schema_name
     raise ValueError(
         "blueprint authoring requires schema_version 5 or 6 and node_type "

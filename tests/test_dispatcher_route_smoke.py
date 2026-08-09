@@ -96,7 +96,7 @@ def _dispatcher_env() -> dict[str, str]:
 def _runner_interfaces(
     repo_root: Path = REPO_ROOT,
     *,
-    expected_schema_version: int = 5,
+    expected_schema_version: int = 6,
     schema_root: Path | None = None,
 ) -> list[RouteSmokeCase]:
     graph = load_repository_blueprint_graph(
@@ -166,7 +166,7 @@ def _route_smoke_specifications(
 def _route_smoke_cases(
     repo_root: Path = REPO_ROOT,
     *,
-    expected_schema_version: int = 5,
+    expected_schema_version: int = 6,
     schema_root: Path | None = None,
 ) -> list[RouteSmokeCase]:
     return _runner_interfaces(
@@ -242,6 +242,28 @@ def test_dispatcher_cli_default_error_format_is_unchanged_text(tmp_path: Path) -
     assert result.stdout == ""
     assert result.stderr.startswith("error: interface not found:")
     assert "nonexistent-module.interface.does-not-exist" in result.stderr
+
+
+def test_dispatcher_cli_reports_invalid_repository_config_without_traceback(
+    tmp_path: Path,
+) -> None:
+    config = tmp_path / "officina.toml"
+    config.write_text("not valid = [")
+    result = _run_dispatcher(
+        [
+            "--repository-config",
+            str(config),
+            "--caller-skill",
+            "demo-caller",
+            "nonexistent-module.interface.does-not-exist",
+        ],
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert result.stderr.startswith("error: ")
+    assert "Traceback" not in result.stderr
 
 
 def test_dispatcher_cli_error_format_json_emits_structured_payload(

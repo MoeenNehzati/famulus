@@ -23,7 +23,7 @@ from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 SKILL_DIR = Path(__file__).parent
 RTX_DIR = Path(__file__).resolve().parent
-if str(RTX_DIR) not in sys.path:
+if not __package__ and str(RTX_DIR) not in sys.path:
     sys.path.insert(0, str(RTX_DIR))
 
 if __package__:
@@ -36,7 +36,10 @@ else:
     platform_schedule_backend,
     schedule_jobs_from_mappings,
 )
-from _run_record import read_latest_run_record  # noqa: E402
+if __package__:
+    from ._run_record import read_latest_run_record
+else:
+    from _run_record import read_latest_run_record  # noqa: E402
 
 JOBS_FILE = SKILL_DIR / "jobs.yaml"
 LOG_DIR = SKILL_DIR / "logs"

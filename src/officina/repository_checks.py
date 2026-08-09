@@ -53,7 +53,7 @@ PERFORMANCE_TESTS = {"tests/test_dispatcher_performance.py"}
 PRECOMMIT_EXCLUDED_TESTS = {
     "tests/test_nested_module_migration.py::"
     "TestNestedModuleMigrationContract::"
-    "test_repository_inventory_matches_reviewed_v5_cutover_surface",
+    "test_repository_inventory_matches_reviewed_v6_cutover_surface",
     *INSTALLATION_TESTS,
     *CHROME_TESTS,
     *DOCSTRING_TESTS,

@@ -42,7 +42,7 @@ standards:
     id: skill-guidelines.canonical-interface-names.example-001
     statement: '```bash
 
-      dispatcher --caller-skill daily-plan list-manager.interface.read-list /tmp/todo.yaml
+      dispatcher --caller-skill daily-plan list-manager._rtx.interface.read-list /tmp/todo.yaml
 
       ```'
 - kind: family

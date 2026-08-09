@@ -22,7 +22,7 @@ from v5_blueprint_fixtures import copy_v5_fixture_tree
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-V5_SCHEMA_ROOT = REPO_ROOT / "references" / "blueprint"
+V5_SCHEMA_ROOT = REPO_ROOT / "references" / "blueprint" / "migrations" / "v5"
 
 
 def test_hash_owner_does_not_expose_legacy_health_authority() -> None:
@@ -136,6 +136,29 @@ def test_v4_basis_and_certifier_identity_are_derived_from_one_state(
         },
         {
             "id": "v4-deterministic",
+            "version": 1,
+            "passed": True,
+            "findings": [],
+        },
+    )
+
+
+def test_v6_check_registry_marks_pre_v6_certificates_stale() -> None:
+    assert expected_certifier_checks(expected_schema_version=6) == (
+        {
+            "id": "blueprint-accuracy",
+            "version": 3,
+            "passed": True,
+            "findings": [],
+        },
+        {
+            "id": "route-smoke-dependencies",
+            "version": 3,
+            "passed": True,
+            "findings": [],
+        },
+        {
+            "id": "v6-deterministic",
             "version": 1,
             "passed": True,
             "findings": [],

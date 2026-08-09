@@ -33,7 +33,7 @@ def _make_skill(repo_root: Path, name: str, domain: str, description: str) -> No
         skill_dir / "blueprint.yaml",
         "\n".join(
             [
-                "schema_version: 5",
+                "schema_version: 6",
                 "node_type: module",
                 f"id: {name}",
                 "version: 1",

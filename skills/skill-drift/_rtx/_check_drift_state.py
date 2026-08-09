@@ -63,7 +63,7 @@ class _V4DerivedState:
 def _v4_repository_state(
     repo_root: Path,
     *,
-    expected_schema_version: int = 5,
+    expected_schema_version: int = 6,
     allow_non_atomic: bool = False,
 ) -> tuple[
     RepositoryBlueprintGraph,
@@ -120,7 +120,7 @@ def _derive_v4_repository_state(
     target_node_ids: Sequence[str],
     *,
     public_key_root: Path,
-    expected_schema_version: int = 5,
+    expected_schema_version: int = 6,
     allow_non_atomic: bool = False,
 ) -> _V4DerivedState:
     root = Path(repo_root).resolve()
@@ -169,7 +169,7 @@ def _check_v4_repository(
     target_node_ids: Sequence[str],
     *,
     public_key_root: Path,
-    expected_schema_version: int = 5,
+    expected_schema_version: int = 6,
     allow_non_atomic: bool = False,
 ) -> CertificateCurrentnessReport:
     """Return public-key-only currentness for exact node IDs."""
@@ -397,7 +397,7 @@ def _module_node_ids(
 def _derive_for_source(
     source: SkillSource,
     *,
-    expected_schema_version: int = 5,
+    expected_schema_version: int = 6,
 ) -> _V4DerivedState:
     try:
         derived = derive_repository_certification_state(
@@ -431,7 +431,7 @@ def _derive_for_source(
 def reports_for_scopes(
     scopes: tuple[RequestedScope, ...],
     *,
-    expected_schema_version: int = 5,
+    expected_schema_version: int = 6,
 ) -> list[ModuleDriftReport]:
     reports: list[ModuleDriftReport] = []
     requested = {name for scope in scopes for name in scope.skill_names}
@@ -486,7 +486,7 @@ def reports_for_scopes(
 def hash_reports_for_scopes(
     scopes: tuple[RequestedScope, ...],
     *,
-    expected_schema_version: int = 5,
+    expected_schema_version: int = 6,
 ) -> tuple[list[SkillHashReport], list[SkillHashFailure]]:
     reports: list[SkillHashReport] = []
     failures: list[SkillHashFailure] = []

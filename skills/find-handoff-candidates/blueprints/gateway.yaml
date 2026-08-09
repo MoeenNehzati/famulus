@@ -86,12 +86,12 @@ interfaces:
     description: Primary LLM-facing skill instructions.
     version: 1
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces:
 - interface: prepare-handoff.interface.default
   version: 1
-- interface: find-handoff-candidates.interface.calibrate
+- interface: find-handoff-candidates._rtx.interface.calibrate
   version: 1
-- interface: find-handoff-candidates.interface.scan
+- interface: find-handoff-candidates._rtx.interface.scan
   version: 1
 version: 1

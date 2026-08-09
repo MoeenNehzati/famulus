@@ -5,16 +5,16 @@ dependencies:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
-  source: list-manager-rtx.source.rtx-init
+  source: list-manager._rtx.source.rtx-init
   version: 1
 description: Python source that converts legacy Markdown checklists into validated
   YAML list documents without overwriting an existing destination.
 gateway:
   language: Python
   path: _legacy_importer.py
-id: list-manager-rtx.source.rtx-legacy-importer
+id: list-manager._rtx.source.rtx-legacy-importer
 interfaces:
-  list-manager-rtx.source.rtx-legacy-importer.interface.migrate-markdown:
+  list-manager._rtx.source.rtx-legacy-importer.interface.migrate-markdown:
     contract:
       arguments:
         destination:
@@ -260,6 +260,6 @@ runtime_dependencies:
     windows: true
   reason: Validates migrated entries before writing.
   version: '>=4'
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

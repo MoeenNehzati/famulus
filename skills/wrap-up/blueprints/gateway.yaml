@@ -110,11 +110,11 @@ interfaces:
       inspection, and summarize results.
     version: 1
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces:
 - interface: daily-plan.interface.default
   version: 1
-- interface: find-handoff-candidates.interface.scan
+- interface: find-handoff-candidates._rtx.interface.scan
   version: 1
 - interface: list-manager.interface.default
   version: 1

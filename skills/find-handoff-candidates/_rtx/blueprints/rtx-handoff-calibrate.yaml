@@ -5,22 +5,22 @@ dependencies:
     base: module-root
     path: blueprints/rtx-handoff-scan.yaml
   reason: Imports Python source from _rtx/_handoff_scan.py.
-  source: find-handoff-candidates-rtx.source.rtx-handoff-scan
+  source: find-handoff-candidates._rtx.source.rtx-handoff-scan
   version: 1
 - blueprint:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
-  source: find-handoff-candidates-rtx.source.rtx-init
+  source: find-handoff-candidates._rtx.source.rtx-init
   version: 1
 description: Reads recent configured session transcripts and prints per-source net-character
   and line-count statistics against current scan thresholds.
 gateway:
   language: Python
   path: _handoff_calibrate.py
-id: find-handoff-candidates-rtx.source.rtx-handoff-calibrate
+id: find-handoff-candidates._rtx.source.rtx-handoff-calibrate
 interfaces:
-  find-handoff-candidates-rtx.source.rtx-handoff-calibrate.interface.calibrate:
+  find-handoff-candidates._rtx.source.rtx-handoff-calibrate.interface.calibrate:
     contract:
       arguments:
         days:
@@ -137,6 +137,6 @@ platform_support:
   macos: true
   windows: true
 runtime_dependencies: []
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

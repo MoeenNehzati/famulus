@@ -12,8 +12,6 @@ content:
 - blueprint_template\.py
 - certification_view\.py
 - codex_toml\.py
-- controller\.py
-- controller_protocol\.py
 - dates\.py
 - famulus_paths/__init__\.py
 - git_provenance\.py
@@ -39,90 +37,90 @@ exports:
       allowed_callers:
       - install
       - recurring-tasks
-      - recurring-tasks-rtx
+      - recurring-tasks._rtx
       - skill-certifier
-      - skill-certifier-rtx
+      - skill-certifier._rtx
       - skill-maker
-      - skill-maker-rtx
+      - skill-maker._rtx
     source_interface: common.source.atomic-files.interface.python-api
   common.interface.blueprint-graph:
     access:
       allow_all_modules: false
       allowed_callers:
       - skill-certifier
-      - skill-certifier-rtx
+      - skill-certifier._rtx
       - skill-drift
-      - skill-drift-rtx
+      - skill-drift._rtx
       - skill-maker
-      - skill-maker-rtx
+      - skill-maker._rtx
     source_interface: common.source.blueprint-graph.interface.python-api
   common.interface.blueprint-template:
     access:
       allow_all_modules: false
       allowed_callers:
       - regenerate-blueprints
-      - regenerate-blueprints-rtx
+      - regenerate-blueprints._rtx
     source_interface: common.source.blueprint-template.interface.python-api
   common.interface.certificate-records:
     access:
       allow_all_modules: false
       allowed_callers:
       - install-assistant-tools
-      - install-assistant-tools-rtx
+      - install-assistant-tools._rtx
       - skill-certifier
-      - skill-certifier-rtx
+      - skill-certifier._rtx
       - skill-drift
-      - skill-drift-rtx
+      - skill-drift._rtx
     source_interface: common.source.certificate-records.interface.python-api
   common.interface.certification-hashing:
     access:
       allow_all_modules: false
       allowed_callers:
       - skill-certifier
-      - skill-certifier-rtx
+      - skill-certifier._rtx
       - skill-drift
-      - skill-drift-rtx
+      - skill-drift._rtx
     source_interface: common.source.certification-hashing.interface.python-api
   common.interface.certification-view:
     access:
       allow_all_modules: false
       allowed_callers:
       - skill-certifier
-      - skill-certifier-rtx
+      - skill-certifier._rtx
       - skill-drift
-      - skill-drift-rtx
+      - skill-drift._rtx
     source_interface: common.source.certification-view.interface.python-api
   common.interface.codex-toml:
     access:
       allow_all_modules: false
       allowed_callers:
       - install-assistant-tools
-      - install-assistant-tools-rtx
+      - install-assistant-tools._rtx
     source_interface: common.source.codex-toml.interface.python-api
   common.interface.dates:
     access:
       allow_all_modules: false
       allowed_callers:
       - daily-plan
-      - daily-plan-rtx
+      - daily-plan._rtx
     source_interface: common.source.dates.interface.python-api
   common.interface.famulus-paths:
     access:
       allow_all_modules: false
       allowed_callers:
       - email-triage
-      - email-triage-rtx
+      - email-triage._rtx
       - install-assistant-tools
-      - install-assistant-tools-rtx
+      - install-assistant-tools._rtx
       - recurring-tasks
-      - recurring-tasks-rtx
+      - recurring-tasks._rtx
     source_interface: common.source.famulus-paths.interface.python-api
   common.interface.git-provenance:
     access:
       allow_all_modules: false
       allowed_callers:
       - skill-certifier
-      - skill-certifier-rtx
+      - skill-certifier._rtx
       - skill-drift
     source_interface: common.source.git-provenance.interface.python-api
   common.interface.google-credentials:
@@ -130,31 +128,31 @@ exports:
       allow_all_modules: false
       allowed_callers:
       - cloud-files
-      - cloud-files-rtx
+      - cloud-files._rtx
       - connect-google
-      - connect-google-rtx
+      - connect-google._rtx
       - email-client
-      - email-client-rtx
+      - email-client._rtx
       - g-calendar
-      - g-calendar-rtx
+      - g-calendar._rtx
     source_interface: common.source.google-credentials.interface.python-api
   common.interface.oauth-json:
     access:
       allow_all_modules: false
       allowed_callers:
       - cloud-files
-      - cloud-files-rtx
+      - cloud-files._rtx
       - connect-google
-      - connect-google-rtx
+      - connect-google._rtx
       - g-calendar
-      - g-calendar-rtx
+      - g-calendar._rtx
     source_interface: common.source.oauth-json.interface.python-api
   common.interface.pooled-blueprint:
     access:
       allow_all_modules: false
       allowed_callers:
       - skill-certifier
-      - skill-certifier-rtx
+      - skill-certifier._rtx
       - skill-drift
     source_interface: common.source.pooled-blueprint.interface.python-api
   common.interface.repository-paths:
@@ -162,7 +160,7 @@ exports:
       allow_all_modules: false
       allowed_callers:
       - skill-certifier
-      - skill-certifier-rtx
+      - skill-certifier._rtx
       - skill-maker
     source_interface: common.source.repository-paths.interface.python-api
   common.interface.repository-configuration:
@@ -175,7 +173,7 @@ exports:
       allow_all_modules: false
       allowed_callers:
       - email-client
-      - email-client-rtx
+      - email-client._rtx
     source_interface: common.source.secret-store.interface.python-api
   common.interface.standard-extractor:
     access:
@@ -195,7 +193,7 @@ exports:
       allow_all_modules: false
       allowed_callers:
       - install-assistant-tools
-      - install-assistant-tools-rtx
+      - install-assistant-tools._rtx
     source_interface: common.source.toml-io.interface.python-api
 gateway:
   language: Python
@@ -203,7 +201,7 @@ gateway:
 id: common
 namespace_exports: {}
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
   common.source.atomic-files:
     blueprint:

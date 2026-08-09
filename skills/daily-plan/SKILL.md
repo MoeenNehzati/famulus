@@ -14,29 +14,17 @@ Activation: user-request, skill-workflow; persistent modifier: no
 
 Skill Version: 2
 
-Uses Interfaces: none
+Uses Interfaces:
+- `daily-plan.source.gateway -> daily-plan._rtx.interface.mutate-plan@1`
+- `daily-plan.source.gateway -> daily-plan._rtx.interface.orchestrate@1`
+- `daily-plan.source.gateway -> daily-plan._rtx.interface.plan-storage@1`
+- `daily-plan.source.gateway -> daily-plan._rtx.interface.render-plan@1`
 
 Public Interfaces:
 - `daily-plan.interface.default`
-- `daily-plan.interface.mutate-plan`
-- `daily-plan.interface.orchestrate`
-- `daily-plan.interface.plan-storage`
-- `daily-plan.interface.render-plan`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Dispatcher Interfaces:
-
-Use the installed `dispatcher` command for these process-bound interfaces:
-- `daily-plan.interface.mutate-plan` — Apply a mutation (hide, show, keep, remove, mark-done, reject, set-deadline, add) to a dated plan and display the refreshed result. Defaults to today when --date is omitted.
-  - `dispatcher --caller-skill daily-plan daily-plan.interface.mutate-plan [--date <M-D-YY|YYYY-MM-DD>] {hide,show,keep,remove,mark-done,reject,set-deadline,add} ...`
-- `daily-plan.interface.orchestrate` — Generate today's plan (or show the existing one, refreshing its Todo/Triage blocks from current list state). Pass --forced to regenerate even if a plan already exists.
-  - `dispatcher --caller-skill daily-plan daily-plan.interface.orchestrate [--forced]`
-- `daily-plan.interface.plan-storage` — Read, write, check existence of, or delete a plan file in cloud storage by date.
-  - `dispatcher --caller-skill daily-plan daily-plan.interface.plan-storage read|write|exists|delete <date>`
-- `daily-plan.interface.render-plan` — Extract or reassemble sections of a plan file for rendering.
-  - `dispatcher --caller-skill daily-plan daily-plan.interface.render-plan <extract|reassemble> <plan-file> <dir>`
 
 Instruction Interfaces:
 

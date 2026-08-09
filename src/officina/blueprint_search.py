@@ -85,7 +85,7 @@ def iter_blueprints(
     repo_root: Path | str,
     *,
     include_hidden: bool = False,
-    schema_version: int = 5,
+    schema_version: int = 6,
 ) -> Iterator[BlueprintRecord]:
     """Yield parsed blueprint records sorted by repository-relative path.
 
@@ -95,11 +95,11 @@ def iter_blueprints(
     """
 
     root = Path(repo_root).resolve()
-    if schema_version == 5:
+    if schema_version in {5, 6}:
         try:
             graph = load_repository_blueprint_graph(
                 root,
-                expected_schema_version=5,
+                expected_schema_version=schema_version,
             )
         except (OSError, ValueError) as exc:
             raise BlueprintSearchError(str(exc)) from exc
@@ -137,7 +137,7 @@ def iter_blueprints(
             )
         return
     if schema_version != 4:
-        raise BlueprintSearchError("schema_version must be 4 or 5")
+        raise BlueprintSearchError("schema_version must be 4, 5, or 6")
     try:
         documents = tuple(
             iter_inventory_blueprints(root, expected_schema_version=4)
@@ -353,13 +353,13 @@ def search_blueprints(
     comments = query.get("comments", "drop")
     explain = bool(query.get("explain", False))
     include_hidden = bool(query.get("include_hidden", False))
-    schema_version = query.get("schema_version", 5)
+    schema_version = query.get("schema_version", 6)
     if (
         not isinstance(schema_version, int)
         or isinstance(schema_version, bool)
-        or schema_version not in {4, 5}
+        or schema_version not in {4, 5, 6}
     ):
-        raise BlueprintSearchError("schema_version must be 4 or 5")
+        raise BlueprintSearchError("schema_version must be 4, 5, or 6")
 
     rows: list[dict[str, Any]] = []
     for record in iter_blueprints(

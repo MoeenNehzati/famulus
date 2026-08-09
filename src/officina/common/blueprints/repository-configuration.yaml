@@ -98,7 +98,7 @@ interfaces:
     description: Loads one exact repository configuration for Python callers.
     version: 1
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces:
 - interface: common.interface.toml-io
   version: 1

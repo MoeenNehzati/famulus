@@ -10,22 +10,22 @@ content:
 - __init__\.py
 description: Code module for the skill-maker skill.
 exports:
-  skill-maker-rtx.interface.sync-blueprints:
+  skill-maker._rtx.interface.sync-blueprints:
     access:
       allow_all_modules: false
       allowed_callers:
       - skill-certifier
       - skill-maker
-    source_interface: skill-maker-rtx.source.rtx-blueprint-syncer.interface.sync-blueprints
+    source_interface: skill-maker._rtx.source.rtx-blueprint-syncer.interface.sync-blueprints
 gateway:
   language: Python>=3.11
   path: __init__.py
-id: skill-maker-rtx
+id: skill-maker._rtx
 namespace_exports: {}
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
-  skill-maker-rtx.source.rtx-blueprint-syncer:
+  skill-maker._rtx.source.rtx-blueprint-syncer:
     blueprint:
       base: module-root
       path: blueprints/rtx-blueprint-syncer.yaml

@@ -23,13 +23,13 @@ from officina.runtime.python_machine_interface import DispatchCall, PythonMachin
 
 DISPATCHES = {
     "cloud-files-lists-read": DispatchCall(
-        caller_module_id="list-manager-rtx",
-        target_module_id="cloud-files",
+        caller_module_id="list-manager._rtx",
+        target_module_id="cloud-files._rtx",
         interface="lists-read",
     ),
     "cloud-files-lists-write": DispatchCall(
-        caller_module_id="list-manager-rtx",
-        target_module_id="cloud-files",
+        caller_module_id="list-manager._rtx",
+        target_module_id="cloud-files._rtx",
         interface="lists-write",
     ),
 }

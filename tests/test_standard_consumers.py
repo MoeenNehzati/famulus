@@ -25,7 +25,7 @@ def test_skill_maker_queries_standards_and_builds_an_authoring_brief() -> None:
         use["interface"] for use in gateway["uses_interfaces"]
     } == {
         "common.interface.query-standard",
-        "skill-maker.interface.sync-blueprints",
+        "skill-maker._rtx.interface.sync-blueprints",
     }
     query_use = next(
         use

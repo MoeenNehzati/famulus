@@ -70,11 +70,11 @@ def _is_same_skill_public_interface(skill_name: str, interface_id: object) -> bo
     """
     if not isinstance(interface_id, str):
         return False
-    prefix = f"{skill_name}.interface."
+    module_id, marker, local_name = interface_id.rpartition(".interface.")
     return (
-        interface_id.startswith(prefix)
-        and _PUBLIC_INTERFACE_NAME_RE.fullmatch(interface_id.removeprefix(prefix))
-        is not None
+        marker == ".interface."
+        and (module_id == skill_name or module_id.startswith(f"{skill_name}."))
+        and _PUBLIC_INTERFACE_NAME_RE.fullmatch(local_name) is not None
     )
 
 
@@ -82,7 +82,7 @@ def _declared_public_interface_ids(
     repo_root: Path,
     skill_dir: Path,
 ) -> frozenset[str]:
-    """Return same-skill exports from one schema-validated module blueprint.
+    """Return same-skill exports from schema-validated root and runtime blueprints.
 
     Intent
     ------
@@ -94,7 +94,7 @@ def _declared_public_interface_ids(
 
     Pseudocode
     ----------
-    - load and validate the skill module blueprint
+    - load and validate the skill root and optional `_rtx` module blueprints
     - reject unavailable, malformed, or non-mapping exports
     - return canonical same-skill interface identifiers
 
@@ -109,19 +109,23 @@ def _declared_public_interface_ids(
         constructs: "Builds the validated module declaration used for masking."
     """
     try:
-        module = load_module_blueprint(
-            repo_root,
-            skill_dir,
-            expected_schema_version=5,
+        module_roots = [skill_dir]
+        if (skill_dir / "_rtx" / "blueprint.yaml").is_file():
+            module_roots.append(skill_dir / "_rtx")
+        modules = tuple(
+            load_module_blueprint(
+                repo_root,
+                module_root,
+                expected_schema_version=6,
+            )
+            for module_root in module_roots
         )
     except (BlueprintGraphError, OSError, UnicodeError, ValueError):
         return frozenset()
-    exports = module.declaration.get("exports")
-    if not isinstance(exports, Mapping):
-        return frozenset()
     return frozenset(
         interface_id
-        for interface_id in exports
+        for module in modules
+        for interface_id in module.declaration.get("exports", {})
         if _is_same_skill_public_interface(skill_dir.name, interface_id)
     )
 
@@ -156,7 +160,12 @@ def _graph_public_interface_ids(
     return frozenset(
         interface_id
         for interface_id, export in exports.items()
-        if getattr(export, "module_node_id", None) == skill_name
+        if (
+            getattr(export, "module_node_id", None) == skill_name
+            or str(getattr(export, "module_node_id", "")).startswith(
+                f"{skill_name}."
+            )
+        )
         and _is_same_skill_public_interface(skill_name, interface_id)
     )
 

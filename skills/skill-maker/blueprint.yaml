@@ -1,9 +1,7 @@
 authority:
   owns_filesystem: []
 children:
-  skill-maker-rtx:
-    base: module-root
-    path: _rtx/blueprint.yaml
+  _rtx: {}
 content:
 - SKILL\.md
 description: Defines the personal skill-authoring workflow and owns repository skill
@@ -28,21 +26,26 @@ exports:
       allow_all_modules: true
       allowed_callers: []
     source_interface: skill-maker.source.gateway.interface.default
-  skill-maker.interface.sync-blueprints:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - skill-certifier
-    facade_interface:
-      interface: skill-maker-rtx.interface.sync-blueprints
-      version: 1
 gateway:
   language: Markdown
   path: SKILL.md
 id: skill-maker
-namespace_exports: {}
+namespace_exports:
+  _rtx:
+    version: 1
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    surface:
+      only:
+        skill-maker._rtx.interface.sync-blueprints: 1
+    interface_access:
+      skill-maker._rtx.interface.sync-blueprints:
+        allow_all_modules: false
+        allowed_callers:
+        - skill-certifier
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
   skill-maker.source.gateway:
     blueprint:

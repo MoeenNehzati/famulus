@@ -793,7 +793,7 @@ def test_route_smoke_batch_empty_input_launches_no_child(
     assert batch_tracer(tmp_path, []) == {}
 
 
-def test_route_smoke_schema_version_is_explicit_and_defaults_to_v5(
+def test_route_smoke_schema_version_is_explicit_and_defaults_to_v6(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -832,9 +832,9 @@ def test_route_smoke_schema_version_is_explicit_and_defaults_to_v5(
         expected_schema_version=5,
     )
 
-    assert [command[-1] for command in commands] == ["5", "5"]
+    assert [command[-1] for command in commands] == ["6", "5"]
     assert Path(commands[0][5]).name == "blueprint"
-    assert Path(commands[1][5]).name == "blueprint"
+    assert Path(commands[1][5]).name == "v5"
 
 
 def test_scalar_route_smoke_trace_delegates_to_batch(

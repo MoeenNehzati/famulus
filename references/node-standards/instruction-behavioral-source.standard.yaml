@@ -1,6 +1,6 @@
 schema_version: 6
 standard_version: 1.0.0
-revision: 14
+revision: 15
 id: node-standards.instruction-behavioral-source
 canonical_path: references/node-standards/instruction-behavioral-source.standard.yaml
 title: Instruction Behavioral Source Standard
@@ -10,7 +10,7 @@ imports:
     standard_id: node-standards.behavioral-source
     standard_version: 1.0.0
     revision: 13
-    digest: sha256:0f99343f847af7fc440127123ef8868d21557f2786118ac1b7fb15d84bfc501c
+    digest: sha256:80cc6a496024b5a36ee58ec3c2f91f3c06e38b70e4b8db92c7e4e9d636b63ea3
     artifact:
       kind: artifact
       ref: artifact.behavioral-source-standard

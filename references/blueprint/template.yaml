@@ -1,4 +1,4 @@
-schema_version: 5
+schema_version: 6
 node_type: module
 id: example-skill
 version: 1
@@ -6,7 +6,7 @@ gateway:
   path: SKILL.md
   language: Markdown
 content:
-  - SKILL\.md
+- SKILL\.md
 authority:
   owns_filesystem: []
 sources: {}

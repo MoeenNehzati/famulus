@@ -1,0 +1,20 @@
+authority:
+  owns_filesystem: []
+children: {}
+content:
+- (?:authority\-disposition|[a-z0-9\-]+\.standard)\.yaml|semantic\-review\.md
+description: Owns the layered canonical standards queried for registered nodes and owned sub-scopes.
+exports: {}
+gateway:
+  language: YAML
+  path: node.standard.yaml
+id: node-standards
+namespace_exports: {}
+node_type: module
+schema_version: 5
+sources:
+  node-standards.source.standards:
+    blueprint:
+      base: module-root
+      path: blueprints/standards.yaml
+version: 1

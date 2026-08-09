@@ -83,28 +83,28 @@ interfaces:
     description: Primary LLM-facing skill instructions.
     version: 1
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces:
-- interface: cloud-files.interface.setup-oauth
+- interface: cloud-files._rtx.interface.setup-oauth
   version: 1
-- interface: cloud-files.interface.use-google-credential
+- interface: cloud-files._rtx.interface.use-google-credential
   version: 1
 - interface: connect-google.interface.default
   version: 1
-- interface: cloud-files.interface.ensure-oauth
+- interface: cloud-files._rtx.interface.ensure-oauth
   version: 1
-- interface: cloud-files.interface.lists-delete
+- interface: cloud-files._rtx.interface.lists-delete
   version: 1
-- interface: cloud-files.interface.lists-read
+- interface: cloud-files._rtx.interface.lists-read
   version: 1
-- interface: cloud-files.interface.lists-write
+- interface: cloud-files._rtx.interface.lists-write
   version: 1
-- interface: cloud-files.interface.plans-delete
+- interface: cloud-files._rtx.interface.plans-delete
   version: 1
-- interface: cloud-files.interface.plans-read
+- interface: cloud-files._rtx.interface.plans-read
   version: 1
-- interface: cloud-files.interface.plans-write
+- interface: cloud-files._rtx.interface.plans-write
   version: 1
-- interface: cloud-files.interface.write-config
+- interface: cloud-files._rtx.interface.write-config
   version: 1
 version: 2

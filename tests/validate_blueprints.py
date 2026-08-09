@@ -92,21 +92,20 @@ def test_preflight_explicitly_selects_v5_for_an_all_v5_staged_tree(
     assert graph.schema_version == 5
 
 
-def test_preflight_defaults_to_v5_for_an_all_v5_tree(
+def test_preflight_defaults_to_v6_for_an_all_v6_tree(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _copy_schema_root(tmp_path)
-    fixture = REPO_ROOT / "tests" / "fixtures" / "blueprint_v5" / "authorization"
-    copy_v5_fixture_tree(fixture / "modules", tmp_path / "modules")
-    copy_v5_fixture_tree(fixture / "skills", tmp_path / "skills")
+    target = tmp_path / "skills" / "loose-mode"
+    shutil.copytree(REPO_ROOT / "skills" / "loose-mode", target)
     monkeypatch.setattr(MOD, "_validate_generated_markers", lambda _path: [])
 
     errors, graph = MOD.preflight(tmp_path)
 
     assert errors == []
     assert graph is not None
-    assert graph.schema_version == 5
+    assert graph.schema_version == 6
 
 
 def test_full_v5_validate_checks_generated_views_with_v5_syncer_mode(
@@ -154,7 +153,7 @@ def test_full_v5_validate_checks_generated_views_with_v5_syncer_mode(
     ]
 
 
-def test_default_validate_uses_v5_syncer_argv(
+def test_default_validate_uses_v6_syncer_argv(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -184,7 +183,7 @@ def test_default_validate_uses_v5_syncer_argv(
             str(sync_script),
             "--check",
             "--schema-version",
-            "5",
+            "6",
         ]
     ]
 

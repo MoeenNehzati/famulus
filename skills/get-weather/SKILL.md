@@ -13,20 +13,14 @@ Activation: user-request, skill-workflow; persistent modifier: no
 
 Skill Version: 2
 
-Uses Interfaces: none
+Uses Interfaces:
+- `get-weather.source.gateway -> get-weather._rtx.interface.scripts-weather@1`
 
 Public Interfaces:
 - `get-weather.interface.default`
-- `get-weather.interface.scripts-weather`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Dispatcher Interfaces:
-
-Use the installed `dispatcher` command for these process-bound interfaces:
-- `get-weather.interface.scripts-weather` — Fetch weather data for a location and date range, returning hourly forecast JSON.
-  - `dispatcher --caller-skill get-weather get-weather.interface.scripts-weather [--date <YYYY-MM-DD>] [--end-date <YYYY-MM-DD>] [--location <loc>]`
 
 Instruction Interfaces:
 

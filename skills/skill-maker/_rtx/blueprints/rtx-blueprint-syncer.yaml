@@ -8,9 +8,9 @@ description: Loads every skill blueprint, validates cross-skill interface and ru
 gateway:
   language: Python
   path: _blueprint_syncer.py
-id: skill-maker-rtx.source.rtx-blueprint-syncer
+id: skill-maker._rtx.source.rtx-blueprint-syncer
 interfaces:
-  skill-maker-rtx.source.rtx-blueprint-syncer.interface.sync-blueprints:
+  skill-maker._rtx.source.rtx-blueprint-syncer.interface.sync-blueprints:
     contract:
       arguments:
         check:
@@ -226,7 +226,7 @@ runtime_dependencies:
     windows: true
   reason: Parses skill blueprint YAML files.
   version: any
-schema_version: 5
+schema_version: 6
 uses_interfaces:
 - interface: common.interface.atomic-files
   version: 1

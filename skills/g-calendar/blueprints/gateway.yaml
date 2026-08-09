@@ -96,16 +96,16 @@ interfaces:
     description: Primary LLM-facing skill instructions.
     version: 1
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces:
 - interface: connect-google.interface.default
   version: 1
-- interface: g-calendar.interface.setup-oauth
+- interface: g-calendar._rtx.interface.setup-oauth
   version: 1
-- interface: g-calendar.interface.use-google-credential
+- interface: g-calendar._rtx.interface.use-google-credential
   version: 1
-- interface: g-calendar.interface.ensure-oauth
+- interface: g-calendar._rtx.interface.ensure-oauth
   version: 1
-- interface: g-calendar.interface.scripts-gcal
+- interface: g-calendar._rtx.interface.scripts-gcal
   version: 1
 version: 2

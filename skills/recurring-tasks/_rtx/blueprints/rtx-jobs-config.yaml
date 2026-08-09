@@ -5,9 +5,9 @@ description: Loads, validates, and writes recurring-job configuration through on
 gateway:
   language: Python
   path: _jobs_config.py
-id: recurring-tasks-rtx.source.rtx-jobs-config
+id: recurring-tasks._rtx.source.rtx-jobs-config
 interfaces: {}
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

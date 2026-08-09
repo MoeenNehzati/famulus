@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import json
 import re
-import sys
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
@@ -33,13 +32,8 @@ from typing import Any
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-try:
-    from officina.common.dates import get_today_date_key, normalize_date_key
-    from officina.runtime.python_machine_interface import DispatchCall, PythonMachineInterface
-except ImportError:  # pragma: no cover - local checkout fallback
-    sys.path.insert(0, str(REPO_ROOT / "src"))
-    from officina.common.dates import get_today_date_key, normalize_date_key
-    from officina.runtime.python_machine_interface import DispatchCall, PythonMachineInterface
+from officina.common.dates import get_today_date_key, normalize_date_key
+from officina.runtime.python_machine_interface import DispatchCall, PythonMachineInterface
 
 MAX_ITEMS = 5
 SECTION_SPECS = {
@@ -64,57 +58,57 @@ class PlanError(Exception):
 
 DISPATCHES = {
     "cloud-plans-read": DispatchCall(
-        caller_module_id="daily-plan-rtx",
-        target_module_id="cloud-files",
+        caller_module_id="daily-plan._rtx",
+        target_module_id="cloud-files._rtx",
         interface="plans-read",
     ),
     "cloud-plans-write": DispatchCall(
-        caller_module_id="daily-plan-rtx",
-        target_module_id="cloud-files",
+        caller_module_id="daily-plan._rtx",
+        target_module_id="cloud-files._rtx",
         interface="plans-write",
     ),
     "cloud-lists-read": DispatchCall(
-        caller_module_id="daily-plan-rtx",
-        target_module_id="cloud-files",
+        caller_module_id="daily-plan._rtx",
+        target_module_id="cloud-files._rtx",
         interface="lists-read",
     ),
     "cloud-lists-write": DispatchCall(
-        caller_module_id="daily-plan-rtx",
-        target_module_id="cloud-files",
+        caller_module_id="daily-plan._rtx",
+        target_module_id="cloud-files._rtx",
         interface="lists-write",
     ),
     "calendar-agenda": DispatchCall(
-        caller_module_id="daily-plan-rtx",
-        target_module_id="g-calendar",
+        caller_module_id="daily-plan._rtx",
+        target_module_id="g-calendar._rtx",
         interface="scripts-gcal",
     ),
     "weather": DispatchCall(
-        caller_module_id="daily-plan-rtx",
-        target_module_id="get-weather",
+        caller_module_id="daily-plan._rtx",
+        target_module_id="get-weather._rtx",
         interface="scripts-weather",
         smoke_args=(),
     ),
     "list-read-beautify": DispatchCall(
-        caller_module_id="daily-plan-rtx",
-        target_module_id="list-manager",
+        caller_module_id="daily-plan._rtx",
+        target_module_id="list-manager._rtx",
         interface="read-beautify",
     ),
     "list-update": DispatchCall(
-        caller_module_id="daily-plan-rtx",
-        target_module_id="list-manager",
+        caller_module_id="daily-plan._rtx",
+        target_module_id="list-manager._rtx",
         interface="update-list",
     ),
 }
 
 _DISPATCH_KEYS = {
-    ("cloud-files", "plans-read"): "cloud-plans-read",
-    ("cloud-files", "plans-write"): "cloud-plans-write",
-    ("cloud-files", "lists-read"): "cloud-lists-read",
-    ("cloud-files", "lists-write"): "cloud-lists-write",
-    ("g-calendar", "scripts-gcal"): "calendar-agenda",
-    ("get-weather", "scripts-weather"): "weather",
-    ("list-manager", "read-beautify"): "list-read-beautify",
-    ("list-manager", "update-list"): "list-update",
+    ("cloud-files._rtx", "plans-read"): "cloud-plans-read",
+    ("cloud-files._rtx", "plans-write"): "cloud-plans-write",
+    ("cloud-files._rtx", "lists-read"): "cloud-lists-read",
+    ("cloud-files._rtx", "lists-write"): "cloud-lists-write",
+    ("g-calendar._rtx", "scripts-gcal"): "calendar-agenda",
+    ("get-weather._rtx", "scripts-weather"): "weather",
+    ("list-manager._rtx", "read-beautify"): "list-read-beautify",
+    ("list-manager._rtx", "update-list"): "list-update",
 }
 
 

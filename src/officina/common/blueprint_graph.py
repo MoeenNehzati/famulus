@@ -1714,7 +1714,7 @@ def _declaration_schema_errors(
     schema_root: Path,
     validators: dict[str, jsonschema.protocols.Validator],
     *,
-    expected_schema_version: int = 5,
+    expected_schema_version: int = 6,
 ) -> tuple[BlueprintSchemaError, ...]:
     """Transform blueprint path, declaration, schema root, validators into the declaration schema errors result used by the blueprint graph.
 
@@ -6011,6 +6011,8 @@ def load_dispatch_blueprint_graph(
                 Path(__file__).resolve().parents[3]
                 / "references"
                 / "blueprint"
+                / "migrations"
+                / "v5"
             )
         graph = _load_v5_repository_blueprint_graph(
             root,
@@ -6032,13 +6034,13 @@ def load_repository_blueprint_graph(
     repo_root: Path,
     *,
     schema_root: Path | None = None,
-    expected_schema_version: int = 5,
+    expected_schema_version: int = 6,
 ) -> RepositoryBlueprintGraph:
-    """Load one explicit repository-wide graph; v5 is canonical.
+    """Load one explicit repository-wide graph; v6 is canonical.
 
     Intent
     ------
-    Use repo root, schema root, expected schema version to load one explicit repository-wide graph; v5 is canonical.
+    Use repo root, schema root, expected schema version to load one explicit repository-wide graph; v6 is canonical.
 
     Rationale
     ---------
@@ -6097,7 +6099,7 @@ def load_repository_blueprint_graph(
         if schema_root is not None
         else (
             root / "references" / "blueprint"
-            if expected_schema_version == 5
+            if expected_schema_version == 6
             else root / "references" / "blueprint" / "migrations" / f"v{expected_schema_version}"
         )
     )
@@ -6108,7 +6110,7 @@ def load_repository_blueprint_graph(
             / "blueprint"
             / (
                 Path()
-                if expected_schema_version == 5
+                if expected_schema_version == 6
                 else Path("migrations") / f"v{expected_schema_version}"
             )
         )

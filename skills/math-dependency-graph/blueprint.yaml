@@ -1,9 +1,7 @@
 authority:
   owns_filesystem: []
 children:
-  math-dependency-graph-rtx:
-    base: module-root
-    path: _rtx/blueprint.yaml
+  _rtx: {}
 content:
 - (?:SKILL\.md|instructions/extract\.md)
 description: Extracts a direct dependency graph from mathematical LaTeX, renders canonical
@@ -33,34 +31,33 @@ exports:
       allowed_callers:
       - math-dependency-graph
     source_interface: math-dependency-graph.source.instructions-extract.interface.extract
-  math-dependency-graph.interface.scripts-build-math-dependency-graph:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: math-dependency-graph-rtx.interface.scripts-build-math-dependency-graph
-      version: 1
-  math-dependency-graph.interface.scripts-extract-mathjax-macros:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: math-dependency-graph-rtx.interface.scripts-extract-mathjax-macros
-      version: 1
-  math-dependency-graph.interface.scripts-serve-graph:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: math-dependency-graph-rtx.interface.scripts-serve-graph
-      version: 1
 gateway:
   language: Markdown
   path: SKILL.md
 id: math-dependency-graph
-namespace_exports: {}
+namespace_exports:
+  _rtx:
+    version: 1
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    surface:
+      only:
+        math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph: 1
+        math-dependency-graph._rtx.interface.scripts-extract-mathjax-macros: 1
+        math-dependency-graph._rtx.interface.scripts-serve-graph: 1
+    interface_access:
+      math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph:
+        allow_all_modules: false
+        allowed_callers: []
+      math-dependency-graph._rtx.interface.scripts-extract-mathjax-macros:
+        allow_all_modules: false
+        allowed_callers: []
+      math-dependency-graph._rtx.interface.scripts-serve-graph:
+        allow_all_modules: false
+        allowed_callers: []
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
   math-dependency-graph.source.gateway:
     blueprint:

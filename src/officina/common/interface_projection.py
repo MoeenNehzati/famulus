@@ -745,7 +745,7 @@ def project_consumer_interfaces(
 ) -> InterfaceProjection:
     """Select one behavioral source's direct interface uses and bounded helpers."""
 
-    if repository_graph.schema_version == 5:
+    if repository_graph.schema_version in {5, 6}:
         return _project_v5_consumer_interfaces(
             repository_graph,
             consumer_id,

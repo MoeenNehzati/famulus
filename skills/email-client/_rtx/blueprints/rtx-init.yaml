@@ -7,10 +7,10 @@ description: Package support source for email-client OAuth token handling; it ex
 gateway:
   language: Python
   path: __init__.py
-id: email-client-rtx.source.rtx-init
+id: email-client._rtx.source.rtx-init
 interfaces: {}
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces:
 - interface: common.interface.secret-store
   version: 1

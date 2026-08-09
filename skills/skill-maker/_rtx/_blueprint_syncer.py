@@ -29,10 +29,6 @@ import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SRC_ROOT = REPO_ROOT / "src"
-if str(SRC_ROOT) not in sys.path:
-    sys.path.insert(0, str(SRC_ROOT))
-
 from officina.runtime.python_machine_interface import PythonMachineInterface
 from officina.runtime.python_machine_interface_runner import run_python_machine_interface
 from officina.common.blueprint_graph import (
@@ -106,7 +102,7 @@ def module_discovery(data: dict[str, Any], context: str) -> dict[str, Any]:
 
 def load_blueprints(
     *,
-    schema_version: int = 5,
+    schema_version: int = 6,
     schema_root: Path | None = None,
 ) -> dict[str, ModuleBlueprint]:
     blueprints: dict[str, ModuleBlueprint] = {}
@@ -116,7 +112,7 @@ def load_blueprints(
         if schema_root is not None
         else (
             BLUEPRINT_SCHEMA_ROOT
-            if schema_version == 5
+            if schema_version == 6
             else BLUEPRINT_SCHEMA_ROOT / "migrations" / f"v{schema_version}"
         )
     )
@@ -591,7 +587,13 @@ def sync_module(blueprint: ModuleBlueprint, check_only: bool) -> list[str]:
 def generated_runtime_dependencies_manifest(
     blueprints: dict[str, ModuleBlueprint],
 ) -> dict[str, Any]:
-    """Build the stdlib-readable dependency manifest from blueprint interfaces."""
+    """Build dependency manifest v2 from all executable owned interfaces.
+
+    Canonical interface IDs are the keys.  Ownership, including descendant
+    ownership, determines aggregation; namespace exposure is intentionally
+    irrelevant because a private child process still needs its runtime
+    dependencies installed.
+    """
     skills: dict[str, Any] = {}
     all_dependencies: dict[str, set[str]] = {kind: set() for kind in RUNTIME_DEPENDENCY_KINDS}
 
@@ -663,7 +665,12 @@ def generated_runtime_dependencies_manifest(
         graph = blueprint.repository_graph
         interface_items = []
         for export_id, export in sorted(graph.exports.items()):
-            if export.module_node_id != skill_name:
+            ancestry = getattr(graph, "module_ancestry", {}).get(
+                export.module_node_id, ()
+            )
+            if export.module_node_id != skill_name and (
+                not ancestry or ancestry[0] != skill_name
+            ):
                 continue
             interface_spec, source_node_id = _generated_export_binding(
                 graph,
@@ -685,9 +692,9 @@ def generated_runtime_dependencies_manifest(
                     else []
                 ),
             }
-            interface_items.append((export.local_name, export_id, enriched))
+            interface_items.append((export_id, enriched))
 
-        for interface_name, interface_id_value, interface_spec in interface_items:
+        for interface_id_value, interface_spec in interface_items:
             if not isinstance(interface_spec, dict):
                 continue
             raw_dependencies = interface_spec.get("dependencies", [])
@@ -724,16 +731,13 @@ def generated_runtime_dependencies_manifest(
                     )
                     all_dependencies[kind].add(name)
 
-            generated_interfaces[interface_name] = {
-                "id": interface_id_value,
-                "dependencies": dependencies,
-            }
+            generated_interfaces[interface_id_value] = {"dependencies": dependencies}
 
         if generated_interfaces:
             skills[skill_name] = {"interfaces": generated_interfaces}
 
     return {
-        "version": 1,
+        "version": 2,
         "skills": skills,
         "all": {kind: sorted(all_dependencies[kind]) for kind in RUNTIME_DEPENDENCY_KINDS},
     }
@@ -768,7 +772,7 @@ class Interface(PythonMachineInterface):
             "--schema-version",
             type=int,
             choices=(4, 5, 6),
-            default=5,
+            default=6,
             help="Select the explicit repository blueprint generation.",
         )
         return parser
@@ -780,7 +784,7 @@ class Interface(PythonMachineInterface):
         )
 
 
-def run_sync(*, check_only: bool, schema_version: int = 5) -> int:
+def run_sync(*, check_only: bool, schema_version: int = 6) -> int:
     try:
         blueprints = load_blueprints(schema_version=schema_version)
     except BlueprintError as exc:

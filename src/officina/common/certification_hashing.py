@@ -50,6 +50,7 @@ CANONICAL_NODE_HASH_POLICY = Path(
 )
 CERTIFIER_NODE_ID = "skill-certifier"
 CERTIFIER_INTERFACE_ID = "skill-certifier.interface.certify"
+V6_CERTIFIER_INTERFACE_ID = "skill-certifier._rtx.interface.certify"
 CERTIFIER_INTERFACE_VERSION = 1
 CERTIFIER_CHECK_REGISTRY: Mapping[str, tuple[str, int]] = {
     "deterministic": ("v4-deterministic", 1),
@@ -61,10 +62,15 @@ V5_CERTIFIER_CHECK_REGISTRY: Mapping[str, tuple[str, int]] = {
     "route-smoke": ("route-smoke-dependencies", 2),
     "semantic-review": ("blueprint-accuracy", 2),
 }
+V6_CERTIFIER_CHECK_REGISTRY: Mapping[str, tuple[str, int]] = {
+    "deterministic": ("v6-deterministic", 1),
+    "route-smoke": ("route-smoke-dependencies", 3),
+    "semantic-review": ("blueprint-accuracy", 3),
+}
 
 
 def certifier_check_registry(
-    expected_schema_version: int = 5,
+    expected_schema_version: int = 6,
 ) -> Mapping[str, tuple[str, int]]:
     """Select the immutable check registry for one repository schema."""
 
@@ -72,7 +78,9 @@ def certifier_check_registry(
         return CERTIFIER_CHECK_REGISTRY
     if expected_schema_version == 5:
         return V5_CERTIFIER_CHECK_REGISTRY
-    raise ValueError("expected_schema_version must be 4 or 5")
+    if expected_schema_version == 6:
+        return V6_CERTIFIER_CHECK_REGISTRY
+    raise ValueError("expected_schema_version must be 4, 5, or 6")
 
 
 @dataclass(frozen=True)
@@ -346,7 +354,7 @@ def map_route_smoke_dependencies(
                 mapping = RouteSmokeDependencyMapping(
                     relative, "certification-basis", None
                 )
-            elif graph.schema_version == 5:
+            elif graph.schema_version in {5, 6}:
                 reachable_modules = {
                     graph.source_modules.get(node_id)
                     for node_id in reachable
@@ -430,16 +438,16 @@ def _hash_bytes(value: bytes) -> str:
 def certification_basis_roots_path(
     repo_root: Path,
     *,
-    expected_schema_version: int = 5,
+    expected_schema_version: int = 6,
 ) -> Path:
     """Return the canonical repository-owned certification-basis manifest."""
 
     if expected_schema_version == 4:
         relative = V4_CERTIFICATION_BASIS_MANIFEST
-    elif expected_schema_version == 5:
+    elif expected_schema_version in {5, 6}:
         relative = CERTIFICATION_BASIS_MANIFEST
     else:
-        raise ValueError("expected_schema_version must be 4 or 5")
+        raise ValueError("expected_schema_version must be 4, 5, or 6")
     return Path(repo_root).resolve() / relative
 
 
@@ -503,7 +511,7 @@ def _basis_pattern_matches(path: PurePosixPath, pattern: PurePosixPath) -> bool:
 def resolve_certification_basis_paths(
     repo_root: Path,
     *,
-    expected_schema_version: int = 5,
+    expected_schema_version: int = 6,
     allow_non_atomic: bool = False,
 ) -> tuple[Path, ...]:
     """Resolve the canonical manifest without accepting caller-selected inputs."""
@@ -586,7 +594,7 @@ def resolve_certification_basis_paths(
 def compute_certification_basis_hash(
     repo_root: Path,
     *,
-    expected_schema_version: int = 5,
+    expected_schema_version: int = 6,
     allow_non_atomic: bool = False,
 ) -> str:
     """Hash the explicitly selected certification-basis manifest and files."""
@@ -623,7 +631,7 @@ def compute_certification_basis_hash(
 
 
 def expected_certifier_checks(
-    expected_schema_version: int = 5,
+    expected_schema_version: int = 6,
 ) -> tuple[dict[str, object], ...]:
     """Return the exact passed records owned by the versioned certifier registry."""
 
@@ -650,7 +658,12 @@ def derive_certifier_identity(
     node = graph.nodes.get(CERTIFIER_NODE_ID)
     if node is None or node.node_type != "module":
         raise CertificationHashError("canonical certifier module is absent from the v4 graph")
-    export = graph.exports.get(CERTIFIER_INTERFACE_ID)
+    interface_id = (
+        V6_CERTIFIER_INTERFACE_ID
+        if graph.schema_version == 6
+        else CERTIFIER_INTERFACE_ID
+    )
+    export = graph.exports.get(interface_id)
     if (
         export is None
         or export.module_node_id != CERTIFIER_NODE_ID
@@ -675,7 +688,7 @@ def derive_certifier_identity(
     ):
         raise CertificationHashError("canonical certifier source commit is unavailable")
     return {
-        "interface": CERTIFIER_INTERFACE_ID,
+        "interface": interface_id,
         "version": CERTIFIER_INTERFACE_VERSION,
         "node_hash": node_hash,
         "source_commit": source_commit,
@@ -1306,9 +1319,10 @@ def compute_node_hash_states(
     if schema_versions != {graph.schema_version} or graph.schema_version not in {
         4,
         5,
+        6,
     }:
         raise CertificationHashError(
-            "node hashing requires one closed all-v4 or all-v5 repository graph"
+            "node hashing requires one closed all-v4, all-v5, or all-v6 repository graph"
         )
     return _compute_node_hash_states(
         graph,

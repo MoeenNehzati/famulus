@@ -5,34 +5,34 @@ dependencies:
     base: module-root
     path: blueprints/rtx-jobs-config.yaml
   reason: Imports the shared validated jobs configuration loader.
-  source: recurring-tasks-rtx.source.rtx-jobs-config
+  source: recurring-tasks._rtx.source.rtx-jobs-config
   version: 1
 - blueprint:
     base: module-root
     path: blueprints/jobs-config.yaml
   reason: Reads enabled job definitions from the shared jobs configuration.
-  source: recurring-tasks-rtx.source.jobs-config
+  source: recurring-tasks._rtx.source.jobs-config
   version: 1
 - blueprint:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
-  source: recurring-tasks-rtx.source.rtx-init
+  source: recurring-tasks._rtx.source.rtx-init
   version: 1
 - blueprint:
     base: module-root
     path: blueprints/rtx-schedule-backend-init.yaml
   reason: Imports Python source from _rtx/_schedule_backend/__init__.py.
-  source: recurring-tasks-rtx.source.rtx-schedule-backend-init
+  source: recurring-tasks._rtx.source.rtx-schedule-backend-init
   version: 1
 description: Checks scheduler availability, agent command resolution, installed registration
   drift, and recent enabled-job freshness and outcome, then reports the result.
 gateway:
   language: Python
   path: _healthcheck_probe.py
-id: recurring-tasks-rtx.source.rtx-healthcheck-probe
+id: recurring-tasks._rtx.source.rtx-healthcheck-probe
 interfaces:
-  recurring-tasks-rtx.source.rtx-healthcheck-probe.interface.scripts-healthcheck:
+  recurring-tasks._rtx.source.rtx-healthcheck-probe.interface.scripts-healthcheck:
     contract:
       arguments: {}
       caller_warnings:
@@ -286,6 +286,6 @@ runtime_dependencies:
     windows: true
   reason: Provides the per-user scheduler state checked by health probes.
   version: any
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

@@ -11,10 +11,10 @@ description: Marks the cloud-files runtime directory as a Python package for sib
 gateway:
   language: Python
   path: __init__.py
-id: cloud-files-rtx.source.rtx-init
+id: cloud-files._rtx.source.rtx-init
 interfaces: {}
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces:
 - interface: common.interface.google-credentials
   version: 1

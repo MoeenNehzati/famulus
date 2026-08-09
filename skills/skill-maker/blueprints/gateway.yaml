@@ -47,9 +47,8 @@ interfaces:
           sensitivity: user-private
           system: agent-runtime
         - access: read
-          content: target skill, schemas, validators, tests, branch, and current
-            diff; canonical standards arrive through the declared standards-query
-            interface
+          content: target skill, schemas, validators, tests, branch, and current diff;
+            canonical standards arrive through the declared standards-query interface
           formats:
           - markdown
           - yaml
@@ -100,7 +99,7 @@ interfaces:
           - text
           id: write-3
           medium: subprocess
-          path: $repo/{skills/skill-maker/_rtx/_blueprint_syncer.py,repo_checks.py,tests,skills/<skill-name>/tests}
+          path: $repo/{skills/skill-maker/_rtx/_blueprint_syncer.py,validators/runner.py,tests,skills/<skill-name>/tests}
           path_match: glob
           reason: Verify branch safety, contract synchronization, and behavior before
             reporting completion.
@@ -219,10 +218,10 @@ interfaces:
       module, interface, validation, and Git-safety standards.
     version: 1
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces:
 - interface: common.interface.query-standard
   version: 1
-- interface: skill-maker.interface.sync-blueprints
+- interface: skill-maker._rtx.interface.sync-blueprints
   version: 1
 version: 5

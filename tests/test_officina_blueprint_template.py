@@ -226,13 +226,13 @@ def test_refresh_preserves_extra_valid_fields_at_the_end() -> None:
     assert refreshed.rstrip().endswith("extra: kept")
 
 
-def test_live_module_template_renders_parseable_v5_yaml() -> None:
+def test_live_module_template_renders_parseable_v6_yaml() -> None:
     schema = load_schema(Path("references/blueprint/module.schema.json"))
 
     text = render_blueprint_template(schema)
 
     loaded = yaml.safe_load(text)
-    assert loaded["schema_version"] == 5
+    assert loaded["schema_version"] == 6
     assert loaded["node_type"] == "module"
     schema_validator(load_schema(Path("references/blueprint/schema.json"))).validate(
         loaded
@@ -287,10 +287,10 @@ def test_compatibility_entry_rejects_pre_v5_authoring_values() -> None:
         )
 
 
-def test_committed_template_is_a_complete_live_v5_module() -> None:
+def test_committed_template_is_a_complete_live_v6_module() -> None:
     committed = yaml.safe_load(Path("references/blueprint/template.yaml").read_text())
 
-    assert committed["schema_version"] == 5
+    assert committed["schema_version"] == 6
     assert committed["node_type"] == "module"
     assert committed["children"] == {}
     assert committed["namespace_exports"] == {}
@@ -382,7 +382,7 @@ def test_regeneration_rejects_pre_v5_blueprints(tmp_path: Path) -> None:
 def test_v5_regeneration_selects_existing_module_schema_owner(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     module_dir = repo / "skills" / "demo-skill"
-    schema_dir = repo / "references" / "blueprint"
+    schema_dir = repo / "references" / "blueprint" / "migrations" / "v5"
     module_dir.mkdir(parents=True)
     schema_dir.mkdir(parents=True)
     blueprint = {
@@ -468,13 +468,8 @@ def test_v5_repository_managed_skill_generator_creates_parent_and_code_child(
         "activated_by": ["user-request"],
         "persistent_modifier": False,
     }
-    assert parent["children"] == {
-        "demo-skill-rtx": {
-            "base": "module-root",
-            "path": "_rtx/blueprint.yaml",
-        }
-    }
-    assert child["id"] == "demo-skill-rtx"
+    assert parent["children"] == {"_rtx": {}}
+    assert child["id"] == "demo-skill._rtx"
     assert "discovery" not in child
     assert child["gateway"] == {
         "path": "__init__.py",
@@ -487,12 +482,12 @@ def test_v5_repository_managed_skill_generator_creates_parent_and_code_child(
     graph = load_repository_blueprint_graph(
         repo,
         schema_root=schema_root,
-        expected_schema_version=5,
+        expected_schema_version=6,
     )
-    assert set(graph.nodes) == {"demo-skill", "demo-skill-rtx"}
+    assert set(graph.nodes) == {"demo-skill", "demo-skill._rtx"}
     assert graph.module_children == {
-        "demo-skill": ("demo-skill-rtx",),
-        "demo-skill-rtx": (),
+        "demo-skill": ("demo-skill._rtx",),
+        "demo-skill._rtx": (),
     }
 
 
@@ -523,7 +518,7 @@ def test_v5_repository_managed_skill_generator_defaults_to_parent_only(
     graph = load_repository_blueprint_graph(
         repo,
         schema_root=Path("references/blueprint").resolve(),
-        expected_schema_version=5,
+        expected_schema_version=6,
     )
     assert set(graph.nodes) == {"instruction-only"}
 

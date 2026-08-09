@@ -26,7 +26,7 @@ def test_cloud_update_contract_requires_list_patches_with_quoted_string_ids():
     )
     _module, _source, export = resolve_export(
         graph,
-        "list-manager.interface.cloud-update",
+        "list-manager._rtx.interface.cloud-update",
     )
     cloud_update = export.declaration
     contract = "\n".join(
@@ -57,7 +57,7 @@ def test_local_update_description_matches_its_sequence_patch_contract():
     )
     _module, _source, export = resolve_export(
         graph,
-        "list-manager.interface.update-list",
+        "list-manager._rtx.interface.update-list",
     )
     update_list = export.declaration
 

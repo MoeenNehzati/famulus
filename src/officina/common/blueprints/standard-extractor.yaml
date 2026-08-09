@@ -33,8 +33,8 @@ interfaces:
             kind: string
             sensitivity: user-private
         facts:
-          description: Optional inspected target facts used to evaluate standard
-            applicability predicates.
+          description: Optional inspected target facts used to evaluate standard applicability
+            predicates.
           required: false
           sensitivity: user-private
           type:
@@ -46,15 +46,22 @@ interfaces:
           required: false
           sensitivity: user-private
           type:
-            description: JSON-compatible mapping with filter, select, and explain fields.
+            description: JSON-compatible mapping with filter, select, and explain
+              fields.
             kind: string
       caller_warnings: []
       direct_io:
         network: []
         reads:
         - access: read
-          content: Standard leaf, pinned imports, schema, validator, and declared evidence artifacts.
-          formats: [yaml, json, markdown, python, text]
+          content: Standard leaf, pinned imports, schema, validator, and declared
+            evidence artifacts.
+          formats:
+          - yaml
+          - json
+          - markdown
+          - python
+          - text
           id: standard-repository
           medium: local-filesystem
           path: <repository>/**
@@ -65,7 +72,9 @@ interfaces:
         writes:
         - access: write
           content: Validated closure metadata and filtered standard records.
-          formats: [python-object, json]
+          formats:
+          - python-object
+          - json
           id: extraction
           medium: local-system
           sensitivity: derived-private
@@ -87,7 +96,8 @@ interfaces:
         class: success
         effects: []
         id: extracted
-        outputs: [result]
+        outputs:
+        - result
       - caller_action: Correct the leaf, pinned closure, facts, or query before retrying.
         class: error
         effects: []
@@ -95,14 +105,20 @@ interfaces:
         outputs: []
       outputs:
       - audience: machine
-        cardinality: {minimum: 1, maximum: 1}
-        description: Closure metadata, effective facts, and filtered JSON-ready standard records.
+        cardinality:
+          minimum: 1
+          maximum: 1
+        description: Closure metadata, effective facts, and filtered JSON-ready standard
+          records.
         direct_io_ref: extraction
-        empty: Never empty on success; the records list may be empty when no record matches.
+        empty: Never empty on success; the records list may be empty when no record
+          matches.
         id: result
         ordering: stable
-        pagination: {kind: none}
-        truncation: {kind: none}
+        pagination:
+          kind: none
+        truncation:
+          kind: none
         type:
           description: Python mapping with JSON-compatible values.
           kind: string
@@ -111,18 +127,27 @@ interfaces:
     description: Extract and query one authoritative standard closure.
     version: 1
 node_type: behavioral_source
-platform_support: {linux: true, macos: true, windows: true}
+platform_support:
+  linux: true
+  macos: true
+  windows: true
 runtime_dependencies:
 - kind: python-package
   name: PyYAML
-  platforms: {linux: true, macos: true, windows: true}
+  platforms:
+    linux: true
+    macos: true
+    windows: true
   reason: Parses standard YAML documents.
   version: any
 - kind: python-package
   name: jsonschema
-  platforms: {linux: true, macos: true, windows: true}
+  platforms:
+    linux: true
+    macos: true
+    windows: true
   reason: Supports the repository standard validator loaded by the extractor.
   version: any
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

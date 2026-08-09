@@ -52,7 +52,7 @@ EXPECTED_SHAPES = {
 def calendar_interface() -> dict[str, object]:
     blueprint = yaml.safe_load(CALENDAR_BLUEPRINT.read_text(encoding="utf-8"))
     return blueprint["interfaces"][
-        "g-calendar-rtx.source.rtx-gcal-client.interface.scripts-gcal"
+        "g-calendar._rtx.source.rtx-gcal-client.interface.scripts-gcal"
     ]
 
 

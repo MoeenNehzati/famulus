@@ -16,6 +16,6 @@ gateway:
 id: common.source.process-binding-compiler
 interfaces: {}
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

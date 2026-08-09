@@ -1,6 +1,6 @@
 schema_version: 6
 standard_version: 1.0.0
-revision: 17
+revision: 18
 id: node-standards.python-behavioral-source
 canonical_path: references/node-standards/python-behavioral-source.standard.yaml
 title: Python Behavioral Source Standard
@@ -10,7 +10,7 @@ imports:
     standard_id: node-standards.behavioral-source
     standard_version: 1.0.0
     revision: 13
-    digest: sha256:0f99343f847af7fc440127123ef8868d21557f2786118ac1b7fb15d84bfc501c
+    digest: sha256:80cc6a496024b5a36ee58ec3c2f91f3c06e38b70e4b8db92c7e4e9d636b63ea3
     artifact:
       kind: artifact
       ref: artifact.behavioral-source-standard
@@ -79,7 +79,7 @@ standards:
       to inspect the resolved invocation without executing it:'
   - kind: guidance
     id: skill-guidelines.dispatcher-role.example-001
-    statement: "```bash\ndispatcher --dry-run --caller-skill daily-plan \\\n  list-manager.interface.read-list\
+    statement: "```bash\ndispatcher --dry-run --caller-skill daily-plan \\\n  list-manager._rtx.interface.read-list\
       \ /tmp/todo.yaml\n```"
   - kind: rule
     id: skill-guidelines.dispatcher-role.requirement-003

@@ -32,7 +32,7 @@ gateway:
 id: semantic-integration
 namespace_exports: {}
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
   semantic-integration.source.gateway:
     blueprint:

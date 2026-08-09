@@ -17,21 +17,21 @@ content:
 - __init__\.py
 description: Code module for the skill-certifier skill.
 exports:
-  skill-certifier-rtx.interface.certify:
+  skill-certifier._rtx.interface.certify:
     access:
       allow_all_modules: false
       allowed_callers:
       - skill-certifier
-    source_interface: skill-certifier-rtx.source.rtx-certifier.interface.certify
+    source_interface: skill-certifier._rtx.source.rtx-certifier.interface.certify
 gateway:
   language: Python>=3.11
   path: __init__.py
-id: skill-certifier-rtx
+id: skill-certifier._rtx
 namespace_exports: {}
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
-  skill-certifier-rtx.source.rtx-certifier:
+  skill-certifier._rtx.source.rtx-certifier:
     blueprint:
       base: module-root
       path: blueprints/rtx-certifier.yaml

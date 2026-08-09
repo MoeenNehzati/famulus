@@ -44,7 +44,7 @@ gateway:
 id: refactor-node
 namespace_exports: {}
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
   refactor-node.source.gateway:
     blueprint:

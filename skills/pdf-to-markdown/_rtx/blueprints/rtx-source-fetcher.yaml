@@ -6,9 +6,9 @@ description: Downloads one arXiv source response, rejects non-gzip responses, an
 gateway:
   language: Python
   path: _source_fetcher.py
-id: pdf-to-markdown-rtx.source.rtx-source-fetcher
+id: pdf-to-markdown._rtx.source.rtx-source-fetcher
 interfaces:
-  pdf-to-markdown-rtx.source.rtx-source-fetcher.interface.scripts-fetch-arxiv-source:
+  pdf-to-markdown._rtx.source.rtx-source-fetcher.interface.scripts-fetch-arxiv-source:
     contract:
       arguments:
         arxiv-id:
@@ -213,6 +213,6 @@ platform_support:
   macos: false
   windows: false
 runtime_dependencies: []
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

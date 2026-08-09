@@ -176,7 +176,7 @@ def _validate_generated_markers(skill_file: Path) -> list[str]:
 def preflight(
     repo_root: Path,
     *,
-    expected_schema_version: int = 5,
+    expected_schema_version: int = 6,
 ) -> tuple[list[str], RepositoryBlueprintGraph | None]:
     """Own repository graph loading and its canonical diagnostics."""
 
@@ -184,7 +184,7 @@ def preflight(
     skills_root = repo_root / "skills"
     blueprint_template = repo_root / "references" / "blueprint" / "template.yaml"
     schema_root = repo_root / "references" / "blueprint"
-    if expected_schema_version != 5:
+    if expected_schema_version != 6:
         schema_root = (
             schema_root / "migrations" / f"v{expected_schema_version}"
         )
@@ -268,7 +268,7 @@ def validate_with_graph(
 def validate(
     repo_root: Path,
     *,
-    expected_schema_version: int = 5,
+    expected_schema_version: int = 6,
 ) -> list[str]:
     errors, graph = preflight(
         repo_root,

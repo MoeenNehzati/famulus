@@ -5,22 +5,22 @@ dependencies:
     base: module-root
     path: blueprints/rtx-jobs-config.yaml
   reason: Imports the shared validated jobs configuration loader.
-  source: recurring-tasks-rtx.source.rtx-jobs-config
+  source: recurring-tasks._rtx.source.rtx-jobs-config
   version: 1
 - blueprint:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
-  source: recurring-tasks-rtx.source.rtx-init
+  source: recurring-tasks._rtx.source.rtx-init
   version: 1
 description: Exposes the no-argument compatibility interface while retaining the internal
   jobs.yaml enabled-field helper.
 gateway:
   language: Python
   path: _job_utils.py
-id: recurring-tasks-rtx.source.rtx-job-utils
+id: recurring-tasks._rtx.source.rtx-job-utils
 interfaces:
-  recurring-tasks-rtx.source.rtx-job-utils.interface.scripts-job-utils:
+  recurring-tasks._rtx.source.rtx-job-utils.interface.scripts-job-utils:
     contract:
       arguments: {}
       caller_warnings: []
@@ -100,6 +100,6 @@ platform_support:
   macos: false
   windows: false
 runtime_dependencies: []
-schema_version: 5
+schema_version: 6
 uses_interfaces: []
 version: 1

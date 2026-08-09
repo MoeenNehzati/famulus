@@ -8,9 +8,9 @@ description: Runs the public v5 certification gate and the frozen candidate-revi
 gateway:
   language: Python
   path: _node_certifier.py
-id: skill-certifier-rtx.source.rtx-certifier
+id: skill-certifier._rtx.source.rtx-certifier
 interfaces:
-  skill-certifier-rtx.source.rtx-certifier.interface.certify:
+  skill-certifier._rtx.source.rtx-certifier.interface.certify:
     contract:
       arguments:
         allow-non-atomic:
@@ -354,7 +354,7 @@ runtime_dependencies:
     windows: true
   reason: Parses v5 blueprint declarations during semantic inspection.
   version: any
-schema_version: 5
+schema_version: 6
 uses_interfaces:
 - interface: common.interface.certification-hashing
   version: 1

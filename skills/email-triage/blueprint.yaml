@@ -1,9 +1,7 @@
 authority:
   owns_filesystem: []
 children:
-  email-triage-rtx:
-    base: module-root
-    path: _rtx/blueprint.yaml
+  _rtx: {}
 content:
 - (?:CHANGES\.md|DEBUGGING\.md|SKILL\.md|instructions/triage\.md|tests/test_finalize_run\.py|tests/test_llm_routing\.py|tests/test_rescan\.py)
 description: Coordinates watermark-safe email triage, classification logging, failure
@@ -26,76 +24,6 @@ exports:
       allow_all_modules: true
       allowed_callers: []
     source_interface: email-triage.source.gateway.interface.default
-  email-triage.interface.fetch-filtered-envelopes:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: email-triage-rtx.interface.fetch-filtered-envelopes
-      version: 1
-  email-triage.interface.scripts-clear-failure:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: email-triage-rtx.interface.scripts-clear-failure
-      version: 1
-  email-triage.interface.scripts-filter-envelopes:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: email-triage-rtx.interface.scripts-filter-envelopes
-      version: 1
-  email-triage.interface.scripts-finalize-triage:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: email-triage-rtx.interface.scripts-finalize-triage
-      version: 1
-  email-triage.interface.scripts-get-cutoff:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: email-triage-rtx.interface.scripts-get-cutoff
-      version: 1
-  email-triage.interface.scripts-log-decision:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: email-triage-rtx.interface.scripts-log-decision
-      version: 1
-  email-triage.interface.scripts-mark-failure:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: email-triage-rtx.interface.scripts-mark-failure
-      version: 1
-  email-triage.interface.scripts-prune-log:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: email-triage-rtx.interface.scripts-prune-log
-      version: 1
-  email-triage.interface.scripts-update-watermark:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: email-triage-rtx.interface.scripts-update-watermark
-      version: 1
-  email-triage.interface.scripts-write-metrics:
-    access:
-      allow_all_modules: false
-      allowed_callers: []
-    facade_interface:
-      interface: email-triage-rtx.interface.scripts-write-metrics
-      version: 1
   email-triage.interface.triage:
     access:
       allow_all_modules: false
@@ -105,9 +33,57 @@ gateway:
   language: Markdown
   path: SKILL.md
 id: email-triage
-namespace_exports: {}
+namespace_exports:
+  _rtx:
+    version: 1
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    surface:
+      only:
+        email-triage._rtx.interface.fetch-filtered-envelopes: 1
+        email-triage._rtx.interface.scripts-clear-failure: 1
+        email-triage._rtx.interface.scripts-filter-envelopes: 1
+        email-triage._rtx.interface.scripts-finalize-triage: 1
+        email-triage._rtx.interface.scripts-get-cutoff: 1
+        email-triage._rtx.interface.scripts-log-decision: 1
+        email-triage._rtx.interface.scripts-mark-failure: 1
+        email-triage._rtx.interface.scripts-prune-log: 1
+        email-triage._rtx.interface.scripts-update-watermark: 1
+        email-triage._rtx.interface.scripts-write-metrics: 1
+    interface_access:
+      email-triage._rtx.interface.fetch-filtered-envelopes:
+        allow_all_modules: false
+        allowed_callers: []
+      email-triage._rtx.interface.scripts-clear-failure:
+        allow_all_modules: false
+        allowed_callers: []
+      email-triage._rtx.interface.scripts-filter-envelopes:
+        allow_all_modules: false
+        allowed_callers: []
+      email-triage._rtx.interface.scripts-finalize-triage:
+        allow_all_modules: false
+        allowed_callers: []
+      email-triage._rtx.interface.scripts-get-cutoff:
+        allow_all_modules: false
+        allowed_callers: []
+      email-triage._rtx.interface.scripts-log-decision:
+        allow_all_modules: false
+        allowed_callers: []
+      email-triage._rtx.interface.scripts-mark-failure:
+        allow_all_modules: false
+        allowed_callers: []
+      email-triage._rtx.interface.scripts-prune-log:
+        allow_all_modules: false
+        allowed_callers: []
+      email-triage._rtx.interface.scripts-update-watermark:
+        allow_all_modules: false
+        allowed_callers: []
+      email-triage._rtx.interface.scripts-write-metrics:
+        allow_all_modules: false
+        allowed_callers: []
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
   email-triage.source.gateway:
     blueprint:

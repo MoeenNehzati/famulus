@@ -29,7 +29,19 @@ def source(
 def exported_source(
     root: dict[str, object], export_id: str
 ) -> tuple[dict[str, object], dict[str, object]]:
-    return _exported_source(SKILL_ROOT, root, export_id)
+    module_id = export_id.split(".interface.", 1)[0]
+    module_root = SKILL_ROOT
+    module = root
+    current_id = str(root["id"])
+    for segment in module_id.split(".")[1:]:
+        assert segment in module["children"]
+        module_root /= segment
+        module = yaml.safe_load(
+            (module_root / "blueprint.yaml").read_text(encoding="utf-8")
+        )
+        current_id = f"{current_id}.{segment}"
+        assert module["id"] == current_id
+    return _exported_source(module_root, module, export_id)
 
 
 def _exported_source(
@@ -38,17 +50,6 @@ def _exported_source(
     export_id: str,
 ) -> tuple[dict[str, object], dict[str, object]]:
     export = root["exports"][export_id]
-    facade = export.get("facade_interface")
-    if facade is not None:
-        child_id = facade["interface"].split(".interface.", 1)[0]
-        locator = root["children"][child_id]
-        child_marker = module_root / locator["path"]
-        child = yaml.safe_load(child_marker.read_text(encoding="utf-8"))
-        return _exported_source(
-            child_marker.parent,
-            child,
-            facade["interface"],
-        )
     source_interface = export["source_interface"]
     source_id, _, _ = source_interface.rpartition(".interface.")
     node = source(module_root, root, source_id)
@@ -79,7 +80,7 @@ def test_module_and_markdown_gateway_graph() -> None:
         root, "connect-google.interface.connect-services"
     )
 
-    assert root["schema_version"] == 5
+    assert root["schema_version"] == 6
     assert root["node_type"] == "module"
     assert root["id"] == "connect-google"
     assert root["discovery"] == {
@@ -98,7 +99,9 @@ def test_module_and_markdown_gateway_graph() -> None:
         for entry in default["uses_interfaces"]
     }
     semantic_default_uses = {
-        ("connect-google.interface.client-status", 1),
+        ("connect-google._rtx.interface.authorize-services", 1),
+        ("connect-google._rtx.interface.client-status", 1),
+        ("connect-google._rtx.interface.install-client", 1),
         (
             "connect-google.source.instructions-connect-services"
             ".interface.connect-services",
@@ -110,24 +113,7 @@ def test_module_and_markdown_gateway_graph() -> None:
             1,
         ),
     }
-    skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
-    generated_block = skill_md.split("<!-- BEGIN BLUEPRINT INTERFACES -->", 1)[
-        1
-    ].split("<!-- END BLUEPRINT INTERFACES -->", 1)[0]
-    generated_dispatch_ids = {
-        line.split("dispatcher --caller-skill connect-google ", 1)[1]
-        .split()[0]
-        .strip("`")
-        for line in generated_block.splitlines()
-        if "dispatcher --caller-skill connect-google " in line
-    }
-    generated_default_uses = {
-        (interface_id, version)
-        for interface_id, version in default_uses
-        if interface_id in generated_dispatch_ids
-    }
-    assert semantic_default_uses <= default_uses
-    assert default_uses <= semantic_default_uses | generated_default_uses
+    assert default_uses == semantic_default_uses
     assert create_client["uses_interfaces"] == [
         {
             "interface": (
@@ -140,20 +126,22 @@ def test_module_and_markdown_gateway_graph() -> None:
     assert connect_services["uses_interfaces"] == [
         {"interface": name, "version": 1}
         for name in (
-            "connect-google.interface.authorize-services",
-            "connect-google.interface.client-status",
-            "connect-google.interface.install-client",
+            "connect-google._rtx.interface.authorize-services",
+            "connect-google._rtx.interface.client-status",
+            "connect-google._rtx.interface.install-client",
         )
     ]
 
-    interface_ids = set(root["exports"])
-    assert interface_ids == {
+    assert set(root["exports"]) == {
         "connect-google.interface.default",
         "connect-google.interface.create-client",
         "connect-google.interface.connect-services",
-        "connect-google.interface.client-status",
-        "connect-google.interface.install-client",
-        "connect-google.interface.authorize-services",
+    }
+    child = load("_rtx/blueprint.yaml")
+    assert set(child["exports"]) == {
+        "connect-google._rtx.interface.client-status",
+        "connect-google._rtx.interface.install-client",
+        "connect-google._rtx.interface.authorize-services",
     }
     assert default_interface["version"] == 1
     assert create_client_interface["version"] == 1
@@ -168,7 +156,7 @@ def test_module_and_markdown_gateway_graph() -> None:
 
 def test_client_status_declares_every_google_client_path_it_reads() -> None:
     root = load("blueprint.yaml")
-    _, node = exported_source(root, "connect-google.interface.client-status")
+    _, node = exported_source(root, "connect-google._rtx.interface.client-status")
 
     declared_paths = {
         entry["path"] for entry in node["contract"]["direct_io"]["reads"]
@@ -186,7 +174,7 @@ def test_client_status_declares_every_google_client_path_it_reads() -> None:
 
 def test_install_client_patterns_require_values_for_value_bearing_flags() -> None:
     root = load("blueprint.yaml")
-    _, node = exported_source(root, "connect-google.interface.install-client")
+    _, node = exported_source(root, "connect-google._rtx.interface.install-client")
 
     assert node["process_binding"]["patterns"][0]["flag_patterns"] == {
         "--from-json": "^.+$",
@@ -207,7 +195,7 @@ def test_default_router_contract() -> None:
     assert "service skills invoke this skill" in text
     assert "never commit" in text
     assert "dispatcher " not in text
-    assert "_rtx" not in text
+    assert "connect-google-rtx" not in text
 
 
 def test_create_client_route_contract() -> None:
@@ -233,7 +221,7 @@ def test_create_client_route_contract() -> None:
     assert "does not distribute" in text
     assert "never commit" in text
     assert "dispatcher " not in text
-    assert "_rtx" not in text
+    assert "connect-google-rtx" not in text
 
 
 def test_connect_services_route_contract() -> None:
@@ -248,5 +236,5 @@ def test_connect_services_route_contract() -> None:
     ):
         assert phrase in text
     assert "dispatcher " not in text
-    assert "_rtx" not in text
+    assert "connect-google-rtx" not in text
     assert "client_secret" not in text

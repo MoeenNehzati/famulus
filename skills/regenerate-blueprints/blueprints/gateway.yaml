@@ -94,8 +94,8 @@ interfaces:
       or validation failure, and never modify the source blueprint.
     version: 1
 node_type: behavioral_source
-schema_version: 5
+schema_version: 6
 uses_interfaces:
-- interface: regenerate-blueprints.interface.regenerate-blueprint
+- interface: regenerate-blueprints._rtx.interface.regenerate-blueprint
   version: 1
 version: 1

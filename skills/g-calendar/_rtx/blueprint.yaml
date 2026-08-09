@@ -1,13 +1,13 @@
 authority:
   owns_filesystem:
   - allowed_readers:
-    - g-calendar.interface.ensure-oauth
-    - g-calendar.interface.scripts-gcal
+    - g-calendar._rtx.interface.ensure-oauth
+    - g-calendar._rtx.interface.scripts-gcal
     match: exact
     path: $home/.config/g-calendar/credentials.json
     reason: setup-oauth is the declared writer for regenerated calendar OAuth credentials.
   - allowed_readers:
-    - g-calendar.interface.scripts-gcal
+    - g-calendar._rtx.interface.scripts-gcal
     match: exact
     path: $home/.config/g-calendar/config.json
     reason: use-google-credential is the declared writer for the g-calendar config.
@@ -37,55 +37,55 @@ content:
 - tests/.*
 description: Code module for the g-calendar skill.
 exports:
-  g-calendar-rtx.interface.ensure-oauth:
+  g-calendar._rtx.interface.ensure-oauth:
     access:
       allow_all_modules: false
       allowed_callers:
       - g-calendar
-    source_interface: g-calendar-rtx.source.rtx-ensure-oauth.interface.ensure-oauth
-  g-calendar-rtx.interface.scripts-gcal:
+    source_interface: g-calendar._rtx.source.rtx-ensure-oauth.interface.ensure-oauth
+  g-calendar._rtx.interface.scripts-gcal:
     access:
       allow_all_modules: false
       allowed_callers:
       - daily-plan
-      - daily-plan-rtx
+      - daily-plan._rtx
       - g-calendar
-    source_interface: g-calendar-rtx.source.rtx-gcal-client.interface.scripts-gcal
-  g-calendar-rtx.interface.setup-oauth:
+    source_interface: g-calendar._rtx.source.rtx-gcal-client.interface.scripts-gcal
+  g-calendar._rtx.interface.setup-oauth:
     access:
       allow_all_modules: false
       allowed_callers:
       - g-calendar
-    source_interface: g-calendar-rtx.source.rtx-oauth-bootstrap.interface.setup-oauth
-  g-calendar-rtx.interface.use-google-credential:
+    source_interface: g-calendar._rtx.source.rtx-oauth-bootstrap.interface.setup-oauth
+  g-calendar._rtx.interface.use-google-credential:
     access:
       allow_all_modules: false
       allowed_callers:
       - g-calendar
       - install-assistant-tools
-      - install-assistant-tools-rtx
-    source_interface: g-calendar-rtx.source.rtx-ensure-oauth.interface.use-google-credential
+      - install-assistant-tools._rtx
+    source_interface: g-calendar._rtx.source.rtx-ensure-oauth.interface.use-google-credential
 gateway:
   language: Python>=3.11
   path: __init__.py
-id: g-calendar-rtx
+id: g-calendar._rtx
 namespace_exports: {}
 node_type: module
-schema_version: 5
+schema_version: 6
 sources:
-  g-calendar-rtx.source.rtx-ensure-oauth:
+  g-calendar._rtx.source.rtx-ensure-oauth:
     blueprint:
       base: module-root
       path: blueprints/rtx-ensure-oauth.yaml
-  g-calendar-rtx.source.rtx-gcal-client:
+  g-calendar._rtx.source.rtx-gcal-client:
     blueprint:
       base: module-root
       path: blueprints/rtx-gcal-client.yaml
-  g-calendar-rtx.source.rtx-init:
+  g-calendar._rtx.source.rtx-init:
     blueprint:
       base: module-root
       path: blueprints/rtx-init.yaml
-  g-calendar-rtx.source.rtx-oauth-bootstrap:
+  g-calendar._rtx.source.rtx-oauth-bootstrap:
     blueprint:
       base: module-root
       path: blueprints/rtx-oauth-bootstrap.yaml
