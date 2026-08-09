@@ -148,6 +148,7 @@ reports remain conversational and do not create additional documentation work.
 | 2026-08-09 12:52 EDT | about 20m | wakeup behavior | about 5m | 5/5 | 6/6/pending hook | 6/0 | on time | commit slice |
 | 2026-08-09 12:54 EDT | about 22m | skill-drift diagnostics | about 2m | 2/2 | 1/1/pending hook | 3/0 | on time | commit slice |
 | 2026-08-09 12:58 EDT | about 26m | cloud route matrix | about 4m | 3/3 | 2/2/pending hook | 3/0 | on time | commit slice |
+| 2026-08-09 13:10 EDT | about 38m | Google service contracts | about 12m | 8/8 | 29/29/pending hook | 11/0 | on time | commit slice |
 
 ## Current-master preservation ledger
 
@@ -413,6 +414,7 @@ For every slice, complete one row per source regression-test file.
 | wakeup behavior | `test_features.py`: policy status preserves absent, existing, non-directory, directory-symlink, and dangling-symlink state; scheduled-session reads do not create storage | Same six focused assertions retained | 6 passed in 0.07s | pending commit hook |
 | skill-drift diagnostics | `test_drift_check.py`: an empty active-plugin graph reports schema-neutral language | Same named regression retained | 1 passed in 0.12s | pending commit hook |
 | cloud route matrix | `test_cloud_files.py`: missing-root reads do not create folders; existing write test retains creating route | New read regression plus existing write-path test | 2 passed in 0.05s | pending commit hook |
+| Google service contracts | Service delegation, Calendar process metadata/guidance, and schema-validated public-interface masking including malformed and adjacent-token negatives | Final-state branch tests retained; validator adapted to master's prepared graph/matcher implementation | 18 validator, 9 delegation, and 2 Calendar tests passed | pending commit hook |
 
 A green `full` run does not prove that a nested skill-owned test was collected.
 Deleting a source test requires naming the exact replacement assertion.

@@ -3,11 +3,19 @@ from __future__ import annotations
 
 import re
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+SRC_ROOT = REPO_ROOT / "src"
+for import_root in (REPO_ROOT, SRC_ROOT):
+    if str(import_root) not in sys.path:
+        sys.path.insert(0, str(import_root))
+
+from officina.common.blueprint_graph import (  # noqa: E402
+    BlueprintGraphError,
+    load_module_blueprint,
+)
 
 from validators.skill_runtime_files import (
     ALLOWED_RTX_SUFFIXES,
@@ -27,6 +35,154 @@ _OLD_RUNTIME_PATH_RE = re.compile(
     rf"(?<!/)scripts/[\w.-]+(?:{_SUFFIX_ALT})(?![{_WORD}])",
     re.IGNORECASE,
 )
+_PUBLIC_INTERFACE_NAME_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+
+
+def _is_same_skill_public_interface(skill_name: str, interface_id: object) -> bool:
+    """Return whether an interface ID is canonical and owned by this skill.
+
+    Intent
+    ------
+    Admit only public interface identifiers whose namespace and suffix are canonical.
+
+    Rationale
+    ---------
+    Malformed or foreign export keys must not hide private runtime names.
+
+    Pseudocode
+    ----------
+    - reject non-string identifiers
+    - require the current skill interface prefix
+    - require a canonical kebab-case public suffix
+
+    Wraps
+    -----
+    - none
+    """
+    if not isinstance(interface_id, str):
+        return False
+    prefix = f"{skill_name}.interface."
+    return (
+        interface_id.startswith(prefix)
+        and _PUBLIC_INTERFACE_NAME_RE.fullmatch(interface_id.removeprefix(prefix))
+        is not None
+    )
+
+
+def _declared_public_interface_ids(
+    repo_root: Path,
+    skill_dir: Path,
+) -> frozenset[str]:
+    """Return same-skill exports from one schema-validated module blueprint.
+
+    Intent
+    ------
+    Identify public interface tokens that may legitimately appear in skill prose.
+
+    Rationale
+    ---------
+    Standalone validation lacks a prepared graph but must reject unvalidated exports.
+
+    Pseudocode
+    ----------
+    - load and validate the skill module blueprint
+    - reject unavailable, malformed, or non-mapping exports
+    - return canonical same-skill interface identifiers
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    officina.common.blueprint_graph.load_module_blueprint:
+      why:
+        constructs: "Builds the validated module declaration used for masking."
+    """
+    try:
+        module = load_module_blueprint(
+            repo_root,
+            skill_dir,
+            expected_schema_version=5,
+        )
+    except (BlueprintGraphError, OSError, UnicodeError, ValueError):
+        return frozenset()
+    exports = module.declaration.get("exports")
+    if not isinstance(exports, Mapping):
+        return frozenset()
+    return frozenset(
+        interface_id
+        for interface_id in exports
+        if _is_same_skill_public_interface(skill_dir.name, interface_id)
+    )
+
+
+def _graph_public_interface_ids(
+    graph: object,
+    skill_name: str,
+) -> frozenset[str] | None:
+    """Return same-skill IDs from a validated graph, or None for legacy fakes.
+
+    Intent
+    ------
+    Reuse public exports already available in the consolidated repository graph.
+
+    Rationale
+    ---------
+    Pooled validation must not reload module blueprints after graph preparation.
+
+    Pseudocode
+    ----------
+    - return legacy sentinel when graph exports are unavailable
+    - select exports owned by the requested module
+    - retain only canonical same-skill interface identifiers
+
+    Wraps
+    -----
+    - none
+    """
+    exports = getattr(graph, "exports", None)
+    if not isinstance(exports, Mapping):
+        return None
+    return frozenset(
+        interface_id
+        for interface_id, export in exports.items()
+        if getattr(export, "module_node_id", None) == skill_name
+        and _is_same_skill_public_interface(skill_name, interface_id)
+    )
+
+
+def _mask_declared_public_interfaces(
+    line: str,
+    interface_ids: frozenset[str],
+) -> str:
+    """Hide verified public tokens before normalized runtime-stem scanning.
+
+    Intent
+    ------
+    Prevent a canonical public interface name from matching its private implementation stem.
+
+    Rationale
+    ---------
+    Public and private names can share words while only the full public token is allowed.
+
+    Pseudocode
+    ----------
+    - process longest identifiers first
+    - replace boundary-delimited public tokens with equal-width spaces
+    - return text retaining all adjacent nonpublic content
+
+    Wraps
+    -----
+    - none
+    """
+    for interface_id in sorted(interface_ids, key=len, reverse=True):
+        line = re.sub(
+            rf"(?<![A-Za-z0-9_.-]){re.escape(interface_id)}(?![A-Za-z0-9_.-])",
+            " " * len(interface_id),
+            line,
+        )
+    return line
 
 def _iter_skill_markdown(repo_root: Path):
     """Yield eligible skill Markdown paths in stable repository order.
@@ -256,6 +412,20 @@ def _validate(repo_root: Path, graph: object | None) -> list[str]:
         for skill_dir in sorted(skills_root.iterdir())
         if skill_dir.is_dir() and skill_dir.name != ".system"
     }
+    public_interfaces_by_skill: dict[str, frozenset[str]] = {}
+    for skill_dir in sorted(skills_root.iterdir()):
+        if not skill_dir.is_dir() or skill_dir.name == ".system":
+            continue
+        graph_ids = (
+            _graph_public_interface_ids(graph, skill_dir.name)
+            if graph is not None
+            else None
+        )
+        public_interfaces_by_skill[skill_dir.name] = (
+            graph_ids
+            if graph_ids is not None
+            else _declared_public_interface_ids(repo_root, skill_dir)
+        )
     patterns_by_skill: dict[
         str,
         tuple[
@@ -285,6 +455,10 @@ def _validate(repo_root: Path, graph: object | None) -> list[str]:
             continue
         lines = _public_markdown_text(path, text).splitlines()
         for lineno, line in enumerate(lines, start=1):
+            stem_scan_line = _mask_declared_public_interfaces(
+                line,
+                public_interfaces_by_skill.get(skill_name, frozenset()),
+            )
             if RTX_DIR_NAME in line:
                 errors.append(f"{rel_path}:{lineno}: skill-facing Markdown must not mention `{RTX_DIR_NAME}`")
             old_path = _OLD_RUNTIME_PATH_RE.search(line)
@@ -303,7 +477,7 @@ def _validate(repo_root: Path, graph: object | None) -> list[str]:
                         )
                         break
             for stem, pattern in stem_patterns:
-                if pattern.search(line):
+                if pattern.search(stem_scan_line):
                     errors.append(
                         f"{rel_path}:{lineno}: skill-facing Markdown must not mention private runtime "
                         f"name `{stem}`"
