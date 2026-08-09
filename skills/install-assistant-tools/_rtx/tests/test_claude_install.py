@@ -158,24 +158,13 @@ class ClaudeInstallTests(unittest.TestCase):
                 # famulus-skip: category=capability-unavailable; reason=building a real managed-runtime release requires a real uv binary; alternate=tests/test_officina_managed_runtime.py and tests/test_officina_launcher_entry.py cover the build+deploy+resolver flow directly
                 self.skipTest("uv is not installed on this machine")
             build_minimal_managed_runtime_release(home=home, tmp_root=tmp_root)
-            # "dispatcher" now execs into the stable managed-runtime resolver
-            # (officina.install.resolvers.launch), which build_candidate_release
-            # deploys (with its trusted-roots.json sidecar) as part of
-            # activating the release built above. So the resolver hop now
-            # succeeds; the release venv still has no `officina` package
-            # installed (a separate, deliberate scope decision -- see
-            # _install_scaffold.install_python_packages's docstring), so the
-            # only expected failure is ModuleNotFoundError for officina.
-            # dispatcher.cli, raised by the release interpreter after control
-            # has already transferred there -- never a resolver-side error.
+            # The managed release contains both the stable resolver and a
+            # snapshot of Officina itself, so the generated dispatcher must
+            # transfer into the managed interpreter and complete normally.
             dispatcher_result = run_command(
-                ["dispatcher", "--help"], env=plugin_env, check=False
+                ["dispatcher", "--help"], env=plugin_env
             )
-            self.assertNotEqual(dispatcher_result.returncode, 0)
-            self.assertNotIn("No such file or directory", dispatcher_result.stderr)
-            self.assertNotIn("famulus launcher:", dispatcher_result.stderr)
-            self.assertIn("ModuleNotFoundError", dispatcher_result.stderr)
-            self.assertIn("officina", dispatcher_result.stderr)
+            self.assertIn("usage:", dispatcher_result.stdout.lower())
 
             # Claude exposes hook_started/hook_response events before auth
             # failure, so this is a real session-attachment check. Codex's

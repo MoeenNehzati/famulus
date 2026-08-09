@@ -430,30 +430,15 @@ class CodexInstallTests(unittest.TestCase):
             # plugin-mode ($AI unset), not whatever happens to be exported
             # in the environment running this test.
             launcher_env.pop("AI", None)
-            # "dispatcher" now execs into the stable managed-runtime resolver
-            # (officina.install.resolvers.launch) instead of running
-            # self-contained against this repo checkout. install_cmd above
-            # went through the real _phase_entry.py, which builds and
-            # activates a managed-runtime candidate release (deploying the
-            # resolver and its trusted-roots.json sidecar as part of that
-            # activation) before scaffold ever runs, so the resolver hop now
-            # succeeds. The release venv still has no `officina` package
-            # installed (a separate, deliberate scope decision -- see
-            # _install_scaffold.install_python_packages's docstring), so the
-            # only expected failure is ModuleNotFoundError for officina.
-            # dispatcher.cli, raised by the release interpreter after control
-            # has already transferred there -- never a resolver-side error.
+            # The managed release contains both the stable resolver and a
+            # snapshot of Officina itself, so the generated dispatcher must
+            # transfer into the managed interpreter and complete normally.
             dispatcher_result = run_command(
                 platform_shell_command("dispatcher", ["--help"]),
                 env=launcher_env,
                 cwd=workdir,
-                check=False,
             )
-            self.assertNotEqual(dispatcher_result.returncode, 0)
-            self.assertNotIn("No such file or directory", dispatcher_result.stderr)
-            self.assertNotIn("famulus launcher:", dispatcher_result.stderr)
-            self.assertIn("ModuleNotFoundError", dispatcher_result.stderr)
-            self.assertIn("officina", dispatcher_result.stderr)
+            self.assertIn("usage:", dispatcher_result.stdout.lower())
             for agent in ("assistant", "collab", "coauthor"):
                 command = platform_shell_command(
                     agent,
