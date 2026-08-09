@@ -332,10 +332,13 @@ def test_risk_ordering_and_global_ordering_rules_are_explicit():
     rules = next(node for node in document["standards"] if node["id"] == "skill-refactoring.ordering-rules")
     statements = [assertion["statement"] for assertion in rules["assertions"]]
     assert statements == [
-        "Always characterize before starting.",
+        (
+            "Map affected behavior, ownership, dependency, authorization, and "
+            "verification edges."
+        ),
         "Apply all safe moves first, verify, then medium, then structural.",
-        "Never apply two structural moves in the same pass without verifying between them.",
-        "If any move breaks behavior, revert immediately — don't patch forward.",
+        "Verify between structural moves; never batch them.",
+        "An unvalidated move is non-final; fix and rerun within scope or revert.",
     ]
 
 

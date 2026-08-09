@@ -1120,6 +1120,7 @@ units:
 - source: skill-refactoring-catalog.md
   line: 127
   text: 1. Always characterize before starting.
+  retired: The live characterize-first assertion replaces this underspecified legacy wording with an explicit preservation-map gate.
   targets:
   - target_ref: skill-refactoring.ordering-rules
     field: /assertions/0/statement
@@ -1137,10 +1138,11 @@ units:
   targets:
   - target_ref: skill-refactoring.ordering-rules
     field: /assertions/2/statement
-    expected: Never apply two structural moves in the same pass without verifying between them.
+    expected: Verify between structural moves; never batch them.
 - source: skill-refactoring-catalog.md
   line: 130
   text: "4. If any move breaks behavior, revert immediately \u2014 don't patch forward."
+  retired: The live rule now makes validator success an explicit finalization gate while preserving revert-over-patch-forward behavior.
   targets:
   - target_ref: skill-refactoring.ordering-rules
     field: /assertions/3/statement
