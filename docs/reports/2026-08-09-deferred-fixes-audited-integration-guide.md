@@ -150,6 +150,7 @@ reports remain conversational and do not create additional documentation work.
 | 2026-08-09 12:58 EDT | about 26m | cloud route matrix | about 4m | 3/3 | 2/2/pending hook | 3/0 | on time | commit slice |
 | 2026-08-09 13:10 EDT | about 38m | Google service contracts | about 12m | 8/8 | 29/29/pending hook | 11/0 | on time | commit slice |
 | 2026-08-09 13:12 EDT | about 40m | TDD guidance | about 2m | 5/5 | 3/3/pending hook | 2/0 | on time | commit slice |
+| 2026-08-09 13:17 EDT | about 45m | installer guidance | about 5m | 7/7 | blueprint check passed/pending hook | 2/0 | on time | commit slice |
 
 ## Current-master preservation ledger
 
@@ -417,6 +418,7 @@ For every slice, complete one row per source regression-test file.
 | cloud route matrix | `test_cloud_files.py`: missing-root reads do not create folders; existing write test retains creating route | New read regression plus existing write-path test | 2 passed in 0.05s | pending commit hook |
 | Google service contracts | Service delegation, Calendar process metadata/guidance, and schema-validated public-interface masking including malformed and adjacent-token negatives | Final-state branch tests retained; validator adapted to master's prepared graph/matcher implementation | 18 validator, 9 delegation, and 2 Calendar tests passed | pending commit hook |
 | TDD guidance | Existing initialize-tdd suite plus preservation review of design, tests, implementation, documentation, overwrite, bootstrap, and no-commit gates | Branch final guidance retained | 3 passed in 0.09s | pending commit hook |
+| installer guidance | Source has no regression-test change; preservation map covers mode, phases, dry-run, conflicts, completion/failure handling, and current `tw` controls | Branch final guidance plus master `tw` contract | canonical blueprint check passed; installation runtime tests deferred to pre-push tier | pending commit hook |
 
 A green `full` run does not prove that a nested skill-owned test was collected.
 Deleting a source test requires naming the exact replacement assertion.
@@ -430,7 +432,7 @@ Deleting a source test requires naming the exact replacement assertion.
 | `13f99ce` | adapted | Google service contracts / `5cab8a0` | final-state delegation and unified checks passed |
 | `6daf9a0` | adapted | Google service contracts / `5cab8a0` | Calendar, validator, and unified checks passed |
 | `ff8a3ab` | pending | | |
-| `3ce3cd3` | pending | | |
+| `3ce3cd3` | adapted | installer guidance / pending slice commit | branch simplification combined with current `tw` contract |
 | `2901238` | adapted | Google service contracts / `5cab8a0` | closing delegation, masking, and unified checks passed |
 | `ab3f91c` | pending | | |
 | `738f66f` | pending | | |
