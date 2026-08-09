@@ -151,6 +151,7 @@ reports remain conversational and do not create additional documentation work.
 | 2026-08-09 13:10 EDT | about 38m | Google service contracts | about 12m | 8/8 | 29/29/pending hook | 11/0 | on time | commit slice |
 | 2026-08-09 13:12 EDT | about 40m | TDD guidance | about 2m | 5/5 | 3/3/pending hook | 2/0 | on time | commit slice |
 | 2026-08-09 13:17 EDT | about 45m | installer guidance | about 5m | 7/7 | blueprint check passed/pending hook | 2/0 | on time | commit slice |
+| 2026-08-09 13:25 EDT | about 53m | refactoring workflow 10A | about 8m | 8/8 | 15/15/pending hook | 5/0 | on time | commit sub-slice |
 
 ## Current-master preservation ledger
 
@@ -419,6 +420,7 @@ For every slice, complete one row per source regression-test file.
 | Google service contracts | Service delegation, Calendar process metadata/guidance, and schema-validated public-interface masking including malformed and adjacent-token negatives | Final-state branch tests retained; validator adapted to master's prepared graph/matcher implementation | 18 validator, 9 delegation, and 2 Calendar tests passed | pending commit hook |
 | TDD guidance | Existing initialize-tdd suite plus preservation review of design, tests, implementation, documentation, overwrite, bootstrap, and no-commit gates | Branch final guidance retained | 3 passed in 0.09s | pending commit hook |
 | installer guidance | Source has no regression-test change; preservation map covers mode, phases, dry-run, conflicts, completion/failure handling, and current `tw` controls | Branch final guidance plus master `tw` contract | canonical blueprint check passed; installation runtime tests deferred to pre-push tier | pending commit hook |
+| refactoring workflow 10A | Current explicit-query architecture plus child discovery, query provenance, evidence classification, preservation maps, exact-diff and semantic-review gates | Four current-architecture routing regressions plus existing routing and consumer contracts | 15 focused checks passed in 0.13s | pending commit hook |
 
 A green `full` run does not prove that a nested skill-owned test was collected.
 Deleting a source test requires naming the exact replacement assertion.

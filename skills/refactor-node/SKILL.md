@@ -38,6 +38,15 @@ Select the root from the scope already established from the request and current
 artifact; the query validates and returns its complete pinned import closure.
 Never ask the query to infer ownership or reconstruct a blueprint graph.
 
+## Preflight
+
+Before querying policy, identify the selected registered component and directly
+affected implementation children from the current artifact and graph. Retain
+the query dry-run and verify caller, target `common.interface.query-standard`,
+repository root,
+selected standard path, task facts, view, and refs. Reject mismatches rather
+than executing against another checkout or inferred target.
+
 ## Standards retrieval
 
 Classify each selected scope by its known node role and gateway family, then
@@ -59,29 +68,27 @@ the source root. For other mixed work, query each applicable root separately
 and combine the returned requirements. A whole-skill audit queries both
 instruction roots plus every declared Python module and source root.
 
-Imported documents already arrive in the closure; never query them separately.
-Follow up under the original root with exact returned `document` and `ref`
-pairs. Establish `task.affects-executable-behavior` from the operation, not its
-filename or language. Enrich and rerun requirements for each established
-missing fact; report unresolved facts. Freeze that root and fact set for
-context, evidence, and remedy follow-ups.
-
-| Current decision | Request | Use |
-|---|---|---|
-| Diagnose | `--view requirements` | Apply `requirements.true`. Inspect the missing facts in `requirements.unknown` and rerun. Never silently discard a material unknown. |
-| Interpret or apply indexed context | `--view context --refs-json JSON` | Request a relevant `context_index` entry or requirement; read only returned families, definitions, guidance, and examples. |
-| Plan or assess verification | `--view evidence --refs-json JSON` | Map returned checks, tests, and assurances to the selected refs; perform `semantic_reviews` and open only returned artifacts. Preserve limitations. |
-| Repair a proven violation | `--view remedies --refs-json JSON` | Follow only returned `remedied-by` links and procedures, including preconditions, order, invariants, completion conditions, and risk. |
-| Unusual extraction | `--query-json JSON` | Apply the generic record filter/projection described by `--help`. |
-| Debug extraction | `--view full` | Inspect the complete projection only. |
-
-`--refs-json` is a list of exact pairs such as
-`[{"document":"node-standards.python-ood","ref":"python-ood.behavioral-contract#preserve-observables"}]`.
-Request follow-up information only for refs that affect the current decision.
+Imported documents arrive in the complete pinned import closure; never query
+them separately. Apply `requirements.true`, resolve material
+`requirements.unknown` and missing facts. Never silently discard a material
+unknown. Then use exact returned document/ref
+pairs: `--view context --refs-json JSON` for `context_index`; `--view
+evidence` for checks, tests, and assurances, `semantic_reviews`, artifacts,
+and limitations; and `--view remedies` for returned `remedied-by`
+procedures. Use `--view full` or `--query-json` only through `--help`.
 
 Retain a selected class, function, method, or instruction section as the
 caller-owned sub-scope. Read scoped repository instructions and the current
 diff, then characterize observable behavior before proposing changes.
+
+## Evidence and preservation
+
+Map affected behavior, ownership, dependencies, authorization, reverse
+consumers, and verification. Classify canonical evidence,
+supplemental change-relevant evidence with owner and limitations, and affected
+refs with no mapped evidence. Perform semantic review and build a preservation
+map for observables, route outcomes, fallbacks, approval boundaries, generated
+invocations, and removed directives.
 
 ## Route
 
@@ -94,6 +101,7 @@ diff, then characterize observable behavior before proposing changes.
 ## Shared change contract
 
 Preserve behavior; separate features, bug fixes, and public-API redesign. Before
-mutation, report scope, relevant requirements, unresolved facts, evidence, and
-the selected remedy. Require approval, apply one move at a time, inspect the
-exact diff, and stop on failed verification or an ownership boundary.
+mutation, report scope, preservation map, requirements, unresolved facts,
+evidence, and remedy. Require approval, apply one move, inspect the exact diff
+against the preservation map, and verify. An unvalidated move is non-final:
+fix and rerun within scope or revert and stop.
