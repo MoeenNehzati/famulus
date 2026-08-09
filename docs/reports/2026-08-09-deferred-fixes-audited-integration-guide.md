@@ -149,6 +149,7 @@ reports remain conversational and do not create additional documentation work.
 | 2026-08-09 12:54 EDT | about 22m | skill-drift diagnostics | about 2m | 2/2 | 1/1/pending hook | 3/0 | on time | commit slice |
 | 2026-08-09 12:58 EDT | about 26m | cloud route matrix | about 4m | 3/3 | 2/2/pending hook | 3/0 | on time | commit slice |
 | 2026-08-09 13:10 EDT | about 38m | Google service contracts | about 12m | 8/8 | 29/29/pending hook | 11/0 | on time | commit slice |
+| 2026-08-09 13:12 EDT | about 40m | TDD guidance | about 2m | 5/5 | 3/3/pending hook | 2/0 | on time | commit slice |
 
 ## Current-master preservation ledger
 
@@ -415,6 +416,7 @@ For every slice, complete one row per source regression-test file.
 | skill-drift diagnostics | `test_drift_check.py`: an empty active-plugin graph reports schema-neutral language | Same named regression retained | 1 passed in 0.12s | pending commit hook |
 | cloud route matrix | `test_cloud_files.py`: missing-root reads do not create folders; existing write test retains creating route | New read regression plus existing write-path test | 2 passed in 0.05s | pending commit hook |
 | Google service contracts | Service delegation, Calendar process metadata/guidance, and schema-validated public-interface masking including malformed and adjacent-token negatives | Final-state branch tests retained; validator adapted to master's prepared graph/matcher implementation | 18 validator, 9 delegation, and 2 Calendar tests passed | pending commit hook |
+| TDD guidance | Existing initialize-tdd suite plus preservation review of design, tests, implementation, documentation, overwrite, bootstrap, and no-commit gates | Branch final guidance retained | 3 passed in 0.09s | pending commit hook |
 
 A green `full` run does not prove that a nested skill-owned test was collected.
 Deleting a source test requires naming the exact replacement assertion.
@@ -424,18 +426,18 @@ Deleting a source test requires naming the exact replacement assertion.
 | Source commit | Status | Resulting slice/commit | Evidence |
 |---|---|---|---|
 | `873d63a` | pending | | |
-| `12e007e` | pending | | |
-| `13f99ce` | pending | | |
-| `6daf9a0` | pending | | |
+| `12e007e` | integrated | cloud route matrix / `f8108e0` | focused and unified cloud tests passed |
+| `13f99ce` | adapted | Google service contracts / `5cab8a0` | final-state delegation and unified checks passed |
+| `6daf9a0` | adapted | Google service contracts / `5cab8a0` | Calendar, validator, and unified checks passed |
 | `ff8a3ab` | pending | | |
 | `3ce3cd3` | pending | | |
-| `2901238` | pending | | |
+| `2901238` | adapted | Google service contracts / `5cab8a0` | closing delegation, masking, and unified checks passed |
 | `ab3f91c` | pending | | |
 | `738f66f` | pending | | |
 | `1934f2d` | pending | | |
 | `f038629` | pending | | |
 | `bbaace9` | pending | | |
-| `9c6e2d6` | pending | | |
+| `9c6e2d6` | integrated | wakeup behavior / `469e638` | six focused and unified wakeup checks passed |
 | `29166b2` | pending | | |
 | `0bea7c6` | pending | | |
 | `66e2b4c` | pending | | |
