@@ -218,17 +218,10 @@ def test_launchers_executable_after_install(homes):
     result = subprocess.run(
         [str(dispatcher), "--help"], capture_output=True, text=True, env=env, timeout=60
     )
-    # The release venv still has no `officina` package installed (a
-    # separate, deliberate scope decision -- see
-    # _install_scaffold.install_python_packages's docstring), so the only
-    # expected failure is ModuleNotFoundError for officina.dispatcher.cli,
-    # raised by the release interpreter after control has already
-    # transferred there -- never a resolver-side error.
-    assert result.returncode != 0
-    assert "No such file or directory" not in result.stderr
-    assert "famulus launcher:" not in result.stderr
-    assert "ModuleNotFoundError" in result.stderr
-    assert "officina" in result.stderr
+    # The candidate release installs Officina and the core dependencies needed
+    # by dispatcher, so this exercises the complete generated-launcher hop.
+    assert result.returncode == 0, result.stderr
+    assert "usage:" in result.stdout
 
     assert _tree_hash(REPO_ROOT / "skills") == skills_before
 
