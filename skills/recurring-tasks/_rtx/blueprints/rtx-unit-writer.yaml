@@ -3,6 +3,12 @@ content:
 dependencies:
 - blueprint:
     base: module-root
+    path: blueprints/rtx-jobs-config.yaml
+  reason: Imports the shared validated jobs configuration loader.
+  source: recurring-tasks-rtx.source.rtx-jobs-config
+  version: 1
+- blueprint:
+    base: module-root
     path: blueprints/jobs-config.yaml
   reason: Reads the shared jobs configuration while generating scheduler entries.
   source: recurring-tasks-rtx.source.jobs-config

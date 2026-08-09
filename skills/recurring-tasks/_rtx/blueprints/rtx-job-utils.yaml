@@ -3,6 +3,12 @@ content:
 dependencies:
 - blueprint:
     base: module-root
+    path: blueprints/rtx-jobs-config.yaml
+  reason: Imports the shared validated jobs configuration loader.
+  source: recurring-tasks-rtx.source.rtx-jobs-config
+  version: 1
+- blueprint:
+    base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
   source: recurring-tasks-rtx.source.rtx-init
