@@ -1,4 +1,21 @@
-"""Windows Task Scheduler backend for recurring-tasks."""
+"""Windows Task Scheduler backend for recurring-tasks.
+
+Registration
+------------
+Each job becomes a scheduled task named ``Famulus-AI-ai-<name>``.
+
+Windows has no shebang-based exec, so unlike the Unix backends the task's
+command line hands the launch resolver to an explicit ``python`` interpreter,
+matching the convention of the installer's generated Windows launcher shims.
+
+The cron expression is translated to the nearest ``schtasks`` schedule
+(``/SC MINUTE``, ``HOURLY``, ``DAILY``, or ``WEEKLY`` with ``/D <weekday>``)
+within the cron subset this skill accepts.
+
+Triggering does NOT block: the task is started and the call returns before the
+job completes, so callers must read the run outcome record rather than the
+trigger result.
+"""
 
 from __future__ import annotations
 

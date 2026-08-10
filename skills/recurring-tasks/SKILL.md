@@ -38,25 +38,11 @@ These interfaces are documented prompt surfaces. They are not executed through `
 
 # Recurring Tasks
 
-Manages AI-driven recurring job automation using each host's **native per-user
-scheduler**: systemd user timers on Linux, launchd LaunchAgents on macOS, and
-Task Scheduler on Windows. Jobs are defined in `jobs.yaml`, which is the
-single source of truth; a platform-specific implementation translates it into
-that host's native scheduler entries. Every platform shares the same job
-command parsing, logging format, and success-evaluation logic — only how a
-job gets triggered and how its process is launched differs.
-
-## Quick Start
-
-The skill provides dispatcher interfaces for all operations:
-
-- Enable/disable jobs
-- Test jobs immediately
-- View job logs
-- Check status and health
-- Sync native scheduler entries
-
-See the **Dispatcher Interfaces** block above for the exact commands.
+Manages AI-driven recurring job automation through the host's **native
+per-user scheduler**. `jobs.yaml` is the single source of truth; a
+platform-specific implementation translates it into that host's own scheduler
+entries. Command parsing, logging, and success evaluation are shared across
+hosts — only how a job gets triggered and launched differs.
 
 ## Process
 
@@ -69,7 +55,6 @@ wrong.
 DATA
   jobs.yaml       one entry per job: name, command, schedule, enabled, success?
   registration    the host scheduler's own entry for a job
-                  (systemd unit | launchd plist | scheduled task)
   outcome record  logs/<job>/latest.json — what the last run actually did
   output log      logs/<job>/run.log — that run's output
 
@@ -92,7 +77,7 @@ RUN(job)                                  # scheduler-invoked
 EVALUATE(exit_code, inner_status, contract) -> ok | failed(reason)
     the single definition of success. RUN owns it; CHECK never re-derives it.
 
-CHECK()                                   # cron-invoked, outside the scheduler
+CHECK()                            # invoked outside the scheduler it inspects
     fail unless the scheduler is reachable
     fail unless the scheduler can resolve the agent command
     for each enabled job:
@@ -104,7 +89,7 @@ CHECK()                                   # cron-invoked, outside the scheduler
             fail unless the record is newer than 2 x the schedule interval
             fail unless the record says ok
         fail unless the registration is active
-    exit nonzero if anything failed       # cron turns that into a notification
+    exit nonzero if anything failed    # the caller turns that into a notification
 ```
 
 **Invariants.** Each one exists because violating it caused a real outage:
@@ -117,10 +102,11 @@ CHECK()                                   # cron-invoked, outside the scheduler
    A killed run refreshes that timestamp without ever completing.
 3. **One renderer.** `SYNC` and `CHECK` both call `RENDER`. When `CHECK`
    re-derived the expected registration from ambient `PATH` instead, every
-   cron-invoked run reported drift that did not exist — 12 consecutive false
+   externally invoked run reported drift that did not exist — 12 consecutive false
    alarms.
-4. **`CHECK` runs outside the scheduler it inspects.** On Linux that means
-   cron, so the check still reports when systemd itself is the problem.
+4. **`CHECK` runs outside the scheduler it inspects**, driven by an
+   independent timer, so it still reports when the scheduler itself is what
+   has failed.
 
 **Current deviations** (the code does not yet fully match the above):
 
@@ -175,85 +161,37 @@ Use the interfaces listed in the **Dispatcher Interfaces** block above. Key oper
 - **View logs:** `scripts-view-logs` tails job logs (default 50 lines).
 - **Check health:** `recurring-tasks._rtx.interface.scripts-healthcheck` verifies scheduler registration, job activity, and run freshness, and exits nonzero when any check fails. Where an independent sentinel is supported, setup registers it separately and the sentinel shows a desktop popup after every failed check.
 
-## Scheduling per platform
+## Scheduling
 
-`jobs.yaml` is translated into whichever native scheduler the current host
-uses. All three translations share the same job runner, log format, and
-success evaluation described further down — only entry creation, triggering,
-and status inspection differ.
+`jobs.yaml` is translated into whichever native scheduler the host provides.
+Entry creation, triggering, and status inspection are host-specific; command
+parsing, logging, and success evaluation are shared. Registration details are
+documented with each host implementation.
 
-### Linux — systemd user timers
+Two facts affect how you author a job:
 
-- Each job becomes a `.timer` + `.service` pair named `ai-<name>.timer` /
-  `ai-<name>.service` under `~/.config/systemd/user/`.
-- The service's `PATH` is built explicitly (launcher directory, the launch
-  resolver's own directory, `~/.npm-global/bin`, `~/.local/bin`, and the
-  standard system directories) rather than relying on shell inheritance.
-- `DBUS_SESSION_BUS_ADDRESS` is set to `unix:path=%t/bus`. systemd expands
-  `%t` to the runtime directory root (`$XDG_RUNTIME_DIR`, i.e.
-  `/run/user/<uid>`) for whichever UID the `systemd --user` instance actually
-  runs as, so this stays correct without a UID hardcoded into configuration.
-- Inspect status: `systemctl --user list-timers 'ai-*.timer'`,
-  `systemctl --user status ai-<name>.service`, or
-  `journalctl --user -u ai-<name>.service -n 50 --no-pager`.
-- `scripts-test` triggers a run via `systemctl --user start --wait`, which
-  blocks until the unit finishes.
+- **Schedule syntax is a restricted cron subset.** Each field accepts `*`, a
+  step (`*/N`), or a single bare integer. Ranges (`9-17`) and comma lists
+  (`9,12,17`) are rejected by every host translator.
+- **Triggering semantics differ by host.** On some hosts a trigger blocks
+  until the job finishes; on others it returns as soon as the trigger is
+  accepted. Never read "the trigger succeeded" as "the job succeeded" — see
+  below.
 
-### macOS — launchd LaunchAgents
+Scheduler entries are generated from `jobs.yaml` and regenerated on every
+sync. Never edit them by hand.
 
-- Each job becomes a plist at
-  `~/Library/LaunchAgents/ai-<name>.plist`, labeled `com.famulus.ai.<name>`.
-- `ProgramArguments` invokes the same fixed launch resolver used on Linux —
-  directly, as `argv[0]`, with no separate interpreter in front of it. That
-  works because the resolver script carries its own `#!/usr/bin/env python3`
-  shebang and launchd execs it the same way any Unix program is exec'd; this
-  is the same convention the dispatcher/invoke-skill launcher shims use.
-- `StartCalendarInterval` is computed from the cron expression (one entry, or
-  a list of entries for combinations like `*/15 9 * * *`, which expands to
-  four calendar intervals — one per quarter-hour within that hour). Only `*`,
-  a step (`*/N`), or a single bare integer are accepted per field — hyphenated
-  ranges like `9-17` and comma lists like `9,12,17` are not supported by any
-  of the three platform translators.
-- `StandardOutPath`/`StandardErrorPath` both point at
-  `logs/<name>/run.log`, alongside the job runner's own writes to that file.
-- Load/reload: `launchctl bootout gui/<uid> <plist>` then
-  `launchctl bootstrap gui/<uid> <plist>` (sync does the bootout defensively
-  before every bootstrap, so re-syncing an already-loaded job is safe).
-- `scripts-test` triggers a run via
-  `launchctl kickstart -k gui/<uid>/com.famulus.ai.<name>`, which — unlike
-  systemd's `start --wait` — returns as soon as the trigger is accepted, not
-  when the job finishes.
-- Inspect status: `launchctl print gui/<uid>/com.famulus.ai.<name>`.
+## Did the job actually succeed?
 
-### Windows — Task Scheduler
+Triggering a job only confirms the scheduler *accepted the trigger*. On some
+hosts that call blocks until the job is done; on others it returns
+immediately, so a bare "did the trigger succeed" check cannot tell you whether
+the job's work succeeded, or whether it even started.
 
-- Each job becomes a scheduled task named `Famulus-AI-ai-<name>`.
-- Windows has no shebang-based exec, so unlike the two Unix platforms above,
-  the task's command line hands the launch resolver to an explicit `python`
-  interpreter: `python <resolver-path> <job-runner-path> --jobs-file ... --job <name>`
-  — the same convention the installer's generated Windows launcher shims use.
-- The cron expression is translated to the nearest `schtasks` schedule
-  (`/SC MINUTE`, `HOURLY`, `DAILY`, or `WEEKLY` with `/D <weekday>`, as
-  supported by the cron subset this skill accepts).
-- `scripts-test` triggers a run via `schtasks /Run /TN Famulus-AI-ai-<name>`,
-  which — like launchd — returns once the trigger is accepted, not once the
-  job finishes.
-- Inspect status: `schtasks /Query /TN Famulus-AI-ai-<name>` (or
-  `/FO LIST /V` for all jobs' details).
-
-### Did the job actually succeed?
-
-Triggering a job through the native scheduler only confirms the scheduler
-*accepted the trigger*. On systemd that call blocks until the job is done, but
-on launchd and Task Scheduler it returns immediately, so a bare "did the
-trigger succeed" check can't tell you whether the job's own work succeeded —
-or whether it has even started.
-
-`scripts-test` accounts for this: after triggering, it waits (bounded, ~60s)
-for a fresh structured outcome file to appear at `logs/<name>/latest.json`,
-identified by a fresh per-run id rather than by timestamp (two runs can
-finish within the same second), and reports pass/fail from that file's
-`success` field instead of trusting the trigger call alone.
+Testing a job accounts for this: after triggering it waits, bounded, for a
+fresh outcome record identified by a new per-run id rather than a timestamp
+(two runs can finish within the same second), and reports pass or fail from
+that record instead of trusting the trigger.
 
 Whether a run counts as successful is decided by combining two signals:
 
@@ -274,53 +212,37 @@ Whether a run counts as successful is decided by combining two signals:
    in the recent run log to classify one of those exit-code failures as a
    tolerated transient condition.
 
-In the shipped `jobs.yaml`, one job (the inbox-triage job, run at 3am)
-declares `success: {require_inner_status: ok}` because it already maintains
-a `state/status.json` of its own; another (the daily-planning job, run at
-7am) has no such mechanism, so it has no `success:` block and its outcome is
-exit-code-only. This asymmetry is intentional, not an oversight — add a
-`success:` block only for jobs that actually write a status file.
+Declare `success: {require_inner_status: ok}` for a job whose own code
+writes a status file, and omit `success:` entirely for one that does not —
+requiring a status a job never writes would fail every run of it.
 
-### Healthcheck
+Prefer making a job report its own outcome over leaving it on exit code
+alone. An agent-driven job commonly exits 0 while accomplishing nothing, so
+exit-code-only jobs can record success indefinitely while producing no
+result. Where a job persists something, have that step record the status.
 
-`recurring-tasks._rtx.interface.scripts-healthcheck` runs pre-flight checks (native
-scheduler manager reachable, `AI_AGENT_COMMAND_TEMPLATE` set and resolvable)
-plus per-job registration, freshness, and activity checks. Its process exit
+## Healthcheck
+
+The healthcheck interface runs pre-flight checks (scheduler manager
+reachable, the agent command configured and resolvable by the scheduler) plus
+per-job registration, freshness, and activity checks. Its process exit
 code reflects the outcome truthfully: `0` when every check passed, `1` when at
 least one failed. Setup also installs an independent four-hour sentinel where
 supported. The sentinel owns the desktop popup fallback, so launch failures
 that occur before the checker starts are still reported.
 
-## Design Principles
+## Logs and outcomes
 
-1. **No hardcoded paths** — Commands use `invoke-skill` which is on PATH (managed by install-assistant-tools)
-2. **jobs.yaml is source of truth** — All state comes from here, nothing else
-3. **Minimal layers** — Direct process execution, no intermediate shell scripts
-4. **Environment-based** — Uses the host scheduler's per-user environment for AI_AGENT_COMMAND_TEMPLATE
-5. **Cross-platform** — Shared Python job-running and success-evaluation logic; only entry creation/triggering is platform-specific
+Each run appends its output to the job's output log, bracketed by run-start
+and run-end markers, and writes a structured outcome record: start and finish
+times, the process exit code, the job's self-reported status if it has one,
+the overall success verdict, a reason when it failed, and a per-run id.
 
-## Logs
+Read the outcome record rather than re-deriving success from the output log —
+testing a job and checking health both read that record, and a second opinion
+about what "succeeded" means is how a failing job stayed green (invariant 1).
 
-All logs go to `logs/<name>/run.log`, appended (never rotated — manage
-manually or with logrotate) on every platform, since a single shared
-component owns log writing regardless of which native scheduler fired the
-job. Each run appends a `--- RUN START ---` marker, the job's captured
-output, and a `--- RUN END (success=True|False) ---` marker (the Python
-`bool`'s capitalized string form, since it's written via an f-string).
-
-Alongside the log, `logs/<name>/latest.json` holds a structured record of the
-most recent run: start/finish timestamps, the process exit code, the inner
-status if the job reported one, the overall `success` verdict, a human
-`reason` when it failed, and a per-run id. `scripts-test` and the healthcheck
-both read this file rather than re-deriving success on their own.
-
-### Healthcheck log
-
-```
-logs/healthcheck/run.log
-```
-
-One entry per check run (typically every 4 hours via cron).
+Output logs are appended and never rotated; manage their size externally.
 
 ## Common Tasks
 
@@ -345,13 +267,7 @@ One entry per check run (typically every 4 hours via cron).
 ## Files
 
 - `jobs.yaml` is the source of truth for job definitions.
-- `logs/<name>/run.log` stores per-job output with RUN START/END markers.
-- `logs/<name>/latest.json` stores the structured outcome of the most recent run.
-- `logs/healthcheck/run.log` stores healthcheck output.
-- Setup writes machine-local launcher environment state during recurring-tasks setup.
-
-Note: native scheduler entries are generated per platform —
-`~/.config/systemd/user/ai-<name>.{service,timer}` on Linux,
-`~/Library/LaunchAgents/ai-<name>.plist` on macOS, and the
-`Famulus-AI-ai-<name>` scheduled task on Windows. Do not edit these
-manually — they're regenerated from jobs.yaml.
+- Each job has an output log and an outcome record under its own log
+  directory; the healthcheck keeps its own log alongside them.
+- Scheduler entries live wherever the host scheduler keeps them and are
+  regenerated from `jobs.yaml` on every sync — never edit them by hand.

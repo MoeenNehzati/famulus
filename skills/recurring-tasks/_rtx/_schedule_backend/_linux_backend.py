@@ -1,4 +1,26 @@
-"""Linux systemd scheduler backend for recurring-tasks."""
+"""Linux systemd scheduler backend for recurring-tasks.
+
+Registration
+------------
+Each job becomes an ``ai-<name>.timer`` + ``ai-<name>.service`` pair under
+``~/.config/systemd/user/``.
+
+The service's ``PATH`` is built explicitly (launcher directory, the launch
+resolver's own directory, ``~/.npm-global/bin``, ``~/.local/bin``, then the
+standard system directories) rather than relying on shell inheritance, and is
+rendered from the single ordered list in ``_job_path_entries`` so the health
+check searches exactly what the unit provides.
+
+``DBUS_SESSION_BUS_ADDRESS`` uses ``unix:path=%t/bus``. systemd expands ``%t``
+to the runtime directory root (``$XDG_RUNTIME_DIR``, i.e. ``/run/user/<uid>``)
+for whichever uid the user manager actually runs as, so no uid is baked into
+configuration.
+
+Triggering blocks: ``systemctl --user start --wait`` returns only once the
+unit has finished. Inspect with ``systemctl --user list-timers 'ai-*.timer'``,
+``systemctl --user status ai-<name>.service``, or ``journalctl --user -u
+ai-<name>.service``.
+"""
 
 from __future__ import annotations
 

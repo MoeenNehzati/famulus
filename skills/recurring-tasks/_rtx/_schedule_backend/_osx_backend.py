@@ -1,4 +1,27 @@
-"""macOS launchd scheduler backend for recurring-tasks."""
+"""macOS launchd scheduler backend for recurring-tasks.
+
+Registration
+------------
+Each job becomes a plist at ``~/Library/LaunchAgents/ai-<name>.plist``,
+labeled ``com.famulus.ai.<name>``.
+
+``ProgramArguments`` invokes the launch resolver directly as ``argv[0]`` with
+no separate interpreter, which works because the resolver carries its own
+shebang and launchd execs it like any other program.
+
+``StartCalendarInterval`` is computed from the cron expression -- one entry,
+or a list when a step expands within an hour (``*/15 9 * * *`` becomes four
+quarter-hour intervals). ``StandardOutPath``/``StandardErrorPath`` both point
+at the job's run log, alongside the runner's own writes to it.
+
+Load and reload with ``launchctl bootout gui/<uid> <plist>`` followed by
+``launchctl bootstrap gui/<uid> <plist>``; sync performs the bootout
+defensively first, so re-syncing an already-loaded job is safe.
+
+Triggering does NOT block: ``launchctl kickstart -k`` returns as soon as the
+trigger is accepted, not when the job finishes -- which is why callers must
+read the run outcome record rather than the trigger result.
+"""
 
 from __future__ import annotations
 
