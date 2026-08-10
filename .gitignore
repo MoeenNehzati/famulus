@@ -22,6 +22,7 @@ settings.json
 **/.certificates/
 **/.pooled-blueprint-review.yaml
 skills/email-triage/state/
+skills/daily-plan/state/
 skills/email-triage/triage.log
 
 # recurring-tasks: generated at setup time, not source-controlled

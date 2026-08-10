@@ -409,3 +409,93 @@ def test_run_job_kills_and_records_a_job_that_exceeds_its_timeout(tmp_path, monk
     assert not job_executor.running_marker_path(
         log_dir=log_dir, job_name="demo"
     ).exists()
+
+
+def test_read_inner_status_ignores_a_status_left_by_an_earlier_run(tmp_path):
+    """A previous run's status.json must not vouch for the current run.
+
+    Without run correlation, `require_inner_status: ok` degrades to "exit 0
+    plus a stale artifact": a run that fails before writing its own status
+    inherits yesterday's ok and records success.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    state = tmp_path / "some-job" / "state"
+    state.mkdir(parents=True)
+    status = state / "status.json"
+    status.write_text(json.dumps({"result": "ok"}), encoding="utf-8")
+
+    stale = time.time() - 86400
+    os.utime(status, (stale, stale))
+    run_started = datetime.now(timezone.utc)
+
+    assert read_inner_status(
+        skills_root=tmp_path, job_name="some-job", not_before=run_started
+    ) is None
+    # Without the run's start time the old behaviour is preserved for callers
+    # that genuinely want "whatever is on disk".
+    assert read_inner_status(skills_root=tmp_path, job_name="some-job") == "ok"
+
+
+def test_read_inner_status_accepts_a_status_written_by_this_run(tmp_path):
+    from datetime import datetime, timezone
+
+    state = tmp_path / "some-job" / "state"
+    state.mkdir(parents=True)
+    (state / "status.json").write_text(json.dumps({"result": "ok"}), encoding="utf-8")
+    run_started = datetime.now(timezone.utc)
+
+    assert read_inner_status(
+        skills_root=tmp_path, job_name="some-job", not_before=run_started
+    ) == "ok"
+
+
+def test_run_job_fails_when_a_contract_job_writes_no_status_at_all(tmp_path):
+    """The daily-plan failure shape: exit 0, nothing accomplished.
+
+    The agent CLI exits 0 even when it could not reach the skill's
+    interfaces, so with an exit-code-only contract such a run recorded
+    success:true. Requiring a self-reported status makes "did nothing"
+    distinguishable from "worked".
+    """
+    jobs_file = _write_jobs_file(
+        tmp_path, command="invoke-skill demo", success={"require_inner_status": "ok"}
+    )
+    completed = subprocess.CompletedProcess(args=[], returncode=0)
+    log_dir = tmp_path / "logs"
+    skills_root = tmp_path / "skills"
+    (skills_root / "demo" / "state").mkdir(parents=True)  # state dir, no status.json
+
+    with mock.patch.object(job_executor.subprocess, "run", return_value=completed), \
+         mock.patch.object(job_executor, "SKILLS_ROOT", skills_root):
+        exit_code = job_executor.run_job(
+            jobs_file=jobs_file, job_name="demo", log_dir=log_dir
+        )
+
+    assert exit_code == 0, "the launcher itself succeeded"
+    record = json.loads((log_dir / "demo" / "latest.json").read_text())
+    assert record["success"] is False, "a run that reported nothing is not a success"
+    assert record["inner_status"] is None
+
+
+def test_run_job_ignores_a_previous_runs_status_under_a_contract(tmp_path):
+    """End-to-end guard for the stale-status false green."""
+    jobs_file = _write_jobs_file(
+        tmp_path, command="invoke-skill demo", success={"require_inner_status": "ok"}
+    )
+    completed = subprocess.CompletedProcess(args=[], returncode=0)
+    log_dir = tmp_path / "logs"
+    skills_root = tmp_path / "skills"
+    state = skills_root / "demo" / "state"
+    state.mkdir(parents=True)
+    status = state / "status.json"
+    status.write_text(json.dumps({"result": "ok"}))
+    stale = time.time() - 86400
+    os.utime(status, (stale, stale))
+
+    with mock.patch.object(job_executor.subprocess, "run", return_value=completed), \
+         mock.patch.object(job_executor, "SKILLS_ROOT", skills_root):
+        job_executor.run_job(jobs_file=jobs_file, job_name="demo", log_dir=log_dir)
+
+    record = json.loads((log_dir / "demo" / "latest.json").read_text())
+    assert record["success"] is False, "yesterday's status must not vouch for today"

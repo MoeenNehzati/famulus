@@ -27,6 +27,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import asdict, dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from officina.common import atomic_files
@@ -140,22 +141,45 @@ def _resolve_job_state_dir(*, skills_root: Path, job_name: str) -> Path:
     return skills_root / job_name / "state"
 
 
-def read_inner_status(*, skills_root: Path, job_name: str) -> str | None:
+# A status file written moments before the run began still belongs to that
+# run in practice (clock granularity, a writer that flushes just as the
+# executor starts). Anything older than this is a previous run's artifact.
+_INNER_STATUS_SLACK_SECONDS = 5
+
+
+def read_inner_status(
+    *, skills_root: Path, job_name: str, not_before: datetime | None = None
+) -> str | None:
     """Read a job's self-reported status from its state/status.json, if
-    present.
+    present and attributable to the current run.
 
     The file shape is the convention already used by email-triage's
     _watermark_floor.py / _watermark_writer.py / _failure_clearer.py:
     status.json containing {"result": "ok" | "error" | "warning", ...}. The
     directory it lives in is resolved per-job by _resolve_job_state_dir()
     since not every job keeps state under SKILLS_ROOT/<job>/state/ (see
-    that function). Jobs that don't write this file at all (e.g. daily-plan,
-    as of this writing) simply have no inner status, and callers should
-    treat that as None rather than a failure by itself.
+    that function). Jobs that don't write this file at all simply have no
+    inner status, and callers should treat that as None rather than a
+    failure by itself.
+
+    ``not_before`` is the run's start time. Without it, a status file left by
+    an EARLIER run satisfies a `require_inner_status` contract for a run that
+    never got far enough to write one -- so the one contract meant to be
+    stronger than the exit code silently degrades to the exit code plus a
+    stale artifact. A status older than the run is reported as absent.
     """
     status_file = _resolve_job_state_dir(skills_root=skills_root, job_name=job_name) / "status.json"
     if not status_file.exists():
         return None
+    if not_before is not None:
+        try:
+            written_at = datetime.fromtimestamp(
+                status_file.stat().st_mtime, tz=timezone.utc
+            )
+        except OSError:
+            return None
+        if written_at < not_before - timedelta(seconds=_INNER_STATUS_SLACK_SECONDS):
+            return None
     try:
         payload = json.loads(status_file.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):

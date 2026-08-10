@@ -19,7 +19,12 @@ jobs:
   command: invoke-skill daily-plan
   schedule: 0 7 * * *
   enabled: true
-  # daily-plan has no status.json self-reporting mechanism (unlike
-  # email-triage), so its success contract is process exit code only --
-  # leave `success:` absent/empty rather than requiring an inner status it
-  # never writes, which would make every run report failure.
+  # daily-plan now self-reports: _plan_storage writes state/status.json with
+  # result: ok when a plan is actually persisted, which is the job's real
+  # deliverable. Exit code alone was not enough -- the agent CLI exits 0 even
+  # when it accomplishes nothing, so runs that could not reach the skill's
+  # interfaces at all recorded success:true for days while producing no plan.
+  # read_inner_status scopes the file to the current run, so a previous day's
+  # status cannot vouch for a run that never wrote its own.
+  success:
+    require_inner_status: ok

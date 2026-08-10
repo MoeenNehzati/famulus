@@ -149,3 +149,38 @@ def test_state_patch_uses_requested_date(monkeypatch, capsys):
     assert state_patch.main(["hide", "actions", "2", "--date", "2026-07-04"]) == 0
     assert calls == [("7-4-26", "hide", {"section": "actions", "indices": [2]})]
     assert capsys.readouterr().out == "updated"
+
+
+# ── self-reported status ───────────────────────────────────────────────────────
+# recurring-tasks' scheduled daily-plan job evaluates success from
+# state/status.json (read_inner_status). Persisting a plan is the job's real
+# deliverable, so only that may report ok -- an agent that exits 0 without
+# producing a plan must leave no status behind.
+
+def load_plan_storage_module():
+    return load_runtime_module(RUNTIME_ROOT / "_plan_storage.py")
+
+
+def test_successful_write_records_an_ok_status(tmp_path, monkeypatch):
+    import json
+
+    plan_storage = load_plan_storage_module()
+    monkeypatch.setattr(plan_storage, "STATE_DIR", tmp_path / "state")
+
+    plan_storage._record_status_ok("8-10-26")
+
+    payload = json.loads((tmp_path / "state" / "status.json").read_text())
+    assert payload["result"] == "ok"
+    assert payload["date_key"] == "8-10-26"
+    assert payload["recorded_at"]
+
+
+def test_status_bookkeeping_never_fails_a_written_plan(tmp_path, monkeypatch):
+    """A plan that reached the cloud must not be reported as a failure
+    because the local status file could not be written."""
+    plan_storage = load_plan_storage_module()
+    unwritable = tmp_path / "file-in-the-way"
+    unwritable.write_text("not a directory")
+    monkeypatch.setattr(plan_storage, "STATE_DIR", unwritable / "state")
+
+    plan_storage._record_status_ok("8-10-26")  # must not raise

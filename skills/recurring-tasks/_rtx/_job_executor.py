@@ -143,7 +143,8 @@ def run_job(*, jobs_file: Path, job_name: str, log_dir: Path = LOG_DIR) -> int:
     env = {**os.environ, **env_overrides}
     resolved_argv = resolve_executable(argv, env)
 
-    started_at = _utc_now_iso()
+    started_dt = datetime.datetime.now(datetime.timezone.utc)
+    started_at = started_dt.isoformat(timespec="seconds")
     # A fresh id per run, independent of finished_at's second-resolution
     # timestamp: two runs (e.g. a fast spawn failure followed by a manual
     # retry) can legitimately finish within the same second, and test_job()
@@ -216,7 +217,13 @@ def run_job(*, jobs_file: Path, job_name: str, log_dir: Path = LOG_DIR) -> int:
             log.write(f"--- process failed to spawn: {spawn_error} ---\n")
         else:
             process_exit_code = result.returncode
-            inner_status = read_inner_status(skills_root=SKILLS_ROOT, job_name=job_name)
+            inner_status = read_inner_status(
+                skills_root=SKILLS_ROOT,
+                job_name=job_name,
+                # Scope the status to THIS run: a file left by an earlier run
+                # must not vouch for one that never wrote its own.
+                not_before=started_dt,
+            )
             evaluation = evaluate_success_contract(
                 process_exit_code=process_exit_code,
                 inner_status=inner_status,
