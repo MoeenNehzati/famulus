@@ -68,7 +68,7 @@ skills/wrap-up/blueprints/gateway.yaml	O04	S6	target-native v6 adaptation	6766e6
 src/officina/common/blueprint.yaml	O04	S6	target-native v6 adaptation	6766e69+484c0d5	changed-on-both-resolution;progress-log:S6;checkpoint-hooks;closure-full-pending
 src/officina/common/blueprint_graph.py	O01	S1,S2	target-native v6 adaptation	57a4c63,0901a75+8cb8781	changed-on-both-resolution;progress-log:S1,S2;checkpoint-hooks;closure-full-pending
 src/officina/common/configuration.schema.json	O01	S1,S2	target-native v6 adaptation	57a4c63,0901a75+8cb8781	changed-on-both-resolution;progress-log:S1,S2;checkpoint-hooks;closure-full-pending
-src/officina/install/managed_runtime.py	O03	S4,S6	target-native v6 adaptation	d5584e7+484c0d5,6766e69+484c0d5	changed-on-both-resolution;progress-log:S4,S6;checkpoint-hooks;closure-full-pending
+src/officina/install/managed_runtime.py	O03	S4,S6	target-native v6 adaptation with runnable compatibility-path core dependencies	d5584e7+484c0d5+313975b,6766e69+484c0d5	changed-on-both-resolution;progress-log:S4,S6,A4;checkpoint-hooks;closure-full-pending;compat-runtime-core:313975b
 src/officina/install/resolvers/launch.py	O03	S4,S6	target-native v6 adaptation	d5584e7+484c0d5,6766e69+484c0d5	changed-on-both-resolution;progress-log:S4,S6;checkpoint-hooks;closure-full-pending
 src/officina/wakeup/blueprints/cli.yaml	O04	S6	target-native v6 adaptation	6766e69+484c0d5	changed-on-both-resolution;progress-log:S6;checkpoint-hooks;closure-full-pending
 tests/conftest.py	O06	S6	target-native v6 adaptation	6766e69+484c0d5	changed-on-both-resolution;progress-log:S6;checkpoint-hooks;closure-full-pending
@@ -80,7 +80,7 @@ tests/test_interface_projection.py	O06	S6	target-native v6 adaptation	6766e69+48
 tests/test_nested_module_migration.py	O06	S6	target-native v6 adaptation	6766e69+484c0d5	changed-on-both-resolution;progress-log:S6;checkpoint-hooks;closure-full-pending
 tests/test_officina_blueprint_graph.py	O01	S1,S2	target-native v6 adaptation	57a4c63,0901a75+8cb8781	changed-on-both-resolution;progress-log:S1,S2;checkpoint-hooks;closure-full-pending
 tests/test_officina_launcher_entry.py	O06	S6	target-native v6 adaptation	6766e69+484c0d5	changed-on-both-resolution;progress-log:S6;checkpoint-hooks;closure-full-pending
-tests/test_officina_managed_runtime.py	O03	S4,S6	retain target installer matrix while adapting source runtime assertions and protecting packaged runtime assets	d5584e7+484c0d5+488056e,6766e69+484c0d5	changed-on-both-resolution;progress-log:S4,S6,A3;checkpoint-hooks;closure-full-pending;wheel-runtime-assets:488056e
+tests/test_officina_managed_runtime.py	O03	S4,S6	retain target installer matrix while adapting source runtime assertions, protecting packaged runtime assets, and proving compatibility-path dependencies	d5584e7+484c0d5+488056e+313975b,6766e69+484c0d5	changed-on-both-resolution;progress-log:S4,S6,A3,A4;checkpoint-hooks;closure-full-pending;wheel-runtime-assets:488056e;compat-runtime-core:313975b
 tests/test_run_python_tests.py	O06	S6	target-native v6 adaptation	6766e69+484c0d5	changed-on-both-resolution;progress-log:S6;checkpoint-hooks;closure-full-pending
 tests/test_standard_consumers.py	O06	S6	target-native v6 adaptation	6766e69+484c0d5	changed-on-both-resolution;progress-log:S6;checkpoint-hooks;closure-full-pending
 tests/test_visualization_browser.py	O08	S8	retain newer target browser behavior and omit stale source allowance	3ae2a40	changed-on-both-resolution;progress-log:S8;checkpoint-hooks;closure-full-pending

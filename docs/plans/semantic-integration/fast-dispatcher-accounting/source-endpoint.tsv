@@ -365,7 +365,7 @@ M	src/officina/install/blueprints/launcher-entry.yaml	adapted	S4,S6	E05,E06,E07,
 M	src/officina/install/blueprints/managed-runtime.yaml	adapted	S4,S6	E05,E06,E07,E10,E13	d5584e7+484c0d5,6766e69+484c0d5	progress-log:S4,S6;focused-checks;checkpoint-hooks;closure-full-pending
 M	src/officina/install/blueprints/runtime-pointer.yaml	adapted	S4,S6	E05,E06,E07,E10,E13	d5584e7+484c0d5,6766e69+484c0d5	progress-log:S4,S6;focused-checks;checkpoint-hooks;closure-full-pending
 M	src/officina/install/blueprints/uv-bootstrap.yaml	adapted	S4,S6	E05,E06,E07,E10,E13	d5584e7+484c0d5,6766e69+484c0d5	progress-log:S4,S6;focused-checks;checkpoint-hooks;closure-full-pending
-M	src/officina/install/managed_runtime.py	adapted	S4,S6	E05,E06,E07,E10,E13	d5584e7+484c0d5,6766e69+484c0d5	progress-log:S4,S6;focused-checks;checkpoint-hooks;closure-full-pending
+M	src/officina/install/managed_runtime.py	adapted	S4,S6	E05,E06,E07,E10,E13	d5584e7+484c0d5+313975b,6766e69+484c0d5	progress-log:S4,S6,A4;focused-checks;checkpoint-hooks;closure-full-pending;compat-runtime-core:313975b
 M	src/officina/install/resolvers/launch.py	adapted	S4,S6	E05,E06,E07,E10,E13	d5584e7+484c0d5,6766e69+484c0d5	progress-log:S4,S6;focused-checks;checkpoint-hooks;closure-full-pending
 M	src/officina/install/runtime_pointer.py	adapted	S4,S6	E05,E06,E07,E10,E13	d5584e7+484c0d5,6766e69+484c0d5	progress-log:S4,S6;focused-checks;checkpoint-hooks;closure-full-pending
 M	src/officina/runtime/python_machine_interface.py	adapted	S6	E11	6766e69+484c0d5	progress-log:S6;focused-checks;checkpoint-hooks;closure-full-pending
@@ -406,7 +406,7 @@ M	tests/test_officina_certification_hashing.py	adapted	S6	E11	6766e69+484c0d5	pr
 D	tests/test_officina_dispatcher.py	adapted	S3,S7	E14	dc96600+484c0d5,ce1ea32+484c0d5	progress-log:S3,S7;focused-checks;checkpoint-hooks;closure-full-pending
 M	tests/test_officina_git_provenance.py	adapted	S4,S6	E05,E06,E07,E10,E13	d5584e7+484c0d5,6766e69+484c0d5	progress-log:S4,S6;focused-checks;checkpoint-hooks;closure-full-pending
 M	tests/test_officina_launcher_entry.py	adapted	S4,S6	E05,E06,E07,E10,E13	d5584e7+484c0d5,6766e69+484c0d5	progress-log:S4,S6;focused-checks;checkpoint-hooks;closure-full-pending
-M	tests/test_officina_managed_runtime.py	adapted	S4,S6	E05,E06,E07,E10,E13	d5584e7+484c0d5+488056e,6766e69+484c0d5	progress-log:S4,S6,A3;focused-checks;checkpoint-hooks;closure-full-pending;wheel-runtime-assets:488056e
+M	tests/test_officina_managed_runtime.py	adapted	S4,S6	E05,E06,E07,E10,E13	d5584e7+484c0d5+488056e+313975b,6766e69+484c0d5	progress-log:S4,S6,A3,A4;focused-checks;checkpoint-hooks;closure-full-pending;wheel-runtime-assets:488056e;compat-runtime-core:313975b
 M	tests/test_officina_python_machine_interface.py	adapted	S6	E11	6766e69+484c0d5	progress-log:S6;focused-checks;checkpoint-hooks;closure-full-pending
 A	tests/test_officina_repository_configuration.py	adapted	S1	E01,E02	57a4c63	progress-log:S1;focused-checks;checkpoint-hooks;closure-full-pending
 M	tests/test_officina_runtime_pointer.py	adapted	S4,S6	E05,E06,E07,E10,E13	d5584e7+484c0d5,6766e69+484c0d5	progress-log:S4,S6;focused-checks;checkpoint-hooks;closure-full-pending

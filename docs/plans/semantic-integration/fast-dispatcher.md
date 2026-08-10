@@ -145,12 +145,12 @@ integration commit and focused evidence before closure.
 | `b53b6e4` | `dc96600`, `484c0d5` | S3 authorization/compiler tests plus restored package export test |
 | `05929b9` | `d5584e7` | S4 runtime-pointer, launcher, and host-routing tests |
 | `789dc52` | `d5584e7` | S4 confined runtime and package-import tests |
-| `4f79c4b` | `d5584e7`, `6766e69`, `ce1ea32`, `484c0d5`, `b632de0`, `488056e` | S4/S6/S7 installer results, verified-wheel and copied-source tests, successful real wheel build, and packaged runtime assets |
+| `4f79c4b` | `d5584e7`, `6766e69`, `ce1ea32`, `484c0d5`, `b632de0`, `488056e`, `313975b`, `f1905ba` | S4/S6/S7 installer results, verified-wheel and copied-source tests, successful real wheel build, packaged runtime assets, compatibility-path core dependencies, and isolated build artifacts |
 | `d24ce0d` | `8cb8781`, `6766e69`, `ce1ea32`, `484c0d5` | S2 tooling, S6 inventory, S7 cutover, and audit-resolution results |
 | `fdecd78` | `3ae2a40`, `484c0d5` | S8 docs plus explicit CLI program-identity test |
 | `9b4125e` | `8cb8781`, `6766e69` | S2 inventory tooling and S6 all-v6 inventory result |
 | `95a360e` | `6766e69` | S6 221-node code-bearing inventory result |
-| `eb78050` | `484c0d5`, `b632de0`, `488056e` | Packaged-source fingerprint, verified-wheel, copied-plugin acceptance coverage, real package build, and complete non-Python runtime payload |
+| `eb78050` | `484c0d5`, `b632de0`, `488056e`, `313975b` | Packaged-source fingerprint, verified-wheel, copied-plugin acceptance coverage, real package build, complete non-Python runtime payload, and runnable copied-package dependencies |
 
 ### Mixed-commit effect resolutions
 
@@ -418,15 +418,18 @@ the evidence, not informal labels:
 
 | Token | Exact meaning |
 |---|---|
-| `progress-log:S1` through `progress-log:S8`, and `progress-log:A1` through `progress-log:A3` | The corresponding row below: exact integration commit, selected subsystem/result counts, skips, and limitations. Comma-separated tokens require every named row. |
+| `progress-log:S1` through `progress-log:S8`, and `progress-log:A1` through `progress-log:A5` | The corresponding row below: exact integration commit, selected subsystem/result counts, skips, and limitations. Comma-separated tokens require every named row. |
 | `focused-checks` / `focused-results` | The slice-specific pytest selections and benchmark scopes summarized in the referenced progress rows; these are supplementary to checkpoint and closure gates, not substitutes for them. |
-| `checkpoint-hooks` | The normal `.githooks/pre-commit` invocation of `python3 repo_checks.py --suite precommit` at every mapped integration commit. The latest results at `b632de0` are validators exit 0; shared 1421 passed/12 skipped; recurring 174 passed/2 skipped; certifier 57 passed; drift 21 passed; and every other admitted skill group exit 0. |
+| `checkpoint-hooks` | The normal `.githooks/pre-commit` invocation of `python3 repo_checks.py --suite precommit` at every mapped integration commit. The latest results at `f1905ba` are validators exit 0; shared 1421 passed/12 skipped; recurring 174 passed/2 skipped; certifier 57 passed; drift 21 passed; and every other admitted skill group exit 0. |
 | `target-base-preservation` | `git merge-base --is-ancestor b984b50b89c1b438bee9130e3ffd08c2f158eddd <integration-tip>` exits 0; the integration branch was created from that frozen target and no target commit is removed. |
 | `changed-on-both-resolution` | The row's explicit semantic resolution plus its mapped integration commits and checkpoint evidence. |
 | `replacement-map` | The row's replacement/consequence assertion, exercised by the mapped S3/S4/S7 tests and checkpoint hooks. |
 | `user-approved-historical-plan-omission` | Explicit approval from the integration conversation: “historical plans? we don't care about historical plans”; no production or canonical-documentation effect is rejected by this token. |
 | `real-wheel-build:b632de0` | `UV_CACHE_DIR=/tmp/ai-fast-dispatcher-uv-cache uv build --wheel --no-build-isolation --out-dir /tmp/ai-fast-dispatcher-wheel .` exited 0 and produced `famulus_officina-0.1.0-py3-none-any.whl`. |
 | `wheel-runtime-assets:488056e` | The focused wheel-metadata regression test passed; `UV_CACHE_DIR=/tmp/ai-fast-dispatcher-uv-cache uv build --wheel --no-build-isolation --out-dir /tmp/ai-fast-dispatcher-wheel-assets .` exited 0, and `unzip -Z1` confirmed the HTML template, CSS, JavaScript runtime, and systemd service template in the wheel. The checkpoint hook also exited 0. |
+| `closure-diagnostic:c389752` | The first vacuous candidate had the required parent/tree shape. Its sandboxed full run was blocked by denied loopback sockets. The unrestricted concise rerun passed validators and all Google OAuth tests, then exposed three independent issues: two local managed-runtime launcher failures from missing PyYAML in the omitted-root compatibility path, one shared-suite clean-tree failure caused by concurrent wheel creation of `build/`, and two GitHub-install assertions against remote `master` before this integration exists there. The local defects are resolved by `313975b` and `f1905ba`; the remote assertions remain an external pre-merge limitation. |
+| `compat-runtime-core:313975b` | The compatibility-path batch-install unit test passed; the previously failing real Claude/local-plugin and launcher lifecycle tests both passed; the checkpoint hook passed validators, 1421 shared tests/12 skips, and every skill-owned group. |
+| `parallel-build-artifacts:f1905ba` | `git check-ignore -v build/probe` selected the root `/build/` rule, preventing real wheel builds in one full-suite lane from making another lane's committed-inventory check observe a dirty tree; the checkpoint hook passed validators, 1421 shared tests/12 skips, and every skill-owned group. |
 | `central-full-collection-pending` | Planned exact closure command `python3 repo_checks.py --suite full --verbose`; replace this token with the committed candidate and result before Gate 3. |
 | `closure-full-pending` | The same exact full-suite command must pass or have every environmental failure classified on the vacuous merge candidate before Gate 3. |
 
@@ -447,3 +450,5 @@ the evidence, not informal labels:
 | `A1` | Independent source-preservation and target-regression audits; public API, verified-wheel provenance, v6 certifier/drift selection, CLI identity, copied-plugin acceptance, and recurring-task portability findings resolved | Dispatcher 2 passed; managed runtime 22 passed/2 real-uv deselected; certifier 57 passed; drift 21 passed; recurring tasks 174 passed/2 skipped; checkpoint hook passed validators, 1421 shared tests/12 skips, and every skill-owned group | `484c0d5` | complete |
 | `A2` | Restore source-owned Officina build metadata omitted from the verified-wheel path | Real local `uv build --wheel --no-build-isolation` produced `famulus_officina-0.1.0-py3-none-any.whl`; checkpoint hook passed validators, 1421 shared tests/12 skips, and every skill-owned group | `b632de0` | complete |
 | `A3` | Preserve target-owned non-Python Officina runtime assets in the restored wheel metadata | Focused wheel-metadata regression test passed; a real local wheel build succeeded and contained the visualization HTML/CSS/JavaScript and wakeup systemd template; checkpoint hook exited 0 | `488056e` | complete |
+| `A4` | Provision pinned core dependencies in the target compatibility path so copied Officina remains runnable under direct dispatch | Focused batch-install unit test passed; both previously failing real local managed-runtime launcher tests passed; checkpoint hook passed validators, 1421 shared tests/12 skips, and every skill-owned group | `313975b` | complete |
+| `A5` | Prevent concurrent real wheel builds from invalidating the shared clean-tree inventory assertion | Root `build/` is now recognized as a generated packaging artifact; checkpoint hook passed validators, 1421 shared tests/12 skips, and every skill-owned group | `f1905ba` | complete |
