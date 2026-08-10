@@ -7,8 +7,9 @@ dependencies:
   reason: Apply the user's optional client-installation and service-selection preferences.
   source: connect-google.source.personal-preferences-connect-services
   version: 1
-description: Instructs the agent to install or reuse the shared Desktop OAuth client
-  and delegate each selected service's authorization setup.
+description: Instructs the agent to install or reuse the shared Desktop OAuth client,
+  run one transparent local-browser or headless same-port loopback authorization,
+  and delegate each selected service's credential handoff.
 gateway:
   language: Markdown
   path: instructions/connect-services.md
@@ -42,8 +43,9 @@ interfaces:
             kind: string
             sensitivity: user-private
       caller_warnings:
-      - external-side-effect: Service owners may write credentials and open a browser
-          authorization flow.
+      - external-side-effect: Combined authorization prints a manual URL, may open
+          a local browser through a bounded helper, listens on 127.0.0.1, and publishes
+          credentials before service-owned handoff.
       direct_io:
         network: []
         reads:
@@ -128,4 +130,4 @@ uses_interfaces:
   version: 1
 - interface: connect-google._rtx.interface.install-client
   version: 1
-version: 2
+version: 3

@@ -37,7 +37,9 @@ interfaces:
           medium: local-filesystem
           path: platform Famulus config root (see common.interface.google-credentials)
             / connect-google/client.json
-          reason: Validate the installed OAuth client without returning its contents.
+          reason: Validate that the installed OAuth client is a regular non-symlink
+            redacted file whose exact client_secret_ref resolves in the host secret
+            store, without returning its contents.
           sensitivity: secret
           system: filesystem
         - access: read
@@ -98,8 +100,9 @@ interfaces:
         cardinality:
           maximum: 1
           minimum: 1
-        description: One JSON object containing status and client_type and canonical
-          path and optional legacy-candidate metadata without secret values.
+        description: One JSON object containing missing, valid, invalid, or needs-migration
+          status; client type; canonical path; and optional legacy-candidate or migration
+          remediation metadata without secret values.
         direct_io_ref: write-1
         empty: Never empty.
         id: status
@@ -115,7 +118,8 @@ interfaces:
           sensitivity: user-private
       preconditions: []
     description: Report whether the canonical Google Desktop OAuth client is missing,
-      valid, or invalid without exposing its secrets.
+      valid, invalid, or needs migration from plaintext, including whether its opaque
+      client-secret reference resolves, without exposing secrets.
     process_binding:
       entry: ClientStatusInterface
       kind: process

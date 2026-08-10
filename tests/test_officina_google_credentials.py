@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import io
 import urllib.error
+import urllib.request
 
 import pytest
 
@@ -29,6 +31,64 @@ class FakeSecretBackend:
 
     def clear(self, namespace: str, key: str) -> bool:
         return False
+
+
+class JsonResponse:
+    def __init__(self, payload: object) -> None:
+        self.data = json.dumps(payload).encode("utf-8")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def read(self, size: int = -1) -> bytes:
+        return self.data if size < 0 else self.data[:size]
+
+
+class BytesResponse(JsonResponse):
+    def __init__(self, data: bytes) -> None:
+        self.data = data
+
+
+class MutableSecretBackend:
+    def __init__(self) -> None:
+        self.values: dict[tuple[str, str], str] = {}
+        self.cleared: list[tuple[str, str]] = []
+
+    def store(self, namespace: str, key: str, value: str) -> None:
+        self.values[(namespace, key)] = value
+
+    def lookup(self, namespace: str, key: str) -> str | None:
+        return self.values.get((namespace, key))
+
+    def clear(self, namespace: str, key: str) -> bool:
+        self.cleared.append((namespace, key))
+        return self.values.pop((namespace, key), None) is not None
+
+
+@pytest.fixture
+def mutable_secret_backend() -> MutableSecretBackend:
+    """Fast in-memory backend with observable cleanup for publication faults."""
+
+    return MutableSecretBackend()
+
+
+@pytest.fixture
+def registry_writer(tmp_path):
+    from officina.common import google_credentials as gc
+    from officina.common.oauth_json import write_oauth_json
+
+    path = gc._credentials_registry_path(home=tmp_path, platform="linux")
+
+    def write(credentials: dict[str, object]) -> None:
+        write_oauth_json(
+            path,
+            {"schema_version": 2, "credentials": credentials},
+        )
+
+    return write
 
 
 def test_normalize_services_preserves_order_and_dedupes():
@@ -286,6 +346,43 @@ def test_store_and_load_credential_round_trip(tmp_path):
     assert loaded == ref
 
 
+def test_schema_2_preserves_custom_client_secret_ref_for_later_refresh(tmp_path):
+    from officina.common import google_credentials as gc
+
+    backend = FakeSecretBackend()
+    backend.store("connect-google", "custom-client-secret-ref", "client-secret")
+    ref = gc.store_google_credential(
+        subject="sub1",
+        account="user@example.com",
+        client_id="abc",
+        client_secret_ref="custom-client-secret-ref",
+        token_uri="https://attacker.invalid/token",
+        granted_scopes=frozenset({"openid", "email"}),
+        refresh_token="rt",
+        home=tmp_path,
+        platform="linux",
+        secret_backend=backend,
+    )
+
+    def fake_urlopen(request, *, timeout):
+        assert request.full_url == "https://oauth2.googleapis.com/token"
+        assert timeout == 30.0
+        return JsonResponse({"access_token": "fresh"})
+
+    loaded = gc.load_credential(ref.credential_id, home=tmp_path, platform="linux")
+    token = gc.refresh_access_token(
+        ref.credential_id,
+        required_scopes={"openid"},
+        home=tmp_path,
+        platform="linux",
+        urlopen=fake_urlopen,
+        secret_backend=backend,
+    )
+
+    assert loaded.client_secret_ref == "custom-client-secret-ref"
+    assert token == "fresh"
+
+
 def test_refresh_access_token_exchanges_refresh_token(tmp_path):
     from officina.common.google_credentials import refresh_access_token, store_google_credential
 
@@ -306,10 +403,12 @@ def test_refresh_access_token_exchanges_refresh_token(tmp_path):
         def __exit__(self, *exc):
             return False
 
-        def read(self):
-            return json.dumps({"access_token": "new-access-token"}).encode()
+        def read(self, size=-1):
+            data = json.dumps({"access_token": "new-access-token"}).encode()
+            return data if size < 0 else data[:size]
 
-    def fake_urlopen(request):
+    def fake_urlopen(request, *, timeout):
+        assert timeout == 30.0
         calls.append(request)
         return FakeResponse()
 
@@ -339,7 +438,7 @@ def test_refresh_access_token_wraps_http_error_as_google_credential_error(tmp_pa
     )
     backend.store("connect-google", "oauth-client:abc:client-secret", "client-secret-value")
 
-    def fake_urlopen(request):
+    def fake_urlopen(request, *, timeout):
         raise urllib.error.HTTPError(
             request.full_url, 400, "Bad Request", {}, None
         )
@@ -351,13 +450,54 @@ def test_refresh_access_token_wraps_http_error_as_google_credential_error(tmp_pa
         )
 
 
+def test_refresh_default_path_uses_redirect_rejecting_opener(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from officina.common import google_credentials as gc
+
+    backend = FakeSecretBackend()
+    gc.store_google_credential(
+        subject="sub1",
+        account="user@example.com",
+        client_id="abc",
+        token_uri="https://attacker.invalid/token",
+        granted_scopes=frozenset({"openid", "email"}),
+        refresh_token="rt",
+        home=tmp_path,
+        platform="linux",
+        secret_backend=backend,
+    )
+    backend.store("connect-google", "oauth-client:abc:client-secret", "secret")
+    observed = []
+
+    def hardened_open(request, *, timeout):
+        observed.append((request.full_url, timeout))
+        return JsonResponse({"access_token": "fresh"})
+
+    def raw_urlopen(*_args, **_kwargs):
+        raise AssertionError("raw urllib opener bypassed redirect rejection")
+
+    monkeypatch.setattr(gc, "_default_urlopen", hardened_open)
+    monkeypatch.setattr(gc.urllib.request, "urlopen", raw_urlopen)
+
+    token = gc.refresh_access_token(
+        "google:sub1",
+        required_scopes={"openid"},
+        home=tmp_path,
+        platform="linux",
+        secret_backend=backend,
+    )
+
+    assert token == "fresh"
+    assert observed == [("https://oauth2.googleapis.com/token", 30.0)]
+
 def test_exchange_authorization_code_wraps_http_error_as_google_credential_error(tmp_path):
     from officina.common.google_credentials import exchange_authorization_code
 
     backend = FakeSecretBackend()
     backend.store("connect-google", "oauth-client:abc:client-secret", "client-secret-value")
 
-    def fake_urlopen(request):
+    def fake_urlopen(request, *, timeout):
         raise urllib.error.HTTPError(
             request.full_url, 400, "Bad Request", {}, None
         )
@@ -372,3 +512,487 @@ def test_exchange_authorization_code_wraps_http_error_as_google_credential_error
             urlopen=fake_urlopen,
             secret_backend=backend,
         )
+
+
+def test_exchange_uses_pinned_endpoint_timeout_and_exact_client_secret_ref():
+    from officina.common.google_credentials import exchange_authorization_code
+
+    backend = FakeSecretBackend()
+    backend.store("connect-google", "custom-client-secret-reference", "client-secret-value")
+    seen = []
+
+    def fake_urlopen(request, *, timeout):
+        seen.append((request.full_url, timeout))
+        return JsonResponse({"access_token": "at", "refresh_token": "rt", "scope": "openid email"})
+
+    result = exchange_authorization_code(
+        client_id="abc",
+        client_secret_ref="custom-client-secret-reference",
+        code="auth-code",
+        code_verifier="verifier",
+        redirect_uri="http://127.0.0.1:43123/",
+        token_uri="https://attacker.invalid/token",
+        urlopen=fake_urlopen,
+        secret_backend=backend,
+    )
+
+    assert result["refresh_token"] == "rt"
+    assert seen == [("https://oauth2.googleapis.com/token", 30.0)]
+
+
+@pytest.mark.parametrize("payload", [[], "text", 17, None])
+def test_google_http_boundary_rejects_non_object_json(payload) -> None:
+    from officina.common import google_credentials as gc
+
+    with pytest.raises(GoogleCredentialError, match="non-object"):
+        gc._open_google_json(
+            urllib.request.Request("https://oauth2.googleapis.com/token"),
+            urlopen=lambda *_args, **_kwargs: JsonResponse(payload),
+        )
+
+
+def test_google_http_boundary_rejects_oversized_body_without_echoing_it() -> None:
+    from officina.common import google_credentials as gc
+
+    marker = b"sensitive-response-marker"
+    body = marker + b"x" * gc.GOOGLE_HTTP_MAX_BODY_BYTES
+
+    with pytest.raises(GoogleCredentialError) as failure:
+        gc._open_google_json(
+            urllib.request.Request("https://oauth2.googleapis.com/token"),
+            urlopen=lambda *_args, **_kwargs: BytesResponse(body),
+        )
+
+    assert "65536" in str(failure.value)
+    assert marker.decode() not in str(failure.value)
+
+
+def test_google_http_boundary_discards_bounded_http_error_body() -> None:
+    from officina.common import google_credentials as gc
+
+    marker = b"private-google-error-body"
+
+    def failing_open(request, *, timeout):
+        raise urllib.error.HTTPError(
+            request.full_url,
+            400,
+            "Bad Request",
+            {},
+            io.BytesIO(marker + b"x" * gc.GOOGLE_HTTP_MAX_BODY_BYTES),
+        )
+
+    with pytest.raises(GoogleCredentialError) as failure:
+        gc._open_google_json(
+            urllib.request.Request("https://oauth2.googleapis.com/token"),
+            urlopen=failing_open,
+        )
+
+    assert str(failure.value) == "Google endpoint returned HTTP 400"
+    assert marker.decode() not in str(failure.value)
+
+
+def test_production_google_opener_installs_redirect_rejection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from officina.common import google_credentials as gc
+
+    observed = {}
+
+    class RedirectingOpener:
+        def __init__(self, handler) -> None:
+            self.handler = handler
+
+        def open(self, request, *, timeout):
+            observed["timeout"] = timeout
+            return self.handler.redirect_request(
+                request,
+                None,
+                302,
+                "Found",
+                {"Location": "https://attacker.invalid/token"},
+                "https://attacker.invalid/token",
+            )
+
+    def build_opener(handler):
+        observed["handler"] = handler
+        return RedirectingOpener(handler)
+
+    monkeypatch.setattr(gc.urllib.request, "build_opener", build_opener)
+
+    with pytest.raises(GoogleCredentialError, match="redirect refused"):
+        gc._open_google_json(
+            urllib.request.Request("https://oauth2.googleapis.com/token")
+        )
+
+    assert isinstance(observed["handler"], gc._RejectRedirects)
+    assert observed["timeout"] == 30.0
+
+
+def test_load_schema_1_derives_legacy_refresh_reference_and_ignores_token_uri(tmp_path):
+    from officina.common import google_credentials as gc
+
+    path = gc._credentials_registry_path(home=tmp_path, platform="linux")
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "credentials": {
+                    "google:sub1": {
+                        "subject": "sub1",
+                        "account": "user@example.test",
+                        "client_id": "abc",
+                        "token_uri": "https://attacker.invalid/token",
+                        "granted_scopes": ["openid", "email"],
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    ref = gc.load_credential("google:sub1", home=tmp_path, platform="linux")
+
+    assert ref.refresh_secret_ref == "google:sub1:refresh-token"
+    assert ref.token_uri == "https://oauth2.googleapis.com/token"
+
+
+def test_publication_failure_before_replace_clears_new_secret_and_keeps_registry_absent(
+    tmp_path, mutable_secret_backend
+):
+    from officina.common import google_credentials as gc
+
+    def fail_before_replace(path, payload):
+        raise OSError("before replace")
+
+    with pytest.raises(GoogleCredentialError, match="publication failed"):
+        gc.store_google_credential(
+            subject="sub1",
+            account="user@example.test",
+            client_id="abc",
+            token_uri="https://attacker.invalid/token",
+            granted_scopes=frozenset({"openid", "email"}),
+            refresh_token="rt",
+            home=tmp_path,
+            platform="linux",
+            secret_backend=mutable_secret_backend,
+            registry_writer=fail_before_replace,
+            refresh_ref_factory=lambda: "google-refresh:00000000000000000000000000000001",
+        )
+
+    assert mutable_secret_backend.values == {}
+    assert mutable_secret_backend.cleared == [
+        ("connect-google", "google-refresh:00000000000000000000000000000001")
+    ]
+    assert not gc._credentials_registry_path(home=tmp_path, platform="linux").exists()
+
+
+def test_registry_load_failure_clears_new_secret(
+    tmp_path, mutable_secret_backend
+) -> None:
+    from officina.common import google_credentials as gc
+
+    path = gc._credentials_registry_path(home=tmp_path, platform="linux")
+    path.parent.mkdir(parents=True)
+    path.write_text("{", encoding="utf-8")
+
+    with pytest.raises(GoogleCredentialError, match="cannot read"):
+        gc.store_google_credential(
+            subject="sub1",
+            account="user@example.test",
+            client_id="abc",
+            token_uri="https://oauth2.googleapis.com/token",
+            granted_scopes=frozenset({"openid"}),
+            refresh_token="rt",
+            home=tmp_path,
+            platform="linux",
+            secret_backend=mutable_secret_backend,
+            refresh_ref_factory=lambda: "google-refresh:00000000000000000000000000000011",
+        )
+
+    assert mutable_secret_backend.values == {}
+    assert mutable_secret_backend.cleared[-1][1].endswith("11")
+
+
+def test_secret_store_failure_leaves_registry_absent(tmp_path) -> None:
+    from officina.common import google_credentials as gc
+    from officina.common import secret_store
+
+    class FailingBackend(MutableSecretBackend):
+        def store(self, namespace: str, key: str, value: str) -> None:
+            raise secret_store.SecretStoreUnavailable("unavailable")
+
+    with pytest.raises(secret_store.SecretStoreUnavailable):
+        gc.store_google_credential(
+            subject="sub1",
+            account="user@example.test",
+            client_id="abc",
+            token_uri="https://oauth2.googleapis.com/token",
+            granted_scopes=frozenset({"openid"}),
+            refresh_token="rt",
+            home=tmp_path,
+            platform="linux",
+            secret_backend=FailingBackend(),
+        )
+
+    assert not gc._credentials_registry_path(home=tmp_path, platform="linux").exists()
+
+
+def test_failed_replace_keeps_previous_record_and_secret(
+    tmp_path, mutable_secret_backend, registry_writer
+) -> None:
+    from officina.common import google_credentials as gc
+
+    old_ref = "google-refresh:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    previous = {
+        "subject": "sub1",
+        "account": "old@example.test",
+        "client_id": "abc",
+        "client_secret_ref": "custom-client-ref",
+        "granted_scopes": ["openid"],
+        "refresh_secret_ref": old_ref,
+    }
+    registry_writer({"google:sub1": previous})
+    mutable_secret_backend.store("connect-google", old_ref, "old-token")
+
+    with pytest.raises(GoogleCredentialError, match="publication failed"):
+        gc.store_google_credential(
+            subject="sub1",
+            account="new@example.test",
+            client_id="abc",
+            token_uri="https://oauth2.googleapis.com/token",
+            granted_scopes=frozenset({"openid"}),
+            refresh_token="new-token",
+            home=tmp_path,
+            platform="linux",
+            secret_backend=mutable_secret_backend,
+            registry_writer=lambda *_args: (_ for _ in ()).throw(OSError("failed")),
+            refresh_ref_factory=lambda: "google-refresh:00000000000000000000000000000012",
+        )
+
+    assert mutable_secret_backend.lookup("connect-google", old_ref) == "old-token"
+    assert mutable_secret_backend.lookup(
+        "connect-google", "google-refresh:00000000000000000000000000000012"
+    ) is None
+    loaded = gc.load_credential("google:sub1", home=tmp_path, platform="linux")
+    assert loaded.account == "old@example.test"
+
+
+def test_post_replace_error_retains_new_secret_and_reports_durability_warning(
+    tmp_path, mutable_secret_backend
+):
+    from officina.common import google_credentials as gc
+    from officina.common.oauth_json import write_oauth_json
+
+    def replace_then_fail(path, payload):
+        write_oauth_json(path, payload)
+        raise OSError("directory fsync failed")
+
+    ref = gc.store_google_credential(
+        subject="sub1",
+        account="user@example.test",
+        client_id="abc",
+        token_uri="https://attacker.invalid/token",
+        granted_scopes=frozenset({"openid", "email"}),
+        refresh_token="rt",
+        home=tmp_path,
+        platform="linux",
+        secret_backend=mutable_secret_backend,
+        registry_writer=replace_then_fail,
+        refresh_ref_factory=lambda: "google-refresh:00000000000000000000000000000002",
+    )
+
+    assert ref.publication_warnings == ("registry_durability_warning",)
+    assert mutable_secret_backend.lookup("connect-google", ref.refresh_secret_ref) == "rt"
+    assert mutable_secret_backend.cleared == []
+
+
+def test_post_replace_error_with_previous_record_retains_both_secrets(
+    tmp_path, mutable_secret_backend, registry_writer
+) -> None:
+    from officina.common import google_credentials as gc
+    from officina.common.oauth_json import write_oauth_json
+
+    old_ref = "google-refresh:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    registry_writer(
+        {
+            "google:sub1": {
+                "subject": "sub1",
+                "account": "old@example.test",
+                "client_id": "abc",
+                "granted_scopes": ["openid"],
+                "refresh_secret_ref": old_ref,
+            }
+        }
+    )
+    mutable_secret_backend.store("connect-google", old_ref, "old-token")
+
+    def replace_then_fail(path, payload):
+        write_oauth_json(path, payload)
+        raise OSError("directory fsync failed")
+
+    ref = gc.store_google_credential(
+        subject="sub1",
+        account="new@example.test",
+        client_id="abc",
+        token_uri="https://oauth2.googleapis.com/token",
+        granted_scopes=frozenset({"openid"}),
+        refresh_token="new-token",
+        home=tmp_path,
+        platform="linux",
+        secret_backend=mutable_secret_backend,
+        registry_writer=replace_then_fail,
+        refresh_ref_factory=lambda: "google-refresh:00000000000000000000000000000013",
+    )
+
+    assert ref.publication_warnings == ("registry_durability_warning",)
+    assert mutable_secret_backend.lookup("connect-google", old_ref) == "old-token"
+    assert mutable_secret_backend.lookup(
+        "connect-google", ref.refresh_secret_ref
+    ) == "new-token"
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected_warnings", "expected_clear"),
+    [
+        ("normal", (), True),
+        ("clear-fails", ("secret_cleanup_warning",), True),
+        ("shared", (), False),
+    ],
+)
+def test_previous_refresh_secret_cleanup_is_safe_and_nonfatal(
+    tmp_path, registry_writer, mode, expected_warnings, expected_clear
+) -> None:
+    from officina.common import google_credentials as gc
+
+    class CleanupBackend(MutableSecretBackend):
+        def clear(self, namespace: str, key: str) -> bool:
+            self.cleared.append((namespace, key))
+            if mode == "clear-fails":
+                raise RuntimeError("cleanup failed")
+            return self.values.pop((namespace, key), None) is not None
+
+    backend = CleanupBackend()
+    old_ref = "google-refresh:cccccccccccccccccccccccccccccccc"
+    current = {
+        "subject": "sub1",
+        "account": "old@example.test",
+        "client_id": "abc",
+        "granted_scopes": ["openid"],
+        "refresh_secret_ref": old_ref,
+    }
+    credentials = {"google:sub1": current}
+    if mode == "shared":
+        credentials["google:other"] = {
+            **current,
+            "subject": "other",
+            "account": "other@example.test",
+        }
+    registry_writer(credentials)
+    backend.store("connect-google", old_ref, "old-token")
+
+    ref = gc.store_google_credential(
+        subject="sub1",
+        account="new@example.test",
+        client_id="abc",
+        token_uri="https://oauth2.googleapis.com/token",
+        granted_scopes=frozenset({"openid"}),
+        refresh_token="new-token",
+        home=tmp_path,
+        platform="linux",
+        secret_backend=backend,
+        refresh_ref_factory=lambda: "google-refresh:00000000000000000000000000000014",
+    )
+
+    assert ref.publication_warnings == expected_warnings
+    assert (("connect-google", old_ref) in backend.cleared) is expected_clear
+    if mode == "normal":
+        assert backend.lookup("connect-google", old_ref) is None
+    else:
+        assert backend.lookup("connect-google", old_ref) == "old-token"
+
+
+def test_ambiguous_post_replace_state_raises_typed_uncertainty_and_retains_secret(
+    tmp_path, mutable_secret_backend
+):
+    from officina.common import google_credentials as gc
+    from officina.common.oauth_json import write_oauth_json
+
+    def publish_other_state_then_fail(path, payload):
+        other = json.loads(json.dumps(payload))
+        other["credentials"]["google:sub1"]["account"] = "other@example.test"
+        write_oauth_json(path, other)
+        raise OSError("uncertain")
+
+    with pytest.raises(gc.GoogleCredentialPublicationUncertain):
+        gc.store_google_credential(
+            subject="sub1",
+            account="user@example.test",
+            client_id="abc",
+            token_uri="https://attacker.invalid/token",
+            granted_scopes=frozenset({"openid", "email"}),
+            refresh_token="rt",
+            home=tmp_path,
+            platform="linux",
+            secret_backend=mutable_secret_backend,
+            registry_writer=publish_other_state_then_fail,
+            refresh_ref_factory=lambda: "google-refresh:00000000000000000000000000000003",
+        )
+
+    assert mutable_secret_backend.lookup(
+        "connect-google", "google-refresh:00000000000000000000000000000003"
+    ) == "rt"
+    assert mutable_secret_backend.cleared == []
+
+
+@pytest.mark.parametrize("malformed_ref", ["", 17, {"unexpected": "mapping"}])
+def test_malformed_unrelated_refresh_reference_does_not_break_successful_publish(
+    tmp_path, mutable_secret_backend, malformed_ref
+) -> None:
+    from officina.common import google_credentials as gc
+    from officina.common.oauth_json import write_oauth_json
+
+    registry_path = gc._credentials_registry_path(home=tmp_path, platform="linux")
+    write_oauth_json(
+        registry_path,
+        {
+            "schema_version": 2,
+            "credentials": {
+                "google:sub1": {
+                    "subject": "sub1",
+                    "account": "old@example.test",
+                    "client_id": "abc",
+                    "granted_scopes": ["openid"],
+                    "refresh_secret_ref": "google-refresh:ffffffffffffffffffffffffffffffff",
+                },
+                "google:other": {
+                    "subject": "other",
+                    "account": "other@example.test",
+                    "client_id": "abc",
+                    "granted_scopes": ["openid"],
+                    "refresh_secret_ref": malformed_ref,
+                }
+            },
+        },
+    )
+    mutable_secret_backend.store(
+        "connect-google",
+        "google-refresh:ffffffffffffffffffffffffffffffff",
+        "old-refresh",
+    )
+
+    ref = gc.store_google_credential(
+        subject="sub1",
+        account="user@example.test",
+        client_id="abc",
+        token_uri="https://oauth2.googleapis.com/token",
+        granted_scopes=frozenset({"openid"}),
+        refresh_token="rt",
+        home=tmp_path,
+        platform="linux",
+        secret_backend=mutable_secret_backend,
+        refresh_ref_factory=lambda: "google-refresh:00000000000000000000000000000004",
+    )
+
+    assert ref.credential_id == "google:sub1"
+    assert gc.load_credential(ref.credential_id, home=tmp_path, platform="linux") == ref

@@ -21,6 +21,15 @@ the full scope union instead of a separate OAuth round trip per service, and
 returns one opaque `credential_id` plus which services were actually granted
 versus denied.
 
+The authorization command prints the manual authorization URL and its callback
+address before it tries to open a browser. If a local browser is available, let
+the isolated helper open it; callback handling does not depend on that helper
+succeeding. On a headless or remote machine, pass `--no-open-browser` and choose
+an explicit `--callback-port`. Keep that same port at both ends of the SSH
+forward, open the printed URL on the local machine, and leave the remote command
+running until Google redirects to `http://127.0.0.1:<port>/`. Follow the exact
+SSH command printed in the diagnostic stream rather than guessing the port.
+
 Hand off that `credential_id` to each granted service's owning skill so it
 can call its own `use-google-credential` interface:
 
@@ -41,7 +50,7 @@ tokens or user data beyond the opaque credential_id. Report only whether the
 shared client is ready, the combined-authorization result, and which
 service-owned handoffs the user selected.
 
-If Google rejects a Testing user during a later service-owned authorization,
+If Google rejects a Testing user during authorization,
 the project owner must add that exact account email under Test users. A
 Workspace administrator policy can still block authorization.
 

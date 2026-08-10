@@ -25,6 +25,10 @@ class ClientConfigError(ValueError):
     """Raised when a client file is unsafe or unsupported."""
 
 
+class ClientSecretStoreUnavailable(ClientConfigError):
+    """Raised when canonical secret preflight cannot use the host backend."""
+
+
 def canonical_client_path(home: Path) -> Path:
     from officina.common.google_credentials import canonical_client_path as _canonical_client_path
 
@@ -40,6 +44,18 @@ def _contains_forbidden_key(value: object) -> bool:
         )
     if isinstance(value, list):
         return any(_contains_forbidden_key(child) for child in value)
+    return False
+
+
+def _contains_plaintext_client_secret(value: object) -> bool:
+    if isinstance(value, dict):
+        return any(
+            str(key).casefold() == "client_secret"
+            or _contains_plaintext_client_secret(child)
+            for key, child in value.items()
+        )
+    if isinstance(value, list):
+        return any(_contains_plaintext_client_secret(child) for child in value)
     return False
 
 
@@ -77,6 +93,17 @@ def validate_client_payload(payload: object) -> dict[str, object]:
     installed = payload.get("installed")
     if not isinstance(installed, dict):
         raise ClientConfigError("client JSON must contain an installed object")
+    installed_without_primary_secret = dict(installed)
+    installed_without_primary_secret.pop("client_secret", None)
+    payload_without_installed = {
+        key: value for key, value in payload.items() if key != "installed"
+    }
+    if _contains_plaintext_client_secret(
+        installed_without_primary_secret
+    ) or _contains_plaintext_client_secret(payload_without_installed):
+        raise ClientConfigError(
+            "client JSON contains an additional plaintext client_secret"
+        )
     missing = sorted(REQUIRED_INSTALLED_FIELDS - set(installed))
     if missing:
         fields = ", ".join(f"installed.{field}" for field in missing)
@@ -107,6 +134,52 @@ def _load_client(path: Path) -> dict[str, object]:
     return validate_client_payload(payload)
 
 
+def _load_canonical_payload(path: Path) -> dict[str, str]:
+    if path.is_symlink() or not path.is_file():
+        raise ClientConfigError("canonical client must be a regular file")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ClientConfigError("canonical client is not valid JSON") from exc
+    if not isinstance(payload, dict) or _contains_forbidden_key(payload):
+        raise ClientConfigError("canonical client contains unsafe fields")
+    if _contains_plaintext_client_secret(payload):
+        raise ClientConfigError("canonical client contains a plaintext client secret")
+    installed = payload.get("installed")
+    if not isinstance(installed, dict):
+        raise ClientConfigError("canonical client is missing installed")
+    if "client_secret" in installed:
+        raise ClientConfigError("canonical client contains a plaintext client secret")
+    for field in ("client_id", "client_secret_ref"):
+        _require_nonempty_string(installed, field)
+    return {
+        "client_id": str(installed["client_id"]),
+        "client_secret_ref": str(installed["client_secret_ref"]),
+    }
+
+
+def load_authorization_client(
+    home: Path, *, platform: str = sys.platform, secret_backend=None
+) -> dict[str, str]:
+    """Load the redacted canonical client and prove its secret is readable."""
+    from officina.common import secret_store
+    from officina.common.google_credentials import canonical_client_path as shared_client_path
+
+    path = shared_client_path(home=Path(home), platform=platform)
+    installed = _load_canonical_payload(path)
+    try:
+        secret_store.require(
+            "connect-google", installed["client_secret_ref"], backend=secret_backend
+        )
+    except secret_store.SecretNotFoundError as exc:
+        raise ClientConfigError("canonical client secret is unavailable") from exc
+    except secret_store.SecretStoreError as exc:
+        raise ClientSecretStoreUnavailable(
+            "canonical client secret store is unavailable"
+        ) from exc
+    return installed
+
+
 def _result(status: str, client_type: str, path: Path) -> dict[str, object]:
     return {"status": status, "client_type": client_type, "path": str(path)}
 
@@ -127,7 +200,7 @@ def _legacy_candidates(home: Path) -> tuple[list[dict[str, str]], list[dict[str,
     return candidates, payloads
 
 
-def client_status(home: Path) -> dict[str, object]:
+def client_status(home: Path, *, secret_backend=None) -> dict[str, object]:
     path = canonical_client_path(home)
     if not path.exists() and not path.is_symlink():
         result = _result("missing", "none", path)
@@ -135,8 +208,29 @@ def client_status(home: Path) -> dict[str, object]:
         result = _result("invalid", "unknown", path)
     else:
         try:
-            _load_client(path)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            installed = payload.get("installed") if isinstance(payload, dict) else None
+            if _contains_forbidden_key(payload):
+                raise ClientConfigError("canonical client contains unsafe fields")
+            if isinstance(installed, dict) and "client_secret" in installed:
+                without_installed_secret = json.loads(json.dumps(payload))
+                without_installed_secret["installed"].pop("client_secret", None)
+                if _contains_plaintext_client_secret(without_installed_secret):
+                    raise ClientConfigError(
+                        "canonical client contains an unexpected plaintext client secret"
+                    )
+                return {
+                    **_result("needs-migration", "desktop", path),
+                    "remediation": (
+                        "dispatcher --caller-skill connect-google "
+                        "connect-google._rtx.interface.install-client --from-json "
+                        "PRIVATE_DOWNLOADED_CLIENT.json --replace"
+                    ),
+                }
+            load_authorization_client(home, secret_backend=secret_backend)
         except ClientConfigError:
+            result = _result("invalid", "unknown", path)
+        except (OSError, json.JSONDecodeError):
             result = _result("invalid", "unknown", path)
         else:
             return _result("valid", "desktop", path)

@@ -182,6 +182,62 @@ def test_install_client_patterns_require_values_for_value_bearing_flags() -> Non
     }
 
 
+def test_authorize_services_declares_interactive_portable_oauth_contract() -> None:
+    root = load("blueprint.yaml")
+    node, interface = exported_source(
+        root, "connect-google._rtx.interface.authorize-services"
+    )
+    contract = interface["contract"]
+    binding = interface["process_binding"]["patterns"][0]
+
+    assert contract["interaction"] == {
+        "mode": "interactive",
+        "channel": "tty",
+        "unattended_outcome": "failed",
+    }
+    assert set(binding["allowed_flags"]) == {
+        "--services",
+        "--account-hint",
+        "--home",
+        "--no-open-browser",
+        "--callback-port",
+    }
+    assert binding["flag_patterns"]["--callback-port"] == "^[0-9]+$"
+    assert "_browser_helper\\.py" in node["content"]
+
+    network = {entry["id"]: entry for entry in contract["direct_io"]["network"]}
+    assert network["authorization-endpoint"]["endpoint"] == (
+        "https://accounts.google.com/o/oauth2/v2/auth"
+    )
+    assert network["token-endpoint"]["endpoint"] == (
+        "https://oauth2.googleapis.com/token"
+    )
+    assert network["userinfo-endpoint"]["endpoint"] == (
+        "https://openidconnect.googleapis.com/v1/userinfo"
+    )
+    assert network["browser-consent"]["endpoint"] == "http://127.0.0.1:<port>/"
+
+    writes = {entry["id"]: entry for entry in contract["direct_io"]["writes"]}
+    assert writes["diagnostic-stream"] == {
+        "id": "diagnostic-stream",
+        "medium": "stderr",
+        "access": "write",
+        "system": "agent-runtime",
+        "content": "oauth-phase-diagnostics",
+        "formats": ["jsonl"],
+        "sensitivity": "user-private",
+        "reason": (
+            "Emit stable phase and code events, the manual authorization URL, "
+            "same-port SSH forwarding guidance, and browser-launch status without "
+            "OAuth secrets."
+        ),
+    }
+    atomicity = contract["execution"]["mutation_safety"]["atomicity"]["atomic"]
+    assert "atomic JSON replacement" in atomicity
+    assert "secret-store publication" in atomicity
+    assert "publication uncertainty" in atomicity
+
+
 def test_default_router_contract() -> None:
     text = body("SKILL.md")
     assert text.startswith("---")
@@ -233,6 +289,10 @@ def test_connect_services_route_contract() -> None:
         "hand off",
         "does not list",
         "does not invoke",
+        "manual authorization url",
+        "--no-open-browser",
+        "--callback-port",
+        "ssh",
     ):
         assert phrase in text
     assert "dispatcher " not in text
