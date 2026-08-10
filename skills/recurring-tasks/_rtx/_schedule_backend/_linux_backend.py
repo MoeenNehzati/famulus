@@ -123,7 +123,13 @@ def cron_to_systemd_calendar(cron: str) -> str:
             raise ValueError(f"Invalid day of week: {dow!r}")
         dow_prefix = dow_names[dow] + " "
 
-    return f'{dow_prefix}*-*-* {field(hour, pad=True)}:{field(minute, pad=True, step_base="00")}:00'
+    # Both stepped fields need an explicit start value: systemd accepts
+    # "00/3" (start/step) but rejects a bare "*/3", which silently produces a
+    # unit that loads and reports active while never firing.
+    return (
+        f'{dow_prefix}*-*-* {field(hour, pad=True, step_base="00")}'
+        f':{field(minute, pad=True, step_base="00")}:00'
+    )
 
 
 def _systemd_quote(value: str) -> str:

@@ -2,7 +2,7 @@ jobs:
 - name: email-triage
   description: Triage new emails into todo and triage lists
   command: ASSISTANT_DEFAULT=codex invoke-skill email-triage
-  schedule: 0 3 * * *
+  schedule: 0 */3 * * *
   enabled: true
   # email-triage's own scripts (_watermark_floor.py, _watermark_writer.py,
   # _failure_clearer.py) write state/status.json with result: ok|error|warning

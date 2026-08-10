@@ -4,6 +4,7 @@
 import json
 import os
 import re
+import shutil
 import sys
 import plistlib
 import subprocess
@@ -86,6 +87,34 @@ def test_platform_schedule_backend_selects_windows():
 def test_linux_cron_conversion_stays_systemd_compatible():
     assert cron_to_systemd_calendar("*/5 * * * *") == "*-*-* *:00/5:00"
     assert cron_to_systemd_calendar("0 9 * * 1") == "Mon *-*-* 09:00:00"
+
+
+def test_linux_stepped_hour_uses_an_explicit_start_value():
+    """A bare `*/N` hour is rejected by systemd.
+
+    It produces a unit that loads and reports active while never firing --
+    the timer's NEXT is empty and the job silently stops running.
+    """
+    assert cron_to_systemd_calendar("0 */3 * * *") == "*-*-* 00/3:00:00"
+    assert cron_to_systemd_calendar("30 */6 * * *") == "*-*-* 00/6:30:00"
+
+
+# famulus-skip: category=native-backend-unavailable; reason=systemd-analyze is the only authority on OnCalendar syntax and is absent off systemd hosts; alternate=the exact-string assertions above pin the same conversions
+@pytest.mark.skipif(
+    shutil.which("systemd-analyze") is None,
+    reason="systemd-analyze is unavailable on this host",
+)
+@pytest.mark.parametrize(
+    "cron",
+    ["0 */3 * * *", "*/5 * * * *", "0 9 * * 1", "0 7 * * *", "30 */6 * * *"],
+)
+def test_generated_calendars_are_accepted_by_systemd(cron):
+    """Pin the output against systemd rather than our reading of its docs."""
+    calendar = cron_to_systemd_calendar(cron)
+    assert subprocess.run(
+        ["systemd-analyze", "calendar", calendar],
+        capture_output=True,
+    ).returncode == 0, f"systemd rejected {calendar!r} generated from {cron!r}"
 
 
 def test_linux_sync_writes_units_and_enables_timer(tmp_path):
