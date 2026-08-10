@@ -15,6 +15,8 @@ from officina.common.famulus_paths import resolve_famulus_paths
 from ._base_launcher import (
     DISPATCHER_WORKFLOWS,
     INVOKE_SKILL_WORKFLOWS,
+    WAKEUP_COMMANDS,
+    WAKEUP_WORKFLOWS,
     LauncherBundleSpec,
     LauncherFileSpec,
     LauncherInstallResult,
@@ -64,14 +66,25 @@ def _resolver_path(*, home: Path | None = None) -> Path:
     return runtime_root.joinpath(*_RESOLVER_RELATIVE_PATH)
 
 
-def _windows_dispatcher_content(repo_root: Path, *, home: Path | None = None) -> str:
+def _windows_module_content(module: str, *, home: Path | None = None) -> str:
+    """Render one batch shim that delegates a module to the active release.
+
+    Windows needs a concrete interpreter to start the resolver's Python source.
+    The resolved interpreter is only the stable bootstrap interpreter; the
+    resolver still selects and enters the active managed release itself.
+    """
     resolver = LauncherInstallerBase._batch_path(_resolver_path(home=home))
     interpreter = LauncherInstallerBase._batch_path(Path(_resolve_python_interpreter()))
     return (
         "@echo off\n"
         "setlocal\n"
-        f"\"{interpreter}\" \"{resolver}\" -m officina.dispatcher.cli %*\n"
+        f'"{interpreter}" "{resolver}" -m {module} %*\n'
     )
+
+
+def _windows_dispatcher_content(repo_root: Path, *, home: Path | None = None) -> str:
+    """Preserve the established dispatcher renderer API for external tests."""
+    return _windows_module_content("officina.dispatcher.cli", home=home)
 
 
 def _windows_invoke_skill_content() -> str:
@@ -144,6 +157,30 @@ class WindowsLauncherInstaller(LauncherInstallerBase):
                     mode="generate",
                     content=_windows_invoke_skill_content(),
                 )
+            ],
+        )
+        return self.install_bundle(bundle, dry_run=dry_run, manifest=manifest)
+
+    def install_wakeup_launcher(
+        self,
+        bin_dir: Path,
+        dry_run: bool,
+        manifest: Manifest | None = None,
+        *,
+        home: Path | None = None,
+    ) -> LauncherInstallResult:
+        """Install both public wakeup names as resolver-backed batch shims."""
+        content = _windows_module_content("officina.wakeup.cli", home=home)
+        bundle = LauncherBundleSpec(
+            name="llm-wakeup",
+            workflows=WAKEUP_WORKFLOWS,
+            files=[
+                LauncherFileSpec(
+                    destination=bin_dir / f"{command}.bat",
+                    mode="generate",
+                    content=content,
+                )
+                for command in WAKEUP_COMMANDS
             ],
         )
         return self.install_bundle(bundle, dry_run=dry_run, manifest=manifest)

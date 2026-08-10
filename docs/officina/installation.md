@@ -17,9 +17,11 @@ If the commands are already installed and you just want to know how to use
 Important distinction:
 
 - installing the Famulus plugin makes the skill package available to Claude Code or Codex
-- running the Phase 1 installer below is what writes local launchers such as `dispatcher` and `invoke-skill`, and adds them to `PATH`
+- running the Phase 1 installer below is what writes local launchers such as
+  `dispatcher`, `llm-wakeup`/`lw`, and `invoke-skill`, and adds them to `PATH`
 
-So even in plugin mode, the local scaffold step is still the route that gives you a working bare `dispatcher` command on your machine.
+So even in plugin mode, the local scaffold step is still the route that gives
+you working bare `dispatcher`, `llm-wakeup`, and `lw` commands on your machine.
 
 ---
 
@@ -68,6 +70,11 @@ Runs in every install, regardless of mode or which agents you want. Installs:
   command (`dispatcher --caller-skill <caller> <module>.interface.<name> ...`), so
   this is the one piece of scaffolding almost everything else structurally
   depends on.
+- The `llm-wakeup` launcher and its `lw` alias — generated as extensionless
+  executable shims on Linux/macOS and as `llm-wakeup.bat`/`lw.bat` on Windows.
+  Both invoke `officina.wakeup.cli` through the same stable managed-runtime
+  resolver as `dispatcher`, so they follow the active Officina release without
+  embedding the checkout or a release-specific interpreter.
 - The `invoke-skill` launcher — used by `recurring-tasks` scheduler jobs to
   invoke a skill by name without hardcoding an absolute path. This is generated
   as `<bin-dir>/invoke-skill` on Unix-like hosts and
@@ -85,14 +92,15 @@ Runs in every install, regardless of mode or which agents you want. Installs:
   units use that runtime and capture the installed launcher directory ahead of
   other PATH entries.
 - `PATH` — adds `<bin-dir>` to your shell rc (or the Windows registry) so
-  `dispatcher` and the agent launchers resolve as bare commands.
+  `dispatcher`, `llm-wakeup`/`lw`, `invoke-skill`, and the agent launchers
+  resolve as bare commands.
 
 At the end of scaffold, the installer prints a capability report for shared
 launchers. If a required capability such as `dispatcher` fails or is skipped,
 scaffold exits nonzero and the phase-1 orchestrator stops before `dev_link.py`
 or `launchers.py` runs. Platform-scoped capabilities that are unsupported on a
 host are reported with the affected workflows named, but they do not block the
-universal dispatcher floor. `--dry-run` prints the same capability report
+universal managed-command floor. `--dry-run` prints the same capability report
 without writing files.
 
 ### `dev_link.py` — dev mode only
@@ -233,8 +241,9 @@ scaffold.py --repo-root DIR [--home DIR] [--bin-dir DIR]
 
 `--repo-root` is required — this is the one script argument `install.py`
 always supplies for you (auto-derived in plugin mode, user-supplied in dev
-mode). Run it standalone only if you need to repair the `dispatcher`/
-`invoke-skill` launchers or PATH without touching anything else.
+mode). Run it standalone only if you need to repair the `dispatcher`,
+`llm-wakeup`/`lw`, or `invoke-skill` launchers or PATH without touching anything
+else.
 
 ### `dev_link.py`
 
@@ -330,6 +339,10 @@ tw -h                   # Unix only
 # Confirm dispatcher resolves
 dispatcher --help
 
+# Confirm both wakeup command names resolve
+llm-wakeup --help
+lw --help
+
 # In a repo checkout, also verify dispatcher can route every converted
 # Python process-bound interface to its subprocess entrypoint.
 python3 -m pytest -q tests/test_dispatcher_route_smoke.py
@@ -343,12 +356,13 @@ agent it just installed and prints `OK`/`FAIL` per command — if it printed
 
 ## 7. Troubleshooting
 
-**`assistant: command not found` (or `collab`, `coauthor`, `tw`, `dispatcher`)**
+**`assistant: command not found` (or `collab`, `coauthor`, `tw`, `dispatcher`, `llm-wakeup`, `lw`)**
 The bin dir isn't on `PATH` yet.
 1. Check which rc file the installer said it updated (or check the Windows
    registry `PATH` entry).
 2. Open a **new** shell / terminal — rc files aren't re-sourced automatically.
-3. If it's still missing, run `scaffold.py` (for `dispatcher`) or
+3. If it's still missing, run `scaffold.py` (for `dispatcher`, `llm-wakeup`,
+   `lw`, or `invoke-skill`) or
    `launchers.py --agents <name>` (for an agent) again directly and read its
    output for `SKIP`/`ERROR` lines.
 

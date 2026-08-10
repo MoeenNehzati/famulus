@@ -30,6 +30,11 @@ INVOKE_SKILL_WORKFLOWS = (
     "recurring automation",
     "systemd/cron skill invocation",
 )
+WAKEUP_WORKFLOWS = (
+    "guarded LLM session wakeups",
+    "wakeup scheduling and diagnostics",
+)
+WAKEUP_COMMANDS = ("llm-wakeup", "lw")
 
 
 def log(msg: str = "") -> None:
@@ -197,6 +202,17 @@ class LauncherInstallerBase:
         dry_run: bool,
         manifest: Manifest | None,
     ) -> None:
+        raise NotImplementedError
+
+    def install_wakeup_launcher(
+        self,
+        bin_dir: Path,
+        dry_run: bool,
+        manifest: Manifest | None = None,
+        *,
+        home: Path | None = None,
+    ) -> LauncherInstallResult:
+        """Install the canonical wakeup command and its short alias."""
         raise NotImplementedError
 
     def _agent_launcher_files(self, source_bin_dir: Path, bin_dir: Path, agent: str) -> list[LauncherFileSpec]:
