@@ -43,6 +43,7 @@ plugins/
 **/*.pyo
 **/*.pyd
 **/*.egg-info/
+/build/
 _build/
 .worktrees/
 /graphs/
