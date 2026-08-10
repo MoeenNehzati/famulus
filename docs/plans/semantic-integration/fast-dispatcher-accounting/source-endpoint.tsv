@@ -24,7 +24,7 @@ M	docs/superpowers/specs/2026-08-03-dispatcher-route-catalog-design.md	rejected	
 A	docs/superpowers/specs/2026-08-04-fast-dispatcher-design.md	rejected	S8	E11	none	user-approved-historical-plan-omission
 M	docs_tooling/catalog.py	adapted	S8	E11	3ae2a40	progress-log:S8;focused-checks;checkpoint-hooks;closure-full-pending
 A	officina.toml	adapted	S1	E01,E02	57a4c63	progress-log:S1;focused-checks;checkpoint-hooks;closure-full-pending
-A	pyproject.toml	adapted	S4	E07,E13	d5584e7+484c0d5+b632de0	progress-log:S4;focused-checks;checkpoint-hooks;closure-full-pending;real-wheel-build:b632de0
+A	pyproject.toml	adapted	S4	E07,E13	d5584e7+484c0d5+b632de0+488056e	progress-log:S4,A2,A3;focused-checks;checkpoint-hooks;closure-full-pending;real-wheel-build:b632de0;wheel-runtime-assets:488056e
 M	references/blueprint/README.md	adapted	S6	E11	6766e69+484c0d5	progress-log:S6;focused-checks;checkpoint-hooks;closure-full-pending
 M	references/blueprint/behavioral-source.schema.json	adapted	S1	E01,E02	57a4c63	progress-log:S1;focused-checks;checkpoint-hooks;closure-full-pending
 M	references/blueprint/blueprint.yaml	adapted	S6	E11	6766e69+484c0d5	progress-log:S6;focused-checks;checkpoint-hooks;closure-full-pending
@@ -406,7 +406,7 @@ M	tests/test_officina_certification_hashing.py	adapted	S6	E11	6766e69+484c0d5	pr
 D	tests/test_officina_dispatcher.py	adapted	S3,S7	E14	dc96600+484c0d5,ce1ea32+484c0d5	progress-log:S3,S7;focused-checks;checkpoint-hooks;closure-full-pending
 M	tests/test_officina_git_provenance.py	adapted	S4,S6	E05,E06,E07,E10,E13	d5584e7+484c0d5,6766e69+484c0d5	progress-log:S4,S6;focused-checks;checkpoint-hooks;closure-full-pending
 M	tests/test_officina_launcher_entry.py	adapted	S4,S6	E05,E06,E07,E10,E13	d5584e7+484c0d5,6766e69+484c0d5	progress-log:S4,S6;focused-checks;checkpoint-hooks;closure-full-pending
-M	tests/test_officina_managed_runtime.py	adapted	S4,S6	E05,E06,E07,E10,E13	d5584e7+484c0d5,6766e69+484c0d5	progress-log:S4,S6;focused-checks;checkpoint-hooks;closure-full-pending
+M	tests/test_officina_managed_runtime.py	adapted	S4,S6	E05,E06,E07,E10,E13	d5584e7+484c0d5+488056e,6766e69+484c0d5	progress-log:S4,S6,A3;focused-checks;checkpoint-hooks;closure-full-pending;wheel-runtime-assets:488056e
 M	tests/test_officina_python_machine_interface.py	adapted	S6	E11	6766e69+484c0d5	progress-log:S6;focused-checks;checkpoint-hooks;closure-full-pending
 A	tests/test_officina_repository_configuration.py	adapted	S1	E01,E02	57a4c63	progress-log:S1;focused-checks;checkpoint-hooks;closure-full-pending
 M	tests/test_officina_runtime_pointer.py	adapted	S4,S6	E05,E06,E07,E10,E13	d5584e7+484c0d5,6766e69+484c0d5	progress-log:S4,S6;focused-checks;checkpoint-hooks;closure-full-pending

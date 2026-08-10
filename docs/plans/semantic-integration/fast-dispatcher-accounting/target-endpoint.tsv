@@ -218,7 +218,7 @@ M	tests/test_interface_projection.py	T04	S2,S8	retain	0901a75+8cb8781,3ae2a40	ta
 M	tests/test_nested_module_migration.py	T04	S2,S8	retain	0901a75+8cb8781,3ae2a40	target-base-preservation;progress-log:S2,S8;checkpoint-hooks;closure-full-pending
 M	tests/test_officina_blueprint_graph.py	T04	S2,S8	retain	0901a75+8cb8781,3ae2a40	target-base-preservation;progress-log:S2,S8;checkpoint-hooks;closure-full-pending
 M	tests/test_officina_launcher_entry.py	T04	S2,S8	retain	0901a75+8cb8781,3ae2a40	target-base-preservation;progress-log:S2,S8;checkpoint-hooks;closure-full-pending
-M	tests/test_officina_managed_runtime.py	T03	S4,S6	retain installer contract coverage	d5584e7+484c0d5,6766e69+484c0d5	target-base-preservation;progress-log:S4,S6;checkpoint-hooks;closure-full-pending
+M	tests/test_officina_managed_runtime.py	T03	S4,S6	retain installer contract coverage including non-Python runtime assets	d5584e7+484c0d5+488056e,6766e69+484c0d5	target-base-preservation;progress-log:S4,S6,A3;checkpoint-hooks;closure-full-pending;wheel-runtime-assets:488056e
 A	tests/test_python_source_cache.py	T04	S2,S8	retain	0901a75+8cb8781,3ae2a40	target-base-preservation;progress-log:S2,S8;checkpoint-hooks;closure-full-pending
 A	tests/test_repo_checks_entrypoint.py	T04	S2,S8	retain	0901a75+8cb8781,3ae2a40	target-base-preservation;progress-log:S2,S8;checkpoint-hooks;closure-full-pending
 A	tests/test_repository_test_checks.py	T04	S2,S8	retain	0901a75+8cb8781,3ae2a40	target-base-preservation;progress-log:S2,S8;checkpoint-hooks;closure-full-pending
