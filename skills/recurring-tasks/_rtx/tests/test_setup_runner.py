@@ -13,19 +13,6 @@ else:
     import _setup_runner as setup_runner
 
 
-def test_default_bin_dir_uses_installed_invoke_skill_location(tmp_path):
-    resolved = {
-        "invoke-skill": str(tmp_path / "managed-bin" / "invoke-skill"),
-        "assistant": str(tmp_path / "other-bin" / "assistant"),
-    }
-    with mock.patch.object(
-        setup_runner.shutil,
-        "which",
-        side_effect=lambda command: resolved.get(command),
-    ):
-        assert setup_runner._default_bin_dir(tmp_path) == tmp_path / "managed-bin"
-
-
 def test_render_healthcheck_cron_uses_runtime_resolver_and_direct_failure_popup(tmp_path):
     resolver = tmp_path / "runtime" / "bootstrap" / "resolvers" / "v1" / "launch.py"
     healthcheck = tmp_path / "skill" / "_rtx" / "_healthcheck_probe.py"
@@ -138,7 +125,6 @@ def test_install_healthcheck_cron_migrates_old_recurring_lines(tmp_path):
 def test_run_setup_uses_python_runtimes_and_scheduler_backend(tmp_path, monkeypatch):
     backend = mock.Mock()
     backend.status.return_value = "timers\n"
-    monkeypatch.setattr(setup_runner, "_default_bin_dir", lambda home: tmp_path / "bin")
 
     with mock.patch.object(setup_runner._ensure_agent_env, "run") as ensure_env, \
          mock.patch.object(setup_runner._unit_writer, "main") as unit_writer_main, \
@@ -147,7 +133,8 @@ def test_run_setup_uses_python_runtimes_and_scheduler_backend(tmp_path, monkeypa
         setup_runner.run_setup(argv=["--migrate-cron", "--unit-dir", str(tmp_path / "units")], home=tmp_path)
 
     ensure_env.assert_called_once()
-    assert ensure_env.call_args.kwargs["repo_root"] == setup_runner.SKILL_DIR.parents[2]
+    # The agent env is written under --home; repo_root/bin_dir were never used.
+    assert ensure_env.call_args.kwargs["home"] == tmp_path
     unit_writer_main.assert_called_once_with(["--unit-dir", str(tmp_path / "units")])
     install_cron.assert_called_once()
     assert install_cron.call_args.kwargs["migrate_cron"] is True

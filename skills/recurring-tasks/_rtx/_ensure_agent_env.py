@@ -92,7 +92,7 @@ def install_ai_agent_env(home: Path, dry_run: bool) -> None:
             )
 
 
-def run(*, repo_root: Path, home: Path, bin_dir: Path, dry_run: bool = False) -> None:
+def run(*, home: Path, dry_run: bool = False) -> None:
     install_ai_agent_env(home, dry_run)
 
 
@@ -114,12 +114,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    run(
-        repo_root=Path(args.repo_root),
-        home=Path(args.home),
-        bin_dir=Path(args.bin_dir),
-        dry_run=args.dry_run,
-    )
+    # --repo-root and --bin-dir remain in the declared CLI contract but are
+    # not used: this writes the systemd user environment file under --home,
+    # and nothing here installs launchers. Dropping the flags would change a
+    # dispatcher-visible surface, so they stay until that contract is revised.
+    run(home=Path(args.home), dry_run=args.dry_run)
     return 0
 
 

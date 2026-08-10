@@ -95,8 +95,6 @@ uses_interfaces:
   version: 1
 - interface: recurring-tasks._rtx.interface.scripts-healthcheck
   version: 1
-- interface: recurring-tasks._rtx.interface.scripts-job-utils
-  version: 1
 - interface: recurring-tasks._rtx.interface.scripts-setup
   version: 1
 - interface: recurring-tasks._rtx.interface.scripts-status

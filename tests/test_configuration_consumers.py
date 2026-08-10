@@ -89,7 +89,6 @@ def test_recurring_jobs_config_helper_has_direct_owner_and_import_dependencies()
         "recurring-tasks._rtx.source.rtx-healthcheck-probe",
         "recurring-tasks._rtx.source.rtx-job-control",
         "recurring-tasks._rtx.source.rtx-job-executor",
-        "recurring-tasks._rtx.source.rtx-job-utils",
         "recurring-tasks._rtx.source.rtx-unit-writer",
     }
     actual = {

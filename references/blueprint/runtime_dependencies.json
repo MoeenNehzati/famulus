@@ -5431,9 +5431,6 @@
             }
           ]
         },
-        "recurring-tasks._rtx.interface.scripts-job-utils": {
-          "dependencies": []
-        },
         "recurring-tasks._rtx.interface.scripts-setup": {
           "dependencies": [
             {

@@ -1,17 +1,9 @@
 content:
 - __init__\.py
 - _assistant_desktop_notify\.py
-- _live_probe\.py
-dependencies:
-- blueprint:
-    base: module-root
-    path: blueprints/jobs-config.yaml
-  reason: Owns the live-probe helper that reads and temporarily rewrites the shared
-    jobs configuration.
-  source: recurring-tasks._rtx.source.jobs-config
-  version: 1
-description: Owns package support plus internal execution, live-probe, and desktop-notification
-  helpers used by recurring-task interfaces.
+dependencies: []
+description: Owns package support and the desktop-notification helper used by
+  recurring-task interfaces.
 gateway:
   language: Python
   path: __init__.py

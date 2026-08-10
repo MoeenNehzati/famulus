@@ -41,7 +41,6 @@ namespace_exports:
         recurring-tasks._rtx.interface.scripts-enable: 1
         recurring-tasks._rtx.interface.scripts-ensure-agent-env: 1
         recurring-tasks._rtx.interface.scripts-healthcheck: 1
-        recurring-tasks._rtx.interface.scripts-job-utils: 1
         recurring-tasks._rtx.interface.scripts-setup: 1
         recurring-tasks._rtx.interface.scripts-status: 1
         recurring-tasks._rtx.interface.scripts-sync: 1
@@ -58,9 +57,6 @@ namespace_exports:
         allow_all_modules: false
         allowed_callers: []
       recurring-tasks._rtx.interface.scripts-healthcheck:
-        allow_all_modules: false
-        allowed_callers: []
-      recurring-tasks._rtx.interface.scripts-job-utils:
         allow_all_modules: false
         allowed_callers: []
       recurring-tasks._rtx.interface.scripts-setup:

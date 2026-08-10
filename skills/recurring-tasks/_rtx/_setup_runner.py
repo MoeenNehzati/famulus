@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import os
 import shlex
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -36,34 +35,6 @@ CRON_MARKER = "# ai-recurring-healthcheck"
 OLD_CRON_MARKER = "# ai-recurring"
 
 
-def _default_bin_dir(home: Path) -> Path:
-    """Select the directory containing installed assistant launchers.
-
-    Intent
-    ------
-    Reuse the active invoke-skill installation directory or derive the conventional user-local fallback.
-
-    Rationale
-    ---------
-    Agent environment setup must update the same launcher installation that scheduled jobs will resolve.
-
-    Pseudocode
-    ----------
-    - set installed_launcher = invoke_skill_on_path
-    - if installed_launcher exists:
-      - return installed_launcher_parent
-    - return conventional_user_bin_directory
-
-    Wraps
-    -----
-    - none
-    """
-    invoke_skill = shutil.which("invoke-skill")
-    if invoke_skill:
-        return Path(invoke_skill).parent
-    return home / "Documents" / "scripts" / "bin"
-
-
 class CrontabUnreadableError(RuntimeError):
     """The existing crontab could not be read, so it must not be rewritten."""
 
@@ -77,30 +48,12 @@ _NO_CRONTAB_MARKER = "no crontab for"
 def _read_crontab() -> str:
     """Read the current user's crontab, or return empty text when there is none.
 
-    Intent
-    ------
-    Obtain the complete crontab text needed for a bounded managed-line update.
-
-    Rationale
-    ---------
-    "No crontab exists" and "the crontab could not be read" are both reported by a nonzero
-    status, but they must not be treated alike: the merge writes back whatever this returns,
-    so mapping a read FAILURE to empty text silently deletes every unrelated entry the user
-    has -- backups, sync jobs, everything. Only the recognised absent-table message is
-    treated as empty; anything else refuses to proceed.
-
-    Pseudocode
-    ----------
-    - set result = run crontab_list
-    - if result succeeded:
-      - return crontab_text
-    - if result reported an absent table:
-      - return empty_text
-    - raise crontab_unreadable
-
-    Wraps
-    -----
-    - none
+    "No crontab exists" and "the crontab could not be read" are both reported
+    by a nonzero status, but they must not be treated alike: the merge writes
+    back whatever this returns, so mapping a read FAILURE to empty text
+    silently deletes every unrelated entry the user has -- backups, sync jobs,
+    everything. Only the recognised absent-table message is treated as empty;
+    anything else refuses to proceed.
     """
     result = subprocess.run(
         ["crontab", "-l"],
@@ -126,22 +79,8 @@ def _read_crontab() -> str:
 def _write_crontab(content: str) -> None:
     """Replace the current user's crontab with supplied complete text.
 
-    Intent
-    ------
-    Install the already-merged crontab through the native user scheduler command.
-
-    Rationale
-    ---------
-    Passing the full text on standard input preserves unrelated entries while allowing one atomic managed update.
-
-    Pseudocode
-    ----------
-    - set installed_crontab = content
-    - return none
-
-    Wraps
-    -----
-    - none
+    Passing the full text on standard input preserves unrelated entries while
+    allowing one atomic managed update.
     """
     subprocess.run(
         ["crontab", "-"],
@@ -156,22 +95,8 @@ def _write_crontab(content: str) -> None:
 def _without_old_recurring_lines(existing: str) -> str:
     """Remove obsolete recurring-task cron lines during migration.
 
-    Intent
-    ------
-    Filter legacy recurring markers while retaining the current health-check marker and unrelated entries.
-
-    Rationale
-    ---------
-    Explicit migration prevents duplicate legacy launches without broadly rewriting user-owned cron configuration.
-
-    Pseudocode
-    ----------
-    - set kept_lines = lines_without_legacy_marker_or_with_current_marker
-    - return joined_kept_lines
-
-    Wraps
-    -----
-    - none
+    Explicit migration prevents duplicate legacy launches without broadly
+    rewriting user-owned cron configuration.
     """
     kept = [
         line
@@ -190,23 +115,8 @@ def render_healthcheck_cron(
 ) -> str:
     """Render the independent health-check cron command.
 
-    Intent
-    ------
-    Run the checker every four hours through the managed resolver and show a critical popup after any nonzero result.
-
-    Rationale
-    ---------
-    Keeping notification fallback in cron reports resolver and checker startup failures that checker-owned logic cannot observe.
-
-    Pseudocode
-    ----------
-    - set quoted_arguments = shell_safe_installation_inputs
-    - set desktop_bus_environment = runtime_directory_for_user
-    - return four_hour_cron_line with logging and failure_popup
-
-    Wraps
-    -----
-    - none
+    Keeping notification fallback in cron reports resolver and checker startup
+    failures that checker-owned logic cannot observe.
     """
     resolver_arg = shlex.quote(str(runtime_resolver))
     healthcheck_arg = shlex.quote(str(healthcheck))
@@ -230,24 +140,8 @@ def render_healthcheck_cron(
 def _replace_managed_cron_line(existing: str, desired: str) -> str:
     """Replace all managed sentinel lines with one desired line.
 
-    Intent
-    ------
-    Preserve unrelated crontab content while converging the managed health-check registration to one entry.
-
-    Rationale
-    ---------
-    Exact replacement makes setup idempotent and repairs stale command paths without accumulating duplicate sentinels.
-
-    Pseudocode
-    ----------
-    - set prefix = existing_lines_without_managed_marker
-    - if prefix lacks trailing_newline:
-      - set prefix = prefix_with_trailing_newline
-    - return prefix with desired_line
-
-    Wraps
-    -----
-    - none
+    Exact replacement makes setup idempotent and repairs stale command paths
+    without accumulating duplicate sentinels.
     """
     kept = [
         line
@@ -270,50 +164,8 @@ def install_healthcheck_cron(
 ) -> None:
     """Install or repair the independent health-check cron entry.
 
-    Intent
-    ------
-    Create the report directory, optionally remove legacy lines, and converge crontab to the desired sentinel command.
-
-    Rationale
-    ---------
-    Setup must repair stale registrations while preserving unrelated cron entries and avoiding unnecessary writes.
-
-    Pseudocode
-    ----------
-    - set healthcheck_log_directory = ensured_directory
-    - set existing = current_crontab
-    - if migration_requested:
-      - set normalized = crontab_without_legacy_lines
-    - set desired = rendered_healthcheck_cron
-    - set updated = crontab_with_managed_line_replaced
-    - if updated equals existing:
-      - return none
-    - set installed_crontab = updated_crontab
-
-    Wraps
-    -----
-    - none
-
-    CallsFromRepo
-    -------------
-    ._without_old_recurring_lines:
-      why:
-        transforms: "Filters obsolete recurring-task entries only when the caller explicitly requests cron migration."
-    ._write_crontab:
-      why:
-        writes: "Installs the complete merged crontab after detecting that its managed entry differs."
-
-    InstantiationsFromRepo
-    ----------------------
-    ._read_crontab:
-      why:
-        constructs: "Obtains the current full crontab used as the preservation and idempotency baseline."
-    .render_healthcheck_cron:
-      why:
-        constructs: "Builds the exact four-hour resolver command and direct desktop-failure fallback."
-    ._replace_managed_cron_line:
-      why:
-        constructs: "Produces the complete desired crontab while retaining every unrelated line."
+    Setup must repair stale registrations while preserving unrelated cron
+    entries and avoiding unnecessary writes.
     """
     log_dir = skill_root / "logs" / "healthcheck"
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -338,41 +190,8 @@ def install_healthcheck_cron(
 def run_setup(*, argv: list[str], home: Path | None = None) -> None:
     """Configure recurring-task launchers, scheduler entries, and sentinel.
 
-    Intent
-    ------
-    Perform the host setup sequence and report the resulting native scheduler status.
-
-    Rationale
-    ---------
-    One orchestration path keeps agent environment, per-job registrations, and independent failure monitoring synchronized.
-
-    Pseudocode
-    ----------
-    - set setup_arguments = parsed_setup_argv
-    - set scheduler_arguments = remaining_setup_argv
-    - set yaml_dependency = imported_yaml_runtime
-    - set agent_environment = ensured_launcher_environment
-    - set scheduler_state = synchronized_native_entries
-    - set schedule_context = recurring_task_paths
-    - if host supports independent_cron:
-      - set sentinel_state = installed_healthcheck_cron
-    - set standard_output = active_scheduler_status
-
-    Wraps
-    -----
-    - none
-
-    CallsFromRepo
-    -------------
-    .install_healthcheck_cron:
-      why:
-        orchestrates: "Converges the independent cron sentinel after native scheduler entries are synchronized."
-
-    InstantiationsFromRepo
-    ----------------------
-    ._default_bin_dir:
-      why:
-        constructs: "Produces the managed launcher directory supplied to agent-environment setup."
+    One orchestration path keeps agent environment, per-job registrations, and
+    independent failure monitoring synchronized.
     """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -388,14 +207,7 @@ def run_setup(*, argv: list[str], home: Path | None = None) -> None:
     print("PyYAML ok")
 
     selected_home = home or Path.home()
-    repo_root = SKILL_DIR.parents[2]
-    bin_dir = _default_bin_dir(selected_home)
-    _ensure_agent_env.run(
-        repo_root=repo_root,
-        home=selected_home,
-        bin_dir=bin_dir,
-        dry_run=False,
-    )
+    _ensure_agent_env.run(home=selected_home, dry_run=False)
 
     print("")
     print("Syncing scheduler entries")
@@ -428,22 +240,8 @@ def run_setup(*, argv: list[str], home: Path | None = None) -> None:
 class Interface(PythonArgvMachineInterface):
     """Expose host setup through the Python machine interface.
 
-    Intent
-    ------
-    Bind dispatcher-provided arguments to the recurring-task setup entrypoint.
-
-    Rationale
-    ---------
-    The shared runtime requires a typed interface object for process-bound execution.
-
-    Pseudocode
-    ----------
-    - set program_name = setup_runner
-    - set interface_run = received_argv
-
-    Wraps
-    -----
-    - none
+    The shared runtime requires a typed interface object for process-bound
+    execution.
     """
 
     prog = "setup_runner.py"
@@ -451,21 +249,8 @@ class Interface(PythonArgvMachineInterface):
     def run(self, argv: list[str]) -> int:
         """Run recurring-task setup with explicit arguments.
 
-        Intent
-        ------
-        Forward machine-interface arguments to the command entrypoint and return its status.
-
-        Rationale
-        ---------
-        One forwarding method keeps direct and dispatcher-driven setup behavior identical.
-
-        Pseudocode
-        ----------
-        - return @.main(argv)
-
-        Wraps
-        -----
-        .main -> preprocess: receives machine-interface argv unchanged; postprocess: returns setup status unchanged; fixed_arguments: none
+        One forwarding method keeps direct and dispatcher-driven setup behavior
+        identical.
         """
         return main(argv)
 
@@ -473,30 +258,8 @@ class Interface(PythonArgvMachineInterface):
 def main(argv: list[str] | None = None) -> int:
     """Run recurring-task host setup and return success.
 
-    Intent
-    ------
-    Normalize optional command arguments and invoke the setup orchestrator.
-
-    Rationale
-    ---------
-    A small process entrypoint gives direct and machine-interface callers one stable exit-code contract.
-
-    Pseudocode
-    ----------
-    - set normalized_argv = supplied_argv_or_empty
-    - @.run_setup(normalized_argv)
-    - return success
-
-    Wraps
-    -----
-    - none
-
-    CallsFromRepo
-    -------------
-    .run_setup:
-      why:
-        orchestrates: "Runs environment, scheduler, and sentinel setup before this entrypoint returns a process success code."
-
+    A small process entrypoint gives direct and machine-interface callers one
+    stable exit-code contract.
     """
     run_setup(argv=list(argv or []))
     return 0

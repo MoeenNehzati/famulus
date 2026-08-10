@@ -21,7 +21,7 @@ def test_does_not_write_legacy_agent_env_shell_script(tmp_path, monkeypatch):
     home.mkdir()
     bin_dir = tmp_path / "bin"
 
-    ensure_agent_env.run(repo_root=repo_root, home=home, bin_dir=bin_dir, dry_run=False)
+    ensure_agent_env.run(home=home, dry_run=False)
 
     env_script = repo_root / "skills" / "recurring-tasks" / "_rtx" / "_agent_env.sh"
     assert not env_script.exists()
@@ -35,7 +35,7 @@ def test_writes_systemd_environment_file_scoped_to_home(tmp_path, monkeypatch):
     home = tmp_path / "home"
     home.mkdir()
 
-    ensure_agent_env.run(repo_root=repo_root, home=home, bin_dir=tmp_path / "bin", dry_run=False)
+    ensure_agent_env.run(home=home, dry_run=False)
 
     env_file = home / ".config" / "environment.d" / "20-ai-agent.conf"
     assert env_file.is_file()
@@ -49,7 +49,7 @@ def test_dry_run_writes_nothing(tmp_path, monkeypatch):
     home = tmp_path / "home"
     home.mkdir()
 
-    ensure_agent_env.run(repo_root=repo_root, home=home, bin_dir=tmp_path / "bin", dry_run=True)
+    ensure_agent_env.run(home=home, dry_run=True)
 
     assert not (home / ".config" / "environment.d" / "20-ai-agent.conf").exists()
 

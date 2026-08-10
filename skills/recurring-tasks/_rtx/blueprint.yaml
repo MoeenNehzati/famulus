@@ -38,14 +38,6 @@ authority:
       - Interface
       reason: Ensure recurring-tasks' systemd AI_AGENT_COMMAND_TEMPLATE is in place.
     - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _job_utils.py
-      - Interface
-      reason: Expose legacy recurring job helper module through the dispatcher runtime
-        contract.
-    - command:
       - systemctl
       reason: Manage systemd user units.
     - command:
@@ -58,11 +50,9 @@ content:
 - _healthcheck_probe\.py
 - __init__\.py
 - _assistant_desktop_notify\.py
-- _live_probe\.py
 - _job_control\.py
 - _job_executor\.py
 - _jobs_config\.py
-- _job_utils\.py
 - _run_record\.py
 - _schedule_backend/__init__\.py
 - _schedule_backend/_base_backend\.py
@@ -99,12 +89,6 @@ exports:
       allowed_callers:
       - recurring-tasks
     source_interface: recurring-tasks._rtx.source.rtx-healthcheck-probe.interface.scripts-healthcheck
-  recurring-tasks._rtx.interface.scripts-job-utils:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - recurring-tasks
-    source_interface: recurring-tasks._rtx.source.rtx-job-utils.interface.scripts-job-utils
   recurring-tasks._rtx.interface.scripts-setup:
     access:
       allow_all_modules: false
@@ -171,10 +155,6 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/rtx-jobs-config.yaml
-  recurring-tasks._rtx.source.rtx-job-utils:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-job-utils.yaml
   recurring-tasks._rtx.source.rtx-run-record:
     blueprint:
       base: module-root

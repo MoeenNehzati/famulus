@@ -17,7 +17,6 @@ Uses Interfaces:
 - `recurring-tasks.source.gateway -> recurring-tasks._rtx.interface.scripts-enable@1`
 - `recurring-tasks.source.gateway -> recurring-tasks._rtx.interface.scripts-ensure-agent-env@1`
 - `recurring-tasks.source.gateway -> recurring-tasks._rtx.interface.scripts-healthcheck@1`
-- `recurring-tasks.source.gateway -> recurring-tasks._rtx.interface.scripts-job-utils@1`
 - `recurring-tasks.source.gateway -> recurring-tasks._rtx.interface.scripts-setup@1`
 - `recurring-tasks.source.gateway -> recurring-tasks._rtx.interface.scripts-status@1`
 - `recurring-tasks.source.gateway -> recurring-tasks._rtx.interface.scripts-sync@1`
@@ -59,22 +58,79 @@ The skill provides dispatcher interfaces for all operations:
 
 See the **Dispatcher Interfaces** block above for the exact commands.
 
-## Architecture (Simplified)
+## Process
+
+This is the whole skill. Everything else is per-platform rendering, a CLI,
+and an installer. Read this before changing anything here; if a change does
+not fit this shape, the shape is probably right and the change is probably
+wrong.
 
 ```
-jobs.yaml (source of truth)
-    ↓
-scripts-sync generates native scheduler entries for the current platform
-    ↓
-the native scheduler fires the job on schedule (or is triggered by scripts-test)
-    ↓
-a fixed, release-independent launch resolver starts the job runner
-    ↓
-the job runner parses the command from jobs.yaml (typically: invoke-skill <job-name>)
-    ↓
-runs the job, capturing output to logs/<job-name>/run.log and writing a
-structured per-run outcome to logs/<job-name>/latest.json
+DATA
+  jobs.yaml       one entry per job: name, command, schedule, enabled, success?
+  registration    the host scheduler's own entry for a job
+                  (systemd unit | launchd plist | scheduled task)
+  outcome record  logs/<job>/latest.json — what the last run actually did
+  output log      logs/<job>/run.log — that run's output
+
+RENDER(job) -> registration
+    derived from jobs.yaml and the install layout ONLY.
+    never from the calling process's environment.
+
+SYNC()                                    # user-invoked
+    for each enabled job:      write RENDER(job)
+    for each registration with no enabled job:   remove it
+    reload the scheduler; activate the enabled registrations
+
+RUN(job)                                  # scheduler-invoked
+    mark in-flight
+    execute job.command, bounded by a timeout, output -> output log
+    outcome := EVALUATE(exit code, status written during THIS run, job.success)
+    write outcome record (outcome, started_at, finished_at)
+    clear in-flight
+
+EVALUATE(exit_code, inner_status, contract) -> ok | failed(reason)
+    the single definition of success. RUN owns it; CHECK never re-derives it.
+
+CHECK()                                   # cron-invoked, outside the scheduler
+    fail unless the scheduler is reachable
+    fail unless the scheduler can resolve the agent command
+    for each enabled job:
+        fail unless installed registration == RENDER(job)
+        if a run is in flight:
+            fail if it started longer ago than the job timeout
+        else:
+            fail unless an outcome record exists
+            fail unless the record is newer than 2 x the schedule interval
+            fail unless the record says ok
+        fail unless the registration is active
+    exit nonzero if anything failed       # cron turns that into a notification
 ```
+
+**Invariants.** Each one exists because violating it caused a real outage:
+
+1. **One definition of success.** `EVALUATE` decides; `CHECK` only reads what
+   was recorded. A second, looser notion of success in `CHECK` is how a job
+   that produced nothing stayed green for days.
+2. **One source of truth per question.** "Did it run recently?" is answered by
+   the outcome record's timestamps — never by a log file's modification time.
+   A killed run refreshes that timestamp without ever completing.
+3. **One renderer.** `SYNC` and `CHECK` both call `RENDER`. When `CHECK`
+   re-derived the expected registration from ambient `PATH` instead, every
+   cron-invoked run reported drift that did not exist — 12 consecutive false
+   alarms.
+4. **`CHECK` runs outside the scheduler it inspects.** On Linux that means
+   cron, so the check still reports when systemd itself is the problem.
+
+**Current deviations** (the code does not yet fully match the above):
+
+- `CHECK` re-derives success through a tolerance policy that scans the output
+  log, rather than reading the recorded outcome — a second definition of
+  success, violating invariant 1.
+- Freshness reads the output log's modification time rather than the outcome
+  record, violating invariant 2; an in-flight marker file currently
+  compensates for the gap.
+- Two `SYNC` implementations exist in the runtime rather than one.
 
 **Key simplifications:**
 - No per-job shell wrapper scripts
