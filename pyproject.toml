@@ -21,4 +21,7 @@ where = ["src"]
 include = ["officina*"]
 
 [tool.setuptools.package-data]
-officina = ["**/*.json", "**/*.toml", "**/*.yaml"]
+officina = ["**/*"]
+
+[tool.setuptools.exclude-package-data]
+officina = ["**/__pycache__/*", "**/*.pyc", "**/*.pyo"]

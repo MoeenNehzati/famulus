@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import subprocess
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -33,6 +34,19 @@ UV_BIN = shutil.which("uv")
 # against str(FAKE_UV_BIN), not a hardcoded POSIX-style literal, to stay
 # correct on a real Windows test host.
 FAKE_UV_BIN = Path("/fake/uv")
+
+
+def test_wheel_metadata_preserves_non_python_runtime_assets() -> None:
+    with (REPO_ROOT / "pyproject.toml").open("rb") as stream:
+        configuration = tomllib.load(stream)
+
+    setuptools = configuration["tool"]["setuptools"]
+    assert setuptools["package-data"]["officina"] == ["**/*"]
+    assert set(setuptools["exclude-package-data"]["officina"]) == {
+        "**/__pycache__/*",
+        "**/*.pyc",
+        "**/*.pyo",
+    }
 
 
 def test_source_revision_falls_back_to_packaged_source_fingerprint(
