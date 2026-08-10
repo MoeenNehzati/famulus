@@ -12,6 +12,7 @@ import platform
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -38,9 +39,11 @@ def _load_repository_checks(repo_root: Path) -> ModuleType:
     module_path = source_root / "officina" / "repository_checks.py"
     if not module_path.is_file():
         raise RuntimeError(f"repository checks are missing: {module_path}")
-    saved = {name: module for name, module in sys.modules.items() if name == "officina" or name.startswith("officina.")}
-    for name in saved:
-        del sys.modules[name]
+    saved_modules = dict(sys.modules)
+    saved_path = list(sys.path)
+    for name in tuple(sys.modules):
+        if name == "officina" or name.startswith("officina."):
+            del sys.modules[name]
     sys.path.insert(0, str(source_root))
     try:
         module_name = "_benchmark_repository_checks"
@@ -48,20 +51,13 @@ def _load_repository_checks(repo_root: Path) -> ModuleType:
         if spec is None or spec.loader is None:
             raise RuntimeError(f"could not load repository checks: {module_path}")
         module = importlib.util.module_from_spec(spec)
-        previous_module = sys.modules.get(module_name)
         sys.modules[module_name] = module
         spec.loader.exec_module(module)
         return module
     finally:
-        sys.path.remove(str(source_root))
-        for name in tuple(sys.modules):
-            if name == "officina" or name.startswith("officina."):
-                del sys.modules[name]
-        sys.modules.update(saved)
-        if "previous_module" in locals() and previous_module is not None:
-            sys.modules[module_name] = previous_module
-        else:
-            sys.modules.pop("_benchmark_repository_checks", None)
+        sys.path[:] = saved_path
+        sys.modules.clear()
+        sys.modules.update(saved_modules)
 
 
 def _cache_environment(cache_root: Path) -> dict[str, str]:
@@ -137,15 +133,31 @@ def run_benchmarks(
     cache_root = root / "_build" / "test-performance-cache"
     artifact_root = output.parent / f"{output.stem}-artifacts"
     artifact_root.mkdir(parents=True, exist_ok=True)
-    task_cache = artifact_root / "task-cache" if task_id is not None else None
-    command, task_slots = resolve_benchmark_command(root, suite, jobs, task_id, task_cache)
-    if sequential and task_id is None:
-        command.append("--sequential")
+    task_cache_root = artifact_root / "task-cache"
+    task_cache_paths: list[dict[str, str]] = []
+    task_slots: int | None = None
+
+    def command_for(phase: str) -> list[str]:
+        nonlocal task_slots
+        if task_id is None:
+            command, task_slots = resolve_benchmark_command(root, suite, jobs, None)
+            if sequential:
+                command.append("--sequential")
+            return command
+        task_cache_root.mkdir(parents=True, exist_ok=True)
+        cache_dir = Path(tempfile.mkdtemp(prefix=f"{phase}-", dir=task_cache_root))
+        command, resolved_slots = resolve_benchmark_command(
+            root, suite, jobs, task_id, cache_dir
+        )
+        task_slots = resolved_slots
+        task_cache_paths.append({"phase": phase, "path": str(cache_dir.resolve())})
+        return command
     resolved_jobs = default_jobs()
     environment = _cache_environment(cache_root)
     if task_id is not None:
         environment["OFFICINA_FIXTURE_PROBE_TASK_ID"] = task_id
     if cache == "warm" and prime:
+        command = command_for("prime")
         staged_before = _staged_fingerprint(root)
         tracked_before = _tracked_worktree_fingerprint(root)
         warmup = subprocess.run(command, cwd=root, env=environment, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT, check=False)
@@ -159,6 +171,7 @@ def run_benchmarks(
             shutil.rmtree(cache_root, ignore_errors=True)
         staged_before = _staged_fingerprint(root)
         tracked_before = _tracked_worktree_fingerprint(root)
+        command = command_for(f"run-{index}")
         metrics = benchmark.benchmark_command(command, log_path=artifact_root / f"run-{index}.log", cwd=root, env=_cache_environment(cache_root) | ({"OFFICINA_FIXTURE_PROBE_TASK_ID": task_id} if task_id else {}), record_samples=measure_resources, sample_process_tree=measure_resources)
         staged_after = _staged_fingerprint(root)
         tracked_after = _tracked_worktree_fingerprint(root)
@@ -167,7 +180,7 @@ def run_benchmarks(
         "schema_version": 3, "repo": str(root), "commit": _git_output(root, "rev-parse", "HEAD").decode().strip(),
         "host": {"platform": platform.platform(), "python": platform.python_version(), "logical_cpus": os.cpu_count()},
         "cache_condition": cache, "jobs": jobs, "requested_jobs": jobs, "resolved_default_jobs": resolved_jobs,
-        "suite": suite, "task_id": task_id, "task_slots": task_slots, "task_cache_dir": str(task_cache.resolve()) if task_cache else None,
+        "suite": suite, "task_id": task_id, "task_slots": task_slots, "task_cache_paths": task_cache_paths,
         "prime": prime, "runs_requested": runs, "command": command, "runs": measurements,
         "scheduler": "sequential" if sequential else "pooled",
         "measurement_mode": "resources" if measure_resources else "timing",

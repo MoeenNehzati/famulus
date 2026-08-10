@@ -106,6 +106,74 @@ def test_task_resolution_loads_live_selected_root_without_officina_leakage(
     } == before
 
 
+def test_selected_root_load_restores_all_module_and_path_mappings(tmp_path: Path) -> None:
+    benchmark = load_module()
+    source = tmp_path / "src" / "officina"
+    source.mkdir(parents=True)
+    (source / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "src" / "selected_root_sentinel.py").write_text(
+        "VALUE = 'selected-root'\n", encoding="utf-8"
+    )
+    (source / "repository_checks.py").write_text(
+        "from dataclasses import dataclass\n"
+        "import selected_root_sentinel\n"
+        "@dataclass(frozen=True)\n"
+        "class CheckTask:\n"
+        "    id: str\n"
+        "    argv: tuple[str, ...]\n"
+        "    slots: int\n"
+        "def _build_check_tasks(*_args, **_kwargs):\n"
+        "    return [CheckTask('selected', ('check',), 1)]\n",
+        encoding="utf-8",
+    )
+    modules_before = dict(sys.modules)
+    path_before = list(sys.path)
+
+    command, slots = benchmark.resolve_benchmark_command(
+        tmp_path, "full", 1, "selected"
+    )
+
+    assert command == ["check"]
+    assert slots == 1
+    assert sys.modules == modules_before
+    assert sys.path == path_before
+
+
+def test_direct_task_observations_receive_fresh_cache_per_invocation(
+    monkeypatch, tmp_path: Path
+) -> None:
+    benchmark = load_module()
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "benchmark-command.py").write_text("", encoding="utf-8")
+    resolved_caches = []
+    commands = []
+
+    class FakeBenchmark:
+        @staticmethod
+        def benchmark_command(command, **_kwargs):
+            commands.append(command)
+            return {"returncode": 0, "wall_seconds": 0.1}
+
+    def resolve(_root, _suite, _jobs, _task_id, cache_dir=None):
+        resolved_caches.append(cache_dir)
+        return [sys.executable, "-m", "pytest", "-o", f"cache_dir={cache_dir}", "-q"], 6
+
+    monkeypatch.setattr(benchmark, "_load_script", lambda *_args: FakeBenchmark)
+    monkeypatch.setattr(benchmark, "resolve_benchmark_command", resolve)
+    monkeypatch.setattr(benchmark.platform, "platform", lambda: "test-platform")
+    monkeypatch.setattr(benchmark.subprocess, "run", lambda command, **_kwargs: commands.append(command) or SimpleNamespace(returncode=0))
+    monkeypatch.setattr(benchmark, "_git_output", lambda _root, *args: b"commit\n" if args[0] == "rev-parse" else b"")
+
+    first = benchmark.run_benchmarks(tmp_path, "full", tmp_path / "first.json", 2, "warm", 8, "tests:shared")
+    second = benchmark.run_benchmarks(tmp_path, "full", tmp_path / "second.json", 1, "warm", 8, "tests:shared", prime=False)
+
+    assert len(resolved_caches) == 4
+    assert len({path.resolve() for path in resolved_caches}) == 4
+    assert all("cache_dir=" in command[4] for command in commands)
+    assert len(first["task_cache_paths"]) == 3
+    assert len(second["task_cache_paths"]) == 1
+
+
 def test_no_prime_makes_only_requested_measured_calls(monkeypatch, tmp_path: Path) -> None:
     benchmark = load_module()
     (tmp_path / "scripts").mkdir()
