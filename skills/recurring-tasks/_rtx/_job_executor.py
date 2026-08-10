@@ -133,6 +133,16 @@ def _write_running_marker(
     return marker
 
 
+def _read_run_output(log_file: Path, start: int) -> str:
+    """Read what this run appended to its log, starting at `start`."""
+    try:
+        with open(log_file, "r", encoding="utf-8", errors="replace") as reader:
+            reader.seek(start)
+            return reader.read()
+    except OSError:
+        return ""
+
+
 def run_job(*, jobs_file: Path, job_name: str, log_dir: Path = LOG_DIR) -> int:
     job = load_job(jobs_file, job_name)
     command = str(job["command"]).replace("{skill_dir}", str(SKILL_DIR))
@@ -155,15 +165,18 @@ def run_job(*, jobs_file: Path, job_name: str, log_dir: Path = LOG_DIR) -> int:
         log.write("--- RUN START ---\n")
         log.flush()
 
-        # An in-flight marker, removed only on normal completion. If the
-        # executor is killed (systemd stop, OOM, reboot, suspend mid-run) no
-        # run record is ever written, but "--- RUN START ---" above has
-        # already refreshed run.log's mtime -- which is the freshness signal
-        # the health check reads. Without this marker that job reports
-        # HEALTHY forever while never completing.
+        # An in-flight marker, removed only on normal completion. A killed
+        # executor (stop, OOM, reboot, suspend mid-run) writes no run record,
+        # so this file is the only evidence that a run began and never
+        # finished. Freshness alone would not notice until the job's next
+        # two scheduled slots had passed.
         marker = _write_running_marker(
             log_dir=log_dir, job_name=job_name, started_at=started_at, run_id=run_id
         )
+
+        # Where this run's output begins, so success is judged against it
+        # alone rather than a slice of the job's cumulative log.
+        output_start = log.tell()
 
         spawn_error: OSError | None = None
         timed_out = False
@@ -224,10 +237,12 @@ def run_job(*, jobs_file: Path, job_name: str, log_dir: Path = LOG_DIR) -> int:
                 # must not vouch for one that never wrote its own.
                 not_before=started_dt,
             )
+            log.flush()
             evaluation = evaluate_success_contract(
                 process_exit_code=process_exit_code,
                 inner_status=inner_status,
                 contract=job.get("success"),
+                run_output=_read_run_output(log_file, output_start),
             )
 
         write_run_record(

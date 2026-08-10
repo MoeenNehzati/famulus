@@ -140,11 +140,17 @@ def _job(name="test-job", schedule="0 * * * *"):
     }
 
 
-def _write_latest_record(log_dir: Path, name: str, *, success: bool, reason: str = ""):
+def _write_latest_record(
+    log_dir: Path, name: str, *, success: bool, reason: str = "",
+    finished_minutes_ago: int = 0,
+):
+    from datetime import datetime, timedelta, timezone
+
+    finished = datetime.now(timezone.utc) - timedelta(minutes=finished_minutes_ago)
     record = {
         "job_name": name,
-        "started_at": "2026-08-05T12:00:00+00:00",
-        "finished_at": "2026-08-05T12:01:00+00:00",
+        "started_at": finished.isoformat(timespec="seconds"),
+        "finished_at": finished.isoformat(timespec="seconds"),
         "process_exit_code": 0 if success else 1,
         "inner_status": None,
         "success": success,
@@ -155,15 +161,15 @@ def _write_latest_record(log_dir: Path, name: str, *, success: bool, reason: str
     destination.write_text(json.dumps(record))
 
 
-def test_check_job_missing_log_fails():
+def test_check_job_with_no_recorded_run_fails():
     with tempfile.TemporaryDirectory() as d:
         mod = _load(Path(d))
         backend = mock.Mock()
         backend.check_job_configuration.return_value = None
         with mock.patch.object(mod, "platform_schedule_backend", return_value=backend):
             reason = mod.check_job(_job())
-        assert reason == "test-job: no log file"
-    print("PASS: missing log file fails")
+        assert reason == "test-job: no completed run recorded"
+    print("PASS: a job with no recorded run fails")
 
 
 def test_check_job_reports_scheduler_configuration_drift_before_log_state():
@@ -223,22 +229,26 @@ def test_check_job_latest_failed_run_fails():
         assert reason == "test-job: latest run failed (process exit code 1)"
 
 
-def test_check_job_stale_log_fails():
+def test_check_job_stale_run_fails():
+    """A job whose last COMPLETED run is old is stale.
+
+    Measured from the run record: a killed run refreshes the log file's
+    timestamp without ever finishing, so the log cannot answer this.
+    """
     with tempfile.TemporaryDirectory() as d:
         mod = _load(Path(d))
-        log_file = mod.LOG_DIR / "test-job" / "run.log"
-        log_file.parent.mkdir(parents=True)
-        log_file.write_text("old\n")
-        # schedule is hourly -> stale threshold is 2h; back-date mtime by 3h
-        old_time = time.time() - 3 * 3600
-        import os
-        os.utime(log_file, (old_time, old_time))
+        (mod.LOG_DIR / "test-job").mkdir(parents=True)
+        # hourly schedule -> stale past 2h; record a finish 3h ago
+        _write_latest_record(
+            mod.LOG_DIR, "test-job", success=True, finished_minutes_ago=180
+        )
         backend = mock.Mock()
         backend.check_job_configuration.return_value = None
-        with mock.patch.object(mod, "platform_schedule_backend", return_value=backend):
+        with mock.patch.object(mod, "platform_schedule_backend", return_value=backend), \
+             mock.patch.object(mod, "check_job_configuration", return_value=None):
             reason = mod.check_job(_job(schedule="0 * * * *"))
-        assert reason is not None and "log stale" in reason
-    print("PASS: stale log fails")
+        assert reason is not None and "last completed run" in reason
+    print("PASS: stale run fails")
 
 
 def test_check_job_inactive_timer_fails():

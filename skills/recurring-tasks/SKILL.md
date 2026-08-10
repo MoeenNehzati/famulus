@@ -108,14 +108,13 @@ CHECK()                            # invoked outside the scheduler it inspects
    independent timer, so it still reports when the scheduler itself is what
    has failed.
 
+A job may declare that certain failures are transient — an exit code plus
+patterns that must appear in that run's own output. `EVALUATE` applies this
+when it decides the outcome, so a tolerated failure is recorded as a success
+with its reason; `CHECK` still only reads the record.
+
 **Current deviations** (the code does not yet fully match the above):
 
-- `CHECK` re-derives success through a tolerance policy that scans the output
-  log, rather than reading the recorded outcome — a second definition of
-  success, violating invariant 1.
-- Freshness reads the output log's modification time rather than the outcome
-  record, violating invariant 2; an in-flight marker file currently
-  compensates for the gap.
 - Two `SYNC` implementations exist in the runtime rather than one.
 
 **Key simplifications:**

@@ -288,12 +288,23 @@ class LinuxScheduleBackend:
 
         if context.live:
             _systemctl("daemon-reload", check=True, capture=False)
+            # Attempt every job before failing. Stopping at the first bad unit
+            # left the rest unregistered with their files already written, so
+            # a single malformed schedule silently disabled unrelated jobs.
+            failed = []
             for name in sorted(enabled_names):
-                _systemctl(
-                    "enable", "--now", f"{PREFIX}{name}.timer",
-                    check=True, capture=False,
+                result = _systemctl(
+                    "enable", "--now", f"{PREFIX}{name}.timer", capture=False
                 )
-                print(f"Enabled {PREFIX}{name}.timer")
+                if result.returncode == 0:
+                    print(f"Enabled {PREFIX}{name}.timer")
+                else:
+                    failed.append(name)
+                    print(f"FAILED to enable {PREFIX}{name}.timer")
+            if failed:
+                raise RuntimeError(
+                    "could not enable: " + ", ".join(sorted(failed))
+                )
 
     def test(self, job_name: str, context: ScheduleContext) -> bool:
         result = _systemctl("start", "--wait", f"{PREFIX}{job_name}.service")

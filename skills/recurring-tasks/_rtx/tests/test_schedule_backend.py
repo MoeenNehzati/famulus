@@ -134,12 +134,16 @@ def test_linux_sync_writes_units_and_enables_timer(tmp_path):
     linux_backend = sys.modules[LinuxScheduleBackend.__module__]
     with (
         mock.patch.object(linux_backend.subprocess, "run") as run,
+        # sync now inspects each enable's returncode so one bad unit cannot
+        # silently leave the remaining jobs unregistered.
+
         mock.patch.object(
             linux_backend,
             "_launcher_bin_dir",
             return_value=PurePosixPath(expected_bin),
         ),
     ):
+        run.return_value.returncode = 0
         LinuxScheduleBackend().sync([job], context)
 
     service = (tmp_path / "ai-my-job.service").read_text()

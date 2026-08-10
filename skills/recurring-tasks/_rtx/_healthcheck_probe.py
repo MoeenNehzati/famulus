@@ -49,7 +49,6 @@ else:
 JOBS_FILE = SKILL_DIR / "jobs.yaml"
 LOG_DIR = SKILL_DIR / "logs"
 HEALTHCHECK_LOG = SKILL_ROOT / "logs" / "healthcheck" / "run.log"
-_DEFAULT_TOLERANCE_TAIL_BYTES = 32768
 # A run may legitimately be in flight when the check fires. Beyond the
 # executor's own timeout (plus slack) it cannot be: it was killed without
 # getting to write a record.
@@ -68,72 +67,6 @@ def log(msg: str) -> None:
         with open(HEALTHCHECK_LOG, "a", encoding="utf-8") as report:
             report.write(f"[{timestamp}] {msg}\n")
     print(msg)
-
-
-def _read_log_tail(path: Path, *, max_bytes: int = _DEFAULT_TOLERANCE_TAIL_BYTES) -> str:
-    """Read a bounded suffix of a file for heuristic failure classification.
-
-    Unbounded reads can be expensive for long-running job logs and can miss
-    only by memory pressure; a bounded read keeps checks predictable.
-    """
-    try:
-        with open(path, "rb") as handle:
-            handle.seek(0, os.SEEK_END)
-            size = handle.tell()
-            if size > max_bytes:
-                handle.seek(size - max_bytes)
-            return handle.read().decode("utf-8", errors="replace")
-    except OSError:
-        return ""
-
-
-def _allowed_failure_pattern(job: dict, latest: dict, log_file: Path) -> str | None:
-    """Return a matched policy pattern when the latest failure should be tolerated.
-
-    Some jobs fail with known, acceptable exit codes and log motifs, and
-    repeatedly failing on those cases should not block the global health check.
-    """
-    if latest.get("success") is True:
-        return None
-
-    contract = job.get("success") or {}
-    ignore_exit_codes = contract.get("ignore_exit_codes")
-    ignore_patterns = contract.get("ignore_exit_log_patterns")
-
-    if not ignore_patterns or not isinstance(ignore_patterns, list):
-        return None
-    if not ignore_patterns:
-        return None
-
-    try:
-        process_exit_code = int(latest.get("process_exit_code"))
-    except (TypeError, ValueError):
-        process_exit_code = None
-    if process_exit_code == 0:
-        return None
-
-    if ignore_exit_codes is not None:
-        if not isinstance(ignore_exit_codes, list):
-            ignore_exit_codes = [ignore_exit_codes]
-        normalized_codes = set()
-        for item in ignore_exit_codes:
-            try:
-                normalized_codes.add(int(item))
-            except (TypeError, ValueError):
-                continue
-        if not normalized_codes or process_exit_code not in normalized_codes:
-            return None
-
-    log_tail = _read_log_tail(log_file)
-    for pattern in ignore_patterns:
-        if not isinstance(pattern, str):
-            continue
-        try:
-            if re.search(pattern, log_tail):
-                return pattern
-        except re.error:
-            continue
-    return None
 
 
 def check_systemd_manager() -> str | None:
@@ -225,28 +158,14 @@ def check_job(job: dict) -> str | None:
         log(f"  FAIL: {reason}")
         return reason
 
-    log_file = LOG_DIR / name / "run.log"
-
-    if not log_file.exists():
-        reason = f"{name}: no log file"
-        log(f"  FAIL: {reason}")
-        return reason
-
-    # Check if log is fresh (within 2x scheduled interval)
+    # Freshness comes from the record the run itself wrote, not from a log
+    # file's modification time: a run that starts and never finishes refreshes
+    # that timestamp without ever completing.
     try:
         interval_mins = parse_schedule_interval(job["schedule"])
     except ValueError as exc:
         reason = f"{name}: unusable schedule: {exc}"
         log(f"  FAIL: {reason}")
-        return reason
-    stale_threshold = timedelta(minutes=interval_mins * 2)
-    age = datetime.now(timezone.utc) - datetime.fromtimestamp(
-        log_file.stat().st_mtime, tz=timezone.utc
-    )
-
-    if age > stale_threshold:
-        reason = f"{name}: log stale ({age.total_seconds() / 60:.0f}m old)"
-        log(f"  WARN: {reason}")
         return reason
 
     # A run that started and never finished leaves an in-flight marker. The
@@ -270,23 +189,35 @@ def check_job(job: dict) -> str | None:
 
     latest_path = LOG_DIR / name / "latest.json"
     latest = read_latest_run_record(log_dir=LOG_DIR, job_name=name)
-    if latest_path.exists() and latest is None:
-        reason = f"{name}: latest run record unreadable"
+    if latest is None:
+        reason = (
+            f"{name}: run record unreadable"
+            if latest_path.exists()
+            else f"{name}: no completed run recorded"
+        )
         log(f"  FAIL: {reason}")
         return reason
-    if latest is not None and latest.get("success") is not True:
-        allowed_failure = _allowed_failure_pattern(
-            job=job,
-            latest=latest,
-            log_file=log_file,
+
+    finished_at = latest.get("finished_at")
+    try:
+        finished = datetime.fromisoformat(str(finished_at))
+    except (TypeError, ValueError):
+        reason = f"{name}: run record has no usable finish time"
+        log(f"  FAIL: {reason}")
+        return reason
+    if finished.tzinfo is None:
+        finished = finished.replace(tzinfo=timezone.utc)
+
+    age = datetime.now(timezone.utc) - finished
+    if age > timedelta(minutes=interval_mins * 2):
+        reason = (
+            f"{name}: last completed run was "
+            f"{age.total_seconds() / 60:.0f}m ago"
         )
-        if allowed_failure is not None:
-            detail = latest.get("reason") or "no failure reason recorded"
-            log(
-                "  WARN: "
-                f"{name}: latest run failed ({detail}); tolerated by policy ({allowed_failure})"
-            )
-            return None
+        log(f"  FAIL: {reason}")
+        return reason
+
+    if latest.get("success") is not True:
         detail = latest.get("reason") or "no failure reason recorded"
         reason = f"{name}: latest run failed ({detail})"
         log(f"  FAIL: {reason}")

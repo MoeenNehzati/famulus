@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -75,8 +76,39 @@ class JobRunRecord:
     run_id: str = ""
 
 
+def _tolerated_failure(
+    exit_code: int, contract: dict, run_output: str
+) -> str | None:
+    """Return the pattern excusing this failure, or None.
+
+    Judged against the output of the run being evaluated. The health check
+    used to make this call separately, scanning a fixed tail of the job's
+    cumulative log -- so an old message could excuse an unrelated later
+    failure, and success had two definitions that could disagree.
+    """
+    patterns = contract.get("ignore_exit_log_patterns") or []
+    if not isinstance(patterns, list) or not patterns:
+        return None
+
+    codes = contract.get("ignore_exit_codes")
+    if codes is not None:
+        if not isinstance(codes, list):
+            codes = [codes]
+        if exit_code not in {int(c) for c in codes if str(c).lstrip("-").isdigit()}:
+            return None
+
+    for pattern in patterns:
+        if isinstance(pattern, str) and re.search(pattern, run_output):
+            return pattern
+    return None
+
+
 def evaluate_success_contract(
-    *, process_exit_code: int, inner_status: str | None, contract: dict | None
+    *,
+    process_exit_code: int,
+    inner_status: str | None,
+    contract: dict | None,
+    run_output: str = "",
 ) -> SuccessEvaluation:
     """Decide whether a run succeeded.
 
@@ -91,8 +123,14 @@ def evaluate_success_contract(
     contract = contract or {}
 
     if process_exit_code != 0:
+        tolerated = _tolerated_failure(process_exit_code, contract, run_output)
+        if tolerated is None:
+            return SuccessEvaluation(
+                success=False, reason=f"process exit code {process_exit_code}"
+            )
         return SuccessEvaluation(
-            success=False, reason=f"process exit code {process_exit_code}"
+            success=True,
+            reason=f"exit {process_exit_code} tolerated: matched {tolerated!r}",
         )
 
     required = contract.get("require_inner_status")

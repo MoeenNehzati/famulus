@@ -499,3 +499,64 @@ def test_run_job_ignores_a_previous_runs_status_under_a_contract(tmp_path):
 
     record = json.loads((log_dir / "demo" / "latest.json").read_text())
     assert record["success"] is False, "yesterday's status must not vouch for today"
+
+
+# ── tolerance belongs to the run, not to the check ─────────────────────────────
+
+def test_tolerated_exit_code_is_recorded_as_success(tmp_path):
+    """A known-transient failure is decided once, by the run that saw it."""
+    jobs_file = _write_jobs_file(
+        tmp_path,
+        command="invoke-skill demo",
+        success={
+            "ignore_exit_codes": "[1]",
+            "ignore_exit_log_patterns": '["hit your usage limit"]',
+        },
+    )
+    log_dir = tmp_path / "logs"
+
+    def fake_run(argv, **kwargs):
+        kwargs["stdout"].write("ERROR: you have hit your usage limit\n")
+        return subprocess.CompletedProcess(args=argv, returncode=1)
+
+    with mock.patch.object(job_executor.subprocess, "run", side_effect=fake_run):
+        job_executor.run_job(jobs_file=jobs_file, job_name="demo", log_dir=log_dir)
+
+    record = json.loads((log_dir / "demo" / "latest.json").read_text())
+    assert record["success"] is True
+    assert "tolerated" in record["reason"]
+
+
+def test_an_earlier_runs_message_cannot_excuse_a_later_failure(tmp_path):
+    """The old check scanned a fixed tail of the cumulative log.
+
+    A quota message from a previous run could therefore excuse an unrelated
+    later failure. Tolerance now sees only the output of the run it judges.
+    """
+    jobs_file = _write_jobs_file(
+        tmp_path,
+        command="invoke-skill demo",
+        success={
+            "ignore_exit_codes": "[1]",
+            "ignore_exit_log_patterns": '["hit your usage limit"]',
+        },
+    )
+    log_dir = tmp_path / "logs"
+
+    def tolerated_run(argv, **kwargs):
+        kwargs["stdout"].write("ERROR: you have hit your usage limit\n")
+        return subprocess.CompletedProcess(args=argv, returncode=1)
+
+    def unrelated_failure(argv, **kwargs):
+        kwargs["stdout"].write("Traceback: something else broke entirely\n")
+        return subprocess.CompletedProcess(args=argv, returncode=1)
+
+    with mock.patch.object(job_executor.subprocess, "run", side_effect=tolerated_run):
+        job_executor.run_job(jobs_file=jobs_file, job_name="demo", log_dir=log_dir)
+    with mock.patch.object(job_executor.subprocess, "run", side_effect=unrelated_failure):
+        job_executor.run_job(jobs_file=jobs_file, job_name="demo", log_dir=log_dir)
+
+    record = json.loads((log_dir / "demo" / "latest.json").read_text())
+    assert record["success"] is False, (
+        "a previous run's quota message must not excuse this failure"
+    )
