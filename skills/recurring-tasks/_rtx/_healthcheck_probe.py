@@ -233,7 +233,12 @@ def check_job(job: dict) -> str | None:
         return reason
 
     # Check if log is fresh (within 2x scheduled interval)
-    interval_mins = parse_schedule_interval(job["schedule"])
+    try:
+        interval_mins = parse_schedule_interval(job["schedule"])
+    except ValueError as exc:
+        reason = f"{name}: unusable schedule: {exc}"
+        log(f"  FAIL: {reason}")
+        return reason
     stale_threshold = timedelta(minutes=interval_mins * 2)
     age = datetime.now(timezone.utc) - datetime.fromtimestamp(
         log_file.stat().st_mtime, tz=timezone.utc
@@ -310,17 +315,21 @@ def parse_schedule_interval(schedule: str) -> int:
     scheduler's full cron parser.
     """
     parts = schedule.split()
-    minute, hour = parts[0], parts[1]
+    if len(parts) != 5:
+        raise ValueError(f"expected a 5-field cron schedule, got {schedule!r}")
+    minute, hour, _dom, _month, dow = parts
 
     if minute.startswith("*/"):
         return int(minute[2:])
-    elif hour.startswith("*/"):
+    if hour.startswith("*/"):
         return int(hour[2:]) * 60
-    elif hour == "*" and minute != "*":
-        return 60
-    elif hour != "*":
-        return 1440  # daily
-    return 60
+    if minute == "*":
+        return 1  # every minute
+    if hour == "*":
+        return 60  # hourly, at a fixed minute
+    if dow != "*":
+        return 10080  # weekly: a healthy weekly job must not read as stale
+    return 1440  # daily, at a fixed time
 
 
 class Interface(PythonArgvMachineInterface):

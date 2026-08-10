@@ -497,3 +497,41 @@ def test_check_job_allows_a_run_that_is_legitimately_in_flight():
              mock.patch.object(mod, "check_job_configuration", return_value=None):
             assert mod.check_job(_job()) is None
     print("PASS: a fresh in-flight run is not a failure")
+
+
+def test_parse_interval_every_minute():
+    """A per-minute job must not read as fresh for two hours after it dies."""
+    with tempfile.TemporaryDirectory() as d:
+        mod = _load(Path(d))
+        assert mod.parse_schedule_interval("* * * * *") == 1
+
+
+def test_parse_interval_weekly_is_not_treated_as_daily():
+    """A healthy weekly job was flagged stale after two days."""
+    with tempfile.TemporaryDirectory() as d:
+        mod = _load(Path(d))
+        assert mod.parse_schedule_interval("0 3 * * 1") == 10080
+
+
+def test_parse_interval_rejects_a_malformed_schedule():
+    with tempfile.TemporaryDirectory() as d:
+        mod = _load(Path(d))
+        try:
+            mod.parse_schedule_interval("@daily")
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("a malformed schedule must be rejected")
+
+
+def test_check_job_reports_an_unusable_schedule_instead_of_crashing():
+    with tempfile.TemporaryDirectory() as d:
+        mod = _load(Path(d))
+        log_file = mod.LOG_DIR / "test-job" / "run.log"
+        log_file.parent.mkdir(parents=True)
+        log_file.write_text("x")
+        backend = mock.Mock()
+        with mock.patch.object(mod, "platform_schedule_backend", return_value=backend), \
+             mock.patch.object(mod, "check_job_configuration", return_value=None):
+            reason = mod.check_job(_job(schedule="@daily"))
+        assert reason is not None and "unusable schedule" in reason
