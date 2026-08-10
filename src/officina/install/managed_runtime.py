@@ -598,7 +598,16 @@ def build_candidate_release(
             mode=0o600,
         )
     else:
-        _run_dependency_install(uv_bin=uv_bin, python_bin=python_bin, packages=packages)
+        module_packages = tuple(
+            package
+            for package in packages
+            if not re.match(r"(?i)^(?:pyyaml|setuptools)(?:[<>=!~].*)?$", package)
+        )
+        _run_dependency_install(
+            uv_bin=uv_bin,
+            python_bin=python_bin,
+            packages=(*_CORE_RUNTIME_PACKAGES, *module_packages),
+        )
         _install_officina_self(
             repo_root=repo_root,
             venv_dir=venv_dir,

@@ -281,6 +281,8 @@ def test_build_candidate_release_creates_venv_then_one_batch_pip_install(monkeyp
     assert venv_call == [str(FAKE_UV_BIN), "venv", "--python", "3.11", str(pointer.runtime_source / "venv")]
     assert pip_call[:4] == [str(FAKE_UV_BIN), "pip", "install", "--python"]
     assert pip_call[4] == str(pointer.python_bin)
+    assert "setuptools==80.9.0" in pip_call
+    assert "PyYAML==6.0.2" in pip_call
     assert python_dir_call == [str(FAKE_UV_BIN), "python", "dir"]
     assert pointer.python_bin.exists()
 
