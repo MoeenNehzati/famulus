@@ -25,6 +25,7 @@ def _print_warning(diagnostic: InvocationDiagnostic) -> None:
 
 def parse_cli() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
+        prog="dispatcher",
         description="Invoke a skill machine interface declared in blueprint.yaml.",
         epilog=(
             "Examples:\n"

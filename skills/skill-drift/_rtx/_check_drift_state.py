@@ -83,15 +83,7 @@ def _v4_repository_state(
             schema_root=(
                 root / "references" / "blueprint"
                 if expected_schema_version == 4
-                else (
-                    root
-                    / "references"
-                    / "blueprint"
-                    / "migrations"
-                    / f"v{expected_schema_version}"
-                    if expected_schema_version != 5
-                    else None
-                )
+                else None
             ),
             allow_non_atomic=allow_non_atomic,
         )

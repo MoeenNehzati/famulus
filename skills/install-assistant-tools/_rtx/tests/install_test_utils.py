@@ -241,18 +241,15 @@ def managed_runtime_uv_bin() -> str | None:
     return shutil.which("uv")
 
 
-def build_minimal_managed_runtime_release(*, home: Path, tmp_root: Path) -> None:
-    """Build and activate a real managed-runtime candidate release (empty
-    dependency manifest -- no third-party packages needed) under ``home``,
-    deploying the dependency-free launcher resolver and its trust sidecar as
-    a side effect of build_candidate_release (see officina.install.
-    managed_runtime._deploy_resolver). This makes a generated dispatcher
-    shim's resolver hop succeed; the release venv still has no `officina`
-    package installed (that's a separate, deliberate scope decision -- see
-    _install_scaffold.install_python_packages's docstring), so `dispatcher
-    --help` still fails, but with a ModuleNotFoundError raised by the release
-    interpreter after control has already transferred there, never a
-    resolver-side "no such file" or containment error.
+def build_minimal_managed_runtime_release(
+    *, home: Path, tmp_root: Path, repo_root: Path | None = None
+) -> None:
+    """Build and activate a real managed-runtime candidate release under
+    ``home``, including Officina and the stable dependency-free resolver.
+
+    When ``repo_root`` is provided, this exercises the verified wheel and
+    copied-source provenance path. Otherwise the low-level compatibility path
+    installs the package snapshot containing this helper.
 
     Callers must guard on managed_runtime_uv_bin() first and skip if it is
     None.
@@ -273,6 +270,7 @@ def build_minimal_managed_runtime_release(*, home: Path, tmp_root: Path) -> None
         platform=platform_name,
         uv_bin=Path(uv_bin),
         python_version="3.11",
+        repo_root=repo_root,
     )
 
 

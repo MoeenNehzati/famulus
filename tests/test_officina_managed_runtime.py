@@ -437,6 +437,91 @@ def test_deploy_resolver_writes_through_atomic_replace_bytes_not_plain_copy(monk
     assert os.access(resolver_path, os.X_OK)
 
 
+def test_repo_candidate_installs_verified_officina_wheel_before_activation(monkeypatch, tmp_path):
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / "skills").mkdir()
+    (repo_root / "src" / "officina").mkdir(parents=True)
+    (repo_root / "officina.toml").write_text(
+        'schema_version = 1\n[modules]\nroots = ["skills", "src/officina"]\n',
+        encoding="utf-8",
+    )
+    manifest = repo_root / "runtime_dependencies.json"
+    manifest.write_text('{"version": 2, "skills": {}}', encoding="utf-8")
+    calls: list = []
+    call_kwargs: list[dict] = []
+    fake_run = fake_uv_subprocess_run(
+        calls, trusted_python_dir=tmp_path / "uv-python-store"
+    )
+
+    def recording_run(cmd, **kwargs):
+        call_kwargs.append(dict(kwargs))
+        return fake_run(cmd, **kwargs)
+
+    monkeypatch.setattr("subprocess.run", recording_run)
+    runtime_root = tmp_path / "runtime"
+
+    pointer = build_candidate_release(
+        runtime_root=runtime_root,
+        manifest_path=manifest,
+        platform="linux",
+        uv_bin=FAKE_UV_BIN,
+        python_version="3.11",
+        repo_root=repo_root,
+    )
+
+    build_index = next(i for i, call in enumerate(calls) if call[1] == "build")
+    install_indices = [i for i, call in enumerate(calls) if call[1:3] == ["pip", "install"]]
+    probe_indices = [i for i, call in enumerate(calls) if len(call) > 1 and call[1] == "-I"]
+    assert install_indices[0] < build_index < install_indices[1] < min(probe_indices)
+    assert "PyYAML==6.0.2" in calls[install_indices[0]]
+    assert "setuptools==80.9.0" in calls[install_indices[0]]
+    assert any(value.endswith(".whl") for value in calls[install_indices[1]])
+    for index in probe_indices:
+        assert "PYTHONPATH" not in call_kwargs[index]["env"]
+        assert call_kwargs[index]["env"]["PYTHONNOUSERSITE"] == "1"
+    metadata = json.loads((pointer.runtime_source / "artifact.json").read_text())
+    assert metadata["wheel"] == "famulus_officina-0.1.0-py3-none-any.whl"
+    assert len(metadata["wheel_sha256"]) == 64
+    assert metadata["source_revision"] == "a" * 40
+    assert pointer.repository_config == (repo_root / "officina.toml").resolve()
+
+
+def test_invalid_repository_config_preserves_prior_pointer(monkeypatch, tmp_path):
+    calls: list = []
+    monkeypatch.setattr(
+        "subprocess.run",
+        fake_uv_subprocess_run(calls, trusted_python_dir=tmp_path / "uv-python-store"),
+    )
+    runtime_root = tmp_path / "runtime"
+    manifest = tmp_path / "runtime_dependencies.json"
+    manifest.write_text('{"version": 2, "skills": {}}', encoding="utf-8")
+    prior = build_candidate_release(
+        runtime_root=runtime_root,
+        manifest_path=manifest,
+        platform="linux",
+        uv_bin=FAKE_UV_BIN,
+        python_version="3.11",
+    )
+    prior_pointer = (runtime_root / "current.json").read_bytes()
+    bad_repo = tmp_path / "bad-repo"
+    bad_repo.mkdir()
+    (bad_repo / "officina.toml").write_text("schema_version = 999\n", encoding="utf-8")
+
+    with pytest.raises(ManagedRuntimeError, match="repository configuration"):
+        build_candidate_release(
+            runtime_root=runtime_root,
+            manifest_path=manifest,
+            platform="linux",
+            uv_bin=FAKE_UV_BIN,
+            python_version="3.11",
+            repo_root=bad_repo,
+        )
+
+    assert (runtime_root / "current.json").read_bytes() == prior_pointer
+    assert prior.python_bin.exists()
+
+
 # famulus-skip: category=capability-unavailable; reason=requires a real uv binary on PATH; alternate=mocked tests above cover call shapes and ordering without uv installed
 @pytest.mark.skipif(UV_BIN is None, reason="uv is not installed on this machine")
 def test_build_candidate_release_end_to_end_with_real_uv(tmp_path):

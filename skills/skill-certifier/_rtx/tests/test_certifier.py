@@ -286,14 +286,14 @@ def _add_cross_owner_contract(repo: Path):
     )
 
 
-def _as_v5_graph(graph):
+def _as_v6_graph(graph):
     return replace(
         graph,
-        schema_version=5,
+        schema_version=6,
         nodes={
             node_id: replace(
                 node,
-                declaration={**node.declaration, "schema_version": 5},
+                declaration={**node.declaration, "schema_version": 6},
             )
             for node_id, node in graph.nodes.items()
         },
@@ -1463,7 +1463,7 @@ def test_public_certification_resolves_one_target_without_hash_dispatch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     legacy_graph, _states, commit = create_v4_repository(tmp_path)
-    graph = _as_v5_graph(legacy_graph)
+    graph = _as_v6_graph(legacy_graph)
     calls: list[dict[str, object]] = []
 
     def issue(repo_root: Path, **kwargs: object):
@@ -1495,6 +1495,8 @@ def test_public_certification_resolves_one_target_without_hash_dispatch(
     assert len(calls) == 1
     assert calls[0]["repo_root"] == tmp_path.resolve()
     assert calls[0]["allow_non_atomic"] is False
+    assert calls[0]["expected_schema_version"] == 6
+    assert calls[0]["schema_root"] == tmp_path / "references" / "blueprint"
     assert set(calls[0]["target_node_ids"]) == {
         node_id
         for node_id, node in graph.nodes.items()
@@ -1517,7 +1519,7 @@ def test_public_certification_propagates_explicit_non_atomic_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     legacy_graph, _states, commit = create_v4_repository(tmp_path)
-    graph = _as_v5_graph(legacy_graph)
+    graph = _as_v6_graph(legacy_graph)
     calls: list[dict[str, object]] = []
 
     def issue(_repo_root: Path, **kwargs: object):
@@ -1557,7 +1559,7 @@ def test_public_certification_without_targets_selects_all_reviewed_modules(
         tmp_path,
         extra_modules=("other-skill",),
     )
-    graph = _as_v5_graph(legacy_graph)
+    graph = _as_v6_graph(legacy_graph)
     expected_modules = tuple(
         sorted(
             node.node_id
@@ -1696,7 +1698,7 @@ def test_public_mechanical_gate_precedes_route_audit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     legacy_graph, _states, commit = create_v4_repository(tmp_path)
-    graph = _as_v5_graph(legacy_graph)
+    graph = _as_v6_graph(legacy_graph)
     events: list[str] = []
 
     def issue(_repo_root: Path, **kwargs: object):
@@ -1735,7 +1737,7 @@ def test_public_certification_has_no_mechanical_bypass(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     legacy_graph, _states, commit = create_v4_repository(tmp_path)
-    graph = _as_v5_graph(legacy_graph)
+    graph = _as_v6_graph(legacy_graph)
     signed = False
 
     def fail_mechanical(_repo_root: Path) -> certifier.CommandResult:

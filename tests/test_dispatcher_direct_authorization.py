@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+import officina.dispatcher as dispatcher_package
 from officina.common.repository_configuration import RepositoryConfiguration
 from officina.dispatcher.direct_authorization import resolve_direct_invocation
 from officina.dispatcher.direct_runtime import (
@@ -23,6 +24,10 @@ from officina.dispatcher.errors import (
 INTERFACE_ID = "root.alpha.leaf.interface.execute"
 SOURCE_ID = "root.alpha.leaf.source.runtime"
 SOURCE_INTERFACE_ID = f"{SOURCE_ID}.interface.execute"
+
+
+def test_dispatcher_package_exports_direct_resolver() -> None:
+    assert dispatcher_package.resolve_direct_invocation is resolve_direct_invocation
 
 
 def _access(*callers: str, public: bool = False) -> dict[str, object]:

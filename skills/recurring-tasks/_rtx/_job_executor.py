@@ -17,11 +17,11 @@ from pathlib import Path
 SKILL_DIR = Path(__file__).parent
 REPO_ROOT = SKILL_DIR.parents[2]
 SRC_DIR = REPO_ROOT / "src"
-if not __package__ and str(SRC_DIR) not in sys.path:
+if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 RTX_DIR = Path(__file__).resolve().parent
-if not __package__ and str(RTX_DIR) not in sys.path:
+if str(RTX_DIR) not in sys.path:
     sys.path.insert(0, str(RTX_DIR))
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface

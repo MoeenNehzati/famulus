@@ -148,18 +148,10 @@ class ClaudeGithubInstallTests(unittest.TestCase):
                 repo_root=installed_path,
             )
             plugin_env = prepend_path(plugin_env, scaffold_bin)
-            if managed_runtime_uv_bin() is None:
-                # famulus-skip: category=capability-unavailable; reason=building a real managed-runtime release requires a real uv binary; alternate=tests/test_officina_managed_runtime.py and tests/test_officina_launcher_entry.py cover the build+deploy+resolver flow directly
-                self.skipTest("uv is not installed on this machine")
-            build_minimal_managed_runtime_release(home=home, tmp_root=tmp_root)
             dispatcher_result = run_command(
-                ["dispatcher", "--help"], env=plugin_env, check=False
+                ["dispatcher", "--help"], env=plugin_env
             )
-            self.assertNotEqual(dispatcher_result.returncode, 0)
-            self.assertNotIn("No such file or directory", dispatcher_result.stderr)
-            self.assertNotIn("famulus launcher:", dispatcher_result.stderr)
-            self.assertIn("ModuleNotFoundError", dispatcher_result.stderr)
-            self.assertIn("officina", dispatcher_result.stderr)
+            self.assertIn("usage: dispatcher", dispatcher_result.stdout.lower())
 
             # Claude exposes hook_started/hook_response events before auth
             # failure, so this is a real session-attachment check. Codex's

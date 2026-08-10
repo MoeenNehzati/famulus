@@ -100,6 +100,10 @@ def fake_uv_subprocess_run(calls: list, *, trusted_python_dir: Path, windows: bo
                 (venv_dir / "bin" / "python").write_text("#!/bin/sh\n")
         elif cmd[1:3] == ["python", "dir"]:
             return FakeCompletedProcess(stdout=str(trusted_python_dir) + "\n")
+        elif cmd[1] == "build":
+            artifact_dir = Path(cmd[cmd.index("--out-dir") + 1])
+            artifact_dir.mkdir(parents=True, exist_ok=True)
+            (artifact_dir / "famulus_officina-0.1.0-py3-none-any.whl").write_bytes(b"wheel")
         return FakeCompletedProcess()
 
     return fake_run

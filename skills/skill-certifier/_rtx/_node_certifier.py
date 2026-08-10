@@ -1613,7 +1613,7 @@ def _certify_v4_repository(
     allow_non_atomic: bool = False,
     require_candidate_execution: bool = False,
     require_migration_review: bool = False,
-    expected_schema_version: int = 5,
+    expected_schema_version: int = 6,
     schema_root: Path | None = None,
 ) -> V4CertificationResult:
     """_certify_v4_repository issues signed certificates for selected v4 or v5 nodes.
@@ -1872,12 +1872,8 @@ officina.common.git_provenance.run_git:
         if schema_root is not None
         else (
             root / "references" / "blueprint"
-            if expected_schema_version == 5
-            else root
-            / "references"
-            / "blueprint"
-            / "migrations"
-            / f"v{expected_schema_version}"
+            if expected_schema_version == 6
+            else root / "references" / "blueprint" / "migrations" / f"v{expected_schema_version}"
         )
     )
     policy_path = root / CANONICAL_NODE_HASH_POLICY
@@ -3426,7 +3422,7 @@ def certify(
 
     Intent
     ------
-    Require reviewed repository inputs, load the v5 graph, resolve requested modules, run mechanical checks, invoke the writer, and shape outcomes.
+    Require reviewed repository inputs, load the v6 graph, resolve requested modules, run mechanical checks, invoke the writer, and shape outcomes.
 
     Rationale
     ---------
@@ -3458,7 +3454,7 @@ def certify(
     ----------------------
     .CertificationError:
       why:
-        raises: "Missing reviewed inputs, non-v5 graphs, private-writer failure, or incomplete issuance leave as typed API rejections."
+        raises: "Missing reviewed inputs, non-v6 graphs, private-writer failure, or incomplete issuance leave as typed API rejections."
     .CertificationOutcome:
       why:
         constructs: "Module-level outcomes are returned to CLI rendering or JSON output."
@@ -3476,7 +3472,7 @@ def certify(
         constructs: "Validator command evidence is returned alongside certification outcomes."
     officina.common.blueprint_graph.load_repository_blueprint_graph:
       why:
-        constructs: "The reviewed v5 graph drives target resolution and outcome path lookup."
+        constructs: "The reviewed v6 graph drives target resolution and outcome path lookup."
     """
 
     if reviewed_repository is None or reviewed_commit is None:
@@ -3488,13 +3484,13 @@ def certify(
     graph = load_repository_blueprint_graph(
         repository,
         schema_root=repository / "references" / "blueprint",
-        expected_schema_version=5,
+        expected_schema_version=6,
     )
     if any(
-        node.declaration.get("schema_version") != 5
+        node.declaration.get("schema_version") != 6
         for node in graph.nodes.values()
     ):
-        raise CertificationError("certification accepts only an all-v5 repository")
+        raise CertificationError("certification accepts only an all-v6 repository")
 
     resolved = resolve_reviewed_repository_targets(graph, targets)
 
@@ -3509,7 +3505,7 @@ def certify(
             )
         )
         if not node_ids:
-            raise CertificationError(f"{target.node_id}: module owns no v4 nodes")
+            raise CertificationError(f"{target.node_id}: module owns no certifiable nodes")
         target_nodes_by_module[target.node_id] = node_ids
         requested_node_ids.update(node_ids)
 
@@ -3525,7 +3521,7 @@ def certify(
         allow_non_atomic=allow_non_atomic,
         require_candidate_execution=True,
         require_migration_review=False,
-        expected_schema_version=5,
+        expected_schema_version=6,
         schema_root=repository / "references" / "blueprint",
     )
     written = set(result.node_ids)

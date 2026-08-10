@@ -9,6 +9,7 @@ __all__ = [
     "ResolvedInvocation",
     "ResolvedInvocationMetadata",
     "dispatch",
+    "resolve_direct_invocation",
     "resolve_dispatch",
     "resolve_dispatch_metadata",
 ]

@@ -253,9 +253,11 @@ def test_default_public_key_location_is_certifier_owned(tmp_path: Path) -> None:
     )
 
 
-def test_v5_drift_derivation_selects_shadow_contract_explicitly(
+@pytest.mark.parametrize("schema_version", (5, 6))
+def test_drift_derivation_delegates_schema_selection_to_canonical_owner(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    schema_version: int,
 ) -> None:
     observed = []
     derived = SimpleNamespace(
@@ -278,7 +280,7 @@ def test_v5_drift_derivation_selects_shadow_contract_explicitly(
 
     result = checker._v4_repository_state(
         tmp_path,
-        expected_schema_version=5,
+        expected_schema_version=schema_version,
     )
 
     assert result[0] == "graph"
@@ -286,7 +288,7 @@ def test_v5_drift_derivation_selects_shadow_contract_explicitly(
         (
             tmp_path.resolve(),
             {
-                "expected_schema_version": 5,
+                "expected_schema_version": schema_version,
                 "schema_root": None,
                 "allow_non_atomic": False,
             },

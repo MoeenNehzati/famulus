@@ -29,6 +29,7 @@ from officina.install.runtime_pointer import RuntimePointer, activate_release
 _VERSION_OPERATOR_RE = re.compile(r"^(==|>=|<=|!=|~=|>|<)")
 
 _DEFAULT_DEPENDENCY_INSTALL_TIMEOUT_SECONDS = 600
+_CORE_RUNTIME_PACKAGES = ("setuptools==80.9.0", "PyYAML==6.0.2")
 
 
 def _dependency_install_timeout_seconds() -> float:
@@ -507,18 +508,18 @@ def build_candidate_release(
     include_optional_dependencies: bool = True,
 ) -> RuntimePointer:
     """Create a new release directory, provision its managed interpreter,
-    install its declared Python dependencies in a single atomic batch,
-    install officina itself into the venv, and activate the release.
+    install its declared Python dependencies, install Officina, verify the
+    candidate when a repository is explicit, and activate the release.
 
     ``python_version`` should be the pinned ``managed_python.preferred``
     value from install-info.toml (see officina.install.install_info); it is
     passed straight through to ``uv venv --python``.
 
-    ``repo_root`` is the checkout whose ``src/officina`` gets copied into the
-    release venv (see ``_install_officina_self``). Defaults to the repo this
-    very module lives in, which is correct for plugin-mode installs (no
-    separate live checkout) and for callers that don't otherwise care; a
-    dev-mode install passes the user's explicit checkout path instead.
+    Production callers pass ``repo_root`` explicitly. That path is validated,
+    built as a wheel, installed, probed in isolation, and recorded by wheel
+    digest plus Git revision or copied-source fingerprint. The omitted-root
+    compatibility path retains the target branch's direct package-copy
+    behavior for low-level callers.
 
     ``include_optional_dependencies`` controls whether large, single-skill
     packages (see ``_OPTIONAL_HEAVY_PACKAGE_NAMES``) are installed. Defaults
@@ -527,12 +528,13 @@ def build_candidate_release(
     choice to ``False`` and passes the result through explicitly.
 
     On any failure (bad manifest, failed venv creation, failed batch
-    install, failed officina self-install, or failed resolver deployment),
-    no release is activated: current.json is left untouched and no new
-    pointer is written. The dependency-free launcher resolver and its trust
-    sidecar are deployed *before* activation for exactly this reason: a
-    deployment failure must prevent activation, not follow it.
+    install, failed Officina build or validation, failed self-install, or
+    failed resolver deployment), no release is activated: current.json is
+    left untouched and no new pointer is written. The dependency-free launcher
+    resolver and its trust sidecar are deployed *before* activation for exactly
+    this reason: a deployment failure must prevent activation, not follow it.
     """
+    explicit_repo_root = repo_root is not None
     if repo_root is None:
         repo_root = Path(__file__).resolve().parents[3]
     repo_root = Path(repo_root).resolve()
@@ -547,8 +549,62 @@ def build_candidate_release(
     python_bin = _venv_python_bin(venv_dir, platform=platform)
 
     _create_release_venv(uv_bin=uv_bin, venv_dir=venv_dir, python_version=python_version)
-    _run_dependency_install(uv_bin=uv_bin, python_bin=python_bin, packages=packages)
-    _install_officina_self(repo_root=repo_root, venv_dir=venv_dir, platform=platform, python_version=python_version)
+    if explicit_repo_root:
+        try:
+            from officina.common.repository_configuration import load_repository_configuration
+
+            load_repository_configuration(repository_config)
+        except Exception as exc:
+            raise ManagedRuntimeError(f"invalid repository configuration: {exc}") from exc
+        _run_dependency_install(
+            uv_bin=uv_bin,
+            python_bin=python_bin,
+            packages=_CORE_RUNTIME_PACKAGES,
+        )
+        wheel, wheel_sha256, source_revision = _build_officina_wheel(
+            uv_bin=uv_bin,
+            python_bin=python_bin,
+            repo_root=repo_root,
+            artifact_dir=release_dir / "artifacts",
+        )
+        _run_dependency_install(
+            uv_bin=uv_bin,
+            python_bin=python_bin,
+            packages=(str(wheel),),
+        )
+        module_packages = tuple(
+            package
+            for package in packages
+            if not re.match(r"(?i)^(?:pyyaml|setuptools)(?:[<>=!~].*)?$", package)
+        )
+        _run_dependency_install(
+            uv_bin=uv_bin,
+            python_bin=python_bin,
+            packages=module_packages,
+        )
+        _validate_candidate_runtime(python_bin=python_bin)
+        atomic_files.atomic_replace_bytes(
+            release_dir / "artifact.json",
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "wheel": wheel.name,
+                    "wheel_sha256": wheel_sha256,
+                    "source_revision": source_revision,
+                },
+                indent=2,
+            ).encode("utf-8"),
+            allowed_root=release_dir,
+            mode=0o600,
+        )
+    else:
+        _run_dependency_install(uv_bin=uv_bin, python_bin=python_bin, packages=packages)
+        _install_officina_self(
+            repo_root=repo_root,
+            venv_dir=venv_dir,
+            platform=platform,
+            python_version=python_version,
+        )
 
     trusted_interpreter_roots = (_uv_python_install_dir(uv_bin),)
     _deploy_resolver(runtime_root=runtime_root, trusted_interpreter_roots=trusted_interpreter_roots)
