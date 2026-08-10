@@ -100,6 +100,15 @@ class ScheduleBackend(Protocol):
     def check_job_active(self, job_name: str) -> bool:
         """Return whether a scheduled job is active/enabled in the host scheduler."""
 
+    def job_search_dirs(self) -> list[Path] | None:
+        """Directories a scheduled job resolves commands from.
+
+        ``None`` means this scheduler does not set a PATH for its jobs, so the
+        job inherits the ambient one and the caller should fall back to it.
+        Backends that DO pin a job PATH must derive this from the same
+        expression that renders it, so the two cannot drift apart.
+        """
+
 
 def schedule_jobs_from_mappings(jobs: list[Mapping[str, object]]) -> list[ScheduleJob]:
     return [ScheduleJob.from_mapping(job) for job in jobs]

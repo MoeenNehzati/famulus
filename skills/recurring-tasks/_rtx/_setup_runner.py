@@ -64,8 +64,18 @@ def _default_bin_dir(home: Path) -> Path:
     return home / "Documents" / "scripts" / "bin"
 
 
+class CrontabUnreadableError(RuntimeError):
+    """The existing crontab could not be read, so it must not be rewritten."""
+
+
+# vixie-cron / cronie report an absent table as "no crontab for <user>". Any
+# other nonzero result means we failed to READ an existing table, which is a
+# different thing entirely.
+_NO_CRONTAB_MARKER = "no crontab for"
+
+
 def _read_crontab() -> str:
-    """Read the current user's crontab or return empty text when absent.
+    """Read the current user's crontab, or return empty text when there is none.
 
     Intent
     ------
@@ -73,14 +83,20 @@ def _read_crontab() -> str:
 
     Rationale
     ---------
-    Crontab reports a missing table through a nonzero status, which setup treats as an empty starting state.
+    "No crontab exists" and "the crontab could not be read" are both reported by a nonzero
+    status, but they must not be treated alike: the merge writes back whatever this returns,
+    so mapping a read FAILURE to empty text silently deletes every unrelated entry the user
+    has -- backups, sync jobs, everything. Only the recognised absent-table message is
+    treated as empty; anything else refuses to proceed.
 
     Pseudocode
     ----------
     - set result = run crontab_list
-    - if result failed:
+    - if result succeeded:
+      - return crontab_text
+    - if result reported an absent table:
       - return empty_text
-    - return crontab_text
+    - raise crontab_unreadable
 
     Wraps
     -----
@@ -94,9 +110,17 @@ def _read_crontab() -> str:
         errors="strict",
         check=False,
     )
-    if result.returncode != 0:
+    if result.returncode == 0:
+        return result.stdout
+
+    stderr = (result.stderr or "").strip()
+    if _NO_CRONTAB_MARKER in stderr.lower():
         return ""
-    return result.stdout
+
+    raise CrontabUnreadableError(
+        "refusing to rewrite the crontab: could not read the existing one "
+        f"(exit {result.returncode}): {stderr or 'no error output'}"
+    )
 
 
 def _write_crontab(content: str) -> None:

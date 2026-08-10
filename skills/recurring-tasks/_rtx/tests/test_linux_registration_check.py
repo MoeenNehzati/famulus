@@ -55,6 +55,9 @@ def test_detects_service_and_timer_drift(tmp_path):
         backend_name=backend.name, job=job, context=context
     ) is None
 
+    # A service whose ExecStart points at a jobs.yaml that no longer exists is
+    # the case this check exists for: systemd would fail to exec it, and
+    # nothing else notices until the log goes stale a full interval later.
     service = tmp_path / "ai-my-job.service"
     service.write_text(
         service.read_text().replace(str(context.jobs_file), "/stale/jobs.yaml")

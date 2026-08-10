@@ -152,3 +152,75 @@ def test_run_setup_uses_python_runtimes_and_scheduler_backend(tmp_path, monkeypa
     install_cron.assert_called_once()
     assert install_cron.call_args.kwargs["migrate_cron"] is True
     backend.status.assert_called_once()
+
+
+def _crontab_result(returncode: int, stdout: str = "", stderr: str = ""):
+    return mock.Mock(returncode=returncode, stdout=stdout, stderr=stderr)
+
+
+def test_read_crontab_returns_existing_table():
+    with mock.patch.object(
+        setup_runner.subprocess,
+        "run",
+        return_value=_crontab_result(0, stdout="0 5 * * * backup.sh\n"),
+    ):
+        assert setup_runner._read_crontab() == "0 5 * * * backup.sh\n"
+
+
+def test_read_crontab_treats_absent_table_as_empty():
+    with mock.patch.object(
+        setup_runner.subprocess,
+        "run",
+        return_value=_crontab_result(1, stderr="no crontab for someuser"),
+    ):
+        assert setup_runner._read_crontab() == ""
+
+
+def test_read_crontab_refuses_to_guess_when_the_table_cannot_be_read():
+    """A read failure must never be mistaken for "there is no crontab".
+
+    install_healthcheck_cron writes back whatever _read_crontab returns, so
+    mapping an unreadable table to "" silently deletes every unrelated entry
+    the user has -- backup jobs, sync jobs, everything.
+    """
+    for returncode, stderr in (
+        (1, "crontab: you (someuser) are not allowed to use this program"),
+        (1, "/var/spool/cron/crontabs/someuser: Permission denied"),
+        (2, ""),
+    ):
+        with mock.patch.object(
+            setup_runner.subprocess,
+            "run",
+            return_value=_crontab_result(returncode, stderr=stderr),
+        ):
+            try:
+                setup_runner._read_crontab()
+            except setup_runner.CrontabUnreadableError as exc:
+                assert "refusing to rewrite" in str(exc)
+            else:
+                raise AssertionError(
+                    f"expected refusal for rc={returncode} stderr={stderr!r}"
+                )
+
+
+def test_install_healthcheck_cron_does_not_write_when_crontab_unreadable(tmp_path):
+    """The wipe scenario, end to end: nothing may be written."""
+    written: list[str] = []
+    with mock.patch.object(
+        setup_runner,
+        "_read_crontab",
+        side_effect=setup_runner.CrontabUnreadableError("boom"),
+    ), mock.patch.object(setup_runner, "_write_crontab", side_effect=written.append):
+        try:
+            setup_runner.install_healthcheck_cron(
+                skill_root=tmp_path / "skill",
+                runtime_resolver=tmp_path / "runtime" / "launch.py",
+                healthcheck=tmp_path / "skill" / "_rtx" / "_healthcheck_probe.py",
+                uid=1000,
+            )
+        except setup_runner.CrontabUnreadableError:
+            pass
+        else:
+            raise AssertionError("install should not swallow an unreadable crontab")
+
+    assert written == [], f"crontab was rewritten despite being unreadable: {written}"

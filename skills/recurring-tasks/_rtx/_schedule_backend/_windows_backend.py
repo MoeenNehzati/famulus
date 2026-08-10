@@ -314,6 +314,10 @@ class WindowsScheduleBackend:
     def get_agent_command_template(self) -> str | None:
         return os.environ.get("AI_AGENT_COMMAND_TEMPLATE")
 
+    def job_search_dirs(self) -> list[Path] | None:
+        """schtasks jobs inherit the ambient PATH; nothing is pinned here."""
+        return None
+
     def check_job_active(self, job_name: str) -> bool:
         result = subprocess.run(
             ["schtasks", "/Query", "/TN", task_name(job_name)],

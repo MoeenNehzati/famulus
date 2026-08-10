@@ -225,6 +225,10 @@ class OSXScheduleBackend:
     def get_agent_command_template(self) -> str | None:
         return os.environ.get("AI_AGENT_COMMAND_TEMPLATE")
 
+    def job_search_dirs(self) -> list[Path] | None:
+        """launchd jobs inherit the ambient PATH; nothing is pinned here."""
+        return None
+
     def check_job_active(self, job_name: str) -> bool:
         result = subprocess.run(
             ["launchctl", "print", f"{self._target()}/{launchd_label(job_name)}"],

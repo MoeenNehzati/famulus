@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Tests for sync_units.py: unit file generation and cron->systemd conversion."""
 import tempfile, os
-import shutil
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from test_support.runtime_module import load_runtime_module
 
@@ -180,7 +179,18 @@ def test_no_per_job_runner_scripts_written():
 
 
 def test_service_runs_python_executor_without_shell(monkeypatch):
-    monkeypatch.setattr(shutil, "which", lambda _name: "/opt/famulus/bin/invoke-skill")
+    # Patch the install-layout lookup, not HOME: Path.home() ignores HOME on
+    # Windows and win32's user_bin is LOCALAPPDATA-based, so a home-driven
+    # fixture would assert a Linux-only layout on all three CI legs.
+    expected_bin = "/opt/famulus/bin"
+    _load()  # ensures the skill dir is importable before reaching the backend
+    if __package__ and __package__.count(".") >= 1:
+        from .._schedule_backend import _linux_backend
+    else:
+        from _schedule_backend import _linux_backend
+    monkeypatch.setattr(
+        _linux_backend, "_launcher_bin_dir", lambda: PurePosixPath(expected_bin)
+    )
     with tempfile.TemporaryDirectory() as d:
         _run_sync(JOBS_ONE_ENABLED, d)
         content = (Path(d) / "ai-test-job.service").read_text()
@@ -190,7 +200,7 @@ def test_service_runs_python_executor_without_shell(monkeypatch):
         assert sys.executable not in content
         assert 'ExecStart="' in content
         assert "bootstrap/resolvers/v1/launch.py" in content
-        assert 'Environment="PATH=/opt/famulus/bin:' in content
+        assert f'Environment="PATH={expected_bin}:' in content
         assert 'Environment="DBUS_SESSION_BUS_ADDRESS=unix:path=%t/bus"' in content
         assert '_job_executor.py" --jobs-file' in content
         assert "/bin/bash" not in content

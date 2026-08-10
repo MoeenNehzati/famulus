@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import json
 import os
 import re
 import shlex
@@ -102,6 +103,36 @@ def resolve_executable(argv: list[str], env: dict[str, str], *, platform: str = 
     return [resolved, *argv[1:]]
 
 
+# No job may run unbounded. The systemd units carry TimeoutStartUSec=infinity
+# and RuntimeMaxUSec=infinity, so before this the only bound on a hung agent
+# was the heat death of the session. One hour is far above these jobs' real
+# durations (email-triage ~2min, daily-plan ~1min).
+JOB_TIMEOUT_SECONDS = 3600
+# Out-of-range sentinel, like SPAWN_FAILURE_EXIT_CODE, so it cannot be
+# confused with a real exit code or a negated signal number.
+TIMEOUT_EXIT_CODE = -1001
+
+RUNNING_MARKER_NAME = "running.json"
+
+
+def running_marker_path(*, log_dir: Path, job_name: str) -> Path:
+    return log_dir / job_name / RUNNING_MARKER_NAME
+
+
+def _write_running_marker(
+    *, log_dir: Path, job_name: str, started_at: str, run_id: str
+) -> Path:
+    """Record that a run is in flight; removed only on normal completion."""
+    marker = running_marker_path(log_dir=log_dir, job_name=job_name)
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(
+        json.dumps({"job_name": job_name, "started_at": started_at, "run_id": run_id})
+        + "\n",
+        encoding="utf-8",
+    )
+    return marker
+
+
 def run_job(*, jobs_file: Path, job_name: str, log_dir: Path = LOG_DIR) -> int:
     job = load_job(jobs_file, job_name)
     command = str(job["command"]).replace("{skill_dir}", str(SKILL_DIR))
@@ -123,7 +154,18 @@ def run_job(*, jobs_file: Path, job_name: str, log_dir: Path = LOG_DIR) -> int:
         log.write("--- RUN START ---\n")
         log.flush()
 
+        # An in-flight marker, removed only on normal completion. If the
+        # executor is killed (systemd stop, OOM, reboot, suspend mid-run) no
+        # run record is ever written, but "--- RUN START ---" above has
+        # already refreshed run.log's mtime -- which is the freshness signal
+        # the health check reads. Without this marker that job reports
+        # HEALTHY forever while never completing.
+        marker = _write_running_marker(
+            log_dir=log_dir, job_name=job_name, started_at=started_at, run_id=run_id
+        )
+
         spawn_error: OSError | None = None
+        timed_out = False
         try:
             result = subprocess.run(
                 resolved_argv,
@@ -134,7 +176,12 @@ def run_job(*, jobs_file: Path, job_name: str, log_dir: Path = LOG_DIR) -> int:
                 errors="replace",
                 env=env,
                 check=False,
+                timeout=JOB_TIMEOUT_SECONDS,
             )
+        except subprocess.TimeoutExpired:
+            # subprocess.run has already killed the child by this point.
+            timed_out = True
+            result = None
         except OSError as exc:
             # The child process never spawned at all (missing/misconfigured
             # executable, permission denied, etc.) -- this is a real,
@@ -147,7 +194,15 @@ def run_job(*, jobs_file: Path, job_name: str, log_dir: Path = LOG_DIR) -> int:
 
         finished_at = _utc_now_iso()
 
-        if spawn_error is not None:
+        if timed_out:
+            process_exit_code = TIMEOUT_EXIT_CODE
+            inner_status = None
+            evaluation = SuccessEvaluation(
+                success=False,
+                reason=f"job exceeded its {JOB_TIMEOUT_SECONDS}s timeout and was killed",
+            )
+            log.write(f"--- process killed after {JOB_TIMEOUT_SECONDS}s timeout ---\n")
+        elif spawn_error is not None:
             # SPAWN_FAILURE_EXIT_CODE (-1000) is a deliberately
             # out-of-range sentinel -- see its definition in _run_record.py
             # -- so it can't be misread as "killed by signal N" the way a
@@ -184,6 +239,10 @@ def run_job(*, jobs_file: Path, job_name: str, log_dir: Path = LOG_DIR) -> int:
 
         log.write(f"--- RUN END (success={evaluation.success}) ---\n")
         log.flush()
+
+    # Only a run that reached this point completed. A killed executor leaves
+    # the marker behind, which is exactly what makes the failure visible.
+    marker.unlink(missing_ok=True)
 
     return process_exit_code
 

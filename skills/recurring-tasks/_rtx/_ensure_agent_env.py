@@ -18,6 +18,12 @@ from pathlib import Path
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
+if __package__:
+    from ._schedule_backend._linux_backend import _session_env
+else:  # invoked directly by path, as the systemd units and dispatcher do
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from _schedule_backend._linux_backend import _session_env  # noqa: E402
+
 
 def log(msg: str = "") -> None:
     print(msg, flush=True)
@@ -55,15 +61,34 @@ def install_ai_agent_env(home: Path, dry_run: bool) -> None:
         return
 
     if shutil.which("systemctl"):
+        # Use the same derived session environment as the reader half of this
+        # variable (_linux_backend._session_env). Without it, running setup
+        # from cron or a non-login ssh session makes is-active fail, silently
+        # skips set-environment, and leaves the manager without the very
+        # variable the health check then reports as "not set".
+        session_env = _session_env()
         result = subprocess.run(
             ["systemctl", "--user", "is-active", "default.target"],
             capture_output=True,
+            env=session_env,
         )
-        if result.returncode == 0:
-            subprocess.run(
-                ["systemctl", "--user", "set-environment",
-                 "AI_AGENT_COMMAND_TEMPLATE=invoke-skill {skill}"],
-                check=False,
+        if result.returncode != 0:
+            log(
+                "Note: systemd user manager not reachable "
+                f"({result.stderr.decode('utf-8', 'replace').strip() or 'no detail'}) "
+                "— AI_AGENT_COMMAND_TEMPLATE not set in the live session."
+            )
+            return
+        applied = subprocess.run(
+            ["systemctl", "--user", "set-environment",
+             "AI_AGENT_COMMAND_TEMPLATE=invoke-skill {skill}"],
+            capture_output=True,
+            env=session_env,
+        )
+        if applied.returncode != 0:
+            log(
+                "Warning: could not set AI_AGENT_COMMAND_TEMPLATE: "
+                f"{applied.stderr.decode('utf-8', 'replace').strip() or 'no detail'}"
             )
 
 
