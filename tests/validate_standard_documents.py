@@ -67,6 +67,48 @@ def test_repository_validation_prepares_the_v6_schema_once(tmp_path, monkeypatch
     assert preparation_count == 1
 
 
+def test_repository_validation_does_not_reuse_standard_import_cache(
+    tmp_path, monkeypatch
+):
+    repo = _copy_standard_repo(tmp_path)
+    validator = _load_validator()
+    original_load_tool = validator._load_tool
+    top_level_caches = []
+
+    def load_tool_with_observed_cache(repo_root, module_name):
+        module = original_load_tool(repo_root, module_name)
+        if module_name != "validate_standard_v6":
+            return module
+        original_validate_file = module.validate_file
+
+        def validate_file(
+            path,
+            root=None,
+            cache=None,
+            _stack=None,
+            _schema_validator=None,
+        ):
+            if _stack is None:
+                top_level_caches.append(cache)
+            return original_validate_file(
+                path,
+                root,
+                cache,
+                _stack,
+                _schema_validator,
+            )
+
+        module.validate_file = validate_file
+        return module
+
+    monkeypatch.setattr(validator, "_load_tool", load_tool_with_observed_cache)
+
+    assert validator.validate(repo) == []
+    assert top_level_caches
+    materialized = [cache for cache in top_level_caches if cache is not None]
+    assert len({id(cache) for cache in materialized}) == len(materialized)
+
+
 def test_accepts_utf8_standards_and_crlf_views_under_windows_default_encoding(
     tmp_path, monkeypatch
 ):

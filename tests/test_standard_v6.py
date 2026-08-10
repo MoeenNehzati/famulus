@@ -407,6 +407,61 @@ def _write_standard(path: Path, value: dict) -> None:
     path.write_text(yaml.safe_dump(value, sort_keys=False))
 
 
+def test_validate_file_cache_findings_depend_on_traversal_context(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "repo"
+    a_path = root / "references" / "standards" / "a.standard.yaml"
+    b_path = root / "references" / "standards" / "b.standard.yaml"
+    a = document()
+    a["id"] = "a"
+    a["canonical_path"] = "references/standards/a.standard.yaml"
+    b = document()
+    b["id"] = "b"
+    b["canonical_path"] = "references/standards/b.standard.yaml"
+    for value, imported_id, imported_path in (
+        (a, "b", "references/standards/b.standard.yaml"),
+        (b, "a", "references/standards/a.standard.yaml"),
+    ):
+        value["artifacts"]["imported-standard"] = {
+            "path": imported_path,
+            "format": "yaml",
+            "roles": ["other"],
+        }
+        value["imports"] = {
+            "imported": {
+                "standard_id": imported_id,
+                "standard_version": "1.0.0",
+                "revision": 1,
+                "digest": "sha256:" + "0" * 64,
+                "artifact": {"kind": "artifact", "ref": "imported-standard"},
+            }
+        }
+    _write_standard(a_path, a)
+    _write_standard(b_path, b)
+
+    class ZeroDigest:
+        def hexdigest(self) -> str:
+            return "0" * 64
+
+    class HashlibDouble:
+        @staticmethod
+        def sha256(_: bytes) -> ZeroDigest:
+            return ZeroDigest()
+
+    monkeypatch.setattr(validator, "hashlib", HashlibDouble)
+
+    fresh_a = validate_file(a_path, root=root)
+    fresh_b = validate_file(b_path, root=root)
+    shared: dict[Path, tuple[dict, list[str]]] = {}
+    validate_file(a_path, root=root, cache=shared)
+    cached_b = validate_file(b_path, root=root, cache=shared)
+
+    assert any("cycle" in error for error in fresh_a)
+    assert any("cycle" in error for error in fresh_b)
+    assert cached_b != fresh_b
+
+
 def test_validate_file_preserves_best_schema_error(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     standard = root / "standards" / "main.standard.yaml"
