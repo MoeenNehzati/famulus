@@ -1189,6 +1189,7 @@ def _run_tracked_child(
     validator_ids: Sequence[str] | None,
     excluded_validator_ids: Sequence[str] | None,
     staged_paths: Sequence[str],
+    timing_output: Path | None = None,
 ) -> dict[str, list[str]]:
     """Run the staged validator runner in a separate isolated Python process.
 
@@ -1265,6 +1266,8 @@ def _run_tracked_child(
             command.extend(("--validator", validator_id))
         for validator_id in excluded_validator_ids or ():
             command.extend(("--exclude-validator", validator_id))
+        if timing_output is not None:
+            command.extend(("--timing-output", str(timing_output)))
         completed = subprocess.run(
             command,
             cwd=mirror_root,
@@ -1319,6 +1322,7 @@ def run_all(
     repo_root: Path = REPO_ROOT,
     validator_ids: Sequence[str] | None = None,
     excluded_validator_ids: Sequence[str] | None = None,
+    timing_output: Path | None = None,
 ) -> dict[str, list[str]]:
     """Run validators from and against the exact staged repository view.
 
@@ -1382,6 +1386,7 @@ def run_all(
             validator_ids,
             excluded_validator_ids,
             staged_paths,
+            timing_output,
         )
     finally:
         if mirror_root is not None:
@@ -1396,6 +1401,7 @@ def _write_tracked_result(
     validator_ids: Sequence[str] | None,
     excluded_validator_ids: Sequence[str] | None,
     staged_paths_file: Path,
+    timing_output: Path | None = None,
 ) -> int:
     """Execute child validators and serialize their result for the parent.
 
@@ -1436,6 +1442,7 @@ def _write_tracked_result(
             validator_ids=validator_ids,
             excluded_validator_ids=excluded_validator_ids,
             staged_paths=staged_paths,
+            timing_output=timing_output,
         )
         result_path.write_text(
             json.dumps({"results": results}, sort_keys=True),

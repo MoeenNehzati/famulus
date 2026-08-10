@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 import sys
 import pytest
@@ -292,6 +293,38 @@ def test_internal_validator_task_preserves_existing_snapshot_lifecycle(
     ]
 
 
+def test_internal_validator_task_forwards_timing_output(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    calls = []
+    timing_output = tmp_path / "validator-timings.xml"
+    monkeypatch.setattr(
+        runner._validator_snapshot,
+        "run_all",
+        lambda **kwargs: calls.append(kwargs) or {},
+    )
+    monkeypatch.setattr(
+        runner._validator_snapshot,
+        "_render_findings",
+        lambda _findings: 0,
+    )
+
+    assert runner._run_validator_task(
+        tmp_path,
+        timing_output=timing_output,
+    ) == 0
+
+    assert calls == [
+        {
+            "repo_root": tmp_path.resolve(),
+            "validator_ids": (),
+            "excluded_validator_ids": (),
+            "timing_output": timing_output,
+        }
+    ]
+
+
 def test_internal_validator_cli_bypasses_suite_scheduling(
     tmp_path: Path,
     monkeypatch,
@@ -490,6 +523,124 @@ def test_each_pytest_task_receives_an_isolated_cache_directory(
         for command in commands
     ]
     assert len(set(cache_options)) == 2
+
+
+def test_pooled_runner_writes_per_file_timing_report(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    commands = []
+
+    class FakeProcess:
+        def __init__(self, command, **_kwargs):
+            commands.append(command)
+            self.returncode = None
+            junit_argument = next(
+                argument
+                for argument in command
+                if argument.startswith("--junitxml=")
+            )
+            junit_path = Path(junit_argument.partition("=")[2])
+            junit_path.parent.mkdir(parents=True, exist_ok=True)
+            junit_path.write_text(
+                '<?xml version="1.0" encoding="utf-8"?>'
+                '<testsuites><testsuite tests="2" time="0.750">'
+                '<testcase classname="tests.test_example.Example" '
+                'name="test_one" time="0.250" />'
+                '<testcase classname="tests.test_example.Example" '
+                'name="test_two" time="0.500"><skipped /></testcase>'
+                '</testsuite></testsuites>',
+                encoding="utf-8",
+            )
+
+        def poll(self):
+            self.returncode = 0
+            return 0
+
+        def wait(self, timeout=None):
+            return self.poll()
+
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_example.py").write_text("", encoding="utf-8")
+    monkeypatch.setattr(runner.subprocess, "Popen", FakeProcess)
+    report_path = tmp_path / "timings.json"
+
+    assert runner._run_check_tasks(
+        [
+            runner.CheckTask(
+                "tests:shared",
+                (runner.sys.executable, "-m", "pytest", "-q", "tests"),
+                1,
+            )
+        ],
+        repo_root=tmp_path,
+        jobs=1,
+        pooled=True,
+        timing_output=report_path,
+    ) == 0
+
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+    assert payload["schema_version"] == 1
+    assert payload["repo"] == str(tmp_path.resolve())
+    assert payload["tasks"][0]["task_id"] == "tests:shared"
+    assert payload["tasks"][0]["pytest_seconds"] == pytest.approx(0.75)
+    assert payload["files"] == [
+        {
+            "task_id": "tests:shared",
+            "kind": "test",
+            "path": "tests/test_example.py",
+            "item_count": 2,
+            "seconds": pytest.approx(0.75),
+            "passed": 1,
+            "failed": 0,
+            "skipped": 1,
+        }
+    ]
+
+
+def test_timing_output_cli_is_forwarded_to_suite(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    calls = []
+    monkeypatch.setattr(
+        runner,
+        "run_suite",
+        lambda repo_root, suite, **kwargs: calls.append(
+            (repo_root, suite, kwargs)
+        )
+        or 0,
+    )
+    monkeypatch.setattr(runner, "_pytest_xdist_available", lambda: True)
+    timing_output = tmp_path / "timings.json"
+
+    assert runner.main(
+        [
+            "--suite",
+            "tests",
+            "--repo-root",
+            str(tmp_path),
+            "--jobs",
+            "1",
+            "--timing-output",
+            str(timing_output),
+        ]
+    ) == 0
+
+    assert calls == [
+        (
+            tmp_path,
+            "tests",
+            {
+                "verbose": False,
+                "jobs": 1,
+                "validator_ids": (),
+                "excluded_validator_ids": (),
+                "pooled": True,
+                "timing_output": timing_output,
+            },
+        )
+    ]
 
 
 def test_probe_task_environment_is_copied_per_child_without_parent_mutation(

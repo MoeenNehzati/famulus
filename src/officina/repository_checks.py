@@ -6,6 +6,7 @@ import argparse
 import copy
 from dataclasses import dataclass
 import importlib.util
+import json
 import os
 from pathlib import Path
 import signal
@@ -15,6 +16,7 @@ import tempfile
 import time
 from types import ModuleType
 from typing import Callable, Sequence
+import xml.etree.ElementTree as ElementTree
 
 import pytest
 
@@ -825,6 +827,7 @@ def run_validators_with_pytest(
     validator_ids: Sequence[str] | None,
     excluded_validator_ids: Sequence[str] | None,
     staged_paths: Sequence[str],
+    timing_output: Path | None = None,
 ) -> dict[str, list[str]]:
     """Collect and execute staged validators through pytest.
 
@@ -879,14 +882,19 @@ def run_validators_with_pytest(
         selected_paths=selected_paths,
         staged_paths=staged_paths,
     )
+    pytest_arguments = [
+        "-q",
+        "--disable-warnings",
+        "--confcutdir",
+        str(tracked_root),
+    ]
+    if timing_output is not None:
+        pytest_arguments.append(f"--junitxml={timing_output}")
+    pytest_arguments.extend(
+        str(path) for _validator_id, path in selected_paths
+    )
     exit_code = pytest.main(
-        [
-            "-q",
-            "--disable-warnings",
-            "--confcutdir",
-            str(tracked_root),
-            *(str(path) for _validator_id, path in selected_paths),
-        ],
+        pytest_arguments,
         plugins=[plugin],
     )
     if plugin.execution_error is not None:
@@ -1147,6 +1155,7 @@ def _run_validator_task(
     *,
     validator_ids: Sequence[str] = (),
     excluded_validator_ids: Sequence[str] = (),
+    timing_output: Path | None = None,
 ) -> int:
     """Run the complete staged validator lifecycle inside the private worker.
 
@@ -1184,10 +1193,15 @@ def _run_validator_task(
     """
 
     try:
+        arguments: dict[str, object] = {
+            "repo_root": Path(repo_root).resolve(),
+            "validator_ids": validator_ids,
+            "excluded_validator_ids": excluded_validator_ids,
+        }
+        if timing_output is not None:
+            arguments["timing_output"] = timing_output
         results = _validator_snapshot.run_all(
-            repo_root=Path(repo_root).resolve(),
-            validator_ids=validator_ids,
-            excluded_validator_ids=excluded_validator_ids,
+            **arguments,
         )
     except _validator_snapshot.ValidatorRunnerError as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -1235,9 +1249,9 @@ def _build_check_tasks(
     ._resolve_suite:
       why:
         computes: "Supplies profile-resolved ordinary test targets."
-    ._suite_pytest_args:
+    ._pytest_args:
       why:
-        computes: "Supplies pytest arguments for each process group."
+        computes: "Supplies pytest arguments for the isolated performance task."
 
     InstantiationsFromRepo
     ----------------------
@@ -1247,6 +1261,9 @@ def _build_check_tasks(
     ._shared_test_jobs:
       why:
         constructs: "Builds the shared task's deterministic worker allocation."
+    ._suite_pytest_args:
+      why:
+        constructs: "Builds pytest arguments for each suite process group."
     .CheckTask:
       why:
         constructs: "Builds each process-level scheduling unit."
@@ -1425,6 +1442,7 @@ def _run_check_tasks(
     repo_root: Path,
     jobs: int,
     pooled: bool,
+    timing_output: Path | None = None,
 ) -> int:
     """Run all check tasks through one bounded first-fitting coordinator.
 
@@ -1464,6 +1482,9 @@ def _run_check_tasks(
     ._terminate_task_process:
       why:
         computes: "Cleans up complete active task trees after interruption."
+    ._write_timing_report:
+      why:
+        computes: "Writes requested task and per-file timing evidence."
     """
 
     if any(task.slots > jobs for task in tasks):
@@ -1474,6 +1495,7 @@ def _run_check_tasks(
         tuple[subprocess.Popen[object], CheckTask, object, object, Path, Path, float],
     ] = {}
     results: dict[int, tuple[int, float]] = {}
+    timing_paths: dict[int, Path] = {}
     admission_open = True
     root = Path(repo_root).resolve()
     with tempfile.TemporaryDirectory(prefix="officina-checks-") as temp_dir:
@@ -1522,6 +1544,14 @@ def _run_check_tasks(
                         if command[1:3] == ["-m", "pytest"]:
                             cache_dir = output_root / "pytest-cache" / f"{index:04d}"
                             command[3:3] = ["-o", f"cache_dir={cache_dir}"]
+                            if timing_output is not None:
+                                timing_path = output_root / "timings" / f"{index:04d}.xml"
+                                timing_paths[index] = timing_path
+                                command[3:3] = [f"--junitxml={timing_path}"]
+                        elif timing_output is not None and task.id == "validators":
+                            timing_path = output_root / "timings" / f"{index:04d}.xml"
+                            timing_paths[index] = timing_path
+                            command.extend(["--timing-output", str(timing_path)])
                         process = subprocess.Popen(command, **popen_kwargs)
                         start = time.monotonic()
                         print(f"START task={task.id} slots={task.slots}")
@@ -1595,10 +1625,209 @@ def _run_check_tasks(
                     end="" if stderr.endswith("\n") else "\n",
                     file=sys.stderr,
                 )
+        if timing_output is not None:
+            _write_timing_report(
+                timing_output,
+                repo_root=root,
+                tasks=tasks,
+                results=results,
+                timing_paths=timing_paths,
+            )
         for index in range(len(tasks)):
             if results.get(index) and (results[index][0] != 0):
                 return results[index][0]
     return 0
+
+
+def _junit_source_path(repo_root: Path, classname: str) -> str:
+    """Map a pytest JUnit classname to one repository Python source path.
+
+    Intent
+    ------
+    Attribute class- and function-level pytest records to their owning test or
+    validator file.
+
+    Rationale
+    ---------
+    JUnit records classnames rather than source paths. Selecting the longest
+    existing dotted-prefix file preserves nested test classes without guessing
+    which classname suffix represents a Python class.
+
+    Pseudocode
+    ----------
+    - set components = classname split into dotted components
+    - for component_prefix in longest-to-shortest components:
+      - if the corresponding repository Python file exists:
+        - return its repository-relative path
+    - return an explicit unmapped marker
+
+    Wraps
+    -----
+    - none
+    """
+
+    parts = classname.split(".")
+    for length in range(len(parts), 0, -1):
+        candidate = Path(*parts[:length]).with_suffix(".py")
+        if (repo_root / candidate).is_file():
+            return candidate.as_posix()
+    return f"<unmapped:{classname}>"
+
+
+def _read_junit_timing(
+    path: Path,
+    *,
+    repo_root: Path,
+    task_id: str,
+) -> tuple[float, list[dict[str, object]]]:
+    """Aggregate one pytest JUnit artifact by repository source file.
+
+    Intent
+    ------
+    Convert framework-owned testcase timing and outcomes into stable per-file
+    records for repository performance comparisons.
+
+    Rationale
+    ---------
+    Pytest already measures setup, call, and teardown consistently, while the
+    repository runner owns task grouping. Parsing its portable JUnit output avoids
+    a second timing plugin and remains compatible with xdist controllers.
+
+    Pseudocode
+    ----------
+    - set document = parsed JUnit artifact
+    - set pytest_seconds = sum of suite durations
+    - for testcase in document:
+      - set source_file = repository source mapped from testcase classname
+      - set source_file_timing = prior timing plus testcase duration and outcome
+    - return pytest session seconds and sorted file records
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._junit_source_path:
+      why:
+        constructs: "Builds the repository-relative owner of each JUnit testcase."
+    """
+
+    root = ElementTree.parse(path).getroot()
+    suites = list(root) if root.tag == "testsuites" else [root]
+    pytest_seconds = sum(float(suite.attrib.get("time", "0")) for suite in suites)
+    grouped: dict[str, dict[str, object]] = {}
+    for testcase in root.iter("testcase"):
+        classname = testcase.attrib.get("classname", "")
+        source_path = _junit_source_path(repo_root, classname)
+        record = grouped.setdefault(
+            source_path,
+            {
+                "task_id": task_id,
+                "kind": "validator" if task_id == "validators" else "test",
+                "path": source_path,
+                "item_count": 0,
+                "seconds": 0.0,
+                "passed": 0,
+                "failed": 0,
+                "skipped": 0,
+            },
+        )
+        record["item_count"] = int(record["item_count"]) + 1
+        record["seconds"] = float(record["seconds"]) + float(
+            testcase.attrib.get("time", "0")
+        )
+        if testcase.find("skipped") is not None:
+            record["skipped"] = int(record["skipped"]) + 1
+        elif testcase.find("failure") is not None or testcase.find("error") is not None:
+            record["failed"] = int(record["failed"]) + 1
+        else:
+            record["passed"] = int(record["passed"]) + 1
+    return pytest_seconds, [grouped[key] for key in sorted(grouped)]
+
+
+def _write_timing_report(
+    output_path: Path,
+    *,
+    repo_root: Path,
+    tasks: Sequence[CheckTask],
+    results: dict[int, tuple[int, float]],
+    timing_paths: dict[int, Path],
+) -> None:
+    """Write normalized task and per-file timings for one runner invocation.
+
+    Intent
+    ------
+    Preserve task wall time, pytest-attributed time, source-file time, outcomes,
+    and execution ownership in one machine-readable artifact.
+
+    Rationale
+    ---------
+    Comparisons need both scheduler-visible task cost and item-visible file cost;
+    keeping them separate prevents unattributed collection or process startup from
+    being assigned misleadingly to a test file.
+
+    Pseudocode
+    ----------
+    - for completed_task in tasks:
+      - set task_timing = parsed JUnit artifact when available
+      - set task_record = exit wall pytest time and file count
+      - set file_records = prior records plus normalized task files
+    - set timing_output = versioned sorted JSON report written at invocation completion
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._read_junit_timing:
+      why:
+        constructs: "Builds normalized per-file records from each task artifact."
+    """
+
+    task_records: list[dict[str, object]] = []
+    file_records: list[dict[str, object]] = []
+    for index, task in enumerate(tasks):
+        if index not in results:
+            continue
+        exit_code, wall_seconds = results[index]
+        pytest_seconds = 0.0
+        files: list[dict[str, object]] = []
+        timing_path = timing_paths.get(index)
+        if timing_path is not None and timing_path.is_file():
+            pytest_seconds, files = _read_junit_timing(
+                timing_path,
+                repo_root=repo_root,
+                task_id=task.id,
+            )
+        task_records.append(
+            {
+                "task_id": task.id,
+                "exit_code": exit_code,
+                "wall_seconds": wall_seconds,
+                "pytest_seconds": pytest_seconds,
+                "file_count": len(files),
+            }
+        )
+        file_records.extend(files)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "repo": str(repo_root.resolve()),
+                "tasks": task_records,
+                "files": sorted(
+                    file_records,
+                    key=lambda record: (str(record["kind"]), str(record["path"])),
+                ),
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
 
 def _run_test_suite(name: str, *, verbose: bool, jobs: int = 1) -> int:
@@ -1667,6 +1896,7 @@ def run_suite(
     validator_ids: Sequence[str] = (),
     excluded_validator_ids: Sequence[str] = (),
     pooled: bool | None = None,
+    timing_output: Path | None = None,
 ) -> int:
     """Run one named repository verification suite.
 
@@ -1723,7 +1953,7 @@ def run_suite(
         raise RuntimeError(
             "pytest-xdist is required for --jobs > 1; install pytest-xdist"
         )
-    if pooled is not False:
+    if pooled is not False or timing_output is not None:
         tasks = _build_check_tasks(
             root,
             suite,
@@ -1736,7 +1966,8 @@ def run_suite(
             tasks,
             repo_root=root,
             jobs=jobs,
-            pooled=pooled,
+            pooled=pooled is not False,
+            timing_output=timing_output,
         )
     for phase, test_suite in SUITE_PHASES[suite]:
         if phase == "validators":
@@ -1861,6 +2092,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help=argparse.SUPPRESS,
     )
+    parser.add_argument(
+        "--timing-output",
+        type=Path,
+        help="Write task and per-file pytest timings as JSON.",
+    )
     parser.add_argument("--sequential", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--tracked-root", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--display-root", type=Path, help=argparse.SUPPRESS)
@@ -1874,11 +2110,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             "--jobs > 1 requires pytest-xdist; install with `pip install pytest-xdist`"
         )
     if args.internal_run_validators:
-        return _run_validator_task(
-            args.repo_root,
-            validator_ids=tuple(args.validator_ids or ()),
-            excluded_validator_ids=tuple(args.excluded_validator_ids or ()),
-        )
+        validator_arguments: dict[str, object] = {
+            "validator_ids": tuple(args.validator_ids or ()),
+            "excluded_validator_ids": tuple(args.excluded_validator_ids or ()),
+        }
+        if args.timing_output is not None:
+            validator_arguments["timing_output"] = args.timing_output
+        return _run_validator_task(args.repo_root, **validator_arguments)
     if args.tracked_root is not None:
         if (
             args.display_root is None
@@ -1896,6 +2134,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.validator_ids,
             args.excluded_validator_ids,
             args.staged_paths_file,
+            timing_output=args.timing_output,
         )
     if (args.validator_ids or args.excluded_validator_ids) and args.suite in {
         "tests",
@@ -1912,4 +2151,5 @@ def main(argv: Sequence[str] | None = None) -> int:
         validator_ids=args.validator_ids or (),
         excluded_validator_ids=args.excluded_validator_ids or (),
         pooled=not args.sequential,
+        timing_output=args.timing_output,
     )

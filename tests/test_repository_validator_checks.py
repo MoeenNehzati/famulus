@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
+import xml.etree.ElementTree as ElementTree
 
 import pytest
 from test_support.git_repository import GitTestRepository
@@ -120,6 +121,31 @@ def test_run_all_collects_validators_as_pytest_functions_with_fixtures(
         repo,
         validator_ids=["repo/fixture_probe"],
     ) == {}
+
+
+def test_run_all_writes_validator_junit_timings(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    validators = _initialize_runner_repository(repo)
+    (validators / "timed_probe.py").write_text(
+        "def validate(repo_root): return []\n",
+        encoding="utf-8",
+    )
+    _require_git_ok(GitTestRepository(repo).git("add", "."))
+    timing_output = tmp_path / "validator-timings.xml"
+
+    assert _RUNNER.run_all(
+        repo,
+        validator_ids=["repo/timed_probe"],
+        timing_output=timing_output,
+    ) == {}
+
+    testcases = list(ElementTree.parse(timing_output).getroot().iter("testcase"))
+    assert [testcase.attrib["classname"] for testcase in testcases] == [
+        "validators.timed_probe"
+    ]
+    assert [testcase.attrib["name"] for testcase in testcases] == [
+        "repo/timed_probe"
+    ]
 
 
 def test_run_all_reuses_module_fixture_and_aggregates_validator_items(
