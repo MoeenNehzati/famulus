@@ -2,18 +2,73 @@
 
 from __future__ import annotations
 
+import os
 import re
-import shutil
 import subprocess
 from pathlib import Path, PurePosixPath
 
-from ._base_backend import ScheduleContext, ScheduleJob
+from ._base_backend import (
+    ScheduleContext,
+    ScheduleJob,
+    _default_famulus_paths,
+    _default_runtime_resolver,
+)
 
 PREFIX = "ai-"
 
 
 def default_unit_dir() -> Path:
     return Path.home() / ".config/systemd/user"
+
+
+def _session_env() -> dict[str, str]:
+    """Environment in which ``systemctl --user`` can reach the user manager.
+
+    cron sessions get no ``pam_systemd``, so they have neither
+    ``XDG_RUNTIME_DIR`` nor ``DBUS_SESSION_BUS_ADDRESS`` and every
+    ``systemctl --user`` call fails to connect. Both values are fixed
+    properties of the uid, so derive them when absent rather than requiring
+    every caller to export them. (The original healthcheck.sh did exactly
+    this; the port to Python dropped it.)
+    """
+    env = dict(os.environ)
+    # os.getuid is POSIX-only. This module renders Linux units from any host
+    # (the portability sentinel runs it on Windows CI), so guard it the way
+    # _osx_backend already does rather than crashing on import-time platforms.
+    getuid = getattr(os, "getuid", lambda: 0)
+    derived = f"/run/user/{getuid()}"
+    # An inherited value wins only if it actually exists: a stale or foreign
+    # XDG_RUNTIME_DIR (su, sudo -u, a leaked container value) points at a bus
+    # this user cannot reach, and silently produces worse diagnostics than
+    # deriving the correct one. Empty is treated as absent.
+    inherited = env.get("XDG_RUNTIME_DIR")
+    runtime_dir = inherited if inherited and Path(inherited).is_dir() else derived
+    env["XDG_RUNTIME_DIR"] = runtime_dir
+    if not env.get("DBUS_SESSION_BUS_ADDRESS"):
+        env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path={runtime_dir}/bus"
+    return env
+
+
+def _systemctl(
+    *args: str, check: bool = False, capture: bool = True
+) -> subprocess.CompletedProcess:
+    """Run one ``systemctl --user`` command with a usable session environment.
+
+    ``capture=False`` lets systemd's own diagnostics reach the operator's
+    terminal directly. Use it for the mutating commands (``daemon-reload``,
+    ``enable``), where a captured failure would otherwise surface only as
+    "Command '[...]' returned non-zero exit status 1" -- the CalledProcessError
+    message does not include stderr.
+    """
+    return subprocess.run(
+        ["systemctl", "--user", *args],
+        capture_output=capture,
+        text=True,
+        encoding="utf-8" if capture else None,
+        errors="strict" if capture else None,
+        env=_session_env(),
+        check=check,
+    )
 
 
 def cron_to_systemd_calendar(cron: str) -> str:
@@ -54,10 +109,45 @@ def _systemd_quote(value: str) -> str:
 
 
 def _launcher_bin_dir() -> PurePosixPath:
-    launcher = shutil.which("invoke-skill")
-    if launcher:
-        return PurePosixPath(launcher).parent
-    return PurePosixPath(Path.home().as_posix()) / "Documents" / "_rtx" / "bin"
+    """Directory the launchers are installed into.
+
+    Resolved from the Famulus install layout, never from ``PATH``. A
+    ``shutil.which("invoke-skill")`` lookup here would make the rendered unit
+    -- and therefore the health check's notion of a correct unit -- a function
+    of whoever happens to be calling. Cron has no ``~/.local/bin`` on ``PATH``,
+    so every cron-invoked check reported drift that did not exist.
+    """
+    return PurePosixPath(_default_famulus_paths().user_bin.as_posix())
+
+
+def _job_path_entries(
+    launcher_dir: PurePosixPath, resolver: PurePosixPath
+) -> list[tuple[str, PurePosixPath]]:
+    """Ordered ``(unit form, concrete path)`` pairs for a job's ``PATH``.
+
+    Single source of truth for two consumers that must never disagree: the
+    ``PATH=`` line written into the generated unit (which uses systemd's
+    ``%h`` specifier) and the directory list the health check searches when
+    asking whether the scheduler can resolve the agent command. Keeping them
+    as one ordered list means a new entry cannot be added to the unit while
+    the checker keeps looking somewhere else.
+    """
+    home = PurePosixPath(Path.home().as_posix())
+    return [
+        (str(launcher_dir), launcher_dir),
+        (str(resolver.parent), resolver.parent),
+        ("%h/.npm-global/bin", home / ".npm-global" / "bin"),
+        ("%h/.local/bin", home / ".local" / "bin"),
+        ("/usr/local/bin", PurePosixPath("/usr/local/bin")),
+        ("/usr/bin", PurePosixPath("/usr/bin")),
+        ("/bin", PurePosixPath("/bin")),
+    ]
+
+
+def job_search_dirs() -> list[PurePosixPath]:
+    """Concrete directories a scheduled job resolves commands from."""
+    resolver = PurePosixPath(_default_runtime_resolver().as_posix())
+    return [path for _, path in _job_path_entries(_launcher_bin_dir(), resolver)]
 
 
 def service_content(
@@ -96,9 +186,8 @@ def service_content(
     executor_posix = executor.as_posix()
     jobs_file_posix = jobs_file.as_posix()
     launcher_dir = launcher_bin or _launcher_bin_dir()
-    path_value = (
-        f"{launcher_dir}:{resolver.parent}:%h/.npm-global/bin:"
-        "%h/.local/bin:/usr/local/bin:/usr/bin:/bin"
+    path_value = ":".join(
+        unit_form for unit_form, _ in _job_path_entries(launcher_dir, resolver)
     )
     return (
         "[Unit]\n"
@@ -164,67 +253,47 @@ class LinuxScheduleBackend:
             name = timer.stem[len(PREFIX):]
             if name not in enabled_names:
                 if context.live:
-                    subprocess.run(
-                        ["systemctl", "--user", "disable", "--now", timer.name],
-                        capture_output=True,
-                    )
+                    _systemctl("disable", "--now", timer.name)
                 timer.unlink(missing_ok=True)
                 (unit_dir / f"{PREFIX}{name}.service").unlink(missing_ok=True)
                 print(f"Removed disabled job: '{name}'")
 
         if context.live:
-            subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
+            _systemctl("daemon-reload", check=True, capture=False)
             for name in sorted(enabled_names):
-                subprocess.run(
-                    ["systemctl", "--user", "enable", "--now", f"{PREFIX}{name}.timer"],
-                    check=True,
+                _systemctl(
+                    "enable", "--now", f"{PREFIX}{name}.timer",
+                    check=True, capture=False,
                 )
                 print(f"Enabled {PREFIX}{name}.timer")
 
     def test(self, job_name: str, context: ScheduleContext) -> bool:
-        result = subprocess.run(
-            ["systemctl", "--user", "start", "--wait", f"{PREFIX}{job_name}.service"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="strict",
-        )
+        result = _systemctl("start", "--wait", f"{PREFIX}{job_name}.service")
         if result.returncode == 0:
             return True
         print("stderr:", result.stderr)
         return False
 
     def status(self, context: ScheduleContext) -> str:
-        result = subprocess.run(
-            ["systemctl", "--user", "list-timers", f"{PREFIX}*.timer", "--no-pager"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="strict",
-        )
+        result = _systemctl("list-timers", f"{PREFIX}*.timer", "--no-pager")
         return result.stdout
 
     def check_manager(self) -> str | None:
-        result = subprocess.run(
-            ["systemctl", "--user", "is-system-running"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="strict",
-        )
+        result = _systemctl("is-system-running")
         state = result.stdout.strip()
         if state in ("running", "degraded"):
             return None
+        if not state:
+            # Empty stdout means systemctl never reached the manager; the
+            # reason is on stderr and is far more actionable than
+            # "unresponsive".
+            detail = result.stderr.strip().splitlines()
+            if detail:
+                return f"systemd user manager: {detail[0]}"
         return f"systemd user manager: {state or 'unresponsive'}"
 
     def get_agent_command_template(self) -> str | None:
-        result = subprocess.run(
-            ["systemctl", "--user", "show-environment"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="strict",
-        )
+        result = _systemctl("show-environment")
         for line in result.stdout.splitlines():
             if line.startswith("AI_AGENT_COMMAND_TEMPLATE="):
                 template = line.split("=", 1)[1]
@@ -234,11 +303,9 @@ class LinuxScheduleBackend:
         return None
 
     def check_job_active(self, job_name: str) -> bool:
-        result = subprocess.run(
-            ["systemctl", "--user", "is-active", f"{PREFIX}{job_name}.timer"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="strict",
-        )
+        result = _systemctl("is-active", f"{PREFIX}{job_name}.timer")
         return result.returncode == 0
+
+    def job_search_dirs(self) -> list[Path] | None:
+        """The unit's own ``PATH=``, expanded -- see ``_job_path_entries``."""
+        return [Path(str(entry)) for entry in job_search_dirs()]

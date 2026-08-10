@@ -50,6 +50,10 @@ JOBS_FILE = SKILL_DIR / "jobs.yaml"
 LOG_DIR = SKILL_DIR / "logs"
 HEALTHCHECK_LOG = SKILL_ROOT / "logs" / "healthcheck" / "run.log"
 _DEFAULT_TOLERANCE_TAIL_BYTES = 32768
+# A run may legitimately be in flight when the check fires. Beyond the
+# executor's own timeout (plus slack) it cannot be: it was killed without
+# getting to write a record.
+INCOMPLETE_RUN_GRACE_SECONDS = 3600 + 600
 
 
 def log(msg: str) -> None:
@@ -247,11 +251,13 @@ def check_environment() -> str | None:
 
     Intent
     ------
-    Verify that the scheduler environment declares an agent command whose executable resolves on PATH.
+    Verify that the scheduler environment declares an agent command the scheduler itself can resolve.
 
     Rationale
     ---------
     A healthy timer cannot run useful AI work when its configured agent launcher is absent or unresolved.
+    Resolving against this process's own PATH would answer a different question: cron's PATH lacks the
+    launcher directory, and an operator's interactive PATH may contain one the scheduler never sees.
 
     Pseudocode
     ----------
@@ -259,7 +265,11 @@ def check_environment() -> str | None:
     - if scheduler_backend_is_unsupported:
       - set healthcheck_report = unsupported_reason
       - return failure
-    - if template is missing or executable is unresolved:
+    - if template is missing:
+      - set healthcheck_report = environment_failure
+      - return failure
+    - set search_directories = scheduler_job_search_dirs or ambient_path
+    - if executable is unresolved in search_directories:
       - set healthcheck_report = environment_failure
       - return failure
     - set healthcheck_report = environment_success
@@ -276,7 +286,8 @@ def check_environment() -> str | None:
         writes: "Records each environment diagnosis so a failed independent sentinel leaves actionable evidence."
     """
     try:
-        template = platform_schedule_backend().get_agent_command_template()
+        backend = platform_schedule_backend()
+        template = backend.get_agent_command_template()
     except ScheduleBackendUnsupported as e:
         reason = str(e)
         log(f"FAIL: {reason}")
@@ -289,7 +300,21 @@ def check_environment() -> str | None:
 
     # Extract command name (first token)
     cmd = template.split()[0] if template else ""
-    if not shutil.which(cmd):
+    # Ask the backend which directories its jobs actually resolve from, so the
+    # question matches what the scheduler will do. A backend returning None
+    # does not pin a job PATH, so its jobs inherit the ambient one.
+    try:
+        search_dirs = backend.job_search_dirs()
+    except Exception as exc:  # an unresolvable install layout is a real failure
+        reason = f"AI_AGENT_COMMAND_TEMPLATE: cannot resolve scheduler search path: {exc}"
+        log(f"FAIL: {reason}")
+        return reason
+    search_path = (
+        os.pathsep.join(str(part) for part in search_dirs)
+        if search_dirs is not None
+        else os.environ.get("PATH", "")
+    )
+    if not shutil.which(cmd, path=search_path):
         reason = f"AI_AGENT_COMMAND_TEMPLATE: command not found: {cmd}"
         log(f"FAIL: {reason}")
         return reason
@@ -376,6 +401,25 @@ def check_job(job: dict) -> str | None:
         reason = f"{name}: log stale ({age.total_seconds() / 60:.0f}m old)"
         log(f"  WARN: {reason}")
         return reason
+
+    # A run that started and never finished leaves an in-flight marker. The
+    # run log's mtime was already refreshed by "--- RUN START ---", so
+    # freshness alone would report a killed job as healthy indefinitely.
+    marker = LOG_DIR / name / "running.json"
+    if marker.exists():
+        marker_age = datetime.now(timezone.utc) - datetime.fromtimestamp(
+            marker.stat().st_mtime, tz=timezone.utc
+        )
+        if marker_age > timedelta(seconds=INCOMPLETE_RUN_GRACE_SECONDS):
+            reason = (
+                f"{name}: run started {marker_age.total_seconds() / 60:.0f}m ago and "
+                "never completed (killed, timed out, or interrupted)"
+            )
+            log(f"  FAIL: {reason}")
+            return reason
+        # Younger than the grace window: a run is legitimately in flight.
+        log(f"  OK: {name} (run in progress)")
+        return None
 
     latest_path = LOG_DIR / name / "latest.json"
     latest = read_latest_run_record(log_dir=LOG_DIR, job_name=name)

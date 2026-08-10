@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import time
 import sys
 from pathlib import Path
 from unittest import mock
@@ -342,3 +343,72 @@ def test_read_inner_status_still_uses_legacy_convention_for_other_jobs(tmp_path,
     status = read_inner_status(skills_root=skills_root, job_name="some-other-job")
 
     assert status == "ok"
+
+
+# ── in-flight marker and timeout ────────────────────────────────────────────────
+
+def test_run_job_clears_the_in_flight_marker_on_normal_completion(tmp_path):
+    jobs_file = _write_jobs_file(tmp_path, command="invoke-skill demo")
+    log_dir = tmp_path / "logs"
+    completed = subprocess.CompletedProcess(args=[], returncode=0)
+
+    with mock.patch.object(job_executor.subprocess, "run", return_value=completed):
+        job_executor.run_job(jobs_file=jobs_file, job_name="demo", log_dir=log_dir)
+
+    assert not job_executor.running_marker_path(
+        log_dir=log_dir, job_name="demo"
+    ).exists()
+
+
+def test_run_job_leaves_the_in_flight_marker_when_the_executor_is_killed(tmp_path):
+    """The real failure: SIGKILL mid-run, no record written.
+
+    run.log's mtime is already fresh from "--- RUN START ---", so without a
+    surviving marker the health check reads the job as healthy while it never
+    completed.
+    """
+    jobs_file = _write_jobs_file(tmp_path, command="/bin/sleep 300")
+    log_dir = tmp_path / "logs"
+    runner = tmp_path / "runner.py"
+    runner.write_text(
+        "import sys\n"
+        f"sys.path.insert(0, {str(Path(job_executor.__file__).parent)!r})\n"
+        f"sys.path.insert(0, {str(Path(job_executor.__file__).parents[3] / 'src')!r})\n"
+        "import _job_executor as je\n"
+        f"je.run_job(jobs_file={str(jobs_file)!r}, job_name='demo', "
+        f"log_dir=__import__('pathlib').Path({str(log_dir)!r}))\n",
+        encoding="utf-8",
+    )
+
+    child = subprocess.Popen([sys.executable, str(runner)])
+    marker = job_executor.running_marker_path(log_dir=log_dir, job_name="demo")
+    for _ in range(100):  # wait for the marker to appear, then kill hard
+        if marker.exists():
+            break
+        time.sleep(0.05)
+    child.kill()
+    child.wait(timeout=10)
+
+    assert marker.exists(), "killed run left no evidence it never completed"
+    assert not (log_dir / "demo" / "latest.json").exists(), (
+        "a killed run must not leave a completed-looking record"
+    )
+
+
+def test_run_job_kills_and_records_a_job_that_exceeds_its_timeout(tmp_path, monkeypatch):
+    jobs_file = _write_jobs_file(tmp_path, command="/bin/sleep 60")
+    log_dir = tmp_path / "logs"
+    monkeypatch.setattr(job_executor, "JOB_TIMEOUT_SECONDS", 1)
+
+    exit_code = job_executor.run_job(
+        jobs_file=jobs_file, job_name="demo", log_dir=log_dir
+    )
+
+    assert exit_code == job_executor.TIMEOUT_EXIT_CODE
+    record = json.loads((log_dir / "demo" / "latest.json").read_text())
+    assert record["success"] is False
+    assert "timeout" in record["reason"]
+    # A timed-out run DID complete its bookkeeping, so the marker is cleared.
+    assert not job_executor.running_marker_path(
+        log_dir=log_dir, job_name="demo"
+    ).exists()

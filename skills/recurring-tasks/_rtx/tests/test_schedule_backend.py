@@ -7,7 +7,7 @@ import re
 import sys
 import plistlib
 import subprocess
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from unittest import mock
 
 import pytest
@@ -89,6 +89,10 @@ def test_linux_cron_conversion_stays_systemd_compatible():
 
 
 def test_linux_sync_writes_units_and_enables_timer(tmp_path):
+    # Patch the install-layout lookup rather than HOME: Path.home() ignores
+    # HOME on Windows, and win32's user_bin is LOCALAPPDATA-based, so a
+    # home-driven fixture asserts a Linux-only layout on all three CI legs.
+    expected_bin = "/opt/famulus/bin"
     context = _context(unit_dir=tmp_path)
     job = ScheduleJob(
         name="my-job",
@@ -98,11 +102,13 @@ def test_linux_sync_writes_units_and_enables_timer(tmp_path):
         enabled=True,
     )
 
+    linux_backend = sys.modules[LinuxScheduleBackend.__module__]
     with (
-        mock.patch("_schedule_backend._linux_backend.subprocess.run") as run,
-        mock.patch(
-            "_schedule_backend._linux_backend.shutil.which",
-            return_value="/opt/famulus/bin/invoke-skill",
+        mock.patch.object(linux_backend.subprocess, "run") as run,
+        mock.patch.object(
+            linux_backend,
+            "_launcher_bin_dir",
+            return_value=PurePosixPath(expected_bin),
         ),
     ):
         LinuxScheduleBackend().sync([job], context)
@@ -120,7 +126,7 @@ def test_linux_sync_writes_units_and_enables_timer(tmp_path):
     assert context.jobs_file.as_posix() in service
     assert "\\" not in service
     assert sys.executable not in service
-    assert 'Environment="PATH=/opt/famulus/bin:' in service
+    assert f'Environment="PATH={expected_bin}:' in service
     assert 'Environment="DBUS_SESSION_BUS_ADDRESS=unix:path=%t/bus"' in service
     assert '_job_executor.py" --jobs-file' in service
     assert "/bin/bash" not in service
@@ -787,3 +793,19 @@ def _context(unit_dir: Path | None = None) -> ScheduleContext:
         log_dir=SKILL_DIR / "logs",
         unit_dir=unit_dir,
     )
+
+
+def test_non_systemd_backends_do_not_pin_a_job_search_path():
+    """launchd and schtasks set no PATH for their jobs, so None means "ambient".
+
+    check_environment is platform-neutral; returning a systemd-shaped list
+    here would make macOS/Windows report a false "command not found" for a
+    launcher those schedulers resolve perfectly well.
+    """
+    assert OSXScheduleBackend().job_search_dirs() is None
+    assert WindowsScheduleBackend().job_search_dirs() is None
+
+
+def test_linux_backend_pins_the_units_own_search_path():
+    dirs = LinuxScheduleBackend().job_search_dirs()
+    assert dirs is not None and len(dirs) > 0

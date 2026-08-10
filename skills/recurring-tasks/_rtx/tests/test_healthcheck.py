@@ -88,6 +88,7 @@ def test_environment_command_not_found_fails():
         mod = _load(Path(d))
         backend = mock.Mock()
         backend.get_agent_command_template.return_value = "invoke-skill {skill}"
+        backend.job_search_dirs.return_value = [Path("/opt/famulus/bin")]
         with mock.patch.object(mod, "platform_schedule_backend", return_value=backend), \
              mock.patch.object(mod.shutil, "which", return_value=None):
             reason = mod.check_environment()
@@ -100,6 +101,7 @@ def test_environment_ok_when_set_and_resolvable():
         mod = _load(Path(d))
         backend = mock.Mock()
         backend.get_agent_command_template.return_value = "invoke-skill {skill}"
+        backend.job_search_dirs.return_value = [Path("/opt/famulus/bin")]
         with mock.patch.object(mod, "platform_schedule_backend", return_value=backend), \
              mock.patch.object(mod.shutil, "which", return_value="/usr/local/bin/invoke-skill"):
             assert mod.check_environment() is None
@@ -111,10 +113,18 @@ def test_environment_strips_bash_quoting():
         mod = _load(Path(d))
         backend = mock.Mock()
         backend.get_agent_command_template.return_value = "invoke-skill {skill}"
+        scheduler_dirs = [Path("/opt/famulus/bin"), Path("/usr/bin")]
+        backend.job_search_dirs.return_value = scheduler_dirs
         with mock.patch.object(mod, "platform_schedule_backend", return_value=backend), \
              mock.patch.object(mod.shutil, "which", return_value="/usr/bin/invoke-skill") as which:
             assert mod.check_environment() is None
-            which.assert_called_once_with("invoke-skill")
+            # Resolution must use the directories the SCHEDULER gives its jobs,
+            # not this process's PATH. Asserting only that a path kwarg exists
+            # would still pass for `path=os.environ["PATH"]`, i.e. the bug.
+            assert which.call_args.args[0] == "invoke-skill"
+            assert which.call_args.kwargs["path"] == os.pathsep.join(
+                str(part) for part in scheduler_dirs
+            )
     print("PASS: bash $'...' quoting is stripped before resolving the command")
 
 
@@ -436,3 +446,54 @@ if __name__ == "__main__":
     test_main_returns_zero_when_no_problems()
     test_main_returns_nonzero_on_load_failure()
     print("\nAll tests passed.")
+
+
+# ── in-flight / interrupted runs ────────────────────────────────────────────────
+
+def _stage_job_logs(mod, name="test-job", *, latest_success=True):
+    """A job whose log is fresh and whose last recorded run succeeded."""
+    log_file = mod.LOG_DIR / name / "run.log"
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    log_file.write_text("--- RUN START ---\n")
+    _write_latest_record(mod.LOG_DIR, name, success=latest_success)
+    return log_file
+
+
+def test_check_job_flags_a_run_that_started_and_never_finished():
+    """The killed-job case: fresh log, stale success record, no completion.
+
+    A killed executor (systemd stop, OOM, reboot, suspend) writes no run
+    record, but "--- RUN START ---" already refreshed run.log's mtime. Before
+    the in-flight marker this reported HEALTHY indefinitely.
+    """
+    with tempfile.TemporaryDirectory() as d:
+        mod = _load(Path(d))
+        _stage_job_logs(mod)
+        marker = mod.LOG_DIR / "test-job" / "running.json"
+        marker.write_text('{"job_name": "test-job"}')
+        stale = time.time() - (mod.INCOMPLETE_RUN_GRACE_SECONDS + 120)
+        os.utime(marker, (stale, stale))
+
+        backend = mock.Mock()
+        backend.check_job_active.return_value = True
+        with mock.patch.object(mod, "platform_schedule_backend", return_value=backend), \
+             mock.patch.object(mod, "check_job_configuration", return_value=None):
+            reason = mod.check_job(_job())
+
+        assert reason is not None, "a killed run must not report healthy"
+        assert "never completed" in reason
+    print("PASS: an interrupted run is reported, not masked by log freshness")
+
+
+def test_check_job_allows_a_run_that_is_legitimately_in_flight():
+    with tempfile.TemporaryDirectory() as d:
+        mod = _load(Path(d))
+        _stage_job_logs(mod)
+        (mod.LOG_DIR / "test-job" / "running.json").write_text('{"job_name": "test-job"}')
+
+        backend = mock.Mock()
+        backend.check_job_active.return_value = True
+        with mock.patch.object(mod, "platform_schedule_backend", return_value=backend), \
+             mock.patch.object(mod, "check_job_configuration", return_value=None):
+            assert mod.check_job(_job()) is None
+    print("PASS: a fresh in-flight run is not a failure")
