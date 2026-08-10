@@ -241,10 +241,12 @@ def test_refresh_from_file_uses_recorded_secret_references(
         def __exit__(self, *_exc):
             return False
 
-        def read(self) -> bytes:
-            return json.dumps({"access_token": "fresh-access-token"}).encode()
+        def read(self, size: int = -1) -> bytes:
+            data = json.dumps({"access_token": "fresh-access-token"}).encode()
+            return data if size < 0 else data[:size]
 
-    def fake_urlopen(request):
+    def fake_urlopen(request, *, timeout=30.0):
+        assert timeout == 30.0
         requests.append(request)
         return FakeResponse()
 

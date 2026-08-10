@@ -17,7 +17,9 @@ import re
 import secrets
 import time
 import urllib.error
-from collections.abc import Callable, Collection, Sequence
+import urllib.request
+import uuid
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -28,10 +30,19 @@ SERVICE_SCOPES: dict[str, frozenset[str]] = {
     "gmail": frozenset({"https://mail.google.com/"}),
 }
 IDENTITY_SCOPES = frozenset({"openid", "email"})
+GOOGLE_AUTHORIZATION_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
+GOOGLE_HTTP_TIMEOUT_S = 30.0
+GOOGLE_HTTP_MAX_BODY_BYTES = 64 * 1024
 
 
 class GoogleCredentialError(RuntimeError):
     """Raised for invalid service/scope requests and credential failures."""
+
+
+class GoogleCredentialPublicationUncertain(GoogleCredentialError):
+    """Raised when registry state cannot be classified after a write error."""
 
 
 def normalize_services(services: Sequence[str]) -> tuple[str, ...]:
@@ -61,8 +72,11 @@ class GoogleCredentialRef:
     subject: str
     account: str
     client_id: str
+    client_secret_ref: str
     token_uri: str
     granted_scopes: frozenset[str]
+    refresh_secret_ref: str
+    publication_warnings: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -148,6 +162,7 @@ def create_credential_file(
     subject: str,
     account: str,
     client_id: str,
+    client_secret_ref: str | None = None,
     token_uri: str,
     granted_services: Sequence[str],
     granted_scopes: frozenset[str],
@@ -176,6 +191,14 @@ def create_credential_file(
         if not isinstance(value, str) or not value:
             raise GoogleCredentialError(f"{label} must be a non-empty string")
 
+    resolved_client_secret_ref = (
+        client_secret_ref
+        if client_secret_ref is not None
+        else f"oauth-client:{client_id}:client-secret"
+    )
+    if not isinstance(resolved_client_secret_ref, str) or not resolved_client_secret_ref:
+        raise GoogleCredentialError("client_secret_ref must be a non-empty string")
+
     services = _validated_granted_services(granted_services)
     if not isinstance(granted_scopes, frozenset) or not all(
         isinstance(scope, str) and scope for scope in granted_scopes
@@ -197,7 +220,6 @@ def create_credential_file(
         raise GoogleCredentialError("unique_id must be exactly eight lowercase hexadecimal characters")
 
     stem = f"{timestamp_slug}-{artifact_id}"
-    client_secret_ref = f"oauth-client:{client_id}:client-secret"
     refresh_token_ref = f"credential-file:{stem}:refresh-token"
     payload = {
         "schema_version": 1,
@@ -208,7 +230,7 @@ def create_credential_file(
         "token_uri": token_uri,
         "granted_services": list(services),
         "granted_scopes": sorted(granted_scopes),
-        "client_secret_ref": client_secret_ref,
+        "client_secret_ref": resolved_client_secret_ref,
         "refresh_token_ref": refresh_token_ref,
     }
 
@@ -250,7 +272,7 @@ def create_credential_file(
         token_uri=token_uri,
         granted_services=services,
         granted_scopes=granted_scopes,
-        client_secret_ref=client_secret_ref,
+        client_secret_ref=resolved_client_secret_ref,
         refresh_token_ref=refresh_token_ref,
     )
 
@@ -322,10 +344,7 @@ def load_credential_file(path: Path) -> GoogleCredentialFile:
         if not SERVICE_SCOPES[service] <= scopes:
             raise GoogleCredentialError(f"credential grants {service!r} without its required scopes")
 
-    expected_client_ref = f"oauth-client:{payload['client_id']}:client-secret"
     expected_refresh_ref = f"credential-file:{resolved.stem}:refresh-token"
-    if payload["client_secret_ref"] != expected_client_ref:
-        raise GoogleCredentialError("credential client_secret_ref does not match client_id")
     if payload["refresh_token_ref"] != expected_refresh_ref:
         raise GoogleCredentialError("credential refresh_token_ref does not match its filename")
 
@@ -558,50 +577,159 @@ def _test_race_delay(subject: str) -> None:
     return None
 
 
+_GENERATED_REFRESH_REF = re.compile(r"^google-refresh:[0-9a-f]{32}$")
+
+
+def _refresh_secret_ref(credential_id: str, record: Mapping[str, object]) -> str:
+    value = record.get("refresh_secret_ref")
+    if value is None:
+        return f"{credential_id}:refresh-token"
+    if not isinstance(value, str) or not value:
+        raise GoogleCredentialError("credential has invalid refresh_secret_ref")
+    return value
+
+
+def _client_secret_ref(client_id: str, record: Mapping[str, object]) -> str:
+    value = record.get("client_secret_ref")
+    if value is None:
+        return f"oauth-client:{client_id}:client-secret"
+    if not isinstance(value, str) or not value:
+        raise GoogleCredentialError("credential has invalid client_secret_ref")
+    return value
+
+
+def _optional_refresh_secret_ref(
+    credential_id: str, record: Mapping[str, object]
+) -> str | None:
+    try:
+        return _refresh_secret_ref(credential_id, record)
+    except GoogleCredentialError:
+        return None
+
+
+def _load_registry(path: Path) -> dict:
+    if not path.exists():
+        return {"schema_version": 2, "credentials": {}}
+    try:
+        registry = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise GoogleCredentialError(f"cannot read Google credential registry at {path}") from exc
+    if not isinstance(registry, dict) or not isinstance(registry.get("credentials"), dict):
+        raise GoogleCredentialError("Google credential registry has invalid structure")
+    return registry
+
+
+def _safe_clear(backend, key: str) -> bool:
+    try:
+        return bool(backend.clear("connect-google", key))
+    except Exception:
+        return False
+
+
 def store_google_credential(
     *,
     subject: str,
     account: str,
     client_id: str,
+    client_secret_ref: str | None = None,
     token_uri: str,
     granted_scopes: frozenset[str],
     refresh_token: str,
     home: Path,
     platform: str,
     secret_backend=None,
+    registry_writer: Callable | None = None,
+    refresh_ref_factory: Callable[[], str] | None = None,
 ) -> GoogleCredentialRef:
     from officina.common import secret_store as secret_store_module
+    from officina.common.oauth_json import write_oauth_json
 
     backend = secret_backend or secret_store_module
     credential_id = f"google:{subject}"
-    backend.store("connect-google", f"{credential_id}:refresh-token", refresh_token)
+    resolved_client_secret_ref = (
+        f"oauth-client:{client_id}:client-secret"
+        if client_secret_ref is None
+        else client_secret_ref
+    )
+    if not resolved_client_secret_ref:
+        raise GoogleCredentialError("client-secret reference must be non-empty")
+    refresh_secret_ref = (
+        refresh_ref_factory() if refresh_ref_factory is not None else f"google-refresh:{uuid.uuid4().hex}"
+    )
+    if _GENERATED_REFRESH_REF.fullmatch(refresh_secret_ref) is None:
+        raise GoogleCredentialError("generated refresh-secret reference has invalid format")
+    backend.store("connect-google", refresh_secret_ref, refresh_token)
+    writer = registry_writer or write_oauth_json
 
     registry_path = _credentials_registry_path(home=home, platform=platform)
     with _registry_file_lock(registry_path):
-        registry = (
-            json.loads(registry_path.read_text(encoding="utf-8"))
-            if registry_path.exists()
-            else {"schema_version": 1, "credentials": {}}
-        )
+        try:
+            registry = _load_registry(registry_path)
+        except Exception:
+            _safe_clear(backend, refresh_secret_ref)
+            raise
         _test_race_delay(subject)
-        registry["credentials"][credential_id] = {
+        previous = registry["credentials"].get(credential_id)
+        new_record = {
             "subject": subject,
             "account": account,
             "client_id": client_id,
-            "token_uri": token_uri,
+            "client_secret_ref": resolved_client_secret_ref,
             "granted_scopes": sorted(granted_scopes),
+            "refresh_secret_ref": refresh_secret_ref,
         }
-        registry_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = registry_path.with_suffix(".json.tmp")
-        tmp_path.write_text(json.dumps(registry, indent=2), encoding="utf-8")
-        os.replace(tmp_path, registry_path)
+        published = json.loads(json.dumps(registry))
+        published["schema_version"] = 2
+        published["credentials"][credential_id] = new_record
+        warnings: list[str] = []
+        try:
+            writer(registry_path, published)
+        except Exception as exc:
+            try:
+                visible = _load_registry(registry_path)["credentials"].get(credential_id)
+            except Exception as read_exc:
+                raise GoogleCredentialPublicationUncertain(
+                    "Google credential publication state is uncertain"
+                ) from read_exc
+            if visible == new_record:
+                warnings.append("registry_durability_warning")
+            elif visible == previous:
+                _safe_clear(backend, refresh_secret_ref)
+                raise GoogleCredentialError("Google credential publication failed") from exc
+            else:
+                raise GoogleCredentialPublicationUncertain(
+                    "Google credential publication state is uncertain"
+                ) from exc
+        else:
+            if isinstance(previous, dict):
+                previous_ref = _optional_refresh_secret_ref(credential_id, previous)
+                candidate_is_safe = (
+                    previous_ref is not None
+                    and (
+                        _GENERATED_REFRESH_REF.fullmatch(previous_ref) is not None
+                        or previous_ref == f"{credential_id}:refresh-token"
+                    )
+                )
+                still_referenced = any(
+                    _optional_refresh_secret_ref(other_id, other_record) == previous_ref
+                    for other_id, other_record in published["credentials"].items()
+                    if other_id != credential_id and isinstance(other_record, dict)
+                )
+                if candidate_is_safe and not still_referenced and previous_ref != refresh_secret_ref:
+                    try:
+                        backend.clear("connect-google", previous_ref)
+                    except Exception:
+                        warnings.append("secret_cleanup_warning")
     return GoogleCredentialRef(
         credential_id=credential_id,
         subject=subject,
         account=account,
         client_id=client_id,
-        token_uri=token_uri,
+        client_secret_ref=resolved_client_secret_ref,
+        token_uri=GOOGLE_TOKEN_URL,
         granted_scopes=frozenset(granted_scopes),
+        refresh_secret_ref=refresh_secret_ref,
+        publication_warnings=tuple(warnings),
     )
 
 
@@ -628,7 +756,7 @@ def load_credential(credential_id: str, *, home: Path, platform: str) -> GoogleC
         raise GoogleCredentialError(
             f"invalid credential registry at {registry_path}: {credential_id} must be an object"
         )
-    string_fields = ("subject", "account", "client_id", "token_uri")
+    string_fields = ("subject", "account", "client_id")
     if any(
         not isinstance(record.get(field), str) or not record[field]
         for field in string_fields
@@ -648,9 +776,58 @@ def load_credential(credential_id: str, *, home: Path, platform: str) -> GoogleC
         subject=record["subject"],
         account=record["account"],
         client_id=record["client_id"],
-        token_uri=record["token_uri"],
+        client_secret_ref=_client_secret_ref(record["client_id"], record),
+        token_uri=GOOGLE_TOKEN_URL,
         granted_scopes=frozenset(granted_scopes),
+        refresh_secret_ref=_refresh_secret_ref(credential_id, record),
     )
+
+
+class _RejectRedirects(urllib.request.HTTPRedirectHandler):
+    """Reject every redirect so secret-bearing requests stay on pinned origins."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise GoogleCredentialError("Google endpoint redirect refused")
+
+
+def _default_urlopen(request, *, timeout: float):
+    return urllib.request.build_opener(_RejectRedirects()).open(request, timeout=timeout)
+
+
+def _read_bounded_json(response) -> dict:
+    data = response.read(GOOGLE_HTTP_MAX_BODY_BYTES + 1)
+    if len(data) > GOOGLE_HTTP_MAX_BODY_BYTES:
+        raise GoogleCredentialError("Google endpoint response exceeded 65536 bytes")
+    try:
+        payload = json.loads(data)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise GoogleCredentialError("Google endpoint returned invalid JSON") from exc
+    if not isinstance(payload, dict):
+        raise GoogleCredentialError("Google endpoint returned a non-object response")
+    return payload
+
+
+def _open_google_json(
+    request,
+    *,
+    urlopen: Callable | None = None,
+    timeout_s: float = GOOGLE_HTTP_TIMEOUT_S,
+) -> dict:
+    """Open one pinned Google request with redirect, size, and JSON guards."""
+    opener = urlopen or _default_urlopen
+    try:
+        with opener(request, timeout=timeout_s) as response:
+            return _read_bounded_json(response)
+    except GoogleCredentialError:
+        raise
+    except urllib.error.HTTPError as exc:
+        try:
+            exc.read(GOOGLE_HTTP_MAX_BODY_BYTES + 1)
+        except Exception:
+            pass
+        raise GoogleCredentialError(f"Google endpoint returned HTTP {exc.code}") from exc
+    except urllib.error.URLError as exc:
+        raise GoogleCredentialError("Google endpoint request failed") from exc
 
 
 def refresh_access_token(
@@ -668,9 +845,6 @@ def refresh_access_token(
     *before* any network call is made, so a caller requesting a scope the
     user never granted fails locally without touching the network.
     """
-    import urllib.request
-
-    urlopen = urlopen or urllib.request.urlopen
     ref = load_credential(credential_id, home=home, platform=platform)
     missing = set(required_scopes) - ref.granted_scopes
     if missing:
@@ -679,10 +853,10 @@ def refresh_access_token(
     from officina.common import secret_store as secret_store_module
 
     client_secret = secret_store_module.require(
-        "connect-google", f"oauth-client:{ref.client_id}:client-secret", backend=secret_backend
+        "connect-google", ref.client_secret_ref, backend=secret_backend
     )
     refresh_token = secret_store_module.require(
-        "connect-google", f"{credential_id}:refresh-token", backend=secret_backend
+        "connect-google", ref.refresh_secret_ref, backend=secret_backend
     )
     return _exchange_refresh_token(ref=ref, client_secret=client_secret, refresh_token=refresh_token, urlopen=urlopen)
 
@@ -694,23 +868,26 @@ def exchange_authorization_code(
     code_verifier: str,
     redirect_uri: str,
     token_uri: str,
-    urlopen: Callable,
+    urlopen: Callable | None = None,
+    client_secret_ref: str | None = None,
     secret_backend=None,
 ) -> dict:
     """Exchange a PKCE authorization code for tokens using the stored client secret.
 
     The client secret never leaves this module: callers (connect-google's
     authorize-services source) pass only ``client_id``/``token_uri`` read from
-    the public canonical client file, and this function looks the secret up
-    from the host secret store itself, keyed by ``client_id``.
+    the redacted canonical client file, and this function resolves the exact
+    supplied secret reference. ``token_uri`` remains accepted for legacy
+    callers but is never trusted as the exchange endpoint.
     """
     import urllib.parse
     import urllib.request
 
     from officina.common import secret_store as secret_store_module
 
+    secret_ref = client_secret_ref or f"oauth-client:{client_id}:client-secret"
     client_secret = secret_store_module.require(
-        "connect-google", f"oauth-client:{client_id}:client-secret", backend=secret_backend
+        "connect-google", secret_ref, backend=secret_backend
     )
     data = urllib.parse.urlencode(
         {
@@ -722,18 +899,8 @@ def exchange_authorization_code(
             "code_verifier": code_verifier,
         }
     ).encode()
-    request = urllib.request.Request(token_uri, data=data, method="POST")
-    try:
-        with urlopen(request) as response:
-            payload = json.loads(response.read())
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise GoogleCredentialError(f"OAuth token endpoint returned HTTP {exc.code}: {detail}") from exc
-    except urllib.error.URLError as exc:
-        raise GoogleCredentialError(f"OAuth token endpoint failed: {exc}") from exc
-    if not isinstance(payload, dict):
-        raise GoogleCredentialError("token endpoint returned a non-object response")
-    return payload
+    request = urllib.request.Request(GOOGLE_TOKEN_URL, data=data, method="POST")
+    return _open_google_json(request, urlopen=urlopen)
 
 
 def _exchange_refresh_token(
@@ -741,7 +908,7 @@ def _exchange_refresh_token(
     ref: GoogleCredentialRef | GoogleCredentialFile,
     client_secret: str,
     refresh_token: str,
-    urlopen: Callable,
+    urlopen: Callable | None,
 ) -> str:
     import urllib.parse
     import urllib.request
@@ -754,22 +921,19 @@ def _exchange_refresh_token(
             "grant_type": "refresh_token",
         }
     ).encode()
-    request = urllib.request.Request(ref.token_uri, data=data, method="POST")
-    try:
-        with urlopen(request) as response:
-            payload = json.loads(response.read())
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise GoogleCredentialError(f"OAuth token endpoint returned HTTP {exc.code}: {detail}") from exc
-    except urllib.error.URLError as exc:
-        raise GoogleCredentialError(f"OAuth token endpoint failed: {exc}") from exc
+    request = urllib.request.Request(GOOGLE_TOKEN_URL, data=data, method="POST")
+    payload = _open_google_json(request, urlopen=urlopen)
     return payload["access_token"]
 
 
 __all__ = [
     "GoogleCredentialError",
     "GoogleCredentialFile",
+    "GoogleCredentialPublicationUncertain",
     "GoogleCredentialRef",
+    "GOOGLE_AUTHORIZATION_URL",
+    "GOOGLE_TOKEN_URL",
+    "GOOGLE_USERINFO_URL",
     "IDENTITY_SCOPES",
     "SERVICE_SCOPES",
     "canonical_client_path",

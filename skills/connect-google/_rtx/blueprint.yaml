@@ -13,6 +13,7 @@ authority:
       setup interfaces may read it for authorization.
 children: {}
 content:
+- _browser_helper\.py
 - _client_config\.py
 - _connect_services\.py
 - _loopback_oauth\.py

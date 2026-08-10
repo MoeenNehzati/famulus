@@ -45,6 +45,21 @@ interfaces:
           type:
             kind: string
             sensitivity: user-private
+        no-open-browser:
+          default: false
+          description: Print the manual authorization URL and same-port forwarding
+            guidance without attempting to launch a local browser.
+          required: false
+          sensitivity: public
+          type:
+            kind: flag
+        callback-port:
+          description: Explicit TCP port for the loopback listener; omit to let the
+            operating system choose an available port.
+          required: false
+          sensitivity: public
+          type:
+            kind: integer
         gmail-nickname:
           description: Existing or new email-client nickname to bind when Gmail is granted.
           required: false
@@ -134,7 +149,9 @@ interfaces:
           output_ref: result
       helpers: []
       interaction:
-        mode: unattended
+        mode: interactive
+        channel: tty
+        unattended_outcome: failed
       outcomes:
       - caller_action: Continue only when complete is true.
         class: success
@@ -189,12 +206,15 @@ interfaces:
         - --account-hint
         - --gmail-nickname
         - --allow-account-change
+        - --no-open-browser
+        - --callback-port
         flag_patterns:
           --services: ^.+$
           --home: ^.+$
           --account-hint: ^.+$
           --gmail-nickname: ^.+$
           --allow-account-change: ^.*$
+          --callback-port: ^[0-9]+$
         max_positionals: 0
         min_positionals: 0
         required_flags:
@@ -202,6 +222,7 @@ interfaces:
         - --home
     usage: --services <comma-separated-list> --home <dir> [--account-hint <email>]
       [--gmail-nickname <name>] [--allow-account-change <comma-separated-list>]
+      [--no-open-browser] [--callback-port <port>]
     version: 1
   connect-google._rtx.source.rtx-connect-services.interface.bind-credential-file:
     contract:

@@ -1,6 +1,14 @@
 content:
+- _browser_helper\.py
 - _loopback_oauth\.py
 dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-client-config.yaml
+  reason: Loads and preflights the canonical redacted client and its exact client-secret
+    reference before opening the callback listener.
+  source: connect-google._rtx.source.rtx-client-config
+  version: 1
 - blueprint:
     base: module-root
     path: blueprints/rtx-init.yaml
@@ -42,13 +50,31 @@ interfaces:
           type:
             kind: string
             sensitivity: user-private
+        no-open-browser:
+          default: false
+          description: Print the manual authorization URL and same-port forwarding
+            guidance without attempting to launch a local browser.
+          required: false
+          sensitivity: public
+          type:
+            kind: flag
+        callback-port:
+          description: Explicit TCP port for the loopback listener; omit to let the
+            operating system choose an available port.
+          required: false
+          sensitivity: public
+          type:
+            kind: integer
       preconditions: []
       interaction:
-        mode: unattended
+        mode: interactive
+        channel: tty
+        unattended_outcome: failed
       caller_warnings:
-      - external-side-effect: Opens a browser consent screen, starts a local loopback
-          HTTP listener for exactly one callback, and stores a refresh token in the
-          host secret store plus a new secret-free credential descriptor file.
+      - external-side-effect: Prints a manual consent URL, optionally launches the
+          host browser in an isolated helper process, starts a bounded local loopback
+          listener, and stores a refresh token in the host secret store plus a new
+          secret-free timestamped credential descriptor file.
       outputs:
       - id: result
         audience: machine
@@ -96,8 +122,8 @@ interfaces:
         class: error
         outputs: []
         effects: []
-        caller_action: Report state mismatch, account mismatch, or token-exchange
-          failure without exposing OAuth secrets; no credential is stored.
+        caller_action: Report the stable phase and code without exposing OAuth secrets;
+          do not retry consent unless the failure requires a new authorization.
       execution:
         state_effect: mutating
         lifecycle: finite
@@ -149,6 +175,17 @@ interfaces:
       helpers: []
       direct_io:
         network:
+        - id: authorization-endpoint
+          medium: network
+          access: read-write
+          system: google-oauth-authorization-endpoint
+          content: PKCE authorization request and user consent
+          formats:
+          - url-query
+          sensitivity: user-private
+          endpoint: https://accounts.google.com/o/oauth2/v2/auth
+          reason: Present the pinned authorization request in the user's browser;
+            client-supplied authorization endpoints are ignored.
         - id: token-endpoint
           medium: network
           access: read-write
@@ -157,8 +194,7 @@ interfaces:
           formats:
           - json
           sensitivity: secret
-          endpoint: Google OAuth 2.0 token endpoint from the installed client's auth/token
-            URIs
+          endpoint: https://oauth2.googleapis.com/token
           reason: Exchanges the loopback-captured authorization code and PKCE verifier
             for an access token and refresh token.
         - id: userinfo-endpoint
@@ -169,7 +205,7 @@ interfaces:
           formats:
           - json
           sensitivity: user-private
-          endpoint: Google OpenID Connect UserInfo endpoint
+          endpoint: https://openidconnect.googleapis.com/v1/userinfo
           reason: Confirms the authorized account's verified email before any credential
             is stored.
         - id: browser-consent
@@ -180,9 +216,10 @@ interfaces:
           formats:
           - url-query
           sensitivity: secret
-          endpoint: http://localhost on an ephemeral port
-          reason: Receives exactly one browser redirect callback carrying the authorization
-            code, then closes.
+          endpoint: http://127.0.0.1:<port>/
+          reason: Receives one valid root-path browser redirect callback on an operating-system-selected
+            or explicit same port, ignoring malformed or unknown-error requests until
+            the monotonic consent deadline expires.
         reads:
         - access: read
           content: config
@@ -192,8 +229,9 @@ interfaces:
           medium: local-filesystem
           path: platform Famulus config root (see common.interface.google-credentials)
             / connect-google/client.json
-          reason: Read the installed client_id, auth_uri, and token_uri; the client
-            secret itself is never read from this file.
+          reason: Read the installed client_id and exact client_secret_ref after the
+            secret reference resolves; endpoint values and plaintext secrets are
+            rejected or ignored rather than trusted from this file.
           sensitivity: secret
           system: filesystem
         writes:
@@ -232,8 +270,31 @@ interfaces:
             secret.
           sensitivity: user-private
           system: agent-runtime
-    description: Request one combined Google OAuth 2.0 PKCE grant and return a new
-      timestamped credential descriptor path covering exactly the scopes Google granted.
+        - id: diagnostic-stream
+          medium: stderr
+          access: write
+          system: agent-runtime
+          content: oauth-phase-diagnostics
+          formats:
+          - jsonl
+          sensitivity: user-private
+          reason: Emit stable phase and code events, the manual authorization URL,
+            same-port SSH forwarding guidance, and browser-launch status without
+            OAuth secrets.
+        - id: browser-helper
+          medium: subprocess
+          access: execute
+          system: default-browser
+          content: browser-launch-request
+          formats:
+          - url-via-stdin
+          sensitivity: user-private
+          reason: Attempt browser opening without allowing host browser-library hangs
+            to block callback handling; the helper is bounded and reaped on every
+            terminal path.
+    description: Request one combined Google OAuth 2.0 PKCE grant across every selected
+      service and return a new timestamped credential descriptor path covering exactly
+      the scopes Google granted.
     process_binding:
       entry: AuthorizeServicesInterface
       kind: process
@@ -242,15 +303,19 @@ interfaces:
         - --services
         - --account-hint
         - --home
+        - --no-open-browser
+        - --callback-port
         flag_patterns:
           --services: ^.+$
           --account-hint: ^.+$
           --home: ^.+$
+          --callback-port: ^[0-9]+$
         max_positionals: 0
         min_positionals: 0
         required_flags:
         - --services
-    usage: --services <list> [--account-hint <email>] [--home <dir>]
+    usage: --services <list> [--account-hint <email>] [--home <dir>] [--no-open-browser]
+      [--callback-port <port>]
     version: 1
 node_type: behavioral_source
 platform_support:

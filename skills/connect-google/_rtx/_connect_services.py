@@ -198,6 +198,8 @@ def connect_services(
     gmail_nickname: str | None,
     allow_account_change: Sequence[str],
     dispatch: Callable,
+    browser_enabled: bool = True,
+    callback_port: int = 0,
     authorize: Callable | None = None,
 ) -> dict:
     """Authorize once, then bind the returned descriptor to granted services."""
@@ -209,6 +211,8 @@ def connect_services(
         services,
         home=Path(home),
         account_hint=account_hint,
+        browser_enabled=browser_enabled,
+        callback_port=callback_port,
     )
     return bind_credential_file(
         credential_file=Path(result.credential_file),
@@ -247,6 +251,8 @@ class ConnectServicesInterface(_CoordinatorInterface):
         parser = super().build_parser()
         self._add_binding_arguments(parser)
         parser.add_argument("--account-hint")
+        parser.add_argument("--no-open-browser", action="store_true")
+        parser.add_argument("--callback-port", type=int, default=0)
         return parser
 
     def run(self, args: argparse.Namespace) -> int:
@@ -258,6 +264,8 @@ class ConnectServicesInterface(_CoordinatorInterface):
                 gmail_nickname=args.gmail_nickname,
                 allow_account_change=_comma_separated(args.allow_account_change),
                 dispatch=self.dispatch,
+                browser_enabled=not args.no_open_browser,
+                callback_port=args.callback_port,
             )
         except Exception as exc:  # noqa: BLE001 - stable machine failure boundary
             print(

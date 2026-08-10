@@ -182,12 +182,13 @@ def integration_env(
         def __exit__(self, *_exc):
             return False
 
-        def read(self) -> bytes:
-            return json.dumps(self.payload).encode("utf-8")
+        def read(self, size: int = -1) -> bytes:
+            data = json.dumps(self.payload).encode("utf-8")
+            return data if size < 0 else data[:size]
 
     def urlopen(request, **_kwargs):
         url = request.full_url
-        if url == "https://oauth.example.test/token":
+        if url == "https://oauth2.googleapis.com/token":
             state.token_requests += 1
             return Response({"access_token": "ephemeral-access-token"})
         if "calendar/v3/users/me/calendarList" in url:

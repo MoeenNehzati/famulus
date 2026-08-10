@@ -100,7 +100,7 @@ def main() -> int:
             target=target,
             args=script_args,
             stdin=stdin,
-            capture_output=True,
+            capture_output=False,
             check=False,
             warning_handler=_print_warning,
             repository_config=args.repository_config,
@@ -112,16 +112,6 @@ def main() -> int:
             print(f"error: {exc}", file=sys.stderr)
         return 2
 
-    if completed.stdout:
-        if isinstance(completed.stdout, str):
-            sys.stdout.write(completed.stdout)
-        else:
-            sys.stdout.buffer.write(completed.stdout)
-    if completed.stderr:
-        if isinstance(completed.stderr, str):
-            sys.stderr.write(completed.stderr)
-        else:
-            sys.stderr.buffer.write(completed.stderr)
     return completed.returncode
 
 __all__ = ["main"]

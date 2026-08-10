@@ -115,6 +115,41 @@ def test_connect_services_dispatches_only_selected_granted_services(
     }
 
 
+def test_connect_services_forwards_portable_browser_controls(
+    connect_services_module,
+    completed: Callable[..., subprocess.CompletedProcess],
+    authorization: Callable[..., SimpleNamespace],
+) -> None:
+    observed: dict[str, object] = {}
+
+    def fake_authorize(*_args, **kwargs):
+        observed.update(kwargs)
+        return authorization(requested=("drive",), granted=("drive",))
+
+    connect_services_module.connect_services(
+        services=("drive",),
+        home=Path("/home/person"),
+        account_hint=None,
+        gmail_nickname=None,
+        allow_account_change=(),
+        dispatch=lambda key, *, args, **_kwargs: completed(
+            {
+                "service": key,
+                "credential_file": "/absolute/credential.json",
+                "account": "person@example.com",
+                "bound": True,
+                "verified": True,
+            }
+        ),
+        browser_enabled=False,
+        callback_port=43123,
+        authorize=fake_authorize,
+    )
+
+    assert observed["browser_enabled"] is False
+    assert observed["callback_port"] == 43123
+
+
 def test_partial_binding_reports_error_and_retry_reuses_same_file(
     connect_services_module,
     completed: Callable[..., subprocess.CompletedProcess],
