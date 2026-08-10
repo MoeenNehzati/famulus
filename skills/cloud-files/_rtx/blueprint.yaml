@@ -133,9 +133,15 @@ exports:
       allow_all_modules: false
       allowed_callers:
       - cloud-files
-      - install-assistant-tools
-      - install-assistant-tools._rtx
     source_interface: cloud-files._rtx.source.rtx-ensure-oauth.interface.use-google-credential
+  cloud-files._rtx.interface.use-google-credential-file:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - cloud-files
+      - connect-google
+      - connect-google._rtx
+    source_interface: cloud-files._rtx.source.rtx-ensure-oauth.interface.use-google-credential-file
   cloud-files._rtx.interface.write-config:
     access:
       allow_all_modules: false

@@ -63,8 +63,10 @@ _FAKE_DISPATCHER_TEMPLATE = textwrap.dedent(
             # Simulate a hypothetical downstream leak: secret-shaped text
             # written to stderr, which _dispatch never reads on success.
             sys.stderr.write("noise client_secret=leaked-secret refresh_token=leaked-token\\n")
-        print(json.dumps(response))
-        return 0
+        returncode = int(response.get("__returncode__", 0)) if isinstance(response, dict) else 0
+        payload = {k: v for k, v in response.items() if not k.startswith("__")} if isinstance(response, dict) else response
+        print(json.dumps(payload))
+        return returncode
 
     if __name__ == "__main__":
         raise SystemExit(main())
@@ -105,17 +107,23 @@ _DEFAULT_RESPONSES = {
         "client_type": "desktop",
         "path": "/fake/client.json",
     },
-    "connect-google._rtx.interface.authorize-services": {
+    "connect-google._rtx.interface.connect-services": {
         "schema_version": 1,
-        "account": "user@example.com",
-        "credential_id": "cred-123",
+        "credential_file": "/fake/credential.json",
         "requested_services": ["drive", "calendar", "gmail"],
         "granted_services": ["drive", "calendar", "gmail"],
         "denied_services": [],
+        "bound_services": ["drive", "calendar"],
+        "verified_services": ["drive", "calendar"],
+        "incomplete_services": {
+            "gmail": {
+                "code": "missing-gmail-nickname",
+                "message": "Gmail nickname required",
+            }
+        },
+        "complete": False,
+        "__returncode__": 1,
     },
-    "cloud-files._rtx.interface.use-google-credential": {},
-    "g-calendar._rtx.interface.use-google-credential": {},
-    "email-client._rtx.interface.accounts-use-google-credential": {},
 }
 
 
@@ -127,13 +135,16 @@ def fake_dispatcher(tmp_path):
 @pytest.fixture
 def fake_dispatcher_with_leaky_stdout(tmp_path):
     responses = dict(_DEFAULT_RESPONSES)
-    responses["connect-google._rtx.interface.authorize-services"] = {
+    responses["connect-google._rtx.interface.connect-services"] = {
         "schema_version": 1,
-        "account": "user@example.com",
-        "credential_id": "cred-123",
+        "credential_file": "/fake/credential.json",
         "requested_services": ["drive"],
         "granted_services": ["drive"],
         "denied_services": [],
+        "bound_services": ["drive"],
+        "verified_services": ["drive"],
+        "incomplete_services": {},
+        "complete": True,
         # Simulate a hypothetical downstream bug leaking secret-shaped keys
         # into the response payload -- our result object must not surface
         # them regardless.
@@ -149,22 +160,28 @@ def test_run_google_onboarding_calls_dispatcher_in_order(fake_dispatcher, tmp_pa
         home=tmp_path, stdin_isatty=False,
     )
     assert fake_dispatcher.calls[0][0] == "connect-google._rtx.interface.client-status"
-    assert any(c[0] == "connect-google._rtx.interface.authorize-services" for c in fake_dispatcher.calls)
+    assert [call[0] for call in fake_dispatcher.calls] == [
+        "connect-google._rtx.interface.client-status",
+        "connect-google._rtx.interface.connect-services",
+    ]
     assert result.status == "partial"  # gmail deferred (no nickname supplied)
-    assert result.credential_id == "cred-123"
+    assert result.credential_file == "/fake/credential.json"
 
 
-def test_run_google_onboarding_binds_drive_and_calendar(fake_dispatcher, tmp_path):
+def test_run_google_onboarding_passes_selected_services_to_coordinator(
+    fake_dispatcher, tmp_path
+):
     run_google_onboarding(
         ["drive", "calendar"], dispatcher_path=fake_dispatcher.path,
         home=tmp_path, stdin_isatty=False,
     )
-    interfaces = [c[0] for c in fake_dispatcher.calls]
-    assert "cloud-files._rtx.interface.use-google-credential" in interfaces
-    assert "g-calendar._rtx.interface.use-google-credential" in interfaces
-    drive_call = next(c for c in fake_dispatcher.calls if c[0] == "cloud-files._rtx.interface.use-google-credential")
-    assert "--credential-id" in drive_call[1]
-    assert "cred-123" in drive_call[1]
+    connect_call = next(
+        call
+        for call in fake_dispatcher.calls
+        if call[0] == "connect-google._rtx.interface.connect-services"
+    )
+    assert connect_call[1][:2] == ["--services", "drive,calendar"]
+    assert not any("use-google-credential" in call[0] for call in fake_dispatcher.calls)
 
 
 def test_run_google_onboarding_non_interactive_with_no_services_does_not_block(fake_dispatcher, tmp_path):
@@ -191,7 +208,7 @@ def test_run_google_onboarding_skips_when_client_not_installed(tmp_path):
         ["drive"], dispatcher_path=dispatcher.path, home=tmp_path, stdin_isatty=False,
     )
     assert result.status == "skipped"
-    # Only client-status should have been called -- authorize-services must
+    # Only client-status should have been called -- connect-services must
     # not run without a valid client.
     assert [c[0] for c in dispatcher.calls] == ["connect-google._rtx.interface.client-status"]
 
@@ -212,37 +229,48 @@ def test_run_google_onboarding_defers_gmail_binding_without_an_account_nickname(
     result = run_google_onboarding(
         ["gmail"], dispatcher_path=fake_dispatcher.path, home=tmp_path, stdin_isatty=False,
     )
-    interfaces = [c[0] for c in fake_dispatcher.calls]
-    assert "email-client._rtx.interface.accounts-use-google-credential" not in interfaces
     assert "gmail" in result.granted_services
     assert "gmail" in result.deferred_services
-    assert result.credential_id == "cred-123"
+    assert result.credential_file == "/fake/credential.json"
     assert result.status == "partial"
 
 
-def test_run_google_onboarding_binds_gmail_when_nickname_supplied(fake_dispatcher, tmp_path):
+def test_run_google_onboarding_binds_gmail_when_nickname_supplied(tmp_path):
+    responses = dict(_DEFAULT_RESPONSES)
+    responses["connect-google._rtx.interface.connect-services"] = {
+        "schema_version": 1,
+        "credential_file": "/fake/credential.json",
+        "requested_services": ["gmail"],
+        "granted_services": ["gmail"],
+        "denied_services": [],
+        "bound_services": ["gmail"],
+        "verified_services": ["gmail"],
+        "incomplete_services": {},
+        "complete": True,
+    }
+    fake_dispatcher = _write_fake_dispatcher(tmp_path, responses)
     result = run_google_onboarding(
         ["gmail"], dispatcher_path=fake_dispatcher.path, home=tmp_path,
         gmail_nickname="personal", stdin_isatty=False,
     )
-    call = next(
-        c for c in fake_dispatcher.calls
-        if c[0] == "email-client._rtx.interface.accounts-use-google-credential"
-    )
-    assert "--nickname" in call[1] and "personal" in call[1]
+    call = next(c for c in fake_dispatcher.calls if c[0].endswith("connect-services"))
+    assert "--gmail-nickname" in call[1] and "personal" in call[1]
     assert "gmail" not in result.deferred_services
     assert result.status == "completed"
 
 
 def test_run_google_onboarding_reports_denied_services_as_partial(tmp_path):
     responses = dict(_DEFAULT_RESPONSES)
-    responses["connect-google._rtx.interface.authorize-services"] = {
+    responses["connect-google._rtx.interface.connect-services"] = {
         "schema_version": 1,
-        "account": "user@example.com",
-        "credential_id": "cred-123",
+        "credential_file": "/fake/credential.json",
         "requested_services": ["drive", "calendar"],
         "granted_services": ["drive"],
         "denied_services": ["calendar"],
+        "bound_services": ["drive"],
+        "verified_services": ["drive"],
+        "incomplete_services": {},
+        "complete": False,
     }
     dispatcher = _write_fake_dispatcher(tmp_path, responses)
 
@@ -267,15 +295,19 @@ def test_run_google_onboarding_survives_a_later_service_binding_failure(tmp_path
     # drive must not be lost -- the function must not raise, and the
     # returned result must show drive bound and calendar's failure captured.
     responses = dict(_DEFAULT_RESPONSES)
-    responses["connect-google._rtx.interface.authorize-services"] = {
+    responses["connect-google._rtx.interface.connect-services"] = {
         "schema_version": 1,
-        "account": "user@example.com",
-        "credential_id": "cred-123",
+        "credential_file": "/fake/credential.json",
         "requested_services": ["drive", "calendar"],
         "granted_services": ["drive", "calendar"],
         "denied_services": [],
+        "bound_services": ["drive"],
+        "verified_services": ["drive"],
+        "incomplete_services": {
+            "calendar": {"code": "live-check-failed", "message": "HTTP 403"}
+        },
+        "complete": False,
     }
-    responses["g-calendar._rtx.interface.use-google-credential"] = {"__exit_nonzero__": True}
     dispatcher = _write_fake_dispatcher(tmp_path, responses)
 
     result = run_google_onboarding(

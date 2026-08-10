@@ -2,7 +2,7 @@ authority:
   owns_filesystem:
   - allowed_readers:
     - cloud-files._rtx.interface.setup-oauth
-    - connect-google._rtx.interface.authorize-services
+    - connect-google._rtx.interface.connect-services
     - connect-google._rtx.interface.client-status
     - email-client._rtx.interface.accounts-setup-oauth
     - g-calendar._rtx.interface.setup-oauth
@@ -14,19 +14,18 @@ authority:
 children: {}
 content:
 - _client_config\.py
+- _connect_services\.py
 - _loopback_oauth\.py
 - __init__\.py
 - tests/.*
 description: Code module for the connect-google skill.
 exports:
-  connect-google._rtx.interface.authorize-services:
+  connect-google._rtx.interface.bind-credential-file:
     access:
       allow_all_modules: false
       allowed_callers:
       - connect-google
-      - install-assistant-tools
-      - install-assistant-tools._rtx
-    source_interface: connect-google._rtx.source.rtx-authorize-services.interface.authorize-services
+    source_interface: connect-google._rtx.source.rtx-connect-services.interface.bind-credential-file
   connect-google._rtx.interface.client-status:
     access:
       allow_all_modules: false
@@ -35,6 +34,14 @@ exports:
       - install-assistant-tools
       - install-assistant-tools._rtx
     source_interface: connect-google._rtx.source.rtx-client-config.interface.client-status
+  connect-google._rtx.interface.connect-services:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - connect-google
+      - install-assistant-tools
+      - install-assistant-tools._rtx
+    source_interface: connect-google._rtx.source.rtx-connect-services.interface.connect-services
   connect-google._rtx.interface.install-client:
     access:
       allow_all_modules: false
@@ -57,6 +64,10 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/rtx-client-config.yaml
+  connect-google._rtx.source.rtx-connect-services:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-connect-services.yaml
   connect-google._rtx.source.rtx-init:
     blueprint:
       base: module-root

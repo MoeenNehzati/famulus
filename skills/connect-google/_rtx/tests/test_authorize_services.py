@@ -24,7 +24,11 @@ SPEC.loader.exec_module(authorize_services_module)
 
 authorize_services = authorize_services_module.authorize_services
 
-from officina.common.google_credentials import GoogleCredentialError, install_client, load_credential
+from officina.common.google_credentials import (
+    GoogleCredentialError,
+    install_client,
+    load_credential_file,
+)
 
 PLATFORM = "linux"
 
@@ -67,6 +71,20 @@ def install_fake_client(home: Path, backend: FakeSecretBackend, **kwargs: object
     payload = desktop_client_payload(**kwargs)
     install_client(payload, home=home, platform=PLATFORM, replace=False, secret_backend=backend)
     return payload["installed"]
+
+
+@pytest.fixture
+def secret_backend() -> FakeSecretBackend:
+    """Keep mutable secret state isolated while centralizing setup."""
+    return FakeSecretBackend()
+
+
+@pytest.fixture
+def installed_client(
+    tmp_path: Path,
+    secret_backend: FakeSecretBackend,
+) -> dict[str, object]:
+    return install_fake_client(tmp_path, secret_backend)
 
 
 class FakeResponse:
@@ -148,9 +166,11 @@ def make_callback_opener(*, code: str | None = "fake-auth-code", state_override:
     return opener
 
 
-def test_authorize_services_builds_correct_scope_union(tmp_path: Path) -> None:
-    backend = FakeSecretBackend()
-    installed = install_fake_client(tmp_path, backend)
+def test_authorize_services_builds_correct_scope_union(
+    tmp_path: Path,
+    secret_backend: FakeSecretBackend,
+    installed_client: dict[str, object],
+) -> None:
     captured: dict[str, str] = {}
 
     def capturing_opener(url: str) -> None:
@@ -163,14 +183,14 @@ def test_authorize_services_builds_correct_scope_union(tmp_path: Path) -> None:
         account_hint=None,
         open_browser=capturing_opener,
         urlopen=make_fake_urlopen(
-            token_uri=installed["token_uri"],
+            token_uri=installed_client["token_uri"],
             granted_scope=(
                 "openid email https://www.googleapis.com/auth/drive "
                 "https://www.googleapis.com/auth/calendar https://mail.google.com/"
             ),
         ),
         platform=PLATFORM,
-        secret_backend=backend,
+        secret_backend=secret_backend,
     )
 
     assert "code_challenge_method=S256" in captured["url"]
@@ -187,63 +207,70 @@ def test_authorize_services_rejects_unknown_service(tmp_path: Path) -> None:
         authorize_services(["dropbox"], home=tmp_path, account_hint=None, platform=PLATFORM)
 
 
-def test_authorize_services_result_payload_shape(tmp_path: Path) -> None:
-    backend = FakeSecretBackend()
-    installed = install_fake_client(tmp_path, backend)
-
+def test_authorize_services_result_payload_shape(
+    tmp_path: Path,
+    secret_backend: FakeSecretBackend,
+    installed_client: dict[str, object],
+) -> None:
     result = authorize_services(
         ["drive"],
         home=tmp_path,
         account_hint=None,
         open_browser=make_callback_opener(),
         urlopen=make_fake_urlopen(
-            token_uri=installed["token_uri"],
+            token_uri=installed_client["token_uri"],
             granted_scope="openid email https://www.googleapis.com/auth/drive",
         ),
         platform=PLATFORM,
-        secret_backend=backend,
+        secret_backend=secret_backend,
     )
     payload = result.as_payload()
     assert payload["schema_version"] == 1
     assert set(payload) == {
         "schema_version",
         "account",
-        "credential_id",
+        "subject",
+        "credential_file",
         "requested_services",
         "granted_services",
         "denied_services",
     }
+    assert Path(payload["credential_file"]).is_absolute()
+    assert "credential_id" not in payload
 
 
-def test_authorize_services_partial_grant_still_stores_granted_subset(tmp_path: Path) -> None:
-    backend = FakeSecretBackend()
-    installed = install_fake_client(tmp_path, backend)
-
+def test_authorize_services_partial_grant_still_stores_granted_subset(
+    tmp_path: Path,
+    secret_backend: FakeSecretBackend,
+    installed_client: dict[str, object],
+) -> None:
     result = authorize_services(
         ["drive", "gmail"],
         home=tmp_path,
         account_hint=None,
         open_browser=make_callback_opener(),
         urlopen=make_fake_urlopen(
-            token_uri=installed["token_uri"],
+            token_uri=installed_client["token_uri"],
             granted_scope="openid email https://www.googleapis.com/auth/drive",
         ),
         platform=PLATFORM,
-        secret_backend=backend,
+        secret_backend=secret_backend,
     )
 
     assert result.granted_services == ("drive",)
     assert result.denied_services == ("gmail",)
 
-    ref = load_credential(result.credential_id, home=tmp_path, platform=PLATFORM)
+    ref = load_credential_file(Path(result.credential_file))
     assert "https://www.googleapis.com/auth/drive" in ref.granted_scopes
     assert "https://mail.google.com/" not in ref.granted_scopes
+    assert ref.granted_services == ("drive",)
 
 
-def test_authorize_services_state_mismatch_stores_no_credential(tmp_path: Path) -> None:
-    backend = FakeSecretBackend()
-    install_fake_client(tmp_path, backend)
-
+def test_authorize_services_state_mismatch_stores_no_credential(
+    tmp_path: Path,
+    secret_backend: FakeSecretBackend,
+    installed_client: dict[str, object],
+) -> None:
     with pytest.raises(GoogleCredentialError):
         authorize_services(
             ["drive"],
@@ -252,19 +279,22 @@ def test_authorize_services_state_mismatch_stores_no_credential(tmp_path: Path) 
             open_browser=make_callback_opener(state_override="wrong-state"),
             urlopen=forbidden_urlopen,
             platform=PLATFORM,
-            secret_backend=backend,
+            secret_backend=secret_backend,
         )
 
     from officina.common.famulus_paths import resolve_famulus_paths
 
     registry_path = resolve_famulus_paths(platform=PLATFORM, home=tmp_path).config_root / "connect-google" / "credentials.json"
     assert not registry_path.exists()
+    descriptor_dir = registry_path.parent / "credentials"
+    assert not descriptor_dir.exists() or not tuple(descriptor_dir.iterdir())
 
 
-def test_authorize_services_account_hint_mismatch_stores_no_credential(tmp_path: Path) -> None:
-    backend = FakeSecretBackend()
-    installed = install_fake_client(tmp_path, backend)
-
+def test_authorize_services_account_hint_mismatch_stores_no_credential(
+    tmp_path: Path,
+    secret_backend: FakeSecretBackend,
+    installed_client: dict[str, object],
+) -> None:
     with pytest.raises(GoogleCredentialError):
         authorize_services(
             ["drive"],
@@ -272,33 +302,43 @@ def test_authorize_services_account_hint_mismatch_stores_no_credential(tmp_path:
             account_hint="someone-else@example.test",
             open_browser=make_callback_opener(),
             urlopen=make_fake_urlopen(
-                token_uri=installed["token_uri"],
+                token_uri=installed_client["token_uri"],
                 granted_scope="openid email https://www.googleapis.com/auth/drive",
                 email="user@example.test",
             ),
             platform=PLATFORM,
-            secret_backend=backend,
+            secret_backend=secret_backend,
         )
 
     from officina.common.famulus_paths import resolve_famulus_paths
 
     registry_path = resolve_famulus_paths(platform=PLATFORM, home=tmp_path).config_root / "connect-google" / "credentials.json"
     assert not registry_path.exists()
+    descriptor_dir = registry_path.parent / "credentials"
+    assert not descriptor_dir.exists() or not tuple(descriptor_dir.iterdir())
 
 
-def test_authorize_services_never_calls_real_network(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_authorize_services_never_calls_real_network(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    secret_backend: FakeSecretBackend,
+    installed_client: dict[str, object],
+) -> None:
     def forbidden(*_args: object, **_kwargs: object):
         raise AssertionError("no real network call permitted in tests")
 
     monkeypatch.setattr("urllib.request.urlopen", forbidden)
     monkeypatch.setattr("webbrowser.open", forbidden)
 
-    backend = FakeSecretBackend()
-    install_fake_client(tmp_path, backend)
-
     # Neither open_browser nor urlopen is passed explicitly: the defaults
     # must be resolved dynamically from the (now-patched) webbrowser/urllib
     # modules at call time, not captured as stale default-parameter values
     # bound to the real functions at import time.
     with pytest.raises(AssertionError, match="no real network call permitted"):
-        authorize_services(["drive"], home=tmp_path, account_hint=None, platform=PLATFORM, secret_backend=backend)
+        authorize_services(
+            ["drive"],
+            home=tmp_path,
+            account_hint=None,
+            platform=PLATFORM,
+            secret_backend=secret_backend,
+        )

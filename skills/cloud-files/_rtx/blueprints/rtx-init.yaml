@@ -7,7 +7,9 @@ content:
 - _rm_llm\.py
 dependencies: []
 description: Marks the cloud-files runtime directory as a Python package for sibling
-  behavioral sources.
+  behavioral sources. Drive authentication treats a present credential_file as
+  authoritative and fails invalid file bindings without fallback; credential_id and
+  legacy per-service credentials remain compatibility paths only when it is absent.
 gateway:
   language: Python
   path: __init__.py

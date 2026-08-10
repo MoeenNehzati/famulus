@@ -21,7 +21,10 @@ import importlib.util
 import json
 import os
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
+from typing import Callable
 
 from officina.common import secret_store
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
@@ -45,6 +48,15 @@ GMAIL_DEFAULTS = {
     "imap": {"host": "imap.gmail.com", "port": 993},
     "smtp": {"host": "smtp.gmail.com", "port": 465, "starttls": False},
 }
+GMAIL_PROFILE_URL = "https://gmail.googleapis.com/gmail/v1/users/me/profile"
+
+
+class CredentialFileBindingError(RuntimeError):
+    """Stable service-owned failure returned to the Google coordinator."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 def die(msg: str) -> None:
@@ -238,9 +250,173 @@ def accounts_use_google_credential(*, nickname: str, credential_id: str, home: P
     save(data)
 
 
+def _existing_binding_subject(
+    record: dict[str, object], *, home: Path, platform: str
+) -> tuple[bool, str | None]:
+    """Return whether prior Gmail OAuth state exists and its stable subject if provable."""
+    from officina.common.google_credentials import (
+        GoogleCredentialError,
+        load_credential,
+        load_credential_file,
+    )
+
+    if "credential_file" in record:
+        value = record["credential_file"]
+        if not isinstance(value, str) or not value.strip():
+            return True, None
+        try:
+            return True, load_credential_file(Path(value)).subject
+        except GoogleCredentialError:
+            return True, None
+    if "credential_id" in record:
+        value = record["credential_id"]
+        if not isinstance(value, str) or not value.strip():
+            return True, None
+        try:
+            return True, load_credential(
+                value.strip(), home=home, platform=platform
+            ).subject
+        except GoogleCredentialError:
+            return True, None
+    legacy_oauth = bool(record.get("oauth")) or (
+        record.get("auth") == _oauth_tokens.AUTH_GMAIL_OAUTH
+    )
+    return legacy_oauth, None
+
+
+def accounts_use_google_credential_file(
+    *,
+    nickname: str,
+    credential_file: Path,
+    home: Path,
+    allow_account_change: bool = False,
+    platform: str = sys.platform,
+    urlopen: Callable = urllib.request.urlopen,
+) -> dict[str, object]:
+    """Validate, live-probe, then bind one named Gmail account to a file."""
+    from officina.common.google_credentials import (
+        GoogleCredentialError,
+        SERVICE_SCOPES,
+        load_credential_file,
+        refresh_access_token_from_file,
+    )
+
+    try:
+        data = load()
+    except Exception as exc:
+        raise CredentialFileBindingError(
+            "invalid-service-config", f"could not read {ACCOUNTS_FILE}: {exc}"
+        ) from exc
+    if not isinstance(data, dict) or not all(
+        isinstance(key, str) and isinstance(value, dict)
+        for key, value in data.items()
+    ):
+        raise CredentialFileBindingError(
+            "invalid-service-config",
+            f"{ACCOUNTS_FILE} must contain an object of account objects",
+        )
+    if nickname not in data:
+        raise CredentialFileBindingError(
+            "unknown-account", f"unknown account '{nickname}'. Known: {', '.join(data) or '(none)'}"
+        )
+    record = data[nickname]
+    path = Path(credential_file).expanduser().resolve()
+    try:
+        ref = load_credential_file(path)
+    except GoogleCredentialError as exc:
+        raise CredentialFileBindingError("invalid-credential-file", str(exc)) from exc
+    if not SERVICE_SCOPES["gmail"] <= ref.granted_scopes:
+        raise CredentialFileBindingError(
+            "insufficient-scope", f"credential file {path} lacks Gmail scope"
+        )
+
+    configured_email = record.get("email")
+    if not isinstance(configured_email, str) or not configured_email.strip():
+        raise CredentialFileBindingError(
+            "invalid-account-email", f"account '{nickname}' has no configured email"
+        )
+    if configured_email.strip().casefold() != ref.account.casefold():
+        raise CredentialFileBindingError(
+            "account-email-mismatch",
+            f"descriptor account {ref.account} does not match {nickname} email {configured_email}",
+        )
+
+    has_prior_state, prior_subject = _existing_binding_subject(
+        record, home=home, platform=platform
+    )
+    if has_prior_state and prior_subject != ref.subject and not allow_account_change:
+        raise CredentialFileBindingError(
+            "account-change-confirmation-required",
+            f"existing Gmail credential identity for '{nickname}' differs or cannot be established",
+        )
+
+    try:
+        token = refresh_access_token_from_file(
+            path,
+            required_scopes=SERVICE_SCOPES["gmail"],
+            urlopen=urlopen,
+        )
+        request = urllib.request.Request(
+            GMAIL_PROFILE_URL,
+            headers={"Authorization": f"Bearer {token}"},
+            method="GET",
+        )
+        with urlopen(request, timeout=30) as response:
+            profile = json.loads(response.read().decode("utf-8"))
+        profile_email = profile.get("emailAddress") if isinstance(profile, dict) else None
+        if not isinstance(profile_email, str) or (
+            profile_email.casefold() != ref.account.casefold()
+        ):
+            raise CredentialFileBindingError(
+                "live-account-mismatch",
+                "Gmail profile identity does not match the credential descriptor",
+            )
+    except CredentialFileBindingError:
+        raise
+    except Exception as exc:
+        raise CredentialFileBindingError("live-check-failed", str(exc)) from exc
+
+    record["credential_file"] = str(path)
+    record["auth"] = _oauth_tokens.AUTH_GMAIL_OAUTH
+    save(data)
+    return {
+        "service": "gmail",
+        "credential_file": str(path),
+        "account": ref.account,
+        "bound": True,
+        "verified": True,
+    }
+
+
 def cmd_use_google_credential(args: argparse.Namespace) -> None:
     accounts_use_google_credential(nickname=args.nickname, credential_id=args.credential_id, home=Path(args.home))
     print(f"Bound account '{args.nickname}' to shared Google credential '{args.credential_id}'")
+
+
+def cmd_use_google_credential_file(args: argparse.Namespace) -> int:
+    path = Path(args.credential_file).expanduser().resolve()
+    try:
+        result = accounts_use_google_credential_file(
+            nickname=args.nickname,
+            credential_file=path,
+            home=Path(args.home),
+            allow_account_change=args.allow_account_change,
+        )
+    except CredentialFileBindingError as exc:
+        print(
+            json.dumps(
+                {
+                    "service": "gmail",
+                    "credential_file": str(path),
+                    "bound": False,
+                    "verified": False,
+                    "error": {"code": exc.code, "message": str(exc)},
+                }
+            )
+        )
+        return 1
+    print(json.dumps(result))
+    return 0
 
 
 def cmd_resolve(args: argparse.Namespace) -> None:
@@ -313,9 +489,15 @@ def main(argv: list[str] | None = None) -> int:
     p_use_cred.add_argument("--home", required=True)
     p_use_cred.set_defaults(func=cmd_use_google_credential)
 
+    p_use_file = sub.add_parser("use-google-credential-file")
+    p_use_file.add_argument("--nickname", required=True)
+    p_use_file.add_argument("--credential-file", required=True)
+    p_use_file.add_argument("--home", required=True)
+    p_use_file.add_argument("--allow-account-change", action="store_true")
+    p_use_file.set_defaults(func=cmd_use_google_credential_file)
+
     args = parser.parse_args(argv)
-    args.func(args)
-    return 0
+    return int(args.func(args) or 0)
 
 
 if __name__ == "__main__":

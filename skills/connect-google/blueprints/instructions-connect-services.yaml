@@ -7,8 +7,9 @@ dependencies:
   reason: Apply the user's optional client-installation and service-selection preferences.
   source: connect-google.source.personal-preferences-connect-services
   version: 1
-description: Instructs the agent to install or reuse the shared Desktop OAuth client
-  and delegate each selected service's authorization setup.
+description: Instructs the agent to install or reuse the shared Desktop OAuth client,
+  run the deterministic coordinator, and retry partial bindings with the same credential
+  descriptor file.
 gateway:
   language: Markdown
   path: instructions/connect-services.md
@@ -122,9 +123,11 @@ interfaces:
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
-- interface: connect-google._rtx.interface.authorize-services
+- interface: connect-google._rtx.interface.bind-credential-file
   version: 1
 - interface: connect-google._rtx.interface.client-status
+  version: 1
+- interface: connect-google._rtx.interface.connect-services
   version: 1
 - interface: connect-google._rtx.interface.install-client
   version: 1

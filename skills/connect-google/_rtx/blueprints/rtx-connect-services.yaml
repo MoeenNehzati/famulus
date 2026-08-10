@@ -1,0 +1,417 @@
+content:
+- _connect_services\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-authorize-services.yaml
+  reason: Calls the local combined OAuth source once before binding granted services.
+  source: connect-google._rtx.source.rtx-authorize-services
+  version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: connect-google._rtx.source.rtx-init
+  version: 1
+description: Authorizes selected Google services once, passes the returned absolute
+  credential descriptor path to fixed service-owned binders, and supports retrying
+  binding with the same file.
+gateway:
+  language: Python
+  path: _connect_services.py
+id: connect-google._rtx.source.rtx-connect-services
+interfaces:
+  connect-google._rtx.source.rtx-connect-services.interface.connect-services:
+    contract:
+      arguments:
+        services:
+          description: Comma-separated supported services to authorize and bind.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+        home:
+          description: Home directory used by the OAuth source and every service binder.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+        account-hint:
+          description: Expected Google account email for the combined grant.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+        gmail-nickname:
+          description: Existing or new email-client nickname to bind when Gmail is granted.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+        allow-account-change:
+          description: Comma-separated selected services whose existing account binding
+            may change during this invocation.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+      caller_warnings:
+      - external-side-effect: Opens one browser consent flow, creates a new credential
+          descriptor, and may update selected service-owned configuration after live
+          verification.
+      direct_io:
+        network: []
+        reads: []
+        writes:
+        - access: write
+          content: credential descriptor and service binding configuration
+          formats:
+          - json
+          id: write-bindings
+          medium: local-system
+          path: new connect-google credential descriptor plus selected service-owned
+            configuration paths declared by their binders
+          reason: The local OAuth source creates one descriptor and fixed dispatcher
+            calls persist only successfully verified service bindings.
+          sensitivity: user-private
+          system: filesystem-and-host-credential-store
+        - access: write
+          content: binding result
+          formats:
+          - json
+          id: write-result
+          medium: stdout
+          reason: Return the descriptor path plus granted, denied, bound, verified,
+            incomplete, and complete state.
+          sensitivity: user-private
+          system: agent-runtime
+      execution:
+        consistency:
+          live: OAuth grant state and each service probe are observed during this invocation.
+        effects:
+        - action: create
+          confirmation_evidence:
+            direct_io_ref: write-result
+            kind: direct-io
+          direct_io_ref: write-bindings
+          id: create-descriptor-and-bind-services
+          may_occur_in_outcomes:
+          - complete
+          - incomplete
+          reversibility:
+            irreversible: The new descriptor and each verified service binding persist
+              until explicitly replaced or removed.
+          value_source:
+            direct_io_ref: write-bindings
+            kind: direct-io
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            per_effect_only: Descriptor creation is exclusive and each service owner
+              commits only its own successfully verified binding.
+          concurrent_invocations:
+            unsafe: Concurrent connection attempts can race while replacing the same
+              service-owned configuration.
+          idempotency:
+            non_idempotent: Each authorization creates a new descriptor and service
+              state can change between live probes.
+          on_uncertain_completion:
+            verify_then_decide: Use the returned credential_file with bind-credential-file
+              for incomplete granted services.
+          partial_effects_on_failure:
+            possible: A new descriptor and earlier verified service bindings may persist
+              when another service binding fails.
+          rollback_on_failure:
+            unavailable: Independent verified service bindings are not rolled back.
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: result
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Continue only when complete is true.
+        class: success
+        effects:
+        - create-descriptor-and-bind-services
+        id: complete
+        outputs:
+        - result
+      - caller_action: Retain credential_file and retry only incomplete granted services
+          through bind-credential-file.
+        class: error
+        effects:
+        - create-descriptor-and-bind-services
+        id: incomplete
+        outputs:
+        - result
+      - caller_action: Report authorization failure without exposing OAuth secrets.
+        class: error
+        effects: []
+        id: failed
+        outputs:
+        - result
+      outputs:
+      - audience: machine
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Stable aggregate JSON with credential_file and per-service status.
+        direct_io_ref: write-result
+        empty: Never empty.
+        id: result
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          format:
+            named: json
+          kind: string
+          sensitivity: user-private
+      preconditions: []
+    description: Run one combined OAuth authorization and bind its new credential file
+      through the fixed service-owner map.
+    process_binding:
+      entry: ConnectServicesInterface
+      kind: process
+      patterns:
+      - allowed_flags:
+        - --services
+        - --home
+        - --account-hint
+        - --gmail-nickname
+        - --allow-account-change
+        flag_patterns:
+          --services: ^.+$
+          --home: ^.+$
+          --account-hint: ^.+$
+          --gmail-nickname: ^.+$
+          --allow-account-change: ^.*$
+        max_positionals: 0
+        min_positionals: 0
+        required_flags:
+        - --services
+        - --home
+    usage: --services <comma-separated-list> --home <dir> [--account-hint <email>]
+      [--gmail-nickname <name>] [--allow-account-change <comma-separated-list>]
+    version: 1
+  connect-google._rtx.source.rtx-connect-services.interface.bind-credential-file:
+    contract:
+      arguments:
+        credential-file:
+          description: Existing credential descriptor returned by connect-services.
+          direct_io_ref: read-credential
+          required: true
+          sensitivity: user-private
+          type:
+            access: read
+            kind: file
+            must_exist: true
+            opaque_content: true
+            relative_to: caller-cwd
+            syntax: literal
+        services:
+          description: Comma-separated requested services to evaluate and bind from
+            the descriptor's recorded grant set.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+        home:
+          description: Home directory passed unchanged to every selected service binder.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+        gmail-nickname:
+          description: Existing or new email-client nickname to bind when Gmail is granted.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+        allow-account-change:
+          description: Comma-separated selected services whose existing account binding
+            may change during this invocation.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+      caller_warnings:
+      - external-side-effect: May update selected service-owned configuration after
+          each service verifies the recorded credential with a live API call.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: credential descriptor
+          formats:
+          - json
+          id: read-credential
+          medium: local-filesystem
+          path: caller-supplied credential descriptor path
+          reason: Validate the file and restrict binding to services recorded as granted.
+          sensitivity: user-private
+          system: filesystem
+        writes:
+        - access: write
+          content: service binding configuration
+          formats:
+          - json
+          id: write-bindings
+          medium: local-system
+          path: selected service-owned configuration paths declared by their binders
+          reason: Fixed dispatcher calls persist only successfully verified bindings
+            using the supplied credential descriptor path.
+          sensitivity: user-private
+          system: filesystem
+        - access: write
+          content: binding result
+          formats:
+          - json
+          id: write-result
+          medium: stdout
+          reason: Return the same descriptor path plus per-service binding state.
+          sensitivity: user-private
+          system: agent-runtime
+      execution:
+        consistency:
+          live: The descriptor is loaded once and each requested granted service is
+            probed during this invocation.
+        effects:
+        - action: update
+          confirmation_evidence:
+            direct_io_ref: write-result
+            kind: direct-io
+          direct_io_ref: write-bindings
+          id: bind-services
+          may_occur_in_outcomes:
+          - complete
+          - incomplete
+          reversibility:
+            reversible: A later explicitly approved binding can replace a service's
+              configured credential-file path.
+          value_source:
+            direct_io_ref: read-credential
+            kind: direct-io
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            per_effect_only: Each service owner probes first and commits only its own
+              successful binding.
+          concurrent_invocations:
+            unsafe: Concurrent retries can race while replacing the same service-owned
+              configuration.
+          idempotency:
+            idempotent: Rebinding the same verified descriptor path preserves the
+              configured path, subject to changing live Google responses.
+          on_uncertain_completion:
+            verify_then_decide: Inspect incomplete_services and retry only failed granted
+              services with the same descriptor.
+          partial_effects_on_failure:
+            possible: Earlier verified service bindings can persist when a later binder
+              fails.
+          rollback_on_failure:
+            unavailable: Independent verified service bindings are not rolled back.
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: result
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Continue only when complete is true.
+        class: success
+        effects:
+        - bind-services
+        id: complete
+        outputs:
+        - result
+      - caller_action: Retain the same credential_file and report or retry remaining
+          incomplete services.
+        class: error
+        effects:
+        - bind-services
+        id: incomplete
+        outputs:
+        - result
+      - caller_action: Correct an invalid path or service selection before retrying.
+        class: error
+        effects: []
+        id: failed
+        outputs:
+        - result
+      outputs:
+      - audience: machine
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Stable aggregate JSON preserving credential_file and per-service status.
+        direct_io_ref: write-result
+        empty: Never empty.
+        id: result
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          format:
+            named: json
+          kind: string
+          sensitivity: user-private
+      preconditions: []
+    description: Retry service-owned binding with an existing credential descriptor;
+      never invoke OAuth authorization.
+    process_binding:
+      entry: BindCredentialFileInterface
+      kind: process
+      patterns:
+      - allowed_flags:
+        - --credential-file
+        - --services
+        - --home
+        - --gmail-nickname
+        - --allow-account-change
+        flag_patterns:
+          --credential-file: ^.+$
+          --services: ^.+$
+          --home: ^.+$
+          --gmail-nickname: ^.+$
+          --allow-account-change: ^.*$
+        max_positionals: 0
+        min_positionals: 0
+        required_flags:
+        - --credential-file
+        - --services
+        - --home
+    usage: --credential-file <path> --services <comma-separated-list> --home <dir>
+      [--gmail-nickname <name>] [--allow-account-change <comma-separated-list>]
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+schema_version: 6
+uses_interfaces:
+- interface: cloud-files._rtx.interface.use-google-credential-file
+  version: 1
+- interface: email-client._rtx.interface.accounts-use-google-credential-file
+  version: 1
+- interface: g-calendar._rtx.interface.use-google-credential-file
+  version: 1
+version: 1

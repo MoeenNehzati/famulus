@@ -291,13 +291,15 @@
         "remote_llm_root": {"type": "string"},
         "timeout_seconds": {"type": "integer", "minimum": 1},
         "credentials_path": {"type": "string"},
-        "credential_id": {"$ref": "#/definitions/nonEmptyString"}
+        "credential_id": {"$ref": "#/definitions/nonEmptyString"},
+        "credential_file": {"$ref": "#/definitions/nonEmptyString"}
       },
       "anyOf": [
         {"required": ["remote_llm_root"]},
         {"required": ["timeout_seconds"]},
         {"required": ["credentials_path"]},
-        {"required": ["credential_id"]}
+        {"required": ["credential_id"]},
+        {"required": ["credential_file"]}
       ]
     }
   }

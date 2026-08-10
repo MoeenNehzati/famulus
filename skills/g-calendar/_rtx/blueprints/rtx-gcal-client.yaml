@@ -8,9 +8,10 @@ dependencies:
   source: g-calendar._rtx.source.rtx-init
   version: 1
 description: Implements the agenda, search, list, create, update, and delete operations
-  of the Google Calendar command interface. Mints access tokens via the shared connect-google
-  credential when config.json carries a credential_id, falling back unchanged to the
-  legacy per-service credentials.json refresh flow otherwise.
+  of the Google Calendar command interface. A present credential_file is authoritative
+  and refreshes only through that descriptor; malformed or inaccessible file bindings
+  fail without fallback. Configured legacy credential_id and per-service credentials.json
+  remain read-only compatibility paths when credential_file is absent.
 gateway:
   language: Python
   path: _gcal_client.py
@@ -119,6 +120,23 @@ interfaces:
           path_match: exact
           sensitivity: user-private
           system: filesystem
+        - access: read
+          content: immutable Google credential descriptor
+          formats:
+          - json
+          id: read-4
+          medium: local-filesystem
+          path: credential_file path selected by config.json
+          sensitivity: credential
+          system: filesystem
+        - access: read
+          content: client secret and refresh-token values referenced by credential_file
+          formats:
+          - opaque-secret
+          id: read-5
+          medium: local-system
+          sensitivity: secret
+          system: host-credential-store
         writes:
         - access: write
           auth:

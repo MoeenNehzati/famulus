@@ -41,6 +41,7 @@ namespace_exports:
         g-calendar._rtx.interface.scripts-gcal: 1
         g-calendar._rtx.interface.setup-oauth: 1
         g-calendar._rtx.interface.use-google-credential: 1
+        g-calendar._rtx.interface.use-google-credential-file: 1
     interface_access:
       g-calendar._rtx.interface.ensure-oauth:
         allow_all_modules: false
@@ -55,9 +56,12 @@ namespace_exports:
         allowed_callers: []
       g-calendar._rtx.interface.use-google-credential:
         allow_all_modules: false
+        allowed_callers: []
+      g-calendar._rtx.interface.use-google-credential-file:
+        allow_all_modules: false
         allowed_callers:
-        - install-assistant-tools
-        - install-assistant-tools._rtx
+        - connect-google
+        - connect-google._rtx
 node_type: module
 schema_version: 6
 sources:

@@ -33,6 +33,7 @@ class CloudFilesConfig:
     timeout_seconds: int
     credentials_path: Path
     credential_id: str | None = None
+    credential_file: Path | None = None
     home: Path | None = None
 
 
@@ -144,6 +145,10 @@ def load_config(home: Path | None = None) -> CloudFilesConfig:
         payload = load_configuration(config_path)
     except FileNotFoundError as exc:
         raise CloudFilesError(f"missing config file: {config_path}") from exc
+    except OSError as exc:
+        raise CloudFilesError(f"could not read config file {config_path}: {exc}") from exc
+    except UnicodeError as exc:
+        raise CloudFilesError(f"could not read config file {config_path}: {exc}") from exc
     except ConfiguredSchemaError as exc:
         raise CloudFilesError(f"invalid configuration in {config_path}: {exc}") from exc
 
@@ -162,12 +167,21 @@ def load_config(home: Path | None = None) -> CloudFilesConfig:
     )
     credential_id_value = payload.get("credential_id")
     credential_id = str(credential_id_value).strip() if credential_id_value else None
+    credential_file = None
+    if "credential_file" in payload:
+        credential_file_value = payload["credential_file"]
+        if not isinstance(credential_file_value, str) or not credential_file_value.strip():
+            raise CloudFilesError(
+                f"invalid configuration in {config_path}: credential_file must be a nonempty path string"
+            )
+        credential_file = Path(credential_file_value).expanduser()
 
     return CloudFilesConfig(
         remote_llm_root=remote_llm_root,
         timeout_seconds=timeout_seconds,
         credentials_path=credentials_path,
         credential_id=credential_id or None,
+        credential_file=credential_file,
         home=home or Path.home(),
     )
 
@@ -195,6 +209,16 @@ def load_credentials(config: CloudFilesConfig) -> dict[str, str]:
 
 
 def get_access_token(config: CloudFilesConfig, *, platform: str = sys.platform) -> str:
+    if config.credential_file is not None:
+        from officina.common.google_credentials import (
+            SERVICE_SCOPES,
+            refresh_access_token_from_file,
+        )
+
+        return refresh_access_token_from_file(
+            config.credential_file,
+            required_scopes=SERVICE_SCOPES["drive"],
+        )
     if config.credential_id:
         from officina.common.google_credentials import SERVICE_SCOPES, refresh_access_token
 

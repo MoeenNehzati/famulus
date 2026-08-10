@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import urllib.error
+from pathlib import Path
 
 import pytest
 
@@ -284,6 +285,66 @@ def test_store_and_load_credential_round_trip(tmp_path):
 
     loaded = load_credential("google:sub1", home=tmp_path, platform="linux")
     assert loaded == ref
+
+
+@pytest.mark.parametrize(
+    "payload",
+    ["{", "[]", '{"credentials": {"legacy-id": {}}}'],
+    ids=["malformed-json", "non-object", "invalid-record"],
+)
+def test_load_credential_rejects_malformed_legacy_registry(tmp_path, payload):
+    from officina.common import google_credentials
+
+    registry_path = google_credentials._credentials_registry_path(
+        home=tmp_path, platform="linux"
+    )
+    registry_path.parent.mkdir(parents=True)
+    registry_path.write_text(payload, encoding="utf-8")
+
+    with pytest.raises(GoogleCredentialError, match="invalid credential registry"):
+        google_credentials.load_credential(
+            "legacy-id", home=tmp_path, platform="linux"
+        )
+
+
+def test_load_credential_rejects_unreadable_legacy_registry(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from officina.common import google_credentials
+
+    registry_path = google_credentials._credentials_registry_path(
+        home=tmp_path, platform="linux"
+    )
+    registry_path.parent.mkdir(parents=True)
+    registry_path.write_text("{}", encoding="utf-8")
+    original_read_text = Path.read_text
+
+    def unreadable(path: Path, *args, **kwargs):
+        if path == registry_path:
+            raise PermissionError("unreadable registry")
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", unreadable)
+    with pytest.raises(GoogleCredentialError, match="invalid credential registry"):
+        google_credentials.load_credential(
+            "legacy-id", home=tmp_path, platform="linux"
+        )
+
+
+def test_load_credential_rejects_invalid_utf8_legacy_registry(tmp_path):
+    from officina.common import google_credentials
+
+    registry_path = google_credentials._credentials_registry_path(
+        home=tmp_path, platform="linux"
+    )
+    registry_path.parent.mkdir(parents=True)
+    registry_path.write_bytes(b"\xff")
+
+    with pytest.raises(GoogleCredentialError, match="invalid credential registry"):
+        google_credentials.load_credential(
+            "legacy-id", home=tmp_path, platform="linux"
+        )
 
 
 def test_refresh_access_token_exchanges_refresh_token(tmp_path):

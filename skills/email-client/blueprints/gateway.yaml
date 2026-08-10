@@ -86,8 +86,6 @@ schema_version: 6
 uses_interfaces:
 - interface: connect-google.interface.default
   version: 1
-- interface: email-client._rtx.interface.accounts-setup-oauth
-  version: 1
 - interface: email-client._rtx.interface.accounts-add
   version: 1
 - interface: email-client._rtx.interface.accounts-list
@@ -97,8 +95,6 @@ uses_interfaces:
 - interface: email-client._rtx.interface.accounts-set-password
   version: 1
 - interface: email-client._rtx.interface.accounts-update
-  version: 1
-- interface: email-client._rtx.interface.accounts-use-google-credential
   version: 1
 - interface: email-client._rtx.interface.live-smoke
   version: 1

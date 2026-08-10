@@ -3,7 +3,7 @@ authority:
 children:
   _rtx: {}
 content:
-- (?:SKILL\.md|instructions/connect\-services\.md|instructions/create\-client\.md|personal\-preferences/connect\-services\.md|personal\-preferences/create\-client\.md|personal\-preferences/default\.md)
+- (?:SKILL\.md|instructions/connect\-services\.md|instructions/create\-client\.md|personal\-preferences/google\-service\-connection\.md|personal\-preferences/create\-client\.md|personal\-preferences/default\.md)
 description: Prepares a shared Google Desktop OAuth client and routes service-specific
   connection setup without exposing client credentials in prompts.
 discovery:
@@ -47,17 +47,22 @@ namespace_exports:
       allowed_callers: []
     surface:
       only:
-        connect-google._rtx.interface.authorize-services: 1
+        connect-google._rtx.interface.bind-credential-file: 1
         connect-google._rtx.interface.client-status: 1
+        connect-google._rtx.interface.connect-services: 1
         connect-google._rtx.interface.install-client: 1
     interface_access:
-      connect-google._rtx.interface.authorize-services:
+      connect-google._rtx.interface.bind-credential-file:
+        allow_all_modules: false
+        allowed_callers:
+        - connect-google
+      connect-google._rtx.interface.client-status:
         allow_all_modules: false
         allowed_callers:
         - connect-google
         - install-assistant-tools
         - install-assistant-tools._rtx
-      connect-google._rtx.interface.client-status:
+      connect-google._rtx.interface.connect-services:
         allow_all_modules: false
         allowed_callers:
         - connect-google

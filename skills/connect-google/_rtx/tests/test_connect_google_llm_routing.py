@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import yaml
 
 
@@ -68,8 +69,31 @@ def body(relative: str) -> str:
     return text.lower()
 
 
-def test_module_and_markdown_gateway_graph() -> None:
-    root = load("blueprint.yaml")
+@pytest.fixture(scope="module")
+def root_blueprint() -> dict[str, object]:
+    """Parse the immutable root graph once for all routing assertions."""
+    return load("blueprint.yaml")
+
+
+@pytest.fixture(scope="module")
+def skill_body() -> str:
+    return body("SKILL.md")
+
+
+@pytest.fixture(scope="module")
+def create_client_body() -> str:
+    return body("instructions/create-client.md")
+
+
+@pytest.fixture(scope="module")
+def connect_services_body() -> str:
+    return body("instructions/connect-services.md")
+
+
+def test_module_and_markdown_gateway_graph(
+    root_blueprint: dict[str, object],
+) -> None:
+    root = root_blueprint
     default, default_interface = exported_source(
         root, "connect-google.interface.default"
     )
@@ -99,8 +123,9 @@ def test_module_and_markdown_gateway_graph() -> None:
         for entry in default["uses_interfaces"]
     }
     semantic_default_uses = {
-        ("connect-google._rtx.interface.authorize-services", 1),
+        ("connect-google._rtx.interface.bind-credential-file", 1),
         ("connect-google._rtx.interface.client-status", 1),
+        ("connect-google._rtx.interface.connect-services", 1),
         ("connect-google._rtx.interface.install-client", 1),
         (
             "connect-google.source.instructions-connect-services"
@@ -126,8 +151,9 @@ def test_module_and_markdown_gateway_graph() -> None:
     assert connect_services["uses_interfaces"] == [
         {"interface": name, "version": 1}
         for name in (
-            "connect-google._rtx.interface.authorize-services",
+            "connect-google._rtx.interface.bind-credential-file",
             "connect-google._rtx.interface.client-status",
+            "connect-google._rtx.interface.connect-services",
             "connect-google._rtx.interface.install-client",
         )
     ]
@@ -141,7 +167,8 @@ def test_module_and_markdown_gateway_graph() -> None:
     assert set(child["exports"]) == {
         "connect-google._rtx.interface.client-status",
         "connect-google._rtx.interface.install-client",
-        "connect-google._rtx.interface.authorize-services",
+        "connect-google._rtx.interface.connect-services",
+        "connect-google._rtx.interface.bind-credential-file",
     }
     assert default_interface["version"] == 1
     assert create_client_interface["version"] == 1
@@ -154,8 +181,10 @@ def test_module_and_markdown_gateway_graph() -> None:
             )
 
 
-def test_client_status_declares_every_google_client_path_it_reads() -> None:
-    root = load("blueprint.yaml")
+def test_client_status_declares_every_google_client_path_it_reads(
+    root_blueprint: dict[str, object],
+) -> None:
+    root = root_blueprint
     _, node = exported_source(root, "connect-google._rtx.interface.client-status")
 
     declared_paths = {
@@ -172,8 +201,10 @@ def test_client_status_declares_every_google_client_path_it_reads() -> None:
     }
 
 
-def test_install_client_patterns_require_values_for_value_bearing_flags() -> None:
-    root = load("blueprint.yaml")
+def test_install_client_patterns_require_values_for_value_bearing_flags(
+    root_blueprint: dict[str, object],
+) -> None:
+    root = root_blueprint
     _, node = exported_source(root, "connect-google._rtx.interface.install-client")
 
     assert node["process_binding"]["patterns"][0]["flag_patterns"] == {
@@ -182,8 +213,8 @@ def test_install_client_patterns_require_values_for_value_bearing_flags() -> Non
     }
 
 
-def test_default_router_contract() -> None:
-    text = body("SKILL.md")
+def test_default_router_contract(skill_body: str) -> None:
+    text = skill_body
     assert text.startswith("---")
     assert "skill: connect-google" in text
     assert "client-status" in text
@@ -191,15 +222,15 @@ def test_default_router_contract() -> None:
     assert "connect-services" in text
     assert "connect" in text and "reconnect" in text
     assert "drive" in text and "calendar" in text and "gmail" in text
-    assert "do not invoke service-owned process interfaces" in text
-    assert "service skills invoke this skill" in text
+    assert "credential file" in text
+    assert "complete: true" in text
     assert "never commit" in text
     assert "dispatcher " not in text
     assert "connect-google-rtx" not in text
 
 
-def test_create_client_route_contract() -> None:
-    text = body("instructions/create-client.md")
+def test_create_client_route_contract(create_client_body: str) -> None:
+    text = create_client_body
     for phrase in (
         "external",
             "testing",
@@ -224,17 +255,19 @@ def test_create_client_route_contract() -> None:
     assert "connect-google-rtx" not in text
 
 
-def test_connect_services_route_contract() -> None:
-    text = body("instructions/connect-services.md")
+def test_connect_services_route_contract(connect_services_body: str) -> None:
+    text = connect_services_body
     for phrase in (
         "recommend all three",
         "subset",
         "service-owned",
-        "hand off",
-        "does not list",
-        "does not invoke",
+        "credential file",
+        "complete: true",
+        "bind-credential-file",
+        "same file",
     ):
         assert phrase in text
+    assert "credential_id" not in text
     assert "dispatcher " not in text
     assert "connect-google-rtx" not in text
     assert "client_secret" not in text

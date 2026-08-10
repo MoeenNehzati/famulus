@@ -13,10 +13,13 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import re
+import secrets
 import time
 import urllib.error
 from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 SERVICE_SCOPES: dict[str, frozenset[str]] = {
@@ -62,6 +65,48 @@ class GoogleCredentialRef:
     granted_scopes: frozenset[str]
 
 
+@dataclass(frozen=True)
+class GoogleCredentialFile:
+    """One immutable authorization descriptor backed by secret-store references.
+
+    ``path`` is the normalized absolute descriptor path used directly by service
+    configurations. The descriptor contains no raw OAuth secret or access token;
+    ``client_secret_ref`` and ``refresh_token_ref`` are resolved only when an
+    access token is refreshed.
+    """
+
+    path: Path
+    created_at: str
+    subject: str
+    account: str
+    client_id: str
+    token_uri: str
+    granted_services: tuple[str, ...]
+    granted_scopes: frozenset[str]
+    client_secret_ref: str
+    refresh_token_ref: str
+
+
+_CREDENTIAL_FILE_FIELDS = frozenset(
+    {
+        "schema_version",
+        "created_at",
+        "subject",
+        "account",
+        "client_id",
+        "token_uri",
+        "granted_services",
+        "granted_scopes",
+        "client_secret_ref",
+        "refresh_token_ref",
+    }
+)
+_CREDENTIAL_FILE_ID_RE = re.compile(r"[0-9a-f]{8}")
+_CREDENTIAL_FILE_STEM_RE = re.compile(
+    r"(?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z)-(?P<unique_id>[0-9a-f]{8})"
+)
+
+
 def canonical_client_path(*, home: Path, platform: str) -> Path:
     """Return the single canonical Google Desktop OAuth client path."""
     from officina.common.famulus_paths import resolve_famulus_paths
@@ -73,6 +118,259 @@ def _credentials_registry_path(*, home: Path, platform: str) -> Path:
     from officina.common.famulus_paths import resolve_famulus_paths
 
     return resolve_famulus_paths(platform=platform, home=Path(home)).config_root / "connect-google" / "credentials.json"
+
+
+def _credential_files_dir(*, home: Path, platform: str) -> Path:
+    """Return the directory containing immutable per-authorization descriptors."""
+    from officina.common.famulus_paths import resolve_famulus_paths
+
+    return (
+        resolve_famulus_paths(platform=platform, home=Path(home)).config_root
+        / "connect-google"
+        / "credentials"
+    )
+
+
+def _validated_granted_services(services: Sequence[str]) -> tuple[str, ...]:
+    """Validate a possibly empty, already-deduplicated granted-service list."""
+    result: list[str] = []
+    for service in services:
+        if not isinstance(service, str) or service not in SERVICE_SCOPES:
+            raise GoogleCredentialError(f"unknown granted service: {service!r}")
+        if service in result:
+            raise GoogleCredentialError(f"duplicate granted service: {service!r}")
+        result.append(service)
+    return tuple(result)
+
+
+def create_credential_file(
+    *,
+    subject: str,
+    account: str,
+    client_id: str,
+    token_uri: str,
+    granted_services: Sequence[str],
+    granted_scopes: frozenset[str],
+    refresh_token: str,
+    home: Path,
+    platform: str,
+    now: datetime | None = None,
+    unique_id: str | None = None,
+    secret_backend=None,
+) -> GoogleCredentialFile:
+    """Create one non-overwriting credential descriptor and store its refresh token.
+
+    The full timestamped file stem is also the refresh-token secret identity. A
+    candidate path is exclusively created before the secret store is touched, so
+    even a forced filename collision cannot replace an older descriptor's token.
+    """
+    from officina.common import secret_store as secret_store_module
+
+    for label, value in (
+        ("subject", subject),
+        ("account", account),
+        ("client_id", client_id),
+        ("token_uri", token_uri),
+        ("refresh_token", refresh_token),
+    ):
+        if not isinstance(value, str) or not value:
+            raise GoogleCredentialError(f"{label} must be a non-empty string")
+
+    services = _validated_granted_services(granted_services)
+    if not isinstance(granted_scopes, frozenset) or not all(
+        isinstance(scope, str) and scope for scope in granted_scopes
+    ):
+        raise GoogleCredentialError("granted_scopes must be a frozenset of non-empty strings")
+    for service in services:
+        if not SERVICE_SCOPES[service] <= granted_scopes:
+            raise GoogleCredentialError(f"granted service {service!r} lacks its required scopes")
+
+    timestamp = now or datetime.now(UTC)
+    if not isinstance(timestamp, datetime) or timestamp.tzinfo is None:
+        raise GoogleCredentialError("now must be a timezone-aware datetime")
+    timestamp = timestamp.astimezone(UTC).replace(microsecond=0)
+    created_at = timestamp.isoformat().replace("+00:00", "Z")
+    timestamp_slug = timestamp.strftime("%Y-%m-%dT%H-%M-%SZ")
+
+    artifact_id = unique_id or secrets.token_hex(4)
+    if not isinstance(artifact_id, str) or _CREDENTIAL_FILE_ID_RE.fullmatch(artifact_id) is None:
+        raise GoogleCredentialError("unique_id must be exactly eight lowercase hexadecimal characters")
+
+    stem = f"{timestamp_slug}-{artifact_id}"
+    client_secret_ref = f"oauth-client:{client_id}:client-secret"
+    refresh_token_ref = f"credential-file:{stem}:refresh-token"
+    payload = {
+        "schema_version": 1,
+        "created_at": created_at,
+        "subject": subject,
+        "account": account,
+        "client_id": client_id,
+        "token_uri": token_uri,
+        "granted_services": list(services),
+        "granted_scopes": sorted(granted_scopes),
+        "client_secret_ref": client_secret_ref,
+        "refresh_token_ref": refresh_token_ref,
+    }
+
+    directory = _credential_files_dir(home=home, platform=platform)
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"{stem}.json"
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        fd = os.open(path, flags, 0o600)
+    except FileExistsError as exc:
+        raise GoogleCredentialError(f"credential file already exists: {path}") from exc
+    except OSError as exc:
+        raise GoogleCredentialError(f"could not create credential file {path}: {exc}") from exc
+
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        secret_store_module.store(
+            "connect-google",
+            refresh_token_ref,
+            refresh_token,
+            backend=secret_backend,
+        )
+    except Exception:
+        path.unlink(missing_ok=True)
+        raise
+
+    return GoogleCredentialFile(
+        path=path.resolve(strict=True),
+        created_at=created_at,
+        subject=subject,
+        account=account,
+        client_id=client_id,
+        token_uri=token_uri,
+        granted_services=services,
+        granted_scopes=granted_scopes,
+        client_secret_ref=client_secret_ref,
+        refresh_token_ref=refresh_token_ref,
+    )
+
+
+def load_credential_file(path: Path) -> GoogleCredentialFile:
+    """Load and fully validate one generated credential descriptor."""
+    candidate = Path(path).expanduser()
+    if candidate.is_symlink():
+        raise GoogleCredentialError(f"credential file must not be a symbolic link: {candidate}")
+    try:
+        resolved = candidate.resolve(strict=True)
+    except FileNotFoundError as exc:
+        raise GoogleCredentialError(f"credential file does not exist: {candidate}") from exc
+    except OSError as exc:
+        raise GoogleCredentialError(f"could not resolve credential file {candidate}: {exc}") from exc
+    if not resolved.is_file():
+        raise GoogleCredentialError(f"credential path is not a regular file: {resolved}")
+
+    try:
+        payload = json.loads(resolved.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise GoogleCredentialError(f"invalid credential JSON at {resolved}: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise GoogleCredentialError("credential descriptor must be a JSON object")
+    if set(payload) != _CREDENTIAL_FILE_FIELDS:
+        raise GoogleCredentialError(
+            f"credential descriptor fields differ from schema: {sorted(set(payload) ^ _CREDENTIAL_FILE_FIELDS)}"
+        )
+    if type(payload["schema_version"]) is not int or payload["schema_version"] != 1:
+        raise GoogleCredentialError("unsupported credential schema_version")
+
+    for field in (
+        "created_at",
+        "subject",
+        "account",
+        "client_id",
+        "token_uri",
+        "client_secret_ref",
+        "refresh_token_ref",
+    ):
+        if not isinstance(payload[field], str) or not payload[field]:
+            raise GoogleCredentialError(f"credential field {field} must be a non-empty string")
+
+    stem_match = _CREDENTIAL_FILE_STEM_RE.fullmatch(resolved.stem)
+    if stem_match is None:
+        raise GoogleCredentialError("credential filename is not canonical")
+    expected_created_at = (
+        datetime.strptime(stem_match.group("timestamp"), "%Y-%m-%dT%H-%M-%SZ")
+        .replace(tzinfo=UTC)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+    if payload["created_at"] != expected_created_at:
+        raise GoogleCredentialError("credential created_at does not match its filename")
+
+    raw_services = payload["granted_services"]
+    if not isinstance(raw_services, list):
+        raise GoogleCredentialError("credential granted_services must be a list")
+    services = _validated_granted_services(raw_services)
+    raw_scopes = payload["granted_scopes"]
+    if not isinstance(raw_scopes, list) or not all(
+        isinstance(scope, str) and scope for scope in raw_scopes
+    ):
+        raise GoogleCredentialError("credential granted_scopes must be a list of non-empty strings")
+    if raw_scopes != sorted(set(raw_scopes)):
+        raise GoogleCredentialError("credential granted_scopes must be sorted and unique")
+    scopes = frozenset(raw_scopes)
+    for service in services:
+        if not SERVICE_SCOPES[service] <= scopes:
+            raise GoogleCredentialError(f"credential grants {service!r} without its required scopes")
+
+    expected_client_ref = f"oauth-client:{payload['client_id']}:client-secret"
+    expected_refresh_ref = f"credential-file:{resolved.stem}:refresh-token"
+    if payload["client_secret_ref"] != expected_client_ref:
+        raise GoogleCredentialError("credential client_secret_ref does not match client_id")
+    if payload["refresh_token_ref"] != expected_refresh_ref:
+        raise GoogleCredentialError("credential refresh_token_ref does not match its filename")
+
+    return GoogleCredentialFile(
+        path=resolved,
+        created_at=payload["created_at"],
+        subject=payload["subject"],
+        account=payload["account"],
+        client_id=payload["client_id"],
+        token_uri=payload["token_uri"],
+        granted_services=services,
+        granted_scopes=scopes,
+        client_secret_ref=payload["client_secret_ref"],
+        refresh_token_ref=payload["refresh_token_ref"],
+    )
+
+
+def refresh_access_token_from_file(
+    path: Path,
+    *,
+    required_scopes: Collection[str],
+    urlopen: Callable | None = None,
+    secret_backend=None,
+) -> str:
+    """Refresh an access token through one descriptor's recorded secret refs."""
+    import urllib.request
+
+    from officina.common import secret_store as secret_store_module
+
+    ref = load_credential_file(path)
+    missing = set(required_scopes) - ref.granted_scopes
+    if missing:
+        raise GoogleCredentialError(f"credential file {ref.path} lacks required scopes: {missing}")
+    client_secret = secret_store_module.require(
+        "connect-google", ref.client_secret_ref, backend=secret_backend
+    )
+    refresh_token = secret_store_module.require(
+        "connect-google", ref.refresh_token_ref, backend=secret_backend
+    )
+    return _exchange_refresh_token(
+        ref=ref,
+        client_secret=client_secret,
+        refresh_token=refresh_token,
+        urlopen=urlopen or urllib.request.urlopen,
+    )
 
 
 def install_client(payload: dict, *, home: Path, platform: str, replace: bool, secret_backend=None) -> dict:
@@ -311,17 +609,47 @@ def load_credential(credential_id: str, *, home: Path, platform: str) -> GoogleC
     registry_path = _credentials_registry_path(home=home, platform=platform)
     if not registry_path.exists():
         raise GoogleCredentialError(f"no credential registry at {registry_path}")
-    registry = json.loads(registry_path.read_text(encoding="utf-8"))
-    record = registry.get("credentials", {}).get(credential_id)
+    try:
+        registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise GoogleCredentialError(
+            f"invalid credential registry at {registry_path}: {exc}"
+        ) from exc
+    if not isinstance(registry, dict) or not isinstance(
+        registry.get("credentials"), dict
+    ):
+        raise GoogleCredentialError(
+            f"invalid credential registry at {registry_path}: expected credentials object"
+        )
+    record = registry["credentials"].get(credential_id)
     if record is None:
         raise GoogleCredentialError(f"unknown credential_id: {credential_id}")
+    if not isinstance(record, dict):
+        raise GoogleCredentialError(
+            f"invalid credential registry at {registry_path}: {credential_id} must be an object"
+        )
+    string_fields = ("subject", "account", "client_id", "token_uri")
+    if any(
+        not isinstance(record.get(field), str) or not record[field]
+        for field in string_fields
+    ):
+        raise GoogleCredentialError(
+            f"invalid credential registry at {registry_path}: {credential_id} has invalid fields"
+        )
+    granted_scopes = record.get("granted_scopes")
+    if not isinstance(granted_scopes, list) or not all(
+        isinstance(scope, str) and scope for scope in granted_scopes
+    ):
+        raise GoogleCredentialError(
+            f"invalid credential registry at {registry_path}: {credential_id} has invalid granted_scopes"
+        )
     return GoogleCredentialRef(
         credential_id=credential_id,
         subject=record["subject"],
         account=record["account"],
         client_id=record["client_id"],
         token_uri=record["token_uri"],
-        granted_scopes=frozenset(record["granted_scopes"]),
+        granted_scopes=frozenset(granted_scopes),
     )
 
 
@@ -408,7 +736,13 @@ def exchange_authorization_code(
     return payload
 
 
-def _exchange_refresh_token(*, ref: GoogleCredentialRef, client_secret: str, refresh_token: str, urlopen: Callable) -> str:
+def _exchange_refresh_token(
+    *,
+    ref: GoogleCredentialRef | GoogleCredentialFile,
+    client_secret: str,
+    refresh_token: str,
+    urlopen: Callable,
+) -> str:
     import urllib.parse
     import urllib.request
 
@@ -434,16 +768,19 @@ def _exchange_refresh_token(*, ref: GoogleCredentialRef, client_secret: str, ref
 
 __all__ = [
     "GoogleCredentialError",
+    "GoogleCredentialFile",
     "GoogleCredentialRef",
     "IDENTITY_SCOPES",
     "SERVICE_SCOPES",
     "canonical_client_path",
     "client_status",
+    "create_credential_file",
     "exchange_authorization_code",
     "install_client",
     "load_credential",
+    "load_credential_file",
     "normalize_services",
     "refresh_access_token",
+    "refresh_access_token_from_file",
     "scope_union_for_services",
-    "store_google_credential",
 ]

@@ -3,19 +3,10 @@
 install completes (managed-runtime candidate build + scaffold, both of
 which must already have succeeded before this runs -- see _phase_entry.py).
 
-This step never imports connect-google/cloud-files/g-calendar/email-client
-Python directly: every cross-skill call goes through the shared dispatcher
-launcher (``dispatcher --caller-skill install-assistant-tools <interface>
-...``), exactly like every other skill-to-skill call in this repo. That
-means the interfaces it calls (``connect-google._rtx.interface.client-status``,
-``connect-google._rtx.interface.authorize-services``,
-``cloud-files._rtx.interface.use-google-credential``,
-``g-calendar._rtx.interface.use-google-credential``,
-``email-client._rtx.interface.accounts-use-google-credential``) must list
-``install-assistant-tools`` in their export's ``allowed_callers`` and this
-skill's source blueprint must declare ``uses_interfaces`` for each of them
--- both sides of the dispatcher's access-control check in
-``officina.dispatcher.core._resolve_export_dispatch``.
+This step never imports another skill's Python. It checks the canonical client
+through the dispatcher, then invokes connect-google's single coordinator. The
+coordinator owns authorization and all fixed service-binding dispatches, so the
+installer never handles a credential ID or performs an LLM-mediated handoff.
 
 Does NOT depend on any ``InstallSelections`` wizard type -- that contract
 was never built. Service selection is either passed in explicitly
@@ -23,17 +14,9 @@ was never built. Service selection is either passed in explicitly
 or prompted for interactively, matching the same stdin_isatty pattern
 already used by cloud-files/_rtx/_ensure_oauth.py.
 
-Design note -- gmail deferral: email-client is multi-account, so binding a
-Gmail credential requires an account nickname
-(``email-client._rtx.interface.accounts-use-google-credential --nickname ...``).
-At fresh-install time there is normally no email account configured yet to
-bind to. Rather than block the whole onboarding step (the credential is
-still valid and useful once an account exists) or invent a nickname, gmail
-is left in ``granted_services`` (it *was* authorized at the connect-google
-credential level) but reported separately in ``deferred_services`` when no
-``gmail_nickname`` was supplied, and the accounts-use-google-credential
-dispatch call is skipped for it. The caller can bind it later once an
-account nickname exists.
+When Gmail is granted without a nickname, the coordinator reports the stable
+``missing-gmail-nickname`` incomplete code. This adapter maps that one case to
+the installer's existing ``deferred_services`` result.
 """
 from __future__ import annotations
 
@@ -43,18 +26,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-# Google services this step knows how to authorize. Keys match
-# officina.common.google_credentials.SERVICE_SCOPES exactly (the shared
-# source of truth for valid service names, enforced by connect-google's
-# authorize-services interface itself).
-_SERVICE_MODULES: dict[str, str] = {
-    "drive": "cloud-files",
-    "calendar": "g-calendar",
-    # "gmail" is handled specially below -- email-client's binder interface
-    # takes a different argument shape (nickname + credential-id) because
-    # it is multi-account.
-}
-_KNOWN_SERVICES = frozenset(_SERVICE_MODULES) | {"gmail"}
+_KNOWN_SERVICES = frozenset({"drive", "calendar", "gmail"})
 
 CALLER_SKILL = "install-assistant-tools"
 
@@ -63,13 +35,12 @@ CALLER_SKILL = "install-assistant-tools"
 class OnboardingCapabilityResult:
     """Outcome of one run_google_onboarding() call.
 
-    Never carries a credential's secret value -- only the opaque
-    credential_id connect-google's authorize-services issued, plus which
-    requested services ended up granted / denied / deferred.
+    Never carries a credential's secret value -- only the absolute descriptor
+    path returned by connect-google, plus per-service status.
     """
 
     status: str  # "completed" | "partial" | "skipped" | "needs_selection" | "failed"
-    credential_id: str | None = None
+    credential_file: str | None = None
     granted_services: tuple[str, ...] = ()
     denied_services: tuple[str, ...] = ()
     # Granted at the connect-google credential level but not yet bound to a
@@ -79,6 +50,7 @@ class OnboardingCapabilityResult:
     # Services that were granted and attempted, and successfully bound to
     # their owning skill.
     bound_services: tuple[str, ...] = ()
+    verified_services: tuple[str, ...] = ()
     # Services that were granted but whose per-skill binding dispatch call
     # raised unexpectedly. Each entry is (service, error message) -- never a
     # raw exception object, so this stays JSON/log friendly and can't smuggle
@@ -144,59 +116,56 @@ def run_google_onboarding(
         # installer step, and it must not block the rest of the install.
         return OnboardingCapabilityResult(status="skipped", detail=f"client status: {status.get('status')}")
 
-    auth_result = _dispatch(
+    coordinator_args = ["--services", ",".join(services)]
+    if gmail_nickname:
+        coordinator_args.extend(("--gmail-nickname", gmail_nickname))
+    coordinator_result = _dispatch(
         dispatcher_path,
-        "connect-google._rtx.interface.authorize-services",
-        "--services", ",".join(services),
+        "connect-google._rtx.interface.connect-services",
+        *coordinator_args,
         home=home,
     )
-    credential_id = auth_result["credential_id"]
-    granted = tuple(auth_result.get("granted_services", ()))
-    denied = tuple(auth_result.get("denied_services", ()))
-
-    bound: list[str] = []
-    deferred: list[str] = []
-    failed: list[tuple[str, str]] = []
-    for service in granted:
-        try:
-            if service == "gmail":
-                if not gmail_nickname:
-                    # See module docstring: no account to bind to yet. The
-                    # credential itself is still granted and usable later.
-                    deferred.append(service)
-                    continue
-                _dispatch(
-                    dispatcher_path,
-                    "email-client._rtx.interface.accounts-use-google-credential",
-                    "--nickname", gmail_nickname,
-                    "--credential-id", credential_id,
-                    home=home,
-                )
-            else:
-                module = _SERVICE_MODULES[service]
-                _dispatch(
-                    dispatcher_path,
-                    f"{module}._rtx.interface.use-google-credential",
-                    "--credential-id", credential_id,
-                    home=home,
-                )
-        except Exception as exc:  # noqa: BLE001 - a per-service binding
-            # failure must not abort binding of the remaining granted
-            # services, nor lose the partial-success info already gathered
-            # in `bound` for services processed earlier in this loop.
-            failed.append((service, str(exc)))
-            continue
-        bound.append(service)
-
-    status_value = "completed" if not denied and not deferred and not failed else "partial"
+    credential_file = coordinator_result.get("credential_file")
+    credential_file = credential_file if isinstance(credential_file, str) else None
+    granted = tuple(coordinator_result.get("granted_services", ()))
+    denied = tuple(coordinator_result.get("denied_services", ()))
+    bound = tuple(coordinator_result.get("bound_services", ()))
+    verified = tuple(coordinator_result.get("verified_services", ()))
+    incomplete = coordinator_result.get("incomplete_services", {})
+    incomplete = incomplete if isinstance(incomplete, dict) else {}
+    deferred = tuple(
+        service
+        for service, error in incomplete.items()
+        if isinstance(error, dict) and error.get("code") == "missing-gmail-nickname"
+    )
+    failed = tuple(
+        (service, str(error.get("message", error.get("code", "binding failed"))))
+        for service, error in incomplete.items()
+        if service not in deferred and isinstance(error, dict)
+    )
+    complete = coordinator_result.get("complete") is True
+    if complete:
+        status_value = "completed"
+    elif granted or denied or bound or deferred or failed:
+        status_value = "partial"
+    else:
+        status_value = "failed"
+    error = coordinator_result.get("error")
+    detail = (
+        str(error.get("message"))
+        if isinstance(error, dict) and error.get("message")
+        else None
+    )
     return OnboardingCapabilityResult(
         status=status_value,
-        credential_id=credential_id,
+        credential_file=credential_file,
         granted_services=granted,
         denied_services=denied,
-        deferred_services=tuple(deferred),
-        bound_services=tuple(bound),
-        failed_services=tuple(failed),
+        deferred_services=deferred,
+        bound_services=bound,
+        verified_services=verified,
+        failed_services=failed,
+        detail=detail,
     )
 
 
@@ -215,10 +184,15 @@ def _dispatch(dispatcher_path: Path, interface: str, *args: str, home: Path) -> 
     completed = subprocess.run(
         argv, capture_output=True, text=True, encoding="utf-8", errors="strict", cwd=str(home),
     )
-    if completed.returncode != 0:
-        raise RuntimeError(f"{interface} failed (exit {completed.returncode})")
     stdout = completed.stdout.strip()
-    return json.loads(stdout) if stdout else {}
+    payload = json.loads(stdout) if stdout else {}
+    if completed.returncode != 0:
+        if interface == "connect-google._rtx.interface.connect-services" and (
+            isinstance(payload, dict) and payload.get("complete") is False
+        ):
+            return payload
+        raise RuntimeError(f"{interface} failed (exit {completed.returncode})")
+    return payload
 
 
 def _prompt_for_services() -> tuple[str, ...]:

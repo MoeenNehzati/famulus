@@ -2,10 +2,11 @@
 """Combined OAuth 2.0 PKCE authorization for Drive, Calendar, and Gmail scopes.
 
 Requests a single scope union covering every selected service in one Google
-consent screen, then stores exactly the scopes Google actually granted (a
-partial grant is not rolled back). The client secret and PKCE code_verifier
+consent screen, then creates one immutable credential descriptor containing
+exactly the services and scopes Google actually granted (a partial grant is
+not rolled back). The client secret, refresh token, and PKCE code_verifier
 never appear on stdout, in the authorization URL, or in any stored file: the
-secret is fetched from the host secret store by
+OAuth secrets are fetched from or written to the host secret store by
 ``officina.common.google_credentials.exchange_authorization_code`` and the
 verifier lives only in this process's memory for the duration of one run.
 """
@@ -32,7 +33,8 @@ USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
 @dataclass(frozen=True)
 class AuthorizationResult:
     account: str
-    credential_id: str
+    subject: str
+    credential_file: str
     requested_services: tuple[str, ...]
     granted_services: tuple[str, ...]
     denied_services: tuple[str, ...]
@@ -41,7 +43,8 @@ class AuthorizationResult:
         return {
             "schema_version": 1,
             "account": self.account,
-            "credential_id": self.credential_id,
+            "subject": self.subject,
+            "credential_file": self.credential_file,
             "requested_services": list(self.requested_services),
             "granted_services": list(self.granted_services),
             "denied_services": list(self.denied_services),
@@ -146,10 +149,10 @@ def authorize_services(
     from officina.common.google_credentials import (
         SERVICE_SCOPES,
         GoogleCredentialError,
+        create_credential_file,
         exchange_authorization_code,
         normalize_services,
         scope_union_for_services,
-        store_google_credential,
     )
 
     open_browser = open_browser or webbrowser.open
@@ -235,11 +238,12 @@ def authorize_services(
     )
     denied_services = tuple(service for service in requested if service not in granted_services)
 
-    ref = store_google_credential(
+    ref = create_credential_file(
         subject=subject,
         account=email,
         client_id=client_id,
         token_uri=token_uri,
+        granted_services=granted_services,
         granted_scopes=granted_scopes,
         refresh_token=refresh_token,
         home=home,
@@ -249,7 +253,8 @@ def authorize_services(
 
     return AuthorizationResult(
         account=email,
-        credential_id=ref.credential_id,
+        subject=subject,
+        credential_file=str(ref.path),
         requested_services=requested,
         granted_services=granted_services,
         denied_services=denied_services,
