@@ -220,6 +220,7 @@ def _directory_symlink_or_skip(link: Path, target: Path) -> None:
     try:
         link.symlink_to(target, target_is_directory=True)
     except (NotImplementedError, OSError) as error:
+        # famulus-skip: category=capability-unavailable; reason=the host cannot create directory symlinks; alternate=ordinary auto-status tests cover the same read-only storage behavior without symlink traversal
         pytest.skip(f"directory symlinks are unavailable: {error}")
 
 

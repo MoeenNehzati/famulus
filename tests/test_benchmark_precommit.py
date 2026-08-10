@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
-import json
+import sys
 from pathlib import Path
-from types import SimpleNamespace
-
-import pytest
 
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "scripts" / "benchmark-precommit.py"
@@ -13,168 +10,40 @@ MODULE_PATH = Path(__file__).resolve().parents[1] / "scripts" / "benchmark-preco
 
 def load_module():
     spec = importlib.util.spec_from_file_location("benchmark_precommit", MODULE_PATH)
-    assert spec is not None
+    assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
     spec.loader.exec_module(module)
     return module
 
 
-def test_default_jobs_uses_two_thirds_of_logical_cpus(monkeypatch) -> None:
+def test_wrapper_delegates_precommit_arguments_to_general_harness(monkeypatch) -> None:
     benchmark = load_module()
-    monkeypatch.setattr(benchmark.os, "cpu_count", lambda: 12)
-
-    assert benchmark.default_jobs() == 8
-
-
-@pytest.mark.parametrize(("runs", "jobs"), [(0, 1), (1, 0)])
-def test_run_benchmarks_rejects_nonpositive_dimensions(
-    tmp_path: Path, runs: int, jobs: int
-) -> None:
-    benchmark = load_module()
-
-    with pytest.raises(ValueError):
-        benchmark.run_benchmarks(
-            repo_root=tmp_path,
-            output=tmp_path / "result.json",
-            runs=runs,
-            cache="warm",
-            jobs=jobs,
-        )
-
-
-def test_run_benchmarks_invokes_centralized_runner(monkeypatch, tmp_path: Path) -> None:
-    benchmark = load_module()
-    (tmp_path / "scripts").mkdir()
-    (tmp_path / "repo_checks.py").write_text("", encoding="utf-8")
-    (tmp_path / "scripts" / "benchmark-command.py").write_text("", encoding="utf-8")
     calls = []
 
-    class FakeBenchmark:
+    class Harness:
         @staticmethod
-        def benchmark_command(command, **kwargs):
-            calls.append((command, kwargs))
-            return {"returncode": 0, "wall_seconds": 1.25}
+        def main(argv):
+            calls.append(argv)
+            return 0
 
-    monkeypatch.setattr(benchmark, "_load_script", lambda *args: FakeBenchmark)
-    monkeypatch.setattr(benchmark.platform, "platform", lambda: "test-platform")
-    warmups = []
-    monkeypatch.setattr(
-        benchmark.subprocess,
-        "run",
-        lambda command, **kwargs: warmups.append((command, kwargs))
-        or SimpleNamespace(returncode=0),
-    )
-    monkeypatch.setattr(
-        benchmark,
-        "_git_output",
-        lambda repo_root, *args: (
-            b"commit\n"
-            if args[0] == "rev-parse"
-            else b"staged"
-            if "--cached" in args
-            else b"tracked"
-        ),
-    )
-    output = tmp_path / "results" / "precommit.json"
+    monkeypatch.setattr(benchmark, "_load_harness", lambda: Harness)
 
-    result = benchmark.run_benchmarks(
-        repo_root=tmp_path,
-        output=output,
-        runs=1,
-        cache="warm",
-        jobs=4,
-    )
-
-    assert calls[0][0][1:] == [
-        str(tmp_path / "repo_checks.py"),
-        "--suite",
-        "precommit",
-        "--jobs",
-        "4",
-    ]
-    assert len(warmups) == 1
-    assert warmups[0][0] == calls[0][0]
-    assert result["runs"][0]["classification"] == "acceptance"
-    assert result["runs"][0]["staged_state_changed"] is False
-    assert result["runs"][0]["tracked_worktree_changed"] is False
-    assert json.loads(output.read_text(encoding="utf-8"))["jobs"] == 4
+    assert benchmark.main(["--repo", ".", "--output", "out.json", "--runs", "1", "--cache", "warm", "--jobs", "2"]) == 0
+    assert calls == [["--repo", ".", "--output", "out.json", "--runs", "1", "--cache", "warm", "--jobs", "2", "--suite", "precommit"]]
 
 
-def test_run_benchmarks_selects_sequential_timing_mode(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
+def test_wrapper_uses_process_arguments_when_none_given(monkeypatch) -> None:
     benchmark = load_module()
-    (tmp_path / "scripts").mkdir()
-    (tmp_path / "repo_checks.py").write_text("", encoding="utf-8")
-    (tmp_path / "scripts" / "benchmark-command.py").write_text("", encoding="utf-8")
     calls = []
 
-    class FakeBenchmark:
+    class Harness:
         @staticmethod
-        def benchmark_command(command, **kwargs):
-            calls.append((command, kwargs))
-            return {"returncode": 0, "wall_seconds": 1.0}
+        def main(argv):
+            calls.append(argv)
+            return 0
 
-    monkeypatch.setattr(benchmark, "_load_script", lambda *args: FakeBenchmark)
-    monkeypatch.setattr(benchmark.platform, "platform", lambda: "test-platform")
-    monkeypatch.setattr(
-        benchmark.subprocess,
-        "run",
-        lambda *args, **kwargs: SimpleNamespace(returncode=0),
-    )
-    monkeypatch.setattr(
-        benchmark,
-        "_git_output",
-        lambda repo_root, *args: b"commit\n" if args[0] == "rev-parse" else b"",
-    )
+    monkeypatch.setattr(benchmark, "_load_harness", lambda: Harness)
+    monkeypatch.setattr(sys, "argv", ["benchmark-precommit.py", "--help"])
 
-    result = benchmark.run_benchmarks(
-        repo_root=tmp_path,
-        output=tmp_path / "result.json",
-        runs=1,
-        cache="warm",
-        jobs=4,
-        sequential=True,
-        measure_resources=False,
-    )
-
-    assert calls[0][0][-1] == "--sequential"
-    assert calls[0][1]["sample_process_tree"] is False
-    assert calls[0][1]["record_samples"] is False
-    assert result["scheduler"] == "sequential"
-
-
-def test_warm_cache_prime_rejects_repository_state_drift(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    benchmark = load_module()
-    (tmp_path / "scripts").mkdir()
-    (tmp_path / "repo_checks.py").write_text("", encoding="utf-8")
-    (tmp_path / "scripts" / "benchmark-command.py").write_text("", encoding="utf-8")
-    fingerprints = iter(
-        (b"staged-before", b"tracked", b"staged-after", b"tracked")
-    )
-
-    monkeypatch.setattr(benchmark, "_load_script", lambda *args: object())
-    monkeypatch.setattr(
-        benchmark.subprocess,
-        "run",
-        lambda *args, **kwargs: SimpleNamespace(returncode=0),
-    )
-    monkeypatch.setattr(
-        benchmark,
-        "_git_output",
-        lambda repo_root, *args: next(fingerprints),
-    )
-
-    with pytest.raises(RuntimeError, match="prime changed repository state"):
-        benchmark.run_benchmarks(
-            repo_root=tmp_path,
-            output=tmp_path / "result.json",
-            runs=1,
-            cache="warm",
-            jobs=4,
-        )
+    assert benchmark.main() == 0
+    assert calls == [["--help", "--suite", "precommit"]]

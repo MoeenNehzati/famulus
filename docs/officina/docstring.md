@@ -336,7 +336,7 @@ payloads and renders them through `officina.common.visualization.ElkHtmlRenderer
 
 Why test files are special:
 
-- `validate_module_docstrings(check_group="all")` currently resolves to `syntax` when the target path is inside `tests/`, `hooks/tests/`, `skills/*/tests`, or `skills/*/_rtx/tests`.
+- `validate_module_docstrings(check_group="all")` currently resolves to `syntax` when the target path is inside `tests/`, `hooks/tests/`, `src/officina/wakeup/tests/`, `skills/*/tests`, or `skills/*/_rtx/tests`.
 - The `tests_lightweight` profile also disables callable docstring requirements and full graph section requirements for test paths.
 - For behavior checks on test modules, request `check_group="behavioral"` explicitly.
 

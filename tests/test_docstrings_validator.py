@@ -43,10 +43,16 @@ def test_validate_staged_uses_test_production_and_base_profiles(
     adapter = _load_adapter()
     repo = tmp_path / "repo"
     (repo / "tests").mkdir(parents=True)
-    (repo / "src").mkdir()
+    (repo / "src" / "officina" / "wakeup" / "tests").mkdir(parents=True)
     (repo / "validators").mkdir()
     (repo / "tests" / "test_lightweight.py").write_text(
         '"""Lightweight test fixture."""\n\n'
+        "def helper():\n"
+        "    return 1\n",
+        encoding="utf-8",
+    )
+    (repo / "src" / "officina" / "wakeup" / "tests" / "test_monitor.py").write_text(
+        '"""Module-owned lightweight test fixture."""\n\n'
         "def helper():\n"
         "    return 1\n",
         encoding="utf-8",
@@ -64,11 +70,13 @@ def test_validate_staged_uses_test_production_and_base_profiles(
         [
             "validators/missing.py",
             "tests/test_lightweight.py",
+            "src/officina/wakeup/tests/test_monitor.py",
             "src/missing.py",
         ],
     )
 
     assert not any("tests/test_lightweight.py" in error for error in errors)
+    assert not any("src/officina/wakeup/tests/test_monitor.py" in error for error in errors)
     assert any(
         "src/missing.py" in error and "docstring.missing" in error
         for error in errors

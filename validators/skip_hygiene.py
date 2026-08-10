@@ -17,7 +17,7 @@ if str(_SRC_ROOT) not in sys.path:
 
 from officina.common.python_source_cache import PythonSourceCache
 
-_CHECK_ROOTS = ["tests", "skills"]
+_CHECK_ROOTS = ["tests", "skills", "src/officina/wakeup/tests"]
 _SKIP_PARTS = {"__pycache__", ".system"}
 _ALLOWED_CATEGORIES = {
     "capability-unavailable",

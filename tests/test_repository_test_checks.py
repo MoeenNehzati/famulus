@@ -148,11 +148,12 @@ def mkdir(path: Path) -> None:
     path.mkdir(parents=True)
 
 
-def test_precommit_discovers_skill_tests_except_install_tests(
+def test_precommit_discovers_module_and_skill_tests_except_install_tests(
     tmp_path: Path, monkeypatch
 ) -> None:
     mkdir(tmp_path / "tests")
     mkdir(tmp_path / "hooks" / "tests")
+    mkdir(tmp_path / "src" / "officina" / "wakeup" / "tests")
     mkdir(tmp_path / "skills" / "new-skill" / "tests")
     mkdir(tmp_path / "skills" / "new-skill" / "_rtx" / "tests")
     mkdir(tmp_path / "skills" / "skill-drift" / "tests")
@@ -169,6 +170,7 @@ def test_precommit_discovers_skill_tests_except_install_tests(
     assert runner._resolve_suite("precommit") == [
         "tests",
         "hooks/tests",
+        "src/officina/wakeup/tests",
         "skills/new-skill/_rtx/tests",
         "skills/new-skill/tests",
         "skills/skill-drift/tests",
@@ -178,6 +180,7 @@ def test_precommit_discovers_skill_tests_except_install_tests(
 def test_full_discovers_install_tests(tmp_path: Path, monkeypatch) -> None:
     mkdir(tmp_path / "tests")
     mkdir(tmp_path / "hooks" / "tests")
+    mkdir(tmp_path / "src" / "officina" / "wakeup" / "tests")
     mkdir(tmp_path / "skills" / "new-skill" / "tests")
     mkdir(tmp_path / "skills" / "new-skill" / "_rtx" / "tests")
     mkdir(tmp_path / "skills" / "install-assistant-tools" / "tests")
@@ -193,6 +196,7 @@ def test_full_discovers_install_tests(tmp_path: Path, monkeypatch) -> None:
     assert runner._resolve_suite("full") == [
         "tests",
         "hooks/tests",
+        "src/officina/wakeup/tests",
         "skills/install-assistant-tools/_rtx/tests",
         "skills/install-assistant-tools/tests",
         "skills/new-skill/_rtx/tests",
@@ -486,6 +490,39 @@ def test_each_pytest_task_receives_an_isolated_cache_directory(
         for command in commands
     ]
     assert len(set(cache_options)) == 2
+
+
+def test_probe_task_environment_is_copied_per_child_without_parent_mutation(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    received = []
+
+    class FakeProcess:
+        def __init__(self, _command, **kwargs):
+            received.append(kwargs.get("env"))
+            self.returncode = None
+
+        def poll(self):
+            self.returncode = 0
+            return 0
+
+        def wait(self, timeout=None):
+            return self.poll()
+
+    monkeypatch.setenv("OFFICINA_FIXTURE_PROBE_DIR", str(tmp_path / "probe"))
+    monkeypatch.delenv("OFFICINA_FIXTURE_PROBE_TASK_ID", raising=False)
+    monkeypatch.setattr(runner.subprocess, "Popen", FakeProcess)
+
+    assert runner._run_check_tasks(
+        [runner.CheckTask("one", ("check", "one"), 1), runner.CheckTask("two", ("check", "two"), 1)],
+        repo_root=tmp_path,
+        jobs=2,
+        pooled=True,
+    ) == 0
+
+    assert [environment["OFFICINA_FIXTURE_PROBE_TASK_ID"] for environment in received] == ["one", "two"]
+    assert "OFFICINA_FIXTURE_PROBE_TASK_ID" not in __import__("os").environ
 
 
 def test_portability_suite_has_exact_early_failure_nodes() -> None:

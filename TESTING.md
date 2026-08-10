@@ -38,10 +38,11 @@ python3 scripts/generate-doc-artifacts.py
 
 `repo_checks.py` is the single entry point and `officina.repository_checks` is
 the source of truth for suite
-membership. The fixed boundaries are `tests/`, `hooks/tests/`, and skill-owned
-runtime test directories. The runner discovers concrete `skills/*/_rtx/tests`
-directories at execution time so migrated runtime modules cannot fall out of
-the suite when a skill gains or loses a code module.
+membership. The fixed boundaries are `tests/`, `hooks/tests/`, the
+module-owned `src/officina/wakeup/tests/`, and skill-owned runtime test
+directories. The runner discovers concrete `skills/*/_rtx/tests` directories
+at execution time so migrated runtime modules cannot fall out of the suite
+when a skill gains or loses a code module.
 
 ### `precommit`
 
@@ -49,6 +50,7 @@ This suite runs:
 
 - `tests/`
 - `hooks/tests/`
+- `src/officina/wakeup/tests/`
 - discovered `skills/*/_rtx/tests/`, excluding the install-assistant-tools
   runtime tests named below
 
@@ -114,6 +116,25 @@ scripts/benchmark-precommit.py --repo . --output /tmp/precommit.json \
 
 `benchmark-precommit.py` calls `benchmark-command.py`; it does not duplicate
 suite discovery or execution policy from `officina.repository_checks`.
+
+Benchmark any named complete suite with the canonical harness:
+
+```bash
+scripts/benchmark-test-suite.py --repo . --suite full --output /tmp/full.json \
+  --runs 3 --cache warm --jobs 8
+```
+
+To measure one scheduler task directly, supply its canonical task ID. The harness
+uses a fresh task-specific pytest cache directory and records its worker-slot cost:
+
+```bash
+scripts/benchmark-test-suite.py --repo . --suite full --task-id tests:shared \
+  --output /tmp/shared.json --runs 3 --cache warm --jobs 8
+```
+
+Omitting `--jobs` uses the live default. On the current 12-logical-CPU host, an
+eight-slot budget gives `tests:shared` six xdist workers, while every
+`skills/*/_rtx/tests` task remains a one-worker process.
 
 ## GitHub Actions
 
@@ -188,7 +209,8 @@ that mechanism.
 When you add, remove, or rename a repo-owned Python test directory:
 
 1. Keep it under the canonical boundary for its owner: repo tests under
-   `tests/` or `hooks/tests/`, and skill runtime tests under
+   `tests/` or `hooks/tests/`, wakeup module tests under
+   `src/officina/wakeup/tests/`, and skill runtime tests under
    `skills/<skill>/_rtx/tests/`.
 2. Update `officina.repository_checks` only if the boundary or exclusion
    policy changes.

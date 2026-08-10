@@ -64,7 +64,7 @@
   "src/officina/common/repository_configuration.py",
   "src/officina/common/repository_paths.py",
   "src/officina/common/secret_store.py",
-  "src/officina/common/test_discovery.py",
+  "src/officina/common/discover_tests.py",
   "src/officina/common/toml_io.py",
   "src/officina/common/docstring/*.py",
   "src/officina/common/docstring/config.yaml",

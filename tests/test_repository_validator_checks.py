@@ -38,8 +38,8 @@ def _initialize_runner_repository(repo: Path) -> Path:
     shutil.copy2(_REPO_ROOT / "src" / "officina" / "__init__.py", officina / "__init__.py")
     shutil.copy2(_REPO_ROOT / "src" / "officina" / "common" / "__init__.py", common / "__init__.py")
     shutil.copy2(
-        _REPO_ROOT / "src" / "officina" / "common" / "test_discovery.py",
-        common / "test_discovery.py",
+        _REPO_ROOT / "src" / "officina" / "common" / "discover_tests.py",
+        common / "discover_tests.py",
     )
     source_cache = (
         _REPO_ROOT / "src" / "officina" / "common" / "python_source_cache.py"
@@ -532,8 +532,8 @@ def test_staged_validator_receives_eligible_paths_with_unborn_head(
         "src/officina/__init__.py",
         "src/officina/_validator_snapshot.py",
         "src/officina/common/__init__.py",
+        "src/officina/common/discover_tests.py",
         "src/officina/common/python_source_cache.py",
-        "src/officina/common/test_discovery.py",
         "src/officina/repository_checks.py",
         "validators/staged_probe.py",
     ]

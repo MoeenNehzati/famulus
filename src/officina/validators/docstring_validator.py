@@ -26,7 +26,7 @@ from ..common.docstring.docstring_policy import (
     load_docstring_check_categories,
     load_docstring_schema,
 )
-from ..common.test_discovery import is_test_module as _is_repo_test_module
+from ..common.discover_tests import is_test_module as _is_repo_test_module
 
 _IGNORED_CALL_BASES = frozenset({
     "self",
@@ -3931,7 +3931,7 @@ def validate_module_docstrings(
     ..common.docstring.docstring_policy.load_docstring_schema:
       why:
         reads: "Loads the standard and repository configuration that define validation policy."
-    ..common.test_discovery.is_test_module:
+    ..common.discover_tests.is_test_module:
       why:
         computes: "Selects syntax-only validation for test modules under the configured profile."
     ._iter_defined_callables:

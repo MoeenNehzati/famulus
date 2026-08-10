@@ -20,7 +20,7 @@ import pytest
 
 from officina import _validator_snapshot
 from officina.common.python_source_cache import PythonSourceCache
-from officina.common.test_discovery import discover_repository_test_dirs
+from officina.common.discover_tests import discover_repository_test_dirs
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -1061,7 +1061,7 @@ def _resolve_suite(name: str) -> list[str]:
 
     InstantiationsFromRepo
     ----------------------
-    .officina.common.test_discovery.discover_repository_test_dirs:
+    .officina.common.discover_tests.discover_repository_test_dirs:
       why:
         constructs: "Builds the discovered working-tree test directory collection."
     """
@@ -1508,6 +1508,10 @@ def _run_check_tasks(
                             "stderr": stderr_log,
                             "cwd": root,
                         }
+                        if os.environ.get("OFFICINA_FIXTURE_PROBE_DIR"):
+                            child_environment = os.environ.copy()
+                            child_environment["OFFICINA_FIXTURE_PROBE_TASK_ID"] = task.id
+                            popen_kwargs["env"] = child_environment
                         if os.name == "posix":
                             popen_kwargs["start_new_session"] = True
                         else:

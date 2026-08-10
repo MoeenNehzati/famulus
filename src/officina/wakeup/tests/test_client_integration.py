@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import os
-import pty
 import select
 import shutil
 import subprocess
@@ -26,9 +25,9 @@ from officina.wakeup.claude_codex_sessions import (
 from officina.wakeup.claude_codex_usage import UsageSnapshot, read_codex_usage
 
 
-RUN_CLIENT_TESTS = os.environ.get("LLM_WAKEUP_RUN_CLIENT_TESTS") == "1"
-CLIENT_TEST = pytest.mark.skipif(
-    not RUN_CLIENT_TESTS,
+# famulus-skip: category=live-smoke-opt-in; reason=each case launches an installed client and performs a real authenticated model turn; alternate=hermetic wakeup feature and monitor tests cover provider parsing storage and scheduling behavior
+pytestmark = pytest.mark.skipif(
+    os.environ.get("LLM_WAKEUP_RUN_CLIENT_TESTS") != "1",
     reason="set LLM_WAKEUP_RUN_CLIENT_TESTS=1 to invoke real LLM clients",
 )
 
@@ -50,15 +49,18 @@ def _read_saved_snapshots(root: Path) -> list[UsageSnapshot]:
     ] if directory.exists() else []
 
 
-@CLIENT_TEST
+# famulus-skip: category=platform-contract; reason=the Claude TUI probe requires the Unix pty API; alternate=hermetic Claude capture tests cover quota parsing and storage on every platform
 @pytest.mark.skipif(os.name == "nt", reason="Claude PTY probe requires Unix pty")
 def test_claude_client_emits_parseable_quota_status(
     tmp_path: Path,
 ) -> None:
     """Launch Claude TUI and verify its real status payload reaches storage."""
 
+    import pty
+
     executable = shutil.which("claude")
     if executable is None:
+        # famulus-skip: category=capability-unavailable; reason=the Claude executable is not installed on this host; alternate=hermetic Claude capture tests cover quota parsing and storage
         pytest.skip("claude executable is not installed")
     state = tmp_path / "state"
     environment = os.environ.copy()
@@ -131,12 +133,12 @@ def test_claude_client_emits_parseable_quota_status(
         assert detected.reset_at.timestamp() > time.time()
 
 
-@CLIENT_TEST
 def test_codex_client_writes_parseable_quota_record(tmp_path: Path) -> None:
     """Run one real Codex turn and parse quota data from that exact session."""
 
     executable = shutil.which("codex")
     if executable is None:
+        # famulus-skip: category=capability-unavailable; reason=the Codex executable is not installed on this host; alternate=hermetic Codex transcript tests cover quota parsing and storage
         pytest.skip("codex executable is not installed")
     result = subprocess.run(
         [

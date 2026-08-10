@@ -10,6 +10,7 @@ from typing import Iterable
 BASE_TEST_DIRS: tuple[str, ...] = (
     "tests",
     "hooks/tests",
+    "src/officina/wakeup/tests",
 )
 
 _SKILL_TEST_GLOBS: tuple[str, ...] = (

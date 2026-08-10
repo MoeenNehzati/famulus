@@ -485,6 +485,13 @@ def test_run_due_worker_performs_monitor_pass_before_delivery(
     )
     set_auto_schedule("claude", SESSION_ID, True)
 
+    monkeypatch.setattr(
+        "officina.wakeup.claude_codex_cli.monitor_usage",
+        lambda: monitor_usage(
+            now=datetime.fromtimestamp(RESET_EPOCH - 500, tz=timezone.utc)
+        ),
+    )
+
     assert main(["run-due"]) == 0
 
     jobs = json.loads((state / "jobs.json").read_text())

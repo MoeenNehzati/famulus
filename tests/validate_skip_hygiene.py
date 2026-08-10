@@ -36,6 +36,21 @@ def test_unannotated_pytest_skip_is_rejected(tmp_path: Path) -> None:
     assert any("test skip must have a nearby" in error for error in errors)
 
 
+def test_unannotated_module_owned_test_skip_is_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "src" / "officina" / "wakeup" / "tests" / "test_demo.py"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        "import pytest\n\n"
+        "def test_demo():\n"
+        "    pytest.skip('not here')\n",
+        encoding="utf-8",
+    )
+
+    errors = _mod.validate(tmp_path)
+
+    assert any("test skip must have a nearby" in error for error in errors)
+
+
 def test_injected_cache_preserves_findings_and_ast(tmp_path: Path) -> None:
     path = _write_test(tmp_path, "import pytest\npytest.skip('no')\n")
     expected = _mod.validate(tmp_path)
