@@ -28,3 +28,13 @@ jobs:
   # status cannot vouch for a run that never wrote its own.
   success:
     require_inner_status: ok
+- name: llm-wakeup
+  description: Deliver any wakeups that have come due
+  command: launch.py -m officina.wakeup.cli run-due
+  schedule: '*/10 * * * *'
+  enabled: true
+  # No success block: this job is a deterministic script, not an agent
+  # session, so its exit code already means what it says. The rule in
+  # SKILL.md applies to agent-driven jobs, which exit 0 regardless of
+  # whether they accomplished anything.
+
