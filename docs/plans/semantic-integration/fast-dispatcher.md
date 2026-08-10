@@ -12,7 +12,7 @@
 | Merge base | `07218847c29f406a88e55150ed1ef147fc43f31e` |
 | Divergence | 184 target-only commits; 14 source-only commits |
 | Closure | Mandatory vacuous merge whose second parent is the frozen source |
-| Current phase | Gate 2 planning |
+| Current phase | Phase 4 completeness and closure-candidate preparation |
 | Active-time estimate | 6-8 hours; reapproval required at 9 hours |
 
 The recurring-tasks worker owns a separate locked worktree. Its changes must not
@@ -145,12 +145,12 @@ integration commit and focused evidence before closure.
 | `b53b6e4` | `dc96600`, `484c0d5` | S3 authorization/compiler tests plus restored package export test |
 | `05929b9` | `d5584e7` | S4 runtime-pointer, launcher, and host-routing tests |
 | `789dc52` | `d5584e7` | S4 confined runtime and package-import tests |
-| `4f79c4b` | `d5584e7`, `6766e69`, `ce1ea32`, `484c0d5` | S4/S6/S7 installer results plus verified-wheel and copied-source tests |
+| `4f79c4b` | `d5584e7`, `6766e69`, `ce1ea32`, `484c0d5`, `b632de0` | S4/S6/S7 installer results, verified-wheel and copied-source tests, and successful real wheel build |
 | `d24ce0d` | `8cb8781`, `6766e69`, `ce1ea32`, `484c0d5` | S2 tooling, S6 inventory, S7 cutover, and audit-resolution results |
 | `fdecd78` | `3ae2a40`, `484c0d5` | S8 docs plus explicit CLI program-identity test |
 | `9b4125e` | `8cb8781`, `6766e69` | S2 inventory tooling and S6 all-v6 inventory result |
 | `95a360e` | `6766e69` | S6 221-node code-bearing inventory result |
-| `eb78050` | `484c0d5` | Packaged-source fingerprint, verified-wheel, and copied-plugin acceptance coverage |
+| `eb78050` | `484c0d5`, `b632de0` | Packaged-source fingerprint, verified-wheel, copied-plugin acceptance coverage, and real package build |
 
 ### Mixed-commit effect resolutions
 
@@ -411,6 +411,24 @@ confirmed target-native tooling order, unified-runner preservation, additive
 recurring-tasks configuration, installer contracts, manifest sequencing, and
 target-movement rules. Both reported no unresolved planning findings.
 
+## Evidence key
+
+Accounting TSVs use the following compact tokens. These aliases are part of
+the evidence, not informal labels:
+
+| Token | Exact meaning |
+|---|---|
+| `progress-log:S1` through `progress-log:S8` | The corresponding row below: exact integration commit, selected subsystem/result counts, skips, and limitations. Comma-separated tokens require every named row. |
+| `focused-checks` / `focused-results` | The slice-specific pytest selections and benchmark scopes summarized in the referenced progress rows; these are supplementary to checkpoint and closure gates, not substitutes for them. |
+| `checkpoint-hooks` | The normal `.githooks/pre-commit` invocation of `python3 repo_checks.py --suite precommit` at every mapped integration commit. The latest results at `b632de0` are validators exit 0; shared 1421 passed/12 skipped; recurring 174 passed/2 skipped; certifier 57 passed; drift 21 passed; and every other admitted skill group exit 0. |
+| `target-base-preservation` | `git merge-base --is-ancestor b984b50b89c1b438bee9130e3ffd08c2f158eddd <integration-tip>` exits 0; the integration branch was created from that frozen target and no target commit is removed. |
+| `changed-on-both-resolution` | The row's explicit semantic resolution plus its mapped integration commits and checkpoint evidence. |
+| `replacement-map` | The row's replacement/consequence assertion, exercised by the mapped S3/S4/S7 tests and checkpoint hooks. |
+| `user-approved-historical-plan-omission` | Explicit approval from the integration conversation: “historical plans? we don't care about historical plans”; no production or canonical-documentation effect is rejected by this token. |
+| `real-wheel-build:b632de0` | `UV_CACHE_DIR=/tmp/ai-fast-dispatcher-uv-cache uv build --wheel --no-build-isolation --out-dir /tmp/ai-fast-dispatcher-wheel .` exited 0 and produced `famulus_officina-0.1.0-py3-none-any.whl`. |
+| `central-full-collection-pending` | Planned exact closure command `python3 repo_checks.py --suite full --verbose`; replace this token with the committed candidate and result before Gate 3. |
+| `closure-full-pending` | The same exact full-suite command must pass or have every environmental failure classified on the vacuous merge candidate before Gate 3. |
+
 ## Progress log
 
 | Slice | Accounting resolved | Evidence | Integration commit | Status |
@@ -426,3 +444,4 @@ target-movement rules. Both reported no unresolved planning findings.
 | `S7` | Production dispatch resolves and launches directly from relevant v6 blueprints; catalog and snapshot routing are retired; target portability, managed-runtime, copied-plugin, and installer guarantees are retained | 64 focused dispatcher tests passed; 94 focused managed-runtime, launcher, provenance, and pointer tests passed with 5 real-uv cases deliberately deselected after sandbox/network classification; the normal checkpoint hook passed validators, 1420 shared tests with 12 skips, and every skill-owned group | `ce1ea32` | complete |
 | `S8` | Canonical Officina documentation describes direct v6 lookup, namespace authorization, advisory certification, managed-runtime launch, and enforced latency budgets without importing historical source plans or flattening master's documentation hierarchy | Bounded stale-claim scan found no retired dispatcher catalog references; the normal checkpoint hook passed validators, 1420 shared tests with 12 skips, and every skill-owned group | `3ae2a40` | complete |
 | `A1` | Independent source-preservation and target-regression audits; public API, verified-wheel provenance, v6 certifier/drift selection, CLI identity, copied-plugin acceptance, and recurring-task portability findings resolved | Dispatcher 2 passed; managed runtime 22 passed/2 real-uv deselected; certifier 57 passed; drift 21 passed; recurring tasks 174 passed/2 skipped; checkpoint hook passed validators, 1421 shared tests/12 skips, and every skill-owned group | `484c0d5` | complete |
+| `A2` | Restore source-owned Officina build metadata omitted from the verified-wheel path | Real local `uv build --wheel --no-build-isolation` produced `famulus_officina-0.1.0-py3-none-any.whl`; checkpoint hook passed validators, 1421 shared tests/12 skips, and every skill-owned group | `b632de0` | complete |
