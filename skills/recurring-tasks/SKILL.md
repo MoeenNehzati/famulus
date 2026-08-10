@@ -113,9 +113,8 @@ patterns that must appear in that run's own output. `EVALUATE` applies this
 when it decides the outcome, so a tolerated failure is recorded as a success
 with its reason; `CHECK` still only reads the record.
 
-**Current deviations** (the code does not yet fully match the above):
-
-- Two `SYNC` implementations exist in the runtime rather than one.
+Output logs are rotated once they pass a size cap, keeping one previous
+generation, so a frequently-scheduled job cannot fill the disk.
 
 **Key simplifications:**
 - No per-job shell wrapper scripts
@@ -241,7 +240,8 @@ Read the outcome record rather than re-deriving success from the output log —
 testing a job and checking health both read that record, and a second opinion
 about what "succeeded" means is how a failing job stayed green (invariant 1).
 
-Output logs are appended and never rotated; manage their size externally.
+Output logs are appended, and rotated once they exceed a size cap; one
+previous generation is kept.
 
 ## Common Tasks
 

@@ -37,6 +37,10 @@ else:
     schedule_jobs_from_mappings,
 )
 if __package__:
+    from . import _unit_writer
+else:
+    import _unit_writer  # noqa: E402
+if __package__:
     from ._run_record import read_latest_run_record
 else:
     from _run_record import read_latest_run_record  # noqa: E402
@@ -70,12 +74,17 @@ def save_jobs(jobs: list, jobs_file: Path = JOBS_FILE) -> None:
 
 
 def sync_units(jobs_file: Path | None = None) -> None:
-    """Regenerate scheduler entries."""
+    """Regenerate scheduler entries.
+
+    Delegates so there is one implementation of the sync itself; this wrapper
+    only supplies the defaults the interactive commands use.
+    """
     selected_jobs_file = jobs_file or JOBS_FILE
-    context = schedule_context(selected_jobs_file)
-    platform_schedule_backend().sync(
-        schedule_jobs_from_mappings(load_jobs(selected_jobs_file)),
-        context,
+    _unit_writer.sync_units(
+        load_jobs(selected_jobs_file),
+        None,  # unit_dir: let the platform backend choose its own location
+        LOG_DIR,
+        jobs_file=selected_jobs_file,
     )
 
 

@@ -560,3 +560,21 @@ def test_an_earlier_runs_message_cannot_excuse_a_later_failure(tmp_path):
     assert record["success"] is False, (
         "a previous run's quota message must not excuse this failure"
     )
+
+
+def test_run_log_is_rotated_once_it_exceeds_its_cap(tmp_path, monkeypatch):
+    """Unbounded run logs were the only thing limiting disk use."""
+    jobs_file = _write_jobs_file(tmp_path, command="invoke-skill demo")
+    log_dir = tmp_path / "logs"
+    log_file = log_dir / "demo" / "run.log"
+    log_file.parent.mkdir(parents=True)
+    monkeypatch.setattr(job_executor, "MAX_RUN_LOG_BYTES", 100)
+    log_file.write_text("x" * 500)
+
+    completed = subprocess.CompletedProcess(args=[], returncode=0)
+    with mock.patch.object(job_executor.subprocess, "run", return_value=completed):
+        job_executor.run_job(jobs_file=jobs_file, job_name="demo", log_dir=log_dir)
+
+    assert (log_dir / "demo" / "run.log.1").read_text() == "x" * 500
+    assert "RUN START" in log_file.read_text()
+    assert len(log_file.read_text()) < 500, "the live log restarted after rotation"

@@ -128,7 +128,9 @@ def test_sync_units_invokes_platform_backend():
     mod = _load()
     backend = mock.Mock()
     with mock.patch.object(mod, "load_jobs", return_value=[]), \
-         mock.patch.object(mod, "platform_schedule_backend", return_value=backend):
+         mock.patch.object(
+             mod._unit_writer, "platform_schedule_backend", return_value=backend
+         ):
         mod.sync_units()
         backend.sync.assert_called_once()
         context = backend.sync.call_args[0][1]
@@ -141,7 +143,9 @@ def test_sync_units_passes_jobs_file_override():
     custom = Path("/tmp/custom-jobs.yaml")
     backend = mock.Mock()
     with mock.patch.object(mod, "load_jobs", return_value=[]), \
-         mock.patch.object(mod, "platform_schedule_backend", return_value=backend):
+         mock.patch.object(
+             mod._unit_writer, "platform_schedule_backend", return_value=backend
+         ):
         mod.sync_units(custom)
         context = backend.sync.call_args[0][1]
         assert context.jobs_file == custom

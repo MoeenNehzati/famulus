@@ -114,6 +114,20 @@ TIMEOUT_EXIT_CODE = -1001
 
 RUNNING_MARKER_NAME = "running.json"
 
+# Run logs are appended to forever otherwise. One previous generation is kept,
+# so a job costs at most twice this on disk.
+MAX_RUN_LOG_BYTES = 5 * 1024 * 1024
+
+
+def _rotate_if_oversized(log_file: Path) -> None:
+    """Move an oversized run log aside, keeping one previous generation."""
+    try:
+        if log_file.exists() and log_file.stat().st_size > MAX_RUN_LOG_BYTES:
+            log_file.replace(log_file.with_name(log_file.name + ".1"))
+    except OSError:
+        # Never fail a run over log housekeeping.
+        pass
+
 
 def running_marker_path(*, log_dir: Path, job_name: str) -> Path:
     return log_dir / job_name / RUNNING_MARKER_NAME
@@ -150,6 +164,9 @@ def run_job(*, jobs_file: Path, job_name: str, log_dir: Path = LOG_DIR) -> int:
 
     log_file = log_dir / job_name / "run.log"
     log_file.parent.mkdir(parents=True, exist_ok=True)
+    # Rotate before the run so this run's output stays in one file, and the
+    # offset captured below refers to the file actually being written.
+    _rotate_if_oversized(log_file)
     env = {**os.environ, **env_overrides}
     resolved_argv = resolve_executable(argv, env)
 
