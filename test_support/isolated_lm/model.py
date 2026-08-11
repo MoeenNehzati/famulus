@@ -4,7 +4,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 import json
+import os
 from pathlib import Path
+import tempfile
 
 
 @dataclass(frozen=True)
@@ -146,6 +148,53 @@ class RunRecord:
     ssh_port: int | None = None
     identity_file: Path | None = None
     qemu_command: tuple[str, ...] = ()
+
+    def write_atomic(self) -> None:
+        """Privately and atomically replace this run's evidence record.
+
+        Rationale
+        ---------
+        Launch and lifecycle transitions must never expose a partial JSON file
+        or silently weaken its permissions. Keeping the write boundary beside
+        the canonical serializer ensures every Task 4 transition persists the
+        same complete frozen record.
+
+        Pseudocode
+        ----------
+        - require the existing record directory to be a real absolute directory
+        - create a mode-0600 temporary file beside the final record
+        - write and fsync the canonical JSON, then atomically replace the record
+        - remove the temporary path on every incomplete write
+
+        Call boundary
+        -------------
+        QEMU lifecycle functions call this after ``dataclasses.replace``. The
+        initial guest-preparation writer remains responsible for creating the
+        first record before Task 4 can consume it.
+        """
+        path = self.record_path
+        parent = path.parent
+        if (
+            not path.is_absolute()
+            or parent.is_symlink()
+            or not parent.is_dir()
+            or parent.resolve() != parent
+        ):
+            raise ValueError("run record must have a real absolute parent directory")
+        if path.is_symlink():
+            raise ValueError("run record must not be a symlink")
+        descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}-", dir=parent)
+        temporary_path = Path(temporary_name)
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+                os.chmod(output.fileno(), 0o600)
+                output.write(self.to_json())
+                output.flush()
+                os.fsync(output.fileno())
+            os.replace(temporary_path, path)
+        finally:
+            if temporary_path.exists():
+                temporary_path.unlink()
 
     def to_json(self) -> str:
         """Render a deterministic, newline-terminated VM run record.
