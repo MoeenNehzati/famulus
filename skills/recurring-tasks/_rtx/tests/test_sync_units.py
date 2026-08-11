@@ -244,3 +244,68 @@ if __name__ == "__main__":
     test_orphaned_units_removed_when_job_disabled()
     test_idempotent()
     print("\nAll tests passed.")
+
+
+# ── sync repairs the independent health-check cron entry ───────────────────────
+#
+# The cron entry was installed by setup alone. Once it went stale nothing
+# restored it, and a stale entry means the watchdog is silently dead -- there is
+# no second watchdog to notice. Sync renders it too, so it self-repairs.
+
+def test_live_sync_repairs_the_healthcheck_cron_entry(monkeypatch, tmp_path):
+    monkeypatch.setattr(unit_writer.sys, "platform", "linux")
+    calls = []
+
+    def _fake_install(**kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(
+        unit_writer, "platform_schedule_backend", lambda: _NullBackend()
+    )
+    _install_fake_cron_installer(monkeypatch, _fake_install)
+
+    unit_writer.sync_units(
+        [], tmp_path / "units", unit_writer.LOG_DIR, live=True,
+    )
+
+    assert len(calls) == 1, "live sync must render the health-check cron entry"
+    assert calls[0]["healthcheck"].name == "_healthcheck_probe.py"
+
+
+def test_sync_survives_a_host_with_no_cron(monkeypatch, tmp_path, capsys):
+    """A missing cron command must not fail an otherwise successful sync.
+
+    `crontab -l` raising FileNotFoundError previously propagated, so on a
+    cron-less Linux host this would have taken the scheduler sync down with it.
+    """
+    monkeypatch.setattr(unit_writer.sys, "platform", "linux")
+
+    def _raise(**kwargs):
+        from .._setup_runner import CronUnavailableError
+
+        raise CronUnavailableError("no crontab command on this host")
+
+    monkeypatch.setattr(
+        unit_writer, "platform_schedule_backend", lambda: _NullBackend()
+    )
+    _install_fake_cron_installer(monkeypatch, _raise)
+
+    unit_writer.sync_units([], tmp_path / "units", unit_writer.LOG_DIR, live=True)
+
+    assert "Skipped health-check cron repair" in capsys.readouterr().out
+
+
+class _NullBackend:
+    """A backend that records nothing; these tests are about the cron entry."""
+
+    name = "linux-systemd"
+
+    def sync(self, jobs, context):
+        return None
+
+
+def _install_fake_cron_installer(monkeypatch, replacement):
+    """Point _repair_healthcheck_cron's function-local import at a double."""
+    from .. import _setup_runner
+
+    monkeypatch.setattr(_setup_runner, "install_healthcheck_cron", replacement)

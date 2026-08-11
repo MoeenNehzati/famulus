@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Regenerate host scheduler entries from jobs.yaml."""
+import os
 import sys
 from pathlib import Path
 from argparse import ArgumentParser
@@ -55,6 +56,49 @@ def sync_units(
     )
     selected_backend = backend or platform_schedule_backend()
     selected_backend.sync(schedule_jobs_from_mappings(jobs), context)
+    if live:
+        _repair_healthcheck_cron(context)
+
+
+def _repair_healthcheck_cron(context: ScheduleContext) -> None:
+    """Bring the independent health-check cron entry back into line.
+
+    The entry was installed by setup alone, so once it went stale nothing
+    restored it -- and a stale entry means the watchdog is silently dead, with
+    no second watchdog to notice. Rendering it on every sync makes it
+    self-repairing. The write is already idempotent: an identical line is
+    detected and not rewritten, so this does not increase how often the user's
+    crontab is touched.
+
+    Cron is Linux-only here, and a host may have no cron at all. Neither is a
+    reason to fail a scheduler sync that otherwise succeeded.
+    """
+    if not sys.platform.startswith("linux"):
+        return
+    # Imported here, not at module scope: _setup_runner imports this module,
+    # so a top-level import back would be circular.
+    if __package__:
+        from ._setup_runner import (
+            CronUnavailableError,
+            CrontabUnreadableError,
+            install_healthcheck_cron,
+        )
+    else:
+        from _setup_runner import (  # noqa: E402
+            CronUnavailableError,
+            CrontabUnreadableError,
+            install_healthcheck_cron,
+        )
+
+    try:
+        install_healthcheck_cron(
+            skill_root=SKILL_DIR.parent,
+            runtime_resolver=context.runtime_resolver,
+            healthcheck=SKILL_DIR / "_healthcheck_probe.py",
+            uid=os.getuid(),
+        )
+    except (CronUnavailableError, CrontabUnreadableError) as exc:
+        print(f"Skipped health-check cron repair: {exc}")
 
 
 class Interface(PythonArgvMachineInterface):

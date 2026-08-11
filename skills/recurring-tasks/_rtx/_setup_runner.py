@@ -39,6 +39,10 @@ class CrontabUnreadableError(RuntimeError):
     """The existing crontab could not be read, so it must not be rewritten."""
 
 
+class CronUnavailableError(RuntimeError):
+    """This host has no cron implementation, so there is no entry to manage."""
+
+
 # vixie-cron / cronie report an absent table as "no crontab for <user>". Any
 # other nonzero result means we failed to READ an existing table, which is a
 # different thing entirely.
@@ -55,14 +59,20 @@ def _read_crontab() -> str:
     everything. Only the recognised absent-table message is treated as empty;
     anything else refuses to proceed.
     """
-    result = subprocess.run(
-        ["crontab", "-l"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="strict",
-        check=False,
-    )
+    try:
+        result = subprocess.run(
+            ["crontab", "-l"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="strict",
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        # No cron implementation installed. Distinct from "the table could not
+        # be read": there is nothing to preserve and nothing to write, so the
+        # caller should skip cron work rather than abort the whole sync.
+        raise CronUnavailableError("no crontab command on this host") from exc
     if result.returncode == 0:
         return result.stdout
 
