@@ -17,13 +17,18 @@ from pathlib import Path
 
 SKILL_DIR = Path(__file__).parent
 REPO_ROOT = SKILL_DIR.parents[2]
-SRC_DIR = REPO_ROOT / "src"
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
 
-RTX_DIR = Path(__file__).resolve().parent
-if str(RTX_DIR) not in sys.path:
-    sys.path.insert(0, str(RTX_DIR))
+# Guarded on __package__, and that guard is the whole point. Under the gateway
+# __package__ is set, so nothing here mutates sys.path -- the gateway snapshots
+# it around every module exec and raises ImportError on any change. Run as a
+# bare script (no package, arbitrary interpreter) the guard fires and puts the
+# repository's src on the path, which is what lets this file work under an
+# interpreter that has no officina installed. An UNguarded version of this
+# insert is what made the healthcheck interface unreachable through the
+# dispatcher; see validators/skill/boundaries.py.
+SRC_DIR = REPO_ROOT / "src"
+if not __package__ and str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 

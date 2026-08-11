@@ -12,10 +12,13 @@ from pathlib import Path
 
 SKILL_DIR = Path(__file__).parent
 REPO_ROOT = SKILL_DIR.parents[2]
-SRC_DIR = REPO_ROOT / "src"
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
-
+# Deliberately no repository-src insert: officina is on site-packages in the
+# managed runtime that both the cron line and the gateway execute under. This
+# insert was unconditional, so it fired under the gateway too -- which snapshots
+# sys.path around every module exec and raises ImportError on any change -- and
+# it also silently preferred the working tree's officina over the pinned
+# release the rest of the system runs. The RTX_DIR insert below stays: it is
+# guarded on __package__, so it applies only to the standalone cron mode.
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 SKILL_ROOT = SKILL_DIR.parent

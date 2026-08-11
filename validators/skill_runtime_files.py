@@ -18,6 +18,11 @@ _CHILD_ARTIFACT_DIRS = {
     "blueprints",
     "schemas",
     "state",
+    # Generated at run time and gitignored, exactly like `state`. Without this,
+    # a skill that writes logs beneath its module root fails the check whenever
+    # one of its jobs happens to have written recently -- which made this
+    # validator's result depend on the clock rather than on the commit.
+    "logs",
     "tests",
     ".certificates",
     ".certificate-history",
@@ -42,6 +47,11 @@ def _iter_skill_files(repo_root: Path):
         if len(rel_path.parts) < 3:
             continue
         if rel_path.parts[1] in _SKIP_SKILLS:
+            continue
+        # Interpreter byte-cache, at any depth. Any import of a skill module
+        # leaves one behind, so without this the check reports on whether
+        # something happened to run rather than on what is being committed.
+        if "__pycache__" in rel_path.parts:
             continue
         yield path, rel_path
 
