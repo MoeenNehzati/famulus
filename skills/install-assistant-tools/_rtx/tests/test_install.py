@@ -3,6 +3,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 if __package__ and __package__.count('.') >= 1:
@@ -12,6 +14,17 @@ else:
 
 from officina.common.famulus_paths import resolve_famulus_paths
 from officina.install.managed_runtime import ManagedRuntimeError
+
+
+@pytest.fixture(autouse=True)
+def _isolate_managed_uv_bootstrap(monkeypatch):
+    """Keep phase-orchestration unit tests independent of network access.
+
+    Tests that exercise ``_ensure_managed_uv`` replace this no-op with their
+    own recording double. End-to-end bootstrap coverage lives in the managed
+    runtime and installer integration suites.
+    """
+    monkeypatch.setattr(install.uv_bootstrap, "bootstrap_uv", lambda **kw: None)
 
 
 def test_plugin_mode_skips_dev_link(tmp_path, monkeypatch):
@@ -35,7 +48,6 @@ def test_dev_mode_requires_repo_path_non_interactively(tmp_path, monkeypatch):
     monkeypatch.setattr(install.dev_link, "run", lambda **kw: None)
     monkeypatch.setattr(install.launchers, "run", lambda **kw: None)
 
-    import pytest
     with pytest.raises(SystemExit):
         install.run(
             home=tmp_path, dry_run=True, non_interactive=True,
