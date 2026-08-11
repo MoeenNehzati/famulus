@@ -61,7 +61,8 @@ written. Use `email-client._rtx.interface.mail-folders` when the target folder i
 Use `email-client._rtx.interface.send-email`; provide the body on stdin. For a reply, first
 obtain the original `message_id` from `email-client._rtx.interface.mail-list`, pass it as
 `in-reply-to`, and use a reply subject. Override `references` only when the caller has
-the complete ancestor chain.
+the complete ancestor chain. To send local files, repeat `--attach` with an absolute
+`/path[:DisplayName]` value. Attach only the files the user reviewed or requested.
 
 ## Managing accounts
 

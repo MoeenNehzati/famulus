@@ -22,6 +22,7 @@ Example prompts:
 - `g-calendar` — Read and modify Google Calendar via a local OAuth CLI
 - `get-weather` — Fetch weather for a location, day, or date range
 - `list-manager` — Manage personal YAML lists in cloud storage
+- `send-feedback` — Send feedback, report a problem, or describe a failed Famulus workflow to its maintainer
 - `wrap-up` — Review the day, record completions, and capture follow-up items
 <!-- END AUTO-GENERATED DOCS: personal-assistance -->
 

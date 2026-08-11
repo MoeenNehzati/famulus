@@ -525,6 +525,7 @@ GRAPH_SPECS: dict[str, dict] = {
                                 [
                                     node("connect-google", "connect-google", **CYAN),
                                     node("email-client", "email-client", **CYAN),
+                                    node("send-feedback", "send-feedback", **CYAN),
                                     node("email-triage", "email-triage", **CYAN),
                                     node("g-calendar", "g-calendar", **CYAN),
                                     node("get-weather", "get-weather", **CYAN),
@@ -617,7 +618,8 @@ GRAPH_SPECS: dict[str, dict] = {
             {"source": "math-dependency-graph", "target": "notation-review", "hidden": True},
             {"source": "notation-review", "target": "proof-audit", "hidden": True},
             {"source": "proof-audit", "target": "technical-flow-review", "hidden": True},
-            {"source": "email-client", "target": "email-triage", "hidden": True},
+            {"source": "email-client", "target": "send-feedback", "hidden": True},
+            {"source": "send-feedback", "target": "email-triage", "hidden": True},
             {"source": "email-triage", "target": "g-calendar", "hidden": True},
             {"source": "g-calendar", "target": "get-weather", "hidden": True},
             {"source": "get-weather", "target": "list-manager", "hidden": True},

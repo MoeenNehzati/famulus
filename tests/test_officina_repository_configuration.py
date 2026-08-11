@@ -46,6 +46,22 @@ def test_loads_exact_absolute_repository_configuration(tmp_path: Path) -> None:
         repository / "skills",
         repository / "src/officina",
     )
+    assert configuration.feedback_email is None
+
+
+def test_loads_configured_feedback_email(tmp_path: Path) -> None:
+    repository = _repository(tmp_path)
+    config_path = repository / "officina.toml"
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8")
+        + '\n[feedback]\nemail = "maintainer@example.com"\n',
+        encoding="utf-8",
+    )
+    module = _repository_configuration_module()
+
+    configuration = module.load_repository_configuration(config_path)
+
+    assert configuration.feedback_email == "maintainer@example.com"
 
 
 def test_resolution_ignores_cwd_and_ai_environment(
@@ -82,6 +98,46 @@ def test_resolution_ignores_cwd_and_ai_environment(
         ("schema_version = 1\n[modules]\nroots = [\"skills//nested\"]\n", "unsafe"),
         ("schema_version = 1\n[modules]\nroots = [\"skills\\\\nested\"]\n", "unsafe"),
         ("schema_version = 1\n[modules]\nroots = [1]\n", "string"),
+        (
+            "schema_version = 1\n[modules]\nroots = [\"skills\"]\n"
+            "[feedback]\nunknown = \"x\"\n",
+            "unknown feedback",
+        ),
+        (
+            "schema_version = 1\n[modules]\nroots = [\"skills\"]\n"
+            "[feedback]\nemail = 1\n",
+            "feedback.email",
+        ),
+        (
+            "schema_version = 1\n[modules]\nroots = [\"skills\"]\n"
+            "[feedback]\nemail = \"Name <person@example.com>\"\n",
+            "feedback.email",
+        ),
+        (
+            "schema_version = 1\n[modules]\nroots = [\"skills\"]\n"
+            "[feedback]\nemail = \"one@example.com, two@example.com\"\n",
+            "feedback.email",
+        ),
+        (
+            "schema_version = 1\n[modules]\nroots = [\"skills\"]\n"
+            "[feedback]\nemail = \"a@\"\n",
+            "feedback.email",
+        ),
+        (
+            "schema_version = 1\n[modules]\nroots = [\"skills\"]\n"
+            "[feedback]\nemail = \"a(comment)@example.com\"\n",
+            "feedback.email",
+        ),
+        (
+            "schema_version = 1\n[modules]\nroots = [\"skills\"]\n"
+            "[feedback]\nemail = \"a..b@example.com\"\n",
+            "feedback.email",
+        ),
+        (
+            "schema_version = 1\n[modules]\nroots = [\"skills\"]\n"
+            "[feedback]\nemail = \"a@example..com\"\n",
+            "feedback.email",
+        ),
     ],
 )
 def test_rejects_malformed_repository_configuration(
@@ -152,6 +208,7 @@ def test_central_schema_accepts_repository_configuration_mapping() -> None:
         {
             "schema_version": 1,
             "modules": {"roots": ["skills", "src/officina"]},
+            "feedback": {"email": "maintainer@example.com"},
         }
     )
 
@@ -163,6 +220,41 @@ def test_central_schema_accepts_repository_configuration_mapping() -> None:
         {"schema_version": 1, "modules": {"roots": ["../skills"]}},
         {"schema_version": 1, "modules": {"roots": ["skills", "skills"]}},
         {"schema_version": 1, "modules": {"roots": ["skills"]}, "extra": True},
+        {
+            "schema_version": 1,
+            "modules": {"roots": ["skills"]},
+            "feedback": {"email": "Name <person@example.com>"},
+        },
+        {
+            "schema_version": 1,
+            "modules": {"roots": ["skills"]},
+            "feedback": {"email": "one@example.com, two@example.com"},
+        },
+        {
+            "schema_version": 1,
+            "modules": {"roots": ["skills"]},
+            "feedback": {"email": "a@"},
+        },
+        {
+            "schema_version": 1,
+            "modules": {"roots": ["skills"]},
+            "feedback": {"email": "a(comment)@example.com"},
+        },
+        {
+            "schema_version": 1,
+            "modules": {"roots": ["skills"]},
+            "feedback": {"email": "a..b@example.com"},
+        },
+        {
+            "schema_version": 1,
+            "modules": {"roots": ["skills"]},
+            "feedback": {"email": "a@example..com"},
+        },
+        {
+            "schema_version": 1,
+            "modules": {"roots": ["skills"]},
+            "feedback": {"email": "a@example.com\n"},
+        },
     ],
 )
 def test_central_schema_rejects_invalid_repository_configuration_mapping(

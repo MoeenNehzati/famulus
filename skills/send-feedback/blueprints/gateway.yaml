@@ -1,0 +1,168 @@
+content:
+- SKILL\.md
+dependencies: []
+description: Coordinates session-evidence collection, redacted text-report preparation,
+  explicit review, sender selection, and delegated email delivery.
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: send-feedback.source.gateway
+interfaces:
+  send-feedback.source.gateway.interface.default:
+    contract:
+      arguments:
+        request:
+          description: Request to prepare or send feedback about a Famulus problem,
+            plus the relevant session evidence.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+      caller_warnings:
+      - external-side-effect: After explicit approval, the delegated email-client
+          interface sends the reviewed report to the configured feedback address.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: Feedback request and observed session evidence.
+          formats:
+          - text
+          id: request
+          medium: prompt
+          sensitivity: user-private
+          system: agent-runtime
+        - access: read
+          content: Feedback address from the exact owning repository configuration
+            resolved through this skill's real filesystem path.
+          formats:
+          - toml
+          id: feedback-config
+          medium: repository-filesystem
+          path: officina.toml
+          path_match: exact
+          sensitivity: user-private
+        writes:
+        - access: write
+          content: Redacted feedback report.
+          formats:
+          - text
+          id: report-file
+          medium: local-filesystem
+          path: temporary text file selected for this invocation
+          sensitivity: user-private
+        - access: write
+          content: Approval request, delivery result, or diagnostic.
+          formats:
+          - markdown
+          id: response
+          medium: prompt
+          sensitivity: derived-private
+          system: agent-runtime
+      execution:
+        consistency:
+          per_source: The draft reflects observed evidence and the configured recipient
+            read during the current workflow.
+        effects:
+        - action: create
+          confirmation_evidence:
+            direct_io_ref: report-file
+            kind: direct-io
+          direct_io_ref: report-file
+          id: create-report
+          may_occur_in_outcomes:
+          - approval-required
+          - sent
+          - blocked
+          reversibility:
+            reversible: The temporary report can be removed after the workflow.
+          value_source:
+            argument_ref: request
+            kind: argument
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            per_effect_only: The report file is created before the separately delegated
+              email send.
+          concurrent_invocations:
+            safe: Independent invocations use separate temporary report files.
+          idempotency:
+            non_idempotent: Repeating an approved send can deliver a duplicate email.
+          on_uncertain_completion:
+            stop: Do not retry when provider acceptance is uncertain.
+          partial_effects_on_failure:
+            possible: The report file remains when account selection or email delivery
+              fails.
+          rollback_on_failure:
+            unavailable: A provider-accepted email cannot be recalled by this workflow.
+        state_effect: mutating
+        verification:
+        - direct_io_ref: report-file
+          method: direct-io-state
+        - direct_io_ref: response
+          method: direct-io-state
+      helpers: []
+      interaction:
+        channel: tty
+        mode: interactive
+        unattended_outcome: approval-required
+      outcomes:
+      - caller_action: Repair the missing or invalid feedback.email value in the owning
+          repository's exact officina.toml before retrying.
+        class: refusal
+        effects: []
+        id: configuration-error
+        outputs:
+        - response
+      - caller_action: Review the exact report and delivery details, then approve or
+          request changes.
+        class: refusal
+        effects:
+        - create-report
+        id: approval-required
+        outputs:
+        - response
+      - caller_action: Retain the delivery confirmation and temporary report path.
+        class: success
+        effects:
+        - create-report
+        id: sent
+        outputs:
+        - response
+      - caller_action: Preserve the report, resolve the named account or delivery
+          failure, and do not retry automatically.
+        class: partial
+        effects:
+        - create-report
+        id: blocked
+        outputs:
+        - response
+      outputs:
+      - audience: human
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Exact draft and approval request, or concise delivery result and
+          any diagnostic.
+        direct_io_ref: response
+        empty: Never empty.
+        id: response
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Prepare a reviewed Famulus feedback report and delegate its delivery
+      to the configured recipient.
+    version: 1
+node_type: behavioral_source
+schema_version: 6
+uses_interfaces:
+- interface: email-client.interface.default
+  version: 3
+version: 1

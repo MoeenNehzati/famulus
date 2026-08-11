@@ -5,3 +5,6 @@ roots = [
   "skills",
   "src/officina",
 ]
+
+[feedback]
+email = "officina.feedback@gmail.com"

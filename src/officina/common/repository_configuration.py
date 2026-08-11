@@ -8,13 +8,24 @@ it never searches cwd, parents, environment variables, or the repository.
 from __future__ import annotations
 
 import os
+import re
 import stat
 import tomllib
 from dataclasses import dataclass
+from email.errors import HeaderParseError
+from email.headerregistry import Address
 from pathlib import Path
 from typing import Mapping
 
 from . import toml_io
+
+
+_BARE_EMAIL_PATTERN = re.compile(
+    r"^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+"
+    r"(?:\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*"
+    r"@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+    r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$"
+)
 
 
 class RepositoryConfigurationError(ValueError):
@@ -34,6 +45,7 @@ class RepositoryConfiguration:
     config_path: Path
     repository_root: Path
     module_roots: tuple[Path, ...]
+    feedback_email: str | None = None
 
 
 def _require_no_symlink_components(path: Path, *, label: str) -> None:
@@ -100,6 +112,37 @@ def _relative_root(raw_root: object, *, repository_root: Path) -> Path:
     return root
 
 
+def _feedback_email(raw_feedback: object) -> str | None:
+    """Validate the optional feedback table and return its single bare address."""
+
+    if raw_feedback is None:
+        return None
+    if not isinstance(raw_feedback, Mapping):
+        raise RepositoryConfigurationError("feedback must be a TOML table")
+    unknown = set(raw_feedback) - {"email"}
+    if unknown:
+        raise RepositoryConfigurationError(f"unknown feedback keys: {sorted(unknown)}")
+    raw_email = raw_feedback.get("email")
+    if (
+        not isinstance(raw_email, str)
+        or _BARE_EMAIL_PATTERN.fullmatch(raw_email) is None
+    ):
+        raise RepositoryConfigurationError(
+            "feedback.email must be one nonempty bare email address"
+        )
+    try:
+        address = Address(addr_spec=raw_email)
+    except (HeaderParseError, ValueError) as exc:
+        raise RepositoryConfigurationError(
+            "feedback.email must be one nonempty bare email address"
+        ) from exc
+    if not address.username or not address.domain or address.addr_spec != raw_email:
+        raise RepositoryConfigurationError(
+            "feedback.email must be one nonempty bare email address"
+        )
+    return raw_email
+
+
 def load_repository_configuration(config_path: Path) -> RepositoryConfiguration:
     """Load one exact absolute ``officina.toml`` without ambient discovery."""
 
@@ -120,7 +163,7 @@ def load_repository_configuration(config_path: Path) -> RepositoryConfiguration:
         )
 
     payload = _load_toml_mapping(path)
-    unknown = set(payload) - {"schema_version", "modules"}
+    unknown = set(payload) - {"schema_version", "modules", "feedback"}
     if unknown:
         raise RepositoryConfigurationError(
             f"unknown repository configuration keys: {sorted(unknown)}"
@@ -153,6 +196,7 @@ def load_repository_configuration(config_path: Path) -> RepositoryConfiguration:
         config_path=path,
         repository_root=repository_root,
         module_roots=module_roots,
+        feedback_email=_feedback_email(payload.get("feedback")),
     )
 
 

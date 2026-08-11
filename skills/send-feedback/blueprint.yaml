@@ -1,0 +1,41 @@
+authority:
+  owns_filesystem: []
+  suggested_permissions:
+    bash: []
+    network: []
+children: {}
+content:
+- SKILL\.md
+description: Prepares evidence-faithful, redacted Famulus problem reports and sends
+  them only after review to the repository-configured feedback address.
+discovery:
+  mechanism: skill
+  catalog:
+    domain: personal-assistance
+    topics:
+    - communications
+    - assistant-assurance
+    visibility: featured
+  activated_by:
+  - user-request
+  - skill-workflow
+  persistent_modifier: false
+exports:
+  send-feedback.interface.default:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: send-feedback.source.gateway.interface.default
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: send-feedback
+namespace_exports: {}
+node_type: module
+schema_version: 6
+sources:
+  send-feedback.source.gateway:
+    blueprint:
+      base: module-root
+      path: blueprints/gateway.yaml
+version: 1

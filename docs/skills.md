@@ -18,6 +18,7 @@ The graph gives a visual overview of the live skill set. The sections below are 
 - `g-calendar` — Read and modify Google Calendar via a local OAuth CLI _(topics: planning, personal-organization, external-integrations; activated by: user request, skill workflow)_
 - `get-weather` — Fetch weather for a location, day, or date range _(topics: planning, external-integrations; activated by: user request, skill workflow)_
 - `list-manager` — Manage personal YAML lists in cloud storage _(topics: personal-organization, storage-and-sync; activated by: user request, skill workflow)_
+- `send-feedback` — Send feedback, report a problem, or describe a failed Famulus workflow to its maintainer _(topics: communications, assistant-assurance; activated by: user request, skill workflow)_
 - `wrap-up` — Review the day, record completions, and capture follow-up items _(topics: planning, personal-organization, session-management; activated by: user request, skill workflow)_
 
 ## Research
