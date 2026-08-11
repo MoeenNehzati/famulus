@@ -28,7 +28,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install test dependencies
-        run: python3 -m pip install pytest pytest-xdist pyyaml jsonschema keyring "cryptography>=44.0.1"
+        run: python3 -m pip install -r requirements-ci.txt
 
       - name: Install Claude and Codex CLIs
         run: npm install -g @anthropic-ai/claude-code @openai/codex

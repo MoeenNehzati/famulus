@@ -828,9 +828,25 @@ def test_ci_runs_combined_full_suite_before_portability() -> None:
     )
 
     assert full < portability
-    assert "pytest-xdist" in workflow
+    assert "python3 -m pip install -r requirements-ci.txt" in workflow
     assert "python3 repo_checks.py --suite validators" not in workflow
     assert "python3 repo_checks.py --suite tests --verbose" not in workflow
+
+
+def test_ci_dependency_lock_covers_the_complete_test_environment() -> None:
+    requirements = (
+        Path(__file__).resolve().parents[1] / "requirements-ci.txt"
+    ).read_text(encoding="utf-8").splitlines()
+
+    assert requirements == [
+        "pytest==8.3.4",
+        "pytest-xdist==3.8.0",
+        "PyYAML==6.0.2",
+        "jsonschema==4.23.0",
+        "keyring==25.6.0",
+        "cryptography==44.0.1",
+        "lark==1.3.1",
+    ]
 
 
 def test_precommit_hook_uses_the_combined_root_suite() -> None:
