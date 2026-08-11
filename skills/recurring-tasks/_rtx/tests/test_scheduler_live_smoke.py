@@ -290,7 +290,10 @@ def _linux_smoke() -> None:
         # famulus-skip: category=native-backend-unavailable; reason=systemd user manager is not available on this host; alternate=systemd unit generation tests cover backend output
         pytest.skip(f"systemd user manager unavailable: {manager.stderr.strip() or manager.stdout.strip()}")
 
-    with tempfile.TemporaryDirectory(prefix="recurring-tasks-smoke-") as raw_tmp:
+    with tempfile.TemporaryDirectory(
+        prefix="recurring-tasks-smoke-",
+        dir=_windows_ci_temp_root(),
+    ) as raw_tmp:
         tmp_dir = Path(raw_tmp)
         job_name = f"codex-ci-smoke-{int(time.time())}"
         marker = tmp_dir / "marker.json"
@@ -638,6 +641,17 @@ def _windows_ci_identity_args() -> list[str]:
     return []
 
 
+def _windows_ci_temp_root() -> Path | None:
+    """Return a Task Scheduler-accessible temporary root for hosted CI."""
+
+    if os.environ.get("GITHUB_ACTIONS", "").lower() != "true":
+        return None
+    system_root = os.environ.get("SystemRoot") or os.environ.get("SYSTEMROOT")
+    if not system_root:
+        return None
+    return Path(system_root) / "Temp"
+
+
 def test_windows_ci_identity_is_service_compatible(monkeypatch) -> None:
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
 
@@ -648,3 +662,10 @@ def test_windows_local_identity_matches_production_default(monkeypatch) -> None:
     monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
 
     assert _windows_ci_identity_args() == []
+
+
+def test_windows_ci_temp_root_is_accessible_to_system(monkeypatch) -> None:
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("SystemRoot", r"C:\Windows")
+
+    assert _windows_ci_temp_root() == Path(r"C:\Windows") / "Temp"

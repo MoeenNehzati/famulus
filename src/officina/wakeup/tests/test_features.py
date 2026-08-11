@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -148,6 +150,32 @@ def test_nonblocking_portable_lock_reports_contention(tmp_path: Path) -> None:
         with pytest.raises(LockUnavailable):
             with locked_file(path, blocking=False):
                 pass
+
+
+def test_nonblocking_windows_lock_maps_setup_permission_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class DeniedHandle:
+        def __enter__(self) -> DeniedHandle:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def seek(self, offset: int) -> None:
+            del offset
+
+        def read(self, size: int) -> bytes:
+            del size
+            raise PermissionError("locked by another Windows handle")
+
+    monkeypatch.setattr(Path, "open", lambda *args, **kwargs: DeniedHandle())
+    monkeypatch.setattr("officina.wakeup.locking.os.name", "nt")
+    monkeypatch.setitem(sys.modules, "msvcrt", SimpleNamespace())
+
+    with pytest.raises(LockUnavailable):
+        with locked_file(tmp_path / "queue.lock", blocking=False):
+            pass
 
 
 def test_doctor_reports_provider_queue_lock_and_scheduler_capabilities(

@@ -2257,6 +2257,11 @@ class TestNestedModuleMigrationContract:
         repository = _fixture_repository(tmp_path)
         probe = repository.root / "skills/skill-maker/validators/probe.py"
         probe.chmod(0o755)
+        repository.git(
+            "update-index",
+            "--chmod=+x",
+            "skills/skill-maker/validators/probe.py",
+        )
         _commit(repository, "preserve executable validator mode")
         plan = _api().build_nested_module_migration(repository.root)
         dry_run = plan.render_manifest()

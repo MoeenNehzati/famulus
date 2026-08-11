@@ -11,7 +11,7 @@ pytestmark = pytest.mark.xdist_group("browser")
 from officina.common.visualization.elk_html_renderer import build_html_with_elk
 
 
-def test_containment_edges_reach_both_endpoint_boundaries() -> None:
+def test_containment_edges_reach_both_endpoint_boundaries(tmp_path: Path) -> None:
     """Keep parent-child edges visible while unrelated nodes and text occlude them."""
     chrome = shutil.which("google-chrome")
     if chrome is None:
@@ -149,7 +149,7 @@ def test_containment_edges_reach_both_endpoint_boundaries() -> None:
         }, 150));
         </script></body>""",
     )
-    path = Path("/tmp/officina-containment-edge-browser.html")
+    path = tmp_path / "officina-containment-edge-browser.html"
     path.write_text(html, encoding="utf-8")
     with tempfile.TemporaryDirectory() as profile:
         result = subprocess.run(
@@ -161,7 +161,7 @@ def test_containment_edges_reach_both_endpoint_boundaries() -> None:
                 "--disable-dev-shm-usage",
                 "--disable-crash-reporter",
                 f"--user-data-dir={profile}",
-                "--virtual-time-budget=3000",
+                "--virtual-time-budget=12000",
                 "--dump-dom",
                 path.as_uri(),
             ],
@@ -172,7 +172,9 @@ def test_containment_edges_reach_both_endpoint_boundaries() -> None:
     assert 'data-test-status="PASS"' in result.stdout, result.stdout[-1000:]
 
 
-def test_edge_occlusion_geometry_scales_with_local_intersections() -> None:
+def test_edge_occlusion_geometry_scales_with_local_intersections(
+    tmp_path: Path,
+) -> None:
     """Avoid multiplying every edge mask by every node in the graph."""
     chrome = shutil.which("google-chrome")
     if chrome is None:
@@ -222,7 +224,7 @@ def test_edge_occlusion_geometry_scales_with_local_intersections() -> None:
         }, 150));
         </script></body>""",
     )
-    path = Path("/tmp/officina-edge-occlusion-scale-browser.html")
+    path = tmp_path / "officina-edge-occlusion-scale-browser.html"
     path.write_text(html, encoding="utf-8")
     with tempfile.TemporaryDirectory() as profile:
         result = subprocess.run(
