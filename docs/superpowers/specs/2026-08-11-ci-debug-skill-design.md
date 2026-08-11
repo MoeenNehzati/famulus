@@ -8,6 +8,11 @@ boundary, preserve sufficient evidence, constrain the repair to evidence-backed
 paths, and expand verification through the exact required GitHub Actions matrix
 before user-approved integration.
 
+Its core is a two-loop coordinator: the outer loop runs the complete matrix and
+forms repair units; isolated subagents run the inner targeted repair/probe loops
+on temporary branches; the coordinator integrates returned patches sequentially
+and repeats the complete matrix until it is exactly green.
+
 The system covers pytest failures and non-pytest failures such as setup,
 dependency installation, collection, validators, native smoke checks, timeouts,
 infrastructure, and artifact failures.
@@ -44,8 +49,8 @@ authorization; the implementation must fail closed until it is resolved.
 1. `repo_checks.py` owns execution and emits one versioned diagnostic schema.
 2. GitHub Actions only selects reviewed targets, supplies conditions, and
    uploads runner output.
-3. The skill runtime dispatches, validates, stores, and summarizes evidence; it
-   does not reimplement repository suites.
+3. `run-matrix` is the sole authority for overall CI green. `run-probe` can
+   establish only the result of one bounded matrix element or selection.
 4. Every conclusion is bound to an exact candidate and an exact attempt.
 5. Classification reruns use a separate fresh hosted job/VM at the same commit,
    never the contaminated failed host or checkout.
@@ -55,6 +60,8 @@ authorization; the implementation must fail closed until it is resolved.
    governed by `git-workflow` and explicit user approval.
 8. Diagnostic output is untrusted and secret-bearing until it passes redaction
    and a deterministic prohibited-data scan.
+9. Parallel repair agents own isolated temporary branches. Only the coordinator
+   advances the authoritative candidate or cleans incident-owned branches.
 
 ## Registered Node Architecture
 
@@ -63,50 +70,77 @@ detail.
 
 ### Discoverable instruction node: `ci-debug`
 
-- Gateway source: `ci-debug.source.gateway`.
-- Public instruction interface: `ci-debug.interface.default`.
-- The interface owns the decision procedure, safety policy, verification graph,
-  and assistant-facing incident workflow.
-- `git-workflow` is a required background sub-skill. The instruction interface
-  delegates every Git mutation to that skill rather than authorizing the
-  runtime to commit, push, merge, or modify worktrees autonomously.
-- The instruction node invokes runtime interfaces through `dispatcher`; it
-  never imports or executes runtime implementation files directly.
+The Markdown layer is split by the two loops in the repair algorithm:
+
+| Instruction source | Exported interface | Canonical responsibility |
+| --- | --- | --- |
+| `ci-debug.source.gateway` (`SKILL.md`) | `ci-debug.interface.default` v1 | Coordinate the outer full-matrix loop, form repair units, delegate bounded parallel work, integrate returned patches sequentially, and repeat until the exact matrix is green or progress stops. |
+| `ci-debug.source.instructions-repair-element` (`instructions/repair-element.md`) | `ci-debug.interface.repair-element` v1 | Run one isolated inner diagnosis/patch/probe loop for an assigned matrix element and failure cluster, returning patch commits and evidence without integrating them. |
+
+`SKILL.md` contains only the router, outer algorithm, shared safety rules, and
+coordinator ownership. It does not duplicate the inner repair procedure. The
+routed instruction file loads only for a repair subagent and is complete given
+the assigned repair-unit record; it does not require sibling instruction files.
+
+The gateway source declares `uses_interfaces` on
+`ci-debug._rtx.interface.run-matrix@1`. The repair-element source declares
+`uses_interfaces` on `ci-debug._rtx.interface.run-probe@1`. Instruction code
+invokes those process-bound interfaces through `dispatcher`; it never imports
+or executes runtime files directly.
+
+**REQUIRED BACKGROUND:** Use `git-workflow` for the bounded branch, commit,
+push, integration, and cleanup operations described below. The runtime records
+Git state but has no Git mutation authority.
 
 ### Non-discoverable Python child node: `ci-debug._rtx`
 
 - Node marker: `skills/ci-debug/_rtx/blueprint.yaml`.
-- Its exact v6 source and interface graph is:
+- Its only public machine surfaces are the two execution contracts:
 
   | Behavioral source | Source interface | Exported interface |
   | --- | --- | --- |
-  | `ci-debug._rtx.source.rtx-incident-state` | `ci-debug._rtx.source.rtx-incident-state.interface.incident-state` | `ci-debug._rtx.interface.incident-state` v1 |
-  | `ci-debug._rtx.source.rtx-remote-dispatch` | `ci-debug._rtx.source.rtx-remote-dispatch.interface.remote-dispatch` | `ci-debug._rtx.interface.remote-dispatch` v1 |
-  | `ci-debug._rtx.source.rtx-remote-inspection` | `ci-debug._rtx.source.rtx-remote-inspection.interface.remote-inspection` | `ci-debug._rtx.interface.remote-inspection` v1 |
-  | `ci-debug._rtx.source.rtx-artifact-collection` | `ci-debug._rtx.source.rtx-artifact-collection.interface.artifact-collection` | `ci-debug._rtx.interface.artifact-collection` v1 |
+  | `ci-debug._rtx.source.rtx-run-matrix` | `ci-debug._rtx.source.rtx-run-matrix.interface.run-matrix` | `ci-debug._rtx.interface.run-matrix` v1 |
+  | `ci-debug._rtx.source.rtx-run-probe` | `ci-debug._rtx.source.rtx-run-probe.interface.run-probe` | `ci-debug._rtx.interface.run-probe` v1 |
 
-- Each source declares complete arguments, outputs, effects, sensitivity,
-  process binding, dependencies, and outcomes.
+- `run-matrix` runs or resumes the exact complete required matrix for a
+  candidate and returns a `MatrixReport`. It may run independently of an
+  existing debugging incident; in that case it creates a minimal standalone
+  certification record. `MatrixReport.overall_green` is true only when every
+  required element is present, current, and successful.
+- `run-probe` runs or resumes one matrix element against either a bounded
+  failure selection or the whole element and returns a `ProbeReport`. It never
+  emits or implies overall matrix green.
 - Each child export sets `allow_all_modules: false` and
   `allowed_callers: [ci-debug]`.
-- Cross-module calls use declared `uses_interfaces` and
-  `PythonMachineInterface.dispatch()`, never the dispatcher CLI or direct
-  imports of another node's internals.
 - The parent's `_rtx` namespace export is version 1. Its `surface.only` map
-  contains exactly the four exported interfaces above at version 1. Each
+  contains exactly the two exported interfaces above at version 1. Each
   `interface_access` entry sets `allow_all_modules: false` and
   `allowed_callers: []`. The runtime is not independently discoverable.
+
+Transport and persistence are private supporting sources, not public module
+interfaces:
+
+- `ci-debug._rtx.source.rtx-incident-state.interface.incident-state`;
+- `ci-debug._rtx.source.rtx-failure-ledger.interface.failure-ledger`;
+- `ci-debug._rtx.source.rtx-github-transport.interface.github-transport`; and
+- `ci-debug._rtx.source.rtx-artifact-bundle.interface.artifact-bundle`.
+
+The two public behavioral sources declare exact `uses_interfaces` edges to the
+private source interfaces they need. Source-to-source calls use the injected
+Python machine-interface dispatch path; no public interface exposes raw GitHub
+transport, artifact storage, or incident-file operations.
 
 The runtime reuses authorized common interfaces rather than duplicating them.
 The exact `uses_interfaces` edges are:
 
-- `rtx-incident-state` uses `common.interface.atomic-files` and
+- `rtx-incident-state` and `rtx-failure-ledger` use
+  `common.interface.atomic-files` and
   `common.interface.repository-paths`;
-- `rtx-remote-dispatch` uses `common.interface.repository-paths` and a new
+- `rtx-github-transport` uses `common.interface.repository-paths` and a new
   `common.interface.git-provenance-read`;
-- `rtx-remote-inspection` uses `common.interface.git-provenance-read`; and
-- `rtx-artifact-collection` uses `common.interface.atomic-files` and
-  `common.interface.repository-paths`.
+- `rtx-artifact-bundle` uses `common.interface.atomic-files`; and
+- `rtx-run-matrix` and `rtx-run-probe` depend only on their declared private
+  source interfaces.
 
 The common blueprint must authorize `ci-debug._rtx` on those exact interfaces.
 The existing `common.interface.git-provenance` is too broad because it includes
@@ -119,7 +153,7 @@ userinfo. It returns no raw remote URL and exposes no generic Git execution,
 ref mutation, pinning, or commit-tree materialization. These common-node changes
 are part of the implementation scope and certification dependency graph.
 
-Before authoring either node, `skill-maker` must retrieve the four applicable
+Before authoring either node, `skill-maker` must refresh the four applicable
 standards roots and their complete pinned closures and facts:
 
 - instruction module;
@@ -149,19 +183,21 @@ diverge in task or diagnostic semantics.
 
 ### `ci-debug._rtx`
 
-The deterministic runtime owns:
+The deterministic runtime owns the implementation shared by `run-matrix` and
+`run-probe`:
 
-- starting or resuming an incident from a workflow run;
+- starting or resuming an incident or standalone certification session;
 - validating candidate identity and GitHub metadata;
 - validating typed selection inputs against the runner-owned dispatch table;
-- dispatching targeted or full runs through `gh` without shell interpolation;
+- dispatching the requested matrix or probe through `gh` without shell
+  interpolation;
 - correlating a dispatch with its exact run and attempt;
 - watching, downloading, validating, and recording artifacts;
 - enforcing evidence-backed repair scope before dispatch or integration; and
 - producing a concise redacted incident summary.
 
-It may inspect and record Git state. It may not commit, push, merge, rewrite
-history, or integrate.
+It may inspect and record Git state. It may not create or remove worktrees,
+commit, push, merge, delete branches, rewrite history, or integrate.
 
 ### GitHub Actions
 
@@ -185,6 +221,95 @@ outside the total-redaction guarantee and is explicitly identified as such;
 secrets must never be passed to those steps. The dependency-free prelude ensures
 that their failures still leave safe, schema-minimal evidence for the finalizer
 to publish when publication succeeds.
+
+## Core Repair Algorithm
+
+The default instruction interface owns one fixed-point loop:
+
+```text
+candidate = exact pushed candidate SHA
+
+while true:
+    matrix = run-matrix(candidate)
+    if matrix.overall_green:
+        stop green
+
+    repair_units = group matrix failures by element and failure signature
+    coalesce only clearly identical cross-element signatures
+
+    in bounded parallel, for each repair_unit:
+        run repair-element in an isolated temporary branch/worktree
+
+        active = repair_unit.failures
+        while active is not empty:
+            diagnose and commit one evidence-backed patch
+            probe = run-probe(branch_head, repair_unit.element, active)
+            ledger.record(probe)
+            active = probe.persistent union probe.novel
+            stop blocked if the ledger detects a cycle or progress limit
+
+        element = run-probe(branch_head, repair_unit.element, whole-element)
+        if element is red:
+            active = element.failures
+            continue the inner loop
+
+        return patch commits and probe evidence to the coordinator
+
+    coordinator reviews and integrates returned patches sequentially
+    candidate = new exact pushed candidate SHA
+```
+
+`run-matrix` is the only operation that can terminate the outer loop as green.
+A selected-failure probe becoming green is insufficient; the subagent must next
+probe its whole matrix element. A whole-element probe becoming green is still
+insufficient for overall certification.
+
+The failure ledger never replaces history with only the latest set. For every
+probe it records `resolved`, `persistent`, and `novel` signatures plus the exact
+candidate and condition key. The next active set is `persistent union novel`.
+Repeating the same active signature set without a discriminating patch or
+condition change is a cycle, not progress. The inner loop then returns
+`blocked` with evidence rather than retrying indefinitely.
+
+Parallelism is bounded by available agent slots. If subagents are unavailable,
+the same repair units run sequentially. Failures from different matrix elements
+are not automatically independent: exact matching signatures may be coalesced
+into one repair unit, and overlapping path scopes are flagged for coordinator
+review rather than mutated concurrently.
+
+## Temporary Repair Branches
+
+At incident start, the coordinator obtains explicit `git-workflow` approval for
+a bounded mutation envelope: the incident ID, exact base SHA, branch namespace,
+allowed paths, and permission to create, commit, push, and later remove only
+incident-owned temporary branches. The namespace is:
+
+```text
+codex/ci-debug/<incident>/<matrix-element>/<attempt>
+```
+
+`<matrix-element>` is the manifest's normalized Git-safe slug, not an arbitrary
+workflow or test string.
+
+Each repair subagent may create an isolated worktree and branch from the exact
+assigned candidate, commit only within its approved scope, push the branch for
+remote probes, and add ordinary commits while its inner loop continues. It may
+not integrate into the coordinator candidate, widen scope, delete branches, or
+force-push. It returns commit SHAs, the complete diff, and probe evidence.
+
+The coordinator integrates accepted patches one at a time. Every integration
+creates a new candidate identity and invalidates probe evidence tied to an older
+candidate. A still-applicable returned patch may be applied to the new candidate
+only after scope review and a fresh affected-element probe. If it conflicts or
+its assumptions changed, the coordinator creates a new attempt branch from the
+new candidate; it never rebases or force-pushes an old attempt branch.
+
+Temporary branches and worktrees remain available as reproducers until the
+integrated candidate reaches `confirmed`. The coordinator then removes only the
+local worktrees, local branches, and remote branches recorded as owned by that
+incident. It preserves the incident ledger, commit identities, reports, and
+artifact references. For `blocked` or `abandoned` incidents, cleanup requires a
+separate explicit decision so unfinished evidence is not destroyed.
 
 ## Two-Stage Rollout
 
@@ -284,6 +409,10 @@ exact ignore rule. The runtime authority declares the exact owned-filesystem
 regular expression. `_build/ci-debug/` contains only reproducible derived local
 reports and downloaded copies; it is never the canonical state store.
 
+A standalone `run-matrix` call uses the same owner and schema subset under
+`skills/ci-debug/_rtx/_state/certifications/<request-id>/`; it does not create
+repair units or authorize Git mutations.
+
 Each incident records:
 
 - immutable incident ID, parent/child relationships, and failure signature;
@@ -296,16 +425,19 @@ Each incident records:
 - typed target, condition key, actual runner image, dependency and tool
   versions;
 - evidence-linked allowed paths and separately approved scope expansions;
-- repair commits observed; and
+- repair-unit assignments, owned temporary branches/worktrees, repair commits,
+  and cleanup disposition;
+- the append-only resolved/persistent/novel failure ledger; and
 - every verification result with provenance.
 
-Incident epistemic/disposition state is separate from operational attempt
-state.
+Incident, repair-unit, and operational attempt state are separate.
 
-Incident states are `captured`, `reproducing`, `reproduced`, `unreproduced`,
-`inconclusive`, `diagnosing`, `repairing`, `target-green`, `scope-green`,
-`matrix-green`, `integrated`, `confirmed`, `blocked`, `abandoned`, and
-`superseded`.
+Incident states are `captured`, `matrix-running`, `matrix-red`, `repairing`,
+`matrix-green`, `integrated`, `confirmed`, `inconclusive`, `blocked`, and
+`abandoned`.
+
+Repair-unit states are `assigned`, `active`, `target-green`, `element-green`,
+`returned`, `accepted`, `blocked`, and `superseded`.
 
 Attempt states are `prepared`, `queued`, `running`, `collecting`, `completed`,
 `interrupted`, `cancelled-before-start`, `cancelled-running`,
@@ -320,17 +452,19 @@ The normative transition and invalidation rules are:
 | Event | Required prior state | Result | Invalidation/effect |
 | --- | --- | --- | --- |
 | incident capture | none | `captured` | Records failing-base identity |
-| reproducer dispatch | `captured`, `unreproduced`, or `inconclusive` | `reproducing` | Creates an independent attempt |
-| reproducer result | `reproducing` | `reproduced`, `unreproduced`, or `inconclusive` | Records separate classification outcome |
-| evidence review | `reproduced` or explicitly accepted `inconclusive` | `diagnosing` | Establishes allowed path set |
-| approved repair begins | `diagnosing` | `repairing` | Creates a new candidate identity |
-| post-repair checks pass | `repairing`, `target-green`, or `scope-green` | next green state | Bound only to the unchanged candidate |
-| any check fails | any post-repair green state | `diagnosing` or child incident | Invalidates that state and all downstream states |
-| candidate SHA/tree/workflow/input changes | any post-repair state | `repairing` | Invalidates all post-repair green states |
-| exact matrix passes | `scope-green` | `matrix-green` | Makes candidate eligible for approved integration |
+| `run-matrix` starts | `captured`, `repairing`, or `matrix-red` | `matrix-running` | Binds one exact candidate |
+| exact matrix fails | `matrix-running` | `matrix-red` | Creates failure ledger entries and repair units |
+| exact matrix passes | `matrix-running` | `matrix-green` | Makes candidate eligible for approved integration |
+| repair units assigned | `matrix-red` | `repairing` | Creates isolated unit branches from the candidate |
+| selected failure probe passes | repair unit `active` | repair unit `target-green` | Requires a whole-element probe next |
+| whole-element probe passes | repair unit `target-green` | repair unit `element-green` | Permits patch return, not overall green |
+| patch returned | repair unit `element-green` | repair unit `returned` | Coordinator reviews scope and evidence |
+| patch integrated | repair unit `returned` | repair unit `accepted`; incident `matrix-running` | Creates a new candidate and invalidates older candidate results |
+| probe repeats an unchanged failure state | repair unit `active` | repair unit `blocked` | Stops the inner loop with cycle evidence |
+| candidate SHA/tree/workflow/input changes | any active/green repair unit | repair unit `superseded` | Requires fresh validation against the new candidate |
 | approved integration observed | `matrix-green` | `integrated` | Records the distinct integrated identity |
 | integrated matrix passes | `integrated` | `confirmed` | Closes the incident |
-| explicit stop/replacement | any nonterminal state | `blocked`, `abandoned`, or `superseded` | No green state transfers |
+| explicit stop | any nonterminal incident state | `blocked` or `abandoned` | No green state transfers; cleanup remains explicit |
 
 Attempt transitions proceed in order from `prepared` to `queued`, `running`,
 `collecting`, and `completed`, with the declared interruption, cancellation,
@@ -449,17 +583,19 @@ their installation is skipped for irrelevant tasks.
 
 ## Repair Scope and Git Policy
 
-An incident begins with an evidence-linked allowed path set. Before every remote
-dispatch and before proposed integration, the runtime compares the complete
-diff from the failing base to the current candidate against that set. An
-unrelated path fails closed. A scope expansion requires explicit approval and
-is recorded with its evidence and approving action.
+An incident begins with an evidence-linked allowed path set for each repair
+unit. Before every `run-probe` and proposed integration, the runtime compares
+the complete unit-branch diff against that set. An unrelated path fails closed.
+A scope expansion requires explicit approval and is recorded with its evidence
+and approving action. Standalone `run-matrix` certification is read-only with
+respect to Git and does not require a repair allowlist.
 
-The skill creates or reuses an isolated named worktree only through
-`git-workflow`. It never edits a dirty primary checkout or stages unrelated
-files. Pushing a branch and integrating a repair require explicit user approval.
-The runtime can recommend those steps and verify their outcomes but cannot
-perform them.
+The coordinator and subagents use only the incident-owned worktrees and branches
+authorized through `git-workflow`. They never edit a dirty primary checkout or
+stage unrelated files. The incident-level approval envelope authorizes ordinary
+commits and pushes only within its exact branch namespace and path scope;
+integration and cleanup remain coordinator actions. The runtime can verify
+these operations but cannot perform them.
 
 The skill does not use these as default repairs:
 
@@ -470,33 +606,22 @@ The skill does not use these as default repairs:
 - reducing operating-system or native integration coverage; or
 - combining a new failure signature into an unrelated patch.
 
-## Verification Graph
+## Verification Boundaries
 
-Verification is an ordered graph, not a fixed node-only ladder:
+The core algorithm above owns verification order. Its reports have deliberately
+non-overlapping authority:
 
-1. **Pre-repair diagnosis:** bind observations to
-   `failing_base_sha/tree/workflow`, reproduce the smallest applicable selection
-   under the original controllable conditions, and establish the evidence-backed
-   repair scope.
-2. **Repair transition:** after approval through the interactive workflow, make
-   the scoped repair and record a distinct `candidate_sha/tree/workflow/input`
-   identity. No failing-base green or classification state transfers to it.
-3. **Post-repair target:** run the repaired target with bounded repeats, then
-   rerun the original failing selection exactly.
-4. **Scope expansion:** run the enclosing selection, affected task, and
-   explicitly coupled tasks or native checks.
-5. **Candidate certification:** run the full required matrix for the exact
-   candidate.
-6. **Integration confirmation:** after user-approved integration, bind the
-   integrated SHA/tree as another distinct candidate and run its required
-   default-branch matrix.
+- a selected-target `ProbeReport` updates one repair unit's failure ledger;
+- a whole-element `ProbeReport` can mark only that repair unit
+  `element-green`;
+- a complete `MatrixReport` can mark one exact candidate `matrix-green`; and
+- a complete `MatrixReport` for the integrated default-branch candidate can
+  mark the incident `confirmed`.
 
-Inapplicable nodes are recorded as such with a policy reason, never silently
-skipped. Any failure stops expansion and returns the incident to diagnosis or
-creates a child incident for a new signature. `matrix-green` is evidence that
-the candidate is eligible for a user-approved integration action, not authority
-to integrate it. Any candidate commit, tree, workflow, or normalized-input
-change restarts the complete applicable post-repair subgraph.
+Inapplicable checks are recorded with a policy reason, never silently skipped.
+`matrix-green` is evidence that a candidate is eligible for user-approved
+integration, not authority to integrate it. Any candidate commit, tree,
+workflow, or normalized-input change invalidates every older green conclusion.
 
 ## Workflow Safety and Performance
 
@@ -543,22 +668,31 @@ test and artifact failures are recorded as separate outcomes.
 Implementation follows test-driven slices:
 
 1. Stage 0 workflow policy tests and live default-branch dispatch bootstrap;
-2. dispatch-table, parser, selector, control-character, path-escape, and
+2. exact instruction routing and the two-interface machine surface, including
+   proof that `run-probe` cannot emit overall green;
+3. dispatch-table, parser, selector, control-character, path-escape, and
    incompatible-axis rejection;
-3. failure identity, condition identity, exhaustive incident/attempt/
+4. failure identity, condition identity, exhaustive incident/repair-unit/attempt/
    classification/publication transitions, and candidate invalidation;
-4. mocked `gh` dispatch correlation, watch, interruption, and artifact download;
-5. dependency-free setup-failure bundles, durable runner diagnostics, and Git
+5. failure-ledger resolved/persistent/novel updates, signature coalescing, and
+   cycle/stall detection;
+6. mocked `gh` dispatch correlation, watch, interruption, and artifact download;
+7. dependency-free setup-failure bundles, durable runner diagnostics, and Git
    failure-hook capture;
-6. separate-hosted-job classification and same-host rerun rejection;
-7. whole-bundle seeded-secret redaction and prohibited-data scanning;
-8. evidence-backed path enforcement and approved scope expansion;
-9. workflow equivalence, unique artifacts, concurrency partitioning, and exact
+8. separate-hosted-job classification and same-host rerun rejection;
+9. whole-bundle seeded-secret redaction and prohibited-data scanning;
+10. evidence-backed path enforcement and approved scope expansion;
+11. isolated temporary-branch creation, append-only commits, sequential
+    coordinator integration, stale-result invalidation, and confirmed cleanup;
+12. simulated outer and inner loops with bounded parallel agents and sequential
+    fallback;
+13. workflow equivalence, unique artifacts, concurrency partitioning, and exact
    full-matrix completeness;
-10. pytest and at least one non-pytest incident;
-11. one live branch-scoped targeted run followed by the exact full branch
+14. pytest and at least one non-pytest incident;
+15. one live temporary-branch probe followed by the exact full branch
     matrix; and
-12. default-branch confirmation after user-approved integration.
+16. default-branch confirmation and incident-owned branch cleanup after
+    user-approved integration.
 
 Changes to `repo_checks.py` and `src/officina/repository_checks.py` affect
 declared repository certification-basis roots. Therefore certification is not
@@ -569,10 +703,28 @@ precommit and pre-push gates also remain required.
 
 ## Acceptance Criteria
 
+- `SKILL.md` owns the outer matrix loop and shared policy; the routed
+  `repair-element` instruction source owns the inner loop without duplicated
+  procedure text.
+- The child exposes exactly `run-matrix` and `run-probe`; transport, artifacts,
+  incident state, and the failure ledger remain private source interfaces.
+- `run-matrix` can certify any exact pushed candidate without a prior incident
+  and is the only interface capable of returning overall green.
+- `run-probe` runs one selected failure set or one complete matrix element and
+  cannot certify the complete matrix.
 - The default branch first contains the task-level/manual dispatch adapter, and
   branch dispatch is proven from a descendant of that commit.
-- One skill invocation captures an existing failed run and prints the smallest
-  supported reproducer without exposing secrets or raw remotes.
+- One skill invocation repeatedly runs the complete matrix, delegates bounded
+  repair units, integrates returned patches sequentially, and stops only at
+  exact matrix green or an evidenced blocked state.
+- Parallel repair subagents commit and push only on incident-owned temporary
+  branches; none can mutate the coordinator candidate or clean up branches.
+- Every selected-failure success is followed by a whole-element probe, and every
+  integrated candidate is followed by a complete `run-matrix` evaluation.
+- The failure ledger preserves resolved, persistent, and novel signatures and
+  stops an unchanged cycle instead of retrying indefinitely.
+- The coordinator removes recorded temporary worktrees and local/remote
+  branches only after the integrated candidate is `confirmed`.
 - A pushed debugging branch runs one selected test on one selected OS without
   running unrelated suites.
 - Automatic failures and manual successes/failures attempt publication of a
@@ -595,7 +747,8 @@ precommit and pre-push gates also remain required.
 - Request correlation is unique by queryable `run-name` request ID plus exact
   SHA/event/actor, and the manifest repeats the request ID.
 - Mandatory dependency-first and full-repository recertification succeeds.
-- Git mutations occur only through explicitly approved `git-workflow` actions.
+- Git mutations remain inside the incident-level `git-workflow` approval
+  envelope; integration and cleanup remain coordinator-owned.
 - The primary checkout and unrelated dirty state remain untouched.
 - The integrated default-branch candidate reaches `confirmed` only after its own
   required matrix passes.
@@ -606,13 +759,18 @@ precommit and pre-push gates also remain required.
    remote configuration without printing its value.
 2. Land the Stage 0 workflow-only dispatch adapter through existing CI.
 3. Branch from that default-branch adapter commit.
-4. Retrieve the four standards closures and implement the runner diagnostics,
-   registered skill/runtime, workflow upload, and policy tests in TDD slices.
-5. Perform mandatory dependency-first and repository-wide recertification.
-6. Run the exact complete matrix for the immutable candidate.
-7. Integrate only through a user-approved `git-workflow` action.
-8. Monitor the integrated candidate to `confirmed`.
-9. Consider separately reviewed interactive access only if artifact-driven
+4. Refresh the four standards closures; author the gateway outer loop, routed
+   repair-element source, and the exact `run-matrix`/`run-probe` contracts.
+5. Implement private incident, failure-ledger, GitHub-transport, and artifact
+   sources plus runner diagnostics and workflow upload in TDD slices.
+6. Add bounded subagent orchestration, temporary-branch ownership, sequential
+   integration, invalidation, and confirmed cleanup.
+7. Perform mandatory dependency-first and repository-wide recertification.
+8. Run the exact complete matrix for the immutable candidate.
+9. Integrate only through the approved `git-workflow` envelope.
+10. Monitor the integrated candidate to `confirmed`, then clean its owned
+    temporary branches and worktrees.
+11. Consider separately reviewed interactive access only if artifact-driven
    debugging remains insufficient.
 
 ## Non-goals
