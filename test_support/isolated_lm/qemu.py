@@ -24,9 +24,79 @@ SHUTDOWN_POLL_SECONDS = 1.0
 RunProcess = Callable[..., subprocess.CompletedProcess[object]]
 ProcCmdlineReader = Callable[[int], bytes | None]
 QmpQuitter = Callable[[Path, float], None]
+RunDirectoryIdentity = tuple[int, int]
 
 _QMP_CAPABILITIES_ID = "isolated-lm-capabilities"
 _QMP_QUIT_ID = "isolated-lm-quit"
+
+
+def _open_absolute_directory(
+    path: Path, *, open_file: Callable[..., int] = os.open
+) -> int:
+    """Open an absolute directory one no-follow component at a time.
+
+    Intent
+    ------
+    Establish directory authority from the filesystem root without allowing a
+    symlink, nondirectory, or lexical traversal component anywhere in the path.
+
+    Rationale
+    ---------
+    ``O_NOFOLLOW`` protects only the component named by one open call. Starting
+    at ``/`` and resolving every child relative to the prior descriptor extends
+    that protection to all ancestors while closing superseded descriptors.
+
+    Pseudocode
+    ----------
+    - if path is not absolute or contains dot traversal:
+      - raise invalid absolute directory
+    - set current_descriptor = no-follow directory open for filesystem root
+    - for component in nonempty path components:
+      - set child_descriptor = relative no-follow directory open
+      - if child_descriptor metadata is not a directory:
+        - raise invalid directory component
+      - set current_descriptor = closed
+      - set current_descriptor = child_descriptor
+    - return final directory descriptor to caller ownership
+
+    Wraps
+    -----
+    none
+    """
+    if not isinstance(path, Path) or not path.is_absolute():
+        raise ValueError("directory path must be absolute")
+    components = path.parts[1:]
+    if any(component in {".", ".."} for component in components):
+        raise ValueError("directory path must not contain dot traversal")
+    flags = (
+        os.O_RDONLY
+        | os.O_DIRECTORY
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
+    current_fd = -1
+    try:
+        current_fd = open_file("/", flags)
+        if not stat.S_ISDIR(os.fstat(current_fd).st_mode):
+            raise ValueError("filesystem root must be a directory")
+        for component in components:
+            if not component:
+                continue
+            child_fd = open_file(component, flags, dir_fd=current_fd)
+            try:
+                if not stat.S_ISDIR(os.fstat(child_fd).st_mode):
+                    raise ValueError("directory path component must be a directory")
+            except BaseException:
+                os.close(child_fd)
+                raise
+            os.close(current_fd)
+            current_fd = child_fd
+        descriptor = current_fd
+        current_fd = -1
+        return descriptor
+    finally:
+        if current_fd >= 0:
+            os.close(current_fd)
 
 
 def allocate_loopback_port(
@@ -193,24 +263,31 @@ def validate_identity_file(identity_file: Path) -> Path:
     return resolved
 
 
-def _validate_run_artifacts(run: RunRecord) -> None:
-    """Revalidate fixed run artifacts through one no-follow run-directory fd.
+def _validate_run_artifacts(
+    run: RunRecord,
+    expected_run_dir_identity: RunDirectoryIdentity | None = None,
+) -> None:
+    """Revalidate run identity and artifacts through a no-follow directory fd.
 
     Intent
     ------
-    Reopen the selected run directory at a lifecycle boundary and verify every
-    fixed artifact name and filesystem type relative to that descriptor.
+    Reopen the selected run directory component by component, optionally bind
+    it to the device/inode captured at manifest load, and verify every fixed
+    artifact name and filesystem type relative to the final descriptor.
 
     Rationale
     ---------
-    CLI manifest validation ends before Task 4 acts, so a second no-follow check
-    catches a selected-directory substitution between loading and control.
+    Artifact types alone cannot distinguish a replacement real directory. The
+    optional loaded identity detects that substitution; callers without it
+    validate only the directory currently occupying the canonical path.
 
     Pseudocode
     ----------
     - if run directory path is not absolute and lexical:
       - raise invalid run directory
-    - set run_descriptor = no-follow directory open
+    - set run_descriptor = component-wise no-follow directory open
+    - if expected identity exists and device or inode differs:
+      - raise replaced run directory
     - for fixed_artifact in run record:
       - if artifact path or relative metadata is invalid:
         - raise invalid run artifact
@@ -222,23 +299,30 @@ def _validate_run_artifacts(run: RunRecord) -> None:
     Wraps
     -----
     none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._open_absolute_directory:
+      why:
+        constructs: "Returns the component-wise no-follow descriptor used for identity and artifact checks."
     """
     run_dir = run.run_dir
     if not run_dir.is_absolute() or ".." in run_dir.parts:
         raise ValueError("run directory must be a resolved absolute directory")
-    flags = (
-        os.O_RDONLY
-        | os.O_DIRECTORY
-        | getattr(os, "O_CLOEXEC", 0)
-        | getattr(os, "O_NOFOLLOW", 0)
-    )
     try:
-        run_fd = os.open(run_dir, flags)
-    except OSError as error:
+        run_fd = _open_absolute_directory(run_dir)
+    except (OSError, ValueError) as error:
         raise ValueError("run directory must be a real non-symlink directory") from error
     try:
-        if not stat.S_ISDIR(os.fstat(run_fd).st_mode):
+        run_metadata = os.fstat(run_fd)
+        if not stat.S_ISDIR(run_metadata.st_mode):
             raise ValueError("run directory must be a real non-symlink directory")
+        actual_identity = (run_metadata.st_dev, run_metadata.st_ino)
+        if (
+            expected_run_dir_identity is not None
+            and actual_identity != expected_run_dir_identity
+        ):
+            raise ValueError("run directory changed since manifest load")
         expected = {
             "overlay": (run.overlay, "overlay.qcow2"),
             "seed ISO": (run.seed_iso, "seed.iso"),
@@ -276,7 +360,10 @@ def _validate_run_artifacts(run: RunRecord) -> None:
         os.close(run_fd)
 
 
-def _validate_prepared_run(run: RunRecord) -> None:
+def _validate_prepared_run(
+    run: RunRecord,
+    expected_run_dir_identity: RunDirectoryIdentity | None = None,
+) -> None:
     """Fail closed before launch if the Task 3 artifact contract has drifted.
 
     Intent
@@ -294,7 +381,7 @@ def _validate_prepared_run(run: RunRecord) -> None:
     - if lifecycle is not prepared:
       - raise invalid launch lifecycle
     - @_qemu_comma_safe(run-controlled QEMU values)
-    - @_validate_run_artifacts(run)
+    - @_validate_run_artifacts(run and loaded identity)
     - for control_path in PID and QMP paths:
       - if control path is occupied or noncanonical:
         - raise reused runtime control path
@@ -321,7 +408,7 @@ def _validate_prepared_run(run: RunRecord) -> None:
     _qemu_comma_safe("overlay path", str(run.overlay))
     _qemu_comma_safe("seed ISO path", str(run.seed_iso))
     _qemu_comma_safe("QMP socket path", str(run.qmp_socket))
-    _validate_run_artifacts(run)
+    _validate_run_artifacts(run, expected_run_dir_identity)
     run_dir = run.run_dir
     for label, path, name in (
         ("QMP socket", run.qmp_socket, "qmp.sock"),
@@ -339,7 +426,12 @@ def _validate_prepared_run(run: RunRecord) -> None:
         raise ValueError("prepared run already contains launch facts")
 
 
-def build_ssh_command(run: RunRecord, remote_argv: Sequence[str]) -> list[str]:
+def build_ssh_command(
+    run: RunRecord,
+    remote_argv: Sequence[str],
+    *,
+    expected_run_dir_identity: RunDirectoryIdentity | None = None,
+) -> list[str]:
     """Build one OpenSSH argv with isolated host/key state and no local shell.
 
     Intent
@@ -356,7 +448,7 @@ def build_ssh_command(run: RunRecord, remote_argv: Sequence[str]) -> list[str]:
     ----------
     - if SSH port or recorded identity is absent:
       - raise incomplete SSH authority
-    - @_validate_run_artifacts(run)
+    - @_validate_run_artifacts(run and optional loaded directory identity)
     - identity = validate_identity_file(recorded identity)
     - if remote argument vector is empty or non-string:
       - raise invalid remote arguments
@@ -383,7 +475,7 @@ def build_ssh_command(run: RunRecord, remote_argv: Sequence[str]) -> list[str]:
         raise ValueError("run has no valid SSH port")
     if run.identity_file is None:
         raise ValueError("run has no identity file")
-    _validate_run_artifacts(run)
+    _validate_run_artifacts(run, expected_run_dir_identity)
     identity = validate_identity_file(run.identity_file)
     if not remote_argv or any(not isinstance(argument, str) for argument in remote_argv):
         raise ValueError("remote argv must contain at least one string argument")
@@ -406,6 +498,7 @@ def start_run(
     run: RunRecord,
     identity_file: Path,
     *,
+    expected_run_dir_identity: RunDirectoryIdentity | None = None,
     allocate_port: Callable[[], int] = allocate_loopback_port,
     run_process: RunProcess = subprocess.run,
 ) -> RunRecord:
@@ -423,7 +516,7 @@ def start_run(
 
     Pseudocode
     ----------
-    - @_validate_prepared_run(run)
+    - @_validate_prepared_run(run and optional loaded directory identity)
     - identity = validate_identity_file(identity_file)
     - set ssh_port = allocated loopback port
     - command = build_qemu_command(run and ssh_port)
@@ -453,7 +546,7 @@ def start_run(
       why:
         constructs: "Returns the exact QEMU vector persisted before the child process starts."
     """
-    _validate_prepared_run(run)
+    _validate_prepared_run(run, expected_run_dir_identity)
     identity = validate_identity_file(identity_file)
     ssh_port = allocate_port()
     command = tuple(build_qemu_command(run, ssh_port))
@@ -520,6 +613,7 @@ def _positive_duration(value: float, label: str, *, allow_zero: bool = False) ->
 def wait_for_ssh(
     run: RunRecord,
     *,
+    expected_run_dir_identity: RunDirectoryIdentity | None = None,
     timeout_seconds: float = READINESS_TIMEOUT_SECONDS,
     poll_interval_seconds: float = READINESS_POLL_SECONDS,
     run_process: RunProcess = subprocess.run,
@@ -544,10 +638,10 @@ def wait_for_ssh(
       - raise invalid readiness lifecycle
     - timeout = _positive_duration(timeout input)
     - poll = _positive_duration(poll input)
-    - probe_command = build_ssh_command(run and true)
+    - probe_command = build_ssh_command(run, true, and loaded directory identity)
     - while probe status is nonzero and deadline remains:
       - set completed = captured bounded SSH probe
-    - cloud_init_command = build_ssh_command(run and cloud-init wait)
+    - cloud_init_command = build_ssh_command(run, cloud-init wait, and loaded directory identity)
     - set completed = captured command within remaining deadline
     - if completed status is nonzero:
       - raise captured cloud-init failure
@@ -571,7 +665,11 @@ def wait_for_ssh(
     timeout = _positive_duration(timeout_seconds, "readiness timeout")
     poll = _positive_duration(poll_interval_seconds, "readiness poll interval")
     deadline = monotonic() + timeout
-    probe_command = build_ssh_command(run, ["true"])
+    probe_command = build_ssh_command(
+        run,
+        ["true"],
+        expected_run_dir_identity=expected_run_dir_identity,
+    )
     while True:
         remaining = deadline - monotonic()
         if remaining <= 0:
@@ -592,7 +690,11 @@ def wait_for_ssh(
     remaining = deadline - monotonic()
     if remaining <= 0:
         raise TimeoutError("cloud-init readiness deadline expired")
-    cloud_init_command = build_ssh_command(run, ["cloud-init", "status", "--wait"])
+    cloud_init_command = build_ssh_command(
+        run,
+        ["cloud-init", "status", "--wait"],
+        expected_run_dir_identity=expected_run_dir_identity,
+    )
     try:
         completed = run_process(
             cloud_init_command, check=False, capture_output=True, timeout=remaining
@@ -1181,6 +1283,7 @@ def _send_qmp_quit(
 def stop_run(
     run: RunRecord,
     *,
+    expected_run_dir_identity: RunDirectoryIdentity | None = None,
     graceful_timeout_seconds: float = SHUTDOWN_TIMEOUT_SECONDS,
     poll_interval_seconds: float = SHUTDOWN_POLL_SECONDS,
     run_process: RunProcess = subprocess.run,
@@ -1206,17 +1309,17 @@ def stop_run(
     - if recorded identity is absent:
       - raise missing stop identity
     - @validate_identity_file(recorded identity)
-    - @_validate_run_artifacts(run)
+    - @_validate_run_artifacts(run and optional loaded directory identity)
     - durations = _positive_duration(shutdown inputs)
     - pid = _read_recorded_pid(PID path)
     - if pid is absent or not @_require_matching_process(run and pid):
-      - return stopped record after durable write
+      - return durably stopped record
     - poweroff_command = build_ssh_command(run and poweroff)
     - if @_wait_for_process_exit(run and graceful deadline):
-      - return stopped record after durable write
+      - return durably stopped record
     - set qmp_result = bounded quit request
     - if @_wait_for_process_exit(run and forced deadline):
-      - return stopped record after durable write
+      - return durably stopped record
     - raise shutdown deadline expired
 
     Wraps
@@ -1253,7 +1356,7 @@ def stop_run(
     if run.identity_file is None:
         raise ValueError("identity file is required for stop")
     validate_identity_file(run.identity_file)
-    _validate_run_artifacts(run)
+    _validate_run_artifacts(run, expected_run_dir_identity)
     timeout = _positive_duration(graceful_timeout_seconds, "shutdown timeout")
     poll = _positive_duration(poll_interval_seconds, "shutdown poll interval")
     pid = _read_recorded_pid(run.pid_file)
@@ -1263,7 +1366,11 @@ def stop_run(
         return stopped
 
     graceful_deadline = monotonic() + timeout
-    poweroff_command = build_ssh_command(run, ["sudo", "-n", "poweroff"])
+    poweroff_command = build_ssh_command(
+        run,
+        ["sudo", "-n", "poweroff"],
+        expected_run_dir_identity=expected_run_dir_identity,
+    )
     try:
         run_process(
             poweroff_command, check=False, capture_output=True, timeout=timeout

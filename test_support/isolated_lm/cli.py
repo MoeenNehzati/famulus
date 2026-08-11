@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from datetime import datetime
 import json
 import os
@@ -34,6 +35,8 @@ from test_support.isolated_lm.model import (
     VmResources,
 )
 from test_support.isolated_lm.qemu import (
+    RunDirectoryIdentity,
+    _open_absolute_directory,
     build_qemu_command,
     build_ssh_command,
     start_run,
@@ -190,6 +193,36 @@ class _JsonArgumentParser(argparse.ArgumentParser):
         raise CliUsageError(message)
 
 
+@dataclass(frozen=True)
+class _LoadedRun:
+    """Carry validated run data with its ephemeral loaded-directory identity.
+
+    Intent
+    ------
+    Bind one reconstructed run record to the device and inode observed through
+    its retained manifest-load descriptor without changing persisted schemas.
+
+    Rationale
+    ---------
+    A path and correct artifact types do not prove that the same real directory
+    remains selected at a later lifecycle boundary. Keeping this evidence only
+    in process permits exact comparison without serializing host inode values.
+
+    Pseudocode
+    ----------
+    - set record = validated persisted run authority
+    - set run_directory_identity = loaded descriptor device and inode
+    - return ephemeral loaded-run authority
+
+    Wraps
+    -----
+    none
+    """
+
+    record: RunRecord
+    run_dir_identity: RunDirectoryIdentity
+
+
 class _StateReader:
     """Read state-owned files through retained no-follow directory descriptors.
 
@@ -326,21 +359,22 @@ class _StateReader:
         )
 
     def _open_directory_path(self, path: Path, label: str) -> int:
-        """Open one absolute directory path and retain its verified descriptor.
+        """Open an absolute path component-wise and retain its final descriptor.
 
         Intent
         ------
-        Convert the root path into a real directory descriptor or one bounded
-        usage error.
+        Resolve the root from ``/`` through no-follow child opens and convert
+        any missing or unsafe component into one bounded usage error.
 
         Rationale
         ---------
-        Root establishment cannot use a parent descriptor, so this one method
-        owns the absolute no-follow open and normalizes filesystem failures.
+        A single absolute ``open`` protects only its final component. Delegating
+        to the component-wise opener prevents an ancestor symlink from entering
+        the retained state authority and normalizes filesystem failures.
 
         Pseudocode
         ----------
-        - set descriptor = no-follow directory open for path
+        - set descriptor = component-wise no-follow directory open for path
         - if path is missing or unsafe:
           - raise state directory usage error
         - return retained directory descriptor
@@ -356,10 +390,10 @@ class _StateReader:
             raises: "Raises the structured usage category when the root directory cannot be safely opened."
         """
         try:
-            descriptor = self._open_file(path, self._directory_flags())
+            descriptor = _open_absolute_directory(path, open_file=self._open_file)
         except FileNotFoundError as error:
             raise CliUsageError(f"{label} not found: {path}") from error
-        except OSError as error:
+        except (OSError, ValueError) as error:
             raise CliUsageError(f"{label} must be a real directory") from error
         return self._retain_directory(descriptor, label)
 
@@ -1249,7 +1283,7 @@ def _load_image_record(paths: RuntimePaths) -> CloudImageRecord:
     )
 
 
-def _load_run_record(paths: RuntimePaths, selected_run_id: str) -> RunRecord:
+def _load_run_record(paths: RuntimePaths, selected_run_id: str) -> _LoadedRun:
     """Read and validate exactly one selected run manifest without mutation.
 
     Intent
@@ -1267,6 +1301,7 @@ def _load_run_record(paths: RuntimePaths, selected_run_id: str) -> RunRecord:
     - set run_id = validated selected identifier
     - @_StateReader(paths.root)
     - set selected_evidence = bounded manifest and artifact reads
+    - set run_directory_identity = selected descriptor device and inode
     - @_expect_exact_fields(run_manifest and run schema)
     - parsed_paths = _require_exact_path(each layout-owned field)
     - digest = _expect_digest(source digest field)
@@ -1275,7 +1310,7 @@ def _load_run_record(paths: RuntimePaths, selected_run_id: str) -> RunRecord:
     - set record = reconstructed run authority
     - if QEMU command differs from rebuilt vector:
       - raise CliUsageError(unsafe command record)
-    - return record
+    - return record with ephemeral run-directory identity
 
     Wraps
     -----
@@ -1307,6 +1342,9 @@ def _load_run_record(paths: RuntimePaths, selected_run_id: str) -> RunRecord:
     ._expect_digest:
       why:
         transforms: "Returns canonical source-image provenance carried into the run record."
+    ._LoadedRun:
+      why:
+        constructs: "Binds the reconstructed record to ephemeral descriptor identity for later lifecycle checks."
     .CliUsageError:
       why:
         raises: "Raises the structured usage category for any stale, escaped, malformed, or unsafe run fact."
@@ -1320,6 +1358,8 @@ def _load_run_record(paths: RuntimePaths, selected_run_id: str) -> RunRecord:
     with _StateReader(paths.root) as reader:
         runs_fd = reader.open_directory(reader.root_fd, "runs", "runs directory")
         run_fd = reader.open_directory(runs_fd, run_id, "run directory")
+        run_metadata = os.fstat(run_fd)
+        run_dir_identity = (run_metadata.st_dev, run_metadata.st_ino)
         data = reader.read_json(run_fd, "run.json", "run manifest")
         artifact_metadata = {
             name: reader.entry_stat(
@@ -1450,7 +1490,7 @@ def _load_run_record(paths: RuntimePaths, selected_run_id: str) -> RunRecord:
         expected_command = build_qemu_command(record, ssh_port_value)
         if command_value != expected_command:
             raise CliUsageError("run manifest QEMU command is stale or unsafe")
-    return record
+    return _LoadedRun(record=record, run_dir_identity=run_dir_identity)
 
 
 def _record_result(command: str, record: RunRecord | CloudImageRecord) -> dict[str, object]:
@@ -1646,6 +1686,9 @@ def _dispatch(args: argparse.Namespace, paths: RuntimePaths) -> int:
     ._diagnose:
       why:
         writes: "Keeps concise preflight and guest-exit diagnostics on standard error."
+    ._load_run_record:
+      why:
+        orchestrates: "Loads selected-run authority and ephemeral directory identity for status or lifecycle use."
 
     InstantiationsFromRepo
     ----------------------
@@ -1654,7 +1697,7 @@ def _dispatch(args: argparse.Namespace, paths: RuntimePaths) -> int:
         constructs: "Constructs validated authenticated-image authority for run preparation."
     ._load_run_record:
       why:
-        constructs: "Constructs validated selected-run authority for status and lifecycle commands."
+        constructs: "Constructs loaded run authority carrying record data and ephemeral directory identity."
     ._exec_argv:
       why:
         transforms: "Returns the nonempty guest vector following the explicit separator."
@@ -1692,20 +1735,31 @@ def _dispatch(args: argparse.Namespace, paths: RuntimePaths) -> int:
         return 0
 
     if args.command == "status":
-        record = _load_run_record(paths, args.run_id)
+        record = _load_run_record(paths, args.run_id).record
         _emit_json(_record_result(args.command, record))
         return 0
 
-    record = _load_run_record(paths, args.run_id)
+    loaded = _load_run_record(paths, args.run_id)
+    record = loaded.record
     if args.command == "start-run":
         if record.lifecycle != "prepared":
             raise CliUsageError("start-run requires lifecycle prepared")
         try:
             identity = validate_identity_file(Path(args.ssh_private_key))
-            running = start_run(record, identity)
+            running = start_run(
+                record,
+                identity,
+                expected_run_dir_identity=loaded.run_dir_identity,
+            )
         except ValueError as error:
             raise CliUsageError(str(error)) from error
-        ready = wait_for_ssh(running)
+        try:
+            ready = wait_for_ssh(
+                running,
+                expected_run_dir_identity=loaded.run_dir_identity,
+            )
+        except ValueError as error:
+            raise CliUsageError(str(error)) from error
         _emit_json(_record_result(args.command, ready))
         return 0
 
@@ -1715,7 +1769,11 @@ def _dispatch(args: argparse.Namespace, paths: RuntimePaths) -> int:
             raise CliUsageError("exec requires lifecycle ready")
         guest_argv = _exec_argv(args.guest_argv)
         try:
-            command = build_ssh_command(record, guest_argv)
+            command = build_ssh_command(
+                record,
+                guest_argv,
+                expected_run_dir_identity=loaded.run_dir_identity,
+            )
         except ValueError as error:
             raise CliUsageError(str(error)) from error
         completed = subprocess.run(
@@ -1746,7 +1804,10 @@ def _dispatch(args: argparse.Namespace, paths: RuntimePaths) -> int:
         if record.lifecycle not in {"launch-failed", "running", "ready", "stopped"}:
             raise CliUsageError("stop-run requires a launched lifecycle")
         try:
-            stopped = stop_run(record)
+            stopped = stop_run(
+                record,
+                expected_run_dir_identity=loaded.run_dir_identity,
+            )
         except ValueError as error:
             raise CliUsageError(str(error)) from error
         _emit_json(_record_result(args.command, stopped))

@@ -90,6 +90,15 @@ def _tree_state(root: Path) -> dict[str, tuple[int, int, int]]:
     }
 
 
+def _replace_run_with_equivalent_directory(run_dir: Path, replacement: Path) -> None:
+    """Replace one selected run with a different inode and equivalent artifacts."""
+    run_dir.rename(replacement)
+    run_dir.mkdir()
+    for artifact in replacement.iterdir():
+        if artifact.is_file():
+            (run_dir / artifact.name).write_bytes(artifact.read_bytes())
+
+
 def test_parser_exposes_only_supported_commands() -> None:
     parser = build_parser()
     subparsers = next(
@@ -167,10 +176,26 @@ def test_state_reader_opens_each_state_directory_without_following_symlinks(
         payload = reader.read_json(run_fd, "run.json", "run manifest")
 
     assert payload["run_id"] == record.run_id
-    directory_calls = calls[:3]
-    assert all(flags & os.O_DIRECTORY for _, flags, _ in directory_calls)
+    assert calls[0][0] == "/"
+    assert calls[0][2] is None
+    directory_calls = [call for call in calls if call[1] & os.O_DIRECTORY]
     assert all(flags & os.O_NOFOLLOW for _, flags, _ in directory_calls)
-    assert directory_calls[1][2] == reader.root_fd
+    runs_call = next(call for call in directory_calls if call[0] == "runs")
+    assert runs_call[2] == reader.root_fd
+
+
+def test_state_reader_rejects_a_symlinked_state_root_ancestor(
+    tmp_path: Path,
+) -> None:
+    real_parent = tmp_path / "real-parent"
+    state_root = real_parent / "state"
+    _record_files(state_root)
+    alias_parent = tmp_path / "alias-parent"
+    alias_parent.symlink_to(real_parent, target_is_directory=True)
+
+    with pytest.raises(cli.CliUsageError, match="real directory"):
+        with cli._StateReader(alias_parent / "state"):
+            pass
 
 
 def test_status_rejects_a_symlinked_state_root_ancestor(
@@ -604,14 +629,20 @@ def test_start_run_captures_fake_tool_file_descriptors_before_json(
     monkeypatch.setattr(
         cli,
         "start_run",
-        lambda run, key: qemu_module.start_run(
-            run, key, allocate_port=lambda: 40222, run_process=delegated_run
+        lambda run, key, **kwargs: qemu_module.start_run(
+            run,
+            key,
+            **kwargs,
+            allocate_port=lambda: 40222,
+            run_process=delegated_run,
         ),
     )
     monkeypatch.setattr(
         cli,
         "wait_for_ssh",
-        lambda run: qemu_module.wait_for_ssh(run, run_process=delegated_run),
+        lambda run, **kwargs: qemu_module.wait_for_ssh(
+            run, **kwargs, run_process=delegated_run
+        ),
     )
 
     assert main(
@@ -647,7 +678,7 @@ def test_subprocess_failure_diagnostic_is_bounded_decoded_and_secret_redacted(
     monkeypatch.setattr(
         cli,
         "start_run",
-        lambda run, key: (_ for _ in ()).throw(
+        lambda run, key, **kwargs: (_ for _ in ()).throw(
             subprocess.CalledProcessError(9, ["qemu"], stderr=stderr)
         ),
     )
@@ -728,11 +759,11 @@ def test_exec_revalidates_run_directory_after_manifest_load_swap(
     record = _ready_record(state_root, identity)
     original_load = cli._load_run_record
 
-    def load_then_swap(paths: object, run_id: str) -> RunRecord:
+    def load_then_swap(paths: object, run_id: str) -> cli._LoadedRun:
         loaded = original_load(paths, run_id)
         moved = tmp_path / "moved-run"
-        loaded.run_dir.rename(moved)
-        loaded.run_dir.symlink_to(moved, target_is_directory=True)
+        loaded.record.run_dir.rename(moved)
+        loaded.record.run_dir.symlink_to(moved, target_is_directory=True)
         return loaded
 
     monkeypatch.setattr(cli, "_load_run_record", load_then_swap)
@@ -753,6 +784,191 @@ def test_exec_revalidates_run_directory_after_manifest_load_swap(
     assert "run directory" in (str(payload["error"]) + diagnostic).lower()
 
 
+def test_start_rejects_equivalent_real_directory_replacement_before_launch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    state_root = tmp_path / "state"
+    record = _record_files(state_root)
+    identity = (tmp_path / "identity").resolve()
+    identity.write_text("PRIVATE TEST KEY\n", encoding="utf-8")
+    identity.chmod(0o600)
+    original_load = cli._load_run_record
+    from test_support.isolated_lm import qemu as qemu_module
+
+    def load_then_replace(paths: object, run_id: str) -> cli._LoadedRun:
+        loaded = original_load(paths, run_id)
+        _replace_run_with_equivalent_directory(
+            loaded.record.run_dir, tmp_path / "moved-run"
+        )
+        return loaded
+
+    monkeypatch.setattr(cli, "_load_run_record", load_then_replace)
+    monkeypatch.setattr(
+        cli,
+        "start_run",
+        lambda run, key, **kwargs: qemu_module.start_run(
+            run,
+            key,
+            **kwargs,
+            allocate_port=lambda: pytest.fail(
+                "port allocation must reject a replaced run"
+            ),
+            run_process=lambda *args, **kwargs: pytest.fail(
+                "QEMU launch must reject a replaced run"
+            ),
+        ),
+    )
+
+    assert main(
+        [
+            "start-run", "--state-root", str(state_root), "--run-id", record.run_id,
+            "--ssh-private-key", str(identity),
+        ]
+    ) == 2
+    payload, diagnostic = _json_stdout(capsys)
+    assert payload["ok"] is False
+    assert "run directory" in (str(payload["error"]) + diagnostic).lower()
+
+
+def test_readiness_rejects_real_directory_replacement_after_launch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    state_root = tmp_path / "state"
+    record = _record_files(state_root)
+    identity = (tmp_path / "identity").resolve()
+    identity.write_text("PRIVATE TEST KEY\n", encoding="utf-8")
+    identity.chmod(0o600)
+    from test_support.isolated_lm import qemu as qemu_module
+
+    def launch_then_replace(
+        run: RunRecord,
+        key: Path,
+        *,
+        expected_run_dir_identity: tuple[int, int],
+    ) -> RunRecord:
+        assert expected_run_dir_identity == (
+            run.run_dir.stat().st_dev,
+            run.run_dir.stat().st_ino,
+        )
+        running = replace(run, lifecycle="running", ssh_port=40222, identity_file=key)
+        running = replace(
+            running, qemu_command=tuple(cli.build_qemu_command(running, 40222))
+        )
+        running.write_atomic()
+        _replace_run_with_equivalent_directory(run.run_dir, tmp_path / "moved-run")
+        return running
+
+    monkeypatch.setattr(cli, "start_run", launch_then_replace)
+    monkeypatch.setattr(
+        cli,
+        "wait_for_ssh",
+        lambda run, **kwargs: qemu_module.wait_for_ssh(
+            run,
+            **kwargs,
+            run_process=lambda *args, **kwargs: pytest.fail(
+                "readiness SSH must reject a replaced run"
+            ),
+        ),
+    )
+
+    assert main(
+        [
+            "start-run", "--state-root", str(state_root), "--run-id", record.run_id,
+            "--ssh-private-key", str(identity),
+        ]
+    ) == 2
+    payload, diagnostic = _json_stdout(capsys)
+    assert payload["ok"] is False
+    assert "run directory" in (str(payload["error"]) + diagnostic).lower()
+
+
+def test_exec_rejects_equivalent_real_directory_replacement_before_ssh(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    state_root = tmp_path / "state"
+    identity = (tmp_path / "identity").resolve()
+    record = _ready_record(state_root, identity)
+    original_load = cli._load_run_record
+
+    def load_then_replace(paths: object, run_id: str) -> cli._LoadedRun:
+        loaded = original_load(paths, run_id)
+        _replace_run_with_equivalent_directory(
+            loaded.record.run_dir, tmp_path / "moved-run"
+        )
+        return loaded
+
+    monkeypatch.setattr(cli, "_load_run_record", load_then_replace)
+    monkeypatch.setattr(
+        cli.subprocess,
+        "run",
+        lambda *args, **kwargs: pytest.fail("SSH must reject a replaced run"),
+    )
+
+    assert main(
+        [
+            "exec", "--state-root", str(state_root), "--run-id", record.run_id,
+            "--ssh-private-key", str(identity), "--", "true",
+        ]
+    ) == 2
+    payload, diagnostic = _json_stdout(capsys)
+    assert payload["ok"] is False
+    assert "run directory" in (str(payload["error"]) + diagnostic).lower()
+
+
+def test_stop_rejects_equivalent_real_directory_replacement_before_pid_action(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    state_root = tmp_path / "state"
+    identity = (tmp_path / "identity").resolve()
+    record = _ready_record(state_root, identity)
+    original_load = cli._load_run_record
+    from test_support.isolated_lm import qemu as qemu_module
+
+    def load_then_replace(paths: object, run_id: str) -> cli._LoadedRun:
+        loaded = original_load(paths, run_id)
+        _replace_run_with_equivalent_directory(
+            loaded.record.run_dir, tmp_path / "moved-run"
+        )
+        return loaded
+
+    monkeypatch.setattr(cli, "_load_run_record", load_then_replace)
+    monkeypatch.setattr(
+        cli,
+        "stop_run",
+        lambda run, **kwargs: qemu_module.stop_run(
+            run,
+            **kwargs,
+            read_proc_cmdline=lambda pid: pytest.fail(
+                "PID action must reject a replaced run"
+            ),
+            run_process=lambda *args, **kwargs: pytest.fail(
+                "SSH must reject a replaced run"
+            ),
+            qmp_quit=lambda *args, **kwargs: pytest.fail(
+                "QMP must reject a replaced run"
+            ),
+        ),
+    )
+
+    assert main(
+        [
+            "stop-run", "--state-root", str(state_root), "--run-id", record.run_id,
+            "--ssh-private-key", str(identity),
+        ]
+    ) == 2
+    payload, diagnostic = _json_stdout(capsys)
+    assert payload["ok"] is False
+    assert "run directory" in (str(payload["error"]) + diagnostic).lower()
+
+
 def test_start_run_delegates_launch_and_readiness_after_loading_manifest(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -765,9 +981,20 @@ def test_start_run_delegates_launch_and_readiness_after_loading_manifest(
     identity.chmod(0o600)
     calls: list[str] = []
 
-    def fake_start(run: RunRecord, key: Path) -> RunRecord:
+    expected_identity = (
+        prepared.run_dir.stat().st_dev,
+        prepared.run_dir.stat().st_ino,
+    )
+
+    def fake_start(
+        run: RunRecord,
+        key: Path,
+        *,
+        expected_run_dir_identity: tuple[int, int],
+    ) -> RunRecord:
         assert run == prepared
         assert key == identity
+        assert expected_run_dir_identity == expected_identity
         calls.append("start")
         running = replace(run, lifecycle="running", ssh_port=40222, identity_file=key)
         running = replace(
@@ -776,8 +1003,11 @@ def test_start_run_delegates_launch_and_readiness_after_loading_manifest(
         running.write_atomic()
         return running
 
-    def fake_wait(run: RunRecord) -> RunRecord:
+    def fake_wait(
+        run: RunRecord, *, expected_run_dir_identity: tuple[int, int]
+    ) -> RunRecord:
         assert run.lifecycle == "running"
+        assert expected_run_dir_identity == expected_identity
         calls.append("wait")
         ready = replace(run, lifecycle="ready")
         ready.write_atomic()
@@ -814,7 +1044,12 @@ def test_stop_run_delegates_only_with_the_recorded_identity(
     ready = _ready_record(state_root, identity)
     calls: list[RunRecord] = []
 
-    def fake_stop(run: RunRecord) -> RunRecord:
+    expected_identity = (ready.run_dir.stat().st_dev, ready.run_dir.stat().st_ino)
+
+    def fake_stop(
+        run: RunRecord, *, expected_run_dir_identity: tuple[int, int]
+    ) -> RunRecord:
+        assert expected_run_dir_identity == expected_identity
         calls.append(run)
         stopped = replace(run, lifecycle="stopped")
         stopped.write_atomic()
