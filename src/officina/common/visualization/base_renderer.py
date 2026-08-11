@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
+
 from .graph import Graph
 from .payload import GraphPayloadProcessor, Payload, PayloadValidator
 

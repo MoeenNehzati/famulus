@@ -846,6 +846,7 @@ def test_ci_dependency_lock_covers_the_complete_test_environment() -> None:
         "keyring==25.6.0",
         "cryptography==44.0.1",
         "lark==1.3.1",
+        "pyflakes==3.2.0",
     ]
 
 

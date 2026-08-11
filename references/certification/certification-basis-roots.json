@@ -31,6 +31,7 @@
   "validators/standard_documents.py",
   "validators/subprocess_text_encoding.py",
   "validators/toml_io_boundary.py",
+  "validators/undefined_names.py",
   "validators/user_docs_cover_blueprints.py",
   "docs_tooling/__init__.py",
   "docs_tooling/catalog.py",
