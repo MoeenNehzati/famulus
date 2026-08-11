@@ -9,22 +9,15 @@ from unittest import mock
 
 import pytest
 
-from test_support.runtime_module import load_runtime_module
-
-RUNTIME_ROOT = Path(__file__).resolve().parents[1]
-_launchers = load_runtime_module(
-    RUNTIME_ROOT / "_install_launcher" / "__init__.py"
+from .._install_launcher import platform_launcher_installer
+from .._install_launcher import _windows_launcher as windows_launcher
+from .._install_launcher._base_launcher import (
+    LauncherBundleSpec,
+    LauncherFileSpec,
+    LauncherInstallerBase,
 )
-_base = load_runtime_module(
-    RUNTIME_ROOT / "_install_launcher" / "_base_launcher.py"
-)
-platform_launcher_installer = _launchers.platform_launcher_installer
-LauncherBundleSpec = _base.LauncherBundleSpec
-LauncherFileSpec = _base.LauncherFileSpec
-LauncherInstallerBase = _base.LauncherInstallerBase
-
-from _install_launcher._linux_launcher import _unix_dispatcher_content
-from _install_launcher._windows_launcher import (
+from .._install_launcher._linux_launcher import _unix_dispatcher_content
+from .._install_launcher._windows_launcher import (
     WindowsPythonNotFoundError,
     _windows_dispatcher_content,
 )
@@ -253,8 +246,9 @@ def test_windows_wakeup_bundle_installs_both_batch_commands(tmp_path, monkeypatc
     bin_dir = tmp_path / "bin"
     monkeypatch.setattr(sys, "platform", "win32")
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
-    with mock.patch(
-        "_install_launcher._windows_launcher.shutil.which",
+    with mock.patch.object(
+        windows_launcher.shutil,
+        "which",
         side_effect=lambda name: r"C:\Python312\python.exe" if name == "python" else None,
     ):
         result = installer.install_wakeup_launcher(
@@ -283,8 +277,9 @@ def test_windows_dispatcher_bakes_in_resolved_python_path(tmp_path):
     fix) instead of a bare, unqualified 'python' token that has no PATH
     validation and no 'py'-launcher fallback."""
     repo_root = Path(r"C:\Users\tester\AI")
-    with mock.patch(
-        "_install_launcher._windows_launcher.shutil.which"
+    with mock.patch.object(
+        windows_launcher.shutil,
+        "which",
     ) as which:
         which.side_effect = lambda name: r"C:\Python312\python.exe" if name == "python" else None
         content = _windows_dispatcher_content(repo_root, home=tmp_path / "home")
@@ -298,8 +293,9 @@ def test_windows_dispatcher_falls_back_to_py_launcher(tmp_path):
     """When 'python' isn't on PATH but the 'py' launcher is, that resolved
     absolute path is used instead."""
     repo_root = Path(r"C:\Users\tester\AI")
-    with mock.patch(
-        "_install_launcher._windows_launcher.shutil.which"
+    with mock.patch.object(
+        windows_launcher.shutil,
+        "which",
     ) as which:
         which.side_effect = lambda name: r"C:\Windows\py.exe" if name == "py" else None
         content = _windows_dispatcher_content(repo_root, home=tmp_path / "home")
@@ -311,8 +307,9 @@ def test_windows_dispatcher_raises_clear_error_when_no_interpreter_found(tmp_pat
     """If neither 'python' nor 'py' resolves on PATH, fail loudly at
     generation time instead of silently baking a broken bare token."""
     repo_root = Path(r"C:\Users\tester\AI")
-    with mock.patch(
-        "_install_launcher._windows_launcher.shutil.which",
+    with mock.patch.object(
+        windows_launcher.shutil,
+        "which",
         return_value=None,
     ):
         with pytest.raises(WindowsPythonNotFoundError):

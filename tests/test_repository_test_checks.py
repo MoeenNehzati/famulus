@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 from pathlib import Path
+import subprocess
 import sys
+from types import SimpleNamespace
 import pytest
 
 
@@ -37,6 +40,96 @@ EXPECTED_PORTABILITY_TESTS = (
 )
 
 
+def test_named_suites_resolve_to_ordered_native_phases() -> None:
+    """Catch reintroduction of a task graph or split runner routes."""
+    assert runner.SUITE_PHASES == {
+        "validators": ("validators",),
+        "tests": ("tests:shared", "tests:performance"),
+        "precommit": ("validators", "tests:shared"),
+        "pre-push": ("validators", "tests:shared"),
+        "portability": ("tests:shared",),
+        "full": ("validators", "tests:shared", "tests:performance"),
+    }
+
+
+def test_combined_suites_share_one_pooled_run() -> None:
+    """Catch reconstruction of a validator-first execution barrier."""
+    assert runner._suite_runs("precommit", task_id=None) == ("combined",)
+    assert runner._suite_runs("pre-push", task_id=None) == ("combined",)
+    assert runner._suite_runs("full", task_id=None) == (
+        "combined",
+        "tests:performance",
+    )
+
+
+def test_repository_view_defaults_are_explicit_by_suite() -> None:
+    assert runner._resolve_repository_view("precommit", "auto") == "staged"
+    for suite in ("validators", "tests", "pre-push", "portability", "full"):
+        assert runner._resolve_repository_view(suite, "auto") == "working"
+    assert runner._resolve_repository_view("full", "staged") == "staged"
+    assert runner._resolve_repository_view("precommit", "working") == "working"
+
+
+def test_validator_collection_keeps_ordinary_pytest_items(tmp_path: Path) -> None:
+    """Catch a validator plugin that erases default pytest collection."""
+    validator_path = (tmp_path / "validators" / "example.py").resolve()
+    test_path = (tmp_path / "tests" / "test_example.py").resolve()
+    plugin = object.__new__(runner.ValidatorPytestPlugin)
+    plugin.path_ids = {validator_path: "repo/example"}
+    validator_item = SimpleNamespace(
+        path=validator_path,
+        _validator_id="repo/example",
+    )
+    duplicate_default_item = SimpleNamespace(path=validator_path)
+    ordinary_item = SimpleNamespace(path=test_path)
+    items = [validator_item, duplicate_default_item, ordinary_item]
+
+    plugin.pytest_collection_modifyitems(items)
+
+    assert items == [validator_item, ordinary_item]
+
+
+def test_real_pytest_collection_combines_validator_and_standard_items(
+    tmp_path: Path,
+) -> None:
+    """Catch separate pytest sessions for validator and ordinary items."""
+    staged_paths = tmp_path / "staged-paths.json"
+    staged_paths.write_text("[]\n", encoding="utf-8")
+    ordinary_node = (
+        "tests/test_repository_test_checks.py::"
+        "test_runner_supplies_repo_src_pythonpath"
+    )
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-p",
+            "officina.repository_checks",
+            "--collect-only",
+            "-q",
+            "--officina-run-validators",
+            "--officina-validator-root",
+            str(REPO_ROOT),
+            "--officina-validator-display-root",
+            str(REPO_ROOT),
+            "--officina-staged-paths-file",
+            str(staged_paths),
+            "--officina-validator",
+            "repo/portable_dates",
+        ],
+        cwd=REPO_ROOT,
+        env={**os.environ, "PYTHONPATH": str(SRC_ROOT)},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "validators/portable_dates.py::test_portable_dates" in completed.stdout
+    assert ordinary_node in completed.stdout
+
+
 def test_runner_supplies_repo_src_pythonpath() -> None:
     assert runner._pytest_args(verbose=False) == [
         "-o",
@@ -55,6 +148,23 @@ def test_runner_adds_exact_xdist_worker_count_for_parallel_jobs() -> None:
         "--dist",
         "worksteal",
     ]
+
+
+@pytest.mark.parametrize("suite", ["full", "pre-push"])
+def test_browser_suites_use_loadgroup(suite: str) -> None:
+    args = runner._suite_pytest_args(suite, verbose=False, jobs=6)
+    assert args[args.index("--dist") + 1] == "loadgroup"
+
+
+@pytest.mark.parametrize("suite", ["precommit", "portability"])
+def test_browser_free_suites_keep_worksteal(suite: str) -> None:
+    args = runner._suite_pytest_args(suite, verbose=False, jobs=6)
+    assert args[args.index("--dist") + 1] == "worksteal"
+
+
+def test_serial_browser_suite_adds_no_distribution_mode() -> None:
+    args = runner._suite_pytest_args("full", verbose=False, jobs=1)
+    assert "--dist" not in args
 
 
 def test_default_jobs_uses_two_thirds_of_logical_cpus(monkeypatch) -> None:
@@ -105,308 +215,167 @@ def test_docstring_validator_is_reserved_for_full_unless_explicit(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    calls: list[tuple[tuple[str, ...], tuple[str, ...]]] = []
-
-    def run_all(*, repo_root, validator_ids, excluded_validator_ids):
-        calls.append((tuple(validator_ids), tuple(excluded_validator_ids)))
-        return {}
-
-    monkeypatch.setattr(runner._validator_snapshot, "run_all", run_all)
-    monkeypatch.setattr(
-        runner._validator_snapshot,
-        "_render_findings",
-        lambda _results: 0,
-    )
+    commands = []
+    monkeypatch.setattr(runner, "_capture_working_staged_paths", lambda _root: ())
     monkeypatch.setattr(
         runner,
-        "SUITE_PHASES",
-        {
-            "precommit": (("validators", None),),
-            "pre-push": (("validators", None),),
-            "full": (("validators", None),),
-        },
+        "_run_process",
+        lambda command, **_kwargs: commands.append(command) or 0,
     )
 
-    assert runner.run_suite(tmp_path, "precommit", pooled=False) == 0
-    assert runner.run_suite(tmp_path, "pre-push", pooled=False) == 0
-    assert runner.run_suite(tmp_path, "full", pooled=False) == 0
+    assert runner.run_suite(tmp_path, "pre-push", repository_view="working") == 0
+    assert runner.run_suite(tmp_path, "full", repository_view="working") == 0
     assert runner.run_suite(
         tmp_path,
         "pre-push",
         validator_ids=("repo/docstrings",),
-        pooled=False,
+        repository_view="working",
     ) == 0
-
-    assert calls == [
-        ((), ("repo/docstrings",)),
-        ((), ("repo/docstrings",)),
-        ((), ()),
-        (("repo/docstrings",), ()),
-    ]
+    combined = [command for command in commands if "--officina-run-validators" in command]
+    assert "repo/docstrings" in combined[0]
+    assert "--officina-exclude-validator" not in combined[1]
+    assert "--officina-validator" in combined[2]
+    assert "--officina-exclude-validator" not in combined[2]
 
 
-def mkdir(path: Path) -> None:
-    path.mkdir(parents=True)
-
-
-def test_precommit_discovers_module_and_skill_tests_except_install_tests(
-    tmp_path: Path, monkeypatch
-) -> None:
-    mkdir(tmp_path / "tests")
-    mkdir(tmp_path / "hooks" / "tests")
-    mkdir(tmp_path / "src" / "officina" / "wakeup" / "tests")
-    mkdir(tmp_path / "skills" / "new-skill" / "tests")
-    mkdir(tmp_path / "skills" / "new-skill" / "_rtx" / "tests")
-    mkdir(tmp_path / "skills" / "skill-drift" / "tests")
-    mkdir(tmp_path / "skills" / "install-assistant-tools" / "tests")
-    mkdir(
-        tmp_path
-        / "skills"
-        / "install-assistant-tools"
-        / "_rtx"
-        / "tests"
-    )
-    monkeypatch.setattr(runner, "REPO_ROOT", tmp_path)
-
-    assert runner._resolve_suite("precommit") == [
-        "tests",
-        "hooks/tests",
-        "src/officina/wakeup/tests",
-        "skills/new-skill/_rtx/tests",
-        "skills/new-skill/tests",
-        "skills/skill-drift/tests",
-    ]
-
-
-def test_full_discovers_install_tests(tmp_path: Path, monkeypatch) -> None:
-    mkdir(tmp_path / "tests")
-    mkdir(tmp_path / "hooks" / "tests")
-    mkdir(tmp_path / "src" / "officina" / "wakeup" / "tests")
-    mkdir(tmp_path / "skills" / "new-skill" / "tests")
-    mkdir(tmp_path / "skills" / "new-skill" / "_rtx" / "tests")
-    mkdir(tmp_path / "skills" / "install-assistant-tools" / "tests")
-    mkdir(
-        tmp_path
-        / "skills"
-        / "install-assistant-tools"
-        / "_rtx"
-        / "tests"
-    )
-    monkeypatch.setattr(runner, "REPO_ROOT", tmp_path)
-
-    assert runner._resolve_suite("full") == [
-        "tests",
-        "hooks/tests",
-        "src/officina/wakeup/tests",
-        "skills/install-assistant-tools/_rtx/tests",
-        "skills/install-assistant-tools/tests",
-        "skills/new-skill/_rtx/tests",
-        "skills/new-skill/tests",
-    ]
-
-
-def test_nested_module_tests_run_in_isolated_pytest_processes() -> None:
-    assert runner._execution_groups(
-        [
-            "tests",
-            "hooks/tests",
-            "skills/alpha/_rtx/tests",
-            "skills/alpha/tests",
-            "skills/beta/_rtx/tests",
-            "skills/beta/tests",
-        ]
-    ) == [
-        [
-            "tests",
-            "hooks/tests",
-            "skills/alpha/tests",
-            "skills/beta/tests",
-        ],
-        ["skills/alpha/_rtx/tests"],
-        ["skills/beta/_rtx/tests"],
-    ]
-
-
-def test_shared_test_jobs_reserve_capacity_for_isolated_tasks() -> None:
-    assert runner._shared_test_jobs(1) == 1
-    assert runner._shared_test_jobs(4) == 3
-    assert runner._shared_test_jobs(8) == 6
-
-
-def test_build_check_tasks_combines_validator_and_existing_test_groups(
+def test_functional_phase_uses_native_discovery_without_explicit_roots(
     tmp_path: Path,
-    monkeypatch,
 ) -> None:
-    monkeypatch.setattr(
-        runner,
-        "_resolve_suite",
-        lambda _name: ["tests", "skills/example/_rtx/tests"],
-    )
-
-    tasks = runner._build_check_tasks(
-        tmp_path,
-        "precommit",
+    command = runner._pytest_phase_command(
+        "full",
+        "tests:shared",
         verbose=False,
         jobs=8,
-        validator_ids=(),
-        excluded_validator_ids=(),
+        cache_dir=tmp_path / "cache",
+        timing_path=None,
     )
 
-    assert [task.id for task in tasks] == [
-        "validators",
-        "tests:shared",
-        "tests:skills/example/_rtx/tests",
-    ]
-    assert [task.slots for task in tasks] == [1, 6, 1]
-    assert "--internal-run-validators" in tasks[0].argv
+    assert command[command.index("-n") + 1] == "8"
+    assert command[command.index("--dist") + 1] == "loadgroup"
+    assert not any(argument in {"tests", "hooks/tests", "skills"} for argument in command)
+    assert _deselected_tests(command) == runner.PERFORMANCE_TESTS
 
 
-def test_internal_validator_task_preserves_existing_snapshot_lifecycle(
+def test_combined_command_enables_validators_in_the_same_xdist_session(
     tmp_path: Path,
-    monkeypatch,
 ) -> None:
-    calls = []
-    monkeypatch.setattr(
-        runner._validator_snapshot,
-        "run_all",
-        lambda **kwargs: calls.append(kwargs) or {"repo/example": ["finding"]},
-    )
-    monkeypatch.setattr(
-        runner._validator_snapshot,
-        "_render_findings",
-        lambda findings: 1 if findings else 0,
-    )
-
-    status = runner._run_validator_task(
-        tmp_path,
+    staged_paths = tmp_path / "staged-paths.json"
+    command = runner._pytest_phase_command(
+        "precommit",
+        "combined",
+        verbose=False,
+        jobs=8,
+        cache_dir=tmp_path / "cache",
+        timing_path=None,
+        validator_root=tmp_path,
+        validator_display_root=tmp_path,
+        staged_paths_file=staged_paths,
         validator_ids=("repo/example",),
         excluded_validator_ids=("repo/other",),
     )
 
-    assert status == 1
-    assert calls == [
-        {
-            "repo_root": tmp_path.resolve(),
-            "validator_ids": ("repo/example",),
-            "excluded_validator_ids": ("repo/other",),
-        }
-    ]
+    assert command[command.index("-n") + 1] == "8"
+    assert "--officina-run-validators" in command
+    assert command[command.index("--officina-validator-root") + 1] == str(tmp_path)
+    assert command[command.index("--officina-validator") + 1] == "repo/example"
+    assert command[command.index("--officina-exclude-validator") + 1] == "repo/other"
 
 
-def test_internal_validator_task_forwards_timing_output(
+def test_full_does_not_fail_fast_before_performance(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    calls = []
-    timing_output = tmp_path / "validator-timings.xml"
-    monkeypatch.setattr(
-        runner._validator_snapshot,
-        "run_all",
-        lambda **kwargs: calls.append(kwargs) or {},
-    )
-    monkeypatch.setattr(
-        runner._validator_snapshot,
-        "_render_findings",
-        lambda _findings: 0,
-    )
-
-    assert runner._run_validator_task(
-        tmp_path,
-        timing_output=timing_output,
-    ) == 0
-
-    assert calls == [
-        {
-            "repo_root": tmp_path.resolve(),
-            "validator_ids": (),
-            "excluded_validator_ids": (),
-            "timing_output": timing_output,
-        }
-    ]
-
-
-def test_internal_validator_cli_bypasses_suite_scheduling(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    calls = []
+    commands = []
+    statuses = iter((1, 0))
     monkeypatch.setattr(
         runner,
-        "_run_validator_task",
-        lambda repo_root, **kwargs: calls.append((repo_root, kwargs)) or 1,
+        "_capture_working_staged_paths",
+        lambda _root: (),
+    )
+    monkeypatch.setattr(
+        runner,
+        "_run_process",
+        lambda command, **_kwargs: commands.append(command) or next(statuses),
     )
 
-    status = runner.main(
-        [
-            "--internal-run-validators",
-            "--repo-root",
-            str(tmp_path),
-            "--validator",
-            "repo/example",
-        ]
+    status = runner.run_suite(
+        tmp_path,
+        "full",
+        jobs=2,
+        repository_view="working",
     )
 
     assert status == 1
-    assert calls == [
-        (
-            tmp_path,
-            {
-                "validator_ids": ("repo/example",),
-                "excluded_validator_ids": (),
-            },
-        )
-    ]
+    assert len(commands) == 2
+    assert "--officina-run-validators" in commands[0]
+    assert "--officina-run-validators" not in commands[1]
 
 
-def test_pooled_runner_fills_budget_and_stops_admission_after_failure(
+def test_precommit_native_discovery_ignores_install_test_roots(
+    tmp_path: Path,
+) -> None:
+    command = runner._pytest_phase_command(
+        "precommit",
+        "tests:shared",
+        verbose=False,
+        jobs=1,
+        cache_dir=tmp_path / "cache",
+        timing_path=None,
+    )
+
+    assert {
+        argument.partition("=")[2]
+        for argument in command
+        if argument.startswith("--ignore=")
+    } == runner.PRECOMMIT_EXCLUDED_TEST_DIRS
+
+
+def test_task_selector_runs_only_the_requested_phase(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    calls = []
+    validator_path = tmp_path / "validators" / "example.py"
+    monkeypatch.setattr(runner, "_capture_working_staged_paths", lambda _root: ())
+    monkeypatch.setattr(
+        runner._validator_snapshot,
+        "_selected_validator_paths",
+        lambda *_args, **_kwargs: (("repo/example", validator_path),),
+    )
+    monkeypatch.setattr(
+        runner,
+        "_run_process",
+        lambda command, **kwargs: calls.append((command, kwargs)) or 1,
+    )
+
+    status = runner.run_suite(
+        tmp_path,
+        "full",
+        task_id="validators",
+        validator_ids=("repo/example",),
+    )
+
+    assert status == 1
+    assert len(calls) == 1
+    assert "--officina-run-validators" in calls[0][0]
+    assert str(validator_path) in calls[0][0]
+    assert calls[0][1]["task_id"] == "validators"
+
+
+def test_phase_runner_continues_to_performance_after_pooled_failure(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
     launched = []
-
-    class FakeProcess:
-        active = 0
-        peak_active = 0
-
-        def __init__(self, command, **_kwargs):
-            self.command = command
-            self.returncode = None
-            launched.append(command[-1])
-            type(self).active += 1
-            type(self).peak_active = max(type(self).peak_active, type(self).active)
-
-        def poll(self):
-            if self.returncode is None:
-                self.returncode = int(self.command[-1])
-                type(self).active -= 1
-            return self.returncode
-
-        def wait(self, timeout=None):
-            return self.poll()
-
-        def terminate(self):
-            self.returncode = 130
-
-        def kill(self):
-            self.returncode = 130
-
-    monkeypatch.setattr(runner.subprocess, "Popen", FakeProcess)
-    tasks = [
-        runner.CheckTask("first", ("check", "1"), 1),
-        runner.CheckTask("second", ("check", "2"), 1),
-        runner.CheckTask("not-started", ("check", "0"), 1),
-    ]
-
-    status = runner._run_check_tasks(
-        tasks,
-        repo_root=tmp_path,
-        jobs=2,
-        pooled=True,
+    monkeypatch.setattr(runner, "_capture_working_staged_paths", lambda _root: ())
+    monkeypatch.setattr(
+        runner,
+        "_run_process",
+        lambda _command, **kwargs: launched.append(kwargs["task_id"]) or 5,
     )
 
-    assert status == 1
-    assert launched == ["1", "2"]
-    assert FakeProcess.peak_active == 2
+    assert runner.run_suite(tmp_path, "full", jobs=8) == 5
+    assert launched == ["tests:shared", "tests:performance"]
 
 
 def test_windows_process_tree_termination_uses_taskkill_tree_mode(monkeypatch) -> None:
@@ -429,49 +398,60 @@ def test_windows_process_tree_termination_uses_taskkill_tree_mode(monkeypatch) -
     assert all(call[1]["check"] is False for call in calls)
 
 
-def test_sequential_control_uses_the_same_check_tasks(
+def test_sequential_flag_is_a_noop_compatibility_alias(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
     calls = []
-    monkeypatch.setattr(
-        runner._validator_snapshot,
-        "run_all",
-        lambda **kwargs: calls.append(("validators", kwargs)) or {},
-    )
-    monkeypatch.setattr(
-        runner._validator_snapshot,
-        "_render_findings",
-        lambda findings: 0 if not findings else 1,
-    )
+    monkeypatch.setattr(runner, "_capture_working_staged_paths", lambda _root: ())
     monkeypatch.setattr(
         runner,
-        "_run_test_suite",
-        lambda *args, **kwargs: calls.append(("tests", args, kwargs)) or 0,
-    )
-    monkeypatch.setattr(
-        runner,
-        "_build_check_tasks",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            AssertionError("pooled path used during sequential run")
-        ),
-    )
-    monkeypatch.setattr(
-        runner,
-        "_run_check_tasks",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            AssertionError("pooled path used during sequential run")
-        ),
+        "_run_process",
+        lambda command, **kwargs: calls.append((command, kwargs)) or 0,
     )
 
-    status = runner.run_suite(tmp_path, "precommit", jobs=1, pooled=False)
+    common = [
+        "--suite", "precommit", "--repo-root", str(tmp_path), "--jobs", "1",
+        "--repository-view", "working",
+    ]
+    assert runner.main(common) == 0
+    first_command, first_kwargs = calls[0]
+    calls.clear()
+    assert runner.main([*common, "--sequential"]) == 0
+    second_command, second_kwargs = calls[0]
+    normalize = lambda command: [
+        "cache_dir=<temporary>"
+        if argument.startswith("cache_dir=")
+        else "staged-paths=<temporary>"
+        if argument.endswith("/staged-paths.json")
+        else argument
+        for argument in command
+    ]
+    assert normalize(second_command) == normalize(first_command)
+    assert second_kwargs == first_kwargs
 
-    assert status == 0
-    assert calls[0][0] == "validators"
-    assert calls[0][1]["repo_root"] == tmp_path.resolve()
-    assert calls[0][1]["validator_ids"] == ()
-    assert calls[0][1]["excluded_validator_ids"] == ("repo/docstrings",)
-    assert calls[1] == ("tests", ("precommit",), {"verbose": False, "jobs": 1})
+
+def test_performance_phase_is_serial_and_uses_only_performance_nodes(
+    tmp_path: Path,
+) -> None:
+    command = runner._pytest_phase_command(
+        "full",
+        "tests:performance",
+        verbose=False,
+        jobs=8,
+        cache_dir=tmp_path / "cache",
+        timing_path=None,
+    )
+
+    assert command[:5] == [
+        sys.executable,
+        "-m",
+        "pytest",
+        "-o",
+        "pythonpath=src",
+    ]
+    assert "-n" not in command
+    assert command[-len(runner.PERFORMANCE_TESTS) :] == sorted(runner.PERFORMANCE_TESTS)
 
 
 def test_xdist_required_for_parallel_jobs(monkeypatch) -> None:
@@ -505,18 +485,7 @@ def test_each_pytest_task_receives_an_isolated_cache_directory(
             return self.poll()
 
     monkeypatch.setattr(runner.subprocess, "Popen", FakeProcess)
-    pytest_argv = (runner.sys.executable, "-m", "pytest", "-q", "tests")
-    tasks = [
-        runner.CheckTask("tests:shared", pytest_argv, 1),
-        runner.CheckTask("tests:isolated", pytest_argv, 1),
-    ]
-
-    assert runner._run_check_tasks(
-        tasks,
-        repo_root=tmp_path,
-        jobs=2,
-        pooled=True,
-    ) == 0
+    assert runner.run_suite(tmp_path, "tests", jobs=2) == 0
 
     cache_options = [
         next(argument for argument in command if argument.startswith("cache_dir="))
@@ -525,7 +494,7 @@ def test_each_pytest_task_receives_an_isolated_cache_directory(
     assert len(set(cache_options)) == 2
 
 
-def test_pooled_runner_writes_per_file_timing_report(
+def test_phase_runner_writes_per_file_timing_report(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -565,18 +534,12 @@ def test_pooled_runner_writes_per_file_timing_report(
     monkeypatch.setattr(runner.subprocess, "Popen", FakeProcess)
     report_path = tmp_path / "timings.json"
 
-    assert runner._run_check_tasks(
-        [
-            runner.CheckTask(
-                "tests:shared",
-                (runner.sys.executable, "-m", "pytest", "-q", "tests"),
-                1,
-            )
-        ],
-        repo_root=tmp_path,
+    assert runner.run_suite(
+        tmp_path,
+        "tests",
         jobs=1,
-        pooled=True,
         timing_output=report_path,
+        task_id="tests:shared",
     ) == 0
 
     payload = json.loads(report_path.read_text(encoding="utf-8"))
@@ -636,9 +599,11 @@ def test_timing_output_cli_is_forwarded_to_suite(
                 "jobs": 1,
                 "validator_ids": (),
                 "excluded_validator_ids": (),
-                "pooled": True,
                 "timing_output": timing_output,
-            },
+                    "task_id": None,
+                    "task_cache_dir": None,
+                    "repository_view": "auto",
+                },
         )
     ]
 
@@ -665,20 +630,43 @@ def test_probe_task_environment_is_copied_per_child_without_parent_mutation(
     monkeypatch.delenv("OFFICINA_FIXTURE_PROBE_TASK_ID", raising=False)
     monkeypatch.setattr(runner.subprocess, "Popen", FakeProcess)
 
-    assert runner._run_check_tasks(
-        [runner.CheckTask("one", ("check", "one"), 1), runner.CheckTask("two", ("check", "two"), 1)],
-        repo_root=tmp_path,
-        jobs=2,
-        pooled=True,
-    ) == 0
+    assert runner._run_process(["check", "one"], cwd=tmp_path, task_id="one") == 0
+    assert runner._run_process(["check", "two"], cwd=tmp_path, task_id="two") == 0
 
     assert [environment["OFFICINA_FIXTURE_PROBE_TASK_ID"] for environment in received] == ["one", "two"]
     assert "OFFICINA_FIXTURE_PROBE_TASK_ID" not in __import__("os").environ
 
 
+def test_process_runner_keeps_execution_root_free_of_bytecode(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Catch validator-visible cache files created by the shared pytest child."""
+    monkeypatch.delenv("PYTHONDONTWRITEBYTECODE", raising=False)
+    monkeypatch.delenv("PYTHONPYCACHEPREFIX", raising=False)
+    (tmp_path / "sample_module.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+    assert runner._run_process(
+        [sys.executable, "-c", "import sample_module"],
+        cwd=tmp_path,
+        task_id="bytecode-probe",
+    ) == 0
+    assert not tuple(tmp_path.rglob("*.pyc"))
+
+
 def test_portability_suite_has_exact_early_failure_nodes() -> None:
     assert runner.PORTABILITY_TESTS == EXPECTED_PORTABILITY_TESTS
-    assert runner._resolve_suite("portability") == list(EXPECTED_PORTABILITY_TESTS)
+    command = runner._pytest_phase_command(
+        "portability",
+        "tests:shared",
+        verbose=False,
+        jobs=1,
+        cache_dir=Path("cache"),
+        timing_path=None,
+    )
+    assert command[-len(EXPECTED_PORTABILITY_TESTS) :] == list(
+        EXPECTED_PORTABILITY_TESTS
+    )
 
 
 def test_ci_runs_combined_full_suite_before_portability() -> None:
@@ -727,7 +715,7 @@ def test_skill_hooks_select_validators_through_root_checks() -> None:
     for name, validator_id in expected.items():
         hook = (hook_root / name).read_text(encoding="utf-8")
         assert (
-            'repo_checks.py" --suite validators --validator '
+            'repo_checks.py" --suite validators --repository-view staged --validator '
             f"{validator_id}"
         ) in hook
         assert "validators/runner.py" not in hook

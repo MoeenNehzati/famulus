@@ -1,33 +1,47 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
+from typing import Callable
 
+import pytest
 import yaml
 
 
 SKILL_ROOT = Path(__file__).resolve().parents[2]
 
 
-def load(relative: str) -> dict[str, object]:
-    return yaml.safe_load((SKILL_ROOT / relative).read_text(encoding="utf-8"))
+BlueprintLoader = Callable[[Path], dict[str, object]]
+
+
+@pytest.fixture(scope="module")
+def load_blueprint() -> BlueprintLoader:
+    """Return independent values while parsing each repository YAML file once."""
+    parsed: dict[Path, dict[str, object]] = {}
+
+    def load(path: Path) -> dict[str, object]:
+        if path not in parsed:
+            parsed[path] = yaml.safe_load(path.read_text(encoding="utf-8"))
+        return deepcopy(parsed[path])
+
+    return load
 
 
 def source(
     module_root: Path,
     root: dict[str, object],
     source_id: str,
+    load_blueprint: BlueprintLoader,
 ) -> dict[str, object]:
     locator = root["sources"][source_id]["blueprint"]
     assert locator["base"] == "module-root"
-    node = yaml.safe_load(
-        (module_root / locator["path"]).read_text(encoding="utf-8")
-    )
+    node = load_blueprint(module_root / locator["path"])
     assert node["id"] == source_id
     return node
 
 
 def exported_source(
-    root: dict[str, object], export_id: str
+    root: dict[str, object], export_id: str, load_blueprint: BlueprintLoader
 ) -> tuple[dict[str, object], dict[str, object]]:
     module_id = export_id.split(".interface.", 1)[0]
     module_root = SKILL_ROOT
@@ -36,23 +50,22 @@ def exported_source(
     for segment in module_id.split(".")[1:]:
         assert segment in module["children"]
         module_root /= segment
-        module = yaml.safe_load(
-            (module_root / "blueprint.yaml").read_text(encoding="utf-8")
-        )
+        module = load_blueprint(module_root / "blueprint.yaml")
         current_id = f"{current_id}.{segment}"
         assert module["id"] == current_id
-    return _exported_source(module_root, module, export_id)
+    return _exported_source(module_root, module, export_id, load_blueprint)
 
 
 def _exported_source(
     module_root: Path,
     root: dict[str, object],
     export_id: str,
+    load_blueprint: BlueprintLoader,
 ) -> tuple[dict[str, object], dict[str, object]]:
     export = root["exports"][export_id]
     source_interface = export["source_interface"]
     source_id, _, _ = source_interface.rpartition(".interface.")
-    node = source(module_root, root, source_id)
+    node = source(module_root, root, source_id, load_blueprint)
     return node, node["interfaces"][source_interface]
 
 
@@ -68,16 +81,16 @@ def body(relative: str) -> str:
     return text.lower()
 
 
-def test_module_and_markdown_gateway_graph() -> None:
-    root = load("blueprint.yaml")
+def test_module_and_markdown_gateway_graph(load_blueprint: BlueprintLoader) -> None:
+    root = load_blueprint(SKILL_ROOT / "blueprint.yaml")
     default, default_interface = exported_source(
-        root, "connect-google.interface.default"
+        root, "connect-google.interface.default", load_blueprint
     )
     create_client, create_client_interface = exported_source(
-        root, "connect-google.interface.create-client"
+        root, "connect-google.interface.create-client", load_blueprint
     )
     connect_services, connect_services_interface = exported_source(
-        root, "connect-google.interface.connect-services"
+        root, "connect-google.interface.connect-services", load_blueprint
     )
 
     assert root["schema_version"] == 6
@@ -137,7 +150,7 @@ def test_module_and_markdown_gateway_graph() -> None:
         "connect-google.interface.create-client",
         "connect-google.interface.connect-services",
     }
-    child = load("_rtx/blueprint.yaml")
+    child = load_blueprint(SKILL_ROOT / "_rtx/blueprint.yaml")
     assert set(child["exports"]) == {
         "connect-google._rtx.interface.client-status",
         "connect-google._rtx.interface.install-client",
@@ -154,9 +167,13 @@ def test_module_and_markdown_gateway_graph() -> None:
             )
 
 
-def test_client_status_declares_every_google_client_path_it_reads() -> None:
-    root = load("blueprint.yaml")
-    _, node = exported_source(root, "connect-google._rtx.interface.client-status")
+def test_client_status_declares_every_google_client_path_it_reads(
+    load_blueprint: BlueprintLoader,
+) -> None:
+    root = load_blueprint(SKILL_ROOT / "blueprint.yaml")
+    _, node = exported_source(
+        root, "connect-google._rtx.interface.client-status", load_blueprint
+    )
 
     declared_paths = {
         entry["path"] for entry in node["contract"]["direct_io"]["reads"]
@@ -172,9 +189,13 @@ def test_client_status_declares_every_google_client_path_it_reads() -> None:
     }
 
 
-def test_install_client_patterns_require_values_for_value_bearing_flags() -> None:
-    root = load("blueprint.yaml")
-    _, node = exported_source(root, "connect-google._rtx.interface.install-client")
+def test_install_client_patterns_require_values_for_value_bearing_flags(
+    load_blueprint: BlueprintLoader,
+) -> None:
+    root = load_blueprint(SKILL_ROOT / "blueprint.yaml")
+    _, node = exported_source(
+        root, "connect-google._rtx.interface.install-client", load_blueprint
+    )
 
     assert node["process_binding"]["patterns"][0]["flag_patterns"] == {
         "--from-json": "^.+$",

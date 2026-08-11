@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from test_support.runtime_module import load_runtime_module
+from .. import _job_control as job_control
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "_job_control.py"
@@ -24,7 +24,6 @@ def test_job_edit_interface_uses_custom_file_without_scheduler_sync(
     initial_enabled: bool,
     expected_enabled: bool,
 ) -> None:
-    job_control = load_runtime_module(SCRIPT)
     jobs_file = tmp_path / "jobs.yaml"
     job_control.save_jobs(
         [

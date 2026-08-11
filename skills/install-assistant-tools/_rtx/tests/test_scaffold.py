@@ -7,17 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from test_support.runtime_module import load_runtime_module
-
 import officina.common.certificate_records as certificate_records
+from .. import _install_scaffold as scaffold
+from .._install_launcher import _windows_launcher as windows_launcher
+from .._install_launcher._base_launcher import LauncherInstallerBase
 
 RUNTIME_ROOT = Path(__file__).resolve().parents[1]
-scaffold = load_runtime_module(RUNTIME_ROOT / "_install_scaffold.py")
-_base = load_runtime_module(
-    RUNTIME_ROOT / "_install_launcher" / "_base_launcher.py"
-)
-LauncherInstallerBase = _base.LauncherInstallerBase
-from install_test_utils import assert_default_bin_dir_matches_famulus_paths
+from .install_test_utils import assert_default_bin_dir_matches_famulus_paths
 
 
 def write_runtime_dependencies_manifest(repo_root: Path, python_packages: list[str]) -> None:
@@ -103,7 +99,8 @@ def test_run_writes_windows_dispatcher_wakeup_and_invoke_skill_launchers(tmp_pat
     # branch on this non-Windows test host, where it would fail since
     # _winapi isn't importable.
     monkeypatch.setattr(
-        "_install_launcher._windows_launcher.shutil.which",
+        windows_launcher.shutil,
+        "which",
         lambda name: r"C:\Python312\python.exe" if name == "python" else None,
     )
     repo_root = tmp_path / "repo"

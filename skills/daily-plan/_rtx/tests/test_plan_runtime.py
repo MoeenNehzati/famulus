@@ -2,15 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from test_support.runtime_module import load_runtime_module
-
-
-RUNTIME_ROOT = Path(__file__).parent.parent
-plan_runtime = load_runtime_module(RUNTIME_ROOT / "_day_model.py")
-
-
-def load_state_patch_module():
-    return load_runtime_module(RUNTIME_ROOT / "_state_patch.py")
+from .. import _day_model as plan_runtime
+from .. import _plan_storage as plan_storage
+from .. import _state_patch as state_patch
 
 
 def test_get_today_date_uses_shared_date_key_formatter(monkeypatch):
@@ -137,7 +131,6 @@ def test_mutate_plan_mark_done_updates_master_list_and_hides_item(monkeypatch):
 
 
 def test_state_patch_uses_requested_date(monkeypatch, capsys):
-    state_patch = load_state_patch_module()
     calls = []
 
     monkeypatch.setattr(
@@ -157,14 +150,9 @@ def test_state_patch_uses_requested_date(monkeypatch, capsys):
 # deliverable, so only that may report ok -- an agent that exits 0 without
 # producing a plan must leave no status behind.
 
-def load_plan_storage_module():
-    return load_runtime_module(RUNTIME_ROOT / "_plan_storage.py")
-
-
 def test_successful_write_records_an_ok_status(tmp_path, monkeypatch):
     import json
 
-    plan_storage = load_plan_storage_module()
     monkeypatch.setattr(plan_storage, "STATE_DIR", tmp_path / "state")
 
     plan_storage._record_status_ok("8-10-26")
@@ -178,7 +166,6 @@ def test_successful_write_records_an_ok_status(tmp_path, monkeypatch):
 def test_status_bookkeeping_never_fails_a_written_plan(tmp_path, monkeypatch):
     """A plan that reached the cloud must not be reported as a failure
     because the local status file could not be written."""
-    plan_storage = load_plan_storage_module()
     unwritable = tmp_path / "file-in-the-way"
     unwritable.write_text("not a directory")
     monkeypatch.setattr(plan_storage, "STATE_DIR", unwritable / "state")

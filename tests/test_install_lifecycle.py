@@ -10,7 +10,7 @@ correct install/update/rollback lifecycle, not a duplicate of that unit
 coverage.
 
 Uses the fake `subprocess.run` shared with test_officina_managed_runtime.py
-(see conftest.py::fake_uv_subprocess_run) rather than a real `uv` binary:
+(see test_support.uv_subprocess::fake_uv_subprocess_run) rather than a real `uv` binary:
 this keeps the lifecycle acceptance suite fast and network-independent,
 while
 `test_officina_managed_runtime.py::test_build_candidate_release_end_to_end_with_real_uv`
@@ -30,9 +30,9 @@ from pathlib import Path
 
 import pytest
 
-from conftest import fake_uv_subprocess_run
 from officina.install.managed_runtime import ManagedRuntimeError, build_candidate_release
 from officina.install.runtime_pointer import activate_release, load_current_pointer
+from test_support.uv_subprocess import fake_uv_subprocess_run
 
 
 def _build(monkeypatch, calls, tmp_path, runtime_root, *, trusted_python_dir=None):

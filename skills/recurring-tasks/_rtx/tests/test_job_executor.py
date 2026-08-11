@@ -34,10 +34,7 @@ def test_direct_executor_entrypoint_finds_repo_package_without_pythonpath():
     result = subprocess.run(
         [
             sys.executable,
-            "-m",
-            "test_support.runtime_module",
             str(Path(__file__).resolve().parents[1] / "_job_executor.py"),
-            "--",
             "--help",
         ],
         capture_output=True,

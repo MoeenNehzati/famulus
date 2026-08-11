@@ -28,6 +28,15 @@ def run(config_dir, *args, input=None):
     )
 
 
+def read_registry(config_dir: Path) -> dict[str, dict[str, object]]:
+    """Read the persisted registry directly after mutation commands.
+
+    Dedicated ``list`` and ``resolve`` tests retain CLI coverage; mutation tests
+    inspect canonical ``accounts.json`` without a redundant observation process.
+    """
+    return json.loads((config_dir / "accounts.json").read_text(encoding="utf-8"))
+
+
 @pytest.fixture
 def config_dir(tmp_path):
     return tmp_path / "email-client"
@@ -61,7 +70,7 @@ def test_add_defaults_to_gmail_settings(config_dir):
 
 def test_add_can_select_gmail_oauth(config_dir):
     run(config_dir, "add", "--nickname", "work", "--email", "me@example.com", "--auth", "gmail-oauth")
-    record = json.loads(run(config_dir, "resolve", "--nickname", "work").stdout)
+    record = read_registry(config_dir)["work"]
     assert record["auth"] == "gmail-oauth"
 
 
@@ -71,7 +80,7 @@ def test_add_explicit_non_gmail_settings(config_dir):
         "--imap-host", "imap.example.com", "--imap-port", "993",
         "--smtp-host", "smtp.example.com", "--smtp-port", "587", "--starttls",
     )
-    record = json.loads(run(config_dir, "resolve", "--nickname", "other").stdout)
+    record = read_registry(config_dir)["other"]
     assert record["imap"] == {"host": "imap.example.com", "port": 993}
     assert record["smtp"] == {"host": "smtp.example.com", "port": 587, "starttls": True}
 
@@ -87,7 +96,7 @@ def test_update_changes_fields(config_dir):
     run(config_dir, "add", "--nickname", "work", "--email", "me@example.com")
     result = run(config_dir, "update", "--nickname", "work", "--display-name", "New Name", "--auth", "gmail-oauth")
     assert result.returncode == 0
-    record = json.loads(run(config_dir, "resolve", "--nickname", "work").stdout)
+    record = read_registry(config_dir)["work"]
     assert record["display_name"] == "New Name"
     assert record["email"] == "me@example.com"  # untouched fields survive
     assert record["auth"] == "gmail-oauth"
@@ -103,7 +112,7 @@ def test_remove_drops_from_registry(config_dir):
     run(config_dir, "add", "--nickname", "work", "--email", "me@example.com")
     result = run(config_dir, "remove", "--nickname", "work")
     assert result.returncode == 0
-    assert json.loads(run(config_dir, "list").stdout) == {}
+    assert read_registry(config_dir) == {}
 
 
 def test_remove_unknown_nickname_fails(config_dir):
@@ -255,11 +264,10 @@ def test_set_password_reads_from_stdin_not_argv(config_dir, fake_keyring):
 # ── use-google-credential (shared connect-google credential, per account) ──
 
 class FakeSecretBackend:
-    """Minimal in-memory secret backend for store_google_credential's own
-    refresh-token write. use-google-credential's scope check never touches
-    the secret store (load_credential only reads the JSON registry), so this
-    is only needed to satisfy store_google_credential while seeding the
-    registry fixture.
+    """Provide an in-memory backend while seeding Google credential fixtures.
+
+    The scope check reads only the JSON registry, so this backend exists solely
+    to accept ``store_google_credential``'s refresh-token write.
     """
 
     def __init__(self) -> None:
@@ -328,7 +336,7 @@ def test_use_google_credential_stores_only_credential_id(config_dir, tmp_path, f
     )
     assert result.returncode == 0
 
-    record = json.loads(run(config_dir, "resolve", "--nickname", "work").stdout)
+    record = read_registry(config_dir)["work"]
     assert record["credential_id"] == credential_id
     assert "client_secret" not in record
     assert "refresh_token" not in record
@@ -345,7 +353,7 @@ def test_use_google_credential_rejects_insufficient_scope(config_dir, tmp_path, 
     )
     assert result.returncode != 0
 
-    record = json.loads(run(config_dir, "resolve", "--nickname", "work").stdout)
+    record = read_registry(config_dir)["work"]
     assert "credential_id" not in record
 
 
@@ -362,18 +370,15 @@ def test_use_google_credential_rejects_unknown_nickname(config_dir, tmp_path, fa
 
 
 def test_use_google_credential_sets_gmail_oauth_auth_mode(config_dir, tmp_path, fake_registry_with_gmail_scope):
-    """Regression test: binding a Google credential must also flip the
-    account's `auth` field to gmail-oauth, since is_gmail_oauth()/
-    account_auth_mode() (the sole gate every real XOAUTH2 call site checks)
-    look at `auth` only -- `credential_id`'s mere presence is never
-    consulted at authentication time. Without this, binding a credential is
-    a silent no-op: the account keeps using its prior auth mode (here, the
-    app-password default) with no error.
+    """Ensure Google credential binding switches ``auth`` to ``gmail-oauth``.
+
+    XOAUTH2 selection reads ``auth``, not merely ``credential_id``; without this
+    update, binding silently leaves the account's app-password mode active.
     """
     credential_id = fake_registry_with_gmail_scope
     run(config_dir, "add", "--nickname", "work", "--email", "me@example.com")
 
-    record = json.loads(run(config_dir, "resolve", "--nickname", "work").stdout)
+    record = read_registry(config_dir)["work"]
     assert record["auth"] == "app-password"
 
     result = run(
@@ -382,7 +387,7 @@ def test_use_google_credential_sets_gmail_oauth_auth_mode(config_dir, tmp_path, 
     )
     assert result.returncode == 0
 
-    record = json.loads(run(config_dir, "resolve", "--nickname", "work").stdout)
+    record = read_registry(config_dir)["work"]
     assert record["auth"] == "gmail-oauth"
     assert record["credential_id"] == credential_id
 
@@ -407,7 +412,7 @@ def test_use_google_credential_preserves_other_fields(config_dir, tmp_path, fake
     )
     assert result.returncode == 0
 
-    record = json.loads(run(config_dir, "resolve", "--nickname", "work").stdout)
+    record = read_registry(config_dir)["work"]
     assert record["credential_id"] == credential_id
     assert record["email"] == "me@example.com"
     assert record["display_name"] == "Work Mail"

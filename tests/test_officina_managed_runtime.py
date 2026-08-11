@@ -9,7 +9,6 @@ from pathlib import Path
 
 import pytest
 
-from conftest import FakeCompletedProcess, fake_uv_subprocess_run
 from officina.common import atomic_files
 from officina.install.managed_runtime import (
     ManagedRuntimeError,
@@ -21,6 +20,7 @@ from officina.install.managed_runtime import (
     optional_python_packages,
 )
 from test_support.git_repository import GitTestRepository
+from test_support.uv_subprocess import FakeCompletedProcess, fake_uv_subprocess_run
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 

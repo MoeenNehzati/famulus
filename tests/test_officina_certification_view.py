@@ -42,7 +42,7 @@ from officina.common.certification_view import (
     repository_certification_view,
     RejectingCertificationView,
 )
-from v4_certification_fixtures import (
+from test_support.v4_certification_fixtures import (
     create_certified_fixture,
     create_v4_repository,
     payload as v4_payload,

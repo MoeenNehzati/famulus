@@ -23,7 +23,7 @@ from officina.common.blueprint_graph import (
 )
 from officina.common.git_provenance import git_file_provenance
 from test_support.git_repository import GitTestRepository
-from v5_blueprint_fixtures import copy_v5_fixture_tree
+from test_support.v5_blueprint_fixtures import copy_v5_fixture_tree
 
 
 CANONICAL_SCHEMA_ROOT = (

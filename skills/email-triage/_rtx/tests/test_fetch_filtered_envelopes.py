@@ -5,7 +5,9 @@ import json
 import subprocess
 from pathlib import Path
 
-from test_support.runtime_module import load_runtime_module
+import pytest
+
+from .. import _mail_envelope_stream as mail_envelope_stream
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_PATH = SKILL_ROOT / "_mail_envelope_stream.py"
@@ -13,23 +15,29 @@ RUNTIME_PATH = SKILL_ROOT / "_mail_envelope_stream.py"
 
 def _load_runtime():
     assert RUNTIME_PATH.is_file(), "composite runtime is missing"
-    return load_runtime_module(RUNTIME_PATH)
+    return mail_envelope_stream
 
 
-def _isolate_filter_state(module, tmp_path: Path) -> None:
+def _isolate_filter_state(
+    module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     state_dir = tmp_path / "state"
     state_dir.mkdir()
     (state_dir / "last_run").write_text("2026-07-05T10:00:00-04:00", encoding="utf-8")
-    module.envelope_gate.default_state_dir = lambda **kwargs: state_dir
-    module.envelope_gate.WATERMARK = state_dir / "last_run"
-    module.envelope_gate.STATUS_FILE = state_dir / "status.json"
+    monkeypatch.setattr(
+        module.envelope_gate, "default_state_dir", lambda **kwargs: state_dir
+    )
+    monkeypatch.setattr(module.envelope_gate, "WATERMARK", state_dir / "last_run")
+    monkeypatch.setattr(
+        module.envelope_gate, "STATUS_FILE", state_dir / "status.json"
+    )
 
 
 def test_composite_dispatches_mail_list_and_emits_only_filtered_envelopes(
-    tmp_path: Path, capsys
+    tmp_path: Path, capsys, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     module = _load_runtime()
-    _isolate_filter_state(module, tmp_path)
+    _isolate_filter_state(module, tmp_path, monkeypatch)
     unfiltered = [
         {
             "id": "old",
@@ -76,9 +84,11 @@ def test_composite_dispatches_mail_list_and_emits_only_filtered_envelopes(
     assert "must stay private" not in captured.out
 
 
-def test_composite_returns_existing_no_new_email_message(tmp_path: Path, capsys) -> None:
+def test_composite_returns_existing_no_new_email_message(
+    tmp_path: Path, capsys, monkeypatch: pytest.MonkeyPatch
+) -> None:
     module = _load_runtime()
-    _isolate_filter_state(module, tmp_path)
+    _isolate_filter_state(module, tmp_path, monkeypatch)
 
     class EmptyInterface(module.Interface):
         def dispatch(self, key, **kwargs):

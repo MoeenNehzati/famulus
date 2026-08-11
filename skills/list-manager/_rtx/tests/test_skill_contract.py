@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from officina.common.blueprint_graph import (
     load_repository_blueprint_graph,
     repository_schema_version,
@@ -18,14 +20,21 @@ if SCHEMA_VERSION == 5:
     SCHEMA_ROOT = SCHEMA_ROOT / "v5"
 
 
-def test_cloud_update_contract_requires_list_patches_with_quoted_string_ids():
-    graph = load_repository_blueprint_graph(
+@pytest.fixture(scope="module")
+def repository_graph():
+    """Load the immutable repository graph once for both contract lookups."""
+    return load_repository_blueprint_graph(
         REPO_ROOT,
         schema_root=SCHEMA_ROOT,
         expected_schema_version=SCHEMA_VERSION,
     )
+
+
+def test_cloud_update_contract_requires_list_patches_with_quoted_string_ids(
+    repository_graph,
+):
     _module, _source, export = resolve_export(
-        graph,
+        repository_graph,
         "list-manager._rtx.interface.cloud-update",
     )
     cloud_update = export.declaration
@@ -49,14 +58,11 @@ def test_cloud_update_contract_requires_list_patches_with_quoted_string_ids():
     assert "report the resolved ids and intended change" in skill_body
 
 
-def test_local_update_description_matches_its_sequence_patch_contract():
-    graph = load_repository_blueprint_graph(
-        REPO_ROOT,
-        schema_root=SCHEMA_ROOT,
-        expected_schema_version=SCHEMA_VERSION,
-    )
+def test_local_update_description_matches_its_sequence_patch_contract(
+    repository_graph,
+):
     _module, _source, export = resolve_export(
-        graph,
+        repository_graph,
         "list-manager._rtx.interface.update-list",
     )
     update_list = export.declaration

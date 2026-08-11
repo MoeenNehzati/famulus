@@ -1,13 +1,18 @@
 """Repository-wide pytest scaffolding.
 
-Sits at the pytest rootdir (see `pytest.ini`'s `testpaths = tests hooks/tests
-skills`), so this conftest.py's fixtures apply to every test collected under
-`tests/`, `hooks/tests/`, and every `skills/*/tests/` directory -- not just
-the top-level `tests/` suite (which has its own, narrower conftest.py).
+Sits at the pytest rootdir, so its fixtures apply to every test collected under
+`tests/`, `hooks/tests/`, `src/officina/wakeup/tests/`, and skill-owned test
+directories -- not just the top-level `tests/` suite (which has its own,
+narrower conftest.py).
 """
 from __future__ import annotations
 
+from itertools import count
+
 import pytest
+
+
+_LOCALAPPDATA_CASES = count()
 
 
 @pytest.fixture(autouse=True)
@@ -42,7 +47,10 @@ def _isolate_xdg_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
-def _isolate_localappdata_env(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+def _isolate_localappdata_env(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
     """Give every test its own `LOCALAPPDATA`, mirroring `_isolate_xdg_env` above.
 
     `resolve_famulus_paths`'s Windows branch resolves *only* from the
@@ -54,9 +62,20 @@ def _isolate_localappdata_env(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None
     collides on that same real path regardless of its own `home=`/`tmp_path`
     override -- the same cross-test collision `_isolate_xdg_env` fixes for
     Linux, just via a variable that can't simply be cleared. Defaulting it to
-    this test's own unique `tmp_path` gives every test a private value; a
-    test that needs a specific value (or needs it unset) still wins by
-    calling `monkeypatch.setenv`/`delenv` itself, since that runs after this
+    a unique path under pytest's session temp root gives every test a private
+    value; a test that needs a specific value (or needs it unset) still wins
+    by calling `monkeypatch.setenv`/`delenv` itself, since that runs after this
     fixture within the same test.
+
+    The path is deliberately not created here. Most tests never exercise the
+    Windows path resolver, so allocating a physical ``tmp_path`` directory for
+    every collected case adds filesystem work without strengthening isolation.
+    Code that actually writes beneath ``LOCALAPPDATA`` remains responsible for
+    creating its normal application directories.
     """
-    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
+    case_root = (
+        tmp_path_factory.getbasetemp()
+        / "localappdata"
+        / f"case-{next(_LOCALAPPDATA_CASES)}"
+    )
+    monkeypatch.setenv("LOCALAPPDATA", str(case_root / "AppData" / "Local"))

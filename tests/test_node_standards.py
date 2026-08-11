@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from functools import cache
 import hashlib
 import json
 from pathlib import Path
@@ -14,7 +15,10 @@ NODE_STANDARDS = ROOT / "references" / "node-standards"
 DISPOSITION = NODE_STANDARDS / "authority-disposition.yaml"
 
 
+@cache
 def _load(path: Path) -> dict:
+    """Parse each immutable repository standard once per test session."""
+
     value = yaml.safe_load(path.read_text(encoding="utf-8"))
     assert isinstance(value, dict)
     return value

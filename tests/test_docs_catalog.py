@@ -8,8 +8,18 @@ import pytest
 import yaml
 
 import officina.common.blueprint_graph as blueprint_graph
-from docs_tooling.catalog import load_catalog, skills_by_domain
+from docs_tooling.catalog import SkillInfo, load_catalog, skills_by_domain
 from docs_tooling.render import render_doc_with_updated_blocks, render_skill_index
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.fixture(scope="module")
+def live_catalog() -> tuple[SkillInfo, ...]:
+    """Load the immutable repository catalog once for live contract checks."""
+
+    return tuple(load_catalog(REPO_ROOT))
 
 
 def _write_skill(
@@ -243,9 +253,10 @@ description: |
     assert "Do not use when" not in rendered
 
 
-def test_repository_multiline_skill_summaries_remain_catalog_safe() -> None:
-    repo_root = Path(__file__).resolve().parents[1]
-    summaries = {skill.name: skill.summary for skill in load_catalog(repo_root)}
+def test_repository_multiline_skill_summaries_remain_catalog_safe(
+    live_catalog: tuple[SkillInfo, ...],
+) -> None:
+    summaries = {skill.name: skill.summary for skill in live_catalog}
 
     assert summaries["notation-review"] == (
         "Mathematical notation needs review for lightness, unification, reuse "
@@ -256,10 +267,11 @@ def test_repository_multiline_skill_summaries_remain_catalog_safe() -> None:
     )
 
 
-def test_math_dependency_graph_description_is_concise_trigger_only() -> None:
-    repo_root = Path(__file__).resolve().parents[1]
+def test_math_dependency_graph_description_is_concise_trigger_only(
+    live_catalog: tuple[SkillInfo, ...],
+) -> None:
     skill = next(
-        skill for skill in load_catalog(repo_root) if skill.name == "math-dependency-graph"
+        skill for skill in live_catalog if skill.name == "math-dependency-graph"
     )
     paragraphs = skill.description.split("\n\n")
     assert len(paragraphs) == 2
@@ -294,10 +306,11 @@ def test_math_dependency_graph_description_is_concise_trigger_only() -> None:
     }
 
 
-def test_regenerate_blueprints_description_is_trigger_only() -> None:
-    repo_root = Path(__file__).resolve().parents[1]
+def test_regenerate_blueprints_description_is_trigger_only(
+    live_catalog: tuple[SkillInfo, ...],
+) -> None:
     skill = next(
-        skill for skill in load_catalog(repo_root) if skill.name == "regenerate-blueprints"
+        skill for skill in live_catalog if skill.name == "regenerate-blueprints"
     )
 
     assert skill.description.startswith("Use when ")

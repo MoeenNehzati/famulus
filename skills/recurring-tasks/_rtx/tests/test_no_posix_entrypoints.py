@@ -4,7 +4,7 @@ from pathlib import Path
 
 import yaml
 
-from test_support.runtime_module import load_runtime_module
+from . import test_sync_units as sync_tests
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
 RUNTIME_DIR = (
@@ -48,10 +48,6 @@ def test_recurring_tasks_runtime_tree_has_no_posix_shell_files():
 
 
 def test_generated_services_do_not_use_posix_shell(tmp_path):
-    sync_tests = load_runtime_module(
-        Path(__file__).with_name("test_sync_units.py")
-    )
-
     sync_tests._run_sync(sync_tests.JOBS_ONE_ENABLED, str(tmp_path))
     service = (tmp_path / "ai-test-job.service").read_text(encoding="utf-8")
     assert "/bin/bash" not in service

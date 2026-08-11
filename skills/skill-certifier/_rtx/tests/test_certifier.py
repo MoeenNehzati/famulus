@@ -18,10 +18,6 @@ MODULE_PATH = Path(__file__).resolve().parents[1] / "_node_certifier.py"
 SRC_ROOT = MODULE_PATH.parents[3] / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
-TEST_ROOT = MODULE_PATH.parents[3] / "tests"
-if str(TEST_ROOT) not in sys.path:
-    sys.path.insert(0, str(TEST_ROOT))
-
 from officina.common.certificate_records import (
     certificate_public_key_root,
     certificate_entry_hash,
@@ -32,14 +28,14 @@ from officina.common.certificate_records import (
 from officina.runtime.python_machine_interface import (
     logical_python_package_name,
 )
-from v4_certification_fixtures import (
+from test_support.v4_certification_fixtures import (
     MemorySecretBackend,
     contract,
     create_v4_repository,
     write_yaml,
 )
-from v5_blueprint_fixtures import copy_v5_fixture_tree
 from test_support.git_repository import GitTestRepository
+from test_support.v5_blueprint_fixtures import copy_v5_fixture_tree
 
 SPEC = importlib.util.spec_from_file_location("skill_certifier_certifier", MODULE_PATH)
 certifier = importlib.util.module_from_spec(SPEC)

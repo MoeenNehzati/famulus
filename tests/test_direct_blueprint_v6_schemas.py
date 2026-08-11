@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from functools import cache
 import json
 from pathlib import Path
 from typing import Any
@@ -19,7 +20,10 @@ V6_ROOT = ROOT / "references" / "blueprint" / "migrations" / "v6"
 FIXTURE_ROOT = ROOT / "tests" / "fixtures" / "blueprint_v6" / "direct-routing"
 
 
+@cache
 def _validator() -> jsonschema.Draft7Validator:
+    """Reuse the immutable v6 schema validator across document cases."""
+
     schema = json.loads((V6_ROOT / "schema.json").read_text(encoding="utf-8"))
     jsonschema.Draft7Validator.check_schema(schema)
     resolver = jsonschema.RefResolver(

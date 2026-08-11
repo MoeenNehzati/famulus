@@ -5,7 +5,7 @@ from pathlib import Path
 
 import yaml
 
-from test_support.runtime_module import load_runtime_module
+from .. import _gcal_client as gcal
 
 
 REPO_SRC = Path(__file__).resolve().parents[4] / "src"
@@ -17,8 +17,6 @@ from officina.common.process_binding_compiler import select_authored_argv_patter
 
 RUNTIME_ROOT = Path(__file__).resolve().parents[1]
 CALENDAR_BLUEPRINT = RUNTIME_ROOT / "blueprints" / "rtx-gcal-client.yaml"
-gcal = load_runtime_module(RUNTIME_ROOT / "_gcal_client.py")
-
 EXPECTED_SHAPES = {
     "token": "token",
     "calendars": "calendars",

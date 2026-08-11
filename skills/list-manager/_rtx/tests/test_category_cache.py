@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import importlib
-import sys
 from pathlib import Path
 
 import pytest
 import yaml
 
-from test_support.runtime_module import load_runtime_module
+from .. import _category_cache as category_cache
 
 TEST_ROOT = Path(__file__).resolve().parent
 TEST_PARENT = TEST_ROOT.parent
@@ -30,26 +28,7 @@ categories:
 
 def category_cache_module():
     assert MODULE_PATH.is_file(), "category-cache interface module has not been created"
-    return load_runtime_module(MODULE_PATH)
-
-
-def test_category_cache_loader_ignores_and_restores_foreign_private_package(
-    tmp_path, monkeypatch
-):
-    foreign_root = tmp_path / "foreign"
-    foreign_package_dir = foreign_root / "_rtx"
-    foreign_package_dir.mkdir(parents=True)
-    (foreign_package_dir / "__init__.py").write_text("marker = 'foreign'\n", encoding="utf-8")
-    monkeypatch.syspath_prepend(str(foreign_root))
-    for name in list(sys.modules):
-        if name == "_rtx" or name.startswith("_rtx."):
-            sys.modules.pop(name, None)
-    foreign_package = importlib.import_module("_rtx")
-
-    module = category_cache_module()
-
-    assert module.load_paths
-    assert sys.modules["_rtx"] is foreign_package
+    return category_cache
 
 
 def fake_download(calls: list[str]):

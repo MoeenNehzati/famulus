@@ -33,33 +33,6 @@ def _load_script(path: Path, module_name: str) -> ModuleType:
     return module
 
 
-def _load_repository_checks(repo_root: Path) -> ModuleType:
-    """Load checks from the selected root without retaining imported packages."""
-    source_root = (repo_root / "src").resolve()
-    module_path = source_root / "officina" / "repository_checks.py"
-    if not module_path.is_file():
-        raise RuntimeError(f"repository checks are missing: {module_path}")
-    saved_modules = dict(sys.modules)
-    saved_path = list(sys.path)
-    for name in tuple(sys.modules):
-        if name == "officina" or name.startswith("officina."):
-            del sys.modules[name]
-    sys.path.insert(0, str(source_root))
-    try:
-        module_name = "_benchmark_repository_checks"
-        spec = importlib.util.spec_from_file_location(module_name, module_path)
-        if spec is None or spec.loader is None:
-            raise RuntimeError(f"could not load repository checks: {module_path}")
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[module_name] = module
-        spec.loader.exec_module(module)
-        return module
-    finally:
-        sys.path[:] = saved_path
-        sys.modules.clear()
-        sys.modules.update(saved_modules)
-
-
 def _cache_environment(cache_root: Path) -> dict[str, str]:
     cache_root.mkdir(parents=True, exist_ok=True)
     environment = os.environ.copy()
@@ -92,23 +65,22 @@ def resolve_benchmark_command(
     task_id: str | None,
     task_cache_dir: Path | None = None,
 ) -> tuple[list[str], int | None]:
-    """Resolve a root suite command or one task from the selected repository."""
+    """Build a runner CLI command rooted in the selected repository."""
     root = Path(repo_root).resolve()
+    command = [
+        sys.executable,
+        str(root / "repo_checks.py"),
+        "--suite",
+        suite,
+        "--jobs",
+        str(jobs),
+    ]
     if task_id is None:
-        return [sys.executable, str(root / "repo_checks.py"), "--suite", suite, "--jobs", str(jobs)], None
-    checks = _load_repository_checks(root)
-    tasks = checks._build_check_tasks(
-        root, suite, verbose=False, jobs=jobs, validator_ids=(), excluded_validator_ids=()
-    )
-    selected = next((task for task in tasks if task.id == task_id), None)
-    if selected is None:
-        available = ", ".join(task.id for task in tasks)
-        raise ValueError(f"unknown task ID {task_id!r}; available IDs: {available}")
-    command = list(selected.argv)
-    if command[1:3] == ["-m", "pytest"] and task_cache_dir is not None:
-        task_cache_dir.mkdir(parents=True, exist_ok=True)
-        command[3:3] = ["-o", f"cache_dir={task_cache_dir.resolve()}"]
-    return command, selected.slots
+        return command, None
+    command.extend(["--task-id", task_id])
+    if task_cache_dir is not None:
+        command.extend(["--task-cache-dir", str(task_cache_dir.resolve())])
+    return command, jobs if task_id == "tests:shared" else 1
 
 
 def run_benchmarks(
@@ -145,7 +117,13 @@ def run_benchmarks(
                 command.append("--sequential")
             return command
         task_cache_root.mkdir(parents=True, exist_ok=True)
-        cache_dir = Path(tempfile.mkdtemp(prefix=f"{phase}-", dir=task_cache_root))
+        if cache == "warm":
+            cache_dir = task_cache_root / "warm"
+            cache_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            cache_dir = Path(
+                tempfile.mkdtemp(prefix=f"{phase}-", dir=task_cache_root)
+            )
         command, resolved_slots = resolve_benchmark_command(
             root, suite, jobs, task_id, cache_dir
         )
@@ -182,7 +160,8 @@ def run_benchmarks(
         "cache_condition": cache, "jobs": jobs, "requested_jobs": jobs, "resolved_default_jobs": resolved_jobs,
         "suite": suite, "task_id": task_id, "task_slots": task_slots, "task_cache_paths": task_cache_paths,
         "prime": prime, "runs_requested": runs, "command": command, "runs": measurements,
-        "scheduler": "sequential" if sequential else "pooled",
+        "scheduler": "phased",
+        "sequential_alias": sequential,
         "measurement_mode": "resources" if measure_resources else "timing",
     }
     output.parent.mkdir(parents=True, exist_ok=True)

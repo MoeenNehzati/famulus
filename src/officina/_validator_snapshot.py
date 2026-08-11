@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+from contextlib import contextmanager
 import importlib.util
 import json
 import os
@@ -11,7 +12,7 @@ import subprocess
 import sys
 import tempfile
 from types import ModuleType
-from typing import Callable, NamedTuple, Sequence
+from typing import Callable, Iterator, NamedTuple, Sequence
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -113,6 +114,13 @@ class _RepositorySnapshot(NamedTuple):
     git_dir: Path
     index_path: Path
     head_commit: str | None
+
+
+class PreparedRepositoryView(NamedTuple):
+    """Expose one materialized staged tree and its immutable changed paths."""
+
+    root: Path
+    staged_paths: tuple[str, ...]
 
 
 def _source_git_environment() -> dict[str, str]:
@@ -1318,6 +1326,35 @@ def _run_tracked_child(
             staged_paths_file.unlink(missing_ok=True)
 
 
+def capture_staged_paths(repo_root: Path) -> tuple[str, ...]:
+    """Capture the current index once and return its changed regular paths."""
+    root = Path(repo_root).resolve()
+    snapshot = _capture_repository_snapshot(root)
+    try:
+        entries = _index_entries(root, snapshot=snapshot)
+        return _changed_regular_paths(root, snapshot, entries)
+    finally:
+        shutil.rmtree(snapshot.root, ignore_errors=True)
+
+
+@contextmanager
+def staged_repository_view(repo_root: Path) -> Iterator[PreparedRepositoryView]:
+    """Materialize one exact staged tree for a complete pytest invocation."""
+    root = Path(repo_root).resolve()
+    snapshot = _capture_repository_snapshot(root)
+    mirror_root: Path | None = None
+    try:
+        entries = _index_entries(root, snapshot=snapshot)
+        staged_paths = _changed_regular_paths(root, snapshot, entries)
+        mirror_root, _entries = _materialize_tracked_mirror(root, entries)
+        _build_isolated_git_dir(snapshot, mirror_root)
+        yield PreparedRepositoryView(mirror_root, staged_paths)
+    finally:
+        if mirror_root is not None:
+            shutil.rmtree(mirror_root, ignore_errors=True)
+        shutil.rmtree(snapshot.root, ignore_errors=True)
+
+
 def run_all(
     repo_root: Path = REPO_ROOT,
     validator_ids: Sequence[str] | None = None,
@@ -1372,26 +1409,17 @@ def run_all(
     """
 
     root = Path(repo_root).resolve()
-    snapshot = _capture_repository_snapshot(root)
-    mirror_root: Path | None = None
-    try:
-        entries = _index_entries(root, snapshot=snapshot)
-        staged_paths = _changed_regular_paths(root, snapshot, entries)
-        mirror_root, _entries = _materialize_tracked_mirror(root, entries)
-        isolated_git_dir = _build_isolated_git_dir(snapshot, mirror_root)
+    with staged_repository_view(root) as view:
+        isolated_git_dir = view.root / ".git"
         return _run_tracked_child(
             root,
-            mirror_root,
+            view.root,
             isolated_git_dir,
             validator_ids,
             excluded_validator_ids,
-            staged_paths,
+            view.staged_paths,
             timing_output,
         )
-    finally:
-        if mirror_root is not None:
-            shutil.rmtree(mirror_root, ignore_errors=True)
-        shutil.rmtree(snapshot.root, ignore_errors=True)
 
 
 def _write_tracked_result(

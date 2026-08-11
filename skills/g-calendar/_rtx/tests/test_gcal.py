@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
-from test_support.runtime_module import load_runtime_module
+from .. import _gcal_client as gcal
 
 
 MODULE_PATH = (
@@ -21,9 +21,6 @@ SKILL_ROOT = RUNTIME_ROOT.parent
 REPO_SRC = SKILL_ROOT.parents[1] / "src"
 if str(REPO_SRC) not in sys.path:
     sys.path.insert(0, str(REPO_SRC))
-
-gcal = load_runtime_module(MODULE_PATH)
-
 
 def test_resolve_range_defaults_from_local_midnight(monkeypatch):
     base = datetime(2026, 7, 9, 15, 30, tzinfo=timezone(timedelta(hours=-4)))

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import FrozenInstanceError
 import importlib
 from pathlib import Path
@@ -7,8 +8,11 @@ from pathlib import Path
 import pytest
 import yaml
 
-from officina.common.blueprint_graph import load_repository_blueprint_graph
-from v5_blueprint_fixtures import copy_v5_fixture_tree
+from officina.common.blueprint_graph import (
+    RepositoryBlueprintGraph,
+    load_repository_blueprint_graph,
+)
+from test_support.v5_blueprint_fixtures import copy_v5_fixture_tree
 
 
 V5_SCHEMA_ROOT = (
@@ -44,14 +48,27 @@ def _copy_v5_authorization_fixture(tmp_path: Path) -> Path:
     )
 
 
-def _load_graph(tmp_path: Path):
-    root = _copy_v5_authorization_fixture(tmp_path)
-    graph = load_repository_blueprint_graph(
+@pytest.fixture(scope="module")
+def authorization_graph(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> RepositoryBlueprintGraph:
+    """Load the immutable authorization fixture graph once for this module."""
+
+    root = _copy_v5_authorization_fixture(tmp_path_factory.mktemp("authorization"))
+    return load_repository_blueprint_graph(
         root,
         schema_root=V5_SCHEMA_ROOT,
         expected_schema_version=5,
     )
-    return root, graph
+
+
+@pytest.fixture
+def mutable_authorization_graph(
+    authorization_graph: RepositoryBlueprintGraph,
+) -> RepositoryBlueprintGraph:
+    """Give mutation cases an isolated copy of the shared base graph."""
+
+    return deepcopy(authorization_graph)
 
 
 def _resolve(
@@ -98,13 +115,13 @@ def _resolve(
     ],
 )
 def test_v5_authorization_uses_target_side_lca_gates(
-    tmp_path: Path,
+    authorization_graph: RepositoryBlueprintGraph,
     caller_module_id: str,
     interface_id: str,
     expected_lca: str | None,
     expected_gates: tuple[tuple[str, str], ...],
 ) -> None:
-    _root, graph = _load_graph(tmp_path)
+    graph = authorization_graph
 
     result = _resolve(
         graph,
@@ -122,9 +139,9 @@ def test_v5_authorization_uses_target_side_lca_gates(
 
 
 def test_v5_relative_callers_admit_their_registered_descendants(
-    tmp_path: Path,
+    mutable_authorization_graph: RepositoryBlueprintGraph,
 ) -> None:
-    _root, graph = _load_graph(tmp_path)
+    graph = mutable_authorization_graph
     graph.nodes["beta-leaf.source.caller"].declaration[
         "uses_interfaces"
     ].append({"interface": "alpha.interface.status", "version": 1})
@@ -153,9 +170,9 @@ def test_v5_relative_callers_admit_their_registered_descendants(
 
 
 def test_v5_authorization_distinguishes_private_unknown_and_versioned_targets(
-    tmp_path: Path,
+    authorization_graph: RepositoryBlueprintGraph,
 ) -> None:
-    _root, graph = _load_graph(tmp_path)
+    graph = authorization_graph
 
     private = _resolve(
         graph,
@@ -187,9 +204,9 @@ def test_v5_authorization_distinguishes_private_unknown_and_versioned_targets(
 
 
 def test_v5_facade_preserves_caller_and_evaluates_self_at_both_owners(
-    tmp_path: Path,
+    mutable_authorization_graph: RepositoryBlueprintGraph,
 ) -> None:
-    _root, graph = _load_graph(tmp_path)
+    graph = mutable_authorization_graph
     graph.nodes["outsider.source.caller"].declaration[
         "uses_interfaces"
     ].append({"interface": "demo-rtx.interface.execute", "version": 3})
@@ -278,9 +295,9 @@ def test_v5_facade_preserves_caller_and_evaluates_self_at_both_owners(
 
 
 def test_v5_facade_owner_is_immediate_caller_of_child_export(
-    tmp_path: Path,
+    mutable_authorization_graph: RepositoryBlueprintGraph,
 ) -> None:
-    _root, graph = _load_graph(tmp_path)
+    graph = mutable_authorization_graph
     facade = graph.exports["demo.interface.execute"].export_declaration
     child = graph.exports[
         "demo-rtx.interface.execute"
@@ -307,9 +324,9 @@ def test_v5_facade_owner_is_immediate_caller_of_child_export(
 
 
 def test_v5_namespace_route_owners_are_immediate_callers_of_next_hop(
-    tmp_path: Path,
+    mutable_authorization_graph: RepositoryBlueprintGraph,
 ) -> None:
-    _root, graph = _load_graph(tmp_path)
+    graph = mutable_authorization_graph
     root_route = graph.namespace_routes[("root", "alpha")].declaration
     alpha_route = graph.namespace_routes[("alpha", "leaf")].declaration
     leaf = graph.exports["leaf.interface.run"].export_declaration
@@ -426,9 +443,9 @@ def test_v5_direct_child_request_bypasses_facade_filter(tmp_path: Path) -> None:
 
 
 def test_v5_all_and_only_routes_are_materialized_not_wildcards(
-    tmp_path: Path,
+    mutable_authorization_graph: RepositoryBlueprintGraph,
 ) -> None:
-    _root, graph = _load_graph(tmp_path)
+    graph = mutable_authorization_graph
     graph.nodes["outsider.source.caller"].declaration[
         "uses_interfaces"
     ].append({"interface": "leaf.interface.hidden", "version": 1})
@@ -460,9 +477,9 @@ def test_v5_all_and_only_routes_are_materialized_not_wildcards(
 
 
 def test_v5_authorization_ignores_caller_source_identity_and_declared_use(
-    tmp_path: Path,
+    mutable_authorization_graph: RepositoryBlueprintGraph,
 ) -> None:
-    _root, graph = _load_graph(tmp_path)
+    graph = mutable_authorization_graph
 
     authorization = _authorization_module()
     missing_source = authorization.resolve_interface_authorization(
@@ -495,9 +512,9 @@ def test_v5_authorization_ignores_caller_source_identity_and_declared_use(
 
 
 def test_v5_result_has_exact_relations_and_minimal_consulted_certificate_set(
-    tmp_path: Path,
+    authorization_graph: RepositoryBlueprintGraph,
 ) -> None:
-    _root, graph = _load_graph(tmp_path)
+    graph = authorization_graph
 
     result = _resolve(
         graph,
@@ -541,8 +558,10 @@ def test_v5_result_has_exact_relations_and_minimal_consulted_certificate_set(
     )
 
 
-def test_v5_authorization_result_is_deeply_immutable(tmp_path: Path) -> None:
-    _root, graph = _load_graph(tmp_path)
+def test_v5_authorization_result_is_deeply_immutable(
+    authorization_graph: RepositoryBlueprintGraph,
+) -> None:
+    graph = authorization_graph
     result = _resolve(
         graph,
         caller_module_id="outsider",

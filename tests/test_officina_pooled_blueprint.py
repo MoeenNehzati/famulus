@@ -12,7 +12,7 @@ from officina.common.pooled_blueprint import (
     PooledReviewValidationError,
     render_pooled_review,
 )
-from v4_certification_fixtures import create_v4_repository
+from test_support.v4_certification_fixtures import create_v4_repository
 
 SCHEMA_ROOT = Path(__file__).resolve().parents[1] / "references" / "blueprint"
 

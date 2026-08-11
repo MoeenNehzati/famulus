@@ -26,12 +26,12 @@ def test_named_suites_have_one_internal_phase_plan() -> None:
     checks = _load_checks()
 
     assert checks.SUITE_PHASES == {
-        "validators": (("validators", None),),
-        "tests": (("tests", "full"),),
-        "precommit": (("validators", None), ("tests", "precommit")),
-        "pre-push": (("validators", None), ("tests", "pre-push")),
-        "portability": (("tests", "portability"),),
-        "full": (("validators", None), ("tests", "full")),
+        "validators": ("validators",),
+        "tests": ("tests:shared", "tests:performance"),
+        "precommit": ("validators", "tests:shared"),
+        "pre-push": ("validators", "tests:shared"),
+        "portability": ("tests:shared",),
+        "full": ("validators", "tests:shared", "tests:performance"),
     }
 
 

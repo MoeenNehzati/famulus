@@ -15,11 +15,7 @@ import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-TESTS_ROOT = REPO_ROOT / "tests"
-if str(TESTS_ROOT) not in sys.path:
-    sys.path.insert(0, str(TESTS_ROOT))
-
-from v5_blueprint_fixtures import copy_v5_fixture_tree
+from test_support.v5_blueprint_fixtures import copy_v5_fixture_tree
 
 
 SYNCER_PATH = REPO_ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py"

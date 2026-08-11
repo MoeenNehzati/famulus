@@ -1,21 +1,15 @@
 #!/usr/bin/env python3
 """Behavior tests for the per-host parser files and their __init__.py aggregation."""
-import importlib
-import sys
-from pathlib import Path
-
-SKILL_DIR = Path(__file__).parent.parent
+from .. import _claude_parser as claude_parser
+from .. import _codex_parser as codex_parser
+from .. import parsers
 
 
 def _load(name):
-    for module_name in list(sys.modules):
-        if module_name == "_rtx" or module_name.startswith("_rtx."):
-            sys.modules.pop(module_name, None)
-    sys.path.insert(0, str(SKILL_DIR))
-    try:
-        return importlib.import_module(f"_rtx._{name}")
-    finally:
-        sys.path.pop(0)
+    return {
+        "claude_parser": claude_parser,
+        "codex_parser": codex_parser,
+    }[name]
 
 
 def test_claude_parser_home_dir_respects_env_override(monkeypatch):
@@ -83,20 +77,11 @@ def test_codex_parser_resume_hint_has_no_leading_slash():
 
 
 def test_init_aggregates_both_parsers_with_distinct_ids():
-    for module_name in list(sys.modules):
-        if module_name == "_rtx" or module_name.startswith("_rtx."):
-            sys.modules.pop(module_name, None)
-    sys.path.insert(0, str(SKILL_DIR))
-    try:
-        mod = importlib.import_module("_rtx")
-    finally:
-        sys.path.pop(0)
-
-    assert len(mod.parsers) == 2
-    ids = sorted(p.id for p in mod.parsers)
+    assert len(parsers) == 2
+    ids = sorted(p.id for p in parsers)
     assert ids == ["claude", "codex"]
     # Each parser exposes the shared interface scan.py relies on.
-    for p in mod.parsers:
+    for p in parsers:
         assert hasattr(p, "home_dir")
         assert hasattr(p, "list_session_files")
         assert hasattr(p, "extract_project")

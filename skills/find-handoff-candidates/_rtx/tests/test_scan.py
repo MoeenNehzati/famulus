@@ -7,31 +7,14 @@ extract_project, extract_session_id, resume_hint) so these tests never
 need to touch real transcript directories or care which host is which --
 scan.py itself is fully generic, and these tests exercise exactly that.
 """
-import importlib
 import datetime
 import json
 import os
-import sys
-from pathlib import Path
-
-SKILL_DIR = Path(__file__).parent.parent
-REPO_SRC = SKILL_DIR.parents[2] / "src"
-
-def _clear_scripts_modules() -> None:
-    for name in list(sys.modules):
-        if name == "scripts" or name.startswith("scripts."):
-            sys.modules.pop(name, None)
+from .. import _handoff_scan as handoff_scan
 
 
 def _load():
-    _clear_scripts_modules()
-    sys.path.insert(0, str(SKILL_DIR))
-    sys.path.insert(0, str(REPO_SRC))
-    try:
-        return importlib.import_module("_rtx._handoff_scan")
-    finally:
-        sys.path.pop(0)
-        sys.path.pop(0)
+    return handoff_scan
 
 
 def _write_transcript(path, lines):

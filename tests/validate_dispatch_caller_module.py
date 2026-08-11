@@ -7,7 +7,7 @@ from pathlib import Path
 
 from officina.common.blueprint_graph import load_repository_blueprint_graph
 from officina.common.python_source_cache import PythonSourceCache
-from v5_blueprint_fixtures import copy_v5_fixture_tree
+from test_support.v5_blueprint_fixtures import copy_v5_fixture_tree
 
 
 _VALIDATOR = (

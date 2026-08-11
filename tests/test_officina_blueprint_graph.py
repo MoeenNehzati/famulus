@@ -18,7 +18,7 @@ from officina.common.blueprint_graph import (
     resolve_export,
     validate_runtime_file_path,
 )
-from v5_blueprint_fixtures import copy_v5_fixture_tree
+from test_support.v5_blueprint_fixtures import copy_v5_fixture_tree
 
 
 CANONICAL_SCHEMA_ROOT = (

@@ -22,7 +22,6 @@ import pytest
 
 from officina import _validator_snapshot
 from officina.common.python_source_cache import PythonSourceCache
-from officina.common.discover_tests import discover_repository_test_dirs
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -78,35 +77,6 @@ PORTABILITY_TESTS = (
 
 
 @dataclass(frozen=True)
-class CheckTask:
-    """Describe one isolated pytest process admitted by the shared scheduler.
-
-    Intent
-    ------
-    Keep the stable task identity, complete child command, and worker-lease cost in
-    the smallest object needed by the coordinator.
-
-    Rationale
-    ---------
-    Scheduling process groups rather than pytest items preserves existing test and
-    validator isolation while allowing every group to share one bounded budget.
-
-    Pseudocode
-    ----------
-    - set task = immutable identifier, child argument vector, and positive slot cost
-    - return task
-
-    Wraps
-    -----
-    - none
-    """
-
-    id: str
-    argv: tuple[str, ...]
-    slots: int
-
-
-@dataclass(frozen=True)
 class _GraphState:
     """Store one shared blueprint preflight result.
 
@@ -131,6 +101,16 @@ class _GraphState:
     owner_id: str
     errors: tuple[str, ...]
     graph: object | None
+
+
+@dataclass(frozen=True)
+class _PhaseResult:
+    """Record one started repository-check phase for timing output."""
+
+    task_id: str
+    exit_code: int
+    wall_seconds: float
+    timing_path: Path | None
 
 
 class _ValidatorModule(pytest.Module):
@@ -715,11 +695,12 @@ class ValidatorPytestPlugin:
         self,
         items: list[pytest.Item],
     ) -> None:
-        """Keep only items emitted by the repository validator collector.
+        """Remove only duplicate default items for selected validator files.
 
         Intent
         ------
-        Remove duplicate ordinary pytest collection for explicitly selected files.
+        Preserve ordinary test items while removing duplicate default collection
+        for explicitly selected validator files.
 
         Rationale
         ---------
@@ -729,17 +710,20 @@ class ValidatorPytestPlugin:
 
         Pseudocode
         ----------
-        - set validator_items = collected items carrying canonical validator ids
-        - set session_items = validator items
+        - keep custom validator items
+        - keep items outside selected validator paths
+        - remove default items for selected validator paths
 
         Wraps
         -----
         - none
         """
+        selected_paths = set(self.path_ids)
         items[:] = [
             item
             for item in items
             if isinstance(getattr(item, "_validator_id", None), str)
+            or Path(item.path).resolve() not in selected_paths
         ]
 
     def pytest_pyfunc_call(self, pyfuncitem: pytest.Function):
@@ -783,7 +767,10 @@ class ValidatorPytestPlugin:
         ) is True
         state = self._graph_state() if uses_graph else None
         if state is not None and state.errors:
-            if validator_id == state.owner_id:
+            if (
+                validator_id == state.owner_id
+                or state.owner_id not in self.entry_points
+            ):
                 pytest.fail("\n".join(state.errors), pytrace=False)
             pytest.skip("blueprint preflight failed")
         if state is not None and state.graph is None:
@@ -817,6 +804,53 @@ class ValidatorPytestPlugin:
             self.results.setdefault(validator_id, []).extend(errors)
             pytest.fail("\n".join(errors), pytrace=False)
         return True
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Register private options for adding validators to normal collection."""
+    group = parser.getgroup("officina repository validators")
+    group.addoption(
+        "--officina-run-validators",
+        action="store_true",
+        help="collect repository validators beside ordinary pytest tests",
+    )
+    group.addoption("--officina-validator-root", type=Path)
+    group.addoption("--officina-validator-display-root", type=Path)
+    group.addoption("--officina-staged-paths-file", type=Path)
+    group.addoption("--officina-validator", action="append", default=[])
+    group.addoption("--officina-exclude-validator", action="append", default=[])
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Register the validator collector in the same session as normal tests."""
+    if not config.getoption("--officina-run-validators"):
+        return
+    tracked_root = config.getoption("--officina-validator-root")
+    display_root = config.getoption("--officina-validator-display-root")
+    staged_paths_file = config.getoption("--officina-staged-paths-file")
+    if tracked_root is None or display_root is None or staged_paths_file is None:
+        raise pytest.UsageError(
+            "--officina-run-validators requires validator root, display root, "
+            "and staged paths file"
+        )
+    tracked_root = tracked_root.resolve()
+    selected_paths = _validator_snapshot._selected_validator_paths(
+        tracked_root,
+        config.getoption("--officina-validator") or None,
+        config.getoption("--officina-exclude-validator"),
+    )
+    staged_paths = _validator_snapshot._load_staged_paths(
+        tracked_root,
+        staged_paths_file,
+    )
+    plugin = ValidatorPytestPlugin(
+        runner=_validator_snapshot,
+        tracked_root=tracked_root,
+        display_root=display_root.resolve(),
+        selected_paths=selected_paths,
+        staged_paths=staged_paths,
+    )
+    config.pluginmanager.register(plugin, "officina-validator-items")
 
 
 def run_validators_with_pytest(
@@ -911,31 +945,68 @@ def run_validators_with_pytest(
 
 
 SUITE_PHASES = {
-    "validators": (("validators", None),),
-    "tests": (("tests", "full"),),
-    "precommit": (("validators", None), ("tests", "precommit")),
-    "pre-push": (("validators", None), ("tests", "pre-push")),
-    "portability": (("tests", "portability"),),
-    "full": (("validators", None), ("tests", "full")),
+    "validators": ("validators",),
+    "tests": ("tests:shared", "tests:performance"),
+    "precommit": ("validators", "tests:shared"),
+    "pre-push": ("validators", "tests:shared"),
+    "portability": ("tests:shared",),
+    "full": ("validators", "tests:shared", "tests:performance"),
+}
+
+SUITE_TEST_PROFILES = {
+    "tests": "full",
+    "precommit": "precommit",
+    "pre-push": "pre-push",
+    "portability": "portability",
+    "full": "full",
 }
 
 
-def _pytest_args(*, verbose: bool, jobs: int = 1) -> list[str]:
+def _suite_runs(suite: str, task_id: str | None) -> tuple[str, ...]:
+    """Resolve one suite to combined pytest invocations without a validator gate."""
+    if task_id is not None:
+        return (task_id,)
+    phases = SUITE_PHASES[suite]
+    pooled = {"validators", "tests:shared"}.intersection(phases)
+    runs: list[str] = ["combined"] if pooled == {"validators", "tests:shared"} else []
+    if not runs:
+        runs.extend(phase for phase in phases if phase != "tests:performance")
+    if "tests:performance" in phases:
+        runs.append("tests:performance")
+    return tuple(runs)
+
+
+def _resolve_repository_view(suite: str, requested: str) -> str:
+    """Choose one import and collection tree for the complete pytest session."""
+    if requested != "auto":
+        return requested
+    return "staged" if suite == "precommit" else "working"
+
+
+def _pytest_args(
+    *,
+    verbose: bool,
+    jobs: int = 1,
+    distribution: str = "worksteal",
+) -> list[str]:
     """Build the common pytest arguments for repository test phases.
 
     Intent
     ------
-    Keep source-path and output-mode configuration identical across suites.
+    Keep source-path, output-mode, and selected xdist configuration identical
+    across suites.
 
     Rationale
     ---------
-    Central arguments prevent hook and CI invocations from drifting.
+    Central arguments prevent hook and CI invocations from drifting while the
+    suite policy supplies the distribution mode appropriate to its tests.
 
     Pseudocode
     ----------
     - set pytest_arguments = source path option and selected verbosity
     - if jobs is greater than one:
-      - set pytest_arguments = arguments plus xdist worker configuration
+      - set pytest_arguments = arguments plus xdist worker and distribution
+        configuration supplied by suite policy
     - return pytest_arguments
 
     Wraps
@@ -944,7 +1015,7 @@ def _pytest_args(*, verbose: bool, jobs: int = 1) -> list[str]:
     """
     args = ["-o", "pythonpath=src", "-v" if verbose else "-q"]
     if jobs > 1:
-        args.extend(["-n", str(jobs), "--dist", "worksteal"])
+        args.extend(["-n", str(jobs), "--dist", distribution])
     return args
 
 
@@ -1010,16 +1081,24 @@ def _suite_pytest_args(
 
     Intent
     ------
-    Apply suite-specific deselections to the common pytest arguments.
+    Apply suite-specific xdist distribution and deselections to common pytest
+    arguments.
 
     Rationale
     ---------
-    Precommit exclusions are repository policy and belong with suite selection.
+    Browser-containing full and pre-push suites use ``loadgroup`` so their
+    shared browser marker forms one work unit. Browser-free parallel suites use
+    ``worksteal``. Serial suites emit no xdist arguments. Precommit exclusions
+    remain repository policy and belong with suite selection.
 
     Pseudocode
     ----------
-    - set pytest_arguments = common pytest arguments
+    - set distribution = loadgroup for full and pre-push; otherwise worksteal
+    - set pytest_arguments = common pytest arguments using distribution only
+      when jobs is greater than one
     - if name is precommit:
+      - set pytest_arguments = arguments plus configured deselections
+    - otherwise if name is pre-push:
       - set pytest_arguments = arguments plus configured deselections
     - return pytest_arguments
 
@@ -1033,312 +1112,21 @@ def _suite_pytest_args(
       why:
         constructs: "Builds the common pytest argument list extended by this suite."
     """
-    args = _pytest_args(verbose=verbose, jobs=jobs)
+    distribution = "loadgroup" if name in {"full", "pre-push"} else "worksteal"
+    args = _pytest_args(
+        verbose=verbose,
+        jobs=jobs,
+        distribution=distribution,
+    )
     if name == "precommit":
+        for test_dir in sorted(PRECOMMIT_EXCLUDED_TEST_DIRS):
+            args.append(f"--ignore={test_dir}")
         for test in sorted(PRECOMMIT_EXCLUDED_TESTS):
             args.extend(["--deselect", test])
     elif name == "pre-push":
         for test in sorted(PREPUSH_EXCLUDED_TESTS):
             args.extend(["--deselect", test])
     return args
-
-
-def _resolve_suite(name: str) -> list[str]:
-    """Resolve one ordinary-test suite to existing pytest targets.
-
-    Intent
-    ------
-    Produce the exact repository paths or nodes selected by a suite name.
-
-    Rationale
-    ---------
-    Missing configured paths must fail before partial test execution begins.
-
-    Pseudocode
-    ----------
-    - set test_targets = portability nodes or discovered repository test directories
-    - if name is precommit:
-      - set test_targets = targets without precommit exclusions
-    - if configured targets are missing:
-      - raise configuration error
-    - return test_targets
-
-    Wraps
-    -----
-    - none
-
-    InstantiationsFromRepo
-    ----------------------
-    .officina.common.discover_tests.discover_repository_test_dirs:
-      why:
-        constructs: "Builds the discovered working-tree test directory collection."
-    """
-    if name == "portability":
-        test_dirs = list(PORTABILITY_TESTS)
-    else:
-        test_dirs = list(
-            discover_repository_test_dirs(REPO_ROOT, return_relative=True)
-        )
-    if name == "precommit":
-        test_dirs = [
-            path for path in test_dirs if path not in PRECOMMIT_EXCLUDED_TEST_DIRS
-        ]
-    missing = [
-        path
-        for path in test_dirs
-        if not (REPO_ROOT / path.split("::", 1)[0]).exists()
-    ]
-    if missing:
-        raise SystemExit(f"configured test paths are missing: {', '.join(missing)}")
-    return test_dirs
-
-
-def _execution_groups(test_dirs: list[str]) -> list[list[str]]:
-    """Partition ordinary tests into shared and isolated pytest processes.
-
-    Intent
-    ------
-    Keep nested runtime suites isolated while consolidating all other targets.
-
-    Rationale
-    ---------
-    Nested runtimes may carry incompatible import and plugin state.
-
-    Pseudocode
-    ----------
-    - set nested_targets = nested runtime test targets
-    - set shared_targets = all remaining test targets
-    - return shared group followed by singleton nested groups
-
-    Wraps
-    -----
-    - none
-
-    """
-    nested = sorted(path for path in test_dirs if "/_rtx/tests" in path)
-    shared = [path for path in test_dirs if path not in nested]
-    return ([shared] if shared else []) + [[path] for path in nested]
-
-
-def _shared_test_jobs(jobs: int) -> int:
-    """Return the deterministic lease allocation for the shared pytest task.
-
-    Intent
-    ------
-    Leave bounded capacity for validator and isolated runtime tasks when parallelism
-    is available, while preserving one-worker execution for a serial budget.
-
-    Rationale
-    ---------
-    A static allocation avoids adaptive scheduling machinery and prevents the large
-    shared task from consuming every lease before smaller isolated tasks can start.
-
-    Pseudocode
-    ----------
-    - if jobs <= one:
-      - return one
-    - set reserved_jobs = at least one and otherwise one quarter of jobs
-    - return jobs minus reserved_jobs
-
-    Wraps
-    -----
-    - none
-    """
-
-    if jobs <= 1:
-        return 1
-    return jobs - max(1, jobs // 4)
-
-
-def _run_validator_task(
-    repo_root: Path,
-    *,
-    validator_ids: Sequence[str] = (),
-    excluded_validator_ids: Sequence[str] = (),
-    timing_output: Path | None = None,
-) -> int:
-    """Run the complete staged validator lifecycle inside the private worker.
-
-    Intent
-    ------
-    Preserve one validator snapshot session while exposing it as a schedulable child
-    process with conventional repository-check exit codes.
-
-    Rationale
-    ---------
-    Keeping snapshot capture and finding rendering inside one worker avoids recursive
-    scheduling and retains staged-index isolation.
-
-    Pseudocode
-    ----------
-    - set validator_results = selected validators run against one staged snapshot
-    - if validator snapshot infrastructure fails:
-      - set error_output = infrastructure failure text written to stderr
-      - return infrastructure failure status
-    - set status = rendered validator findings
-    - return status
-
-    Wraps
-    -----
-    - none
-
-    InstantiationsFromRepo
-    ----------------------
-    .officina._validator_snapshot.run_all:
-      why:
-        constructs: "Builds findings from the complete staged validator session."
-    .officina._validator_snapshot._render_findings:
-      why:
-        constructs: "Builds the canonical validator process status and output."
-    """
-
-    try:
-        arguments: dict[str, object] = {
-            "repo_root": Path(repo_root).resolve(),
-            "validator_ids": validator_ids,
-            "excluded_validator_ids": excluded_validator_ids,
-        }
-        if timing_output is not None:
-            arguments["timing_output"] = timing_output
-        results = _validator_snapshot.run_all(
-            **arguments,
-        )
-    except _validator_snapshot.ValidatorRunnerError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 2
-    return _validator_snapshot._render_findings(results)
-
-
-def _build_check_tasks(
-    repo_root: Path,
-    suite: str,
-    *,
-    verbose: bool,
-    jobs: int,
-    validator_ids: Sequence[str],
-    excluded_validator_ids: Sequence[str],
-) -> list[CheckTask]:
-    """Build one deterministic queue from existing validator and test groups.
-
-    Intent
-    ------
-    Translate resolved suite policy into process-level tasks without introducing a
-    second collection or test-inventory abstraction.
-
-    Rationale
-    ---------
-    Reusing the established validator session, shared pytest group, and isolated
-    ``_rtx`` groups preserves coverage and import boundaries during parallelization.
-
-    Pseudocode
-    ----------
-    - set tasks = validator worker when the suite includes validators
-    - set test_targets = resolved ordinary tests for the suite
-    - set execution_groups = shared tests and isolated runtime roots
-    - for execution_group in execution_groups:
-      - set task = command and worker leases for execution_group
-      - set tasks = tasks plus task
-    - return tasks in deterministic admission order
-
-    Wraps
-    -----
-    - none
-
-    CallsFromRepo
-    -------------
-    ._resolve_suite:
-      why:
-        computes: "Supplies profile-resolved ordinary test targets."
-    ._pytest_args:
-      why:
-        computes: "Supplies pytest arguments for the isolated performance task."
-
-    InstantiationsFromRepo
-    ----------------------
-    ._execution_groups:
-      why:
-        constructs: "Builds the preserved shared and isolated process groups."
-    ._shared_test_jobs:
-      why:
-        constructs: "Builds the shared task's deterministic worker allocation."
-    ._suite_pytest_args:
-      why:
-        constructs: "Builds pytest arguments for each suite process group."
-    .CheckTask:
-      why:
-        constructs: "Builds each process-level scheduling unit."
-    """
-
-    root = Path(repo_root).resolve()
-    tasks: list[CheckTask] = []
-    phases = SUITE_PHASES[suite]
-    if any(phase == "validators" for phase, _test_suite in phases):
-        tier_exclusions = (
-            ()
-            if validator_ids
-            else SUITE_EXCLUDED_VALIDATORS.get(suite, ())
-        )
-        effective_exclusions = tuple(
-            dict.fromkeys((*tier_exclusions, *excluded_validator_ids))
-        )
-        argv = [
-            sys.executable,
-            str(REPO_ROOT / "repo_checks.py"),
-            "--internal-run-validators",
-            "--repo-root",
-            str(root),
-        ]
-        for validator_id in validator_ids:
-            argv.extend(["--validator", validator_id])
-        for validator_id in effective_exclusions:
-            argv.extend(["--exclude-validator", validator_id])
-        tasks.append(CheckTask("validators", tuple(argv), 1))
-
-    test_suite = next(
-        (test_suite for phase, test_suite in phases if phase == "tests"),
-        None,
-    )
-    if test_suite is None:
-        return tasks
-    previous_root = globals()["REPO_ROOT"]
-    globals()["REPO_ROOT"] = root
-    try:
-        groups = _execution_groups(_resolve_suite(str(test_suite)))
-        shared_jobs = _shared_test_jobs(jobs)
-        for group in groups:
-            isolated = len(group) == 1 and "/_rtx/tests" in group[0]
-            group_jobs = 1 if isolated else shared_jobs
-            task_id = f"tests:{group[0]}" if isolated else "tests:shared"
-            pytest_args = _suite_pytest_args(
-                str(test_suite),
-                verbose=verbose,
-                jobs=group_jobs,
-            )
-            if test_suite == "full" and not isolated:
-                for test in sorted(PERFORMANCE_TESTS):
-                    pytest_args.extend(["--deselect", test])
-            argv = (
-                sys.executable,
-                "-m",
-                "pytest",
-                *pytest_args,
-                *group,
-            )
-            tasks.append(CheckTask(task_id, tuple(argv), group_jobs))
-        if test_suite == "full":
-            performance_argv = (
-                sys.executable,
-                "-m",
-                "pytest",
-                *_pytest_args(verbose=verbose, jobs=1),
-                *sorted(PERFORMANCE_TESTS),
-            )
-            tasks.append(
-                CheckTask("tests:performance", performance_argv, max(1, jobs))
-            )
-    finally:
-        globals()["REPO_ROOT"] = previous_root
-    return tasks
 
 
 def _terminate_windows_process_tree(
@@ -1434,209 +1222,6 @@ def _terminate_task_process(process: subprocess.Popen[object]) -> None:
             else:
                 _terminate_windows_process_tree(process, force=True)
             process.wait()
-
-
-def _run_check_tasks(
-    tasks: Sequence[CheckTask],
-    *,
-    repo_root: Path,
-    jobs: int,
-    pooled: bool,
-    timing_output: Path | None = None,
-) -> int:
-    """Run all check tasks through one bounded first-fitting coordinator.
-
-    Intent
-    ------
-    Share a total pytest-worker lease budget across validators, compatible tests, and
-    isolated runtime groups while preserving deterministic reporting.
-
-    Rationale
-    ---------
-    A rolling process scheduler overlaps existing isolation groups without replacing
-    pytest collection, validator snapshots, or item-level reporting.
-
-    Pseudocode
-    ----------
-    - if any task exceeds the invocation budget:
-      - raise invalid task budget error
-    - set pending = tasks in original order
-    - while pending tasks or active tasks exist:
-      - set admitted_task = first pending task fitting available leases
-      - set active = active plus admitted_task process
-      - set completed = active processes with exit status
-      - if any completed task failed:
-        - set admission_open = false
-    - if coordinator is interrupted:
-      - set cleanup = every active process group terminated
-      - return interrupted status
-    - set replay = completed output in original task order
-    - return the first nonzero result in deterministic task order
-
-    Wraps
-    -----
-    - none
-
-    CallsFromRepo
-    -------------
-    ._terminate_task_process:
-      why:
-        computes: "Cleans up complete active task trees after interruption."
-    ._write_timing_report:
-      why:
-        computes: "Writes requested task and per-file timing evidence."
-    """
-
-    if any(task.slots > jobs for task in tasks):
-        raise ValueError("check task requires more worker slots than --jobs")
-    pending = list(enumerate(tasks))
-    active: dict[
-        int,
-        tuple[subprocess.Popen[object], CheckTask, object, object, Path, Path, float],
-    ] = {}
-    results: dict[int, tuple[int, float]] = {}
-    timing_paths: dict[int, Path] = {}
-    admission_open = True
-    root = Path(repo_root).resolve()
-    with tempfile.TemporaryDirectory(prefix="officina-checks-") as temp_dir:
-        output_root = Path(temp_dir)
-        try:
-            while pending or active:
-                if admission_open:
-                    while pending and (pooled or not active):
-                        used = sum(
-                            task.slots
-                            for _process, task, _stdout, _stderr, _out_path, _err_path, _start
-                            in active.values()
-                        )
-                        available = jobs - used
-                        fitting = next(
-                            (
-                                position
-                                for position, (_index, task) in enumerate(pending)
-                                if task.slots <= available
-                            ),
-                            None,
-                        )
-                        if fitting is None:
-                            break
-                        index, task = pending.pop(fitting)
-                        stdout_path = output_root / f"{index:04d}.stdout.log"
-                        stderr_path = output_root / f"{index:04d}.stderr.log"
-                        stdout_log = stdout_path.open("w", encoding="utf-8")
-                        stderr_log = stderr_path.open("w", encoding="utf-8")
-                        popen_kwargs: dict[str, object] = {
-                            "stdout": stdout_log,
-                            "stderr": stderr_log,
-                            "cwd": root,
-                        }
-                        if os.environ.get("OFFICINA_FIXTURE_PROBE_DIR"):
-                            child_environment = os.environ.copy()
-                            child_environment["OFFICINA_FIXTURE_PROBE_TASK_ID"] = task.id
-                            popen_kwargs["env"] = child_environment
-                        if os.name == "posix":
-                            popen_kwargs["start_new_session"] = True
-                        else:
-                            popen_kwargs["creationflags"] = (
-                                subprocess.CREATE_NEW_PROCESS_GROUP
-                            )
-                        command = list(task.argv)
-                        if command[1:3] == ["-m", "pytest"]:
-                            cache_dir = output_root / "pytest-cache" / f"{index:04d}"
-                            command[3:3] = ["-o", f"cache_dir={cache_dir}"]
-                            if timing_output is not None:
-                                timing_path = output_root / "timings" / f"{index:04d}.xml"
-                                timing_paths[index] = timing_path
-                                command[3:3] = [f"--junitxml={timing_path}"]
-                        elif timing_output is not None and task.id == "validators":
-                            timing_path = output_root / "timings" / f"{index:04d}.xml"
-                            timing_paths[index] = timing_path
-                            command.extend(["--timing-output", str(timing_path)])
-                        process = subprocess.Popen(command, **popen_kwargs)
-                        start = time.monotonic()
-                        print(f"START task={task.id} slots={task.slots}")
-                        active[index] = (
-                            process,
-                            task,
-                            stdout_log,
-                            stderr_log,
-                            stdout_path,
-                            stderr_path,
-                            start,
-                        )
-
-                completed = []
-                for index, (
-                    process,
-                    task,
-                    stdout_log,
-                    stderr_log,
-                    stdout_path,
-                    stderr_path,
-                    start,
-                ) in active.items():
-                    status = process.poll()
-                    if status is None:
-                        continue
-                    stdout_log.close()
-                    stderr_log.close()
-                    results[index] = (int(status), time.monotonic() - start)
-                    completed.append(index)
-                    if status:
-                        admission_open = False
-                for index in completed:
-                    active.pop(index)
-                if active and not completed:
-                    time.sleep(0.01)
-                if not active and not admission_open:
-                    break
-        except KeyboardInterrupt:
-            for (
-                process,
-                _task,
-                stdout_log,
-                stderr_log,
-                _stdout_path,
-                _stderr_path,
-                _start,
-            ) in active.values():
-                _terminate_task_process(process)
-                stdout_log.close()
-                stderr_log.close()
-            return 130
-
-        for index, task in enumerate(tasks):
-            if index not in results:
-                continue
-            stdout_path = output_root / f"{index:04d}.stdout.log"
-            stderr_path = output_root / f"{index:04d}.stderr.log"
-            exit_code, duration = results[index]
-            print(
-                f"== {task.id} == exit={exit_code} "
-                f"duration_seconds={duration:.2f}"
-            )
-            stdout = stdout_path.read_text(encoding="utf-8", errors="replace")
-            stderr = stderr_path.read_text(encoding="utf-8", errors="replace")
-            if stdout:
-                print(stdout, end="" if stdout.endswith("\n") else "\n")
-            if stderr:
-                print(
-                    stderr,
-                    end="" if stderr.endswith("\n") else "\n",
-                    file=sys.stderr,
-                )
-        if timing_output is not None:
-            _write_timing_report(
-                timing_output,
-                repo_root=root,
-                tasks=tasks,
-                results=results,
-                timing_paths=timing_paths,
-            )
-        for index in range(len(tasks)):
-            if results.get(index) and (results[index][0] != 0):
-                return results[index][0]
-    return 0
 
 
 def _junit_source_path(repo_root: Path, classname: str) -> str:
@@ -1746,66 +1331,137 @@ def _read_junit_timing(
     return pytest_seconds, [grouped[key] for key in sorted(grouped)]
 
 
-def _write_timing_report(
+def _run_process(
+    command: Sequence[str],
+    *,
+    cwd: Path,
+    task_id: str,
+) -> int:
+    """Run one streaming child process and clean up its descendants on interrupt."""
+    child_environment = os.environ.copy()
+    child_environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    source_root = str(cwd / "src")
+    existing_pythonpath = child_environment.get("PYTHONPATH")
+    child_environment["PYTHONPATH"] = os.pathsep.join(
+        part for part in (source_root, existing_pythonpath) if part
+    )
+    popen_kwargs: dict[str, object] = {
+        "cwd": cwd,
+        "env": child_environment,
+    }
+    if os.environ.get("OFFICINA_FIXTURE_PROBE_DIR"):
+        child_environment["OFFICINA_FIXTURE_PROBE_TASK_ID"] = task_id
+    if os.name == "posix":
+        popen_kwargs["start_new_session"] = True
+    else:
+        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    process = subprocess.Popen(list(command), **popen_kwargs)
+    try:
+        return int(process.wait())
+    except KeyboardInterrupt:
+        _terminate_task_process(process)
+        return 130
+
+
+def _pytest_phase_command(
+    suite: str,
+    task_id: str,
+    *,
+    verbose: bool,
+    jobs: int,
+    cache_dir: Path,
+    timing_path: Path | None,
+    validator_root: Path | None = None,
+    validator_display_root: Path | None = None,
+    staged_paths_file: Path | None = None,
+    validator_ids: Sequence[str] = (),
+    excluded_validator_ids: Sequence[str] = (),
+    validator_paths: Sequence[Path] = (),
+) -> list[str]:
+    """Build one pytest command for selected ordinary and validator items."""
+    profile = SUITE_TEST_PROFILES.get(suite, "full")
+    if task_id in {"tests:shared", "combined"}:
+        pytest_args = _suite_pytest_args(profile, verbose=verbose, jobs=jobs)
+        if profile == "full":
+            for test in sorted(PERFORMANCE_TESTS):
+                pytest_args.extend(["--deselect", test])
+        targets = list(PORTABILITY_TESTS) if profile == "portability" else []
+    elif task_id == "validators":
+        pytest_args = _pytest_args(verbose=verbose, jobs=jobs)
+        targets = [str(path) for path in validator_paths]
+    elif task_id == "tests:performance":
+        pytest_args = _pytest_args(verbose=verbose, jobs=1)
+        targets = sorted(PERFORMANCE_TESTS)
+    else:
+        raise ValueError(f"not a pytest phase: {task_id}")
+    if task_id in {"combined", "validators"}:
+        if (
+            validator_root is None
+            or validator_display_root is None
+            or staged_paths_file is None
+        ):
+            raise ValueError("validator collection requires one repository view")
+        pytest_args.extend(
+            [
+                "--officina-run-validators",
+                "--officina-validator-root",
+                str(validator_root),
+                "--officina-validator-display-root",
+                str(validator_display_root),
+                "--officina-staged-paths-file",
+                str(staged_paths_file),
+            ]
+        )
+        for validator_id in validator_ids:
+            pytest_args.extend(["--officina-validator", validator_id])
+        for validator_id in excluded_validator_ids:
+            pytest_args.extend(["--officina-exclude-validator", validator_id])
+    pytest_args.extend(["-o", f"cache_dir={cache_dir}"])
+    if timing_path is not None:
+        pytest_args.append(f"--junitxml={timing_path}")
+    plugin_args = (
+        ["-p", "officina.repository_checks"]
+        if task_id in {"combined", "validators"}
+        else []
+    )
+    return [
+        sys.executable,
+        "-m",
+        "pytest",
+        *plugin_args,
+        *pytest_args,
+        *targets,
+    ]
+
+
+def _capture_working_staged_paths(repo_root: Path) -> tuple[str, ...]:
+    """Return one immutable staged-path list for working-view validators."""
+    return _validator_snapshot.capture_staged_paths(repo_root)
+
+
+def _write_phase_timing_report(
     output_path: Path,
     *,
     repo_root: Path,
-    tasks: Sequence[CheckTask],
-    results: dict[int, tuple[int, float]],
-    timing_paths: dict[int, Path],
+    results: Sequence[_PhaseResult],
 ) -> None:
-    """Write normalized task and per-file timings for one runner invocation.
-
-    Intent
-    ------
-    Preserve task wall time, pytest-attributed time, source-file time, outcomes,
-    and execution ownership in one machine-readable artifact.
-
-    Rationale
-    ---------
-    Comparisons need both scheduler-visible task cost and item-visible file cost;
-    keeping them separate prevents unattributed collection or process startup from
-    being assigned misleadingly to a test file.
-
-    Pseudocode
-    ----------
-    - for completed_task in tasks:
-      - set task_timing = parsed JUnit artifact when available
-      - set task_record = exit wall pytest time and file count
-      - set file_records = prior records plus normalized task files
-    - set timing_output = versioned sorted JSON report written at invocation completion
-
-    Wraps
-    -----
-    - none
-
-    InstantiationsFromRepo
-    ----------------------
-    ._read_junit_timing:
-      why:
-        constructs: "Builds normalized per-file records from each task artifact."
-    """
-
+    """Write timing schema version 1 from completed ordered phases."""
     task_records: list[dict[str, object]] = []
     file_records: list[dict[str, object]] = []
-    for index, task in enumerate(tasks):
-        if index not in results:
-            continue
-        exit_code, wall_seconds = results[index]
+    for result in results:
         pytest_seconds = 0.0
         files: list[dict[str, object]] = []
-        timing_path = timing_paths.get(index)
-        if timing_path is not None and timing_path.is_file():
+        if result.timing_path is not None and result.timing_path.is_file():
             pytest_seconds, files = _read_junit_timing(
-                timing_path,
+                result.timing_path,
                 repo_root=repo_root,
-                task_id=task.id,
+                task_id=result.task_id,
             )
         task_records.append(
             {
-                "task_id": task.id,
-                "exit_code": exit_code,
-                "wall_seconds": wall_seconds,
+                "task_id": result.task_id,
+                "exit_code": result.exit_code,
+                "wall_seconds": result.wall_seconds,
                 "pytest_seconds": pytest_seconds,
                 "file_count": len(files),
             }
@@ -1830,63 +1486,6 @@ def _write_timing_report(
     )
 
 
-def _run_test_suite(name: str, *, verbose: bool, jobs: int = 1) -> int:
-    """Execute every pytest process group for one ordinary-test suite.
-
-    Intent
-    ------
-    Run resolved working-tree tests under the central repository check command.
-
-    Rationale
-    ---------
-    Process grouping remains internal instead of requiring another executable.
-
-    Pseudocode
-    ----------
-    - for group in resolved execution groups:
-      - set group_jobs = requested jobs for shared groups or one for isolated groups
-      - set pytest_arguments = arguments for named suite and group jobs
-      - set group_status = pytest subprocess status
-      - if group_status is nonzero:
-        - return group_status
-    - return success
-
-    Wraps
-    -----
-    - none
-
-    CallsFromRepo
-    -------------
-    ._resolve_suite:
-      why:
-        computes: "Supplies the exact pytest targets for the named suite."
-    ._execution_groups:
-      why:
-        computes: "Supplies the process-isolated grouping of resolved targets."
-
-    InstantiationsFromRepo
-    ----------------------
-    ._suite_pytest_args:
-      why:
-        constructs: "Builds the pytest arguments used by each process group."
-    """
-    for group in _execution_groups(_resolve_suite(name)):
-        group_jobs = jobs if len(group) > 1 else 1
-        pytest_args = _suite_pytest_args(
-            name,
-            verbose=verbose,
-            jobs=group_jobs,
-        )
-        completed = subprocess.run(
-            [sys.executable, "-m", "pytest", *pytest_args, *group],
-            cwd=REPO_ROOT,
-            check=False,
-        )
-        if completed.returncode:
-            return completed.returncode
-    return 0
-
-
 def run_suite(
     repo_root: Path,
     suite: str,
@@ -1895,8 +1494,10 @@ def run_suite(
     jobs: int = 1,
     validator_ids: Sequence[str] = (),
     excluded_validator_ids: Sequence[str] = (),
-    pooled: bool | None = None,
     timing_output: Path | None = None,
+    task_id: str | None = None,
+    task_cache_dir: Path | None = None,
+    repository_view: str = "auto",
 ) -> int:
     """Run one named repository verification suite.
 
@@ -1906,18 +1507,16 @@ def run_suite(
 
     Rationale
     ---------
-    Validators retain staged-mirror semantics and ordinary tests retain working-tree
-    semantics while callers use one stable suite-selection interface.
+    Every invocation selects one repository view, and combined suites give
+    validator and ordinary items to the same pytest-xdist scheduler.
 
     Pseudocode
     ----------
-    - set phases = ordered phases for requested suite
-    - for phase in phases:
-      - set command = canonical validator or ordinary-test command
-      - set phase_status = executed command status
-      - if phase_status is nonzero:
-        - return phase_status
-    - return success after every phase passes
+    - set repository_view = staged precommit or requested working/staged view
+    - set pooled_items = selected validators plus ordinary tests
+    - run pooled_items in one pytest-xdist command without fail-fast
+    - run selected performance thresholds serially even after pooled failures
+    - return the aggregate status
 
     Wraps
     -----
@@ -1931,21 +1530,15 @@ def run_suite(
 
     InstantiationsFromRepo
     ----------------------
-    .officina._validator_snapshot.run_all:
+    .officina._validator_snapshot.staged_repository_view:
       why:
-        constructs: "Builds validator findings from the captured staged repository."
-    .officina._validator_snapshot._render_findings:
+        constructs: "Builds the one staged tree used by every collected item."
+    ._pytest_phase_command:
       why:
-        constructs: "Builds the validator phase status from canonical findings."
-    ._run_test_suite:
+        constructs: "Builds the sole pytest command for a selected test phase."
+    ._run_process:
       why:
-        constructs: "Builds the ordinary-test phase status for the selected suite."
-    ._build_check_tasks:
-      why:
-        constructs: "Builds the unified validator-and-test scheduling queue."
-    ._run_check_tasks:
-      why:
-        constructs: "Builds the pooled suite status from task process results."
+        constructs: "Runs one streaming pytest process with interruption cleanup."
     """
 
     root = Path(repo_root).resolve()
@@ -1953,56 +1546,119 @@ def run_suite(
         raise RuntimeError(
             "pytest-xdist is required for --jobs > 1; install pytest-xdist"
         )
-    if pooled is not False or timing_output is not None:
-        tasks = _build_check_tasks(
-            root,
-            suite,
-            verbose=verbose,
-            jobs=jobs,
-            validator_ids=validator_ids,
-            excluded_validator_ids=excluded_validator_ids,
+    phases = SUITE_PHASES[suite]
+    if task_id is not None:
+        if task_id not in phases:
+            raise ValueError(f"task {task_id!r} is not part of suite {suite!r}")
+        phases = (task_id,)
+    if task_cache_dir is not None and task_id is None:
+        raise ValueError("task_cache_dir requires task_id")
+    runs = _suite_runs(suite, task_id)
+    resolved_view = _resolve_repository_view(suite, repository_view)
+    completed: list[_PhaseResult] = []
+    final_status = 0
+    with tempfile.TemporaryDirectory(prefix="officina-checks-") as temp_dir:
+        artifact_root = Path(temp_dir)
+        execution_root = root
+        view_manager = None
+        includes_validators = any(
+            run in {"combined", "validators"} for run in runs
         )
-        return _run_check_tasks(
-            tasks,
-            repo_root=root,
-            jobs=jobs,
-            pooled=pooled is not False,
-            timing_output=timing_output,
+        try:
+            if includes_validators and resolved_view == "staged":
+                view_manager = _validator_snapshot.staged_repository_view(root)
+                prepared_view = view_manager.__enter__()
+                execution_root = prepared_view.root
+                staged_paths = prepared_view.staged_paths
+            elif includes_validators:
+                staged_paths = _capture_working_staged_paths(root)
+            else:
+                staged_paths = ()
+        except _validator_snapshot.ValidatorRunnerError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        staged_paths_file = artifact_root / "staged-paths.json"
+        staged_paths_file.write_text(
+            json.dumps(list(staged_paths)),
+            encoding="utf-8",
         )
-    for phase, test_suite in SUITE_PHASES[suite]:
-        if phase == "validators":
-            tier_exclusions = (
-                ()
-                if validator_ids
-                else SUITE_EXCLUDED_VALIDATORS.get(suite, ())
-            )
-            effective_exclusions = tuple(
-                dict.fromkeys((*tier_exclusions, *excluded_validator_ids))
-            )
-            try:
-                results = _validator_snapshot.run_all(
-                    repo_root=root,
-                    validator_ids=validator_ids,
-                    excluded_validator_ids=effective_exclusions,
+        tier_exclusions = (
+            () if validator_ids else SUITE_EXCLUDED_VALIDATORS.get(suite, ())
+        )
+        effective_exclusions = tuple(
+            dict.fromkeys((*tier_exclusions, *excluded_validator_ids))
+        )
+        try:
+            for index, phase in enumerate(runs):
+                report_task_id = (
+                    "tests:shared" if phase == "combined" else phase
                 )
-            except _validator_snapshot.ValidatorRunnerError as exc:
-                print(f"error: {exc}", file=sys.stderr)
-                return 2
-            status = _validator_snapshot._render_findings(results)
-        else:
-            previous_root = globals()["REPO_ROOT"]
-            globals()["REPO_ROOT"] = root
-            try:
-                status = _run_test_suite(
-                    str(test_suite),
+                timing_path = (
+                    artifact_root / "timings" / f"{index:04d}.xml"
+                    if timing_output is not None
+                    else None
+                )
+                if timing_path is not None:
+                    timing_path.parent.mkdir(parents=True, exist_ok=True)
+                print(f"START task={report_task_id}")
+                start = time.monotonic()
+                cache_dir = (
+                    Path(task_cache_dir)
+                    if task_cache_dir is not None
+                    else artifact_root / "pytest-cache" / f"{index:04d}"
+                )
+                validator_paths: tuple[Path, ...] = ()
+                if phase == "validators":
+                    validator_paths = tuple(
+                        path
+                        for _validator_id, path in (
+                            _validator_snapshot._selected_validator_paths(
+                                execution_root,
+                                validator_ids or None,
+                                effective_exclusions,
+                            )
+                        )
+                    )
+                command = _pytest_phase_command(
+                    suite,
+                    phase,
                     verbose=verbose,
                     jobs=jobs,
+                    cache_dir=cache_dir,
+                    timing_path=timing_path,
+                    validator_root=execution_root,
+                    validator_display_root=root,
+                    staged_paths_file=staged_paths_file,
+                    validator_ids=validator_ids,
+                    excluded_validator_ids=effective_exclusions,
+                    validator_paths=validator_paths,
                 )
-            finally:
-                globals()["REPO_ROOT"] = previous_root
-        if status:
-            return status
-    return 0
+                status = _run_process(
+                    command,
+                    cwd=execution_root,
+                    task_id=report_task_id,
+                )
+                duration = time.monotonic() - start
+                completed.append(
+                    _PhaseResult(report_task_id, status, duration, timing_path)
+                )
+                print(
+                    f"== {report_task_id} == exit={status} "
+                    f"duration_seconds={duration:.2f}"
+                )
+                final_status = max(final_status, status)
+                if timing_output is not None:
+                    _write_phase_timing_report(
+                        timing_output,
+                        repo_root=execution_root,
+                        results=completed,
+                    )
+                if status == 130:
+                    break
+        finally:
+            if view_manager is not None:
+                view_manager.__exit__(None, None, None)
+    return final_status
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -2042,9 +1698,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     .officina._validator_snapshot._write_tracked_result:
       why:
         constructs: "Builds the private staged-child result payload and status."
-    ._run_validator_task:
-      why:
-        constructs: "Builds the private validator-worker process status."
     """
 
     parser = argparse.ArgumentParser(description=__doc__)
@@ -2083,15 +1736,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         type=int,
         default=_default_jobs(),
         help=(
-            "Use a total budget of N pytest workers across selected checks "
+            "Use N pytest-xdist workers for the pooled validator and test run "
             "(default: two thirds of logical CPUs)."
         ),
     )
     parser.add_argument(
-        "--internal-run-validators",
-        action="store_true",
+        "--repository-view",
+        choices=("auto", "working", "staged"),
+        default="auto",
+        help=(
+            "Choose one source tree for validators and tests together; auto uses "
+            "the staged index for precommit and the working tree otherwise."
+        ),
+    )
+    parser.add_argument(
+        "--task-id",
+        choices=("validators", "tests:shared", "tests:performance"),
         help=argparse.SUPPRESS,
     )
+    parser.add_argument("--task-cache-dir", type=Path, help=argparse.SUPPRESS)
     parser.add_argument(
         "--timing-output",
         type=Path,
@@ -2109,14 +1772,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error(
             "--jobs > 1 requires pytest-xdist; install with `pip install pytest-xdist`"
         )
-    if args.internal_run_validators:
-        validator_arguments: dict[str, object] = {
-            "validator_ids": tuple(args.validator_ids or ()),
-            "excluded_validator_ids": tuple(args.excluded_validator_ids or ()),
-        }
-        if args.timing_output is not None:
-            validator_arguments["timing_output"] = args.timing_output
-        return _run_validator_task(args.repo_root, **validator_arguments)
+    if args.task_cache_dir is not None and args.task_id is None:
+        parser.error("--task-cache-dir requires --task-id")
+    if args.task_id is not None and args.task_id not in SUITE_PHASES[args.suite]:
+        parser.error(
+            f"task {args.task_id!r} is not part of suite {args.suite!r}"
+        )
     if args.tracked_root is not None:
         if (
             args.display_root is None
@@ -2150,6 +1811,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         jobs=args.jobs,
         validator_ids=args.validator_ids or (),
         excluded_validator_ids=args.excluded_validator_ids or (),
-        pooled=not args.sequential,
         timing_output=args.timing_output,
+        task_id=args.task_id,
+        task_cache_dir=args.task_cache_dir,
+        repository_view=args.repository_view,
     )

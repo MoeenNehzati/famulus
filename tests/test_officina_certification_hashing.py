@@ -17,8 +17,8 @@ from officina.common.certification_hashing import (
     resolve_certification_basis_paths,
 )
 from test_support.git_repository import GitTestRepository
-from v4_certification_fixtures import create_v4_repository
-from v5_blueprint_fixtures import copy_v5_fixture_tree
+from test_support.v4_certification_fixtures import create_v4_repository
+from test_support.v5_blueprint_fixtures import copy_v5_fixture_tree
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]

@@ -195,15 +195,7 @@ class ScriptEntryPointTests(unittest.TestCase):
             )
             self.assertEqual(delete_res.returncode, 0, delete_res.stderr)
 
-            list_after_delete = subprocess.run(
-                [sys.executable, str(tmpdir / "_read_llm_file.py"), "--list", "scratch"],
-                text=True,
-                capture_output=True,
-                env=env,
-                check=False,
-            )
-            self.assertEqual(list_after_delete.returncode, 0, list_after_delete.stderr)
-            self.assertNotIn("roundtrip.txt", list_after_delete.stdout.splitlines())
+            self.assertFalse((store / relpath).exists())
 
             missing_read = subprocess.run(
                 [sys.executable, str(tmpdir / "_read_llm_file.py"), relpath],
@@ -273,15 +265,7 @@ class ScriptEntryPointTests(unittest.TestCase):
             )
             self.assertEqual(delete_res.returncode, 0, delete_res.stderr)
 
-            post_list = subprocess.run(
-                [sys.executable, str(tmpdir / "_ls_llm.py"), "llm:scratch"],
-                text=True,
-                capture_output=True,
-                env=env,
-                check=False,
-            )
-            self.assertEqual(post_list.returncode, 0, post_list.stderr)
-            self.assertNotIn("roundtrip.txt", post_list.stdout.splitlines())
+            self.assertFalse((store / "scratch" / "roundtrip.txt").exists())
 
 
 if __name__ == "__main__":

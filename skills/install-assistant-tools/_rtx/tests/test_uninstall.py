@@ -12,8 +12,9 @@ import io
 import json
 import subprocess
 import sys
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from test_support.git_repository import GitTestRepository
@@ -185,10 +186,9 @@ def make_installed_state(root: Path) -> dict[str, Path]:
     }
 
 
-def run_uninstall(paths: dict[str, Path], *extra: str, check: bool = True):
-    cmd = [
-        sys.executable,
-        str(UNINSTALL),
+def _uninstall_args(paths: dict[str, Path], *extra: str) -> list[str]:
+    """Build the shared CLI argument contract used by both invocation modes."""
+    return [
         "--home", str(paths["home"]),
         "--claude-home", str(paths["claude_home"]),
         "--codex-home", str(paths["codex_home"]),
@@ -202,6 +202,43 @@ def run_uninstall(paths: dict[str, Path], *extra: str, check: bool = True):
         "--no-git-hooks",
         *extra,
     ]
+
+
+def run_uninstall(paths: dict[str, Path], *extra: str, check: bool = True):
+    """Exercise parser/main on a fresh tree; the report test retains executable smoke coverage."""
+    args = _uninstall_args(paths, *extra)
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    with (
+        patch.object(sys, "argv", [str(UNINSTALL), *args]),
+        redirect_stdout(stdout),
+        redirect_stderr(stderr),
+    ):
+        try:
+            uninstall.main()
+        except SystemExit as exc:
+            returncode = int(exc.code or 0)
+        else:
+            returncode = 0
+
+    result = subprocess.CompletedProcess(
+        [sys.executable, str(UNINSTALL), *args],
+        returncode,
+        stdout.getvalue(),
+        stderr.getvalue(),
+    )
+    if check and returncode != 0:
+        raise AssertionError(
+            f"uninstall exited {returncode}\n"
+            f"stdout:\n{result.stdout}\n"
+            f"stderr:\n{result.stderr}"
+        )
+    return result
+
+
+def run_uninstall_subprocess(paths: dict[str, Path], *extra: str, check: bool = True):
+    """Run the installed entrypoint in a fresh interpreter for smoke coverage."""
+    cmd = [sys.executable, str(UNINSTALL), *_uninstall_args(paths, *extra)]
     env = python_test_env(paths["home"].parent)
     env["HOME"] = str(paths["home"])
     return run_command(cmd, env=env, check=check)
@@ -295,12 +332,7 @@ def test_removes_managed_claude_hook_preserving_user_hook(installed):
 
 
 def _seed_legacy_config_dir_entry(installed: dict[str, Path]) -> Path:
-    """Simulate a pre-migration manifest entry: cloud-files config.json used
-    to be written (and manifest-tracked) by install-assistant-tools itself.
-    That responsibility has moved to cloud-files/_rtx/_ensure_oauth.py, but
-    uninstall.py must still correctly purge/leave entries recorded by an
-    older install for users upgrading across the migration.
-    """
+    """Add an old tracked cloud-files config entry so uninstall preserves or purges it correctly."""
     config_dir = installed["home"] / ".config" / "cloud-files"
     config_dir.mkdir(parents=True, exist_ok=True)
     (config_dir / "config.json").write_text('{"remote_llm_root": "assistant"}\n', encoding="utf-8")
@@ -337,7 +369,7 @@ def test_dry_run_changes_nothing(installed):
 
 
 def test_report_lists_actions(installed):
-    result = run_uninstall(installed)
+    result = run_uninstall_subprocess(installed)
     assert "Uninstall report:" in result.stdout
     assert "[removed]" in result.stdout
 

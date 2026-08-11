@@ -14,7 +14,7 @@ from officina.common.blueprint_inventory import (
     iter_blueprints,
 )
 from test_support.git_repository import GitTestRepository
-from v5_blueprint_fixtures import copy_v5_fixture_tree
+from test_support.v5_blueprint_fixtures import copy_v5_fixture_tree
 
 
 _V5_INVENTORY_FIXTURES = (

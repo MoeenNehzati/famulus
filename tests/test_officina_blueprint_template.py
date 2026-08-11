@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from copy import deepcopy
+from functools import cache
 from pathlib import Path
 
 import yaml
@@ -15,12 +16,21 @@ from officina.common.blueprint_graph import (  # noqa: E402
     load_repository_blueprint_graph,
 )
 from officina.common.blueprint_template import (  # noqa: E402
-    load_schema,
+    load_schema as _load_schema,
     refresh_blueprint_documentation,
     render_blueprint_template,
     schema_validator,
     write_regenerated_skill_blueprint,
 )
+
+
+@cache
+def load_schema(path: str | Path):
+    """Reuse read-only schema bundles by their exact requested path."""
+
+    return _load_schema(path)
+
+
 def _schema() -> dict:
     return {
         "$schema": "http://json-schema.org/draft-07/schema#",

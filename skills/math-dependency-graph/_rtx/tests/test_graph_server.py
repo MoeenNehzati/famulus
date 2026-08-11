@@ -9,10 +9,7 @@ TEST_ROOT = Path(__file__).resolve().parents[4] / "tests"
 if str(TEST_ROOT) not in sys.path:
     sys.path.insert(0, str(TEST_ROOT))
 
-from test_support.runtime_module import load_runtime_module
-
-
-server = load_runtime_module(Path(__file__).resolve().parents[1] / "_graph_server.py")
+from .. import _graph_server as server
 
 
 @pytest.mark.parametrize("port", ["0", "65536"])

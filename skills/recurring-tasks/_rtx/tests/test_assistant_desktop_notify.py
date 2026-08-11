@@ -7,14 +7,14 @@ import tempfile
 from pathlib import Path
 from unittest import mock
 
-from test_support.runtime_module import load_runtime_module
+from .. import _assistant_desktop_notify as desktop_notify
 
 SKILL_DIR = Path(__file__).parent.parent
 SCRIPT = SKILL_DIR / "_assistant_desktop_notify.py"
 
 
 def _load():
-    return load_runtime_module(SCRIPT)
+    return desktop_notify
 
 
 # ── build_legacy_message ───────────────────────────────────────────────────────

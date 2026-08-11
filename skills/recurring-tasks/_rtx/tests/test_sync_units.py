@@ -4,7 +4,7 @@ import tempfile, os
 import sys
 from pathlib import Path, PurePosixPath
 
-from test_support.runtime_module import load_runtime_module
+from .. import _unit_writer as unit_writer
 
 SKILL_DIR = Path(__file__).parent.parent
 REPO_SRC = SKILL_DIR.parents[2] / "src"
@@ -12,16 +12,14 @@ SCRIPT    = SKILL_DIR / "_unit_writer.py"
 
 
 def _load():
-    import sys
-    sys.path.insert(0, str(REPO_SRC))
-    return load_runtime_module(SCRIPT)
+    return unit_writer
 
 
 def test_skill_dir_is_absolute_when_entrypoint_uses_a_logical_path(monkeypatch):
     monkeypatch.syspath_prepend(str(REPO_SRC))
     monkeypatch.chdir(SKILL_DIR)
 
-    namespace = vars(load_runtime_module(SCRIPT))
+    namespace = vars(unit_writer)
 
     assert namespace["SKILL_DIR"] == SKILL_DIR.resolve()
 

@@ -683,3 +683,348 @@ whole-suite comparison verifies it.
 
 - `skills/initialize-tdd/assets/python/tests/test_logger.py` — project scaffold template.
 - `references/standards/validate_standard_v6.py` — standalone implementation exercised by canonical tests and validators.
+
+## Three-pass skill-suite refactor ledger
+
+On 2026-08-10, all 73 Python test files in the 16 canonical
+`skills/*/_rtx/tests` suites completed the independent ledger workflow in
+`docs/test-refactor-ledger/`: Pass 1 explanation, rotated Pass 2 adjudication,
+third-agent tie-break where needed, and fresh-agent Pass 3 verification.
+
+Final states were 10 `optimized`, 38 `already-efficient`, 25
+`no-safe-change`, and 0 `blocked`. The accepted changes use pytest-owned
+immutable fixtures/copy factories, in-process CLI fixtures with retained real
+executable smoke, direct persisted-state assertions after real mutations, and
+`tmp_path` ownership. Required subprocess, concurrency, timeout, platform, and
+persistence boundaries remain recorded per file in the ledger. Pass 3 closed
+73/73 entries after one P04 temporary-path fix and one docstring-policy fix
+round.
+
+Canonical observations after staging only the ledger-approved paths:
+
+- precommit, live default eight-job budget: passed in 143.62s; a separate green
+  observation passed in 54.92s, so the spread is treated as run noise rather
+  than a performance result;
+- precommit, one-job budget: passed in 206.70s with average effective CPU use
+  of 0.99 cores;
+- full, live default eight-job budget: diagnostic exit 1 in 89.22s; validators
+  and every changed skill task passed, while unrelated native-keyring,
+  dirty-worktree, browser-projection, and two live GitHub marketplace checks
+  failed;
+- full, one-job budget: diagnostic exit 1 in 163.38s; the clean-tree contract
+  failed and fail-fast stopped admission before the later skill tasks.
+
+These are single observations, not paired performance claims. The full-suite
+gate remains blocked by pre-existing/environmental conditions outside the ten
+approved skill-test refactors.
+
+<!-- BEGIN single-pool-scheduler-diagnostic-2026-08-10 -->
+## Single-pool scheduler diagnostic (2026-08-10)
+
+The live `benchmark-command.py` interface requires `--log`. The first literal
+loadgroup command from the scheduler plan omitted that required option and
+exited 2 before pytest ran. The matched measurements therefore added only the
+required, mode-specific log paths:
+
+```bash
+scripts/benchmark-command.py --output /tmp/single-pool-loadgroup-small.json \
+  --log /tmp/single-pool-loadgroup-small.log -- \
+  pytest -o pythonpath=src -q -n 6 --dist loadgroup \
+  tests/test_visualization_browser.py \
+  tests/test_visualization_containment_edges_browser.py \
+  tests/test_visualization_inspector_and_bezier_browser.py \
+  tests/test_visualization_projection_arrangements_browser.py \
+  tests/test_visualization_projection_browser.py \
+  tests/test_repository_test_checks.py \
+  tests/test_benchmark_test_suite.py
+
+scripts/benchmark-command.py --output /tmp/single-pool-worksteal-small.json \
+  --log /tmp/single-pool-worksteal-small.log -- \
+  pytest -o pythonpath=src -q -n 6 --dist worksteal \
+  tests/test_visualization_browser.py \
+  tests/test_visualization_containment_edges_browser.py \
+  tests/test_visualization_inspector_and_bezier_browser.py \
+  tests/test_visualization_projection_arrangements_browser.py \
+  tests/test_visualization_projection_browser.py \
+  tests/test_repository_test_checks.py \
+  tests/test_benchmark_test_suite.py
+```
+
+Both samples returned 0 and passed 71 items: 31 browser tests and 40 focused
+ordinary tests, each executed once. The loadgroup artifact reports 34.402s wall
+time, 0.837 average effective cores, and 6.356 peak cores. The worksteal
+artifact reports 36.090s wall time, 0.835 average effective cores, and 6.256
+peak cores. On this single matched observation, loadgroup was 1.688s faster;
+that passed the plan's wall-time gate for the diagnostic full run.
+
+The canonical full diagnostic command was:
+
+```bash
+scripts/benchmark-test-suite.py --repo <repo> --suite full \
+  --output /tmp/full-single-pool-loadgroup.json --runs 1 --cache cold --jobs 8 \
+  --no-prime --measure-resources
+```
+
+Its JSON artifact is `/tmp/full-single-pool-loadgroup.json`, and its task log is
+`/tmp/full-single-pool-loadgroup-artifacts/run-1.log`. The run returned 1 in
+99.306s, with 5.219 whole-run average effective cores and a 10.727-core peak.
+The log contains one `START task=tests:shared slots=6`, no `tests:browser`, and
+a 74.88s shared-task duration. As an operational outer-clock proxy, elapsed
+samples from 0 through 74.88s average 6.219 effective cores (465.52 sampled
+CPU-seconds over 74.851 seconds). This is not an exact active-window metric:
+the outer sampling clock starts before `tests:shared`, and the log does not
+timestamp `START`, so exact active-window utilization is unavailable from this
+artifact.
+
+Exact failures were:
+
+- `tests/test_nested_module_migration.py::TestNestedModuleMigrationContract::test_repository_inventory_matches_reviewed_v6_cutover_surface`
+  because its clean committed-tree assertion observed the dirty worktree;
+- `skills/install-assistant-tools/_rtx/tests/test_claude_github_install.py::ClaudeGithubInstallTests::test_claude_plugin_marketplace_install_from_github`;
+- `skills/install-assistant-tools/_rtx/tests/test_codex_github_install.py::CodexGithubInstallTests::test_codex_plugin_install_from_github`.
+
+Both marketplace-install failures reported the installed bundle missing
+`semantic-integration`. This dirty, failing full run is diagnostic evidence,
+not a certified whole-suite improvement.
+<!-- END single-pool-scheduler-diagnostic-2026-08-10 -->
+
+<!-- BEGIN unified-xdist-pool-acceptance-2026-08-10 -->
+## Unified xdist-pool acceptance (2026-08-10)
+
+The acceptance comparison resolved the live `full` targets once, collected all
+targets together, and compared that node-ID set with the union of collections
+from the previous execution boundary: one non-`_rtx` group plus each of the 16
+current `_rtx` roots collected separately. All 18 collection subprocesses
+exited 0. The unified set and separate-group union each contained 2,516 node
+IDs, with no missing or extra IDs. This same-source-state comparison supersedes
+the earlier 2,513-item handoff snapshot; it does not count the intentionally
+removed obsolete runner-policy case as an inventory loss.
+
+The exact inline comparator command was:
+
+```bash
+python3 -c "exec('''import hashlib
+import re
+import subprocess
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path.cwd() / \"src\"))
+from officina.repository_checks import _resolve_suite
+def fingerprint(args): return hashlib.sha256(subprocess.check_output([\"git\", *args])).hexdigest()
+def collect(group):
+ result=subprocess.run([sys.executable,\"-m\",\"pytest\",\"--collect-only\",\"-q\",*group],capture_output=True,text=True,check=False)
+ nodes={line.strip() for line in result.stdout.splitlines() if \"::\" in line and not line.startswith(\"=\")}
+ match=re.search(r\"([0-9]+) tests? collected\",result.stdout)
+ return result.returncode,nodes,int(match.group(1)) if match else None
+targets=_resolve_suite(\"full\")
+groups=[[target for target in targets if \"/_rtx/tests\" not in target]]+[[target] for target in sorted(target for target in targets if \"/_rtx/tests\" in target)]
+before=(fingerprint([\"diff\",\"--binary\"]),fingerprint([\"diff\",\"--cached\",\"--binary\"]))
+ustatus,unified,ureported=collect(targets)
+union=set(); statuses=[]; reported=[]
+for group in groups:
+ status,nodes,count=collect(group); statuses.append(status); reported.append(count); union.update(nodes)
+after=(fingerprint([\"diff\",\"--binary\"]),fingerprint([\"diff\",\"--cached\",\"--binary\"]))
+print(f\"unified_exit={ustatus} unified_node_ids={len(unified)} unified_reported={ureported}\")
+print(f\"legacy_groups={len(groups)} child_exits={statuses} child_reported_total={sum(reported)} union_node_ids={len(union)}\")
+print(f\"missing={len(union-unified)} extra={len(unified-union)} exact_equal={unified==union}\")
+print(f\"fingerprints_unchanged={before==after}\")
+raise SystemExit(0 if ustatus==0 and not any(statuses) and unified==union and len(unified)==ureported and before==after else 1)
+''')"
+```
+
+Focused collection, runtime-loader, runner-policy, browser-policy,
+benchmark-harness, and fixture-probe verification passed 50 tests in 0.80s:
+
+```bash
+python3 -m pytest -q tests/test_unified_pytest_collection.py \
+  tests/test_runtime_module_test_support.py \
+  tests/test_repository_test_checks.py \
+  tests/test_browser_parallel_policy.py \
+  tests/test_benchmark_test_suite.py tests/test_fixture_probe.py
+```
+
+After the docstring corrections, the final focused command added
+`tests/test_docstrings_validator.py` and passed 56 tests in 2.02s:
+
+```bash
+python3 -m pytest -q tests/test_unified_pytest_collection.py \
+  tests/test_runtime_module_test_support.py \
+  tests/test_repository_test_checks.py \
+  tests/test_browser_parallel_policy.py \
+  tests/test_benchmark_test_suite.py tests/test_fixture_probe.py \
+  tests/test_docstrings_validator.py
+```
+
+The canonical runner observations were measured through
+`scripts/benchmark-command.py` so wall time and the unabridged pytest transcript
+were retained. The precommit observations are green. The full observations are
+diagnostic because known non-scheduling failures prevent the separate
+performance task from being admitted after `tests:shared` fails.
+
+```bash
+scripts/benchmark-command.py --output /tmp/task4-precommit-j1.json \
+  --log /tmp/task4-precommit-j1.log -- \
+  python3 repo_checks.py --suite precommit --jobs 1
+
+scripts/benchmark-command.py --output /tmp/task4-precommit-j8.json \
+  --log /tmp/task4-precommit-j8.log -- \
+  python3 repo_checks.py --suite precommit --jobs 8
+
+scripts/benchmark-command.py --output /tmp/task4-full-j1.json \
+  --log /tmp/task4-full-j1.log -- \
+  python3 repo_checks.py --suite full --jobs 1
+
+scripts/benchmark-command.py --output /tmp/task4-full-j8.json \
+  --log /tmp/task4-full-j8.log -- \
+  python3 repo_checks.py --suite full --jobs 8
+```
+
+| Suite | Jobs | Exit | Wall (s) | Pytest result |
+| --- | ---: | ---: | ---: | --- |
+| `precommit` | 1 | 0 | 138.528 | 2,174 passed, 16 skipped, 168 deselected |
+| `precommit` | 8 | 0 | 51.584 | 2,174 passed, 16 skipped; xdist omitted the 168 configured deselections from its summary |
+| `full` | 1 | 1 | 229.521 | 3 failed, 2,488 passed, 19 skipped, 6 deselected |
+| `full` | 8 | 1 | 92.764 | 4 failed, 2,487 passed, 19 skipped; xdist omitted the 6 configured performance deselections from its summary |
+
+Both full runs reproduced the dirty-tree inventory assertion and the Claude
+and Codex GitHub package checks whose installed bundles omit
+`semantic-integration`. The eight-job run additionally reproduced the known
+mixed-load-sensitive browser assertion
+`test_collapse_aggregates_without_marking_dependency_indirect`; the serial run
+did not. No assertion or product code was changed to mask these failures.
+
+One cold observation and one immediately following warm observation used the
+canonical full-suite harness and the same eight-job policy:
+
+```bash
+scripts/benchmark-test-suite.py --repo <repo> --suite full \
+  --output /tmp/task4-full-j8-cold.json --runs 1 --cache cold --jobs 8 \
+  --no-prime --measure-resources
+
+scripts/benchmark-test-suite.py --repo <repo> --suite full \
+  --output /tmp/task4-full-j8-warm.json --runs 1 --cache warm --jobs 8 \
+  --no-prime --measure-resources
+```
+
+The cold run populated the harness-owned cache; the warm run immediately reused
+it. `--no-prime` was necessary because an ordinary warm prime aborts on the
+known full-suite failures before recording a measurement. Both observations
+were diagnostic exit 1, reproduced only the three non-scheduling failures, and
+left both staged and tracked-worktree fingerprints unchanged.
+
+| Cache | Wall (s) | Whole-run avg. cores | `tests:shared` active avg. cores | Peak cores | Tail: last quarter | Tail: last 10s | Tail: last 5s |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| cold | 87.171 | 5.522 | 6.236 | 10.808 | 4.113 | 3.133 | 1.769 |
+| warm | 84.236 | 5.510 | 6.204 | 10.101 | 4.103 | 3.173 | 1.981 |
+
+The active and tail values are sampled outer-clock proxies, not exact scheduler
+timestamps. Under the eight-slot budget, the one-slot validator must finish
+before the eight-slot `tests:shared` task can start. The proxy therefore aligns
+the shared window after the logged validator duration and ends it after the
+logged shared-task duration: 68.97s cold and 66.62s warm. Sampled CPU-seconds
+divided by sampled seconds gives the active averages. Tail columns apply the
+same calculation to the last quarter, 10 seconds, and 5 seconds of that window;
+the last-quarter values are about 51% of the eight worker slots and fall below
+two effective cores in the final five seconds.
+
+These red observations describe timing and utilization only. They do not
+certify a whole-suite speed improvement, and the cold/warm wall-time difference
+is not a performance claim. Green matched full-suite observations are still
+required for one.
+<!-- END unified-xdist-pool-acceptance-2026-08-10 -->
+
+<!-- BEGIN native-pytest-runner-acceptance-2026-08-10 -->
+## Native pytest runner acceptance (2026-08-10)
+
+This section records the superseded first native-runner revision. Its serial
+validator phase was subsequently replaced by the combined collection described
+in the next section.
+
+The custom runtime-module loader and outer `CheckTask` scheduler were removed.
+The canonical route is now a fixed sequence of staged validators, one native
+pytest-xdist functional phase, and a serial full-only performance phase. Pytest
+configuration owns discovery; the benchmark harness selects a phase only by
+invoking the selected checkout's hidden runner CLI.
+
+Focused runner, discovery, validator, benchmark, browser-policy, fixture-probe,
+and docstring verification passed 85 tests. The 21 former loader-consumer files
+passed 347 tests serially in 7.13s and under `-n 8 --dist loadgroup` in 2.55s.
+A live benchmark smoke of `tests:performance` passed in 1.43s and preserved
+benchmark schema version 3 plus both checkout fingerprints.
+
+Exact old/candidate collection used each checkout's own execution boundaries.
+The portability set is identical. Other suites have a net ten additional
+candidate nodes: 28 added behavior/policy nodes and 18 removed loader or
+scheduler-internal nodes. No product-behavior node was removed.
+
+| Suite | Old nodes | Candidate nodes | Added | Removed |
+| --- | ---: | ---: | ---: | ---: |
+| `tests` | 2,501 | 2,511 | 28 | 18 |
+| `precommit` | 2,175 | 2,185 | 28 | 18 |
+| `pre-push` | 2,452 | 2,462 | 28 | 18 |
+| `portability` | 7 | 7 | 0 | 0 |
+| `full` | 2,501 | 2,511 | 28 | 18 |
+
+Matched host-side precommit measurements used the same laptop power state,
+eight requested workers, warm-cache prime, three measured observations, and
+process-tree resource sampling. Both sides were green.
+
+| Runner | Wall samples (s) | Median wall (s) | Median avg. cores | Median peak cores |
+| --- | --- | ---: | ---: | ---: |
+| committed `832fee9` | 64.39, 60.53, 64.32 | 64.32 | 5.719 | 9.053 |
+| native candidate | 58.64, 58.30, 72.13 | 58.64 | 5.716 | 9.217 |
+
+The candidate median is 5.68s, or 8.8%, lower. This is a useful observed
+improvement but not a high-confidence speedup claim: the candidate includes a
+72.13s outlier and only three observations. Core utilization did not materially
+change. Within the candidate functional phase, sampled median utilization was
+5.95 effective cores; it fell to 4.73 in the last quarter, 4.22 in the last ten
+seconds, and 2.72 in the last five seconds. The remaining utilization gap is
+therefore mainly functional-test workload and tail imbalance, not an outer-pool
+limit.
+
+One candidate precommit acceptance at `--jobs 1` passed in 156.10s with 0.988
+average effective cores. One full diagnostic per side was non-green for known
+non-runner conditions and is not a speed claim: committed `832fee9` took 94.31s
+at 5.074 average cores with two marketplace-package failures; the candidate
+took 84.67s at 5.522 average cores with those failures plus the dirty-tree
+inventory assertion.
+
+Artifacts:
+
+- `/tmp/native-runner-old-precommit.json`
+- `/tmp/native-runner-new-precommit.json`
+- `/tmp/native-runner-new-precommit-j1.json`
+- `/tmp/native-runner-old-full.json`
+- `/tmp/native-runner-new-full.json`
+- `/tmp/native-runner-old-nodes.json`
+- `/tmp/native-runner-new-nodes.json`
+<!-- END native-pytest-runner-acceptance-2026-08-10 -->
+
+<!-- BEGIN unified-validator-test-collection-2026-08-10 -->
+## Unified validator and test collection (2026-08-10)
+
+The serial validator gate was removed after review showed that validator modules
+already produce standard pytest items. Combined suites now choose one repository
+view, add the custom validator items to pytest's default test collection, and
+send both kinds through one xdist queue. The runner does not use `-x` and does
+not cancel ordinary tests after validator findings.
+
+Repository-view policy is explicit: precommit uses the staged mirror; manual
+validators, tests, pre-push, portability, and full use the working tree; CI uses
+its clean checkout. A single pytest process never mixes staged and working-tree
+imports. Performance thresholds remain serial and run after pooled failures.
+
+Focused runner, snapshot, entrypoint, benchmark, cross-platform, and
+platform-neutral coverage passed 134 tests in 17.06s. A real two-worker smoke
+executed one validator item and one ordinary test item together: 2 passed in
+0.86s.
+
+One host-side eight-worker working-view precommit diagnostic took 38.81s at
+7.733 average effective cores and 12.354 peak effective cores. It was non-green
+because working-view validators intentionally saw existing untracked Git logs,
+runtime logs, and build artifacts; those files are absent from the canonical
+staged precommit view. The utilization observation is valid for scheduler
+diagnosis but is not a green-suite speed claim. Artifact:
+`/tmp/unified-view-precommit-v2.json`.
+<!-- END unified-validator-test-collection-2026-08-10 -->

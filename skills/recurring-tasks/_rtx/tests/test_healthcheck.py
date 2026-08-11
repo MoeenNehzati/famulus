@@ -8,18 +8,34 @@ import time
 from pathlib import Path
 from unittest import mock
 
-from test_support.runtime_module import load_runtime_module
+import pytest
+
+from .. import _healthcheck_probe as healthcheck
 
 SKILL_DIR = Path(__file__).parent.parent
 REPO_SRC = SKILL_DIR.parents[2] / "src"
 SCRIPT = SKILL_DIR / "_healthcheck_probe.py"
 
 
+@pytest.fixture(autouse=True)
+def restore_runtime_paths():
+    """Restore shared module paths after every healthcheck test."""
+    original = (
+        healthcheck.LOG_DIR,
+        healthcheck.HEALTHCHECK_LOG,
+        healthcheck.JOBS_FILE,
+    )
+    yield
+    (
+        healthcheck.LOG_DIR,
+        healthcheck.HEALTHCHECK_LOG,
+        healthcheck.JOBS_FILE,
+    ) = original
+
+
 def _load(tmp_dir: Path):
-    """Load a fresh copy of the module with its log/jobs paths redirected
-    into tmp_dir, so tests never touch this skill's real logs/jobs.yaml."""
-    sys.path.insert(0, str(REPO_SRC))
-    mod = load_runtime_module(SCRIPT)
+    """Redirect the package runtime into this test's temporary directory."""
+    mod = healthcheck
     mod.LOG_DIR = tmp_dir / "logs"
     mod.HEALTHCHECK_LOG = mod.LOG_DIR / "healthcheck" / "run.log"
     mod.JOBS_FILE = tmp_dir / "jobs.yaml"

@@ -1,12 +1,16 @@
 """Integration tests for lists.py subcommands. All tests operate on local temp files."""
+import io
 import os
 import subprocess
 import sys
 import time
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 import yaml
+from .. import _yaml_store as yaml_store
 
 LISTS_PY = Path(__file__).parent.parent / "_yaml_store.py"
 REPO_SRC = Path(__file__).resolve().parents[4] / "src"
@@ -58,10 +62,32 @@ categories:
 
 
 def run(args: list[str], stdin: str | None = None) -> subprocess.CompletedProcess:
+    """Invoke the runtime interface in-process with isolated standard streams."""
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    with (
+        patch.object(sys, "stdin", io.StringIO(stdin or "")),
+        redirect_stdout(stdout),
+        redirect_stderr(stderr),
+    ):
+        try:
+            returncode = yaml_store.main(args)
+        except SystemExit as exc:
+            returncode = int(exc.code or 0)
+    return subprocess.CompletedProcess(
+        [sys.executable, str(LISTS_PY), *args],
+        returncode,
+        stdout.getvalue(),
+        stderr.getvalue(),
+    )
+
+
+def run_script_smoke(args: list[str], stdin: str | None = None) -> subprocess.CompletedProcess:
+    """Retain executable/import/environment coverage for `_yaml_store.py`."""
     env = os.environ.copy()
     env["PYTHONPATH"] = os.pathsep.join([str(REPO_SRC), str(SCRIPTS_DIR)])
     return subprocess.run(
-        [sys.executable, str(LISTS_PY)] + args,
+        [sys.executable, str(LISTS_PY), *args],
         input=stdin,
         capture_output=True,
         text=True,
@@ -89,6 +115,13 @@ def test_init_creates_valid_yaml(tmp_path):
     # than an empty list (feedback item 23) -- see
     # test_init_seeds_default_categories_for_todo_schema for the details.
     assert data["categories"]
+
+
+def test_init_executable_smoke(tmp_path):
+    f = tmp_path / "script-smoke.yaml"
+    result = run_script_smoke(["init", str(f), "--schema", "todo"])
+    assert result.returncode == 0, result.stderr
+    assert yaml.safe_load(f.read_text())["schema"] == "todo"
 
 
 def test_init_custom_name(tmp_path):
@@ -137,9 +170,7 @@ _WORK_SUBCATEGORY_NAMES = {"Replies", "Payments", "Reading", "Writing", "Tasks",
 
 
 def _assert_default_domain_categories(data: dict) -> None:
-    """Shared assertion for the todo/triage default-category seed: both
-    "Personal" and "Work" domains present, each with its exact required
-    subcategory set."""
+    """Assert the seeded Personal and Work category structures."""
     category_names = [c["name"] for c in data["categories"]]
     assert "Personal" in category_names
     assert "Work" in category_names
@@ -811,15 +842,7 @@ def test_update_rejects_stale_expected_revision(todo_file):
 
 
 def test_update_rejects_stale_revision_from_a_prior_completed_write(todo_file):
-    """Sequential regression test (writer1 fully completes before writer2
-    starts -- NOT a concurrency test): a writer whose --expected-revision no
-    longer matches because a previous, already-finished write moved the
-    revision on must be rejected, not silently clobber that prior write. The
-    file on disk must be exactly the first writer's result -- no
-    partial/corrupt write from the rejected second attempt. For an actual
-    concurrent race that exercises the lock (two processes alive at the same
-    time, racing through the check-to-write gap), see
-    test_update_concurrent_writers_are_serialized_by_the_lock below."""
+    """Reject a sequential write that uses the revision before a completed update."""
     writer1 = run(
         ["update", str(todo_file), "--expected-revision", "0"],
         stdin="- id: a3f2b9\n  state: complete\n",
@@ -847,21 +870,7 @@ def test_update_rejects_stale_revision_from_a_prior_completed_write(todo_file):
 
 
 def test_update_concurrent_writers_are_serialized_by_the_lock(todo_file):
-    """Genuinely concurrent race, not sequential: writer1 is started and,
-    while it is INSIDE its lock-held critical section -- past check_revision,
-    before its save (via the LIST_MANAGER_TEST_RACE_DELAY test hook) --
-    writer2 is started without waiting for writer1 to finish. Both are alive
-    at the same time and both target --expected-revision 0, so their
-    check-then-write windows would genuinely interleave if the mutation were
-    only an optimistic check with no lock (writer2's load+check could happen
-    before writer1's save, and both would then pass the check and both
-    write). This is exactly the gap a bare revision check narrows but does
-    not close.
-
-    Proves the file lock closes it: writer2's load_yaml() cannot even begin
-    until writer1 releases the lock (i.e. has already saved), so writer2
-    always observes the post-writer1 revision and is correctly rejected --
-    it can never race through and clobber writer1's write."""
+    """Verify two local writer processes serialize on the file lock."""
     env = os.environ.copy()
     env["PYTHONPATH"] = os.pathsep.join([str(REPO_SRC), str(SCRIPTS_DIR)])
     env["LIST_MANAGER_TEST_RACE_DELAY"] = "1.0"
@@ -915,14 +924,7 @@ def test_update_concurrent_writers_are_serialized_by_the_lock(todo_file):
 # famulus-skip: category=platform-contract; reason=this test holds the lock sidecar directly via fcntl.flock, which only exists on os.name == "posix"; alternate=file_lock()'s os.name == "nt" branch shares the same bounded-retry-with-deadline structure exercised here, just via msvcrt instead of fcntl
 @pytest.mark.skipif(os.name != "posix", reason="holds the lock directly via fcntl.flock")
 def test_update_lock_acquisition_times_out_with_clear_error(todo_file):
-    """A HUNG-but-alive lock holder (stuck network call, deadlock -- not a
-    crash, which releases the OS lock automatically) must not make a later
-    invocation stall silently forever. Hold the `<file>.lock` sidecar
-    exclusively (simulating a stuck writer that has acquired the lock but
-    never releases it) and confirm a second acquisition attempt -- using
-    LIST_MANAGER_TEST_LOCK_TIMEOUT_S to shrink the real 30s default down to
-    well under a second -- fails fast with a clear, actionable error instead
-    of hanging."""
+    """Verify a blocked local file lock fails within the configured timeout."""
     import fcntl
 
     lock_path = todo_file.with_name(todo_file.name + ".lock")
@@ -1005,21 +1007,7 @@ def test_delete_rejects_stale_expected_revision_no_write(todo_file):
 # second upload silently clobbers the first's change.
 
 def test_cloud_concurrent_writers_are_serialized_across_processes(tmp_path):
-    """Genuinely concurrent race (not a sequential simulation): two real
-    subprocess invocations of lists.py --cloud race against a shared fake
-    "cloud" backend (LIST_MANAGER_TEST_CLOUD_DIR, see _cloud_transport.py's
-    _test_cloud_dir()), each still going through its own private
-    tempfile.mkdtemp() download path exactly as production does. writer1 is
-    held inside its critical section (past check_revision, before its save --
-    via LIST_MANAGER_TEST_RACE_DELAY) while writer2, with no delay, is
-    started and races to download+mutate+upload the same cloud list before
-    writer1 finishes.
-
-    Proves the fix serializes the two: writer2 cannot even begin its download
-    until writer1's whole download-mutate-upload sequence has completed, so
-    it always observes the post-writer1 revision and is correctly rejected --
-    it never gets a window to race through and clobber writer1's write.
-    """
+    """Verify cloud-writer processes serialize the complete mutation cycle."""
     cloud_dir = tmp_path / "cloud"
     cloud_dir.mkdir()
     (cloud_dir / "todo.yaml").write_text(TODO_YAML)

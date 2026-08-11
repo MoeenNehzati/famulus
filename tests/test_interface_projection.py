@@ -8,6 +8,7 @@ import yaml
 from officina.common.blueprint_graph import (
     HelperEdge,
     InterfaceExport,
+    RepositoryBlueprintGraph,
     load_repository_blueprint_graph,
     resolve_export,
 )
@@ -34,7 +35,7 @@ from officina.common.interface_projection import (
     project_consumer_interfaces,
     standalone_export_size,
 )
-from v5_blueprint_fixtures import copy_v5_fixture_tree
+from test_support.v5_blueprint_fixtures import copy_v5_fixture_tree
 
 
 V5_SCHEMA_ROOT = (
@@ -48,6 +49,13 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 V5_AUTHORIZATION_FIXTURE = (
     Path(__file__).parent / "fixtures" / "blueprint_v5" / "authorization"
 )
+
+
+@pytest.fixture(scope="module")
+def live_repository_graph() -> RepositoryBlueprintGraph:
+    """Share the immutable live graph across repository contract checks."""
+
+    return _canonical_load_repository_blueprint_graph(REPO_ROOT)
 
 
 class _PassingView:
@@ -451,7 +459,9 @@ def test_v5_projection_derives_facade_contract_from_terminal_child(
     assert certification.checked == ["demo.interface.execute"]
 
 
-def test_pdf_to_markdown_direct_export_projects_optional_output_directory() -> None:
+def test_pdf_to_markdown_direct_export_projects_optional_output_directory(
+    live_repository_graph: RepositoryBlueprintGraph,
+) -> None:
     public_interface = (
         "pdf-to-markdown._rtx.interface.scripts-fetch-arxiv-source"
     )
@@ -459,7 +469,7 @@ def test_pdf_to_markdown_direct_export_projects_optional_output_directory() -> N
         "pdf-to-markdown._rtx.source.rtx-source-fetcher.interface."
         "scripts-fetch-arxiv-source"
     )
-    graph = _canonical_load_repository_blueprint_graph(REPO_ROOT)
+    graph = live_repository_graph
 
     module, source, export = resolve_export(graph, public_interface, 1)
     projection = project_consumer_interfaces(
@@ -491,23 +501,30 @@ def test_pdf_to_markdown_direct_export_projects_optional_output_directory() -> N
     ]
 
 
-def test_recurring_tasks_direct_job_edit_exports_project_complete_usage() -> None:
+def test_recurring_tasks_direct_job_edit_exports_project_complete_usage(
+    live_repository_graph: RepositoryBlueprintGraph,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     operations = ("disable", "enable")
     public_interfaces = [
         f"recurring-tasks._rtx.interface.scripts-{operation}"
         for operation in operations
     ]
-    graph = _canonical_load_repository_blueprint_graph(REPO_ROOT)
+    graph = live_repository_graph
     gateway = graph.nodes["recurring-tasks.source.gateway"]
     declared_uses = gateway.declaration["uses_interfaces"]
     assert all(
         {"interface": public_interface, "version": 1} in declared_uses
         for public_interface in public_interfaces
     )
-    gateway.declaration["uses_interfaces"] = [
-        {"interface": public_interface, "version": 1}
-        for public_interface in public_interfaces
-    ]
+    monkeypatch.setitem(
+        gateway.declaration,
+        "uses_interfaces",
+        [
+            {"interface": public_interface, "version": 1}
+            for public_interface in public_interfaces
+        ],
+    )
     projection = project_consumer_interfaces(
         graph,
         "recurring-tasks.source.gateway",
@@ -551,8 +568,10 @@ def test_recurring_tasks_direct_job_edit_exports_project_complete_usage() -> Non
         ]
 
 
-def test_live_list_read_and_graph_server_exports_match_their_cli_contracts() -> None:
-    graph = _canonical_load_repository_blueprint_graph(REPO_ROOT)
+def test_live_list_read_and_graph_server_exports_match_their_cli_contracts(
+    live_repository_graph: RepositoryBlueprintGraph,
+) -> None:
+    graph = live_repository_graph
 
     list_export = graph.exports["list-manager._rtx.interface.read-list"]
     assert list_export.declaration["usage"] == "<file> [filters] [--sort FIELD]"

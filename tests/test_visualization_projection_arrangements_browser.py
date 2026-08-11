@@ -1,11 +1,13 @@
 """Disposable browser matrix for graph node-removal projection behavior."""
 
+import json
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 
 import pytest
+pytestmark = pytest.mark.xdist_group("browser")
 
 from officina.common.visualization.elk_html_renderer import build_html_with_elk
 
@@ -98,13 +100,21 @@ def payload(entities):
     }
 
 
-def run_case(name, entities, assertions):
+def run_case(name, entities, assertions, *, readiness_delays=None):
     if CHROME is None:
         # famulus-skip: category=capability-unavailable; reason=Google Chrome is not installed; alternate=projection policy tests cover transformation semantics without a browser
         pytest.skip("google-chrome unavailable")
-    helpers = r'''
+    # Optional gates make a missing-readiness wait fail deterministically without
+    # extending the browser deadline used by the real assertion helper.
+    helpers = (
+        "const nodeReadyAt = new Map(Object.entries("
+        + json.dumps(readiness_delays or {})
+        + ").map(([id, delayMs]) => [id, Date.now() + delayMs]));\n"
+        + r'''
       const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-      const node = id => document.querySelector(`[data-node-id="${id}"]`);
+      const node = id => Date.now() >= (nodeReadyAt.get(id) || 0)
+        ? document.querySelector(`[data-node-id="${id}"]`)
+        : null;
       const paths = (source, target, type = null) => Array.from(document.querySelectorAll(
         `.edge-path[data-source-node-id="${source}"][data-target-node-id="${target}"]`
       )).filter(path => path.style.display !== "none" && (!type || path.dataset.edgeType === type));
@@ -146,7 +156,7 @@ def run_case(name, entities, assertions):
         row.click();
         await delay(70);
       };
-    '''
+    ''')
     script = f'''<script>
     window.addEventListener("load", () => setTimeout(async () => {{
       try {{
@@ -406,9 +416,11 @@ def test_collapse_aggregates_without_marking_dependency_indirect():
         entity("B", 2, node_type="module"),
         entity("B.s", 3, container="B"),
     ], '''
-      node("A").dispatchEvent(new MouseEvent("dblclick", {bubbles: true, altKey: true}));
+      const containerA = await waitForNode("A");
+      containerA.dispatchEvent(new MouseEvent("dblclick", {bubbles: true, altKey: true}));
       await delay(250);
-      node("B").dispatchEvent(new MouseEvent("dblclick", {bubbles: true, altKey: true}));
+      const containerB = await waitForNode("B");
+      containerB.dispatchEvent(new MouseEvent("dblclick", {bubbles: true, altKey: true}));
       await delay(250);
       const aggregate = one("A", "B", "direct");
       check(aggregate && aggregate.dataset.aggregate === "true", "collapsed containers lack aggregate edge");
@@ -420,7 +432,7 @@ def test_collapse_aggregates_without_marking_dependency_indirect():
       check(aggregate.style.filter.includes("edge-presentation-filter"), "hidden-detail summary edge lacks halo");
       check(aggregatePresentation.querySelector(".edge-presentation-outline"), "hidden-detail summary legend lacks halo");
       check(!one("A", "B", "indirect"), "collapse incorrectly created indirect dependency");
-    ''')
+    ''', readiness_delays={"A": 150, "B": 600})
 
 
 def test_visible_projection_target_does_not_replace_hidden_interface():

@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 from unittest import mock
 
-from test_support.runtime_module import load_runtime_module
+from .. import _job_control as job_control
 
 SKILL_DIR = Path(__file__).parent.parent
 REPO_SRC = SKILL_DIR.parents[2] / "src"
@@ -20,8 +20,7 @@ SCRIPT = SKILL_DIR / "_job_control.py"
 
 
 def _load():
-    sys.path.insert(0, str(REPO_SRC))
-    return load_runtime_module(SCRIPT)
+    return job_control
 
 
 # ── load_jobs / save_jobs ──────────────────────────────────────────────────────
@@ -415,10 +414,7 @@ def test_cli_unknown_command_is_rejected():
     result = subprocess.run(
         [
             sys.executable,
-            "-m",
-            "test_support.runtime_module",
             str(SCRIPT),
-            "--",
             "not-a-real-command",
         ],
         capture_output=True, text=True,
@@ -431,8 +427,6 @@ def test_cli_requires_a_subcommand():
     result = subprocess.run(
         [
             sys.executable,
-            "-m",
-            "test_support.runtime_module",
             str(SCRIPT),
         ],
         capture_output=True, text=True,

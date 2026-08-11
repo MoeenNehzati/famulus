@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from functools import cache
 from pathlib import Path
 
 import jsonschema
@@ -34,11 +35,17 @@ REQUIRED_RULES = {
 }
 
 
+@cache
 def _load(name: str) -> dict:
+    """Load each immutable frozen-v4 schema once."""
+
     return json.loads((SCHEMA_ROOT / name).read_text(encoding="utf-8"))
 
 
+@cache
 def _load_v5(name: str) -> dict:
+    """Load each immutable frozen-v5 schema once."""
+
     return json.loads((V5_SCHEMA_ROOT / name).read_text(encoding="utf-8"))
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from functools import cache
 import json
 from pathlib import Path
 
@@ -16,7 +17,6 @@ from officina.common.blueprint_graph import (
 )
 from officina.common.blueprint_template import load_schema
 from officina.common.configured_schema import ConfiguredSchemaError
-import yaml
 
 from officina.common.configured_schema import configured_validator, load_configuration
 
@@ -26,7 +26,10 @@ BLUEPRINT_ROOT = REPO_ROOT / "references" / "blueprint"
 CONFIG_PATH = BLUEPRINT_ROOT / "config.yaml"
 
 
+@cache
 def _validator():
+    """Build the immutable configured catalog validator once."""
+
     return configured_validator(
         BLUEPRINT_ROOT / "module.schema.json",
         config_path=CONFIG_PATH,

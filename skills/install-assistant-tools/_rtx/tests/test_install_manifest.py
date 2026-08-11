@@ -7,14 +7,18 @@ fallback cannot know about.
 """
 from __future__ import annotations
 
+import io
 import json
+import subprocess
 import sys
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from test_support.git_repository import GitTestRepository
 
-from install_test_utils import REPO_ROOT, can_create_symlink, python_test_env, run_command
+from install_test_utils import REPO_ROOT, can_create_symlink
 
 SCRIPTS = REPO_ROOT / "skills" / "install-assistant-tools" / "_rtx"
 sys.path.insert(0, str(SCRIPTS))
@@ -23,6 +27,10 @@ if __package__ and __package__.count('.') >= 1:
     from .._state_record import Manifest, manifest_path
 else:
     from _state_record import Manifest, manifest_path  # noqa: E402
+if __package__ and __package__.count('.') >= 1:
+    from .. import _install_uninstall as uninstall
+else:
+    import _install_uninstall as uninstall  # noqa: E402
 
 UNINSTALL = SCRIPTS / "_install_uninstall.py"
 
@@ -71,12 +79,7 @@ def test_manifest_path_is_under_home_state(tmp_path: Path):
 # ── Install-side recording ────────────────────────────────────────────────────
 
 def _make_repo_for_manifest_tests(tmp_path: Path) -> Path:
-    """Throwaway repo with the .githooks/llmhooks layout dev_link.run() needs.
-
-    In-process run() MUST get a throwaway repo_root: dev_link now also writes
-    into the repo (git hooksPath) and imports llmhooks from it — the default
-    (or the real live repo) must never be used here.
-    """
+    """Build the disposable hooks/llmhooks repo required by dev_link without touching the live checkout."""
     repo = tmp_path / "repo"
     GitTestRepository.create(repo)
     (repo / "skills").mkdir(parents=True)
@@ -176,10 +179,8 @@ def test_rc_block_recorded(tmp_path: Path):
 # ── Uninstall replay ──────────────────────────────────────────────────────────
 
 def run_uninstall_with_home(home: Path, *extra: str, check: bool = True):
-    env = python_test_env(home.parent)
-    env["HOME"] = str(home)
-    cmd = [
-        sys.executable, str(UNINSTALL),
+    """Exercise manifest replay through real parser/main while the companion suite retains executable smoke coverage."""
+    args = [
         "--home", str(home),
         "--claude-home", str(home / ".claude"),
         "--codex-home", str(home / ".codex"),
@@ -188,7 +189,33 @@ def run_uninstall_with_home(home: Path, *extra: str, check: bool = True):
         "--no-system-shell-rc", "--no-pip", "--no-git-hooks",
         *extra,
     ]
-    return run_command(cmd, env=env, check=check)
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    with (
+        patch.object(sys, "argv", [str(UNINSTALL), *args]),
+        redirect_stdout(stdout),
+        redirect_stderr(stderr),
+    ):
+        try:
+            uninstall.main()
+        except SystemExit as exc:
+            returncode = int(exc.code or 0)
+        else:
+            returncode = 0
+
+    result = subprocess.CompletedProcess(
+        [sys.executable, str(UNINSTALL), *args],
+        returncode,
+        stdout.getvalue(),
+        stderr.getvalue(),
+    )
+    if check and returncode != 0:
+        raise AssertionError(
+            f"uninstall exited {returncode}\n"
+            f"stdout:\n{result.stdout}\n"
+            f"stderr:\n{result.stderr}"
+        )
+    return result
 
 
 def test_uninstall_replays_manifest_removing_stale_root_symlink(tmp_path: Path):
@@ -271,12 +298,7 @@ def test_uninstall_keeps_failed_entries_in_manifest(tmp_path: Path):
 
 
 def test_full_install_writes_manifest(tmp_path: Path):
-    """scaffold.run() + launchers.run() record their side effects in the
-    home-scoped manifest (replacing setup_tools.run(), now deleted).
-
-    Hook installation (json_hook_commands) is dev_link.py's job — see
-    test_dev_link.py / test_dev_link_hooks.py for that coverage.
-    """
+    """Verify scaffold and launchers record home-scoped side effects; dev_link owns hook-install coverage."""
     if __package__ and __package__.count('.') >= 1:
         from .. import _install_scaffold as scaffold
     else:

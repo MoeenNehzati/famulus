@@ -5,9 +5,6 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
-
-
 MODULE_PATH = Path(__file__).resolve().parents[1] / "scripts" / "benchmark-test-suite.py"
 
 
@@ -36,27 +33,11 @@ def test_full_suite_resolves_to_root_runner(tmp_path: Path) -> None:
     assert slots is None
 
 
-def test_task_resolution_uses_selected_root_and_task_cache(
-    monkeypatch, tmp_path: Path
+def test_task_resolution_uses_selected_root_runner_and_task_cache(
+    tmp_path: Path,
 ) -> None:
     benchmark = load_module()
     task_cache = tmp_path / "task-cache"
-
-    class FakeChecks:
-        CheckTask = SimpleNamespace
-
-        @staticmethod
-        def _build_check_tasks(*_args, **_kwargs):
-            return [
-                SimpleNamespace(
-                    id="tests:shared",
-                    argv=(sys.executable, "-m", "pytest", "-q", "tests"),
-                    slots=6,
-                ),
-                SimpleNamespace(id="tests:isolated", argv=("check",), slots=1),
-            ]
-
-    monkeypatch.setattr(benchmark, "_load_repository_checks", lambda _root: FakeChecks)
 
     command, slots = benchmark.resolve_benchmark_command(
         tmp_path, "full", 8, "tests:shared", task_cache
@@ -64,22 +45,23 @@ def test_task_resolution_uses_selected_root_and_task_cache(
 
     assert command == [
         sys.executable,
-        "-m",
-        "pytest",
-        "-o",
-        f"cache_dir={task_cache.resolve()}",
-        "-q",
-        "tests",
+        str(tmp_path / "repo_checks.py"),
+        "--suite",
+        "full",
+        "--jobs",
+        "8",
+        "--task-id",
+        "tests:shared",
+        "--task-cache-dir",
+        str(task_cache.resolve()),
     ]
-    assert slots == 6
+    assert slots == 8
     assert benchmark.resolve_benchmark_command(
-        tmp_path, "full", 8, "tests:isolated", task_cache
+        tmp_path, "full", 8, "tests:performance", task_cache
     )[1] == 1
-    with pytest.raises(ValueError, match="tests:shared.*tests:isolated"):
-        benchmark.resolve_benchmark_command(tmp_path, "full", 8, "unknown")
 
 
-def test_task_resolution_loads_live_selected_root_without_officina_leakage(
+def test_task_resolution_does_not_import_the_selected_checkout(
     tmp_path: Path,
 ) -> None:
     benchmark = load_module()
@@ -89,16 +71,21 @@ def test_task_resolution_loads_live_selected_root_without_officina_leakage(
         if name == "officina" or name.startswith("officina.")
     }
 
+    modules_before = dict(sys.modules)
+    path_before = list(sys.path)
+
     command, slots = benchmark.resolve_benchmark_command(
-        Path(__file__).resolve().parents[1],
+        tmp_path,
         "full",
         8,
         "tests:shared",
         tmp_path / "task-cache",
     )
 
-    assert command[:3] == [sys.executable, "-m", "pytest"]
-    assert slots == 6
+    assert command[:2] == [sys.executable, str(tmp_path / "repo_checks.py")]
+    assert slots == 8
+    assert sys.modules == modules_before
+    assert sys.path == path_before
     assert {
         name: module
         for name, module in sys.modules.items()
@@ -106,40 +93,7 @@ def test_task_resolution_loads_live_selected_root_without_officina_leakage(
     } == before
 
 
-def test_selected_root_load_restores_all_module_and_path_mappings(tmp_path: Path) -> None:
-    benchmark = load_module()
-    source = tmp_path / "src" / "officina"
-    source.mkdir(parents=True)
-    (source / "__init__.py").write_text("", encoding="utf-8")
-    (tmp_path / "src" / "selected_root_sentinel.py").write_text(
-        "VALUE = 'selected-root'\n", encoding="utf-8"
-    )
-    (source / "repository_checks.py").write_text(
-        "from dataclasses import dataclass\n"
-        "import selected_root_sentinel\n"
-        "@dataclass(frozen=True)\n"
-        "class CheckTask:\n"
-        "    id: str\n"
-        "    argv: tuple[str, ...]\n"
-        "    slots: int\n"
-        "def _build_check_tasks(*_args, **_kwargs):\n"
-        "    return [CheckTask('selected', ('check',), 1)]\n",
-        encoding="utf-8",
-    )
-    modules_before = dict(sys.modules)
-    path_before = list(sys.path)
-
-    command, slots = benchmark.resolve_benchmark_command(
-        tmp_path, "full", 1, "selected"
-    )
-
-    assert command == ["check"]
-    assert slots == 1
-    assert sys.modules == modules_before
-    assert sys.path == path_before
-
-
-def test_direct_task_observations_receive_fresh_cache_per_invocation(
+def test_warm_task_observations_share_cache_only_within_one_invocation(
     monkeypatch, tmp_path: Path
 ) -> None:
     benchmark = load_module()
@@ -168,7 +122,9 @@ def test_direct_task_observations_receive_fresh_cache_per_invocation(
     second = benchmark.run_benchmarks(tmp_path, "full", tmp_path / "second.json", 1, "warm", 8, "tests:shared", prime=False)
 
     assert len(resolved_caches) == 4
-    assert len({path.resolve() for path in resolved_caches}) == 4
+    assert len({path.resolve() for path in resolved_caches}) == 2
+    assert len({path.resolve() for path in resolved_caches[:3]}) == 1
+    assert resolved_caches[3].resolve() != resolved_caches[0].resolve()
     assert all("cache_dir=" in command[4] for command in commands)
     assert len(first["task_cache_paths"]) == 3
     assert len(second["task_cache_paths"]) == 1
