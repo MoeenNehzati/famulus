@@ -47,8 +47,8 @@ authorization; the implementation must fail closed until it is resolved.
 3. The skill runtime dispatches, validates, stores, and summarizes evidence; it
    does not reimplement repository suites.
 4. Every conclusion is bound to an exact candidate and an exact attempt.
-5. Classification reruns use a fresh environment at the same commit, never the
-   contaminated failed checkout.
+5. Classification reruns use a separate fresh hosted job/VM at the same commit,
+   never the contaminated failed host or checkout.
 6. Incident evidence constrains the allowed repair paths and any expansion is
    explicit and recorded.
 7. CI green is evidence, not Git authority. Commit, push, and integration remain
@@ -73,25 +73,51 @@ detail.
 - The instruction node invokes runtime interfaces through `dispatcher`; it
   never imports or executes runtime implementation files directly.
 
-### Non-discoverable Python child node: `ci-debug-rtx`
+### Non-discoverable Python child node: `ci-debug._rtx`
 
 - Node marker: `skills/ci-debug/_rtx/blueprint.yaml`.
-- Behavioral sources are separated by responsibility:
-  `incident_state`, `remote_dispatch`, `remote_inspection`, and
-  `artifact_collection`.
+- Its exact v6 source and interface graph is:
+
+  | Behavioral source | Source interface | Exported interface |
+  | --- | --- | --- |
+  | `ci-debug._rtx.source.rtx-incident-state` | `ci-debug._rtx.source.rtx-incident-state.interface.incident-state` | `ci-debug._rtx.interface.incident-state` v1 |
+  | `ci-debug._rtx.source.rtx-remote-dispatch` | `ci-debug._rtx.source.rtx-remote-dispatch.interface.remote-dispatch` | `ci-debug._rtx.interface.remote-dispatch` v1 |
+  | `ci-debug._rtx.source.rtx-remote-inspection` | `ci-debug._rtx.source.rtx-remote-inspection.interface.remote-inspection` | `ci-debug._rtx.interface.remote-inspection` v1 |
+  | `ci-debug._rtx.source.rtx-artifact-collection` | `ci-debug._rtx.source.rtx-artifact-collection.interface.artifact-collection` | `ci-debug._rtx.interface.artifact-collection` v1 |
+
 - Each source declares complete arguments, outputs, effects, sensitivity,
   process binding, dependencies, and outcomes.
-- Each behavior is exposed through a narrow registered machine interface.
+- Each child export sets `allow_all_modules: false` and
+  `allowed_callers: [ci-debug]`.
 - Cross-module calls use declared `uses_interfaces` and
   `PythonMachineInterface.dispatch()`, never the dispatcher CLI or direct
   imports of another node's internals.
-- The parent declares exact `namespace_exports` with an `only` surface and
-  per-interface access. The runtime is not independently discoverable.
+- The parent's `_rtx` namespace export is version 1. Its `surface.only` map
+  contains exactly the four exported interfaces above at version 1. Each
+  `interface_access` entry sets `allow_all_modules: false` and
+  `allowed_callers: []`. The runtime is not independently discoverable.
 
-The runtime reuses authorized common interfaces rather than duplicating their
-behavior: atomic files, repository-path validation, and read-only Git
-provenance. Any required common-node export change is part of the implementation
-scope and certification dependency graph.
+The runtime reuses authorized common interfaces rather than duplicating them.
+The exact `uses_interfaces` edges are:
+
+- `rtx-incident-state` uses `common.interface.atomic-files` and
+  `common.interface.repository-paths`;
+- `rtx-remote-dispatch` uses `common.interface.repository-paths` and a new
+  `common.interface.git-provenance-read`;
+- `rtx-remote-inspection` uses `common.interface.git-provenance-read`; and
+- `rtx-artifact-collection` uses `common.interface.atomic-files` and
+  `common.interface.repository-paths`.
+
+The common blueprint must authorize `ci-debug._rtx` on those exact interfaces.
+The existing `common.interface.git-provenance` is too broad because it includes
+Git execution and materialization operations. Before authorizing the runtime,
+split out `common.interface.git-provenance-read`, backed by
+`common.source.git-provenance.interface.read-only`. Its only operations resolve
+the repository root, read HEAD/tree/blob object IDs, read porcelain status,
+list diff paths between two objects, and report a boolean for HTTP(S) remote
+userinfo. It returns no raw remote URL and exposes no generic Git execution,
+ref mutation, pinning, or commit-tree materialization. These common-node changes
+are part of the implementation scope and certification dependency graph.
 
 Before authoring either node, `skill-maker` must retrieve the four applicable
 standards roots and their complete pinned closures and facts:
@@ -113,14 +139,15 @@ The canonical repository runner owns:
 - worker count, repeat count, phase ordering, and timeout policy;
 - durable, redacted phase logs, JUnit, timing data, and failure hooks;
 - Git state before execution, at the moment of failure, and after execution;
-- fresh-environment classification reruns; and
+- classification-plan generation and experiment execution inside the separate
+  hosted job/VM provisioned by the workflow; and
 - one versioned diagnostic bundle schema shared by automatic and manual runs.
 
 `src/officina/repository_checks.py` remains the underlying repository-check
 implementation where appropriate. The public runner and implementation must not
 diverge in task or diagnostic semantics.
 
-### `ci-debug-rtx`
+### `ci-debug._rtx`
 
 The deterministic runtime owns:
 
@@ -142,12 +169,22 @@ The workflow owns only:
 
 - trigger and permission declarations;
 - a reviewed mapping from typed inputs to runner invocations;
-- environment and dependency setup;
+- a dependency-free diagnostic prelude that creates a minimal bundle before
+  checkout or any other fallible setup step;
+- environment and dependency setup, with every repository-owned setup command
+  executed through a redacting capture wrapper after checkout;
 - invoking `repo_checks.py`; and
-- uploading the already redacted diagnostic bundle with `always()`.
+- finalizing and attempting to upload the already scanned diagnostic bundle
+  with `always()`.
 
 The workflow does not parse pytest failures, classify incidents, or construct a
-second test inventory.
+second test inventory. Third-party actions such as checkout and setup-python are
+fully pinned, receive no diagnostic free-form input or repository secrets, and
+run before repository code is available. Their platform-owned console output is
+outside the total-redaction guarantee and is explicitly identified as such;
+secrets must never be passed to those steps. The dependency-free prelude ensures
+that their failures still leave safe, schema-minimal evidence for the finalizer
+to publish when publication succeeds.
 
 ## Two-Stage Rollout
 
@@ -254,6 +291,7 @@ Each incident records:
 - current expected head SHA, tree SHA, workflow blob SHA, and request
   fingerprint;
 - workflow, run ID, attempt, event, actor, job ID, required-job manifest, and
+  intended artifact names, bundle-content digests, and post-upload GitHub
   artifact IDs/digests;
 - typed target, condition key, actual runner image, dependency and tool
   versions;
@@ -270,10 +308,37 @@ Incident states are `captured`, `reproducing`, `reproduced`, `unreproduced`,
 `superseded`.
 
 Attempt states are `prepared`, `queued`, `running`, `collecting`, `completed`,
-`interrupted`, and `infrastructure-failed`. Attempts transition independently;
-an interrupted monitor can resume from its persisted run ID. The implementation
-must define and test a transition/invalidation table, including the rule that a
-changed commit invalidates every downstream green state.
+`interrupted`, `cancelled-before-start`, `cancelled-running`,
+`superseded-before-start`, and `infrastructure-failed`. Classification outcome
+is a separate enum: `not-attempted`, `reproduced`, `not-reproduced`,
+`inconclusive-contaminated`, and `inconclusive-infrastructure`. Bundle
+publication is also separate: `not-produced`, `bundle-produced`,
+`bundle-publication-refused`, and `upload-failed`.
+
+The normative transition and invalidation rules are:
+
+| Event | Required prior state | Result | Invalidation/effect |
+| --- | --- | --- | --- |
+| incident capture | none | `captured` | Records failing-base identity |
+| reproducer dispatch | `captured`, `unreproduced`, or `inconclusive` | `reproducing` | Creates an independent attempt |
+| reproducer result | `reproducing` | `reproduced`, `unreproduced`, or `inconclusive` | Records separate classification outcome |
+| evidence review | `reproduced` or explicitly accepted `inconclusive` | `diagnosing` | Establishes allowed path set |
+| approved repair begins | `diagnosing` | `repairing` | Creates a new candidate identity |
+| post-repair checks pass | `repairing`, `target-green`, or `scope-green` | next green state | Bound only to the unchanged candidate |
+| any check fails | any post-repair green state | `diagnosing` or child incident | Invalidates that state and all downstream states |
+| candidate SHA/tree/workflow/input changes | any post-repair state | `repairing` | Invalidates all post-repair green states |
+| exact matrix passes | `scope-green` | `matrix-green` | Makes candidate eligible for approved integration |
+| approved integration observed | `matrix-green` | `integrated` | Records the distinct integrated identity |
+| integrated matrix passes | `integrated` | `confirmed` | Closes the incident |
+| explicit stop/replacement | any nonterminal state | `blocked`, `abandoned`, or `superseded` | No green state transfers |
+
+Attempt transitions proceed in order from `prepared` to `queued`, `running`,
+`collecting`, and `completed`, with the declared interruption, cancellation,
+supersession, or infrastructure terminal reachable only from applicable earlier
+states. A queued concurrency supersession becomes `superseded-before-start`.
+Manual cancellation of a running job becomes `cancelled-running`; its bundle
+publication is best-effort. An interrupted monitor can resume from its persisted
+run ID. Tests exhaust every allowed and rejected transition.
 
 ## Candidate and Matrix Binding
 
@@ -284,13 +349,17 @@ Every attempt is bound to:
 - normalized typed inputs and request fingerprint;
 - run ID and attempt;
 - exact required-job manifest; and
-- produced artifact IDs and digests.
+- intended artifact name and bundle-content digest, followed after upload by the
+  GitHub artifact ID and GitHub artifact digest in canonical incident state.
 
 Branch names are locators, not identities. Inspection must prove that the run's
-`headSha` equals the incident's expected SHA. The dispatcher uses a request ID
-plus exact SHA, event, actor, and time window, or a directly returned API run ID;
-it never assumes the newest run is the requested run. If repository policy
-permits, an immutable temporary tag may be used as an additional locator.
+`headSha` equals the incident's expected SHA. Every dispatch includes a
+high-entropy request ID as a typed input and projects it into `run-name`. The
+dispatcher correlates on that queryable request ID plus exact SHA, event, and
+actor, or uses a directly returned API run ID; it never assumes the newest run
+is the requested run. The artifact manifest repeats the request ID for final
+verification. If repository policy permits, an immutable temporary tag may be
+used as an additional locator.
 
 `matrix-green` requires every required job and required conditional check in the
 manifest to succeed for that exact candidate. Missing, cancelled, stale,
@@ -305,14 +374,19 @@ required matrix. Branch green never transfers implicitly to a different tree.
 
 ## Diagnostic Bundle and Redaction
 
-Automatic push/PR failures and all manual runs upload a short-retention bundle.
-The unique artifact name includes run ID, attempt, OS, task, and job identity.
-Upload uses `if-no-files-found: error`.
+Automatic push/PR failures and all manual runs attempt publication of a
+short-retention bundle. The unique intended artifact name includes run ID,
+attempt, OS, task, and job identity. Upload uses `if-no-files-found: error`.
+Queued runs superseded before starting cannot produce a bundle. Manual
+cancellation while running, prohibited-data refusal, and upload failure are
+explicit safe non-artifact outcomes rather than false preservation guarantees.
+GitHub's run/job/step conclusion remains the outer evidence for those outcomes.
 
 The versioned bundle contains:
 
 - a manifest with schema version, exact candidate and request identity, job ID,
-  artifact identity/digest, and condition key;
+  intended artifact name, condition key, and a canonical digest over the
+  payload-file digest list (excluding the manifest itself);
 - a concise summary and verification history;
 - redacted durable phase logs, JUnit XML, and timing JSON;
 - structured argv with sensitive values replaced, never a reconstructed raw
@@ -333,9 +407,12 @@ URLs and unrestricted process command lines are never collected. Process
 metadata is limited to allowlisted descendants started by the runner.
 
 Before upload, a deterministic prohibited-data scan covers the entire bundle.
-Any hit makes artifact publication fail closed and emits only a safe diagnostic
-code. Tests seed secrets through stdout, logs, JUnit, summaries, argv, and nested
-records and prove none survive.
+Any hit sets `bundle-publication-refused`, prevents upload, and emits only a safe
+diagnostic code. A successful upload returns the GitHub artifact ID and digest;
+those values are stored as outer metadata in canonical incident state and
+validated during collection. They are never embedded self-referentially in the
+artifact whose bytes determine the digest. Tests seed secrets through stdout,
+logs, JUnit, summaries, argv, and nested records and prove none survive.
 
 Workflow input values are placed in environment variables and read by Python;
 free-form values are never interpolated as `${{ inputs.selector }}` inside a
@@ -344,10 +421,13 @@ test roots. Artifact names use a selector hash, never the raw selector.
 
 ## Clean Classification Reruns
 
-After a failed attempt, the runner first finalizes and preserves evidence from
-that failed workspace. It then creates a fresh checkout or worktree at the same
-expected SHA with isolated caches and process state for classification. It never
-reruns classification in the contaminated original checkout.
+After a failed attempt, the runner first finalizes evidence from that failed
+workspace and emits a bounded classification plan. The workflow provisions a
+separate hosted job/VM, checks out the same expected SHA, uses a new cache
+namespace, downloads the failed-attempt evidence, and invokes `repo_checks.py`
+with that plan. The workflow provisions isolation; the runner still owns the
+experiment and schema. Classification never runs again on the failed host or in
+its checkout.
 
 The smallest reproducing selection depends on failure kind: a pytest node or
 file, validator, native check, setup phase, or bounded task. The runner reruns
@@ -356,9 +436,11 @@ varying workers, selection, order, or operating system. Hosted `*-latest`
 images and fresh VMs are not identical conditions; actual image/tool versions
 are recorded and drift is reported as a confounder.
 
-If a clean rerun environment cannot be established, the attempt is
-`inconclusive-contaminated`. Classification does not proceed. Repeats and order
-permutations are explicit bounded experiments, not implicit retry loops.
+If a separate clean hosted job cannot be established or exact identity cannot be
+proved, classification outcome is `inconclusive-contaminated` or
+`inconclusive-infrastructure` as applicable. Classification does not proceed.
+Repeats and order permutations are explicit bounded experiments, not implicit
+retry loops.
 
 Controllable dependencies are pinned. Python caching uses the reviewed CI
 requirements lock/path. Node caching is enabled only with a lockfile and
@@ -390,24 +472,31 @@ The skill does not use these as default repairs:
 
 ## Verification Graph
 
-Verification is an ordered graph, not a fixed node-only ladder. Starting from
-the smallest reproducing selection appropriate to the failure kind:
+Verification is an ordered graph, not a fixed node-only ladder:
 
-1. reproduce the original failure under its original controllable conditions;
-2. run the repaired target with bounded repeats;
-3. rerun the original failing selection exactly;
-4. run the enclosing selection;
-5. run the affected task;
-6. run explicitly coupled tasks or native checks;
-7. run the full required matrix for the exact candidate; and
-8. after user-approved integration, run and monitor the required default-branch
-   matrix for the integrated candidate.
+1. **Pre-repair diagnosis:** bind observations to
+   `failing_base_sha/tree/workflow`, reproduce the smallest applicable selection
+   under the original controllable conditions, and establish the evidence-backed
+   repair scope.
+2. **Repair transition:** after approval through the interactive workflow, make
+   the scoped repair and record a distinct `candidate_sha/tree/workflow/input`
+   identity. No failing-base green or classification state transfers to it.
+3. **Post-repair target:** run the repaired target with bounded repeats, then
+   rerun the original failing selection exactly.
+4. **Scope expansion:** run the enclosing selection, affected task, and
+   explicitly coupled tasks or native checks.
+5. **Candidate certification:** run the full required matrix for the exact
+   candidate.
+6. **Integration confirmation:** after user-approved integration, bind the
+   integrated SHA/tree as another distinct candidate and run its required
+   default-branch matrix.
 
 Inapplicable nodes are recorded as such with a policy reason, never silently
 skipped. Any failure stops expansion and returns the incident to diagnosis or
 creates a child incident for a new signature. `matrix-green` is evidence that
 the candidate is eligible for a user-approved integration action, not authority
-to integrate it.
+to integrate it. Any candidate commit, tree, workflow, or normalized-input
+change restarts the complete applicable post-repair subgraph.
 
 ## Workflow Safety and Performance
 
@@ -415,9 +504,11 @@ to integrate it.
 - `gh` has a declared minimum version and required token scopes.
 - Monitoring uses `gh run watch --exit-status` and validates the exact run and
   attempt before recording a conclusion.
-- Targeted-run concurrency groups are partitioned by incident and may cancel an
-  obsolete attempt. Full certification uses a distinct group and is never
-  cancelled by a targeted run.
+- `run-name` includes the typed high-entropy request ID used for correlation.
+- Targeted-run concurrency groups are partitioned by incident. They may
+  supersede an obsolete queued attempt but set `cancel-in-progress: false` so a
+  running attempt can finalize evidence. Full certification uses a distinct
+  group and is never cancelled by a targeted run.
 - Pip caching keys `requirements-ci.txt` (or its reviewed replacement).
 - Node downloads are cached only from the reviewed lock/manifest.
 - CLI installation is skipped where the dispatch table says it is irrelevant.
@@ -454,11 +545,12 @@ Implementation follows test-driven slices:
 1. Stage 0 workflow policy tests and live default-branch dispatch bootstrap;
 2. dispatch-table, parser, selector, control-character, path-escape, and
    incompatible-axis rejection;
-3. failure identity, condition identity, incident/attempt transitions, and
-   candidate invalidation;
+3. failure identity, condition identity, exhaustive incident/attempt/
+   classification/publication transitions, and candidate invalidation;
 4. mocked `gh` dispatch correlation, watch, interruption, and artifact download;
-5. durable runner diagnostics and Git failure-hook capture;
-6. clean-checkout classification and contaminated-rerun rejection;
+5. dependency-free setup-failure bundles, durable runner diagnostics, and Git
+   failure-hook capture;
+6. separate-hosted-job classification and same-host rerun rejection;
 7. whole-bundle seeded-secret redaction and prohibited-data scanning;
 8. evidence-backed path enforcement and approved scope expansion;
 9. workflow equivalence, unique artifacts, concurrency partitioning, and exact
@@ -472,7 +564,7 @@ Changes to `repo_checks.py` and `src/officina/repository_checks.py` affect
 declared repository certification-basis roots. Therefore certification is not
 optional: implementation must perform dependency-first recertification of all
 affected nodes, a full-repository certification migration for the changed
-roots, and fresh certification of `ci-debug` and `ci-debug-rtx`. Existing
+roots, and fresh certification of `ci-debug` and `ci-debug._rtx`. Existing
 precommit and pre-push gates also remain required.
 
 ## Acceptance Criteria
@@ -483,19 +575,25 @@ precommit and pre-push gates also remain required.
   supported reproducer without exposing secrets or raw remotes.
 - A pushed debugging branch runs one selected test on one selected OS without
   running unrelated suites.
-- Automatic failures and manual successes/failures preserve schema-valid,
-  redacted artifacts.
-- Classification runs in a fresh environment at the exact failed SHA; inability
-  to create one produces `inconclusive-contaminated`.
+- Automatic failures and manual successes/failures attempt publication of a
+  schema-valid, redacted artifact; cancellation, scan refusal, and upload failure
+  produce their exact safe non-artifact states without claiming preservation.
+- Checkout/setup/dependency failures can produce the dependency-free minimal
+  schema without relying on repository code.
+- Classification runs in a separate hosted job/VM at the exact failed SHA;
+  inability to establish it produces the applicable inconclusive outcome.
 - At least one pytest and one non-pytest incident traverse the state model.
-- Seeded secrets are absent from console, logs, JUnit, summaries, argv, nested
-  records, filenames, and uploaded artifacts.
+- Seeded secrets are absent from repository-owned console output, logs, JUnit,
+  summaries, argv, nested records, filenames, and uploaded artifacts. Pinned
+  third-party setup steps receive no secret-bearing values.
 - An unrelated changed path blocks dispatch/integration, while an explicitly
   approved evidence-backed expansion succeeds and is recorded.
 - Every required job succeeds for the exact candidate SHA/tree/workflow/input
   fingerprint; missing, stale, cancelled, or unexpectedly skipped jobs block
   `matrix-green`.
 - A changed candidate invalidates prior downstream green states.
+- Request correlation is unique by queryable `run-name` request ID plus exact
+  SHA/event/actor, and the manifest repeats the request ID.
 - Mandatory dependency-first and full-repository recertification succeeds.
 - Git mutations occur only through explicitly approved `git-workflow` actions.
 - The primary checkout and unrelated dirty state remain untouched.
