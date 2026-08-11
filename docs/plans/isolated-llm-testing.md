@@ -1,6 +1,6 @@
 # Isolated LM Testing Plan
 
-Status: proposed as of 2026-08-11.
+Status: in progress as of 2026-08-11.
 
 ## Goal
 
@@ -74,14 +74,84 @@ clone is discarded after evidence and cleanup status are recorded.
 **Outcome:** A single command or short documented procedure creates a disposable
 test VM from a known baseline.
 
-- [ ] Choose and document one Linux virtualization path, preferring KVM/QEMU
+### Initial implementation profile
+
+The first supported configuration is an Ubuntu 25.10 x86-64 host running an
+Ubuntu Server 24.04 LTS amd64 guest through direct QEMU/KVM. The harness uses a
+verified Ubuntu cloud image as the source for this pre-sealing foundation and creates one disposable
+QCOW2 copy-on-write overlay per run. It does not use Docker, libvirt, or a host
+filesystem mount.
+
+The initial guest allocation is four virtual CPUs, 8 GiB of memory, and a
+40 GiB sparse virtual disk. QEMU user-mode networking provides outbound access
+and exposes only a dynamically allocated SSH port on host loopback. The harness
+must not bridge the guest onto the host LAN or expose a guest service on a
+non-loopback host address.
+
+#### Host dependencies
+
+Install these Ubuntu packages:
+
+```text
+cpu-checker
+qemu-system-x86
+qemu-utils
+cloud-image-utils
+ubuntu-cloudimage-keyring
+```
+
+The host must also provide `curl`, `gpgv`, `sha256sum`, and an OpenSSH client.
+They are already present on the initial host, but they remain declared
+prerequisites rather than ambient assumptions. Before creating a baseline,
+`kvm-ok` must succeed and the invoking user must be able to open `/dev/kvm`.
+Package names, package versions, host architecture, and the KVM preflight
+result belong in the baseline build record.
+
+No host-side Python package is required initially. Harness code should use the
+repository's supported Python and its standard library, invoke QEMU and SSH as
+subprocesses, and add a third-party Python dependency only when a concrete
+requirement cannot be met safely with those interfaces.
+
+#### Guest dependencies
+
+The eventual sealed guest baseline will contain only these generic operating-system and
+assistant-host prerequisites:
+
+```text
+cloud-init
+openssh-server
+ca-certificates
+curl
+python3
+Codex CLI
+```
+
+Install Codex through OpenAI's supported standalone Linux path, authenticate
+it, and record its exact version in the baseline manifest. Record the Ubuntu
+cloud-image URL, release identifier, and verified digest; after provisioning,
+record the installed guest-package versions and the digest of the sealed base
+image. Do not place assistant conversation history, private Famulus knowledge,
+or reusable scenario data in the baseline.
+
+#### Famulus-owned dependencies excluded from the baseline
+
+The baseline must not contain Famulus, a Famulus plugin, Famulus configuration
+or credentials, `uv`, the Famulus-managed Python 3.11 runtime, the Officina
+wheel, or any Python/runtime dependency declared by Famulus. The supported
+Famulus installation path must provision those components during each test.
+
+The initial implementation also does not require libvirt, `virt-install`,
+OVMF/UEFI, a virtual TPM, Docker, Multipass, Ansible, Packer, or Vagrant. Add
+one of these only through a later design change tied to a verified requirement.
+
+- [x] Choose and document one Linux virtualization path, preferring KVM/QEMU
   with a copy-on-write disk on hosts that support it.
 - [ ] Define the baseline Linux distribution, version, system packages, resource
   allocation, network behavior, and supported assistant-host versions.
-- [ ] Separate generic VM and assistant-host prerequisites from Famulus-owned
+- [x] Separate generic VM and assistant-host prerequisites from Famulus-owned
   dependencies. Install the latter through the documented Famulus path or test
   them as explicit public preconditions rather than hiding them in the image.
-- [ ] Automate or document baseline creation sufficiently that it can be rebuilt
+- [x] Automate or document baseline creation sufficiently that it can be rebuilt
   without relying on the original maintainer's VM.
 - [ ] Authenticate the assistant host, seal the Famulus-free baseline, and
   verify that a clone can start an interactive LM session.
