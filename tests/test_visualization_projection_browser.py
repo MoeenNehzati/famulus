@@ -89,21 +89,29 @@ def test_hidden_module_projects_only_its_used_interface_implementation(
         "</body>",
         """<script>
         const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+        const waitForNode = async id => {
+          for (let attempt = 0; attempt < 200; attempt += 1) {
+            const node = document.querySelector(`[data-node-id="${id}"]`);
+            if (node) return node;
+            await delay(50);
+          }
+          throw new Error(`rendered node missing: ${id}`);
+        };
         window.addEventListener("load", () => setTimeout(async () => {
           try {
-            document.querySelector('[data-node-id="service"]').dispatchEvent(new MouseEvent("dblclick", {bubbles: true}));
+            (await waitForNode("service")).dispatchEvent(new MouseEvent("dblclick", {bubbles: true}));
             await delay(80);
             const desired = document.querySelector('.edge-path[data-source-node-id="consumer"][data-target-node-id="storage.interface"][data-edge-type="indirectly-uses-interface"]');
             if (!desired || desired.style.display === "none") throw new Error("desired implementation dependency missing");
-            document.querySelector('[data-node-id="split"]').dispatchEvent(new MouseEvent("dblclick", {bubbles: true}));
+            (await waitForNode("split")).dispatchEvent(new MouseEvent("dblclick", {bubbles: true}));
             await delay(80);
             const falseEdge = document.querySelector('.edge-path[data-source-node-id="separate-consumer"][data-target-node-id="setup.interface"]');
             if (falseEdge && falseEdge.style.display !== "none") throw new Error("projection crossed into unrelated sibling gateway");
-            document.querySelector('[data-node-id="bind.middle"]').dispatchEvent(new MouseEvent("dblclick", {bubbles: true}));
+            (await waitForNode("bind.middle")).dispatchEvent(new MouseEvent("dblclick", {bubbles: true}));
             await delay(80);
             const indirectBinding = document.querySelector('.edge-path[data-source-node-id="bind.root"][data-target-node-id="bind.leaf"][data-edge-type="indirectly-binds-interface"]');
             if (!indirectBinding || indirectBinding.style.display === "none") throw new Error("binding-layer projection missing");
-            document.querySelector('[data-node-id="use.middle"]').dispatchEvent(new MouseEvent("dblclick", {bubbles: true}));
+            (await waitForNode("use.middle")).dispatchEvent(new MouseEvent("dblclick", {bubbles: true}));
             await delay(80);
             const indirectUse = document.querySelector('.edge-path[data-source-node-id="use.consumer"][data-target-node-id="use.leaf"][data-edge-type="indirectly-uses-interface"]');
             if (!indirectUse || indirectUse.style.display === "none") throw new Error("interface-use binding projection missing");

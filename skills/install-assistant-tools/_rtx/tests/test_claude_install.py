@@ -20,6 +20,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from test_support.git_repository import GitTestRepository
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
@@ -27,6 +29,7 @@ from install_test_utils import (  # noqa: E402
     REPO_ROOT,
     build_minimal_managed_runtime_release,
     claude_env,
+    copy_repo_tree,
     contains_dispatcher_context,
     expected_skills,
     install_minimum_scaffold,
@@ -46,17 +49,24 @@ class ClaudeInstallTests(unittest.TestCase):
             raise unittest.SkipTest("claude CLI is not installed")
 
     def test_claude_plugin_marketplace_install_isolated(self) -> None:
-        expected = expected_skills()
         plugin_name = read_json(REPO_ROOT / ".claude-plugin" / "plugin.json")["name"]
-        marketplace_name = read_json(REPO_ROOT / ".claude-plugin" / "marketplace.json")["name"]
 
         with tempfile.TemporaryDirectory(prefix=f"{plugin_name}-claude-install-") as tmp:
             tmp_root = Path(tmp)
+            source_root = tmp_root / "source"
+            source_repository = GitTestRepository.create(source_root)
+            copy_repo_tree(source_root)
+            source_repository.git("add", ".")
+            source_repository.git("commit", "-qm", "tracked plugin snapshot")
+            expected = expected_skills(source_root)
+            plugin_manifest = source_root / ".claude-plugin" / "plugin.json"
+            marketplace_manifest = source_root / ".claude-plugin" / "marketplace.json"
+            marketplace_name = read_json(marketplace_manifest)["name"]
             env = python_test_env(tmp_root)
             run_command(
                 [
                     sys.executable,
-                    str(REPO_ROOT / "repo_checks.py"),
+                    str(source_root / "repo_checks.py"),
                     "--suite",
                     "validators",
                     "--validator",
@@ -72,14 +82,14 @@ class ClaudeInstallTests(unittest.TestCase):
             home.mkdir()
             plugin_env = claude_env(home, claude_home, tmp_root)
 
-            run_command(["claude", "plugins", "validate", str(REPO_ROOT / ".claude-plugin" / "plugin.json")], env=plugin_env)
-            run_command(["claude", "plugins", "validate", str(REPO_ROOT / ".claude-plugin" / "marketplace.json")], env=plugin_env)
+            run_command(["claude", "plugins", "validate", str(plugin_manifest)], env=plugin_env)
+            run_command(["claude", "plugins", "validate", str(marketplace_manifest)], env=plugin_env)
 
             before_install = run_command(["claude", "plugins", "list"], env=plugin_env)
             self.assertNotIn(f"{plugin_name}@{marketplace_name}", before_install.stdout)
 
             run_command(
-                ["claude", "plugins", "marketplace", "add", str(REPO_ROOT / ".claude-plugin" / "marketplace.json")],
+                ["claude", "plugins", "marketplace", "add", str(marketplace_manifest)],
                 env=plugin_env,
             )
 
@@ -91,7 +101,7 @@ class ClaudeInstallTests(unittest.TestCase):
             )
             self.assertEqual(
                 known_marketplaces[marketplace_name]["source"]["path"],
-                str(REPO_ROOT / ".claude-plugin" / "marketplace.json"),
+                str(marketplace_manifest),
             )
 
             run_command(["claude", "plugins", "install", f"{plugin_name}@{marketplace_name}"], env=plugin_env)
