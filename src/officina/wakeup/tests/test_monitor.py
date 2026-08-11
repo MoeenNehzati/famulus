@@ -23,6 +23,8 @@ from officina.wakeup.claude_codex_usage import (
 
 
 SESSION_ID = "11111111-2222-4333-8444-555555555555"
+
+
 RESET_EPOCH = 1_786_294_800
 
 
@@ -503,10 +505,19 @@ def test_run_due_worker_performs_monitor_pass_before_delivery(
     )
     set_auto_schedule("claude", SESSION_ID, True)
 
+    # Two things must be pinned or this test reaches the real desktop. It
+    # discovered this machine's live near-limit sessions, and it left `notifier`
+    # unset, which falls through to _default_notifier and its notify-send call
+    # -- so every run of the suite raised a real popup about whatever session
+    # the developer happened to be in.
+    import officina.wakeup.claude_codex_usage as usage
+
+    monkeypatch.setattr(usage, "_observable_claude_exhaustions", lambda: [])
     monkeypatch.setattr(
         "officina.wakeup.claude_codex_cli.monitor_usage",
         lambda: monitor_usage(
-            now=datetime.fromtimestamp(RESET_EPOCH - 500, tz=timezone.utc)
+            now=datetime.fromtimestamp(RESET_EPOCH - 500, tz=timezone.utc),
+            notifier=lambda _message: None,
         ),
     )
 
