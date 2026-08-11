@@ -138,8 +138,8 @@ it completes.
 
 `.github/workflows/python-tests.yml` runs on pushes and pull requests to
 `master` and `main` using Linux, macOS, and Windows. Each matrix job installs
-pytest, pytest-xdist, the validator dependencies, and both supported assistant
-CLIs, then runs:
+the exact Python test environment from `requirements-ci.txt` and both
+supported assistant CLIs, then runs:
 
 1. the full repository suite;
 2. the portability sentinel;
@@ -148,6 +148,11 @@ CLIs, then runs:
 
 The native smokes use `always()` so their platform evidence is still collected
 after an unrelated full-suite failure.
+
+`requirements-ci.txt` is the reproducible GitHub Actions lock for pytest,
+pytest-xdist, and every imported test/validator dependency. Update it only
+after the proposed versions pass the full repository suite; runtime dependency
+declarations remain governed separately by the blueprint inventory.
 
 ## Platform skips
 

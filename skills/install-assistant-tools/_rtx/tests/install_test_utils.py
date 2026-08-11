@@ -120,9 +120,85 @@ def run_command(
 def python_test_env(tmp_root: Path, extra: dict[str, str] | None = None) -> dict[str, str]:
     env = os.environ.copy()
     env["PYTHONPYCACHEPREFIX"] = str(tmp_root / "pycache")
+    configure_isolated_test_keyring(env, tmp_root)
     if extra:
         env.update(extra)
     return env
+
+
+def configure_isolated_test_keyring(env: dict[str, str], tmp_root: Path) -> None:
+    """Select a persistent, test-only keyring contained by ``tmp_root``.
+
+    Installer acceptance tests launch several real Python subprocesses. A
+    process-local fake cannot carry signing material between them, while a
+    hosted Linux runner normally has no desktop credential service. Generate
+    a tiny keyring backend beside the test's other temporary state so those
+    subprocesses exercise the real ``keyring`` API without reading or writing
+    the developer's host credential store.
+    """
+    module_root = tmp_root / "keyring-backend"
+    module_root.mkdir(parents=True, exist_ok=True)
+    module_path = module_root / "famulus_test_keyring.py"
+    module_path.write_text(
+        '''from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+
+from keyring.backend import KeyringBackend
+from keyring.errors import PasswordDeleteError
+
+
+class IsolatedFileKeyring(KeyringBackend):
+    """Minimal file-backed keyring used only by installer acceptance tests."""
+
+    priority = 1
+
+    @property
+    def _path(self) -> Path:
+        return Path(os.environ["FAMULUS_TEST_KEYRING_PATH"])
+
+    def _read(self) -> dict[str, str]:
+        try:
+            return json.loads(self._path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return {}
+
+    def _write(self, values: dict[str, str]) -> None:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._path.write_text(json.dumps(values, sort_keys=True), encoding="utf-8")
+
+    @staticmethod
+    def _key(service: str, username: str) -> str:
+        return json.dumps([service, username], separators=(",", ":"))
+
+    def get_password(self, service: str, username: str) -> str | None:
+        return self._read().get(self._key(service, username))
+
+    def set_password(self, service: str, username: str, password: str) -> None:
+        values = self._read()
+        values[self._key(service, username)] = password
+        self._write(values)
+
+    def delete_password(self, service: str, username: str) -> None:
+        values = self._read()
+        key = self._key(service, username)
+        if key not in values:
+            raise PasswordDeleteError("credential does not exist")
+        del values[key]
+        self._write(values)
+''',
+        encoding="utf-8",
+    )
+    existing_pythonpath = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = str(module_root) + (
+        os.pathsep + existing_pythonpath if existing_pythonpath else ""
+    )
+    env["PYTHON_KEYRING_BACKEND"] = (
+        "famulus_test_keyring.IsolatedFileKeyring"
+    )
+    env["FAMULUS_TEST_KEYRING_PATH"] = str(tmp_root / "keyring" / "secrets.json")
 
 
 def can_create_symlink() -> bool:

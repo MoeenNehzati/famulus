@@ -12,7 +12,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -246,6 +246,42 @@ def _assert_marker_written(marker: Path, *, log_file: Path | None = None) -> Non
         assert json.loads(_wait_for_marker(marker))["ran_at"]
     except AssertionError as exc:
         raise AssertionError(_missing_marker_message(marker, log_file)) from exc
+
+
+def _wait_for_fresh_scheduler_result(
+    marker: Path,
+    latest: Path,
+    *,
+    not_before: datetime,
+    timeout: int = 120,
+) -> None:
+    """Wait for both effects produced by a newly triggered scheduled run."""
+    deadline = time.time() + timeout
+    threshold = not_before.replace(microsecond=0)
+    while time.time() < deadline:
+        try:
+            marker_payload = json.loads(marker.read_text(encoding="utf-8"))
+            run_payload = json.loads(latest.read_text(encoding="utf-8"))
+            started_at = datetime.fromisoformat(run_payload["started_at"])
+        except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+            time.sleep(1)
+            continue
+        if (
+            marker_payload.get("ran_at")
+            and started_at >= threshold
+            and run_payload.get("success") is True
+        ):
+            return
+        time.sleep(1)
+    raise AssertionError(
+        f"fresh scheduled run evidence was not written: marker={marker}, latest={latest}"
+    )
+
+
+def _file_diagnostic(path: Path) -> str:
+    if not path.exists():
+        return f"{path.name} was not created"
+    return path.read_text(encoding="utf-8", errors="replace")
 
 
 def _linux_smoke() -> None:
@@ -539,6 +575,11 @@ def _windows_smoke() -> None:
                     f"\n--- scheduler log ---\n{scheduler_detail}"
                 ) from exc
             marker.unlink()
+            # The direct preflight intentionally uses the same executor and
+            # log directory as Task Scheduler. Remove every preflight artifact
+            # so only a newly scheduled invocation can satisfy the assertions
+            # and diagnostics below.
+            shutil.rmtree(tmp_dir / job_name)
             _run(
                 [
                     "schtasks",
@@ -551,16 +592,30 @@ def _windows_smoke() -> None:
                     *cron_to_schtasks_args(schedule),
                 ]
             )
+            triggered_at = datetime.now(timezone.utc)
             _run(["schtasks", "/Run", "/TN", name])
             try:
-                _assert_marker_written(marker, log_file=tmp_dir / job_name / "run.log")
+                _wait_for_fresh_scheduler_result(
+                    marker,
+                    tmp_dir / job_name / "latest.json",
+                    not_before=triggered_at,
+                )
             except AssertionError as exc:
                 query = _run(
                     ["schtasks", "/Query", "/TN", name, "/FO", "LIST", "/V"],
                     check=False,
                 )
                 detail = query.stdout.strip() or query.stderr.strip() or "no task details"
-                raise AssertionError(f"{exc}\n--- schtasks query ---\n{detail}") from exc
+                raise AssertionError(
+                    f"{exc}\n--- schtasks query ---\n{detail}"
+                    f"\n--- wrapper ---\n{_file_diagnostic(wrapper_path)}"
+                    f"\n--- scheduler log ---\n"
+                    f"{_file_diagnostic(tmp_dir / job_name / 'scheduler.log')}"
+                    f"\n--- run log ---\n"
+                    f"{_file_diagnostic(tmp_dir / job_name / 'run.log')}"
+                    f"\n--- latest run record ---\n"
+                    f"{_file_diagnostic(tmp_dir / job_name / 'latest.json')}"
+                ) from exc
         finally:
             _run(["schtasks", "/Delete", "/TN", name, "/F"], check=False)
             post = _run(["schtasks", "/Query", "/TN", name], check=False)
