@@ -54,6 +54,20 @@ def test_user_data_contains_only_generic_guest_prerequisites() -> None:
         assert forbidden not in rendered
 
 
+def test_user_data_encodes_a_yaml_significant_public_key_as_one_json_scalar() -> None:
+    """Catch YAML parsing an allowed key with a colon as a mapping, not a key string."""
+    public_key = 'ssh-ed25519 AAAA: injected "quoted" \\backslash'
+    rendered = render_user_data(public_key)
+    key_items = [
+        line.removeprefix("      - ")
+        for line in rendered.splitlines()
+        if line.startswith("      - ")
+    ]
+
+    assert len(key_items) == 1
+    assert json.loads(key_items[0]) == public_key
+
+
 @pytest.mark.parametrize(
     "run_id",
     ["../escape", "a/b", "a\\b", "-leading", "Upper", "a_underscore", "a" * 64],

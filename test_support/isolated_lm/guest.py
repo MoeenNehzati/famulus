@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime
+import json
 import os
 from pathlib import Path
 import re
@@ -94,7 +95,7 @@ def render_user_data(public_key: str) -> str:
             "    lock_passwd: true",
             "    sudo: ALL=(ALL) NOPASSWD:ALL",
             "    ssh_authorized_keys:",
-            f"      - {key}",
+            f"      - {json.dumps(key)}",
             "ssh_pwauth: false",
             "disable_root: true",
             "",
