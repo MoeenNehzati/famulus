@@ -290,10 +290,7 @@ def _linux_smoke() -> None:
         # famulus-skip: category=native-backend-unavailable; reason=systemd user manager is not available on this host; alternate=systemd unit generation tests cover backend output
         pytest.skip(f"systemd user manager unavailable: {manager.stderr.strip() or manager.stdout.strip()}")
 
-    with tempfile.TemporaryDirectory(
-        prefix="recurring-tasks-smoke-",
-        dir=_windows_ci_temp_root(),
-    ) as raw_tmp:
+    with tempfile.TemporaryDirectory(prefix="recurring-tasks-smoke-") as raw_tmp:
         tmp_dir = Path(raw_tmp)
         job_name = f"codex-ci-smoke-{int(time.time())}"
         marker = tmp_dir / "marker.json"
@@ -509,7 +506,7 @@ def _windows_smoke() -> None:
         # famulus-skip: category=native-backend-unavailable; reason=Task Scheduler is not available on this host; alternate=Task Scheduler command generation tests cover backend output
         pytest.skip(f"Task Scheduler unavailable: {available.stderr.strip() or available.stdout.strip()}")
 
-    with tempfile.TemporaryDirectory(prefix="recurring-tasks-smoke-") as raw_tmp:
+    with _windows_smoke_temp_directory() as raw_tmp:
         tmp_dir = Path(raw_tmp)
         job_name = f"codex-ci-smoke-{int(time.time())}"
         marker = tmp_dir / "marker.json"
@@ -652,6 +649,15 @@ def _windows_ci_temp_root() -> Path | None:
     return Path(system_root) / "Temp"
 
 
+def _windows_smoke_temp_directory() -> tempfile.TemporaryDirectory[str]:
+    """Create smoke state where the scheduled SYSTEM task can access it."""
+
+    return tempfile.TemporaryDirectory(
+        prefix="recurring-tasks-smoke-",
+        dir=_windows_ci_temp_root(),
+    )
+
+
 def test_windows_ci_identity_is_service_compatible(monkeypatch) -> None:
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
 
@@ -669,3 +675,31 @@ def test_windows_ci_temp_root_is_accessible_to_system(monkeypatch) -> None:
     monkeypatch.setenv("SystemRoot", r"C:\Windows")
 
     assert _windows_ci_temp_root() == Path(r"C:\Windows") / "Temp"
+
+
+def test_windows_smoke_directory_uses_ci_temp_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, object] = {}
+
+    class TemporaryDirectoryProbe:
+        def __enter__(self) -> str:
+            return str(tmp_path)
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+    def create_temp_directory(**kwargs: object) -> TemporaryDirectoryProbe:
+        captured.update(kwargs)
+        return TemporaryDirectoryProbe()
+
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("SystemRoot", r"C:\Windows")
+    monkeypatch.setattr(tempfile, "TemporaryDirectory", create_temp_directory)
+
+    with _windows_smoke_temp_directory() as raw_tmp:
+        assert raw_tmp == str(tmp_path)
+    assert captured == {
+        "prefix": "recurring-tasks-smoke-",
+        "dir": Path(r"C:\Windows") / "Temp",
+    }
