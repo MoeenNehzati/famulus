@@ -508,7 +508,7 @@ def test_sequential_flag_is_a_noop_compatibility_alias(
         "cache_dir=<temporary>"
         if argument.startswith("cache_dir=")
         else "staged-paths=<temporary>"
-        if argument.endswith("/staged-paths.json")
+        if Path(argument).name == "staged-paths.json"
         else argument
         for argument in command
     ]
@@ -844,11 +844,12 @@ def test_ci_shards_windows_repository_checks_for_parallel_diagnostics() -> None:
     assert "task: validators" in workflow
     assert "task: 'tests:shared'" in workflow
     assert "task: 'tests:performance'" in workflow
+    assert workflow.count("jobs: 4") == 3
     assert 'if: matrix.task == \'combined\'' in workflow
     assert 'if: matrix.task != \'combined\'' in workflow
     assert (
         'python3 repo_checks.py --suite full --task-id "${{ matrix.task }}" '
-        "--verbose"
+        '--verbose --jobs "${{ matrix.jobs }}"'
     ) in workflow
     assert "timeout-minutes: 60" in workflow
 
@@ -866,6 +867,7 @@ def test_ci_dependency_lock_covers_the_complete_test_environment() -> None:
         "keyring==25.6.0",
         "cryptography==44.0.1",
         "lark==1.3.1",
+        "tzdata==2026.3",
     ]
 
 

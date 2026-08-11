@@ -156,7 +156,7 @@ def validate(repo_root: Path) -> list[str]:
                 )
                 for other_skill in other_skills:
                     if other_skill in direct_targets:
-                        rel = path.relative_to(repo_root)
+                        rel = path.relative_to(repo_root).as_posix()
                         errors.append(
                             f"{rel}:{lineno}: direct cross-skill runtime path to "
                             f"{other_skill} is forbidden"
@@ -164,7 +164,7 @@ def validate(repo_root: Path) -> list[str]:
                         break
 
                     if other_skill in sys_path_targets:
-                        rel = path.relative_to(repo_root)
+                        rel = path.relative_to(repo_root).as_posix()
                         errors.append(
                             f"{rel}:{lineno}: cross-skill sys.path insertion to "
                             f"{other_skill} is forbidden"

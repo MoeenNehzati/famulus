@@ -14,6 +14,8 @@ import pytest
 MODULE_PATH = Path(__file__).resolve().parents[1] / "_connect_services.py"
 RTX_ROOT = MODULE_PATH.parent
 SRC_ROOT = MODULE_PATH.parents[3] / "src"
+TEST_CREDENTIAL_FILE = str(Path(Path.cwd().anchor) / "absolute" / "credential.json")
+TEST_HOME = Path(Path.cwd().anchor) / "home" / "person"
 for import_root in (SRC_ROOT, RTX_ROOT):
     if str(import_root) not in sys.path:
         sys.path.insert(0, str(import_root))
@@ -57,7 +59,7 @@ def authorization() -> Callable[..., SimpleNamespace]:
         return SimpleNamespace(
             account="person@example.com",
             subject="google-subject",
-            credential_file="/absolute/credential.json",
+            credential_file=TEST_CREDENTIAL_FILE,
             requested_services=requested,
             granted_services=granted,
             denied_services=denied,
@@ -82,7 +84,7 @@ def test_connect_services_dispatches_only_selected_granted_services(
         return completed(
             {
                 "service": key,
-                "credential_file": "/absolute/credential.json",
+                "credential_file": TEST_CREDENTIAL_FILE,
                 "account": "person@example.com",
                 "bound": True,
                 "verified": True,
@@ -91,7 +93,7 @@ def test_connect_services_dispatches_only_selected_granted_services(
 
     result = connect_services_module.connect_services(
         services=("calendar", "drive"),
-        home=Path("/home/person"),
+        home=TEST_HOME,
         account_hint=None,
         gmail_nickname=None,
         allow_account_change=(),
@@ -100,11 +102,11 @@ def test_connect_services_dispatches_only_selected_granted_services(
     )
 
     assert [key for key, _args in calls] == ["calendar", "drive"]
-    assert all("/absolute/credential.json" in args for _key, args in calls)
-    assert all("/home/person" in args for _key, args in calls)
+    assert all(TEST_CREDENTIAL_FILE in args for _key, args in calls)
+    assert all(str(TEST_HOME) in args for _key, args in calls)
     assert result == {
         "schema_version": 1,
-        "credential_file": "/absolute/credential.json",
+        "credential_file": TEST_CREDENTIAL_FILE,
         "requested_services": ["calendar", "drive"],
         "granted_services": ["calendar", "drive"],
         "denied_services": [],
@@ -128,14 +130,14 @@ def test_connect_services_forwards_portable_browser_controls(
 
     connect_services_module.connect_services(
         services=("drive",),
-        home=Path("/home/person"),
+        home=TEST_HOME,
         account_hint=None,
         gmail_nickname=None,
         allow_account_change=(),
         dispatch=lambda key, *, args, **_kwargs: completed(
             {
                 "service": key,
-                "credential_file": "/absolute/credential.json",
+                "credential_file": TEST_CREDENTIAL_FILE,
                 "account": "person@example.com",
                 "bound": True,
                 "verified": True,
@@ -172,7 +174,7 @@ def test_partial_binding_reports_error_and_retry_reuses_same_file(
                 return completed(
                     {
                         "service": "drive",
-                        "credential_file": "/absolute/credential.json",
+                        "credential_file": TEST_CREDENTIAL_FILE,
                         "bound": False,
                         "verified": False,
                         "error": {"code": "live-check-failed", "message": "HTTP 403"},
@@ -191,7 +193,7 @@ def test_partial_binding_reports_error_and_retry_reuses_same_file(
 
     first = connect_services_module.connect_services(
         services=("calendar", "drive"),
-        home=Path("/home/person"),
+        home=TEST_HOME,
         account_hint=None,
         gmail_nickname=None,
         allow_account_change=(),
@@ -202,7 +204,7 @@ def test_partial_binding_reports_error_and_retry_reuses_same_file(
         credential_file=Path(first["credential_file"]),
         requested_services=("drive",),
         granted_services=("drive",),
-        home=Path("/home/person"),
+        home=TEST_HOME,
         gmail_nickname=None,
         allow_account_change=(),
         dispatch=fake_dispatch,
@@ -230,7 +232,7 @@ def test_granted_gmail_without_nickname_is_incomplete_but_does_not_block_drive(
         return completed(
             {
                 "service": key,
-                "credential_file": "/absolute/credential.json",
+                "credential_file": TEST_CREDENTIAL_FILE,
                 "account": "person@example.com",
                 "bound": True,
                 "verified": True,
@@ -239,7 +241,7 @@ def test_granted_gmail_without_nickname_is_incomplete_but_does_not_block_drive(
 
     result = connect_services_module.connect_services(
         services=("drive", "gmail"),
-        home=Path("/home/person"),
+        home=TEST_HOME,
         account_hint=None,
         gmail_nickname=None,
         allow_account_change=(),
@@ -262,7 +264,7 @@ def test_denied_gmail_without_nickname_reports_denial_only(
 ) -> None:
     result = connect_services_module.connect_services(
         services=("drive", "gmail"),
-        home=Path("/home/person"),
+        home=TEST_HOME,
         account_hint=None,
         gmail_nickname=None,
         allow_account_change=(),
@@ -272,7 +274,7 @@ def test_denied_gmail_without_nickname_reports_denial_only(
         dispatch=lambda key, *, args, **_kwargs: completed(
             {
                 "service": key,
-                "credential_file": "/absolute/credential.json",
+                "credential_file": TEST_CREDENTIAL_FILE,
                 "account": "person@example.com",
                 "bound": True,
                 "verified": True,
@@ -297,7 +299,7 @@ def test_gmail_dispatch_requires_nickname_and_forwards_account_change_approval(
         return completed(
             {
                 "service": "gmail",
-                "credential_file": "/absolute/credential.json",
+                "credential_file": TEST_CREDENTIAL_FILE,
                 "account": "person@example.com",
                 "bound": True,
                 "verified": True,
@@ -306,7 +308,7 @@ def test_gmail_dispatch_requires_nickname_and_forwards_account_change_approval(
 
     result = connect_services_module.connect_services(
         services=("gmail",),
-        home=Path("/home/person"),
+        home=TEST_HOME,
         account_hint=None,
         gmail_nickname="work",
         allow_account_change=("gmail",),
@@ -321,8 +323,8 @@ def test_gmail_dispatch_requires_nickname_and_forwards_account_change_approval(
         "--nickname",
         "work",
         "--credential-file",
-        "/absolute/credential.json",
+        TEST_CREDENTIAL_FILE,
         "--home",
-        "/home/person",
+        str(TEST_HOME),
         "--allow-account-change",
     ]]

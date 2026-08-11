@@ -71,7 +71,7 @@ def run_git(
     command = [
         "git",
         "-c",
-        f"core.hooksPath={os.devnull}",
+        "core.hooksPath=",
         "-c",
         "commit.gpgSign=false",
         "-c",

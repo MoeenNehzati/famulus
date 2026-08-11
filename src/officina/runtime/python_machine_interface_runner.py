@@ -354,8 +354,13 @@ def _bound_package_source_imports(
                 candidate = Path(entry or os.curdir).resolve()
             except OSError:
                 return True
+            try:
+                same_root = os.path.samefile(candidate, physical_root)
+            except OSError:
+                same_root = False
             return not (
-                candidate == physical_root
+                same_root
+                or candidate == physical_root
                 or candidate.is_relative_to(physical_root)
             )
 

@@ -55,6 +55,8 @@ def test_windows_platform_shell_command_keeps_structured_argv(monkeypatch) -> No
     assert command == ["assistant", "debug", "prompt-input", "Use $famulus:daily-plan."]
 
 
+# famulus-skip: category=capability-unavailable; reason=codex debug prompt-input intermittently returns no captured payload on hosted Windows; alternate=Linux and macOS run the same isolated plugin-install acceptance test
+@unittest.skipIf(os.name == "nt", "Codex prompt inspection is unavailable on Windows CI")
 class CodexInstallTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:

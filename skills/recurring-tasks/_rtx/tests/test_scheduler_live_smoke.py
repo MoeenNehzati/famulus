@@ -589,6 +589,7 @@ def _windows_smoke() -> None:
                     "/TR",
                     task_run_command(wrapper_path),
                     "/F",
+                    *_windows_ci_identity_args(),
                     *cron_to_schtasks_args(schedule),
                 ]
             )
@@ -621,3 +622,29 @@ def _windows_smoke() -> None:
             post = _run(["schtasks", "/Query", "/TN", name], check=False)
             assert post.returncode != 0
             wrapper_path.unlink(missing_ok=True)
+
+
+def _windows_ci_identity_args() -> list[str]:
+    """Use a non-interactive Task Scheduler identity on GitHub runners.
+
+    GitHub hosts the Windows runner as a service, so the default current-user
+    task is registered as ``Interactive only`` and never launches there.  The
+    opt-in live smoke uses the local SYSTEM account in CI; normal interactive
+    host smoke runs retain the production backend's current-user semantics.
+    """
+
+    if os.environ.get("GITHUB_ACTIONS", "").lower() == "true":
+        return ["/RU", "SYSTEM"]
+    return []
+
+
+def test_windows_ci_identity_is_service_compatible(monkeypatch) -> None:
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+
+    assert _windows_ci_identity_args() == ["/RU", "SYSTEM"]
+
+
+def test_windows_local_identity_matches_production_default(monkeypatch) -> None:
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+
+    assert _windows_ci_identity_args() == []

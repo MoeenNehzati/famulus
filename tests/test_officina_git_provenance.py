@@ -98,7 +98,7 @@ def test_run_git_sanitizes_ambient_routing_and_config(
     assert command == [
         "git",
         "-c",
-        f"core.hooksPath={os.devnull}",
+        "core.hooksPath=",
         "-c",
         "commit.gpgSign=false",
         "-c",

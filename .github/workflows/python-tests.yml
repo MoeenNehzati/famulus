@@ -20,10 +20,13 @@ jobs:
             task: combined
           - os: windows-latest
             task: validators
+            jobs: 4
           - os: windows-latest
             task: 'tests:shared'
+            jobs: 4
           - os: windows-latest
             task: 'tests:performance'
+            jobs: 4
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -53,7 +56,7 @@ jobs:
 
       - name: Run repository check shard
         if: matrix.task != 'combined'
-        run: python3 repo_checks.py --suite full --task-id "${{ matrix.task }}" --verbose
+        run: python3 repo_checks.py --suite full --task-id "${{ matrix.task }}" --verbose --jobs "${{ matrix.jobs }}"
 
       - name: Run portability sentinel
         if: matrix.task == 'combined' || matrix.task == 'tests:shared'

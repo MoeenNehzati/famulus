@@ -1239,6 +1239,8 @@ def run_validators_with_pytest(
     pytest_arguments = [
         "-q",
         "--disable-warnings",
+        "--rootdir",
+        str(tracked_root),
         "--confcutdir",
         str(tracked_root),
     ]
