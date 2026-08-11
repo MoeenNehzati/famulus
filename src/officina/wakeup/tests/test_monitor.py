@@ -497,3 +497,96 @@ def test_run_due_worker_performs_monitor_pass_before_delivery(
     jobs = json.loads((state / "jobs.json").read_text())
     assert len(jobs) == 1
     assert jobs[0]["session_id"] == SESSION_ID
+
+
+def _snapshot(window: str, percentage: float, reset: int, transcript: Path):
+    """Build one usage snapshot directly, bypassing provider discovery.
+
+    Discovery reads exhaustion events only for the latest or auto-enabled
+    session, from the real Claude projects directory. Driving monitor_usage
+    through it would test the reader, not the deduplication these cases are
+    about.
+    """
+    from officina.wakeup.claude_codex_usage import UsageSnapshot
+
+    return UsageSnapshot(
+        provider="claude",
+        session_id=SESSION_ID,
+        window=window,
+        used_percentage=percentage,
+        resets_at=reset,
+        transcript_path=str(transcript),
+        observed_at=datetime.fromtimestamp(reset - 900, tz=timezone.utc).isoformat(),
+    )
+
+
+def test_monitor_notifies_once_when_a_second_window_crosses(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """One session near its limit is one popup, however many windows cross.
+
+    The deduplication key used to include the set of near-limit windows, so a
+    session notified for `five_hour` was notified again the minute it also
+    crossed `exhausted` -- same session, same reset, two popups a minute apart.
+    Observed live: 6cdc732a was reminded at 21:05 for `five_hour` and again at
+    21:06 for `exhausted,five_hour`.
+    """
+    import officina.wakeup.claude_codex_monitor as monitor
+
+    monkeypatch.setenv("LLM_WAKEUP_HOME", str(tmp_path / "state"))
+    transcript = tmp_path / f"{SESSION_ID}.jsonl"
+    _write_jsonl(transcript, [{"type": "user", "sessionId": SESSION_ID}])
+    reset = RESET_EPOCH
+    now = datetime.fromtimestamp(reset - 500, tz=timezone.utc)
+
+    visible = [_snapshot("five_hour", 92, reset, transcript)]
+    monkeypatch.setattr(
+        monitor, "observable_usage_snapshots", lambda: list(visible)
+    )
+
+    notices: list[str] = []
+    first = monitor.monitor_usage(now=now, notifier=notices.append)
+
+    # The same session then hits the hard limit: a second near-limit window
+    # appears with the same reset. Nothing new has happened to the user.
+    visible.append(_snapshot("exhausted", 100, reset, transcript))
+    second = monitor.monitor_usage(now=now, notifier=notices.append)
+
+    assert [action.kind for action in first] == ["reminded"]
+    assert second == []
+    assert len(notices) == 1
+
+
+def test_monitor_never_notifies_a_session_with_auto_scheduling_enabled(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """An opted-in session is scheduled silently, across repeated passes."""
+    state = tmp_path / "state"
+    monkeypatch.setenv("LLM_WAKEUP_HOME", str(state))
+    transcript = tmp_path / f"{SESSION_ID}.jsonl"
+    _write_jsonl(
+        transcript,
+        [{"type": "user", "sessionId": SESSION_ID, "message": {"content": "work"}}],
+    )
+    payload = {
+        "session_id": SESSION_ID,
+        "transcript_path": str(transcript),
+        "rate_limits": {"five_hour": {"used_percentage": 92, "resets_at": RESET_EPOCH}},
+    }
+    capture_claude_status(payload)
+    set_auto_schedule("claude", SESSION_ID, True)
+    now = datetime.fromtimestamp(RESET_EPOCH - 500, tz=timezone.utc)
+
+    def _fail(message: str) -> None:
+        pytest.fail(f"auto-enabled session must not notify: {message}")
+
+    first = monitor_usage(now=now, notifier=_fail)
+    payload["rate_limits"]["exhausted"] = {
+        "used_percentage": 100,
+        "resets_at": RESET_EPOCH,
+    }
+    capture_claude_status(payload)
+    second = monitor_usage(now=now, notifier=_fail)
+
+    assert [action.kind for action in first] == ["scheduled"]
+    assert second == []

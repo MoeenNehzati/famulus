@@ -48,10 +48,14 @@ def _utc_now() -> datetime:
 def _event_key(snapshots: list[UsageSnapshot], kind: str) -> str:
     """Identify one policy outcome across repeated minute-level checks."""
 
-    windows = ",".join(sorted(item.window for item in snapshots))
+    # Deliberately excludes the window set. It used to be part of the key, so a
+    # session already notified for `five_hour` was notified again the minute it
+    # also crossed `exhausted` -- one condition, two popups, a minute apart.
+    # What the user needs to hear once is "this session is near its limit until
+    # <reset>", which is exactly (session, reset).
     reset = max(item.resets_at for item in snapshots)
     first = snapshots[0]
-    return f"{kind}:{first.provider}:{first.session_id}:{windows}:{reset}"
+    return f"{kind}:{first.provider}:{first.session_id}:{reset}"
 
 
 def _event_marker_path(key: str) -> Path:
