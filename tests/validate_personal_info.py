@@ -7,6 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from validators import personal_info as module_under_test  # noqa: E402
 from validators.personal_info import validate  # noqa: E402
+from test_support.git_repository import GitTestRepository  # noqa: E402
 
 
 def test_empty_repo_passes(tmp_path: Path) -> None:
@@ -16,6 +17,17 @@ def test_empty_repo_passes(tmp_path: Path) -> None:
 def test_clean_file_passes(tmp_path: Path) -> None:
     (tmp_path / "notes.md").write_text("Nothing personal here.\n")
     assert validate(tmp_path) == []
+
+
+def test_git_repository_scans_only_tracked_files(tmp_path: Path) -> None:
+    repository = GitTestRepository.initialize_existing_empty(tmp_path)
+    (tmp_path / "tracked.md").write_text("private path: /home/moeen\n")
+    repository.git("add", "tracked.md")
+    (tmp_path / "untracked.md").write_text("private path: /home/nehzati\n")
+
+    assert validate(tmp_path) == [
+        "tracked.md:1: contains personal-info token 'moeen'"
+    ]
 
 
 def test_allow_patterns_are_scrubbed_only_for_token_candidates(

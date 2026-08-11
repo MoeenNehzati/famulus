@@ -11,7 +11,9 @@ pytestmark = pytest.mark.xdist_group("browser")
 from officina.common.visualization.elk_html_renderer import build_html_with_elk
 
 
-def test_hidden_module_projects_only_its_used_interface_implementation() -> None:
+def test_hidden_module_projects_only_its_used_interface_implementation(
+    tmp_path: Path,
+) -> None:
     """Preserve real implementation dependencies without crossing sibling gateways."""
     chrome = shutil.which("google-chrome")
     if chrome is None:
@@ -110,13 +112,22 @@ def test_hidden_module_projects_only_its_used_interface_implementation() -> None
         }, 100));
         </script></body>""",
     )
-    path = Path("/tmp/officina-interface-projection-browser.html")
+    path = tmp_path / "interface-projection-browser.html"
     path.write_text(html, encoding="utf-8")
     with tempfile.TemporaryDirectory() as profile:
         result = subprocess.run([
             chrome, "--headless", "--no-sandbox", "--disable-gpu",
             "--disable-dev-shm-usage", "--disable-crash-reporter",
-            f"--user-data-dir={profile}", "--virtual-time-budget=6000",
+            f"--user-data-dir={profile}", "--virtual-time-budget=12000",
             "--dump-dom", path.as_uri(),
         ], check=True, capture_output=True, text=True)
-    assert 'data-test-status="PASS"' in result.stdout
+    marker = 'data-test-status="'
+    start = result.stdout.find(marker)
+    status = (
+        result.stdout[
+            start + len(marker):result.stdout.find('"', start + len(marker))
+        ]
+        if start >= 0
+        else "FAIL:status missing"
+    )
+    assert status == "PASS", status

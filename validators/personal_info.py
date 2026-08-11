@@ -12,6 +12,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from officina.common.git_provenance import run_git
+
 _TOKENS = ("seyed", "moeen", "nehzati")
 _PATTERN = re.compile("|".join(_TOKENS), re.IGNORECASE)
 
@@ -93,6 +95,46 @@ _ALLOWED_PATHS = {
 }
 
 
+def _repository_files(repo_root: Path) -> list[Path]:
+    """Return tracked files when ``repo_root`` is Git-backed, else all files.
+
+    Intent
+    ------
+    Match the publication boundary documented by this validator: only paths
+    recorded in Git can be pushed, while lightweight unit-test fixtures remain
+    usable without initializing a repository.
+
+    Rationale
+    ---------
+    Walking the checkout also enters ``.git`` metadata, ignored build output,
+    live logs, and unrelated untracked work. Those files are host state rather
+    than repository content and can contain local identities legitimately.
+
+    Pseudocode
+    ----------
+    - ask Git for the NUL-delimited tracked-file inventory
+    - if the command succeeds, return existing tracked paths in inventory order
+    - otherwise, return every file below the fixture root in sorted order
+
+    Wraps
+    -----
+    - git ls-files
+    """
+    try:
+        result = run_git(repo_root, "ls-files", "-z", check=False)
+    except OSError:
+        result = None
+    if result is not None and result.returncode == 0:
+        return [
+            repo_root / relative
+            for encoded in result.stdout.split(b"\0")
+            if encoded
+            for relative in [encoded.decode("utf-8", errors="surrogateescape")]
+            if relative and (repo_root / relative).is_file()
+        ]
+    return sorted(path for path in repo_root.rglob("*") if path.is_file())
+
+
 def validate(repo_root: Path) -> list[str]:
     """Return ordered path and line findings for personal tokens.
 
@@ -131,9 +173,7 @@ def validate(repo_root: Path) -> list[str]:
         constructs: "Builds each content-line token match used in a finding."
     """
     errors: list[str] = []
-    for path in sorted(repo_root.rglob("*")):
-        if not path.is_file():
-            continue
+    for path in _repository_files(repo_root):
         rel = path.relative_to(repo_root)
         if rel in _ALLOWED_PATHS:
             continue

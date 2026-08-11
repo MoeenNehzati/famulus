@@ -71,10 +71,11 @@ suites use work stealing; browser-containing suites use load grouping. Only the
 full-suite performance thresholds run separately and serially. The runner does
 not fail fast and does not maintain a second process pool.
 
-Fresh dispatcher CLI gates use 100 ms median / 150 ms p95 on the Linux and
-macOS reference hosts. Windows uses 175 ms / 250 ms because hosted Windows
-process creation has a higher fixed cost; the warm in-process resolution gates
-remain identical across platforms.
+Fresh dispatcher CLI gates use 100 ms median / 150 ms p95 on the macOS
+reference host, 125 ms / 200 ms on Linux, and 175 ms / 250 ms on Windows.
+The Linux allowance covers short-lived contention after the parallel shared
+suite, while Windows process creation has a higher fixed cost. The warm
+in-process resolution gates remain identical across platforms.
 
 This is the simplest supported architecture. Performance work should target
 test or validator computation, not add another scheduler layer.

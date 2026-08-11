@@ -83,7 +83,9 @@ def test_benchmark_can_return_process_tree_samples_for_attribution(
     benchmark = _load_benchmark_module()
 
     metrics = benchmark.benchmark_command(
-        [sys.executable, "-c", "import time; time.sleep(0.08)"],
+        # Leave enough wall time for two sampler iterations even when an xdist
+        # worker is briefly descheduled on a loaded hosted runner.
+        [sys.executable, "-c", "import time; time.sleep(0.5)"],
         log_path=tmp_path / "command.log",
         sample_interval_seconds=0.005,
         record_samples=True,
