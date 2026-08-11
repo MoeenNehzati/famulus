@@ -10,7 +10,8 @@ from typing import Any
 
 import pytest
 
-from test_support.isolated_lm.model import RunRecord, VmResources
+import test_support.isolated_lm.qemu as qemu_module
+from test_support.isolated_lm.model import RunRecord, RuntimePaths, VmResources
 from test_support.isolated_lm.qemu import (
     allocate_loopback_port,
     build_qemu_command,
@@ -152,8 +153,74 @@ def test_ssh_command_uses_only_the_recorded_loopback_identity_and_remote_argv(
         "-o", "BatchMode=yes",
         "--",
         "famulus-test@127.0.0.1",
-        "printf", "%s", "two words",
+        "printf %s 'two words'",
     ]
+
+
+def test_ssh_command_posix_quotes_empty_whitespace_and_metacharacter_arguments(
+    prepared_run: RunRecord, identity_file: Path
+) -> None:
+    """Catch OpenSSH's remote shell changing argument boundaries or expanding input."""
+    run = _launched(prepared_run, identity_file)
+
+    command = build_ssh_command(
+        run,
+        ["printf", "%s|%s|%s", "", "two words", ";$HOME"],
+    )
+
+    assert command[-2:] == [
+        "famulus-test@127.0.0.1",
+        "printf '%s|%s|%s' '' 'two words' ';$HOME'",
+    ]
+
+
+def test_start_rejects_comma_bearing_qemu_values_before_allocation_or_persistence(
+    tmp_path: Path, identity_file: Path
+) -> None:
+    """Catch QEMU parsing a comma in a state-root path as another suboption."""
+    paths = RuntimePaths.from_root((tmp_path / "state,unsafe").resolve())
+    run_dir = paths.runs / "run-42"
+    run_dir.mkdir(parents=True)
+    for name, content in (
+        ("overlay.qcow2", b"overlay"),
+        ("seed.iso", b"seed"),
+        ("known_hosts", b""),
+        ("serial.log", b""),
+    ):
+        path = run_dir / name
+        path.write_bytes(content)
+        path.chmod(0o600)
+    run = RunRecord(
+        schema_version=1,
+        run_id="run-42",
+        run_dir=run_dir,
+        resources=VmResources(),
+        source_image_digest="a" * 64,
+        overlay=run_dir / "overlay.qcow2",
+        seed_iso=run_dir / "seed.iso",
+        known_hosts=run_dir / "known_hosts",
+        serial_log=run_dir / "serial.log",
+        qmp_socket=run_dir / "qmp.sock",
+        pid_file=run_dir / "qemu.pid",
+        record_path=run_dir / "run.json",
+        ssh_user="famulus-test",
+        created_at_utc="2026-08-11T12:00:00+00:00",
+        lifecycle="prepared",
+    )
+    run.record_path.write_text(run.to_json(), encoding="utf-8")
+    before = run.record_path.read_bytes()
+    events: list[str] = []
+
+    with pytest.raises(ValueError, match="comma"):
+        start_run(
+            run,
+            identity_file,
+            allocate_port=lambda: events.append("port") or 40222,
+            run_process=lambda argv, **kwargs: events.append("qemu"),
+        )
+
+    assert events == []
+    assert run.record_path.read_bytes() == before
 
 
 def test_allocate_loopback_port_binds_ipv4_port_zero_and_closes_before_return() -> None:
@@ -292,6 +359,9 @@ def test_wait_for_ssh_polls_then_requires_cloud_init_before_ready(
         build_ssh_command(run, ["true"]),
         build_ssh_command(run, ["cloud-init", "status", "--wait"]),
     ]
+    assert [call[0][-1] for call in calls] == [
+        "true", "true", "true", "cloud-init status --wait",
+    ]
     assert all(call[1]["check"] is False for call in calls)
     assert [call[1]["timeout"] for call in calls] == [10, 8, 6, 6]
     assert clock.sleeps == [2, 2]
@@ -364,6 +434,7 @@ def test_stop_powers_off_then_marks_stopped_when_the_exact_process_disappears(
     )
 
     assert commands == [build_ssh_command(run, ["sudo", "-n", "poweroff"])]
+    assert commands[0][-1] == "sudo -n poweroff"
     assert stopped.lifecycle == "stopped"
     assert run.record_path.read_text(encoding="utf-8") == stopped.to_json()
 
@@ -493,3 +564,167 @@ def test_stop_timeout_leaves_lifecycle_unchanged(
 
     assert clock.now == 4
     assert json.loads(run.record_path.read_text())["lifecycle"] == "ready"
+
+
+class _FakeQmpSocket:
+    """Offline stream-socket double with explicit fragmented receive frames."""
+
+    def __init__(
+        self,
+        chunks: list[bytes],
+        *,
+        clock: _Clock | None = None,
+        operation_seconds: float = 0,
+    ) -> None:
+        self.chunks = iter(chunks)
+        self.clock = clock
+        self.operation_seconds = operation_seconds
+        self.timeouts: list[float] = []
+        self.sent: list[bytes] = []
+        self.connected: list[str] = []
+        self.recv_count = 0
+
+    def __enter__(self) -> "_FakeQmpSocket":
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        return None
+
+    def _advance(self) -> None:
+        if self.clock is not None:
+            self.clock.now += self.operation_seconds
+
+    def settimeout(self, seconds: float) -> None:
+        self.timeouts.append(seconds)
+
+    def connect(self, path: str) -> None:
+        self.connected.append(path)
+        self._advance()
+
+    def sendall(self, payload: bytes) -> None:
+        self.sent.append(payload)
+        self._advance()
+
+    def recv(self, size: int) -> bytes:
+        assert size == 4096
+        self.recv_count += 1
+        chunk = next(self.chunks)
+        self._advance()
+        return chunk
+
+
+def test_qmp_quit_buffers_fragments_ignores_async_frames_and_matches_reply_ids(
+    tmp_path: Path,
+) -> None:
+    """Catch fragment parsing, lost coalesced frames, or accepting the wrong reply."""
+    qmp_socket = tmp_path / "qmp.sock"
+    fake = _FakeQmpSocket(
+        [
+            b'{"QM',
+            b'P":{"version":{"qemu":{"major":9}}}}\r\n',
+            (
+                b'{"event":"RESET"}\r\n'
+                b'{"return":{},"id":"other"}\r\n'
+                b'{"return":{},"id":"isolated-lm-capabilities"}\r\n'
+            ),
+            (
+                b'{"event":"STOP"}\r\n'
+                b'{"return":{},"id":"isolated-lm-quit"}\r\n'
+            ),
+        ]
+    )
+
+    qemu_module._send_qmp_quit(
+        qmp_socket,
+        10,
+        socket_factory=lambda family, kind: fake,
+        monotonic=lambda: 0,
+    )
+
+    assert fake.connected == [str(qmp_socket)]
+    assert fake.recv_count == 4
+    assert fake.sent == [
+        b'{"execute":"qmp_capabilities","id":"isolated-lm-capabilities"}\r\n',
+        b'{"execute":"quit","id":"isolated-lm-quit"}\r\n',
+    ]
+    assert fake.timeouts and all(0 < timeout <= 10 for timeout in fake.timeouts)
+
+
+@pytest.mark.parametrize(
+    ("chunks", "message"),
+    [
+        ([b"not-json\r\n"], "malformed"),
+        ([b""], "closed"),
+    ],
+)
+def test_qmp_quit_rejects_malformed_frames_and_eof(
+    tmp_path: Path, chunks: list[bytes], message: str
+) -> None:
+    """Catch invalid or truncated QMP input being treated as a valid handshake."""
+    fake = _FakeQmpSocket(chunks)
+
+    with pytest.raises(RuntimeError, match=message):
+        qemu_module._send_qmp_quit(
+            tmp_path / "qmp.sock",
+            10,
+            socket_factory=lambda family, kind: fake,
+            monotonic=lambda: 0,
+        )
+
+    assert fake.sent == []
+
+
+def test_qmp_quit_uses_one_deadline_across_fragmented_blocking_operations(
+    tmp_path: Path,
+) -> None:
+    """Catch each connect/recv/send resetting the full QMP timeout budget."""
+    clock = _Clock()
+    fake = _FakeQmpSocket(
+        [b'{"QM'],
+        clock=clock,
+        operation_seconds=3,
+    )
+
+    with pytest.raises(TimeoutError, match="QMP"):
+        qemu_module._send_qmp_quit(
+            tmp_path / "qmp.sock",
+            5,
+            socket_factory=lambda family, kind: fake,
+            monotonic=clock.monotonic,
+        )
+
+    assert fake.connected == [str(tmp_path / "qmp.sock")]
+    assert fake.recv_count == 1
+    assert fake.timeouts == [5, 2]
+
+
+def test_qmp_quit_rejects_a_buffered_reply_after_the_overall_deadline(
+    tmp_path: Path,
+) -> None:
+    """Catch buffered frames bypassing a deadline exhausted by the preceding send."""
+    clock = _Clock()
+    fake = _FakeQmpSocket(
+        [
+            (
+                b'{"QMP":{"version":{}}}\r\n'
+                b'{"return":{},"id":"isolated-lm-capabilities"}\r\n'
+                b'{"return":{},"id":"isolated-lm-quit"}\r\n'
+            )
+        ],
+        clock=clock,
+        operation_seconds=1,
+    )
+
+    with pytest.raises(TimeoutError, match="QMP"):
+        qemu_module._send_qmp_quit(
+            tmp_path / "qmp.sock",
+            3.5,
+            socket_factory=lambda family, kind: fake,
+            monotonic=clock.monotonic,
+        )
+
+    assert fake.sent == [
+        b'{"execute":"qmp_capabilities","id":"isolated-lm-capabilities"}\r\n',
+        b'{"execute":"quit","id":"isolated-lm-quit"}\r\n',
+    ]
+    assert clock.now == 4

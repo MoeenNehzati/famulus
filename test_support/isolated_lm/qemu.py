@@ -4,8 +4,8 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import replace
 import json
-import os
 from pathlib import Path
+import shlex
 import socket
 import stat
 import subprocess
@@ -23,6 +23,9 @@ SHUTDOWN_POLL_SECONDS = 1.0
 RunProcess = Callable[..., subprocess.CompletedProcess[object]]
 ProcCmdlineReader = Callable[[int], bytes | None]
 QmpQuitter = Callable[[Path, float], None]
+
+_QMP_CAPABILITIES_ID = "isolated-lm-capabilities"
+_QMP_QUIT_ID = "isolated-lm-quit"
 
 
 def allocate_loopback_port(
@@ -51,23 +54,34 @@ def build_qemu_command(run: RunRecord, ssh_port: int) -> list[str]:
     """
     if not isinstance(ssh_port, int) or isinstance(ssh_port, bool) or not 1 <= ssh_port <= 65535:
         raise ValueError("SSH port must be an integer in 1..65535")
+    vm_name = _qemu_comma_safe("VM name", f"isolated-lm-{run.run_id}")
+    overlay = _qemu_comma_safe("overlay path", str(run.overlay))
+    seed_iso = _qemu_comma_safe("seed ISO path", str(run.seed_iso))
+    qmp_socket = _qemu_comma_safe("QMP socket path", str(run.qmp_socket))
     return [
         "qemu-system-x86_64",
-        "-name", f"isolated-lm-{run.run_id}",
+        "-name", vm_name,
         "-machine", "q35,accel=kvm",
         "-cpu", "host",
         "-smp", str(run.resources.vcpus),
         "-m", str(run.resources.memory_mib),
-        "-drive", f"file={run.overlay},if=virtio,format=qcow2",
-        "-drive", f"file={run.seed_iso},if=virtio,format=raw,readonly=on",
+        "-drive", f"file={overlay},if=virtio,format=qcow2",
+        "-drive", f"file={seed_iso},if=virtio,format=raw,readonly=on",
         "-netdev", f"user,id=net0,hostfwd=tcp:127.0.0.1:{ssh_port}-:22",
         "-device", "virtio-net-pci,netdev=net0",
         "-display", "none",
         "-serial", f"file:{run.serial_log}",
-        "-qmp", f"unix:{run.qmp_socket},server=on,wait=off",
+        "-qmp", f"unix:{qmp_socket},server=on,wait=off",
         "-pidfile", str(run.pid_file),
         "-daemonize",
     ]
+
+
+def _qemu_comma_safe(label: str, value: str) -> str:
+    """Reject data QEMU would split as another comma-delimited suboption."""
+    if "," in value:
+        raise ValueError(f"{label} must not contain a comma")
+    return value
 
 
 def _validate_identity(identity_file: Path) -> Path:
@@ -102,6 +116,10 @@ def _validate_prepared_run(run: RunRecord) -> None:
     """Fail closed before launch if the Task 3 artifact contract has drifted."""
     if run.lifecycle != "prepared":
         raise ValueError("start_run requires lifecycle prepared")
+    _qemu_comma_safe("VM name", f"isolated-lm-{run.run_id}")
+    _qemu_comma_safe("overlay path", str(run.overlay))
+    _qemu_comma_safe("seed ISO path", str(run.seed_iso))
+    _qemu_comma_safe("QMP socket path", str(run.qmp_socket))
     run_dir = run.run_dir
     if (
         not run_dir.is_absolute()
@@ -141,8 +159,11 @@ def build_ssh_command(run: RunRecord, remote_argv: Sequence[str]) -> list[str]:
     """Build one OpenSSH argv with isolated host/key state and no local shell.
 
     The destination is the fixed Task 3 guest user on IPv4 loopback. The
-    caller's remote arguments remain individual argv elements after the
-    destination, so this layer never concatenates or locally interprets them.
+    OpenSSH passes its post-host command through the remote login shell. One
+    ``shlex.join`` string therefore preserves the caller's argument boundaries,
+    including empty and metacharacter-bearing values. This layer never invokes
+    a local shell; the quoting is solely for OpenSSH's unavoidable remote-shell
+    command boundary.
     """
     if run.ssh_port is None or not 1 <= run.ssh_port <= 65535:
         raise ValueError("run has no valid SSH port")
@@ -151,6 +172,7 @@ def build_ssh_command(run: RunRecord, remote_argv: Sequence[str]) -> list[str]:
     identity = _validate_identity(run.identity_file)
     if not remote_argv or any(not isinstance(argument, str) for argument in remote_argv):
         raise ValueError("remote argv must contain at least one string argument")
+    remote_command = shlex.join(remote_argv)
     return [
         "ssh",
         "-p", str(run.ssh_port),
@@ -161,7 +183,7 @@ def build_ssh_command(run: RunRecord, remote_argv: Sequence[str]) -> list[str]:
         "-o", "BatchMode=yes",
         "--",
         f"{run.ssh_user}@127.0.0.1",
-        *remote_argv,
+        remote_command,
     ]
 
 
@@ -342,21 +364,87 @@ def _wait_for_process_exit(
         sleep(min(poll, remaining))
 
 
-def _recv_qmp_object(connection: Any) -> dict[str, object]:
-    """Receive one newline-framed QMP JSON object from a bounded socket."""
-    buffered = b""
-    while True:
-        chunk = connection.recv(4096)
-        if not chunk:
-            raise RuntimeError("QMP connection closed before a response")
-        buffered += chunk
-        lines = buffered.splitlines()
-        for line in lines:
-            if line.strip():
-                parsed = json.loads(line)
+class _QmpConnection:
+    """Frame one QMP stream under a single connection-wide deadline."""
+
+    def __init__(
+        self,
+        connection: Any,
+        deadline: float,
+        monotonic: Callable[[], float],
+    ) -> None:
+        self.connection = connection
+        self.deadline = deadline
+        self.monotonic = monotonic
+        self.buffer = bytearray()
+
+    def _time_left(self) -> float:
+        """Return positive time left, including before consuming buffered frames."""
+        remaining = self.deadline - self.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("QMP overall deadline expired")
+        return remaining
+
+    def _remaining(self) -> float:
+        """Set and return the positive time left before one blocking operation."""
+        remaining = self._time_left()
+        self.connection.settimeout(remaining)
+        return remaining
+
+    def connect(self, path: Path) -> None:
+        """Connect without resetting the overall deadline."""
+        self._remaining()
+        try:
+            self.connection.connect(str(path))
+        except (TimeoutError, socket.timeout) as error:
+            raise TimeoutError("QMP overall deadline expired during connect") from error
+
+    def send(self, payload: dict[str, object]) -> None:
+        """Send one compact newline-framed request within the time remaining."""
+        self._remaining()
+        encoded = json.dumps(payload, separators=(",", ":")).encode("utf-8") + b"\r\n"
+        try:
+            self.connection.sendall(encoded)
+        except (TimeoutError, socket.timeout) as error:
+            raise TimeoutError("QMP overall deadline expired during send") from error
+
+    def receive(self) -> dict[str, object]:
+        """Return one complete JSON frame while retaining later buffered frames."""
+        while True:
+            self._time_left()
+            newline = self.buffer.find(b"\n")
+            if newline >= 0:
+                frame = bytes(self.buffer[:newline]).rstrip(b"\r")
+                del self.buffer[:newline + 1]
+                if not frame.strip():
+                    continue
+                try:
+                    parsed = json.loads(frame)
+                except (UnicodeDecodeError, json.JSONDecodeError) as error:
+                    raise RuntimeError("QMP received a malformed JSON frame") from error
                 if not isinstance(parsed, dict):
-                    raise RuntimeError("QMP response is not an object")
+                    raise RuntimeError("QMP received a malformed non-object frame")
                 return parsed
+            self._remaining()
+            try:
+                chunk = self.connection.recv(4096)
+            except (TimeoutError, socket.timeout) as error:
+                raise TimeoutError("QMP overall deadline expired during receive") from error
+            if not chunk:
+                raise RuntimeError("QMP connection closed before a complete response")
+            self.buffer.extend(chunk)
+
+
+def _wait_for_qmp_reply(stream: _QmpConnection, request_id: str) -> None:
+    """Ignore asynchronous/unrelated frames until this request's terminal reply."""
+    while True:
+        message = stream.receive()
+        if message.get("id") != request_id:
+            continue
+        if "error" in message:
+            raise RuntimeError(f"QMP request {request_id} failed: {message['error']!r}")
+        if "return" in message:
+            return
 
 
 def _send_qmp_quit(
@@ -364,20 +452,20 @@ def _send_qmp_quit(
     timeout_seconds: float,
     *,
     socket_factory: Callable[..., Any] = socket.socket,
+    monotonic: Callable[[], float] = time.monotonic,
 ) -> None:
-    """Perform a bounded QMP greeting/capabilities handshake and request quit."""
+    """Complete QMP capabilities/quit replies under one monotonic deadline."""
     timeout = _positive_duration(timeout_seconds, "QMP timeout")
+    deadline = monotonic() + timeout
     with socket_factory(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
-        connection.settimeout(timeout)
-        connection.connect(str(qmp_socket))
-        greeting = _recv_qmp_object(connection)
-        if "QMP" not in greeting:
-            raise RuntimeError("QMP greeting is missing")
-        connection.sendall(b'{"execute":"qmp_capabilities"}\r\n')
-        capabilities = _recv_qmp_object(connection)
-        if "return" not in capabilities:
-            raise RuntimeError("QMP capabilities negotiation failed")
-        connection.sendall(b'{"execute":"quit"}\r\n')
+        stream = _QmpConnection(connection, deadline, monotonic)
+        stream.connect(qmp_socket)
+        while "QMP" not in stream.receive():
+            pass
+        stream.send({"execute": "qmp_capabilities", "id": _QMP_CAPABILITIES_ID})
+        _wait_for_qmp_reply(stream, _QMP_CAPABILITIES_ID)
+        stream.send({"execute": "quit", "id": _QMP_QUIT_ID})
+        _wait_for_qmp_reply(stream, _QMP_QUIT_ID)
 
 
 def stop_run(
