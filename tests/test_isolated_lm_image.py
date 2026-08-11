@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import inspect
 from pathlib import Path
 from subprocess import CalledProcessError, CompletedProcess
-from typing import Any
 
 import pytest
 
+import test_support.isolated_lm.image as image_module
 from test_support.isolated_lm.image import (
     CHECKSUMS_URL,
     IMAGE_FILENAME,
@@ -69,11 +70,20 @@ class _MappingOpener:
         return self._responses[url]
 
 
-def _opener_factory(
-    responses: dict[str, _Response], events: list[str] | None = None
-) -> Any:
-    """Build an opener factory without bypassing the redirect-handler boundary."""
-    return lambda _handler: _MappingOpener(responses, events)
+def _install_opener(
+    monkeypatch: pytest.MonkeyPatch,
+    responses: dict[str, _Response],
+    events: list[str] | None = None,
+) -> list[object]:
+    """Replace only the module opener builder while retaining its handler input."""
+    handlers: list[object] = []
+
+    def factory(handler: object) -> _MappingOpener:
+        handlers.append(handler)
+        return _MappingOpener(responses, events)
+
+    monkeypatch.setattr(image_module, "build_opener", factory)
+    return handlers
 
 
 def _record(path: Path, digest: str) -> CloudImageRecord:
@@ -89,6 +99,26 @@ def _record(path: Path, digest: str) -> CloudImageRecord:
         retrieved_at=datetime(2026, 8, 11, tzinfo=UTC),
         cached_path=path,
     )
+
+
+def test_acquisition_apis_construct_the_redirect_safe_opener_internally(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Prevent public callers from replacing the redirect-enforcement boundary."""
+    assert "opener_factory" not in inspect.signature(download_atomic).parameters
+    assert "opener_factory" not in inspect.signature(prepare_cloud_image).parameters
+    handlers: list[object] = []
+    monkeypatch.setattr(
+        image_module,
+        "build_opener",
+        lambda handler: handlers.append(handler)
+        or _MappingOpener({IMAGE_URL: _Response(b"payload")}),
+    )
+
+    assert download_atomic(IMAGE_URL, tmp_path / IMAGE_FILENAME) == (
+        tmp_path / IMAGE_FILENAME
+    ).resolve()
+    assert isinstance(handlers[0], image_module._ApprovedRedirectHandler)
 
 
 def test_parse_sha256sums_selects_exact_image_once() -> None:
@@ -162,11 +192,7 @@ def test_verify_signed_checksums_uses_only_trusted_keyring(tmp_path: Path) -> No
 def test_download_atomic_rejects_unapproved_image_origins(tmp_path: Path, url: str) -> None:
     """Refuse a download before an unapproved URL reaches the network boundary."""
     with pytest.raises(ValueError):
-        download_atomic(
-            url,
-            tmp_path / "image",
-            opener_factory=_opener_factory({IMAGE_URL: _Response(b"image")}),
-        )
+        download_atomic(url, tmp_path / "image")
 
 
 @pytest.mark.parametrize(
@@ -178,7 +204,7 @@ def test_download_atomic_rejects_unapproved_image_origins(tmp_path: Path, url: s
     ids=["wrong-origin", "unapproved-artifact"],
 )
 def test_download_atomic_rejects_a_redirect_outside_the_exact_allowlist(
-    tmp_path: Path, target: str
+    tmp_path: Path, target: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Do not let urllib request a redirect target outside the closed allowlist."""
     calls: list[str] = []
@@ -194,58 +220,53 @@ def test_download_atomic_rejects_a_redirect_outside_the_exact_allowlist(
                 target,
             )
 
+    monkeypatch.setattr(
+        image_module, "build_opener", lambda handler: _RedirectingOpener(handler)
+    )
     with pytest.raises(ValueError, match="unapproved redirect"):
-        download_atomic(
-            IMAGE_URL,
-            tmp_path / IMAGE_FILENAME,
-            opener_factory=lambda handler: _RedirectingOpener(handler),
-        )
+        download_atomic(IMAGE_URL, tmp_path / IMAGE_FILENAME)
 
     assert calls == [IMAGE_URL]
 
 
-def test_download_atomic_discards_partial_file_when_transfer_fails(tmp_path: Path) -> None:
+def test_download_atomic_discards_partial_file_when_transfer_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Leave no visible destination or temporary payload after a failed transfer."""
     destination = tmp_path / IMAGE_FILENAME
 
+    _install_opener(monkeypatch, {
+        IMAGE_URL: _Response(b"partial", fail_after_first_read=True),
+    })
     with pytest.raises(OSError, match="interrupted download"):
-        download_atomic(
-            IMAGE_URL,
-            destination,
-            opener_factory=_opener_factory({
-                IMAGE_URL: _Response(b"partial", fail_after_first_read=True),
-            }),
-        )
+        download_atomic(IMAGE_URL, destination)
 
     assert not destination.exists()
     assert list(tmp_path.iterdir()) == []
 
 
 def test_download_atomic_rejects_digest_mismatch_without_replacing_destination(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Keep a pre-existing cache entry when newly downloaded bytes are untrusted."""
     destination = tmp_path / IMAGE_FILENAME
     destination.write_bytes(b"known-good")
 
+    _install_opener(monkeypatch, {IMAGE_URL: _Response(b"different")})
     with pytest.raises(ValueError, match="download digest mismatch"):
-        download_atomic(
-            IMAGE_URL,
-            destination,
-            expected_digest="a" * 64,
-            opener_factory=_opener_factory({IMAGE_URL: _Response(b"different")}),
-        )
+        download_atomic(IMAGE_URL, destination, expected_digest="a" * 64)
 
     assert destination.read_bytes() == b"known-good"
     assert list(tmp_path.iterdir()) == [destination]
 
 
 def test_download_atomic_rejects_empty_payload_even_when_its_digest_matches(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Never treat an empty transfer as a verified cloud-image payload."""
     destination = tmp_path / IMAGE_FILENAME
 
+    _install_opener(monkeypatch, {IMAGE_URL: _Response(b"")})
     with pytest.raises(ValueError, match="empty download"):
         download_atomic(
             IMAGE_URL,
@@ -253,13 +274,14 @@ def test_download_atomic_rejects_empty_payload_even_when_its_digest_matches(
             expected_digest=(
                 "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
             ),
-            opener_factory=_opener_factory({IMAGE_URL: _Response(b"")}),
         )
 
     assert not destination.exists()
 
 
-def test_prepare_cloud_image_verifies_signature_before_caching_image(tmp_path: Path) -> None:
+def test_prepare_cloud_image_verifies_signature_before_caching_image(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Authenticate checksum metadata before transferring bytes into the image cache."""
     paths = RuntimePaths.from_root(tmp_path / "state")
     image = b"abc"
@@ -271,9 +293,9 @@ def test_prepare_cloud_image_verifies_signature_before_caching_image(tmp_path: P
         IMAGE_URL: _Response(image),
     }
 
+    _install_opener(monkeypatch, responses, events)
     record = prepare_cloud_image(
         paths,
-        opener_factory=_opener_factory(responses, events),
         run=lambda argv, **kwargs: events.append("verify-signature")
         or CompletedProcess(argv, 0),
         now=lambda: datetime(2026, 8, 11, 12, 0, tzinfo=UTC),
@@ -414,7 +436,6 @@ def test_prepare_cloud_image_rejects_symlinked_cache_directories(
     with pytest.raises(ValueError, match="symlink"):
         prepare_cloud_image(
             paths,
-            opener_factory=_opener_factory({}, events),
             run=lambda *args, **kwargs: pytest.fail("gpgv must not run"),
         )
 

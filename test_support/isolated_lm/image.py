@@ -241,7 +241,6 @@ def download_atomic(
     destination: Path,
     *,
     expected_digest: str | None = None,
-    opener_factory: Callable[[_ApprovedRedirectHandler], object] = build_opener,
 ) -> Path:
     """Download an approved URL into a temporary file and atomically replace.
 
@@ -259,12 +258,13 @@ def download_atomic(
 
     Call boundary
     -------------
-    ``prepare_cloud_image`` injects only an opener factory for tests. Every
-    factory receives the approved redirect handler before any request is made.
+    This public acquisition boundary always constructs its redirect-validating
+    opener internally. Tests replace the module-level ``build_opener`` symbol,
+    not this function's authority-bearing call signature.
     """
     _validate_source_url(url)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    opener = opener_factory(_ApprovedRedirectHandler())
+    opener = build_opener(_ApprovedRedirectHandler())
     temporary_name: str | None = None
     try:
         with tempfile.NamedTemporaryFile(
@@ -293,7 +293,6 @@ def download_atomic(
 def prepare_cloud_image(
     paths: RuntimePaths,
     *,
-    opener_factory: Callable[[_ApprovedRedirectHandler], object] = build_opener,
     run: Callable[..., subprocess.CompletedProcess[object]] = subprocess.run,
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> CloudImageRecord:
@@ -314,24 +313,19 @@ def prepare_cloud_image(
     Call boundary
     -------------
     The VM preparation layer supplies explicit ``RuntimePaths`` and consumes
-    the returned ``CloudImageRecord``; tests inject approved-opener factories
-    and subprocess fakes.
+    the returned ``CloudImageRecord``; tests replace the module opener builder
+    and inject subprocess fakes without changing acquisition authority.
     """
     downloads = _prepare_cache_directory(paths.root, paths.downloads)
     images = _prepare_cache_directory(paths.root, paths.images)
-    checksums = download_atomic(
-        CHECKSUMS_URL, downloads / "SHA256SUMS", opener_factory=opener_factory
-    )
-    signature = download_atomic(
-        SIGNATURE_URL, downloads / "SHA256SUMS.gpg", opener_factory=opener_factory
-    )
+    checksums = download_atomic(CHECKSUMS_URL, downloads / "SHA256SUMS")
+    signature = download_atomic(SIGNATURE_URL, downloads / "SHA256SUMS.gpg")
     verify_signed_checksums(checksums, signature, KEYRING, run=run)
     digest = parse_sha256sums(checksums.read_text(encoding="utf-8"), IMAGE_FILENAME)
     cached_path = download_atomic(
         IMAGE_URL,
         images / IMAGE_FILENAME,
         expected_digest=digest,
-        opener_factory=opener_factory,
     )
     retrieved_at = now().astimezone(UTC)
     return CloudImageRecord(
