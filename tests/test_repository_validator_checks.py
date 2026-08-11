@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 import xml.etree.ElementTree as ElementTree
 
@@ -717,8 +718,8 @@ def test_snapshot_capture_fails_if_head_changes_while_index_is_copied(
         _RUNNER._capture_repository_snapshot(repo)
 
 
-# famulus-skip: category=platform-contract; reason=POSIX preserves arbitrary filename bytes while Windows paths are Unicode; alternate=test_staged_validator_receives_eligible_paths_with_unborn_head
-@pytest.mark.skipif(os.name != "posix", reason="POSIX filename bytes")
+# famulus-skip: category=platform-contract; reason=this arbitrary-byte filename contract is supported by Linux but macOS and Windows paths reject the surrogate spelling used here; alternate=test_staged_validator_receives_eligible_paths_with_unborn_head
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux filename bytes")
 def test_staged_path_transport_preserves_non_utf8_filename_bytes(
     tmp_path: Path,
 ) -> None:

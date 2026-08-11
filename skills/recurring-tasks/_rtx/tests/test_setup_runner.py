@@ -125,6 +125,7 @@ def test_install_healthcheck_cron_migrates_old_recurring_lines(tmp_path):
 def test_run_setup_uses_python_runtimes_and_scheduler_backend(tmp_path, monkeypatch):
     backend = mock.Mock()
     backend.status.return_value = "timers\n"
+    monkeypatch.setattr(setup_runner.sys, "platform", "linux")
 
     with mock.patch.object(setup_runner._ensure_agent_env, "run") as ensure_env, \
          mock.patch.object(setup_runner._unit_writer, "main") as unit_writer_main, \

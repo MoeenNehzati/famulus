@@ -773,6 +773,20 @@ def test_loader_confines_relative_schema_references(tmp_path: Path) -> None:
         load_configured_schema_bundle(root_path)
 
 
+def test_file_uri_path_decoding_preserves_windows_drive_root() -> None:
+    assert configured_schema_module._decoded_file_uri_path(
+        "/D:/a/famulus/common.schema.json",
+        drive_letter_root=True,
+    ) == "D:/a/famulus/common.schema.json"
+
+
+def test_file_uri_path_decoding_preserves_posix_root() -> None:
+    assert configured_schema_module._decoded_file_uri_path(
+        "/opt/famulus/common.schema.json",
+        drive_letter_root=False,
+    ) == "/opt/famulus/common.schema.json"
+
+
 def test_configured_validator_honors_format_checker(tmp_path: Path) -> None:
     schema_path = tmp_path / "email.schema.json"
     schema_path.write_text(

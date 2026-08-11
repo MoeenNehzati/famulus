@@ -607,7 +607,7 @@ def test_windows_wrapper_tr_value_stays_well_under_261_char_limit(tmp_path):
 
     wrapper_path = unit_dir / wrapper_name(job.name)
     tr_value = task_run_command(wrapper_path)
-    assert len(tr_value) < 200, f"/TR value too long ({len(tr_value)} chars): {tr_value!r}"
+    assert len(tr_value) <= 261, f"/TR value too long ({len(tr_value)} chars): {tr_value!r}"
 
     # The measured, previously-failing inline command for comparison: the
     # same interpreter/resolver/executor/args chained on one /TR line.

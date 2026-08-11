@@ -12,6 +12,7 @@ import pytest
 
 import officina.install.launcher_entry as launcher_entry
 import officina.install.runtime_pointer as runtime_pointer
+from officina.common.famulus_paths import resolve_famulus_paths
 from officina.install.launcher_entry import ResolverError, main
 from officina.install.managed_runtime import build_candidate_release, uv_python_install_dir
 from officina.install.runtime_pointer import RuntimePointerError, activate_release
@@ -203,7 +204,10 @@ def test_deployed_stable_launcher_runs_an_installed_dispatcher_without_pythonpat
     from _install_launcher._linux_launcher import _unix_dispatcher_content
 
     home = tmp_path / "home"
-    runtime_root = home / ".local" / "share" / "famulus" / "runtime"
+    runtime_root = resolve_famulus_paths(
+        platform=sys.platform,
+        home=home,
+    ).runtime_root
     release_dir = runtime_root / "releases" / "installed"
     environment = release_dir / "venv"
     venv.EnvBuilder(with_pip=False, system_site_packages=True).create(environment)

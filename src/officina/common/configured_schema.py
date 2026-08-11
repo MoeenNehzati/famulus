@@ -16,6 +16,7 @@ from functools import lru_cache
 from importlib import resources
 import json
 import math
+import os
 from pathlib import Path
 import re
 from types import MappingProxyType
@@ -267,7 +268,9 @@ def _local_reference_path(
     if parsed.scheme not in {"", "file"}:
         return None
     if parsed.scheme == "file":
-        candidate = Path(unquote(parsed.path)).resolve()
+        candidate = Path(
+            _decoded_file_uri_path(parsed.path, drive_letter_root=(os.name == "nt"))
+        ).resolve()
     else:
         candidate = (current_path.parent / unquote(parsed.path)).resolve()
     try:
@@ -277,6 +280,14 @@ def _local_reference_path(
             f"{current_path}: schema reference {ref!r} resolves outside allowed schema root {allowed_root}"
         ) from exc
     return candidate
+
+
+def _decoded_file_uri_path(uri_path: str, *, drive_letter_root: bool) -> str:
+    """Decode a local file-URI path into the host filesystem path spelling."""
+    decoded = unquote(uri_path)
+    if drive_letter_root and re.match(r"^/[A-Za-z]:/", decoded):
+        return decoded[1:]
+    return decoded
 
 
 def _load_schema_documents(
