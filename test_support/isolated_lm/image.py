@@ -14,7 +14,6 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
-from urllib.parse import unquote, urlsplit
 from urllib.request import HTTPRedirectHandler, build_opener
 
 from test_support.isolated_lm.model import CloudImageRecord, RuntimePaths, VmResources
@@ -34,11 +33,14 @@ CHECKSUMS_URL = "https://cloud-images.ubuntu.com/noble/current/SHA256SUMS"
 SIGNATURE_URL = "https://cloud-images.ubuntu.com/noble/current/SHA256SUMS.gpg"
 KEYRING = Path("/usr/share/keyrings/ubuntu-cloudimage-keyring.gpg")
 
+ALLOWED_SOURCE_URLS = frozenset({IMAGE_URL, CHECKSUMS_URL, SIGNATURE_URL})
+"""The complete, closed set of URLs this acquisition boundary may request."""
+
 _SHA256SUM_LINE = re.compile(r"^([0-9A-Fa-f]{64}) [ *](.+)$")
 
 
 def _validate_source_url(url: str) -> None:
-    """Reject a source URL outside the fixed Ubuntu cloud-image namespace.
+    """Reject every source URL except the three explicitly approved artifacts.
 
     Rationale
     ---------
@@ -47,25 +49,15 @@ def _validate_source_url(url: str) -> None:
 
     Pseudocode
     ----------
-    - parse the supplied URL without performing network I/O
-    - require the approved scheme, exact authority, and Noble-current prefix
-    - reject credentials, ports, query parameters, and fragments
+    - compare the supplied URL with the complete fixed allowlist
+    - reject a different artifact even when its origin and path prefix match
 
     Call boundary
     -------------
-    ``download_atomic`` calls this before invoking its injected ``urlopen``
-    boundary, so disallowed URLs cannot reach the network.
+    ``download_atomic`` and ``_ApprovedRedirectHandler`` call this before a
+    network request, so a caller cannot widen the acquisition authority.
     """
-    parsed = urlsplit(url)
-    decoded_segments = unquote(parsed.path).split("/")
-    if (
-        parsed.scheme != ALLOWED_IMAGE_ORIGIN[0]
-        or parsed.netloc != ALLOWED_IMAGE_ORIGIN[1]
-        or not parsed.path.startswith(ALLOWED_PATH_PREFIX)
-        or any(segment in {".", ".."} for segment in decoded_segments)
-        or parsed.query
-        or parsed.fragment
-    ):
+    if url not in ALLOWED_SOURCE_URLS:
         raise ValueError(f"unapproved cloud-image URL: {url}")
 
 
@@ -85,8 +77,8 @@ class _ApprovedRedirectHandler(HTTPRedirectHandler):
 
     Call boundary
     -------------
-    ``download_atomic`` installs one instance in its default standard-library
-    opener; injected test ``urlopen`` functions do not use network I/O.
+    ``download_atomic`` installs one instance in every supplied opener factory,
+    including test factories, so its redirect policy cannot be bypassed.
     """
 
     def redirect_request(
@@ -106,6 +98,51 @@ class _ApprovedRedirectHandler(HTTPRedirectHandler):
         return super().redirect_request(
             request, file_pointer, status_code, message, headers, new_url
         )
+
+
+def _prepare_cache_directory(root: Path, directory: Path) -> Path:
+    """Create one real cache directory without traversing symlinked components.
+
+    Rationale
+    ---------
+    A symlink at a state-cache component could redirect temporary downloads or
+    the recorded cache path outside the explicitly selected runtime root.
+
+    Pseudocode
+    ----------
+    - require the requested directory to be a descendant of the absolute root
+    - create each missing component and reject a symlink or non-directory
+    - resolve the final directory and require it to remain under the root
+
+    Call boundary
+    -------------
+    ``prepare_cloud_image`` validates both download and image cache directories
+    before it asks an opener to make any network request.
+    """
+    if not root.is_absolute():
+        raise ValueError("runtime root must be absolute")
+    if root.is_symlink():
+        raise ValueError("runtime root must not be a symlink")
+    root.mkdir(parents=True, exist_ok=True)
+    if not root.is_dir():
+        raise ValueError("runtime root must be a directory")
+    try:
+        relative = directory.relative_to(root)
+    except ValueError as error:
+        raise ValueError("cache directory must be below runtime root") from error
+    current = root
+    for component in relative.parts:
+        current = current / component
+        if current.is_symlink():
+            raise ValueError(f"cache directory component is a symlink: {current}")
+        current.mkdir(exist_ok=True)
+        if current.is_symlink() or not current.is_dir():
+            raise ValueError(f"cache directory is not a real directory: {current}")
+    resolved_root = root.resolve()
+    resolved_directory = current.resolve()
+    if not resolved_directory.is_relative_to(resolved_root):
+        raise ValueError("cache directory resolves outside runtime root")
+    return resolved_directory
 
 
 def parse_sha256sums(text: str, filename: str) -> str:
@@ -204,8 +241,7 @@ def download_atomic(
     destination: Path,
     *,
     expected_digest: str | None = None,
-    urlopen: Callable[[str], object] | None = None,
-    build_opener: Callable[..., object] = build_opener,
+    opener_factory: Callable[[_ApprovedRedirectHandler], object] = build_opener,
 ) -> Path:
     """Download an approved URL into a temporary file and atomically replace.
 
@@ -223,21 +259,19 @@ def download_atomic(
 
     Call boundary
     -------------
-    ``prepare_cloud_image`` injects ``urlopen`` for unit tests. In production,
-    this helper builds an opener whose redirect handler validates each target.
+    ``prepare_cloud_image`` injects only an opener factory for tests. Every
+    factory receives the approved redirect handler before any request is made.
     """
     _validate_source_url(url)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    open_url = urlopen
-    if open_url is None:
-        open_url = build_opener(_ApprovedRedirectHandler()).open  # type: ignore[union-attr]
+    opener = opener_factory(_ApprovedRedirectHandler())
     temporary_name: str | None = None
     try:
         with tempfile.NamedTemporaryFile(
             mode="wb", dir=destination.parent, prefix=f".{destination.name}-", delete=False
         ) as temporary:
             temporary_name = temporary.name
-            with open_url(url) as response:  # type: ignore[union-attr]
+            with opener.open(url) as response:  # type: ignore[union-attr]
                 effective_url = response.geturl()  # type: ignore[union-attr]
                 try:
                     _validate_source_url(effective_url)
@@ -259,7 +293,7 @@ def download_atomic(
 def prepare_cloud_image(
     paths: RuntimePaths,
     *,
-    urlopen: Callable[[str], object] | None = None,
+    opener_factory: Callable[[_ApprovedRedirectHandler], object] = build_opener,
     run: Callable[..., subprocess.CompletedProcess[object]] = subprocess.run,
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> CloudImageRecord:
@@ -280,16 +314,24 @@ def prepare_cloud_image(
     Call boundary
     -------------
     The VM preparation layer supplies explicit ``RuntimePaths`` and consumes
-    the returned ``CloudImageRecord``; tests inject URL and subprocess fakes.
+    the returned ``CloudImageRecord``; tests inject approved-opener factories
+    and subprocess fakes.
     """
-    checksums = download_atomic(CHECKSUMS_URL, paths.downloads / "SHA256SUMS", urlopen=urlopen)
+    downloads = _prepare_cache_directory(paths.root, paths.downloads)
+    images = _prepare_cache_directory(paths.root, paths.images)
+    checksums = download_atomic(
+        CHECKSUMS_URL, downloads / "SHA256SUMS", opener_factory=opener_factory
+    )
     signature = download_atomic(
-        SIGNATURE_URL, paths.downloads / "SHA256SUMS.gpg", urlopen=urlopen
+        SIGNATURE_URL, downloads / "SHA256SUMS.gpg", opener_factory=opener_factory
     )
     verify_signed_checksums(checksums, signature, KEYRING, run=run)
     digest = parse_sha256sums(checksums.read_text(encoding="utf-8"), IMAGE_FILENAME)
     cached_path = download_atomic(
-        IMAGE_URL, paths.images / IMAGE_FILENAME, expected_digest=digest, urlopen=urlopen
+        IMAGE_URL,
+        images / IMAGE_FILENAME,
+        expected_digest=digest,
+        opener_factory=opener_factory,
     )
     retrieved_at = now().astimezone(UTC)
     return CloudImageRecord(
@@ -306,38 +348,43 @@ def prepare_cloud_image(
 
 
 def create_overlay(
-    backing_image: Path,
+    image: CloudImageRecord,
     overlay: Path,
     resources: VmResources,
     *,
     run: Callable[..., subprocess.CompletedProcess[object]] = subprocess.run,
 ) -> Path:
-    """Create a new sparse QCOW2 run disk over one verified absolute image.
+    """Create a new sparse QCOW2 run disk over one still-verified source image.
 
     Rationale
     ---------
-    Reusing an overlay would contaminate a disposable scenario, while a
-    relative backing path makes the disk's source depend on QEMU's CWD.
+    Reusing an overlay would contaminate a disposable scenario. Rechecking the
+    record path and digest prevents a substituted local file from becoming a
+    backing image after authenticated acquisition.
 
     Pseudocode
     ----------
-    - reject a pre-existing destination and a nonabsolute or empty backing file
+    - reject a pre-existing destination and unresolved/nonabsolute record path
+    - require nonempty current bytes to match the record's verified digest
     - invoke qemu-img with the fixed QCOW2 backing format and requested size
     - return the resolved overlay path for the later run record
 
     Call boundary
     -------------
-    Task 3 owns ``RunRecord`` serialization and combines this returned path
-    with ``CloudImageRecord.verified_source_digest`` after calling this helper.
+    Task 3 owns ``RunRecord`` serialization and records this returned path with
+    the already-verified ``CloudImageRecord.verified_source_digest``.
     """
     if overlay.exists() or overlay.is_symlink():
         raise FileExistsError(f"overlay destination already exists: {overlay}")
+    backing_image = image.cached_path
     if not backing_image.is_absolute():
         raise ValueError("backing image must be absolute")
+    if backing_image != backing_image.resolve():
+        raise ValueError("backing image record path must be resolved")
     if not backing_image.is_file():
         raise FileNotFoundError(f"backing image does not exist: {backing_image}")
-    if backing_image.stat().st_size == 0:
-        raise ValueError("backing image must not be empty")
+    if sha256_file(backing_image) != image.verified_source_digest:
+        raise ValueError("backing image digest does not match verified record")
     try:
         run(
             [

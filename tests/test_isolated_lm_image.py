@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 from subprocess import CalledProcessError, CompletedProcess
+from typing import Any
 
 import pytest
 
@@ -18,7 +19,7 @@ from test_support.isolated_lm.image import (
     prepare_cloud_image,
     verify_signed_checksums,
 )
-from test_support.isolated_lm.model import RuntimePaths, VmResources
+from test_support.isolated_lm.model import CloudImageRecord, RuntimePaths, VmResources
 
 
 class _Response:
@@ -53,6 +54,41 @@ class _Response:
 
     def geturl(self) -> str:
         return self._final_url
+
+
+class _MappingOpener:
+    """Serve fixed responses through the production opener interface."""
+
+    def __init__(self, responses: dict[str, _Response], events: list[str] | None = None) -> None:
+        self._responses = responses
+        self._events = events
+
+    def open(self, url: str) -> _Response:
+        if self._events is not None:
+            self._events.append(f"download:{url}")
+        return self._responses[url]
+
+
+def _opener_factory(
+    responses: dict[str, _Response], events: list[str] | None = None
+) -> Any:
+    """Build an opener factory without bypassing the redirect-handler boundary."""
+    return lambda _handler: _MappingOpener(responses, events)
+
+
+def _record(path: Path, digest: str) -> CloudImageRecord:
+    """Construct verified image provenance for an overlay contract test."""
+    return CloudImageRecord(
+        schema_version=1,
+        image_url=IMAGE_URL,
+        checksums_url=CHECKSUMS_URL,
+        signature_url=SIGNATURE_URL,
+        filename=IMAGE_FILENAME,
+        verified_source_digest=digest,
+        byte_size=path.stat().st_size,
+        retrieved_at=datetime(2026, 8, 11, tzinfo=UTC),
+        cached_path=path,
+    )
 
 
 def test_parse_sha256sums_selects_exact_image_once() -> None:
@@ -116,19 +152,35 @@ def test_verify_signed_checksums_uses_only_trusted_keyring(tmp_path: Path) -> No
         "https://mirror.example/noble/current/noble-server-cloudimg-amd64.img",
         "https://cloud-images.ubuntu.com/jammy/current/noble-server-cloudimg-amd64.img",
         "https://cloud-images.ubuntu.com/noble/current/%2e%2e/jammy/current/image",
+        "https://cloud-images.ubuntu.com/noble/current/unapproved-artifact.img",
     ],
-    ids=["non-https", "wrong-host", "wrong-path-prefix", "encoded-path-traversal"],
+    ids=[
+        "non-https", "wrong-host", "wrong-path-prefix", "encoded-path-traversal",
+        "unapproved-artifact",
+    ],
 )
 def test_download_atomic_rejects_unapproved_image_origins(tmp_path: Path, url: str) -> None:
     """Refuse a download before an unapproved URL reaches the network boundary."""
     with pytest.raises(ValueError):
-        download_atomic(url, tmp_path / "image", urlopen=lambda _: _Response(b"image"))
+        download_atomic(
+            url,
+            tmp_path / "image",
+            opener_factory=_opener_factory({IMAGE_URL: _Response(b"image")}),
+        )
 
 
-def test_download_atomic_rejects_a_redirect_outside_the_approved_origin(
-    tmp_path: Path,
+@pytest.mark.parametrize(
+    "target",
+    [
+        "https://mirror.example/noble/current/image",
+        "https://cloud-images.ubuntu.com/noble/current/unapproved-artifact.img",
+    ],
+    ids=["wrong-origin", "unapproved-artifact"],
+)
+def test_download_atomic_rejects_a_redirect_outside_the_exact_allowlist(
+    tmp_path: Path, target: str
 ) -> None:
-    """Do not let urllib request an unapproved redirect target."""
+    """Do not let urllib request a redirect target outside the closed allowlist."""
     calls: list[str] = []
 
     class _RedirectingOpener:
@@ -139,14 +191,14 @@ def test_download_atomic_rejects_a_redirect_outside_the_approved_origin(
             calls.append(url)
             return self._handler.redirect_request(  # type: ignore[union-attr]
                 object(), None, 302, "redirect", {},
-                "https://mirror.example/noble/current/image",
+                target,
             )
 
     with pytest.raises(ValueError, match="unapproved redirect"):
         download_atomic(
             IMAGE_URL,
             tmp_path / IMAGE_FILENAME,
-            build_opener=lambda handler: _RedirectingOpener(handler),
+            opener_factory=lambda handler: _RedirectingOpener(handler),
         )
 
     assert calls == [IMAGE_URL]
@@ -160,7 +212,9 @@ def test_download_atomic_discards_partial_file_when_transfer_fails(tmp_path: Pat
         download_atomic(
             IMAGE_URL,
             destination,
-            urlopen=lambda _: _Response(b"partial", fail_after_first_read=True),
+            opener_factory=_opener_factory({
+                IMAGE_URL: _Response(b"partial", fail_after_first_read=True),
+            }),
         )
 
     assert not destination.exists()
@@ -179,7 +233,7 @@ def test_download_atomic_rejects_digest_mismatch_without_replacing_destination(
             IMAGE_URL,
             destination,
             expected_digest="a" * 64,
-            urlopen=lambda _: _Response(b"different"),
+            opener_factory=_opener_factory({IMAGE_URL: _Response(b"different")}),
         )
 
     assert destination.read_bytes() == b"known-good"
@@ -199,7 +253,7 @@ def test_download_atomic_rejects_empty_payload_even_when_its_digest_matches(
             expected_digest=(
                 "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
             ),
-            urlopen=lambda _: _Response(b""),
+            opener_factory=_opener_factory({IMAGE_URL: _Response(b"")}),
         )
 
     assert not destination.exists()
@@ -219,7 +273,7 @@ def test_prepare_cloud_image_verifies_signature_before_caching_image(tmp_path: P
 
     record = prepare_cloud_image(
         paths,
-        urlopen=lambda url: events.append(f"download:{url}") or responses[url],
+        opener_factory=_opener_factory(responses, events),
         run=lambda argv, **kwargs: events.append("verify-signature")
         or CompletedProcess(argv, 0),
         now=lambda: datetime(2026, 8, 11, 12, 0, tzinfo=UTC),
@@ -250,12 +304,15 @@ def test_prepare_cloud_image_verifies_signature_before_caching_image(tmp_path: P
 def test_create_overlay_uses_verified_absolute_backing_image(tmp_path: Path) -> None:
     """Create one sparse run disk with the mandated backing-image command."""
     backing_image = (tmp_path / "base.qcow2").resolve()
-    backing_image.write_bytes(b"verified-image")
+    backing_image.write_bytes(b"abc")
     overlay = tmp_path / "run.qcow2"
     calls: list[list[str]] = []
 
     returned = create_overlay(
-        backing_image,
+        _record(
+            backing_image,
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+        ),
         overlay,
         VmResources(disk_gib=40),
         run=lambda argv, **kwargs: calls.append(argv) or CompletedProcess(argv, 0),
@@ -274,17 +331,35 @@ def test_create_overlay_refuses_reused_destination_or_relative_backing_image(
     """Avoid destructive reuse and reject an unauditable relative backing path."""
     overlay = tmp_path / "run.qcow2"
     overlay.touch()
+    backing_image = (tmp_path / "base.qcow2").resolve()
+    backing_image.write_bytes(b"abc")
 
     with pytest.raises(FileExistsError):
-        create_overlay(tmp_path / "base.qcow2", overlay, VmResources())
+        create_overlay(
+            _record(backing_image, "a" * 64), overlay, VmResources()
+        )
     with pytest.raises(ValueError, match="absolute"):
-        create_overlay(Path("base.qcow2"), tmp_path / "new.qcow2", VmResources())
+        create_overlay(
+            CloudImageRecord(
+                schema_version=1,
+                image_url=IMAGE_URL,
+                checksums_url=CHECKSUMS_URL,
+                signature_url=SIGNATURE_URL,
+                filename=IMAGE_FILENAME,
+                verified_source_digest="ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+                byte_size=3,
+                retrieved_at=datetime(2026, 8, 11, tzinfo=UTC),
+                cached_path=Path("base.qcow2"),
+            ),
+            tmp_path / "new.qcow2",
+            VmResources(),
+        )
 
 
 def test_create_overlay_removes_partial_destination_when_qemu_img_fails(tmp_path: Path) -> None:
     """Do not leave a failed qemu-img output reusable as a run disk."""
     backing_image = (tmp_path / "base.qcow2").resolve()
-    backing_image.write_bytes(b"verified-image")
+    backing_image.write_bytes(b"abc")
     overlay = tmp_path / "run.qcow2"
 
     def fail_after_creating_overlay(argv: list[str], **kwargs: object) -> CompletedProcess[object]:
@@ -292,7 +367,15 @@ def test_create_overlay_removes_partial_destination_when_qemu_img_fails(tmp_path
         raise CalledProcessError(1, argv)
 
     with pytest.raises(CalledProcessError):
-        create_overlay(backing_image, overlay, VmResources(), run=fail_after_creating_overlay)
+        create_overlay(
+            _record(
+                backing_image,
+                "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+            ),
+            overlay,
+            VmResources(),
+            run=fail_after_creating_overlay,
+        )
 
     assert not overlay.exists()
 
@@ -300,14 +383,73 @@ def test_create_overlay_removes_partial_destination_when_qemu_img_fails(tmp_path
 def test_create_overlay_refuses_a_dangling_symlink_destination(tmp_path: Path) -> None:
     """Treat a dangling symlink as an occupied overlay path, not an empty slot."""
     backing_image = (tmp_path / "base.qcow2").resolve()
-    backing_image.write_bytes(b"verified-image")
+    backing_image.write_bytes(b"abc")
     overlay = tmp_path / "run.qcow2"
     overlay.symlink_to(tmp_path / "missing.qcow2")
 
     with pytest.raises(FileExistsError):
         create_overlay(
-            backing_image,
+            _record(
+                backing_image,
+                "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+            ),
             overlay,
+            VmResources(),
+            run=lambda *args, **kwargs: pytest.fail("qemu-img must not run"),
+        )
+
+
+@pytest.mark.parametrize("cache_name", ["downloads", "images"])
+def test_prepare_cloud_image_rejects_symlinked_cache_directories(
+    tmp_path: Path, cache_name: str
+) -> None:
+    """Keep downloads and image-cache paths confined below the runtime root."""
+    paths = RuntimePaths.from_root(tmp_path / "state")
+    paths.root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    getattr(paths, cache_name).symlink_to(outside, target_is_directory=True)
+    events: list[str] = []
+
+    with pytest.raises(ValueError, match="symlink"):
+        prepare_cloud_image(
+            paths,
+            opener_factory=_opener_factory({}, events),
+            run=lambda *args, **kwargs: pytest.fail("gpgv must not run"),
+        )
+
+    assert events == []
+
+
+def test_create_overlay_requires_record_path_and_digest_to_match_bytes(tmp_path: Path) -> None:
+    """Reject a regular local file unless verified record provenance still holds."""
+    backing_image = (tmp_path / "base.qcow2").resolve()
+    backing_image.write_bytes(b"abc")
+    overlay = tmp_path / "run.qcow2"
+
+    with pytest.raises(ValueError, match="digest"):
+        create_overlay(
+            _record(backing_image, "a" * 64),
+            overlay,
+            VmResources(),
+            run=lambda *args, **kwargs: pytest.fail("qemu-img must not run"),
+        )
+
+
+def test_create_overlay_requires_recorded_path_to_be_resolved(tmp_path: Path) -> None:
+    """Reject a symlinked record path even when it resolves to the image bytes."""
+    backing_image = (tmp_path / "base.qcow2").resolve()
+    backing_image.write_bytes(b"abc")
+    recorded_path = tmp_path / "recorded.qcow2"
+    recorded_path.symlink_to(backing_image)
+
+    with pytest.raises(ValueError, match="resolved"):
+        create_overlay(
+            _record(
+                recorded_path,
+                "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+            ),
+            tmp_path / "run.qcow2",
             VmResources(),
             run=lambda *args, **kwargs: pytest.fail("qemu-img must not run"),
         )
