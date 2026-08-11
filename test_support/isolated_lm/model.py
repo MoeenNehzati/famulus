@@ -104,3 +104,95 @@ class CloudImageRecord:
             sort_keys=True,
             separators=(",", ":"),
         ) + "\n"
+
+
+@dataclass(frozen=True)
+class RunRecord:
+    """Freeze the complete artifact contract for one disposable VM run.
+
+    Rationale
+    ---------
+    A run must retain the verified backing-image digest and every private host
+    artifact path so later lifecycle operations cannot infer them from ambient
+    state or a mutable image cache.
+
+    Pseudocode
+    ----------
+    - retain immutable run identity, resource, provenance, and artifact facts
+    - render paths as strings and resources as explicit scalar fields
+    - serialize with sorted keys and a final newline for stable evidence files
+
+    Call boundary
+    -------------
+    ``prepare_run`` creates the initial ``prepared`` record. Task 4 replaces
+    the optional launch fields and atomically rewrites the same record path.
+    """
+
+    schema_version: int
+    run_id: str
+    run_dir: Path
+    resources: VmResources
+    source_image_digest: str
+    overlay: Path
+    seed_iso: Path
+    known_hosts: Path
+    serial_log: Path
+    qmp_socket: Path
+    pid_file: Path
+    record_path: Path
+    ssh_user: str
+    created_at_utc: str
+    lifecycle: str
+    ssh_port: int | None = None
+    identity_file: Path | None = None
+    qemu_command: tuple[str, ...] = ()
+
+    def to_json(self) -> str:
+        """Render a deterministic, newline-terminated VM run record.
+
+        Rationale
+        ---------
+        Lifecycle code needs an auditable record it can update atomically
+        without varying the serialization across Python or host environments.
+
+        Pseudocode
+        ----------
+        - convert every path to its already-confined absolute string form
+        - expand resource values rather than depending on dataclass encoding
+        - encode sorted compact JSON and append the record-file newline
+
+        Call boundary
+        -------------
+        ``prepare_run`` and later lifecycle code write this exact text to
+        ``record_path`` through their atomic file-writing boundary.
+        """
+        return json.dumps(
+            {
+                "schema_version": self.schema_version,
+                "run_id": self.run_id,
+                "run_dir": str(self.run_dir),
+                "resources": {
+                    "vcpus": self.resources.vcpus,
+                    "memory_mib": self.resources.memory_mib,
+                    "disk_gib": self.resources.disk_gib,
+                },
+                "source_image_digest": self.source_image_digest,
+                "overlay": str(self.overlay),
+                "seed_iso": str(self.seed_iso),
+                "known_hosts": str(self.known_hosts),
+                "serial_log": str(self.serial_log),
+                "qmp_socket": str(self.qmp_socket),
+                "pid_file": str(self.pid_file),
+                "record_path": str(self.record_path),
+                "ssh_user": self.ssh_user,
+                "created_at_utc": self.created_at_utc,
+                "lifecycle": self.lifecycle,
+                "ssh_port": self.ssh_port,
+                "identity_file": (
+                    str(self.identity_file) if self.identity_file is not None else None
+                ),
+                "qemu_command": list(self.qemu_command),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ) + "\n"
