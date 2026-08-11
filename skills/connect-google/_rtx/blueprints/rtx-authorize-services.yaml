@@ -1,6 +1,14 @@
 content:
+- _browser_helper\.py
 - _loopback_oauth\.py
 dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-client-config.yaml
+  reason: Loads and preflights the canonical redacted client and its exact client-secret
+    reference before opening the callback listener.
+  source: connect-google._rtx.source.rtx-client-config
+  version: 1
 - blueprint:
     base: module-root
     path: blueprints/rtx-init.yaml
@@ -8,8 +16,8 @@ dependencies:
   source: connect-google._rtx.source.rtx-init
   version: 1
 description: Requests one combined Google OAuth 2.0 PKCE grant covering every selected
-  service's scope in a single consent screen and stores exactly the scopes actually
-  granted.
+  service's scope, creates a new timestamped credential descriptor, and stores secrets
+  only in the host secret store.
 gateway:
   language: Python
   path: _loopback_oauth.py
@@ -35,25 +43,44 @@ interfaces:
             kind: string
             sensitivity: user-private
         home:
-          description: Home directory used to resolve the canonical client and credential
-            registry; defaults to the host home.
+          description: Home directory used to resolve the canonical client and descriptor
+            directory; defaults to the host home.
           required: false
           sensitivity: user-private
           type:
             kind: string
             sensitivity: user-private
+        no-open-browser:
+          default: false
+          description: Print the manual authorization URL and same-port forwarding
+            guidance without attempting to launch a local browser.
+          required: false
+          sensitivity: public
+          type:
+            kind: flag
+        callback-port:
+          description: Explicit TCP port for the loopback listener; omit to let the
+            operating system choose an available port.
+          required: false
+          sensitivity: public
+          type:
+            kind: integer
       preconditions: []
       interaction:
-        mode: unattended
+        mode: interactive
+        channel: tty
+        unattended_outcome: failed
       caller_warnings:
-      - external-side-effect: Opens a browser consent screen, starts a local loopback
-          HTTP listener for exactly one callback, and stores a refresh token in the
-          host secret store and per-account credential registry.
+      - external-side-effect: Prints a manual consent URL, optionally launches the
+          host browser in an isolated helper process, starts a bounded local loopback
+          listener, and stores a refresh token in the host secret store plus a new
+          secret-free timestamped credential descriptor file.
       outputs:
       - id: result
         audience: machine
-        description: One JSON object reporting the authorized account, opaque credential_id,
-          requested services, and which services were actually granted versus denied.
+        description: One JSON object reporting the authorized account, absolute credential
+          descriptor path, requested services, and which services were actually granted
+          versus denied.
         direct_io_ref: write-3
         cardinality:
           minimum: 1
@@ -75,15 +102,14 @@ interfaces:
         outputs:
         - result
         effects:
-        - credential-registry
-        caller_action: Hand credential_id to each granted service's use-google-credential
-          interface.
+        - credential-descriptor
+        caller_action: Pass credential_file to the coordinator for service-owned binding.
       - id: partial-grant
         class: success
         outputs:
         - result
         effects:
-        - credential-registry
+        - credential-descriptor
         caller_action: Report denied services to the user; the granted subset is already
           usable.
       - id: refused
@@ -96,8 +122,8 @@ interfaces:
         class: error
         outputs: []
         effects: []
-        caller_action: Report state mismatch, account mismatch, or token-exchange
-          failure without exposing OAuth secrets; no credential is stored.
+        caller_action: Report the stable phase and code without exposing OAuth secrets;
+          do not retry consent unless the failure requires a new authorization.
       execution:
         state_effect: mutating
         lifecycle: finite
@@ -105,9 +131,9 @@ interfaces:
           live: The authorization code, state, and granted scopes are all validated
             during this single invocation.
         effects:
-        - id: credential-registry
+        - id: credential-descriptor
           direct_io_ref: write-1
-          action: update
+          action: create
           value_source:
             kind: direct-io
             direct_io_ref: token-endpoint
@@ -118,26 +144,29 @@ interfaces:
             kind: direct-io
             direct_io_ref: write-1
           reversibility:
-            irreversible: No prior credential entry for this subject is retained.
+            irreversible: The new descriptor and its new refresh-token secret remain
+              until explicitly removed.
         mutation_safety:
           atomicity:
-            atomic: The credential registry is replaced through the shared atomic
-              JSON writer; the refresh token is stored in the secret store only after
-              a fully verified grant.
+            per_effect_only: The descriptor is exclusively created before its uniquely
+              keyed refresh-token secret is stored; a secret-store failure removes
+              the newly created descriptor.
           concurrent_invocations:
-            unsafe: Concurrent authorizations for the same subject are not serialized.
+            safe: Each authorization uses a distinct timestamp-and-random descriptor
+              filename and secret reference.
           idempotency:
             non_idempotent: Each run performs a fresh consent exchange and may return
               a different set of granted scopes.
           on_uncertain_completion:
-            verify_then_decide: Use connect-google._rtx.interface.client-status and the
-              owning service's credential check before retrying.
+            verify_then_decide: Retain the returned credential_file and use bind-credential-file
+              before considering another authorization.
           partial_effects_on_failure:
-            impossible: A state mismatch, account-hint mismatch, or failed token/UserInfo
-              exchange stores nothing -- the credential registry and secret store
-              are untouched.
+            possible: A host secret-store failure can occur after exclusive descriptor
+              creation; the implementation removes that new descriptor before returning
+              failure.
           rollback_on_failure:
-            unavailable: No prior credential backup is retained.
+            automatic: A secret-store failure removes only the descriptor created by
+              this invocation; earlier descriptors are never changed.
         verification:
         - method: output-schema
           output_ref: result
@@ -146,6 +175,17 @@ interfaces:
       helpers: []
       direct_io:
         network:
+        - id: authorization-endpoint
+          medium: network
+          access: read-write
+          system: google-oauth-authorization-endpoint
+          content: PKCE authorization request and user consent
+          formats:
+          - url-query
+          sensitivity: user-private
+          endpoint: https://accounts.google.com/o/oauth2/v2/auth
+          reason: Present the pinned authorization request in the user's browser;
+            client-supplied authorization endpoints are ignored.
         - id: token-endpoint
           medium: network
           access: read-write
@@ -154,8 +194,7 @@ interfaces:
           formats:
           - json
           sensitivity: secret
-          endpoint: Google OAuth 2.0 token endpoint from the installed client's auth/token
-            URIs
+          endpoint: https://oauth2.googleapis.com/token
           reason: Exchanges the loopback-captured authorization code and PKCE verifier
             for an access token and refresh token.
         - id: userinfo-endpoint
@@ -166,7 +205,7 @@ interfaces:
           formats:
           - json
           sensitivity: user-private
-          endpoint: Google OpenID Connect UserInfo endpoint
+          endpoint: https://openidconnect.googleapis.com/v1/userinfo
           reason: Confirms the authorized account's verified email before any credential
             is stored.
         - id: browser-consent
@@ -177,9 +216,10 @@ interfaces:
           formats:
           - url-query
           sensitivity: secret
-          endpoint: http://localhost on an ephemeral port
-          reason: Receives exactly one browser redirect callback carrying the authorization
-            code, then closes.
+          endpoint: http://127.0.0.1:<port>/
+          reason: Receives one valid root-path browser redirect callback on an operating-system-selected
+            or explicit same port, ignoring malformed or unknown-error requests until
+            the monotonic consent deadline expires.
         reads:
         - access: read
           content: config
@@ -189,8 +229,9 @@ interfaces:
           medium: local-filesystem
           path: platform Famulus config root (see common.interface.google-credentials)
             / connect-google/client.json
-          reason: Read the installed client_id, auth_uri, and token_uri; the client
-            secret itself is never read from this file.
+          reason: Read the installed client_id and exact client_secret_ref after the
+            secret reference resolves; endpoint values and plaintext secrets are
+            rejected or ignored rather than trusted from this file.
           sensitivity: secret
           system: filesystem
         writes:
@@ -201,10 +242,10 @@ interfaces:
           id: write-1
           medium: local-filesystem
           path: platform Famulus config root (see common.interface.google-credentials)
-            / connect-google/credentials.json
-          reason: Record the authorized subject, account, client, token endpoint,
-            and actually-granted scopes. The refresh token itself is stored via common.interface.google-credentials
-            in the host secret store, not written to this file.
+            / connect-google/credentials/<timestamp>-<random>.json
+          reason: Create one immutable descriptor recording identity, client, token
+            endpoint, granted services/scopes, and opaque secret references. Tokens
+            are never written to this file.
           sensitivity: user-private
           system: filesystem
         - access: write
@@ -215,7 +256,7 @@ interfaces:
           medium: local-system
           path: host secret store
           reason: Store the new refresh token via common.interface.google-credentials,
-            keyed by the opaque credential_id.
+            keyed by the unique credential descriptor filename stem.
           sensitivity: secret
           system: host-credential-store
         - access: write
@@ -224,12 +265,36 @@ interfaces:
           - json
           id: write-3
           medium: stdout
-          reason: Return the authorization result only -- account, credential_id,
-            and per-service grant status, never a token or client secret.
+          reason: Return the authorization result only -- account, subject, absolute
+            credential_file, and per-service grant status, never a token or client
+            secret.
           sensitivity: user-private
           system: agent-runtime
+        - id: diagnostic-stream
+          medium: stderr
+          access: write
+          system: agent-runtime
+          content: oauth-phase-diagnostics
+          formats:
+          - jsonl
+          sensitivity: user-private
+          reason: Emit stable phase and code events, the manual authorization URL,
+            same-port SSH forwarding guidance, and browser-launch status without
+            OAuth secrets.
+        - id: browser-helper
+          medium: subprocess
+          access: execute
+          system: default-browser
+          content: browser-launch-request
+          formats:
+          - url-via-stdin
+          sensitivity: user-private
+          reason: Attempt browser opening without allowing host browser-library hangs
+            to block callback handling; the helper is bounded and reaped on every
+            terminal path.
     description: Request one combined Google OAuth 2.0 PKCE grant across every selected
-      service and store exactly the scopes Google actually granted.
+      service and return a new timestamped credential descriptor path covering exactly
+      the scopes Google granted.
     process_binding:
       entry: AuthorizeServicesInterface
       kind: process
@@ -238,15 +303,19 @@ interfaces:
         - --services
         - --account-hint
         - --home
+        - --no-open-browser
+        - --callback-port
         flag_patterns:
           --services: ^.+$
           --account-hint: ^.+$
           --home: ^.+$
+          --callback-port: ^[0-9]+$
         max_positionals: 0
         min_positionals: 0
         required_flags:
         - --services
-    usage: --services <list> [--account-hint <email>] [--home <dir>]
+    usage: --services <list> [--account-hint <email>] [--home <dir>] [--no-open-browser]
+      [--callback-port <port>]
     version: 1
 node_type: behavioral_source
 platform_support:

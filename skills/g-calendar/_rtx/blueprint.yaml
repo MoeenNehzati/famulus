@@ -62,9 +62,15 @@ exports:
       allow_all_modules: false
       allowed_callers:
       - g-calendar
-      - install-assistant-tools
-      - install-assistant-tools._rtx
     source_interface: g-calendar._rtx.source.rtx-ensure-oauth.interface.use-google-credential
+  g-calendar._rtx.interface.use-google-credential-file:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - connect-google
+      - connect-google._rtx
+      - g-calendar
+    source_interface: g-calendar._rtx.source.rtx-ensure-oauth.interface.use-google-credential-file
 gateway:
   language: Python>=3.11
   path: __init__.py

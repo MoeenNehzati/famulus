@@ -45,6 +45,7 @@ namespace_exports:
         cloud-files._rtx.interface.plans-write: 1
         cloud-files._rtx.interface.setup-oauth: 1
         cloud-files._rtx.interface.use-google-credential: 1
+        cloud-files._rtx.interface.use-google-credential-file: 1
         cloud-files._rtx.interface.write-config: 1
     interface_access:
       cloud-files._rtx.interface.ensure-oauth:
@@ -87,9 +88,12 @@ namespace_exports:
         allowed_callers: []
       cloud-files._rtx.interface.use-google-credential:
         allow_all_modules: false
+        allowed_callers: []
+      cloud-files._rtx.interface.use-google-credential-file:
+        allow_all_modules: false
         allowed_callers:
-        - install-assistant-tools
-        - install-assistant-tools._rtx
+        - connect-google
+        - connect-google._rtx
       cloud-files._rtx.interface.write-config:
         allow_all_modules: false
         allowed_callers: []

@@ -16,15 +16,12 @@ Activation: user-request, skill-workflow; persistent modifier: no
 Skill Version: 2
 
 Uses Interfaces:
-- `cloud-files.source.gateway -> cloud-files._rtx.interface.ensure-oauth@1`
 - `cloud-files.source.gateway -> cloud-files._rtx.interface.lists-delete@1`
 - `cloud-files.source.gateway -> cloud-files._rtx.interface.lists-read@1`
 - `cloud-files.source.gateway -> cloud-files._rtx.interface.lists-write@1`
 - `cloud-files.source.gateway -> cloud-files._rtx.interface.plans-delete@1`
 - `cloud-files.source.gateway -> cloud-files._rtx.interface.plans-read@1`
 - `cloud-files.source.gateway -> cloud-files._rtx.interface.plans-write@1`
-- `cloud-files.source.gateway -> cloud-files._rtx.interface.setup-oauth@1`
-- `cloud-files.source.gateway -> cloud-files._rtx.interface.use-google-credential@1`
 - `cloud-files.source.gateway -> cloud-files._rtx.interface.write-config@1`
 - `cloud-files.source.gateway -> connect-google.interface.default@1`
 
@@ -52,13 +49,13 @@ Install-time config lives at `~/.config/cloud-files/config.json`.
 Legacy OAuth credentials live at `~/.config/cloud-files/credentials.json`.
 
 For shared Google setup or Drive reauthorization, first invoke
-`connect-google.interface.default`. Inspect its combined-authorization result.
-When Drive was granted, bind the returned opaque `credential_id` with
-`cloud-files._rtx.interface.use-google-credential`, using the same registry home.
+`connect-google.interface.default`. Its deterministic coordinator creates a
+credential file, asks Drive's owner to probe live access, and stores the path
+only after verification. Treat only `complete: true` as successful setup; report
+an incomplete Drive result and retry through connect-google with the same file.
 
-Use `cloud-files._rtx.interface.setup-oauth` only as the legacy fallback for a
-cloud-files configuration that has not adopted a shared credential. It accepts
-the Google Desktop-client JSON and performs a separate Drive authorization flow.
+Existing legacy Drive credentials remain runtime-readable until a verified
+credential-file binding replaces them. Do not offer legacy setup as a new route.
 
 ## 1. Preapproved LLM-root operations
 

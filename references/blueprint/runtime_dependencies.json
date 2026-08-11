@@ -172,6 +172,21 @@
             }
           ]
         },
+        "cloud-files._rtx.interface.use-google-credential-file": {
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
+        },
         "cloud-files._rtx.interface.write-config": {
           "dependencies": [
             {
@@ -191,7 +206,7 @@
     },
     "connect-google": {
       "interfaces": {
-        "connect-google._rtx.interface.authorize-services": {
+        "connect-google._rtx.interface.bind-credential-file": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -202,7 +217,40 @@
                 "macos": true,
                 "windows": true
               },
+              "reason": "Clears stored account credentials when requested."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Provides the system credential-store API imported by secret_store.py."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Stores Gmail OAuth refresh tokens and client secrets in the host credential store."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Stores IMAP or SMTP credentials in the host credential store."
             }
           ]
         },
@@ -218,6 +266,54 @@
                 "windows": true
               },
               "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
+        },
+        "connect-google._rtx.interface.connect-services": {
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Clears stored account credentials when requested."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Stores Gmail OAuth refresh tokens and client secrets in the host credential store."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Stores IMAP or SMTP credentials in the host credential store."
             }
           ]
         },
@@ -1421,6 +1517,54 @@
             }
           ]
         },
+        "email-client._rtx.interface.accounts-use-google-credential-file": {
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Clears stored account credentials when requested."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Stores Gmail OAuth refresh tokens and client secrets in the host credential store."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Stores IMAP or SMTP credentials in the host credential store."
+            }
+          ]
+        },
         "email-client._rtx.interface.live-smoke": {
           "dependencies": [
             {
@@ -2159,6 +2303,21 @@
           "dependencies": []
         },
         "g-calendar._rtx.interface.use-google-credential": {
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
+        },
+        "g-calendar._rtx.interface.use-google-credential-file": {
           "dependencies": [
             {
               "kind": "python-package",

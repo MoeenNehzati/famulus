@@ -267,6 +267,188 @@ interfaces:
         - --home
     usage: --home <dir> [--dry-run]
     version: 1
+  g-calendar._rtx.source.rtx-ensure-oauth.interface.use-google-credential-file:
+    contract:
+      arguments:
+        credential-file:
+          description: Credential descriptor path created by connect-google.
+          direct_io_ref: read-credential
+          required: true
+          sensitivity: user-private
+          type:
+            access: read
+            kind: file
+            must_exist: true
+            opaque_content: true
+            relative_to: caller-cwd
+            syntax: literal
+        home:
+          description: Home directory under which g-calendar config is written.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+        allow-account-change:
+          default: false
+          description: Explicit approval to replace prior Calendar OAuth state when
+            its stable Google subject differs or cannot be established.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: flag
+      caller_warnings:
+      - external-side-effect: Performs a live Calendar read and writes credential_file
+          only after scope, account-change, refresh, and probe checks succeed.
+      direct_io:
+        network:
+        - access: read
+          content: access-token refresh and Calendar list probe
+          endpoint: Google OAuth token endpoint from the descriptor and Calendar API
+            /users/me/calendarList?maxResults=1
+          formats:
+          - json
+          id: calendar-probe
+          medium: network
+          reason: Verify live Calendar access before changing service configuration.
+          sensitivity: secret
+          system: google-calendar-api
+        reads:
+        - access: read
+          content: credential descriptor
+          formats:
+          - json
+          id: read-credential
+          medium: local-filesystem
+          path: caller-supplied credential descriptor path
+          reason: Validate identity and Calendar scope and resolve secret references.
+          sensitivity: user-private
+          system: filesystem
+        - access: read
+          content: config
+          formats:
+          - json
+          id: read-config
+          medium: local-filesystem
+          path: $home/.config/g-calendar/config.json
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        writes:
+        - access: write
+          content: config
+          formats:
+          - json
+          id: write-config-file
+          medium: local-filesystem
+          path: $home/.config/g-calendar/config.json
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        - access: write
+          content: binding result
+          formats:
+          - json
+          id: write-result
+          medium: stdout
+          sensitivity: user-private
+          system: agent-runtime
+      execution:
+        consistency:
+          live: The descriptor, prior binding identity, token refresh, and Calendar
+            probe are checked before the config write.
+        effects:
+        - action: update
+          confirmation_evidence:
+            direct_io_ref: write-result
+            kind: direct-io
+          direct_io_ref: write-config-file
+          id: bind-file
+          may_occur_in_outcomes:
+          - bound
+          reversibility:
+            reversible: A later explicitly approved binding may replace credential_file.
+          value_source:
+            argument_ref: credential-file
+            kind: argument
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            per_effect_only: One config file is written only after all verification succeeds.
+          concurrent_invocations:
+            unsafe: Concurrent config writers can overwrite preserved fields.
+          idempotency:
+            idempotent: Rebinding the same verified path converges to the same value.
+          on_uncertain_completion:
+            verify_then_decide: Read config.json before retrying.
+          partial_effects_on_failure:
+            impossible: Scope, identity, refresh, and probe failures occur before writing.
+          rollback_on_failure:
+            unavailable: A low-level failure during the direct file write has no retained backup.
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: result
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Use Calendar with the recorded credential_file path.
+        class: success
+        effects:
+        - bind-file
+        id: bound
+        outputs:
+        - result
+      - caller_action: Correct the file, scope, account approval, or live access before retrying.
+        class: error
+        effects: []
+        id: failed
+        outputs:
+        - result
+      outputs:
+      - audience: machine
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Stable JSON reporting service, normalized path, account, bound,
+          verified, or a stable error.
+        direct_io_ref: write-result
+        empty: Never empty.
+        id: result
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          format:
+            named: json
+          kind: string
+          sensitivity: user-private
+      preconditions: []
+    description: Validate and live-probe a Calendar credential descriptor before
+      storing only its normalized absolute path in g-calendar config.
+    process_binding:
+      args_prefix:
+      - use-google-credential-file
+      entry: Interface
+      kind: process
+      patterns:
+      - allowed_flags:
+        - --credential-file
+        - --home
+        - --allow-account-change
+        flag_patterns:
+          --credential-file: ^.+$
+          --home: ^.+$
+        max_positionals: 0
+        min_positionals: 0
+        required_flags:
+        - --credential-file
+        - --home
+    usage: --credential-file <path> --home <dir> [--allow-account-change]
+    version: 1
   g-calendar._rtx.source.rtx-ensure-oauth.interface.use-google-credential:
     contract:
       arguments:

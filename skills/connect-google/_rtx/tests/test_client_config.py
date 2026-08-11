@@ -60,6 +60,26 @@ class FakeSecretBackend:
         return False
 
 
+@pytest.fixture
+def secret_backend() -> FakeSecretBackend:
+    return FakeSecretBackend()
+
+
+@pytest.fixture
+def canonical_redacted_client(tmp_path: Path, secret_backend: FakeSecretBackend):
+    home = tmp_path / "home"
+    path = canonical(home)
+    path.parent.mkdir(parents=True)
+    payload = desktop_client()
+    installed = payload["installed"]
+    installed.pop("project_id")
+    installed.pop("client_secret")
+    installed["client_secret_ref"] = "custom-secret-ref"
+    write_json(path, payload)
+    secret_backend.store("connect-google", "custom-secret-ref", "secret")
+    return home, path
+
+
 def test_validate_accepts_desktop_client_and_token_uri() -> None:
     payload = desktop_client()
     assert client_config.validate_client_payload(payload) == payload
@@ -184,8 +204,13 @@ def test_client_status_reports_missing_valid_and_invalid_without_secrets(
     assert missing == {"status": "missing", "client_type": "none", "path": str(path)}
 
     path.parent.mkdir(parents=True)
-    write_json(path, desktop_client())
-    valid = client_config.client_status(home)
+    payload = desktop_client()
+    payload["installed"].pop("client_secret")
+    payload["installed"]["client_secret_ref"] = "ref"
+    write_json(path, payload)
+    backend = FakeSecretBackend()
+    backend.store("connect-google", "ref", "secret")
+    valid = client_config.client_status(home, secret_backend=backend)
     assert valid == {"status": "valid", "client_type": "desktop", "path": str(path)}
 
     path.write_text("{", encoding="utf-8")
@@ -194,6 +219,19 @@ def test_client_status_reports_missing_valid_and_invalid_without_secrets(
     assert invalid == {"status": "invalid", "client_type": "unknown", "path": str(path)}
     assert "client_secret" not in rendered
     assert "secret" not in rendered
+
+
+def test_client_status_reports_invalid_utf8_as_invalid(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    path = canonical(home)
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"\xff")
+
+    assert client_config.client_status(home) == {
+        "status": "invalid",
+        "client_type": "unknown",
+        "path": str(path),
+    }
 
 
 def test_client_status_discovers_valid_legacy_service_clients_without_copying(
@@ -238,3 +276,101 @@ def test_client_status_reports_conflicting_legacy_clients_and_ignores_invalid(
         {"service": "cloud-files", "path": str(drive)}
     ]
     assert "legacy_candidates_match" not in result
+
+
+def test_load_authorization_client_accepts_redacted_client_without_project_id(
+    canonical_redacted_client, secret_backend
+) -> None:
+    home, _ = canonical_redacted_client
+
+    installed = client_config.load_authorization_client(
+        home, secret_backend=secret_backend
+    )
+
+    assert installed == {"client_id": "cid", "client_secret_ref": "custom-secret-ref"}
+
+
+def test_client_status_marks_plaintext_canonical_client_needs_migration(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    path = canonical(home)
+    path.parent.mkdir(parents=True)
+    write_json(path, desktop_client())
+
+    result = client_config.client_status(home, secret_backend=FakeSecretBackend())
+
+    assert result["status"] == "needs-migration"
+    assert "--from-json" in result["remediation"]
+    assert "--replace" in result["remediation"]
+
+
+@pytest.mark.parametrize("secret_value", [None, ""])
+def test_load_authorization_client_rejects_unresolved_secret_before_listener(
+    canonical_redacted_client, secret_value
+) -> None:
+    home, _ = canonical_redacted_client
+    backend = FakeSecretBackend()
+    if secret_value:
+        backend.store("connect-google", "custom-secret-ref", secret_value)
+
+    with pytest.raises(client_config.ClientConfigError, match="secret"):
+        client_config.load_authorization_client(home, secret_backend=backend)
+
+
+def test_load_authorization_client_rejects_recursive_plaintext_client_secret(
+    canonical_redacted_client, secret_backend
+) -> None:
+    home, path = canonical_redacted_client
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["unexpected"] = {"client_secret": "plaintext-leak"}
+    write_json(path, payload)
+
+    with pytest.raises(client_config.ClientConfigError, match="plaintext"):
+        client_config.load_authorization_client(home, secret_backend=secret_backend)
+
+
+def test_downloaded_client_rejects_additional_nested_plaintext_client_secret() -> None:
+    payload = desktop_client()
+    payload["unexpected"] = {"client_secret": "plaintext-leak"}
+
+    with pytest.raises(client_config.ClientConfigError, match="plaintext"):
+        client_config.validate_client_payload(payload)
+
+
+def test_plaintext_canonical_with_token_field_is_invalid_not_migration(
+    tmp_path: Path,
+) -> None:
+    home = tmp_path / "home"
+    path = canonical(home)
+    path.parent.mkdir(parents=True)
+    payload = desktop_client()
+    payload["access_token"] = "must-not-be-accepted"
+    write_json(path, payload)
+
+    result = client_config.client_status(home, secret_backend=FakeSecretBackend())
+
+    assert result["status"] == "invalid"
+    assert "remediation" not in result
+
+
+@pytest.mark.parametrize("platform", ["linux", "darwin", "win32"])
+def test_authorization_preflight_resolves_canonical_path_on_each_platform(
+    tmp_path: Path, secret_backend: FakeSecretBackend, platform: str
+) -> None:
+    from officina.common.google_credentials import canonical_client_path
+
+    path = canonical_client_path(home=tmp_path, platform=platform)
+    path.parent.mkdir(parents=True)
+    payload = desktop_client()
+    payload["installed"].pop("client_secret")
+    payload["installed"]["client_secret_ref"] = "portable-secret-ref"
+    write_json(path, payload)
+    secret_backend.store("connect-google", "portable-secret-ref", "secret")
+
+    installed = client_config.load_authorization_client(
+        tmp_path, platform=platform, secret_backend=secret_backend
+    )
+
+    assert installed == {
+        "client_id": "cid",
+        "client_secret_ref": "portable-secret-ref",
+    }

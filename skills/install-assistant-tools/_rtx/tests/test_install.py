@@ -385,7 +385,7 @@ def test_phase_entry_google_onboarding_partial_does_not_fail_install(tmp_path, m
     monkeypatch.setattr(
         install.google_onboarding, "run_google_onboarding",
         lambda *a, **kw: install.google_onboarding.OnboardingCapabilityResult(
-            status="partial", credential_id="cred-1",
+            status="partial", credential_file="/fake/credential.json",
             granted_services=("drive",), denied_services=(), deferred_services=("gmail",),
         ),
     )

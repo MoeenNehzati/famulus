@@ -85,13 +85,7 @@ interfaces:
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
-- interface: cloud-files._rtx.interface.setup-oauth
-  version: 1
-- interface: cloud-files._rtx.interface.use-google-credential
-  version: 1
 - interface: connect-google.interface.default
-  version: 1
-- interface: cloud-files._rtx.interface.ensure-oauth
   version: 1
 - interface: cloud-files._rtx.interface.lists-delete
   version: 1

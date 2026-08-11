@@ -81,8 +81,32 @@ def body(relative: str) -> str:
     return text.lower()
 
 
-def test_module_and_markdown_gateway_graph(load_blueprint: BlueprintLoader) -> None:
-    root = load_blueprint(SKILL_ROOT / "blueprint.yaml")
+@pytest.fixture(scope="module")
+def root_blueprint(load_blueprint: BlueprintLoader) -> dict[str, object]:
+    """Parse the immutable root graph once for all routing assertions."""
+    return load_blueprint(SKILL_ROOT / "blueprint.yaml")
+
+
+@pytest.fixture(scope="module")
+def skill_body() -> str:
+    return body("SKILL.md")
+
+
+@pytest.fixture(scope="module")
+def create_client_body() -> str:
+    return body("instructions/create-client.md")
+
+
+@pytest.fixture(scope="module")
+def connect_services_body() -> str:
+    return body("instructions/connect-services.md")
+
+
+def test_module_and_markdown_gateway_graph(
+    root_blueprint: dict[str, object],
+    load_blueprint: BlueprintLoader,
+) -> None:
+    root = root_blueprint
     default, default_interface = exported_source(
         root, "connect-google.interface.default", load_blueprint
     )
@@ -112,8 +136,9 @@ def test_module_and_markdown_gateway_graph(load_blueprint: BlueprintLoader) -> N
         for entry in default["uses_interfaces"]
     }
     semantic_default_uses = {
-        ("connect-google._rtx.interface.authorize-services", 1),
+        ("connect-google._rtx.interface.bind-credential-file", 1),
         ("connect-google._rtx.interface.client-status", 1),
+        ("connect-google._rtx.interface.connect-services", 1),
         ("connect-google._rtx.interface.install-client", 1),
         (
             "connect-google.source.instructions-connect-services"
@@ -139,8 +164,9 @@ def test_module_and_markdown_gateway_graph(load_blueprint: BlueprintLoader) -> N
     assert connect_services["uses_interfaces"] == [
         {"interface": name, "version": 1}
         for name in (
-            "connect-google._rtx.interface.authorize-services",
+            "connect-google._rtx.interface.bind-credential-file",
             "connect-google._rtx.interface.client-status",
+            "connect-google._rtx.interface.connect-services",
             "connect-google._rtx.interface.install-client",
         )
     ]
@@ -154,11 +180,28 @@ def test_module_and_markdown_gateway_graph(load_blueprint: BlueprintLoader) -> N
     assert set(child["exports"]) == {
         "connect-google._rtx.interface.client-status",
         "connect-google._rtx.interface.install-client",
-        "connect-google._rtx.interface.authorize-services",
+        "connect-google._rtx.interface.connect-services",
+        "connect-google._rtx.interface.bind-credential-file",
     }
     assert default_interface["version"] == 1
     assert create_client_interface["version"] == 1
     assert connect_services_interface["version"] == 1
+    _, coordinator_interface = _exported_source(
+        SKILL_ROOT / "_rtx",
+        child,
+        "connect-google._rtx.interface.connect-services",
+        load_blueprint,
+    )
+    coordinator_binding = coordinator_interface["process_binding"]["patterns"][0]
+    assert {"--no-open-browser", "--callback-port"} <= set(
+        coordinator_binding["allowed_flags"]
+    )
+    assert coordinator_binding["flag_patterns"]["--callback-port"] == "^[0-9]+$"
+    assert coordinator_interface["contract"]["interaction"] == {
+        "mode": "interactive",
+        "channel": "tty",
+        "unattended_outcome": "failed",
+    }
 
     for node in (default, create_client, connect_services):
         for edge in node.get("uses_interfaces", []):
@@ -168,9 +211,10 @@ def test_module_and_markdown_gateway_graph(load_blueprint: BlueprintLoader) -> N
 
 
 def test_client_status_declares_every_google_client_path_it_reads(
+    root_blueprint: dict[str, object],
     load_blueprint: BlueprintLoader,
 ) -> None:
-    root = load_blueprint(SKILL_ROOT / "blueprint.yaml")
+    root = root_blueprint
     _, node = exported_source(
         root, "connect-google._rtx.interface.client-status", load_blueprint
     )
@@ -190,9 +234,10 @@ def test_client_status_declares_every_google_client_path_it_reads(
 
 
 def test_install_client_patterns_require_values_for_value_bearing_flags(
+    root_blueprint: dict[str, object],
     load_blueprint: BlueprintLoader,
 ) -> None:
-    root = load_blueprint(SKILL_ROOT / "blueprint.yaml")
+    root = root_blueprint
     _, node = exported_source(
         root, "connect-google._rtx.interface.install-client", load_blueprint
     )
@@ -203,8 +248,73 @@ def test_install_client_patterns_require_values_for_value_bearing_flags(
     }
 
 
-def test_default_router_contract() -> None:
-    text = body("SKILL.md")
+def test_authorize_services_declares_interactive_portable_oauth_contract(
+    load_blueprint: BlueprintLoader,
+) -> None:
+    child = load_blueprint(SKILL_ROOT / "_rtx/blueprint.yaml")
+    node = source(
+        SKILL_ROOT / "_rtx",
+        child,
+        "connect-google._rtx.source.rtx-authorize-services",
+        load_blueprint,
+    )
+    interface = node["interfaces"][
+        "connect-google._rtx.source.rtx-authorize-services.interface.authorize-services"
+    ]
+    contract = interface["contract"]
+    binding = interface["process_binding"]["patterns"][0]
+
+    assert contract["interaction"] == {
+        "mode": "interactive",
+        "channel": "tty",
+        "unattended_outcome": "failed",
+    }
+    assert set(binding["allowed_flags"]) == {
+        "--services",
+        "--account-hint",
+        "--home",
+        "--no-open-browser",
+        "--callback-port",
+    }
+    assert binding["flag_patterns"]["--callback-port"] == "^[0-9]+$"
+    assert "_browser_helper\\.py" in node["content"]
+
+    network = {entry["id"]: entry for entry in contract["direct_io"]["network"]}
+    assert network["authorization-endpoint"]["endpoint"] == (
+        "https://accounts.google.com/o/oauth2/v2/auth"
+    )
+    assert network["token-endpoint"]["endpoint"] == (
+        "https://oauth2.googleapis.com/token"
+    )
+    assert network["userinfo-endpoint"]["endpoint"] == (
+        "https://openidconnect.googleapis.com/v1/userinfo"
+    )
+    assert network["browser-consent"]["endpoint"] == "http://127.0.0.1:<port>/"
+
+    writes = {entry["id"]: entry for entry in contract["direct_io"]["writes"]}
+    assert writes["diagnostic-stream"] == {
+        "id": "diagnostic-stream",
+        "medium": "stderr",
+        "access": "write",
+        "system": "agent-runtime",
+        "content": "oauth-phase-diagnostics",
+        "formats": ["jsonl"],
+        "sensitivity": "user-private",
+        "reason": (
+            "Emit stable phase and code events, the manual authorization URL, "
+            "same-port SSH forwarding guidance, and browser-launch status without "
+            "OAuth secrets."
+        ),
+    }
+    atomicity = contract["execution"]["mutation_safety"]["atomicity"][
+        "per_effect_only"
+    ]
+    assert "descriptor" in atomicity
+    assert "secret" in atomicity
+
+
+def test_default_router_contract(skill_body: str) -> None:
+    text = skill_body
     assert text.startswith("---")
     assert "skill: connect-google" in text
     assert "client-status" in text
@@ -212,15 +322,15 @@ def test_default_router_contract() -> None:
     assert "connect-services" in text
     assert "connect" in text and "reconnect" in text
     assert "drive" in text and "calendar" in text and "gmail" in text
-    assert "do not invoke service-owned process interfaces" in text
-    assert "service skills invoke this skill" in text
+    assert "credential file" in text
+    assert "complete: true" in text
     assert "never commit" in text
     assert "dispatcher " not in text
     assert "connect-google-rtx" not in text
 
 
-def test_create_client_route_contract() -> None:
-    text = body("instructions/create-client.md")
+def test_create_client_route_contract(create_client_body: str) -> None:
+    text = create_client_body
     for phrase in (
         "external",
             "testing",
@@ -245,17 +355,23 @@ def test_create_client_route_contract() -> None:
     assert "connect-google-rtx" not in text
 
 
-def test_connect_services_route_contract() -> None:
-    text = body("instructions/connect-services.md")
+def test_connect_services_route_contract(connect_services_body: str) -> None:
+    text = connect_services_body
     for phrase in (
         "recommend all three",
         "subset",
         "service-owned",
-        "hand off",
-        "does not list",
-        "does not invoke",
+        "credential file",
+        "complete: true",
+        "bind-credential-file",
+        "same file",
+        "manual authorization url",
+        "--no-open-browser",
+        "--callback-port",
+        "ssh",
     ):
         assert phrase in text
+    assert "credential_id" not in text
     assert "dispatcher " not in text
     assert "connect-google-rtx" not in text
     assert "client_secret" not in text

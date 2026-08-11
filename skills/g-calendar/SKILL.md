@@ -13,10 +13,7 @@ Skill Version: 2
 
 Uses Interfaces:
 - `g-calendar.source.gateway -> connect-google.interface.default@1`
-- `g-calendar.source.gateway -> g-calendar._rtx.interface.ensure-oauth@1`
 - `g-calendar.source.gateway -> g-calendar._rtx.interface.scripts-gcal@1`
-- `g-calendar.source.gateway -> g-calendar._rtx.interface.setup-oauth@1`
-- `g-calendar.source.gateway -> g-calendar._rtx.interface.use-google-credential@1`
 
 Public Interfaces:
 - `g-calendar.interface.default`
@@ -77,12 +74,12 @@ creates can produce duplicates.
 
 ## Google authorization
 
-Use the shared route first. Retain the two legacy routes only as the fallback.
+For setup or reauthorization, invoke `connect-google.interface.default`. Its
+deterministic coordinator creates a credential file, asks Calendar's owner to
+probe live access, and stores the path only after verification. Treat only
+`complete: true` as successful setup; report any incomplete Calendar result and
+retry through connect-google with the same file.
 
-| Situation | Route | Interpret the result |
-|---|---|---|
-| `Shared setup or reauthorization` | `connect-google.interface.default -> g-calendar._rtx.interface.use-google-credential` | Bind the Calendar-granted credential_id using the same registry home, then verify with calendars and agenda. |
-| `Legacy status or recovery` | `g-calendar._rtx.interface.ensure-oauth` | Check readiness and guide or launch the fallback flow. |
-| `Direct legacy setup` | `g-calendar._rtx.interface.setup-oauth` | Use only for a Calendar configuration that has not adopted a shared credential. |
-
+Existing legacy Calendar credentials remain runtime-readable until a verified
+credential-file binding replaces them. Do not offer legacy setup as a new route.
 Replacing the single active Calendar account requires explicit confirmation.

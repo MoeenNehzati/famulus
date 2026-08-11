@@ -17,9 +17,7 @@ Uses Interfaces:
 - `email-client.source.gateway -> email-client._rtx.interface.accounts-list@1`
 - `email-client.source.gateway -> email-client._rtx.interface.accounts-remove@1`
 - `email-client.source.gateway -> email-client._rtx.interface.accounts-set-password@1`
-- `email-client.source.gateway -> email-client._rtx.interface.accounts-setup-oauth@1`
 - `email-client.source.gateway -> email-client._rtx.interface.accounts-update@1`
-- `email-client.source.gateway -> email-client._rtx.interface.accounts-use-google-credential@1`
 - `email-client.source.gateway -> email-client._rtx.interface.live-smoke@1`
 - `email-client.source.gateway -> email-client._rtx.interface.mail-attachments@1`
 - `email-client.source.gateway -> email-client._rtx.interface.mail-folders@1`
@@ -73,15 +71,15 @@ app-password credentials; the secret must be supplied on stdin and never as an
 argument or ordinary configuration value.
 
 For shared Google setup or Gmail reauthorization, first invoke
-`connect-google.interface.default`. Inspect its combined-authorization result. When
-Gmail was granted, bind the returned opaque `credential_id` to the selected registered
-nickname with `email-client._rtx.interface.accounts-use-google-credential`, using the same
-credential-registry home.
+`connect-google.interface.default` with the selected registered nickname. Its
+deterministic coordinator creates a credential file, asks Gmail's owner to probe
+the account profile, and stores the path only after verification. Treat only
+`complete: true` as successful setup; report an incomplete Gmail result and retry
+through connect-google with the same file.
 
-Use `email-client._rtx.interface.accounts-setup-oauth` only as the pre-existing
-per-account fallback for an account that has not adopted a shared credential. It
-requires a Google Desktop-client configuration path and performs a separate
-per-account authorization flow.
+Existing legacy per-account Gmail OAuth credentials remain runtime-readable
+until a verified credential-file binding replaces them. Do not offer legacy
+setup as a new route.
 
 ## Live checks
 

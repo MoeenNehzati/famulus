@@ -7,9 +7,9 @@ dependencies:
   reason: Loads Python package support from _rtx/__init__.py.
   source: install-assistant-tools._rtx.source.rtx-init
   version: 1
-description: Self-contained Google onboarding step run after core install completes
-  -- authorizes selected Google services through connect-google and binds the resulting
-  shared credential to each granted service's owning skill, entirely through the dispatcher.
+description: Self-contained Google onboarding step run after core install completes;
+  checks the canonical client then invokes connect-google's one authorization-and-binding
+  coordinator through the dispatcher.
   Exposes no callable interface of its own; only _phase_entry.py imports it directly.
 gateway:
   language: Python
@@ -26,12 +26,6 @@ schema_version: 6
 uses_interfaces:
 - interface: connect-google._rtx.interface.client-status
   version: 1
-- interface: connect-google._rtx.interface.authorize-services
-  version: 1
-- interface: cloud-files._rtx.interface.use-google-credential
-  version: 1
-- interface: g-calendar._rtx.interface.use-google-credential
-  version: 1
-- interface: email-client._rtx.interface.accounts-use-google-credential
+- interface: connect-google._rtx.interface.connect-services
   version: 1
 version: 1

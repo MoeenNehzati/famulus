@@ -10,14 +10,29 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
+from typing import Callable
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 CONFIG_DIR_NAME = "g-calendar"
 LABEL = "Google Calendar (g-calendar)"
+CALENDAR_PROBE_URL = (
+    "https://www.googleapis.com/calendar/v3/users/me/calendarList?maxResults=1"
+)
+
+
+class CredentialFileBindingError(RuntimeError):
+    """Stable service-owned failure returned to the Google coordinator."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 def log(msg: str = "") -> None:
@@ -85,12 +100,23 @@ def _config_paths(home: Path) -> tuple[Path, Path]:
 
 
 def _read_existing_config(config_path: Path) -> dict[str, object]:
-    if not config_path.exists():
+    if not os.path.lexists(config_path):
         return {}
+    if not config_path.is_file():
+        raise CredentialFileBindingError(
+            "invalid-service-config", f"{config_path} exists but is not a regular file"
+        )
     try:
-        return json.loads(config_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return {}
+        payload = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise CredentialFileBindingError(
+            "invalid-service-config", f"could not read {config_path}: {exc}"
+        ) from exc
+    if not isinstance(payload, dict):
+        raise CredentialFileBindingError(
+            "invalid-service-config", f"{config_path} must contain a JSON object"
+        )
+    return payload
 
 
 def _merge_and_write_config(
@@ -143,6 +169,105 @@ def use_google_credential(*, credential_id: str, home: Path, platform: str = sys
     _merge_and_write_config(home, patch={"credential_id": credential_id})
 
 
+def _existing_binding_subject(
+    config: dict[str, object], *, home: Path, platform: str
+) -> tuple[bool, str | None]:
+    """Return whether prior OAuth state exists and its stable subject when provable."""
+    from officina.common.google_credentials import (
+        GoogleCredentialError,
+        load_credential,
+        load_credential_file,
+    )
+
+    if "credential_file" in config:
+        value = config["credential_file"]
+        if not isinstance(value, str) or not value.strip():
+            return True, None
+        try:
+            return True, load_credential_file(Path(value)).subject
+        except GoogleCredentialError:
+            return True, None
+    if "credential_id" in config:
+        value = config["credential_id"]
+        if not isinstance(value, str) or not value.strip():
+            return True, None
+        try:
+            return True, load_credential(
+                value.strip(), home=home, platform=platform
+            ).subject
+        except GoogleCredentialError:
+            return True, None
+    return (home / ".config" / CONFIG_DIR_NAME / "credentials.json").exists(), None
+
+
+def use_google_credential_file(
+    *,
+    credential_file: Path,
+    home: Path,
+    allow_account_change: bool = False,
+    platform: str = sys.platform,
+    urlopen: Callable = urllib.request.urlopen,
+) -> dict[str, object]:
+    """Validate, live-probe, then persist one Calendar descriptor path.
+
+    The descriptor is loaded before any network call, prior identity is compared
+    before replacement, and ``config.json`` is not changed unless both refresh
+    and the Calendar-owned probe succeed.
+    """
+    from officina.common.google_credentials import (
+        GoogleCredentialError,
+        SERVICE_SCOPES,
+        load_credential_file,
+        refresh_access_token_from_file,
+    )
+
+    path = Path(credential_file).expanduser().resolve()
+    try:
+        ref = load_credential_file(path)
+    except GoogleCredentialError as exc:
+        raise CredentialFileBindingError("invalid-credential-file", str(exc)) from exc
+    if not SERVICE_SCOPES["calendar"] <= ref.granted_scopes:
+        raise CredentialFileBindingError(
+            "insufficient-scope", f"credential file {path} lacks Calendar scope"
+        )
+
+    _config_dir, config_path = _config_paths(home)
+    config = _read_existing_config(config_path)
+    has_prior_state, prior_subject = _existing_binding_subject(
+        config, home=home, platform=platform
+    )
+    if has_prior_state and prior_subject != ref.subject and not allow_account_change:
+        raise CredentialFileBindingError(
+            "account-change-confirmation-required",
+            "existing Calendar credential identity differs or cannot be established",
+        )
+
+    try:
+        token = refresh_access_token_from_file(
+            path,
+            required_scopes=SERVICE_SCOPES["calendar"],
+            urlopen=urlopen,
+        )
+        request = urllib.request.Request(
+            CALENDAR_PROBE_URL,
+            headers={"Authorization": f"Bearer {token}"},
+            method="GET",
+        )
+        with urlopen(request, timeout=30) as response:
+            response.read()
+    except Exception as exc:
+        raise CredentialFileBindingError("live-check-failed", str(exc)) from exc
+
+    _merge_and_write_config(home, patch={"credential_file": str(path)})
+    return {
+        "service": "calendar",
+        "credential_file": str(path),
+        "account": ref.account,
+        "bound": True,
+        "verified": True,
+    }
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -154,6 +279,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     use_cred_p = sub.add_parser("use-google-credential")
     use_cred_p.add_argument("--credential-id", metavar="ID", required=True)
     use_cred_p.add_argument("--home", metavar="DIR", required=True)
+
+    use_file_p = sub.add_parser("use-google-credential-file")
+    use_file_p.add_argument("--credential-file", metavar="PATH", required=True)
+    use_file_p.add_argument("--home", metavar="DIR", required=True)
+    use_file_p.add_argument("--allow-account-change", action="store_true")
 
     return parser.parse_args(argv)
 
@@ -173,6 +303,28 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "use-google-credential":
         use_google_credential(credential_id=args.credential_id, home=Path(args.home))
         log("Status: configured")
+    elif args.command == "use-google-credential-file":
+        path = Path(args.credential_file).expanduser().resolve()
+        try:
+            result = use_google_credential_file(
+                credential_file=path,
+                home=Path(args.home),
+                allow_account_change=args.allow_account_change,
+            )
+        except CredentialFileBindingError as exc:
+            print(
+                json.dumps(
+                    {
+                        "service": "calendar",
+                        "credential_file": str(path),
+                        "bound": False,
+                        "verified": False,
+                        "error": {"code": exc.code, "message": str(exc)},
+                    }
+                )
+            )
+            return 1
+        print(json.dumps(result))
     return 0
 
 

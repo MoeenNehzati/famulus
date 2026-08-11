@@ -16,7 +16,7 @@ BlueprintLoader = Callable[[Path], dict[str, object]]
 
 
 @pytest.fixture(scope="module")
-def load_blueprint() -> BlueprintLoader:
+def blueprint_loader() -> BlueprintLoader:
     """Return independent values while parsing each repository YAML file once."""
     parsed: dict[Path, dict[str, object]] = {}
 
@@ -29,16 +29,18 @@ def load_blueprint() -> BlueprintLoader:
 
 
 def exported_interface(
-    skill: str, canonical_id: str, load_blueprint: BlueprintLoader
+    skill: str,
+    canonical_id: str,
+    load: BlueprintLoader,
 ) -> tuple[dict[str, object], dict[str, object], dict[str, object]]:
     module_root = SKILLS / skill
-    module = load_blueprint(module_root / "blueprint.yaml")
+    module = load(module_root / "blueprint.yaml")
     module_id = canonical_id.split(".interface.", 1)[0]
     current_id = skill
     for segment in module_id.split(".")[1:]:
         assert segment in module["children"]
         module_root /= segment
-        module = load_blueprint(module_root / "blueprint.yaml")
+        module = load(module_root / "blueprint.yaml")
         current_id = f"{current_id}.{segment}"
         assert module["id"] == current_id
     assert module["schema_version"] == 6
@@ -46,7 +48,7 @@ def exported_interface(
         module_root,
         module,
         canonical_id,
-        load_blueprint,
+        load,
     )
     return module, source, interface
 
@@ -55,25 +57,25 @@ def _resolve_export(
     module_root: Path,
     module: dict[str, object],
     canonical_id: str,
-    load_blueprint: BlueprintLoader,
+    load: BlueprintLoader,
 ) -> tuple[dict[str, object], dict[str, object]]:
     export = module["exports"][canonical_id]
     facade = export.get("facade_interface")
     if facade is not None:
         child_id = facade["interface"].split(".interface.", 1)[0]
         child_marker = module_root / module["children"][child_id]["path"]
-        child = load_blueprint(child_marker)
+        child = load(child_marker)
         return _resolve_export(
             child_marker.parent,
             child,
             facade["interface"],
-            load_blueprint,
+            load,
         )
     source_interface = export["source_interface"]
     source_id, _, _ = source_interface.rpartition(".interface.")
     locator = module["sources"][source_id]["blueprint"]
     assert locator["base"] == "module-root"
-    source = load_blueprint(module_root / locator["path"])
+    source = load(module_root / locator["path"])
     assert source["id"] == source_id
     interface = source["interfaces"][source_interface]
     return source, interface
@@ -91,85 +93,70 @@ def authored_skill(name: str) -> str:
     return text.lower()
 
 
-def test_email_interfaces_are_not_exposed_to_connect_google(
-    load_blueprint: BlueprintLoader,
+def test_only_email_file_binder_is_exposed_to_connect_google(
+    blueprint_loader: BlueprintLoader,
 ) -> None:
     for interface in (
         "accounts-list",
         "accounts-add",
         "accounts-update",
         "accounts-setup-oauth",
-        "accounts-use-google-credential",
         "live-smoke",
     ):
         canonical_id = f"email-client._rtx.interface.{interface}"
-        root, _, _ = exported_interface("email-client", canonical_id, load_blueprint)
+        root, _, _ = exported_interface("email-client", canonical_id, blueprint_loader)
         access = root["exports"][canonical_id]["access"]
         assert access["allow_all_modules"] is False
         assert "connect-google" not in access["allowed_callers"]
+    root, _, _ = exported_interface(
+        "email-client",
+        "email-client._rtx.interface.accounts-use-google-credential-file",
+        blueprint_loader,
+    )
+    access = root["exports"][
+        "email-client._rtx.interface.accounts-use-google-credential-file"
+    ]["access"]
+    assert set(access["allowed_callers"]) >= {"connect-google", "connect-google._rtx"}
 
 
-def test_google_service_gateways_delegate_to_connect_google(
-    load_blueprint: BlueprintLoader,
+def test_google_service_gateways_delegate_setup_only_to_connect_google(
+    blueprint_loader: BlueprintLoader,
 ) -> None:
-    expected_interfaces = {
-        "cloud-files": (
-            "cloud-files._rtx.interface.use-google-credential",
-            "cloud-files._rtx.interface.setup-oauth",
-        ),
-        "g-calendar": (
-            "g-calendar._rtx.interface.use-google-credential",
-            "g-calendar._rtx.interface.setup-oauth",
-        ),
-        "email-client": (
-            "email-client._rtx.interface.accounts-use-google-credential",
-            "email-client._rtx.interface.accounts-setup-oauth",
-        ),
-    }
-    for skill, service_interfaces in expected_interfaces.items():
-        root, gateway, _ = exported_interface(
-            skill, f"{skill}.interface.default", load_blueprint
+    forbidden = ("setup-oauth", "ensure-oauth", "use-google-credential")
+    for skill in ("cloud-files", "g-calendar", "email-client"):
+        _root, gateway, _ = exported_interface(
+            skill, f"{skill}.interface.default", blueprint_loader
         )
         assert {
             "interface": "connect-google.interface.default",
             "version": 1,
         } in gateway["uses_interfaces"]
-        for service_interface in service_interfaces:
-            assert {
-                "interface": service_interface,
-                "version": 1,
-            } in gateway["uses_interfaces"]
+        interfaces = {edge["interface"] for edge in gateway["uses_interfaces"]}
+        assert not any(fragment in interface for fragment in forbidden for interface in interfaces)
 
 
-def test_authorization_contract_hands_opaque_credential_to_service_owners(
-    load_blueprint: BlueprintLoader,
+def test_coordinator_contract_hands_file_to_service_owners(
+    blueprint_loader: BlueprintLoader,
 ) -> None:
-    _, _, authorize = exported_interface(
+    _, _, connect = exported_interface(
         "connect-google",
-        "connect-google._rtx.interface.authorize-services",
-        load_blueprint,
+        "connect-google._rtx.interface.connect-services",
+        blueprint_loader,
     )
     result = next(
-        output for output in authorize["contract"]["outputs"] if output["id"] == "result"
+        output for output in connect["contract"]["outputs"] if output["id"] == "result"
     )
     assert result["type"]["format"] == {"named": "json"}
-    assert "credential_id" in result["description"]
-    authorized = next(
-        outcome
-        for outcome in authorize["contract"]["outcomes"]
-        if outcome["id"] == "authorized"
-    )
-    assert "credential_id" in authorized["caller_action"]
-    assert "use-google-credential" in authorized["caller_action"]
+    assert "credential_file" in result["description"]
 
     expected = {
-        "cloud-files": "cloud-files._rtx.interface.use-google-credential",
-        "g-calendar": "g-calendar._rtx.interface.use-google-credential",
-        "email-client": "email-client._rtx.interface.accounts-use-google-credential",
+        "cloud-files": "cloud-files._rtx.interface.use-google-credential-file",
+        "g-calendar": "g-calendar._rtx.interface.use-google-credential-file",
+        "email-client": "email-client._rtx.interface.accounts-use-google-credential-file",
     }
     for skill, interface_id in expected.items():
-        _, _, interface = exported_interface(skill, interface_id, load_blueprint)
-        assert "credential-id" in interface["contract"]["arguments"]
+        _, _, interface = exported_interface(skill, interface_id, blueprint_loader)
+        assert "credential-file" in interface["contract"]["arguments"]
 
 
 def test_email_guidance_routes_shared_credential_and_legacy_fallback() -> None:
@@ -178,18 +165,10 @@ def test_email_guidance_routes_shared_credential_and_legacy_fallback() -> None:
     shared = next(
         paragraph
         for paragraph in paragraphs
-        if "email-client._rtx.interface.accounts-use-google-credential" in paragraph
+        if "connect-google.interface.default" in paragraph
     )
-    assert "connect-google.interface.default" in shared
-    assert "credential_id" in shared
-
-    legacy = next(
-        paragraph
-        for paragraph in paragraphs
-        if "email-client._rtx.interface.accounts-setup-oauth" in paragraph
-    )
-    assert "per-account" in legacy
-    assert "fallback" in legacy
+    assert "credential file" in shared
+    assert "credential_id" not in text
 
 
 def test_cloud_guidance_routes_shared_credential_and_legacy_fallback() -> None:
@@ -198,46 +177,34 @@ def test_cloud_guidance_routes_shared_credential_and_legacy_fallback() -> None:
     shared = next(
         paragraph
         for paragraph in paragraphs
-        if "cloud-files._rtx.interface.use-google-credential" in paragraph
+        if "connect-google.interface.default" in paragraph
     )
-    assert "connect-google.interface.default" in shared
-    assert "credential_id" in shared
-    assert "same registry home" in shared
-
-    legacy = next(
-        paragraph
-        for paragraph in paragraphs
-        if "cloud-files._rtx.interface.setup-oauth" in paragraph
-    )
-    assert "legacy" in legacy
-    assert "fallback" in legacy
+    assert "credential file" in shared
+    assert "credential_id" not in text
 
 
-def test_cloud_shared_credential_route_allows_owning_gateway(
-    load_blueprint: BlueprintLoader,
+def test_cloud_file_binder_allows_connect_google(
+    blueprint_loader: BlueprintLoader,
 ) -> None:
     root, _, _ = exported_interface(
         "cloud-files",
-        "cloud-files._rtx.interface.use-google-credential",
-        load_blueprint,
+        "cloud-files._rtx.interface.use-google-credential-file",
+        blueprint_loader,
     )
-    access = root["exports"]["cloud-files._rtx.interface.use-google-credential"]["access"]
-    assert "cloud-files" in access["allowed_callers"]
+    access = root["exports"]["cloud-files._rtx.interface.use-google-credential-file"]["access"]
+    assert "connect-google._rtx" in access["allowed_callers"]
 
 
 def test_calendar_gateway_declares_complete_oauth_route_invariants(
-    load_blueprint: BlueprintLoader,
+    blueprint_loader: BlueprintLoader,
 ) -> None:
     _, gateway, _ = exported_interface(
-        "g-calendar", "g-calendar.interface.default", load_blueprint
+        "g-calendar", "g-calendar.interface.default", blueprint_loader
     )
 
     assert {edge["interface"] for edge in gateway["uses_interfaces"]} == {
         "connect-google.interface.default",
-        "g-calendar._rtx.interface.ensure-oauth",
         "g-calendar._rtx.interface.scripts-gcal",
-        "g-calendar._rtx.interface.setup-oauth",
-        "g-calendar._rtx.interface.use-google-credential",
     }
 
 
@@ -247,13 +214,15 @@ def test_installer_does_not_depend_on_connect_google() -> None:
     assert "connect-google." not in text
 
 
-def test_service_setup_exports_still_exist(load_blueprint: BlueprintLoader) -> None:
+def test_legacy_setup_exports_still_exist_for_compatibility(
+    blueprint_loader: BlueprintLoader,
+) -> None:
     expected = {
         "cloud-files": "cloud-files._rtx.interface.setup-oauth",
         "g-calendar": "g-calendar._rtx.interface.setup-oauth",
         "email-client": "email-client._rtx.interface.accounts-setup-oauth",
     }
     for skill, interface in expected.items():
-        root, source, contract = exported_interface(skill, interface, load_blueprint)
+        root, source, contract = exported_interface(skill, interface, blueprint_loader)
         assert contract in source["interfaces"].values()
         assert contract

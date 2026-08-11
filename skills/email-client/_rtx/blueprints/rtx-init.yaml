@@ -2,8 +2,10 @@ content:
 - __init__\.py
 - _oauth_tokens\.py
 dependencies: []
-description: Package support source for email-client OAuth token handling; it exposes
-  no caller-facing interface.
+description: Package support source for email-client OAuth token handling. Each Gmail
+  nickname treats a present credential_file as authoritative and fails invalid file
+  bindings without fallback; credential_id and legacy OAuth records remain compatibility
+  paths only when it is absent. It exposes no caller-facing interface.
 gateway:
   language: Python
   path: __init__.py

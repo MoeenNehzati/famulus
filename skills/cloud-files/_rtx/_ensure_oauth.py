@@ -14,15 +14,30 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
+from typing import Callable
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 from officina.common.configured_schema import load_configuration, validate_configuration
 
 CONFIG_DIR_NAME = "cloud-files"
 LABEL = "Google Drive (cloud-files)"
+DRIVE_PROBE_URL = (
+    "https://www.googleapis.com/drive/v3/files?pageSize=1&fields=files(id)"
+)
+
+
+class CredentialFileBindingError(RuntimeError):
+    """Stable service-owned failure returned to the Google coordinator."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 def log(msg: str = "") -> None:
@@ -104,8 +119,12 @@ def _config_paths(home: Path) -> tuple[Path, Path]:
 
 
 def _read_existing_config(config_path: Path) -> dict[str, object]:
-    if not config_path.exists():
+    if not os.path.lexists(config_path):
         return {}
+    if not config_path.is_file():
+        raise CredentialFileBindingError(
+            "invalid-service-config", f"{config_path} exists but is not a regular file"
+        )
     return load_configuration(config_path)
 
 
@@ -175,6 +194,111 @@ def use_google_credential(*, credential_id: str, home: Path, platform: str = sys
     _merge_and_write_config(home, patch={"credential_id": credential_id})
 
 
+def _existing_binding_subject(
+    config: dict[str, object], *, home: Path, platform: str
+) -> tuple[bool, str | None]:
+    """Return whether prior OAuth state exists and its stable subject when provable."""
+    from officina.common.google_credentials import (
+        GoogleCredentialError,
+        load_credential,
+        load_credential_file,
+    )
+
+    if "credential_file" in config:
+        value = config["credential_file"]
+        if not isinstance(value, str) or not value.strip():
+            return True, None
+        try:
+            return True, load_credential_file(Path(value)).subject
+        except GoogleCredentialError:
+            return True, None
+    if "credential_id" in config:
+        value = config["credential_id"]
+        if not isinstance(value, str) or not value.strip():
+            return True, None
+        try:
+            return True, load_credential(
+                value.strip(), home=home, platform=platform
+            ).subject
+        except GoogleCredentialError:
+            return True, None
+    credentials_value = config.get("credentials_path")
+    credentials_path = (
+        Path(credentials_value).expanduser()
+        if isinstance(credentials_value, str) and credentials_value.strip()
+        else home / ".config" / CONFIG_DIR_NAME / "credentials.json"
+    )
+    return credentials_path.exists(), None
+
+
+def use_google_credential_file(
+    *,
+    credential_file: Path,
+    home: Path,
+    allow_account_change: bool = False,
+    platform: str = sys.platform,
+    urlopen: Callable = urllib.request.urlopen,
+) -> dict[str, object]:
+    """Validate, live-probe, then persist one Drive descriptor path."""
+    from officina.common.google_credentials import (
+        GoogleCredentialError,
+        SERVICE_SCOPES,
+        load_credential_file,
+        refresh_access_token_from_file,
+    )
+
+    path = Path(credential_file).expanduser().resolve()
+    try:
+        ref = load_credential_file(path)
+    except GoogleCredentialError as exc:
+        raise CredentialFileBindingError("invalid-credential-file", str(exc)) from exc
+    if not SERVICE_SCOPES["drive"] <= ref.granted_scopes:
+        raise CredentialFileBindingError(
+            "insufficient-scope", f"credential file {path} lacks Drive scope"
+        )
+
+    _config_dir, config_path = _config_paths(home)
+    try:
+        config = _read_existing_config(config_path)
+    except (OSError, ValueError) as exc:
+        raise CredentialFileBindingError(
+            "invalid-service-config", f"could not read {config_path}: {exc}"
+        ) from exc
+    has_prior_state, prior_subject = _existing_binding_subject(
+        config, home=home, platform=platform
+    )
+    if has_prior_state and prior_subject != ref.subject and not allow_account_change:
+        raise CredentialFileBindingError(
+            "account-change-confirmation-required",
+            "existing Drive credential identity differs or cannot be established",
+        )
+
+    try:
+        token = refresh_access_token_from_file(
+            path,
+            required_scopes=SERVICE_SCOPES["drive"],
+            urlopen=urlopen,
+        )
+        request = urllib.request.Request(
+            DRIVE_PROBE_URL,
+            headers={"Authorization": f"Bearer {token}"},
+            method="GET",
+        )
+        with urlopen(request, timeout=45) as response:
+            response.read()
+    except Exception as exc:
+        raise CredentialFileBindingError("live-check-failed", str(exc)) from exc
+
+    _merge_and_write_config(home, patch={"credential_file": str(path)})
+    return {
+        "service": "drive",
+        "credential_file": str(path),
+        "account": ref.account,
+        "bound": True,
+        "verified": True,
+    }
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -191,6 +315,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     use_cred_p = sub.add_parser("use-google-credential")
     use_cred_p.add_argument("--credential-id", metavar="ID", required=True)
     use_cred_p.add_argument("--home", metavar="DIR", required=True)
+
+    use_file_p = sub.add_parser("use-google-credential-file")
+    use_file_p.add_argument("--credential-file", metavar="PATH", required=True)
+    use_file_p.add_argument("--home", metavar="DIR", required=True)
+    use_file_p.add_argument("--allow-account-change", action="store_true")
 
     return parser.parse_args(argv)
 
@@ -212,6 +341,28 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "use-google-credential":
         use_google_credential(credential_id=args.credential_id, home=Path(args.home))
         log("Status: configured")
+    elif args.command == "use-google-credential-file":
+        path = Path(args.credential_file).expanduser().resolve()
+        try:
+            result = use_google_credential_file(
+                credential_file=path,
+                home=Path(args.home),
+                allow_account_change=args.allow_account_change,
+            )
+        except CredentialFileBindingError as exc:
+            print(
+                json.dumps(
+                    {
+                        "service": "drive",
+                        "credential_file": str(path),
+                        "bound": False,
+                        "verified": False,
+                        "error": {"code": exc.code, "message": str(exc)},
+                    }
+                )
+            )
+            return 1
+        print(json.dumps(result))
     return 0
 
 

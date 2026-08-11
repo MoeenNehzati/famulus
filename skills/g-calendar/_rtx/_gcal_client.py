@@ -36,22 +36,23 @@ def _config_path(home: Path) -> Path:
     return home / ".config" / CONFIG_DIR_NAME / "config.json"
 
 
-def _load_credential_id(home: Path) -> str | None:
+def _load_service_config(home: Path) -> dict[str, object]:
     config_path = _config_path(home)
+    if not os.path.lexists(config_path):
+        return {}
     if not config_path.is_file():
-        return None
+        raise RuntimeError(f"{config_path} exists but is not a regular file")
     try:
         payload = json.loads(config_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        # Deliberately falls through to the legacy credentials.json flow
-        # rather than raising: an unreadable config.json should not by
-        # itself block calendar access when legacy credentials are still
-        # usable. But say so, so a corrupted config.json (that used to hold
-        # a working credential_id) doesn't surface only as a misleading
-        # "No credentials at .../credentials.json" from the legacy path.
-        print(f"Warning: could not read {config_path}: {exc}", file=sys.stderr)
-        return None
-    value = payload.get("credential_id")
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"could not read {config_path}: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"{config_path} must contain a JSON object")
+    return payload
+
+
+def _load_credential_id(config: dict[str, object]) -> str | None:
+    value = config.get("credential_id")
     text = str(value).strip() if value else ""
     return text or None
 
@@ -99,8 +100,23 @@ def iso(dt: datetime) -> str:
 
 def get_access_token(*, home: Path | None = None, platform: str = sys.platform) -> str:
     home = home or Path.home()
+    config = _load_service_config(home)
 
-    credential_id = _load_credential_id(home)
+    if "credential_file" in config:
+        value = config["credential_file"]
+        if not isinstance(value, str) or not value.strip():
+            raise RuntimeError("configured credential_file must be a nonempty path string")
+        from officina.common.google_credentials import (
+            SERVICE_SCOPES,
+            refresh_access_token_from_file,
+        )
+
+        return refresh_access_token_from_file(
+            Path(value).expanduser(),
+            required_scopes=SERVICE_SCOPES["calendar"],
+        )
+
+    credential_id = _load_credential_id(config)
     if credential_id:
         from officina.common.google_credentials import SERVICE_SCOPES, refresh_access_token
 

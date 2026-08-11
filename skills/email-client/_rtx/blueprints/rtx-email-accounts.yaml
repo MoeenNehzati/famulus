@@ -1261,6 +1261,199 @@ interfaces:
     usage: --nickname <nick> [--email <addr>] [--display-name <name>] [--imap-host
       H] [--imap-port P] [--smtp-host H] [--smtp-port P] [--auth app-password|gmail-oauth]
     version: 1
+  email-client._rtx.source.rtx-email-accounts.interface.accounts-use-google-credential-file:
+    contract:
+      arguments:
+        nickname:
+          description: Existing email-client account nickname to bind.
+          required: true
+          sensitivity: user-private
+          type:
+            format:
+              named: identifier
+            kind: string
+        credential-file:
+          description: Credential descriptor path created by connect-google.
+          direct_io_ref: read-credential
+          required: true
+          sensitivity: user-private
+          type:
+            access: read
+            kind: file
+            must_exist: true
+            opaque_content: true
+            relative_to: caller-cwd
+            syntax: literal
+        home:
+          description: Home directory used to resolve legacy shared identities during
+            account-change comparison.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+        allow-account-change:
+          default: false
+          description: Explicit approval to replace prior Gmail OAuth state when
+            its stable Google subject differs or cannot be established; never overrides
+            an email mismatch.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: flag
+      caller_warnings:
+      - external-side-effect: Performs a live Gmail profile read and updates only
+          the named account after scope, email, account-change, refresh, and probe checks.
+      direct_io:
+        network:
+        - access: read
+          content: access-token refresh and Gmail profile probe
+          endpoint: Google OAuth token endpoint from the descriptor and Gmail API
+            /gmail/v1/users/me/profile
+          formats:
+          - json
+          id: gmail-probe
+          medium: network
+          reason: Verify live Gmail access and identity before changing the account record.
+          sensitivity: secret
+          system: google-gmail-api
+        reads:
+        - access: read
+          content: credential descriptor
+          formats:
+          - json
+          id: read-credential
+          medium: local-filesystem
+          path: caller-supplied credential descriptor path
+          reason: Validate identity and Gmail scope and resolve secret references.
+          sensitivity: user-private
+          system: filesystem
+        - access: read
+          content: email account registry
+          formats:
+          - json
+          id: read-accounts
+          medium: local-filesystem
+          path: email-client configured accounts.json
+          sensitivity: user-private
+          system: filesystem
+        writes:
+        - access: write
+          content: email account registry
+          formats:
+          - json
+          id: write-account
+          medium: local-filesystem
+          path: email-client configured accounts.json
+          sensitivity: user-private
+          system: filesystem
+        - access: write
+          content: binding result
+          formats:
+          - json
+          id: write-result
+          medium: stdout
+          sensitivity: user-private
+          system: agent-runtime
+      execution:
+        consistency:
+          live: The descriptor, named account, prior identity, token refresh, and
+            Gmail profile are checked before the registry write.
+        effects:
+        - action: update
+          confirmation_evidence:
+            direct_io_ref: write-result
+            kind: direct-io
+          direct_io_ref: write-account
+          id: bind-account-file
+          may_occur_in_outcomes:
+          - bound
+          reversibility:
+            reversible: A later explicitly approved binding may replace this nickname's path.
+          value_source:
+            argument_ref: credential-file
+            kind: argument
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            per_effect_only: The registry is written only after all verification succeeds.
+          concurrent_invocations:
+            unsafe: Concurrent account-registry writers can overwrite one another.
+          idempotency:
+            idempotent: Rebinding the same nickname to the same verified path converges.
+          on_uncertain_completion:
+            verify_then_decide: Resolve the nickname and inspect credential_file before retrying.
+          partial_effects_on_failure:
+            impossible: Scope, email, identity, refresh, and probe failures occur before writing.
+          rollback_on_failure:
+            unavailable: A low-level failure during the registry write has no retained backup.
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: result
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Use Gmail for this nickname with the recorded credential_file path.
+        class: success
+        effects:
+        - bind-account-file
+        id: bound
+        outputs:
+        - result
+      - caller_action: Correct the nickname, email, file, scope, approval, or live access.
+        class: error
+        effects: []
+        id: failed
+        outputs:
+        - result
+      outputs:
+      - audience: machine
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Stable JSON reporting service, normalized path, account, bound,
+          verified, or a stable error.
+        direct_io_ref: write-result
+        empty: Never empty.
+        id: result
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          format:
+            named: json
+          kind: string
+          sensitivity: user-private
+      preconditions: []
+    description: Validate and live-probe a Gmail credential descriptor before
+      storing only its normalized path and Gmail OAuth mode on one named account.
+    process_binding:
+      args_prefix:
+      - use-google-credential-file
+      entry: Interface
+      kind: process
+      patterns:
+      - allowed_flags:
+        - --nickname
+        - --credential-file
+        - --home
+        - --allow-account-change
+        flag_patterns:
+          --nickname: ^.+$
+          --credential-file: ^.+$
+          --home: ^.+$
+        max_positionals: 0
+        min_positionals: 0
+        required_flags:
+        - --nickname
+        - --credential-file
+        - --home
+    usage: --nickname <name> --credential-file <path> --home <dir> [--allow-account-change]
+    version: 1
   email-client._rtx.source.rtx-email-accounts.interface.accounts-use-google-credential:
     contract:
       direct_io:

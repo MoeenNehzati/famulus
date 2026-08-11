@@ -12,37 +12,43 @@ user which one to import. Otherwise obtain a local Desktop client JSON path and
 use `connect-google._rtx.interface.install-client`. Replacing a different canonical
 client requires explicit confirmation. Never expose file contents or tokens.
 
-## Combined authorization, then service-owned handoff
+## Combined authorization and service-owned binding
 
-After the canonical client is ready, request one combined grant for every
-selected service with `connect-google._rtx.interface.authorize-services`, passing
-all selected services together. This opens a single consent screen covering
-the full scope union instead of a separate OAuth round trip per service, and
-returns one opaque `credential_id` plus which services were actually granted
-versus denied.
+Before a Gmail-inclusive request, obtain the Gmail account nickname. Then call
+`connect-google._rtx.interface.connect-services` once with every selected service.
+It opens one consent screen for the combined scope union, creates one timestamped
+credential file, and passes that exact absolute path directly to each granted
+service's service-owned binder.
 
-Hand off that `credential_id` to each granted service's owning skill so it
-can call its own `use-google-credential` interface:
+The authorization command prints the manual authorization URL and its callback
+address before it tries to open a browser. If a local browser is available, let
+the isolated helper open it; callback handling does not depend on that helper
+succeeding. On a headless or remote machine, pass `--no-open-browser` and choose
+an explicit `--callback-port`. Keep that same port at both ends of the SSH
+forward, open the printed URL on the local machine, and leave the remote command
+running until Google redirects to `http://127.0.0.1:<port>/`. Follow the exact
+SSH command printed in the diagnostic stream rather than guessing the port.
 
-- Drive belongs to the Drive storage service's default LLM interface.
-- Calendar belongs to the Calendar service's default LLM interface.
-- Gmail accounts belong to the email service's default LLM interface.
+The fixed coordinator route passes the returned `credential_file` to:
 
-The service skill owns account selection, verification, recovery, and Google
-API use, but no longer performs its own independent OAuth exchange -- it
-consumes the credential this interface already authorized. A service skill
-may invoke `connect-google` again when it needs to confirm or replace the
-canonical client, or when the user wants to add a service that was denied or
-never requested in the original combined grant.
+- Drive to the Drive storage service's credential-file binder.
+- Calendar to the Calendar service's credential-file binder.
+- Gmail to the email service's account credential-file binder.
 
-This interface does not list, add, update, inspect, or test service accounts.
-It does not invoke any service machine interface and does not receive service
-tokens or user data beyond the opaque credential_id. Report only whether the
-shared client is ready, the combined-authorization result, and which
-service-owned handoffs the user selected.
+Treat only `complete: true` as success. If a grant is denied or one service
+binder fails, report the per-service result and retain the returned credential
+file path. Retry incomplete granted services through
+`connect-google._rtx.interface.bind-credential-file`, passing the same file;
+do not open a second consent flow merely to retry binding.
 
-If Google rejects a Testing user during a later service-owned authorization,
+The coordinator never copies access or refresh tokens between services. Each
+service owns account-change confirmation, persists only its configured
+credential-file path, verifies a live API call before success, and reports a
+stable machine result. An installer may omit a Gmail nickname; in that case
+Gmail remains incomplete while other granted services still bind.
+
+If Google rejects a Testing user during authorization,
 the project owner must add that exact account email under Test users. A
 Workspace administrator policy can still block authorization.
 
-@../personal-preferences/connect-services.md
+@../personal-preferences/google-service-connection.md

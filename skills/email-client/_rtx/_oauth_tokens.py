@@ -140,6 +140,25 @@ def get_gmail_access_token(
     absent, so accounts that have not adopted the shared credential keep
     authenticating exactly as before.
     """
+    if "credential_file" in account:
+        credential_file = account["credential_file"]
+        if not isinstance(credential_file, str) or not credential_file.strip():
+            raise OAuthError("configured credential_file must be a nonempty path string")
+        from officina.common.google_credentials import (
+            GoogleCredentialError,
+            SERVICE_SCOPES,
+            refresh_access_token_from_file,
+        )
+
+        try:
+            return refresh_access_token_from_file(
+                Path(credential_file).expanduser(),
+                required_scopes=SERVICE_SCOPES["gmail"],
+                urlopen=urlopen,
+            )
+        except GoogleCredentialError as exc:
+            raise OAuthError(str(exc)) from exc
+
     credential_id = account.get("credential_id")
     if not credential_id:
         # Unchanged legacy call shape: refresh_google_access_token's own
