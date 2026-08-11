@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 if __package__ and __package__.count('.') >= 1:
     from .. import _job_executor as job_executor
+    from .. import _run_record
     from .._run_record import (
         JobRunRecord,
         evaluate_success_contract,
@@ -21,6 +22,7 @@ if __package__ and __package__.count('.') >= 1:
     )
 else:
     import _job_executor as job_executor
+    import _run_record
     from _run_record import (
         JobRunRecord,
         evaluate_success_contract,
@@ -335,6 +337,33 @@ def test_read_inner_status_still_uses_legacy_convention_for_other_jobs(tmp_path,
     (state_dir / "status.json").write_text(json.dumps({"result": "ok"}))
 
     status = read_inner_status(skills_root=skills_root, job_name="some-other-job")
+
+    assert status == "ok"
+
+
+# The cell production actually occupies: email-triage, EMAIL_TRIAGE_STATE_DIR
+# UNSET. The two tests above cover email-triage with the variable SET and
+# another job with it unset, so this branch -- the only one a scheduled run
+# takes -- went unexercised, and the `sys.platform` call it reaches raised
+# NameError for four days while every triage run died after finishing its work.
+# Do not "simplify" this by setting the env var; setting it is what hid the bug.
+
+def test_read_inner_status_resolves_email_triage_without_the_env_override(
+    tmp_path, monkeypatch
+):
+    monkeypatch.delenv("EMAIL_TRIAGE_STATE_DIR", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+
+    resolved = _run_record._resolve_job_state_dir(
+        skills_root=tmp_path / "skills", job_name="email-triage"
+    )
+    resolved.mkdir(parents=True)
+    (resolved / "status.json").write_text(json.dumps({"result": "ok"}))
+
+    status = read_inner_status(
+        skills_root=tmp_path / "skills", job_name="email-triage"
+    )
 
     assert status == "ok"
 
