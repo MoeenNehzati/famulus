@@ -26,6 +26,18 @@ SESSION_ID = "11111111-2222-4333-8444-555555555555"
 RESET_EPOCH = 1_786_294_800
 
 
+@pytest.fixture(autouse=True)
+def isolate_live_transcript_roots(tmp_path: Path, monkeypatch) -> None:
+    """Keep monitor tests independent of the developer's live sessions."""
+
+    monkeypatch.setenv(
+        "LLM_WAKEUP_CLAUDE_DIR", str(tmp_path / "live-transcripts" / "claude")
+    )
+    monkeypatch.setenv(
+        "LLM_WAKEUP_CODEX_DIR", str(tmp_path / "live-transcripts" / "codex")
+    )
+
+
 def _write_jsonl(path: Path, events: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("".join(json.dumps(event) + "\n" for event in events))
