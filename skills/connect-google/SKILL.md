@@ -1,6 +1,7 @@
 ---
 name: connect-google
-description: Use when a Google service needs a shared OAuth client prepared, or when the user asks to prepare Google authentication for Famulus.
+description: >-
+  Use when the user needs to set up or restore Google authentication for Famulus. Do not use for ordinary Google-service operations.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->

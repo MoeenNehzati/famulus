@@ -1,6 +1,7 @@
 ---
 name: bib-audit
-description: Use when auditing a .bib bibliography file for syntactic validity, style consistency, external metadata verification, or duplicate/version conflicts; or when applying approved corrections to a .bib file or LaTeX project citations.
+description: >-
+  Use when the user asks to audit a bibliography or apply corrections identified by a bibliography audit. Do not use for general LaTeX citation editing.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->

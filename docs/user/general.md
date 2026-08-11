@@ -46,7 +46,7 @@ Typical flow:
 <!-- BEGIN AUTO-GENERATED DOCS: assistant-interaction -->
 > Generated from live blueprints. Do not edit this block by hand.
 
-- `llm-wakeup` — Schedule a supported assistant session after a usage reset, infer a wakeup from a timeout, or manage per-session automatic wakeups
+- `llm-wakeup` — Schedule or manage an automatic assistant-session wakeup after a usage reset or timeout
 - `loose-mode` — Broad, fast exploration mode with breadth over certainty
 - `prepare-handoff` — Prepare a clean handoff with workflow and documentation updates
 - `tight-mode` — Rigorous, verified output mode with certainty over speed

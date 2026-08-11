@@ -1,9 +1,7 @@
 ---
 name: formal-prose-review
-description: Use when technical prose needs grammar, typos, punctuation, wording,
-  clarity, concision, or formal-tone editing while preserving mathematical and
-  substantive content; not for proof verification, notation review, document-level
-  flow, or substantive rewriting.
+description: >-
+  Use when the user asks for sentence-level editing of technical prose while preserving its substance. Do not use for proof, notation, document-flow, or substantive review.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->

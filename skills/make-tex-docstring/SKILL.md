@@ -1,24 +1,7 @@
 ---
 name: make-tex-docstring
-description: |
-  Create or propose a top-of-document TeX comment block that records the document profile and intended use.
-
-  Use when:
-  - a TeX document is missing a top-of-document profile comment
-  - the user wants to add or standardize a document docstring/header comment
-  - another skill needs document-profile information and the file does not already state it clearly
-  - a skill marked `Category: document-oriented` is about to be applied to a `.tex` file — check for a profile comment before proceeding
-
-  Do not use when:
-  - the file already has a suitable top-of-document profile comment
-  - the user wants substantive editing rather than document-profile metadata
-
-  Success criteria:
-  - identify or reliably infer the document profile
-  - ask only for information that cannot be inferred safely
-  - produce one canonical TeX comment block
-  - keep the schema in one place and avoid ad hoc variations across skills
-  - do not edit the file unless the user agrees
+description: >-
+  Use when the user asks to create or standardize a TeX document-profile comment, or when a selected TeX task requires profile information that the document does not state clearly. Do not use merely because the target is a `.tex` file.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->

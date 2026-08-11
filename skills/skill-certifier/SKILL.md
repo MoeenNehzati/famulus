@@ -1,6 +1,7 @@
 ---
 name: skill-certifier
-description: Use when mechanical checks and semantic review should issue fresh node certificates for an exact committed repository state.
+description: >-
+  Use when fresh certificates are requested for one or more Officina nodes. Do not use merely to check certificate currentness or canonical node hashes.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->

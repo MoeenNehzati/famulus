@@ -22,7 +22,7 @@ Example prompts:
 > Generated from live blueprints. Do not edit this block by hand.
 
 - `cloud-files` — Bounded read/write of plain files under a configured Google Drive root
-- `connect-google` — A Google service needs a shared OAuth client prepared, or when the user asks to prepare Google authentication for Famulus
+- `connect-google` — The user needs to set up or restore Google authentication for Famulus
 - `fix-bisync` — Diagnose and repair rclone bisync failures
 - `install-assistant-tools` — Install or update launchers, wiring, hooks, and environment on a machine
 - `recurring-tasks` — Manage recurring AI jobs through the host's native per-user scheduler

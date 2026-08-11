@@ -1,6 +1,7 @@
 ---
 name: refactor-node
-description: Use when auditing or refactoring a whole registered skill-system node or an owned file, class, function, method, or instruction section
+description: >-
+  Use when the user asks for a behavior-preserving audit or refactor of a registered Officina node or one of its owned sources. Do not use for feature work, bug fixes, generic code review, or files outside registered node ownership.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->

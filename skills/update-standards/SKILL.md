@@ -1,6 +1,7 @@
 ---
 name: update-standards
-description: Use when creating, changing, splitting, importing, or auditing a canonical standard document and its pinned dependents, generated views, declared evidence, or enforcement artifacts.
+description: >-
+  Use when the user asks to create, change, or audit a canonical repository standard. Do not use for generic policy or documentation work.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->

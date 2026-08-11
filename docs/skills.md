@@ -26,23 +26,23 @@ The graph gives a visual overview of the live skill set. The sections below are 
 
 - `bib-audit` — Audit a `.bib` file for validity, style, external metadata, and duplicates _(topics: scholarly-documents, research-writing; activated by: user request, skill workflow)_
 - `formal-prose-review` — Polish grammar, tone, and concision in technical prose without touching the math _(topics: research-writing, scholarly-documents; activated by: user request, skill workflow)_
-- `latex-workshop` — A user wants to compile, rebuild, or troubleshoot a TeX/LaTeX document and the build should match VS Code LaTeX Workshop settings, recipes, and output-directory conventions _(topics: scholarly-documents, research-writing; activated by: user request, skill workflow)_
+- `latex-workshop` — Compiling or troubleshooting a LaTeX document inside a VS Code project whose build is governed by LaTeX Workshop _(topics: scholarly-documents, research-writing; activated by: user request, skill workflow)_
 - `math-dependency-graph` — Extract an assumptions-to-results dependency graph from a LaTeX document _(topics: mathematical-reasoning, visualization, scholarly-documents; activated by: user request, skill workflow)_
-- `notation-review` — Mathematical notation needs review for lightness, unification, reuse across scopes, or semantic transparency _(topics: mathematical-reasoning, research-writing; activated by: user request, skill workflow)_
+- `notation-review` — Review, simplify, or standardize mathematical notation _(topics: mathematical-reasoning, research-writing; activated by: user request, skill workflow)_
 - `proof-audit` — Audit a proof for soundness, coherence, hidden assumptions, and redundancy _(topics: mathematical-reasoning, research-writing, scholarly-documents; activated by: user request, skill workflow)_
-- `technical-flow-review` — A technical document needs review for flow, structure, motivation, or readability _(topics: research-writing, scholarly-documents; activated by: user request, skill workflow)_
+- `technical-flow-review` — For document-level review of technical structure, motivation, or reader flow _(topics: research-writing, scholarly-documents; activated by: user request, skill workflow)_
 - `tool-applicability` — Check whether a theorem or framework achieves a target in the current setting _(topics: mathematical-reasoning; activated by: user request, skill workflow)_
 
 ### Listed
 
-- `make-tex-docstring` — Create or propose a top-of-document TeX comment block that records the document profile and intended use _(topics: scholarly-documents, research-writing; activated by: user request, skill workflow)_
+- `make-tex-docstring` — Create or standardize a TeX document-profile comment, or when a selected TeX task requires profile information that the document does not state clearly _(topics: scholarly-documents, research-writing; activated by: user request, skill workflow)_
 - `pdf-to-markdown` — Convert a research-paper PDF into LLM-readable text _(topics: scholarly-documents; activated by: user request, skill workflow)_
 
 ## Software Development
 
 ### Featured
 
-- `semantic-integration` — A complicated Git integration between substantially diverged branches requires reconstructing source intent against the target's current architecture, especially after failed merges, broad conflicts, or architectural drift; do not use for ordinary conflict-free merges or rebases _(topics: repository-workflow; activated by: user request, skill workflow)_
+- `semantic-integration` — Integrating substantially diverged Git branches and merge or rebase is inadequate because it produces broad structural conflicts, or because mechanical application would place source changes into structures the target architecture has replaced and thereby lose their intent _(topics: repository-workflow; activated by: user request, skill workflow)_
 
 ### Listed
 
@@ -59,9 +59,9 @@ The graph gives a visual overview of the live skill set. The sections below are 
 ### Listed
 
 - `hook-maker` — Design cross-host assistant hooks with one purpose and per-host bindings _(topics: assistant-authoring, assistant-architecture; activated by: user request, skill workflow)_
-- `regenerate-blueprints` — An existing skill's blueprint.yaml needs regeneration or refresh _(topics: assistant-authoring, assistant-architecture; activated by: user request, skill workflow)_
-- `skill-certifier` — Mechanical checks and semantic review should issue fresh node certificates for an exact committed repository state _(topics: assistant-assurance, assistant-architecture; activated by: user request, skill workflow)_
-- `skill-drift` — Reading signed certificate currentness or canonical node hashes for Famulus modules _(topics: assistant-assurance, assistant-architecture; activated by: user request, skill workflow)_
+- `regenerate-blueprints` — An existing skill blueprint needs regeneration, whether requested directly or required by another skill _(topics: assistant-authoring, assistant-architecture; activated by: user request, skill workflow)_
+- `skill-certifier` — Fresh certificates are requested for one or more Officina nodes _(topics: assistant-assurance, assistant-architecture; activated by: user request, skill workflow)_
+- `skill-drift` — Whether Officina node certificates are current or stale, or asks for canonical node hashes _(topics: assistant-assurance, assistant-architecture; activated by: user request, skill workflow)_
 - `update-standards` — Change canonical standards and keep their pinned closures aligned _(topics: assistant-authoring, assistant-architecture, assistant-assurance; activated by: user request, skill workflow)_
 
 ## Assistant Operations
@@ -73,7 +73,7 @@ The graph gives a visual overview of the live skill set. The sections below are 
 ### Listed
 
 - `cloud-files` — Bounded read/write of plain files under a configured Google Drive root _(topics: external-integrations, storage-and-sync; activated by: user request, skill workflow)_
-- `connect-google` — A Google service needs a shared OAuth client prepared, or when the user asks to prepare Google authentication for Famulus _(topics: external-integrations; activated by: user request, skill workflow)_
+- `connect-google` — The user needs to set up or restore Google authentication for Famulus _(topics: external-integrations; activated by: user request, skill workflow)_
 - `fix-bisync` — Diagnose and repair rclone bisync failures _(topics: storage-and-sync, system-maintenance; activated by: user request)_
 - `install-assistant-tools` — Install or update launchers, wiring, hooks, and environment on a machine _(topics: assistant-installation, system-maintenance; activated by: user request)_
 
@@ -86,5 +86,5 @@ The graph gives a visual overview of the live skill set. The sections below are 
 
 ### Listed
 
-- `llm-wakeup` — Schedule a supported assistant session after a usage reset, infer a wakeup from a timeout, or manage per-session automatic wakeups _(topics: session-management, task-automation; activated by: user request, skill workflow, scheduled job)_
+- `llm-wakeup` — Schedule or manage an automatic assistant-session wakeup after a usage reset or timeout _(topics: session-management, task-automation; activated by: user request, skill workflow, scheduled job)_
 - `prepare-handoff` — Prepare a clean handoff with workflow and documentation updates _(topics: session-management, repository-workflow; activated by: user request, skill workflow)_

@@ -1,6 +1,7 @@
 ---
 name: skill-maker
-description: Use when creating or editing a personal skill in the shared skills directory
+description: >-
+  Use when the user asks to create a personal skill or change an existing personal skill's intended behavior or public interface in the shared skills directory. Do not use for behavior-preserving refactoring, blueprint regeneration, certificate work, or standards maintenance.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->

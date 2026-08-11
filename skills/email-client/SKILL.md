@@ -1,6 +1,7 @@
 ---
 name: email-client
-description: Use when reading, listing, searching, or sending email for the user across any nickname registered in the account registry.
+description: >-
+  Use when the user asks to access or manage email or a registered email account. Do not use when the primary request is inbox triage or shared Google authentication setup.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->

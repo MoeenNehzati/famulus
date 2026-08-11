@@ -1,6 +1,7 @@
 ---
 name: initialize-tdd
-description: Use when starting a brand-new project that should follow a staged, approval-gated TDD workflow, especially a Python project.
+description: >-
+  Use when the user asks to initialize a brand-new TDD project. Do not use for adding TDD to an existing project.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->

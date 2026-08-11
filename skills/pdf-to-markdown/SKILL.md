@@ -1,6 +1,7 @@
 ---
 name: pdf-to-markdown
-description: Use when converting a research paper PDF to readable text for LLM analysis of technical content.
+description: >-
+  Use when research-paper analysis requires readable source or text that is not already available. Do not use for generic non-research PDFs.
 tools:
   - marker_single
 ---

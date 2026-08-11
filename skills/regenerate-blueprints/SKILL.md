@@ -1,6 +1,7 @@
 ---
 name: regenerate-blueprints
-description: Use when an existing skill's blueprint.yaml needs regeneration or refresh.
+description: >-
+  Use when an existing skill blueprint needs regeneration, whether requested directly or required by another skill. Do not use for ordinary blueprint editing or synchronization.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->

@@ -1,6 +1,7 @@
 ---
 name: install-assistant-tools
-description: Use when installing, repairing, updating, or propagating the assistant, collab, coauthor, or workspace helper commands on a machine, or when their launcher or shell integration is missing or stale.
+description: >-
+  Use when the user asks to install, update, propagate, or repair the `assistant`, `collab`, `coauthor`, or workspace helper commands, including missing or stale launchers and shell integration. Do not use for unrelated software or plugin installation.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->

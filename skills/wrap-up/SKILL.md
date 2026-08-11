@@ -1,9 +1,7 @@
 ---
 name: wrap-up
-description: |
-  Use when ending the work day or wrapping up a session. Reads today's plan,
-  asks which incomplete actions were completed, prompts for calendar activity
-  notes, and captures any new items for lists.
+description: >-
+  Use when the user explicitly asks to wrap up or formally close the workday or current session. Do not use for status or completeness questions such as “anything else remaining?” or “are we done here?”, ordinary task completion, or a handoff-only request.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->

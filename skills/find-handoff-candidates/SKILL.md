@@ -1,6 +1,7 @@
 ---
 name: find-handoff-candidates
-description: Use when you need a mechanical, non-interpretive scan of today's (or another day's) work sessions to find ones that had substantial activity but no completed handoff. Typically invoked by wrap-up, not directly by the user.
+description: >-
+  Use when `wrap-up` needs to identify recent work sessions that may still require a handoff. Do not invoke directly for transcript review, interpretation, or summarization.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->

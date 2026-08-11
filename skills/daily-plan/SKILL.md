@@ -1,9 +1,7 @@
 ---
 name: daily-plan
-description: |
-  Use when the user asks to plan their day, see what to work on today, check
-  their schedule, or review today's actions. Triggers on "plan my day",
-  "what should I do today", "what should I work on", "show my plan", or similar.
+description: >-
+  Use when the user asks to plan their day, decide what to work on today, or review an existing daily plan. Do not use for a standalone calendar or list request, or for an end-of-day wrap-up.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->

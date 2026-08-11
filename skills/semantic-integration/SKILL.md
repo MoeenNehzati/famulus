@@ -1,6 +1,7 @@
 ---
 name: semantic-integration
-description: Use when a complicated Git integration between substantially diverged branches requires reconstructing source intent against the target's current architecture, especially after failed merges, broad conflicts, or architectural drift; do not use for ordinary conflict-free merges or rebases.
+description: >-
+  Use when integrating substantially diverged Git branches and merge or rebase is inadequate because it produces broad structural conflicts, or because mechanical application would place source changes into structures the target architecture has replaced and thereby lose their intent. Do not use when direct application and localized conflict resolution can preserve both branches' intended behavior.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->

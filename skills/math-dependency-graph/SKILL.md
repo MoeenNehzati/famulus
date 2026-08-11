@@ -1,9 +1,7 @@
 ---
 name: math-dependency-graph
-description: |
-  Use when a LaTeX math document needs a direct dependency graph of its assumptions-to-results structure, covering standing assumptions, definitions, mathematical results, notation, and evidence, as canonical JSON or interactive HTML.
-
-  Do not use when the main goal is proof validation, notation cleanup, prose review, or a literature map.
+description: >-
+  Use when the user asks for a direct assumptions-to-results dependency graph of a LaTeX mathematical document. Do not use for proof, notation, prose, or literature review.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->

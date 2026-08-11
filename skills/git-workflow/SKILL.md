@@ -1,6 +1,7 @@
 ---
 name: git-workflow
-description: Use when working in any git repo — committing, staging, checking branch state, or deciding whether to suggest a commit. Also use before editing files in any repo to verify branch safety.
+description: >-
+  Use when a task will edit a Git repository or the user asks to inspect or change Git state. Do not use solely because a read-only task happens inside a repository.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->

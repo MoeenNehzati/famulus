@@ -1,9 +1,7 @@
 ---
 name: proof-audit
-description: |
-  Use when the user asks to audit a mathematical proof, proof sketch, argument, lemma, proposition, or theorem statement for soundness, coherence, redundancy, hidden assumptions, invalid theorem use, quantifier or domain mistakes, corner cases, or missing hypotheses; asks to check, verify, validate, stress-test, or debug a proof or claimed mathematical implication; wants diagnosis before rewriting; or asks whether an argument actually proves its stated conclusion.
-
-  Do not use when the main task is brainstorming, notation cleanup, prose polishing, writing a proof from scratch, computation, code, or LaTeX formatting.
+description: >-
+  Use when the user asks to audit the soundness, coherence, or redundancy of a mathematical proof or claimed implication. Do not use to write a new proof or for notation, prose, computation, code, or LaTeX work.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->

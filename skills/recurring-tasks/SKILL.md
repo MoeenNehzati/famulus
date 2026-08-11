@@ -1,6 +1,7 @@
 ---
 name: recurring-tasks
-description: Manage recurring AI job automation via the host's native per-user scheduler (systemd on Linux, launchd on macOS, Task Scheduler on Windows). Define jobs in jobs.yaml, enable/disable/test them, and monitor health.
+description: >-
+  Use when the user asks to set up or manage a recurring AI job. Do not use for one-off commands or generic scheduler questions.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->

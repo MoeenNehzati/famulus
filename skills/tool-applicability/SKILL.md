@@ -1,12 +1,7 @@
 ---
 name: tool-applicability
-description: |
-  Use when checking whether a theorem, framework, or mathematical tool can achieve a target objective in the current setting and, if not, what nearest valid result it still delivers, including when:
-  - the user asks whether a theorem, method, machinery, or formalism applies
-  - the user wants to know whether a tool proves a target under current assumptions, what added assumptions would make it work, or what weaker nearby result it gives
-
-  Do not use when:
-  - the main task is line-by-line proof auditing, broad proof strategy without a specific candidate tool, or notation or document-structure review
+description: >-
+  Use when the user asks whether a specific mathematical theorem, method, framework, or formalism applies to a target problem. Do not use for generic software tools, line-by-line proof review, or broad strategy without a candidate mathematical tool.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->

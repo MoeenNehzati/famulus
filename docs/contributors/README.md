@@ -56,9 +56,9 @@ These skills own assistant modules, standards, and their lifecycle.
 
 - `hook-maker` — Design cross-host assistant hooks with one purpose and per-host bindings
 - `refactor-node` — Refactor whole repository nodes or owned sub-scopes by gateway language
-- `regenerate-blueprints` — An existing skill's blueprint.yaml needs regeneration or refresh
-- `skill-certifier` — Mechanical checks and semantic review should issue fresh node certificates for an exact committed repository state
-- `skill-drift` — Reading signed certificate currentness or canonical node hashes for Famulus modules
+- `regenerate-blueprints` — An existing skill blueprint needs regeneration, whether requested directly or required by another skill
+- `skill-certifier` — Fresh certificates are requested for one or more Officina nodes
+- `skill-drift` — Whether Officina node certificates are current or stale, or asks for canonical node hashes
 - `skill-maker` — Author new skills that conform to the repo's skill-writing guideline
 - `update-standards` — Change canonical standards and keep their pinned closures aligned
 <!-- END AUTO-GENERATED DOCS: assistant-development -->
@@ -72,7 +72,7 @@ These skills support general software projects and repositories.
 
 - `git-workflow` — Branch-safety checks and commit hygiene for any repo
 - `initialize-tdd` — Scaffold a staged, approval-gated TDD project
-- `semantic-integration` — A complicated Git integration between substantially diverged branches requires reconstructing source intent against the target's current architecture, especially after failed merges, broad conflicts, or architectural drift; do not use for ordinary conflict-free merges or rebases
+- `semantic-integration` — Integrating substantially diverged Git branches and merge or rebase is inadequate because it produces broad structural conflicts, or because mechanical application would place source changes into structures the target architecture has replaced and thereby lose their intent
 <!-- END AUTO-GENERATED DOCS: software-development -->
 
 ## Where To Go Next

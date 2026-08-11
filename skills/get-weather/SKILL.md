@@ -1,8 +1,7 @@
 ---
 name: get-weather
-description: |
-  Use when the user asks about weather for the current location or a named
-  location, including a specific day or date range.
+description: >-
+  Use when the user asks about weather for the current location or a named location, including a specific day or date range.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->

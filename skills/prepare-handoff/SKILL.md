@@ -1,6 +1,7 @@
 ---
 name: prepare-handoff
-description: Use when the user explicitly invokes this skill to prepare a handoff or preserve project continuity before pausing, ending, or switching tracks after work that produced decisions, failed paths, interface contracts, environment quirks, or preferences worth preserving. Do not auto-use for general "remember this" requests, short clarifications, or incidental mentions of switching inside another task.
+description: >-
+  Use when the user explicitly asks for a handoff, or when pausing, ending, or switching away from substantial project work that produced continuity-relevant knowledge. Do not use for ordinary remember-this requests, short clarifications, incidental switching, or formal closure with no handoff need.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->

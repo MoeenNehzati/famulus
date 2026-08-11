@@ -1,8 +1,7 @@
 ---
 name: fix-bisync
-description: Use when a live rclone bisync job fails, requests `--resync`, has
-  corrupted state, needs its first real fault or culprit files identified, or
-  repeatedly fails and needs a safe prevention or recovery decision.
+description: >-
+  Use when a live rclone bisync job has failed or repeatedly becomes unhealthy and the user needs diagnosis or recovery guidance. Do not use for generic rclone questions or one-off syncs.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->

@@ -1,6 +1,7 @@
 ---
 name: loose-mode
-description: Use when the user invokes "loose mode" or asks for broad exploration, strategy, options, or a fast overview — when breadth and speed matter more than certainty. Contrasts with tight-mode.
+description: >-
+  Use when the user explicitly asks to enter or continue loose mode. Do not infer it from an ordinary request for ideas, options, strategy, or an overview.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->

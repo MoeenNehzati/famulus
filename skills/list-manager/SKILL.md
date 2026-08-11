@@ -1,12 +1,7 @@
 ---
 name: list-manager
-description: |
-  Use whenever the user refers to any personal list they keep — a list of any
-  name or topic (todo, shopping, reading, packing, gifts, projects, and any
-  other) — or asks to see, add to, check off, complete, reorder, rename, set a
-  deadline on, or remove items in one. Any phrasing like "my <X> list", "what's
-  on my <X>", "add X to my list", "show my <X>", "mark X done" triggers this,
-  whatever the list is called.
+description: >-
+  Use when the user asks to view or change a persistent personal list. Do not use for an ad hoc generated list, repository inventory, or prose checklist.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->

@@ -259,11 +259,10 @@ def test_repository_multiline_skill_summaries_remain_catalog_safe(
     summaries = {skill.name: skill.summary for skill in live_catalog}
 
     assert summaries["notation-review"] == (
-        "Mathematical notation needs review for lightness, unification, reuse "
-        "across scopes, or semantic transparency"
+        "Review, simplify, or standardize mathematical notation"
     )
     assert summaries["technical-flow-review"] == (
-        "A technical document needs review for flow, structure, motivation, or readability"
+        "For document-level review of technical structure, motivation, or reader flow"
     )
 
 
@@ -273,37 +272,11 @@ def test_math_dependency_graph_description_is_concise_trigger_only(
     skill = next(
         skill for skill in live_catalog if skill.name == "math-dependency-graph"
     )
-    paragraphs = skill.description.split("\n\n")
-    assert len(paragraphs) == 2
-    summary, exclusion = paragraphs
-
-    assert summary.startswith("Use when ")
-    assert summary.endswith(".")
-    assert summary.count(".") == 1
-    assert len(summary.split()) <= 35
-
-    lowered = summary.lower()
-    assert "latex math document" in lowered
-    assert "direct dependency graph" in lowered
-    assert "assumptions-to-results" in lowered
-    for concept in (
-        "standing assumption",
-        "definition",
-        "result",
-        "notation",
-        "evidence",
-    ):
-        assert concept in lowered
-    for artifact in ("canonical json", "interactive html"):
-        assert artifact in lowered
-
-    assert exclusion == (
-        "Do not use when the main goal is proof validation, notation cleanup, "
-        "prose review, or a literature map."
+    assert skill.description == (
+        "Use when the user asks for a direct assumptions-to-results dependency "
+        "graph of a LaTeX mathematical document. Do not use for proof, notation, "
+        "prose, or literature review."
     )
-    assert not {"success criteria:", "workflow:", "outputs:"} & {
-        line.strip().lower() for line in skill.description.splitlines()
-    }
 
 
 def test_regenerate_blueprints_description_is_trigger_only(
@@ -313,17 +286,11 @@ def test_regenerate_blueprints_description_is_trigger_only(
         skill for skill in live_catalog if skill.name == "regenerate-blueprints"
     )
 
-    assert skill.description.startswith("Use when ")
-    assert skill.description.endswith(".")
-    assert skill.description.count(".") == 2  # ``blueprint.yaml`` plus sentence end.
-    assert "\n" not in skill.description
-
-    lowered = skill.description.lower()
-    for concept in ("existing", "skill", "blueprint.yaml"):
-        assert concept in lowered
-    assert "refresh" in lowered or "regenerat" in lowered
-    for workflow_detail in ("/tmp", "generated under", "without modifying"):
-        assert workflow_detail not in lowered
+    assert skill.description == (
+        "Use when an existing skill blueprint needs regeneration, whether "
+        "requested directly or required by another skill. Do not use for ordinary "
+        "blueprint editing or synchronization."
+    )
 
 
 def test_catalog_errors_name_field_and_configured_choices(tmp_path: Path) -> None:

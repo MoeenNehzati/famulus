@@ -99,14 +99,15 @@ def test_preference_management_files_are_removed() -> None:
 
 def test_frontmatter_discovers_only_email_triage_requests() -> None:
     body = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
-    frontmatter = body.split("---", 2)[1].lower()
+    metadata = yaml.safe_load(body.split("---", 2)[1])
+    description = metadata["description"].lower()
 
-    assert "description: use when" in frontmatter
-    assert "triage email" in frontmatter
-    assert "process the inbox" in frontmatter
-    assert "preferences" not in frontmatter
+    assert description.startswith("use when")
+    assert "inbox-level email triage" in description
+    assert "processing" in description
+    assert "preferences" not in description
     for action in ("add", "change", "remove", "review", "reset"):
-        assert action not in frontmatter
+        assert action not in description
 
 
 def test_triage_contract_has_no_preference_source_or_read() -> None:

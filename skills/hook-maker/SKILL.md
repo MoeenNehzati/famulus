@@ -1,6 +1,7 @@
 ---
 name: hook-maker
-description: Use when designing, creating, installing, or refactoring assistant hooks that must work across multiple hosts or future agent runtimes, especially when a shared hook purpose needs host-specific lifecycle bindings or output schemas.
+description: >-
+  Use when the user asks to create or change an assistant lifecycle hook that must support multiple hosts or runtimes. Do not use for ordinary Git hooks or single-host automation.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->

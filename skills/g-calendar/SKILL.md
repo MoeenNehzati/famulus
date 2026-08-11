@@ -1,6 +1,7 @@
 ---
 name: g-calendar
-description: Use when the user asks to read or change Google Calendar events, calendars, schedules, meetings, or availability.
+description: >-
+  Use when the user asks to view or change their Google Calendar. Do not use for daily planning.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->

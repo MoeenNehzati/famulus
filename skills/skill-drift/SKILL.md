@@ -1,6 +1,7 @@
 ---
 name: skill-drift
-description: Use when reading signed certificate currentness or canonical node hashes for Famulus modules.
+description: >-
+  Use when the user asks whether Officina node certificates are current or stale, or asks for canonical node hashes. Do not use to issue certificates.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->

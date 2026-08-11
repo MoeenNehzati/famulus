@@ -1,6 +1,7 @@
 ---
 name: llm-wakeup
-description: Use when the user wants to schedule a supported assistant session after a usage reset, infer a wakeup from a timeout, or manage per-session automatic wakeups.
+description: >-
+  Use when the user asks to schedule or manage an automatic assistant-session wakeup after a usage reset or timeout.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->

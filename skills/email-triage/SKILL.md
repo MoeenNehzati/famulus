@@ -1,6 +1,7 @@
 ---
 name: email-triage
-description: Use when asked to triage email, process the inbox, or surface action items from recent emails.
+description: >-
+  Use when the user asks for inbox-level email triage or processing. Do not use for ordinary email access, sending, or analysis of a single message.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->

@@ -1,10 +1,7 @@
 ---
 name: cloud-files
-description: |
-  Read, write, and delete plain files under a configured Google Drive LLM root
-  through skill-owned Python scripts. Use when another skill needs bounded
-  cloud-file storage or a separately prompted broader read from the configured
-  Drive root.
+description: >-
+  Use when the user or another skill needs to read from or write to the configured LLM root of a remote. Do not use for local files or remote paths outside that LLM root.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->

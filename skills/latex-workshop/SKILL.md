@@ -1,6 +1,7 @@
 ---
 name: latex-workshop
-description: Use when a user wants to compile, rebuild, or troubleshoot a TeX/LaTeX document and the build should match VS Code LaTeX Workshop settings, recipes, and output-directory conventions.
+description: >-
+  Use when compiling or troubleshooting a LaTeX document inside a VS Code project whose build is governed by LaTeX Workshop. Do not use for LaTeX compilation outside a VS Code project.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->

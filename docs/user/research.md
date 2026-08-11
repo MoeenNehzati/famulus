@@ -34,12 +34,12 @@ Example prompts:
 
 - `bib-audit` — Audit a `.bib` file for validity, style, external metadata, and duplicates
 - `formal-prose-review` — Polish grammar, tone, and concision in technical prose without touching the math
-- `latex-workshop` — A user wants to compile, rebuild, or troubleshoot a TeX/LaTeX document and the build should match VS Code LaTeX Workshop settings, recipes, and output-directory conventions
-- `make-tex-docstring` — Create or propose a top-of-document TeX comment block that records the document profile and intended use
+- `latex-workshop` — Compiling or troubleshooting a LaTeX document inside a VS Code project whose build is governed by LaTeX Workshop
+- `make-tex-docstring` — Create or standardize a TeX document-profile comment, or when a selected TeX task requires profile information that the document does not state clearly
 - `math-dependency-graph` — Extract an assumptions-to-results dependency graph from a LaTeX document
-- `notation-review` — Mathematical notation needs review for lightness, unification, reuse across scopes, or semantic transparency
+- `notation-review` — Review, simplify, or standardize mathematical notation
 - `pdf-to-markdown` — Convert a research-paper PDF into LLM-readable text
 - `proof-audit` — Audit a proof for soundness, coherence, hidden assumptions, and redundancy
-- `technical-flow-review` — A technical document needs review for flow, structure, motivation, or readability
+- `technical-flow-review` — For document-level review of technical structure, motivation, or reader flow
 - `tool-applicability` — Check whether a theorem or framework achieves a target in the current setting
 <!-- END AUTO-GENERATED DOCS: research -->
