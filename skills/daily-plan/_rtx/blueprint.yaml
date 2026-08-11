@@ -30,7 +30,6 @@ content:
 - __init__\.py
 - _day_model\.py
 - _plan_orchestrate\.py
-- _plan_storage\.py
 - _render_plan\.py
 - _state_patch\.py
 - tests/.*
@@ -48,12 +47,6 @@ exports:
       allowed_callers:
       - daily-plan
     source_interface: daily-plan._rtx.source.rtx-plan-orchestrate.interface.orchestrate
-  daily-plan._rtx.interface.plan-storage:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - daily-plan
-    source_interface: daily-plan._rtx.source.rtx-plan-storage.interface.plan-storage
   daily-plan._rtx.interface.render-plan:
     access:
       allow_all_modules: false
@@ -76,10 +69,6 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/rtx-plan-orchestrate.yaml
-  daily-plan._rtx.source.rtx-plan-storage:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-plan-storage.yaml
   daily-plan._rtx.source.rtx-render-plan:
     blueprint:
       base: module-root

@@ -15,7 +15,6 @@ Skill Version: 2
 Uses Interfaces:
 - `daily-plan.source.gateway -> daily-plan._rtx.interface.mutate-plan@1`
 - `daily-plan.source.gateway -> daily-plan._rtx.interface.orchestrate@1`
-- `daily-plan.source.gateway -> daily-plan._rtx.interface.plan-storage@1`
 - `daily-plan.source.gateway -> daily-plan._rtx.interface.render-plan@1`
 
 Public Interfaces:

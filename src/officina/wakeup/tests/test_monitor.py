@@ -240,6 +240,12 @@ def test_monitor_schedules_auto_session_once_and_reminds_manual_session_once(
 ) -> None:
     state = tmp_path / "state"
     monkeypatch.setenv("LLM_WAKEUP_HOME", str(state))
+    # This machine's own near-limit sessions are discovered from the real
+    # Claude projects directory, so without this the assertions below depend on
+    # whether the developer running them happens to be near a usage limit.
+    import officina.wakeup.claude_codex_usage as usage
+
+    monkeypatch.setattr(usage, "_observable_claude_exhaustions", lambda: [])
     transcript = tmp_path / "claude" / "project" / f"{SESSION_ID}.jsonl"
     _write_jsonl(
         transcript,
@@ -302,6 +308,12 @@ def test_monitor_ignores_below_threshold_and_expired_windows(
     tmp_path: Path, monkeypatch
 ) -> None:
     monkeypatch.setenv("LLM_WAKEUP_HOME", str(tmp_path / "state"))
+    # This machine's own near-limit sessions are discovered from the real
+    # Claude projects directory, so without this the assertions below depend on
+    # whether the developer running them happens to be near a usage limit.
+    import officina.wakeup.claude_codex_usage as usage
+
+    monkeypatch.setattr(usage, "_observable_claude_exhaustions", lambda: [])
     transcript = tmp_path / f"{SESSION_ID}.jsonl"
     _write_jsonl(
         transcript,
@@ -331,6 +343,12 @@ def test_monitor_ignores_below_threshold_and_expired_windows(
 
 def test_monitor_retries_when_notification_fails(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("LLM_WAKEUP_HOME", str(tmp_path / "state"))
+    # This machine's own near-limit sessions are discovered from the real
+    # Claude projects directory, so without this the assertions below depend on
+    # whether the developer running them happens to be near a usage limit.
+    import officina.wakeup.claude_codex_usage as usage
+
+    monkeypatch.setattr(usage, "_observable_claude_exhaustions", lambda: [])
     transcript = tmp_path / f"{SESSION_ID}.jsonl"
     _write_jsonl(
         transcript,
@@ -561,32 +579,29 @@ def test_monitor_never_notifies_a_session_with_auto_scheduling_enabled(
     tmp_path: Path, monkeypatch
 ) -> None:
     """An opted-in session is scheduled silently, across repeated passes."""
-    state = tmp_path / "state"
-    monkeypatch.setenv("LLM_WAKEUP_HOME", str(state))
+    import officina.wakeup.claude_codex_monitor as monitor
+
+    monkeypatch.setenv("LLM_WAKEUP_HOME", str(tmp_path / "state"))
     transcript = tmp_path / f"{SESSION_ID}.jsonl"
-    _write_jsonl(
-        transcript,
-        [{"type": "user", "sessionId": SESSION_ID, "message": {"content": "work"}}],
+    _write_jsonl(transcript, [{"type": "user", "sessionId": SESSION_ID}])
+    reset = RESET_EPOCH
+    now = datetime.fromtimestamp(reset - 500, tz=timezone.utc)
+
+    # Injected rather than discovered: discovery reads this machine's real
+    # Claude transcripts, so a live session near its own limit would leak in
+    # and add actions this test never asked about.
+    visible = [_snapshot("five_hour", 92, reset, transcript)]
+    monkeypatch.setattr(
+        monitor, "observable_usage_snapshots", lambda: list(visible)
     )
-    payload = {
-        "session_id": SESSION_ID,
-        "transcript_path": str(transcript),
-        "rate_limits": {"five_hour": {"used_percentage": 92, "resets_at": RESET_EPOCH}},
-    }
-    capture_claude_status(payload)
     set_auto_schedule("claude", SESSION_ID, True)
-    now = datetime.fromtimestamp(RESET_EPOCH - 500, tz=timezone.utc)
 
     def _fail(message: str) -> None:
         pytest.fail(f"auto-enabled session must not notify: {message}")
 
-    first = monitor_usage(now=now, notifier=_fail)
-    payload["rate_limits"]["exhausted"] = {
-        "used_percentage": 100,
-        "resets_at": RESET_EPOCH,
-    }
-    capture_claude_status(payload)
-    second = monitor_usage(now=now, notifier=_fail)
+    first = monitor.monitor_usage(now=now, notifier=_fail)
+    visible.append(_snapshot("exhausted", 100, reset, transcript))
+    second = monitor.monitor_usage(now=now, notifier=_fail)
 
     assert [action.kind for action in first] == ["scheduled"]
     assert second == []

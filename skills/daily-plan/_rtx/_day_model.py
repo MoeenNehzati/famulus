@@ -25,7 +25,7 @@ import json
 import re
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -191,6 +191,45 @@ def read_plan_text(date_key: str) -> str:
 
 def write_plan_text(date_key: str, content: str) -> None:
     run_dispatcher("cloud-files", "plans-write", plan_path(date_key), stdin=content)
+    _record_status_ok(date_key)
+
+
+# Self-reported outcome, in the shape recurring-tasks' run records already
+# consume (state/status.json with {"result": "ok"|"error"|...}, read by
+# _run_record.read_inner_status). Persisting a plan is this skill's actual
+# deliverable, so it is the only event that may claim success -- without it the
+# scheduled job has nothing beyond the agent CLI's exit code, which is 0 even
+# when the agent accomplished nothing.
+#
+# This lives beside the single write path deliberately. It used to live in a
+# second storage module that wrote the same plans through rclone; the
+# orchestrator persists through cloud-files instead, so the signal was attached
+# to a path no run took and every successful run still reported failure.
+STATE_DIR = Path(__file__).resolve().parents[1] / "state"
+
+
+def _record_status_ok(date_key: str) -> None:
+    """Record that a plan was actually persisted for ``date_key``."""
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        (STATE_DIR / "status.json").write_text(
+            json.dumps(
+                {
+                    "result": "ok",
+                    "date_key": date_key,
+                    "recorded_at": datetime.now(timezone.utc).isoformat(
+                        timespec="seconds"
+                    ),
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+    except OSError:
+        # Never fail a successfully written plan because bookkeeping failed; an
+        # absent status already reads as "this run did not report success",
+        # which is the safe direction.
+        pass
 
 
 def read_meta(date_key: str) -> dict[str, list[list[str]]]:

@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from .. import _day_model as plan_runtime
-from .. import _plan_storage as plan_storage
 from .. import _state_patch as state_patch
 
 
@@ -153,9 +152,9 @@ def test_state_patch_uses_requested_date(monkeypatch, capsys):
 def test_successful_write_records_an_ok_status(tmp_path, monkeypatch):
     import json
 
-    monkeypatch.setattr(plan_storage, "STATE_DIR", tmp_path / "state")
+    monkeypatch.setattr(plan_runtime, "STATE_DIR", tmp_path / "state")
 
-    plan_storage._record_status_ok("8-10-26")
+    plan_runtime._record_status_ok("8-10-26")
 
     payload = json.loads((tmp_path / "state" / "status.json").read_text())
     assert payload["result"] == "ok"
@@ -168,6 +167,36 @@ def test_status_bookkeeping_never_fails_a_written_plan(tmp_path, monkeypatch):
     because the local status file could not be written."""
     unwritable = tmp_path / "file-in-the-way"
     unwritable.write_text("not a directory")
-    monkeypatch.setattr(plan_storage, "STATE_DIR", unwritable / "state")
+    monkeypatch.setattr(plan_runtime, "STATE_DIR", unwritable / "state")
 
-    plan_storage._record_status_ok("8-10-26")  # must not raise
+    plan_runtime._record_status_ok("8-10-26")  # must not raise
+
+
+def test_writing_a_plan_records_the_status_the_job_contract_reads(
+    tmp_path, monkeypatch
+):
+    """The success signal must sit on the path that actually persists a plan.
+
+    It used to live in a second storage module that wrote the same plans
+    through rclone, while the orchestrator persisted through cloud-files. No
+    scheduled run took the rclone path, so status.json was never written and
+    every successful run was recorded as a failure by
+    `require_inner_status: ok`.
+    """
+    import json
+
+    monkeypatch.setattr(plan_runtime, "STATE_DIR", tmp_path / "state")
+    written: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        plan_runtime,
+        "run_dispatcher",
+        lambda skill, interface, *args, stdin=None: written.append((interface, args[0]))
+        or "",
+    )
+
+    plan_runtime.write_plan_text("8-10-26", "# plan")
+
+    assert written == [("plans-write", "plans/8-10-26.md")]
+    payload = json.loads((tmp_path / "state" / "status.json").read_text())
+    assert payload["result"] == "ok"
+    assert payload["date_key"] == "8-10-26"

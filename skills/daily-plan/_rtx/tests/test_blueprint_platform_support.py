@@ -12,7 +12,6 @@ RTX_ROOT = REPO_ROOT / "skills" / "daily-plan" / "_rtx"
 
 BLUEPRINT_FILES = [
     RTX_ROOT / "blueprints" / "rtx-plan-orchestrate.yaml",
-    RTX_ROOT / "blueprints" / "rtx-plan-storage.yaml",
     RTX_ROOT / "blueprints" / "rtx-state-patch.yaml",
 ]
 

@@ -36,6 +36,10 @@ _HEALTHCHECK_PROBE = _RTX_DIR / "_healthcheck_probe.py"
 _SCHEDULER_ENV = {
     "HOME": os.environ.get("HOME", "/root"),
     "PATH": "/usr/bin:/bin",
+    # Spawning the real entrypoints would otherwise leave __pycache__ trees in
+    # the skill directory, written by whichever interpreter ran. Tests should
+    # not deposit artifacts in the tree they are testing.
+    "PYTHONDONTWRITEBYTECODE": "1",
 }
 
 

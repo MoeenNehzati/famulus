@@ -38,16 +38,12 @@ namespace_exports:
       only:
         daily-plan._rtx.interface.mutate-plan: 1
         daily-plan._rtx.interface.orchestrate: 1
-        daily-plan._rtx.interface.plan-storage: 1
         daily-plan._rtx.interface.render-plan: 1
     interface_access:
       daily-plan._rtx.interface.mutate-plan:
         allow_all_modules: false
         allowed_callers: []
       daily-plan._rtx.interface.orchestrate:
-        allow_all_modules: false
-        allowed_callers: []
-      daily-plan._rtx.interface.plan-storage:
         allow_all_modules: false
         allowed_callers: []
       daily-plan._rtx.interface.render-plan:

@@ -91,8 +91,6 @@ uses_interfaces:
   version: 1
 - interface: daily-plan._rtx.interface.orchestrate
   version: 1
-- interface: daily-plan._rtx.interface.plan-storage
-  version: 1
 - interface: daily-plan._rtx.interface.render-plan
   version: 1
 version: 1
