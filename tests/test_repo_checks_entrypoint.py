@@ -29,7 +29,7 @@ def test_named_suites_have_one_internal_phase_plan() -> None:
         "validators": ("validators",),
         "tests": ("tests:shared", "tests:performance"),
         "precommit": ("validators", "tests:shared"),
-        "pre-push": ("validators", "tests:shared"),
+        "pre-push": ("validators", "tests:shared", "tests:browser"),
         "portability": ("tests:shared",),
         "full": ("validators", "tests:shared", "tests:performance"),
     }
