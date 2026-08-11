@@ -469,9 +469,13 @@ def test_validate_file_preserves_best_schema_error(tmp_path: Path) -> None:
     value["standards"][0]["children"] = []
     _write_standard(standard, value)
 
-    assert validate_file(standard, root=root) == [
-        "schema validation failed: [] is too short"
-    ]
+    errors = validate_file(standard, root=root)
+
+    # jsonschema has emitted both "is too short" and "should be non-empty"
+    # for this minItems failure. The stable contract is that validation keeps
+    # the specific empty-children finding instead of a less relevant error.
+    assert len(errors) == 1
+    assert errors[0].startswith("schema validation failed: [] ")
 
 
 def _add_import(value: dict, artifact_path: str, imported_path: Path) -> None:
