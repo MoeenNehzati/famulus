@@ -3,8 +3,10 @@ from __future__ import annotations
 
 from dataclasses import replace
 import json
+import os
 from pathlib import Path
 import socket
+import stat
 from subprocess import CalledProcessError, CompletedProcess
 from typing import Any
 
@@ -20,6 +22,12 @@ from test_support.isolated_lm.qemu import (
     stop_run,
     wait_for_ssh,
 )
+
+
+def _unix_socket_metadata(path: Path) -> os.stat_result:
+    """Provide socket metadata at the injectable QMP filesystem boundary."""
+    del path
+    return os.stat_result((stat.S_IFSOCK, 0, 0, 0, 0, 0, 0, 0, 0, 0))
 
 
 @pytest.fixture
@@ -260,7 +268,7 @@ def test_start_persists_launch_facts_before_qemu_then_marks_running(
 
     def run_process(argv: list[str], **kwargs: object) -> CompletedProcess[object]:
         observed.append(json.loads(prepared_run.record_path.read_text(encoding="utf-8")))
-        assert kwargs == {"check": False}
+        assert kwargs == {"capture_output": True, "check": False}
         return CompletedProcess(argv, 0)
 
     running = start_run(
@@ -289,11 +297,15 @@ def test_start_marks_launch_failed_without_removing_logs(
             prepared_run,
             identity_file,
             allocate_port=lambda: 40222,
-            run_process=lambda argv, **kwargs: CompletedProcess(argv, 9),
+            run_process=lambda argv, **kwargs: CompletedProcess(
+                argv, 9, stdout=b"qemu out", stderr=b"qemu rejected"
+            ),
         )
 
     persisted = json.loads(prepared_run.record_path.read_text(encoding="utf-8"))
     assert failure.value.returncode == 9
+    assert failure.value.stdout == b"qemu out"
+    assert failure.value.stderr == b"qemu rejected"
     assert persisted["lifecycle"] == "launch-failed"
     assert persisted["qemu_command"] == build_qemu_command(prepared_run, 40222)
     assert prepared_run.serial_log.read_bytes() == b"serial evidence"
@@ -363,6 +375,7 @@ def test_wait_for_ssh_polls_then_requires_cloud_init_before_ready(
         "true", "true", "true", "cloud-init status --wait",
     ]
     assert all(call[1]["check"] is False for call in calls)
+    assert all(call[1]["capture_output"] is True for call in calls)
     assert [call[1]["timeout"] for call in calls] == [10, 8, 6, 6]
     assert clock.sleeps == [2, 2]
     assert ready.lifecycle == "ready"
@@ -421,20 +434,23 @@ def test_stop_powers_off_then_marks_stopped_when_the_exact_process_disappears(
     run = _launched(prepared_run, identity_file, lifecycle="ready")
     run.pid_file.write_text("123\n", encoding="ascii")
     cmdlines = iter((_matching_cmdline(run), None))
-    commands: list[list[str]] = []
+    calls: list[tuple[list[str], dict[str, object]]] = []
 
     stopped = stop_run(
         run,
         graceful_timeout_seconds=5,
         run_process=lambda argv, **kwargs: (
-            commands.append(argv) or CompletedProcess(argv, 0)
+            calls.append((argv, kwargs)) or CompletedProcess(argv, 0)
         ),
         read_proc_cmdline=lambda pid: next(cmdlines),
         qmp_quit=lambda path, timeout: pytest.fail("QMP must not run"),
     )
 
-    assert commands == [build_ssh_command(run, ["sudo", "-n", "poweroff"])]
-    assert commands[0][-1] == "sudo -n poweroff"
+    assert calls == [(
+        build_ssh_command(run, ["sudo", "-n", "poweroff"]),
+        {"capture_output": True, "check": False, "timeout": 5.0},
+    )]
+    assert calls[0][0][-1] == "sudo -n poweroff"
     assert stopped.lifecycle == "stopped"
     assert run.record_path.read_text(encoding="utf-8") == stopped.to_json()
 
@@ -498,6 +514,73 @@ def test_stop_rejects_a_malformed_pid_without_ssh_or_qmp(
 
     assert events == []
     assert json.loads(run.record_path.read_text())["lifecycle"] == "ready"
+
+
+def test_stop_rejects_fifo_pid_without_path_read_or_blocking(
+    prepared_run: RunRecord,
+    identity_file: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reject a FIFO through descriptor metadata before any potentially blocking read."""
+    run = _launched(prepared_run, identity_file, lifecycle="ready")
+    os.mkfifo(run.pid_file)
+    monkeypatch.setattr(
+        Path,
+        "read_text",
+        lambda *args, **kwargs: pytest.fail("PID reading must not use Path.read_text"),
+    )
+
+    with pytest.raises(RuntimeError, match="PID"):
+        stop_run(
+            run,
+            run_process=lambda argv, **kwargs: pytest.fail("SSH must not run"),
+            read_proc_cmdline=lambda pid: pytest.fail("FIFO must not select a PID"),
+            qmp_quit=lambda path, timeout: pytest.fail("QMP must not run"),
+        )
+
+
+def test_stop_rejects_regular_qmp_path_before_connecting(
+    prepared_run: RunRecord, identity_file: Path
+) -> None:
+    """Do not connect QMP to a substituted regular filesystem object."""
+    run = _launched(prepared_run, identity_file, lifecycle="ready")
+    run.pid_file.write_text("123", encoding="ascii")
+    run.qmp_socket.write_text("not a socket", encoding="utf-8")
+    clock = _Clock()
+
+    with pytest.raises(RuntimeError, match="QMP.*socket"):
+        stop_run(
+            run,
+            graceful_timeout_seconds=1,
+            poll_interval_seconds=1,
+            run_process=lambda argv, **kwargs: CompletedProcess(argv, 0),
+            monotonic=clock.monotonic,
+            sleep=clock.sleep,
+            read_proc_cmdline=lambda pid: _matching_cmdline(run),
+        )
+
+
+@pytest.mark.parametrize("defect", ["group-readable", "symlink"])
+def test_stop_validates_recorded_identity_before_missing_pid_shortcut(
+    prepared_run: RunRecord, identity_file: Path, tmp_path: Path, defect: str
+) -> None:
+    """A missing PID must not bypass Task 4's private-key authority validation."""
+    identity = identity_file
+    if defect == "group-readable":
+        identity.chmod(0o640)
+    else:
+        link = tmp_path / "identity-link"
+        link.symlink_to(identity)
+        identity = link
+    run = _launched(prepared_run, identity, lifecycle="launch-failed")
+
+    with pytest.raises(ValueError, match="identity"):
+        stop_run(
+            run,
+            run_process=lambda argv, **kwargs: pytest.fail("SSH must not run"),
+            read_proc_cmdline=lambda pid: pytest.fail("missing PID must short-circuit"),
+            qmp_quit=lambda path, timeout: pytest.fail("QMP must not run"),
+        )
 
 
 def test_stop_rejects_inexact_process_identity_without_ssh_or_qmp(
@@ -639,6 +722,7 @@ def test_qmp_quit_buffers_fragments_ignores_async_frames_and_matches_reply_ids(
         10,
         socket_factory=lambda family, kind: fake,
         monotonic=lambda: 0,
+        path_lstat=_unix_socket_metadata,
     )
 
     assert fake.connected == [str(qmp_socket)]
@@ -669,6 +753,7 @@ def test_qmp_quit_rejects_malformed_frames_and_eof(
             10,
             socket_factory=lambda family, kind: fake,
             monotonic=lambda: 0,
+            path_lstat=_unix_socket_metadata,
         )
 
     assert fake.sent == []
@@ -691,6 +776,7 @@ def test_qmp_quit_uses_one_deadline_across_fragmented_blocking_operations(
             5,
             socket_factory=lambda family, kind: fake,
             monotonic=clock.monotonic,
+            path_lstat=_unix_socket_metadata,
         )
 
     assert fake.connected == [str(tmp_path / "qmp.sock")]
@@ -721,6 +807,7 @@ def test_qmp_quit_rejects_a_buffered_reply_after_the_overall_deadline(
             3.5,
             socket_factory=lambda family, kind: fake,
             monotonic=clock.monotonic,
+            path_lstat=_unix_socket_metadata,
         )
 
     assert fake.sent == [

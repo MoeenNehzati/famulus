@@ -88,12 +88,12 @@ def test_rendered_metadata_uses_only_the_validated_run_identity() -> None:
 
 def test_write_nocloud_seed_uses_private_inputs_and_the_exact_command(tmp_path: Path) -> None:
     """Catch writable seed inputs or an argv that changes cloud-localds semantics."""
-    calls: list[list[str]] = []
+    calls: list[tuple[list[str], dict[str, object]]] = []
     run_dir = tmp_path / "run"
     run_dir.mkdir()
 
     def run(argv: list[str], **kwargs: object) -> CompletedProcess[object]:
-        calls.append(argv)
+        calls.append((argv, kwargs))
         Path(argv[1]).write_bytes(b"seed")
         return CompletedProcess(argv, 0)
 
@@ -106,7 +106,10 @@ def test_write_nocloud_seed_uses_private_inputs_and_the_exact_command(tmp_path: 
 
     user_data = run_dir / "user-data"
     meta_data = run_dir / "meta-data"
-    assert calls == [["cloud-localds", str(seed_iso), str(user_data), str(meta_data)]]
+    assert calls == [(
+        ["cloud-localds", str(seed_iso), str(user_data), str(meta_data)],
+        {"capture_output": True, "check": True},
+    )]
     assert user_data.stat().st_mode & 0o777 == 0o600
     assert meta_data.stat().st_mode & 0o777 == 0o600
     assert user_data.read_text(encoding="utf-8") == render_user_data(_PUBLIC_KEY)

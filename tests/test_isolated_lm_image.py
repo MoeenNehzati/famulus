@@ -160,19 +160,23 @@ def test_parse_sha256sums_rejects_a_malformed_target_alongside_valid_entry() -> 
 
 def test_verify_signed_checksums_uses_only_trusted_keyring(tmp_path: Path) -> None:
     """Pin detached-signature verification to the distribution keyring only."""
-    calls: list[list[str]] = []
+    calls: list[tuple[list[str], dict[str, object]]] = []
 
     verify_signed_checksums(
         tmp_path / "SHA256SUMS",
         tmp_path / "SHA256SUMS.gpg",
         Path("/usr/share/keyrings/ubuntu-cloudimage-keyring.gpg"),
-        run=lambda argv, **kwargs: calls.append(argv) or CompletedProcess(argv, 0),
+        run=lambda argv, **kwargs: calls.append((argv, kwargs))
+        or CompletedProcess(argv, 0),
     )
 
-    assert calls == [[
-        "gpgv", "--keyring", "/usr/share/keyrings/ubuntu-cloudimage-keyring.gpg",
-        str(tmp_path / "SHA256SUMS.gpg"), str(tmp_path / "SHA256SUMS"),
-    ]]
+    assert calls == [(
+        [
+            "gpgv", "--keyring", "/usr/share/keyrings/ubuntu-cloudimage-keyring.gpg",
+            str(tmp_path / "SHA256SUMS.gpg"), str(tmp_path / "SHA256SUMS"),
+        ],
+        {"capture_output": True, "check": True},
+    )]
 
 
 @pytest.mark.parametrize(
@@ -328,7 +332,7 @@ def test_create_overlay_uses_verified_absolute_backing_image(tmp_path: Path) -> 
     backing_image = (tmp_path / "base.qcow2").resolve()
     backing_image.write_bytes(b"abc")
     overlay = tmp_path / "run.qcow2"
-    calls: list[list[str]] = []
+    calls: list[tuple[list[str], dict[str, object]]] = []
 
     returned = create_overlay(
         _record(
@@ -337,14 +341,18 @@ def test_create_overlay_uses_verified_absolute_backing_image(tmp_path: Path) -> 
         ),
         overlay,
         VmResources(disk_gib=40),
-        run=lambda argv, **kwargs: calls.append(argv) or CompletedProcess(argv, 0),
+        run=lambda argv, **kwargs: calls.append((argv, kwargs))
+        or CompletedProcess(argv, 0),
     )
 
     assert returned == overlay.resolve()
-    assert calls == [[
-        "qemu-img", "create", "-f", "qcow2", "-F", "qcow2",
-        "-b", str(backing_image), str(overlay), "40G",
-    ]]
+    assert calls == [(
+        [
+            "qemu-img", "create", "-f", "qcow2", "-F", "qcow2",
+            "-b", str(backing_image), str(overlay), "40G",
+        ],
+        {"capture_output": True, "check": True},
+    )]
 
 
 def test_create_overlay_refuses_reused_destination_or_relative_backing_image(

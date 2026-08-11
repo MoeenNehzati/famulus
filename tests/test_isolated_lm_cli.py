@@ -68,6 +68,7 @@ def _ready_record(state_root: Path, identity: Path) -> RunRecord:
         identity_file=identity,
     )
     record = replace(record, qemu_command=tuple(cli.build_qemu_command(record, 40222)))
+    record.pid_file.write_text("999999\n", encoding="ascii")
     record.record_path.write_text(record.to_json(), encoding="utf-8")
     return record
 
@@ -99,6 +100,29 @@ def test_parser_exposes_only_supported_commands() -> None:
     assert set(subparsers.choices) == SUPPORTED_COMMANDS
 
 
+def test_parser_rejects_abbreviated_state_root_option(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Keep every supported option spelling explicit and stable."""
+    assert main(["status", "--state", str(tmp_path), "--run-id", "manual-001"]) == 2
+    payload, diagnostic = _json_stdout(capsys)
+    assert payload["ok"] is False
+    assert "--state" in str(payload["error"])
+    assert diagnostic
+
+
+def test_unexpected_value_error_is_not_classified_as_operator_input(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Do not hide internal defects under the structured usage-error contract."""
+    monkeypatch.setattr(
+        cli, "_dispatch", lambda args, paths: (_ for _ in ()).throw(ValueError("bug"))
+    )
+
+    with pytest.raises(ValueError, match="bug"):
+        main(["preflight", "--state-root", str(tmp_path)])
+
+
 @pytest.mark.parametrize("command", sorted(SUPPORTED_COMMANDS))
 def test_every_command_requires_explicit_absolute_state_root(
     command: str, capsys: pytest.CaptureFixture[str]
@@ -123,6 +147,46 @@ def test_every_command_requires_explicit_absolute_state_root(
     assert payload["ok"] is False
     assert "absolute" in str(payload["error"])
     assert diagnostic
+
+
+def test_state_reader_opens_each_state_directory_without_following_symlinks(
+    tmp_path: Path,
+) -> None:
+    state_root = tmp_path / "state"
+    record = _record_files(state_root)
+    real_open = os.open
+    calls: list[tuple[object, int, object]] = []
+
+    def recording_open(path: object, flags: int, *args: object, **kwargs: object) -> int:
+        calls.append((path, flags, kwargs.get("dir_fd")))
+        return real_open(path, flags, *args, **kwargs)
+
+    with cli._StateReader(state_root, open_file=recording_open) as reader:
+        runs_fd = reader.open_directory(reader.root_fd, "runs", "runs directory")
+        run_fd = reader.open_directory(runs_fd, record.run_id, "run directory")
+        payload = reader.read_json(run_fd, "run.json", "run manifest")
+
+    assert payload["run_id"] == record.run_id
+    directory_calls = calls[:3]
+    assert all(flags & os.O_DIRECTORY for _, flags, _ in directory_calls)
+    assert all(flags & os.O_NOFOLLOW for _, flags, _ in directory_calls)
+    assert directory_calls[1][2] == reader.root_fd
+
+
+def test_status_rejects_a_symlinked_state_root_ancestor(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    state_root = tmp_path / "state"
+    record = _record_files(state_root)
+    alias = tmp_path / "state-alias"
+    alias.symlink_to(state_root, target_is_directory=True)
+
+    assert main(
+        ["status", "--state-root", str(alias), "--run-id", record.run_id]
+    ) == 2
+    payload, diagnostic = _json_stdout(capsys)
+    assert payload["ok"] is False
+    assert "symlink" in (str(payload["error"]) + diagnostic).lower()
 
 
 def test_failed_preflight_emits_json_and_returns_nonzero(
@@ -334,6 +398,30 @@ def test_status_rejects_symlink_and_escape_violations(
     assert "PRIVATE OUTSIDE CONTENT" not in diagnostic
 
 
+@pytest.mark.parametrize("artifact", ["pid-fifo", "qmp-regular"])
+def test_status_rejects_wrong_runtime_artifact_types(
+    tmp_path: Path,
+    artifact: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    state_root = tmp_path / "state"
+    identity = (tmp_path / "identity").resolve()
+    record = _ready_record(state_root, identity)
+    if artifact == "pid-fifo":
+        record.pid_file.unlink()
+        os.mkfifo(record.pid_file)
+    else:
+        record.qmp_socket.unlink(missing_ok=True)
+        record.qmp_socket.write_text("not a socket", encoding="utf-8")
+
+    assert main(
+        ["status", "--state-root", str(state_root), "--run-id", record.run_id]
+    ) == 2
+    payload, diagnostic = _json_stdout(capsys)
+    assert payload["ok"] is False
+    assert artifact.split("-")[0].upper() in (str(payload["error"]) + diagnostic).upper()
+
+
 @pytest.mark.parametrize("contents", ["not-json", "{}"])
 def test_status_reports_corrupt_or_incomplete_manifest(
     tmp_path: Path,
@@ -415,9 +503,11 @@ def test_exec_uses_recorded_ssh_boundary_and_returns_guest_exit_code(
     record = _ready_record(state_root, identity)
     calls: list[tuple[list[str], dict[str, object]]] = []
 
-    def fake_run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def fake_run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
         calls.append((argv, kwargs))
-        return subprocess.CompletedProcess(argv, 7, stdout="guest out\n", stderr="guest err\n")
+        return subprocess.CompletedProcess(
+            argv, 7, stdout=b"guest out\n", stderr=b"guest err\n"
+        )
 
     monkeypatch.setattr(cli.subprocess, "run", fake_run)
     exit_code = main(
@@ -449,7 +539,154 @@ def test_exec_uses_recorded_ssh_boundary_and_returns_guest_exit_code(
     assert diagnostic == "guest command exited with status 7\n"
     argv, kwargs = calls[0]
     assert argv == cli.build_ssh_command(record, ["printf", "%s", "hello world"])
-    assert kwargs == {"capture_output": True, "check": False, "text": True}
+    assert kwargs == {"capture_output": True, "check": False}
+
+
+def test_exec_replaces_invalid_utf8_without_losing_exit_or_streams(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    state_root = tmp_path / "state"
+    identity = (tmp_path / "identity").resolve()
+    record = _ready_record(state_root, identity)
+    monkeypatch.setattr(
+        cli.subprocess,
+        "run",
+        lambda argv, **kwargs: subprocess.CompletedProcess(
+            argv, 23, stdout=b"out:\xff\n", stderr=b"err:\xfe\n"
+        ),
+    )
+
+    assert main(
+        [
+            "exec", "--state-root", str(state_root), "--run-id", record.run_id,
+            "--ssh-private-key", str(identity), "--", "false",
+        ]
+    ) == 23
+    payload, diagnostic = _json_stdout(capsys)
+    assert payload["guest_exit_code"] == 23
+    assert payload["stdout"] == "out:\ufffd\n"
+    assert payload["stderr"] == "err:\ufffd\n"
+    assert "status 23" in diagnostic
+
+
+def test_start_run_captures_fake_tool_file_descriptors_before_json(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    state_root = tmp_path / "state"
+    identity = (tmp_path / "identity").resolve()
+    identity.write_text("PRIVATE TEST KEY", encoding="utf-8")
+    identity.chmod(0o600)
+    record = _record_files(state_root)
+    real_run = subprocess.run
+
+    def delegated_run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        return real_run(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import os; "
+                    "os.write(1, b'delegated-stdout\\n'); "
+                    "os.write(2, b'delegated-stderr\\n')"
+                ),
+            ],
+            **kwargs,
+        )
+
+    # Exercise the real lifecycle functions while replacing only their external
+    # process boundary with a harmless Python child that writes both OS fds.
+    from test_support.isolated_lm import qemu as qemu_module
+
+    monkeypatch.setattr(
+        cli,
+        "start_run",
+        lambda run, key: qemu_module.start_run(
+            run, key, allocate_port=lambda: 40222, run_process=delegated_run
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "wait_for_ssh",
+        lambda run: qemu_module.wait_for_ssh(run, run_process=delegated_run),
+    )
+
+    assert main(
+        [
+            "start-run", "--state-root", str(state_root), "--run-id", record.run_id,
+            "--ssh-private-key", str(identity),
+        ]
+    ) == 0
+    captured = capfd.readouterr()
+    payload = json.loads(captured.out)
+    assert payload["ok"] is True
+    assert payload["lifecycle"] == "ready"
+    assert "delegated-" not in captured.out
+    assert captured.err == ""
+
+
+def test_subprocess_failure_diagnostic_is_bounded_decoded_and_secret_redacted(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    state_root = tmp_path / "state"
+    identity = (tmp_path / "identity").resolve()
+    identity.write_text("PRIVATE TEST KEY", encoding="utf-8")
+    identity.chmod(0o600)
+    record = _record_files(state_root)
+    private_key_block = (
+        b"-----BEGIN " + b"OPENSSH PRIVATE KEY-----\n"
+        b"SECRET-BYTES\n"
+        b"-----END " + b"OPENSSH PRIVATE KEY-----\n"
+    )
+    stderr = b"qemu rejected invalid byte \xff\n" + private_key_block + b"x" * 5000
+    monkeypatch.setattr(
+        cli,
+        "start_run",
+        lambda run, key: (_ for _ in ()).throw(
+            subprocess.CalledProcessError(9, ["qemu"], stderr=stderr)
+        ),
+    )
+
+    assert main(
+        [
+            "start-run", "--state-root", str(state_root), "--run-id", record.run_id,
+            "--ssh-private-key", str(identity),
+        ]
+    ) == 1
+    payload, diagnostic = _json_stdout(capsys)
+    message = str(payload["error"])
+    assert "status 9" in message
+    assert "qemu rejected invalid byte \ufffd" in message
+    assert "redacted private-key material" in message
+    assert "SECRET-BYTES" not in message + diagnostic
+    assert len(message.encode("utf-8")) < 3000
+
+
+def test_usage_failure_diagnostic_is_bounded_and_secret_redacted(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Keep argparse-rejected input from bypassing diagnostic safeguards."""
+    private_key_block = (
+        "-----BEGIN " + "OPENSSH PRIVATE KEY-----\n"
+        "SECRET-BYTES\n"
+        "-----END " + "OPENSSH PRIVATE KEY-----\n"
+    )
+    rejected_argument = private_key_block + "x" * 5000
+
+    assert main(
+        ["preflight", "--state-root", str(tmp_path), rejected_argument]
+    ) == 2
+    payload, diagnostic = _json_stdout(capsys)
+    message = str(payload["error"])
+    assert "redacted private-key material" in message
+    assert "SECRET-BYTES" not in message + diagnostic
+    assert len(message.encode("utf-8")) < 3000
 
 
 def test_exec_rejects_wrong_lifecycle_without_leaking_private_key(
@@ -477,8 +714,43 @@ def test_exec_rejects_wrong_lifecycle_without_leaking_private_key(
     payload, diagnostic = _json_stdout(capsys)
     combined = json.dumps(payload) + diagnostic
     assert payload["ok"] is False
-    assert "ready" in combined
+    assert "identity" in combined.lower()
     assert "DO-NOT-LEAK-THIS-PRIVATE-KEY" not in combined
+
+
+def test_exec_revalidates_run_directory_after_manifest_load_swap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    state_root = tmp_path / "state"
+    identity = (tmp_path / "identity").resolve()
+    record = _ready_record(state_root, identity)
+    original_load = cli._load_run_record
+
+    def load_then_swap(paths: object, run_id: str) -> RunRecord:
+        loaded = original_load(paths, run_id)
+        moved = tmp_path / "moved-run"
+        loaded.run_dir.rename(moved)
+        loaded.run_dir.symlink_to(moved, target_is_directory=True)
+        return loaded
+
+    monkeypatch.setattr(cli, "_load_run_record", load_then_swap)
+    monkeypatch.setattr(
+        cli.subprocess,
+        "run",
+        lambda *args, **kwargs: pytest.fail("SSH must not use a swapped run directory"),
+    )
+
+    assert main(
+        [
+            "exec", "--state-root", str(state_root), "--run-id", record.run_id,
+            "--ssh-private-key", str(identity), "--", "true",
+        ]
+    ) == 2
+    payload, diagnostic = _json_stdout(capsys)
+    assert payload["ok"] is False
+    assert "run directory" in (str(payload["error"]) + diagnostic).lower()
 
 
 def test_start_run_delegates_launch_and_readiness_after_loading_manifest(
@@ -583,6 +855,38 @@ def test_stop_run_delegates_only_with_the_recorded_identity(
     assert rejected["ok"] is False
     assert "recorded identity" in str(rejected["error"])
     assert "OTHER PRIVATE KEY" not in json.dumps(rejected) + rejected_diagnostic
+
+
+@pytest.mark.parametrize("defect", ["group-readable", "symlink"])
+def test_stop_validates_private_key_even_when_recorded_pid_is_absent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    defect: str,
+) -> None:
+    state_root = tmp_path / "state"
+    identity = (tmp_path / "identity").resolve()
+    record = _ready_record(state_root, identity)
+    record.pid_file.unlink()
+    supplied = identity
+    if defect == "group-readable":
+        identity.chmod(0o640)
+    else:
+        supplied = tmp_path / "identity-link"
+        supplied.symlink_to(identity)
+    monkeypatch.setattr(
+        cli, "stop_run", lambda run: pytest.fail("stop must not receive an invalid key")
+    )
+
+    assert main(
+        [
+            "stop-run", "--state-root", str(state_root), "--run-id", record.run_id,
+            "--ssh-private-key", str(supplied),
+        ]
+    ) == 2
+    payload, diagnostic = _json_stdout(capsys)
+    assert payload["ok"] is False
+    assert "identity" in (str(payload["error"]) + diagnostic).lower()
 
 
 def test_wrapper_loads_by_exact_path_from_foreign_working_directory() -> None:

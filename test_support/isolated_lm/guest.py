@@ -25,6 +25,11 @@ _SSH_ED25519_PREFIX = "ssh-ed25519 "
 def validate_run_id(run_id: str) -> str:
     """Return a closed-namespace run ID or reject it before filesystem use.
 
+    Intent
+    ------
+    Constrain every operator-supplied run identifier to one safe directory and
+    guest-hostname component before any caller uses it as authority.
+
     Rationale
     ---------
     A run ID becomes a directory component, so accepting separators or dot
@@ -32,13 +37,13 @@ def validate_run_id(run_id: str) -> str:
 
     Pseudocode
     ----------
-    - require a full match of the lowercase 1--63-character run-ID grammar
-    - return the unchanged ID only after that validation succeeds
+    - if run_id does not match the closed grammar:
+      - raise invalid run identifier
+    - return run_id
 
-    Call boundary
-    -------------
-    ``prepare_run`` validates this value before it creates the state root or
-    any descendant, and ``render_meta_data`` uses the same guest identity.
+    Wraps
+    -----
+    none
     """
     if not isinstance(run_id, str) or _RUN_ID.fullmatch(run_id) is None:
         raise ValueError("run ID must match ^[a-z0-9][a-z0-9-]{0,62}$")
@@ -46,7 +51,28 @@ def validate_run_id(run_id: str) -> str:
 
 
 def _validate_public_key(public_key: str) -> str:
-    """Require one non-empty Ed25519 public-key line for guest authorization."""
+    """Require one nonempty Ed25519 public-key line for guest authorization.
+
+    Intent
+    ------
+    Keep multiline content and unsupported key forms out of rendered cloud-init
+    configuration while preserving the validated key text exactly.
+
+    Rationale
+    ---------
+    The public key crosses into YAML and guest account authority, so accepting
+    embedded line breaks would alter the fixed bootstrap document structure.
+
+    Pseudocode
+    ----------
+    - if public_key is not one nonempty Ed25519 line:
+      - raise invalid public key
+    - return public_key
+
+    Wraps
+    -----
+    none
+    """
     if (
         not isinstance(public_key, str)
         or "\n" in public_key
@@ -61,6 +87,11 @@ def _validate_public_key(public_key: str) -> str:
 def render_user_data(public_key: str) -> str:
     """Render the fixed, generic cloud-init guest configuration.
 
+    Intent
+    ------
+    Produce the complete generic cloud-init policy for the sole non-root guest
+    account from one previously untrusted public-key string.
+
     Rationale
     ---------
     Guest setup must enable only bootstrap prerequisites and one supplied
@@ -69,14 +100,19 @@ def render_user_data(public_key: str) -> str:
 
     Pseudocode
     ----------
-    - validate one Ed25519 public-key line before interpolation
-    - render the approved package floor and locked non-root user contract
-    - return the fixed newline-terminated NoCloud user-data text
+    - key = _validate_public_key(public_key)
+    - set cloud_config = fixed packages account policy and key
+    - return cloud_config
 
-    Call boundary
-    -------------
-    ``write_nocloud_seed`` persists the returned content with private file
-    permissions; callers may also inspect it before preparing a run.
+    Wraps
+    -----
+    none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._validate_public_key:
+      why:
+        transforms: "Returns the validated key text embedded in the fixed cloud-init document."
     """
     key = _validate_public_key(public_key)
     return "\n".join(
@@ -104,19 +140,88 @@ def render_user_data(public_key: str) -> str:
 
 
 def render_meta_data(run_id: str) -> str:
-    """Render the two fixed NoCloud metadata fields for one validated run."""
+    """Render the two fixed NoCloud metadata fields for one validated run.
+
+    Intent
+    ------
+    Give instance-id and local-hostname one shared identity derived only from a
+    run identifier that satisfies the closed namespace grammar.
+
+    Rationale
+    ---------
+    Keeping both NoCloud identity fields identical prevents unrelated host data
+    or unsafe path-like text from entering guest metadata.
+
+    Pseudocode
+    ----------
+    - run_id = validate_run_id(run_id)
+    - set guest_identity = isolated prefix plus run_id
+    - return rendered metadata
+
+    Wraps
+    -----
+    none
+
+    InstantiationsFromRepo
+    ----------------------
+    .validate_run_id:
+      why:
+        transforms: "Returns the namespace-safe identifier used in both metadata fields."
+    """
     run_id = validate_run_id(run_id)
     identity = f"isolated-lm-{run_id}"
     return f"instance-id: {identity}\nlocal-hostname: {identity}\n"
 
 
 def _occupied(path: Path) -> bool:
-    """Treat regular files and dangling symlinks alike as occupied paths."""
+    """Treat regular files and dangling symlinks alike as occupied paths.
+
+    Intent
+    ------
+    Give exclusive artifact creation one predicate that cannot overlook a
+    dangling symlink merely because its target is absent.
+
+    Rationale
+    ---------
+    Reusing any existing directory entry could overwrite evidence or follow an
+    attacker-controlled link during disposable-run preparation.
+
+    Pseudocode
+    ----------
+    - set occupied = path exists or path is a symlink
+    - return occupied
+
+    Wraps
+    -----
+    none
+    """
     return path.exists() or path.is_symlink()
 
 
 def _write_private_new(path: Path, content: str) -> None:
-    """Create one non-reusable private text file without following a symlink."""
+    """Create one non-reusable private text file without following a symlink.
+
+    Intent
+    ------
+    Persist a new seed input with owner-only permissions and durable contents
+    while refusing any pre-existing final path.
+
+    Rationale
+    ---------
+    Exclusive creation and an fsync keep seed authority from replacing an
+    existing artifact or being reported before its bytes reach storage.
+
+    Pseudocode
+    ----------
+    - set output = exclusively opened path
+    - set output_permissions = owner_only
+    - set output_content = content
+    - set output_durability = synchronized
+
+    Wraps
+    -----
+    none
+    """
     with path.open("x", encoding="utf-8") as output:
         os.chmod(output.fileno(), 0o600)
         output.write(content)
@@ -133,6 +238,11 @@ def write_nocloud_seed(
 ) -> Path:
     """Write private NoCloud inputs and generate their ISO without a shell.
 
+    Intent
+    ------
+    Materialize private user-data and meta-data inputs and turn them into one
+    validated seed ISO without exposing child-process output to CLI transport.
+
     Rationale
     ---------
     The ISO generator receives exactly two controlled input files. Refusing
@@ -141,15 +251,29 @@ def write_nocloud_seed(
 
     Pseudocode
     ----------
-    - require an existing real run directory and three unused artifact names
-    - create mode-0600 user-data and meta-data files with exclusive creation
-    - invoke cloud-localds with its exact argv and retain a private seed ISO
-    - remove any artifacts made by this call if generation fails
+    - if run directory is not real:
+      - raise invalid run directory
+    - if @_occupied(seed paths):
+      - raise occupied seed artifact
+    - @_write_private_new(user path and user content)
+    - @_write_private_new(metadata path and metadata content)
+    - set seed_result = captured cloud-localds invocation
+    - if seed result is missing or has wrong type:
+      - raise invalid seed result
+    - return resolved seed path
 
-    Call boundary
+    Wraps
+    -----
+    none
+
+    CallsFromRepo
     -------------
-    ``prepare_run`` calls this after the overlay exists. Tests inject the
-    subprocess boundary; production invokes ``cloud-localds`` directly.
+    ._occupied:
+      why:
+        validates: "Rejects existing files and dangling symlinks at every seed artifact path."
+    ._write_private_new:
+      why:
+        writes: "Persists each cloud-localds input exclusively with owner-only permissions."
     """
     if run_dir.is_symlink() or not run_dir.is_dir():
         raise ValueError("run directory must be a real directory")
@@ -165,7 +289,11 @@ def write_nocloud_seed(
         created.append(user_path)
         _write_private_new(meta_path, meta_data)
         created.append(meta_path)
-        run(["cloud-localds", str(seed_iso), str(user_path), str(meta_path)], check=True)
+        run(
+            ["cloud-localds", str(seed_iso), str(user_path), str(meta_path)],
+            capture_output=True,
+            check=True,
+        )
         if not _occupied(seed_iso):
             raise RuntimeError("cloud-localds did not create seed ISO")
         if seed_iso.is_symlink() or not seed_iso.is_file():
@@ -180,7 +308,35 @@ def write_nocloud_seed(
 
 
 def _prepare_runs_directory(paths: RuntimePaths) -> Path:
-    """Create and validate the real state/runs directory without symlink hops."""
+    """Create and validate the real state/runs directory without symlink hops.
+
+    Intent
+    ------
+    Establish the one canonical parent beneath which disposable run directories
+    may be created, checking each descendant component independently.
+
+    Rationale
+    ---------
+    Component-wise symlink rejection prevents a concurrently supplied runtime
+    layout from redirecting run creation outside the explicit state root.
+
+    Pseudocode
+    ----------
+    - if runtime root is not absolute and real:
+      - raise invalid runtime root
+    - set relative_runs = runs path relative to root
+    - for component in relative_runs:
+      - if component is a symlink:
+        - raise redirected runs directory
+      - set component = existing or newly created directory
+    - if resolved runs directory escapes root:
+      - raise escaped runs directory
+    - return resolved runs directory
+
+    Wraps
+    -----
+    none
+    """
     root = paths.root
     if not root.is_absolute() or root.is_symlink():
         raise ValueError("runtime root must be an absolute real directory")
@@ -209,7 +365,31 @@ def _prepare_runs_directory(paths: RuntimePaths) -> Path:
 
 
 def _atomic_write_private(path: Path, content: str) -> None:
-    """Atomically replace one private evidence file in its existing directory."""
+    """Atomically replace one private evidence file in its existing directory.
+
+    Intent
+    ------
+    Publish a complete owner-only manifest only after its temporary bytes have
+    been flushed and synchronized.
+
+    Rationale
+    ---------
+    A same-directory replace prevents readers from observing a partial record
+    and preserves evidence confidentiality across successful transitions.
+
+    Pseudocode
+    ----------
+    - set temporary_manifest = private file beside destination
+    - set temporary_content = content
+    - set temporary_durability = synchronized
+    - set destination = atomic replacement of temporary_manifest
+    - if temporary_manifest remains:
+      - set temporary_manifest = removed
+
+    Wraps
+    -----
+    none
+    """
     descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}-", dir=path.parent)
     temporary_path = Path(temporary_name)
     try:
@@ -236,6 +416,11 @@ def prepare_run(
 ) -> RunRecord:
     """Create one fully described disposable VM run below the selected state root.
 
+    Intent
+    ------
+    Assemble every immutable and mutable artifact for one fresh VM run and
+    publish its prepared lifecycle record as a single transaction boundary.
+
     Rationale
     ---------
     Every mutable VM artifact is contained in a fresh run directory while its
@@ -243,16 +428,48 @@ def prepare_run(
 
     Pseudocode
     ----------
-    - validate run ID and key before any filesystem mutation
-    - create one non-reusable real run directory below state/runs
-    - create the verified overlay, NoCloud ISO, and private host-key file
-    - atomically persist the immutable prepared RunRecord
-    - remove the newly created run directory if any preparation step fails
+    - run_id = validate_run_id(run_id)
+    - public_key = _validate_public_key(public_key)
+    - runs = _prepare_runs_directory(paths)
+    - set run_directory = fresh private child of runs
+    - set overlay = verified sparse overlay
+    - @render_user_data(public_key)
+    - @render_meta_data(run_id)
+    - seed_iso = write_nocloud_seed(run directory and rendered inputs)
+    - set run_record = prepared manifest with fixed artifact paths
+    - @_atomic_write_private(record path and serialized record)
+    - return run_record
 
-    Call boundary
+    Wraps
+    -----
+    none
+
+    CallsFromRepo
     -------------
-    Task 4 consumes the returned record to construct and control QEMU. It may
-    replace optional launch fields but must retain this run's artifact paths.
+    .render_user_data:
+      why:
+        transforms: "Builds the fixed guest bootstrap policy from the validated public key."
+    .render_meta_data:
+      why:
+        transforms: "Builds NoCloud identity fields from the validated run identifier."
+    ._atomic_write_private:
+      why:
+        writes: "Publishes the complete prepared run record with private durable replacement."
+
+    InstantiationsFromRepo
+    ----------------------
+    .validate_run_id:
+      why:
+        transforms: "Returns the namespace-safe identifier carried into run paths and records."
+    ._validate_public_key:
+      why:
+        transforms: "Returns the single-line public key carried into seed rendering."
+    ._prepare_runs_directory:
+      why:
+        constructs: "Returns the validated runs parent used to create the dedicated run directory."
+    .write_nocloud_seed:
+      why:
+        constructs: "Returns the generated private seed path recorded as VM boot authority."
     """
     run_id = validate_run_id(run_id)
     public_key = _validate_public_key(public_key)

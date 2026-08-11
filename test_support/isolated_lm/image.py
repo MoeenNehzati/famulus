@@ -42,6 +42,11 @@ _SHA256SUM_LINE = re.compile(r"^([0-9A-Fa-f]{64}) [ *](.+)$")
 def _validate_source_url(url: str) -> None:
     """Reject every source URL except the three explicitly approved artifacts.
 
+    Intent
+    ------
+    Restrict each initial or redirected network request to one of the three
+    immutable Ubuntu artifact URLs authorized by this harness.
+
     Rationale
     ---------
     Detached-signature verification authenticates a manifest, but it does not
@@ -49,13 +54,13 @@ def _validate_source_url(url: str) -> None:
 
     Pseudocode
     ----------
-    - compare the supplied URL with the complete fixed allowlist
-    - reject a different artifact even when its origin and path prefix match
+    - if url is absent from the fixed allowlist:
+      - raise unapproved source URL
+    - return none
 
-    Call boundary
-    -------------
-    ``download_atomic`` and ``_ApprovedRedirectHandler`` call this before a
-    network request, so a caller cannot widen the acquisition authority.
+    Wraps
+    -----
+    none
     """
     if url not in ALLOWED_SOURCE_URLS:
         raise ValueError(f"unapproved cloud-image URL: {url}")
@@ -64,6 +69,11 @@ def _validate_source_url(url: str) -> None:
 class _ApprovedRedirectHandler(HTTPRedirectHandler):
     """Validate every redirect target before urllib issues its next request.
 
+    Intent
+    ------
+    Interpose the same closed URL allowlist on every redirect before urllib can
+    issue the follow-up request.
+
     Rationale
     ---------
     Checking a response's final URL is too late: urllib may already have
@@ -71,14 +81,12 @@ class _ApprovedRedirectHandler(HTTPRedirectHandler):
 
     Pseudocode
     ----------
-    - receive the proposed redirect URL before urllib follows it
-    - validate the URL against the same approved origin and path namespace
-    - delegate only an approved redirect to urllib's normal redirect behavior
+    - set redirect_policy = validate target before inherited redirect handling
+    - return redirect_policy
 
-    Call boundary
-    -------------
-    ``download_atomic`` installs one instance in every supplied opener factory,
-    including test factories, so its redirect policy cannot be bypassed.
+    Wraps
+    -----
+    none
     """
 
     def redirect_request(
@@ -90,7 +98,34 @@ class _ApprovedRedirectHandler(HTTPRedirectHandler):
         headers: object,
         new_url: str,
     ) -> object:
-        """Refuse an unapproved target before the redirect request is sent."""
+        """Refuse an unapproved target before the redirect request is sent.
+
+        Intent
+        ------
+        Validate the proposed redirect URL and delegate the approved request to
+        urllib without changing status, headers, or request context.
+
+        Rationale
+        ---------
+        Post-response checks cannot undo an unauthorized outbound request, so
+        the target must be rejected inside urllib's redirect decision point.
+
+        Pseudocode
+        ----------
+        - @_validate_source_url(new_url)
+        - set redirected_request = inherited redirect request
+        - return redirected_request
+
+        Wraps
+        -----
+        none
+
+        CallsFromRepo
+        -------------
+        ._validate_source_url:
+          why:
+            validates: "Rejects a redirect target before urllib constructs its next request."
+        """
         try:
             _validate_source_url(new_url)
         except ValueError as error:
@@ -103,6 +138,11 @@ class _ApprovedRedirectHandler(HTTPRedirectHandler):
 def _prepare_cache_directory(root: Path, directory: Path) -> Path:
     """Create one real cache directory without traversing symlinked components.
 
+    Intent
+    ------
+    Establish an existing canonical cache descendant under the explicit runtime
+    root without following any symlinked component.
+
     Rationale
     ---------
     A symlink at a state-cache component could redirect temporary downloads or
@@ -110,14 +150,20 @@ def _prepare_cache_directory(root: Path, directory: Path) -> Path:
 
     Pseudocode
     ----------
-    - require the requested directory to be a descendant of the absolute root
-    - create each missing component and reject a symlink or non-directory
-    - resolve the final directory and require it to remain under the root
+    - if root is not absolute and real:
+      - raise invalid runtime root
+    - set relative_directory = directory relative to root
+    - for component in relative_directory:
+      - if component is a symlink:
+        - raise redirected cache directory
+      - set component = existing or newly created directory
+    - if resolved directory escapes root:
+      - raise escaped cache directory
+    - return resolved directory
 
-    Call boundary
-    -------------
-    ``prepare_cloud_image`` validates both download and image cache directories
-    before it asks an opener to make any network request.
+    Wraps
+    -----
+    none
     """
     if not root.is_absolute():
         raise ValueError("runtime root must be absolute")
@@ -148,6 +194,11 @@ def _prepare_cache_directory(root: Path, directory: Path) -> Path:
 def parse_sha256sums(text: str, filename: str) -> str:
     """Extract exactly one SHA-256 digest for the exact requested filename.
 
+    Intent
+    ------
+    Select one exact filename-to-digest binding from authenticated checksum
+    text and reject malformed or ambiguous target entries.
+
     Rationale
     ---------
     Substring selection could associate a trusted digest with a similarly
@@ -156,14 +207,18 @@ def parse_sha256sums(text: str, filename: str) -> str:
 
     Pseudocode
     ----------
-    - parse checksum-manifest lines that have the standard digest form
-    - retain only entries whose filename equals the requested filename
-    - require one retained entry and return its normalized lowercase digest
+    - set matches = empty digest collection
+    - for line in checksum text:
+      - if line names filename with malformed syntax:
+        - raise malformed checksum entry
+      - set matches = matches plus exact normalized digest
+    - if matches does not contain exactly one digest:
+      - raise ambiguous checksum entry
+    - return sole digest
 
-    Call boundary
-    -------------
-    ``prepare_cloud_image`` calls this only after ``verify_signed_checksums``
-    accepts the detached signature for the downloaded manifest.
+    Wraps
+    -----
+    none
     """
     matches: list[str] = []
     for line in text.splitlines():
@@ -180,6 +235,11 @@ def parse_sha256sums(text: str, filename: str) -> str:
 def sha256_file(path: Path) -> str:
     """Hash a nonempty regular payload incrementally with SHA-256.
 
+    Intent
+    ------
+    Compute a stable SHA-256 digest for a nonempty regular payload without
+    loading an image-sized file into memory.
+
     Rationale
     ---------
     Source images are large, so whole-file reads waste memory; an empty input
@@ -187,14 +247,16 @@ def sha256_file(path: Path) -> str:
 
     Pseudocode
     ----------
-    - reject zero-byte paths before calculating any digest
-    - read fixed-size blocks and update one SHA-256 object
-    - return the lowercase hexadecimal digest
+    - if path size is zero:
+      - raise empty payload
+    - set digest = new SHA-256 accumulator
+    - for block in fixed-size file reads:
+      - set digest = digest updated with block
+    - return hexadecimal digest
 
-    Call boundary
-    -------------
-    ``download_atomic`` hashes its still-temporary output before replacing a
-    destination, and ``prepare_cloud_image`` records the resulting digest.
+    Wraps
+    -----
+    none
     """
     if path.stat().st_size == 0:
         raise ValueError("empty download cannot be verified")
@@ -214,6 +276,11 @@ def verify_signed_checksums(
 ) -> None:
     """Verify checksum metadata with only the supplied trusted keyring.
 
+    Intent
+    ------
+    Authenticate the downloaded checksum manifest against one explicit Ubuntu
+    keyring while containing all child-process output.
+
     Rationale
     ---------
     The host user's personal GnuPG configuration is not a trust source for
@@ -221,17 +288,17 @@ def verify_signed_checksums(
 
     Pseudocode
     ----------
-    - construct the fixed detached-signature verification argument vector
-    - invoke the injected subprocess boundary with check enabled
-    - propagate a verification failure without parsing the manifest
+    - set verification_command = gpgv with explicit keyring signature and manifest
+    - set verification_result = captured checked subprocess invocation
+    - return none
 
-    Call boundary
-    -------------
-    ``prepare_cloud_image`` calls this after atomically downloading the
-    checksum and signature files and before reading either manifest entry.
+    Wraps
+    -----
+    none
     """
     run(
         ["gpgv", "--keyring", str(keyring), str(signature), str(checksums)],
+        capture_output=True,
         check=True,
     )
 
@@ -244,6 +311,11 @@ def download_atomic(
 ) -> Path:
     """Download an approved URL into a temporary file and atomically replace.
 
+    Intent
+    ------
+    Fetch one allowlisted artifact into a same-directory temporary file,
+    optionally verify its digest, and publish it atomically.
+
     Rationale
     ---------
     A failed or mismatched download must not become visible as a source image
@@ -251,16 +323,30 @@ def download_atomic(
 
     Pseudocode
     ----------
-    - validate the origin before the network call and create the parent path
-    - validate the effective response URL before streaming into a temporary file
-    - optionally verify its nonempty SHA-256 digest, then replace destination
-    - remove the temporary file on every failure path
+    - @_validate_source_url(url)
+    - @_ApprovedRedirectHandler()
+    - set temporary_path = streamed allowlisted response
+    - @_validate_source_url(effective_url)
+    - if expected digest is present:
+      - @sha256_file(temporary_path)
+    - set destination = atomic replacement of temporary_path
+    - return resolved destination
 
-    Call boundary
+    Wraps
+    -----
+    none
+
+    CallsFromRepo
     -------------
-    This public acquisition boundary always constructs its redirect-validating
-    opener internally. Tests replace the module-level ``build_opener`` symbol,
-    not this function's authority-bearing call signature.
+    ._validate_source_url:
+      why:
+        validates: "Applies the fixed allowlist before initial and effective URL use."
+    ._ApprovedRedirectHandler:
+      why:
+        validates: "Installs pre-request redirect validation into the urllib opener."
+    .sha256_file:
+      why:
+        validates: "Compares nonempty temporary bytes with an expected authenticated digest."
     """
     _validate_source_url(url)
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -298,6 +384,11 @@ def prepare_cloud_image(
 ) -> CloudImageRecord:
     """Acquire and authenticate the pinned Ubuntu image into the runtime cache.
 
+    Intent
+    ------
+    Acquire the signed checksum evidence and matching Ubuntu image bytes, then
+    return immutable provenance for the authenticated cache entry.
+
     Rationale
     ---------
     Image bytes are usable only when an Ubuntu-keyring-verified manifest names
@@ -305,16 +396,36 @@ def prepare_cloud_image(
 
     Pseudocode
     ----------
-    - atomically acquire checksum files under downloads and verify the signature
-    - parse the single exact image checksum from verified manifest text
-    - atomically download and digest-verify image bytes under images
-    - return immutable UTC provenance for the resolved cached image
+    - downloads = _prepare_cache_directory(root and downloads path)
+    - images = _prepare_cache_directory(root and images path)
+    - checksums = download_atomic(checksum URL and destination)
+    - signature = download_atomic(signature URL and destination)
+    - @verify_signed_checksums(checksums signature and keyring)
+    - digest = parse_sha256sums(authenticated manifest and image filename)
+    - cached_path = download_atomic(image URL destination and digest)
+    - return authenticated image record
 
-    Call boundary
+    Wraps
+    -----
+    none
+
+    CallsFromRepo
     -------------
-    The VM preparation layer supplies explicit ``RuntimePaths`` and consumes
-    the returned ``CloudImageRecord``; tests replace the module opener builder
-    and inject subprocess fakes without changing acquisition authority.
+    .verify_signed_checksums:
+      why:
+        validates: "Authenticates checksum metadata before its image binding is parsed."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._prepare_cache_directory:
+      why:
+        constructs: "Returns each canonical cache directory used for acquired artifacts."
+    .download_atomic:
+      why:
+        constructs: "Returns published evidence and image paths after bounded acquisition checks."
+    .parse_sha256sums:
+      why:
+        transforms: "Returns the sole authenticated digest carried into image download verification."
     """
     downloads = _prepare_cache_directory(paths.root, paths.downloads)
     images = _prepare_cache_directory(paths.root, paths.images)
@@ -350,6 +461,11 @@ def create_overlay(
 ) -> Path:
     """Create a new sparse QCOW2 run disk over one still-verified source image.
 
+    Intent
+    ------
+    Create one fresh sparse QCOW2 overlay only when its recorded backing image
+    remains canonical, present, and byte-identical to authenticated provenance.
+
     Rationale
     ---------
     Reusing an overlay would contaminate a disposable scenario. Rechecking the
@@ -358,15 +474,25 @@ def create_overlay(
 
     Pseudocode
     ----------
-    - reject a pre-existing destination and unresolved/nonabsolute record path
-    - require nonempty current bytes to match the record's verified digest
-    - invoke qemu-img with the fixed QCOW2 backing format and requested size
-    - return the resolved overlay path for the later run record
+    - if overlay destination is occupied:
+      - raise reused overlay path
+    - if backing image path is not canonical and regular:
+      - raise invalid backing image
+    - @sha256_file(backing image)
+    - if current digest differs from verified digest:
+      - raise substituted backing image
+    - set overlay_result = captured checked qemu-img invocation
+    - return resolved overlay path
 
-    Call boundary
+    Wraps
+    -----
+    none
+
+    CallsFromRepo
     -------------
-    Task 3 owns ``RunRecord`` serialization and records this returned path with
-    the already-verified ``CloudImageRecord.verified_source_digest``.
+    .sha256_file:
+      why:
+        validates: "Rehashes the current backing image before qemu-img receives its path."
     """
     if overlay.exists() or overlay.is_symlink():
         raise FileExistsError(f"overlay destination already exists: {overlay}")
@@ -385,6 +511,7 @@ def create_overlay(
                 "qemu-img", "create", "-f", "qcow2", "-F", "qcow2", "-b",
                 str(backing_image), str(overlay), f"{resources.disk_gib}G",
             ],
+            capture_output=True,
             check=True,
         )
     except Exception:

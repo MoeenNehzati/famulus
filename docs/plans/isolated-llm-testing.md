@@ -149,8 +149,9 @@ one of these only through a later design change tied to a verified requirement.
 - [ ] Define the baseline Linux distribution, version, system packages, resource
   allocation, network behavior, and supported assistant-host versions.
 - [x] Separate generic VM and assistant-host prerequisites from Famulus-owned
-  dependencies. Install the latter through the documented Famulus path or test
-  them as explicit public preconditions rather than hiding them in the image.
+  dependencies.
+- [ ] Install Famulus-owned dependencies through the documented Famulus path or
+  test them as explicit public preconditions rather than hiding them in the image.
 - [x] Automate or document baseline creation sufficiently that it can be rebuilt
   without relying on the original maintainer's VM.
 - [ ] Authenticate the assistant host, seal the Famulus-free baseline, and

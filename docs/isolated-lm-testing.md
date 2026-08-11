@@ -54,8 +54,10 @@ manifest records only the resolved identity-file path needed for later commands.
 
 The supported surface has exactly seven commands. Success and structured
 command failures emit one JSON object on standard output. Human diagnostics use
-standard error. Invalid input or a missing, corrupt, stale, escaped, or
-symlinked manifest exits `2`; host or lifecycle-operation failure exits `1`.
+standard error. The sole plaintext standard-output exception is explicit
+`--help` output; it performs no command. Invalid input or a missing, corrupt,
+stale, escaped, or symlinked manifest exits `2`; host or lifecycle-operation
+failure exits `1`.
 Failed preflight exits `1`. `exec` returns `0` for guest success and otherwise
 returns the SSH/guest status in `1..255` (using `1` for an out-of-range process
 status); its JSON always contains `guest_exit_code`, `stdout`, and `stderr`.
@@ -86,12 +88,18 @@ harness POSIX-quotes the remote argument vector into one command string. It uses
 the run's dedicated `known_hosts`, `StrictHostKeyChecking=accept-new`,
 `IdentitiesOnly=yes`, `BatchMode=yes`, recorded port, fixed `famulus-test` user,
 and recorded private-key path. A different supplied private-key path is rejected.
+Captured guest byte streams are decoded as UTF-8 for JSON; invalid byte sequences
+are represented by the Unicode replacement character rather than dropping the
+exit result or either stream.
 
-`status` is strictly read-only. It validates the selected run ID, opens only
-`runs/<run-id>/run.json` through a no-follow regular-file descriptor, and rejects
+`status` is strictly read-only. It validates the selected run ID, retains
+no-follow descriptors for the state root, `runs`, and the selected run directory,
+opens only `runs/<run-id>/run.json` for content, and rejects
 unknown schema fields, wrong lifecycle facts, noncanonical state-owned paths,
-escapes, symlinks, missing state-owned artifacts, and a QEMU argv that does not
-exactly reconstruct from the manifest. A recorded identity outside state is
+escapes, symlinks, missing or wrong-type state-owned artifacts, and a QEMU argv
+that does not exactly reconstruct from the manifest. Existing `qemu.pid` must be
+a regular non-symlink file and existing `qmp.sock` must be a Unix socket. A
+recorded identity outside state is
 treated as historical path text; only `exec` and `stop-run` validate the supplied
 live key against it. Status does not scan other runs, probe that external path,
 inspect or repair a process, or rewrite any state.
