@@ -6,6 +6,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 from .direct_runtime import (
     InvocationDiagnostic,
@@ -15,12 +16,33 @@ from .direct_runtime import (
 )
 
 
+_VERSION_MISMATCH_CODE = "dispatcher.interface_version_mismatch"
+
+
 def _print_warning(diagnostic: InvocationDiagnostic) -> None:
     subject = f" [{diagnostic.subject}]" if diagnostic.subject is not None else ""
     print(
         f"warning: {diagnostic.code}: {diagnostic.message}{subject}",
         file=sys.stderr,
     )
+
+
+def _split_target_version(raw: str) -> tuple[str, int | None]:
+    """Split an optional trailing ``@<version>`` pin off a target id.
+
+    Contract blocks in SKILL.md spell pinned dependencies as
+    ``<module>.interface.<name>@<version>``, so accept that spelling directly.
+    A target with no pin, or with a suffix that is not a positive decimal
+    integer, is returned unchanged for the normal id validation to reject.
+    """
+
+    base, separator, suffix = raw.rpartition("@")
+    if not separator or not (suffix.isascii() and suffix.isdigit()):
+        return raw, None
+    version = int(suffix)
+    if version < 1:
+        return raw, None
+    return base, version
 
 
 def parse_cli() -> argparse.Namespace:
@@ -32,7 +54,9 @@ def parse_cli() -> argparse.Namespace:
             "  dispatcher --dry-run --caller-skill daily-plan "
             "list-manager._rtx.interface.read-list /tmp/todo.yaml state=incomplete\n"
             "  dispatcher --caller-skill daily-plan list-manager._rtx.interface.update-list "
-            "/tmp/todo.yaml --file /tmp/todo-updates.yaml"
+            "/tmp/todo.yaml --file /tmp/todo-updates.yaml\n"
+            "  dispatcher --caller-skill daily-plan "
+            "daily-plan._rtx.interface.orchestrate@1"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -66,7 +90,14 @@ def parse_cli() -> argparse.Namespace:
             "object with a stable machine-readable `code`."
         ),
     )
-    parser.add_argument("target_or_skill")
+    parser.add_argument(
+        "target_or_skill",
+        help=(
+            "Target export as `<module>.interface.<name>`, with an optional "
+            "`@<version>` pin. The pin is checked against the interface version "
+            "the source declares; a stale pin warns and resolution continues."
+        ),
+    )
     parser.add_argument("rest", nargs=argparse.REMAINDER)
     return parser.parse_args()
 
@@ -74,7 +105,7 @@ def parse_cli() -> argparse.Namespace:
 def main() -> int:
     args = parse_cli()
     script_args = list(args.rest)
-    target = args.target_or_skill
+    target, requested_version = _split_target_version(args.target_or_skill)
     if ".interface." not in target:
         print(
             "error: target must be a fully qualified `<module>.interface.<name>` export",
@@ -82,29 +113,52 @@ def main() -> int:
         )
         return 2
 
-    try:
+    # Read stdin once: a stale pin retries resolution, and the buffer is empty
+    # the second time through.
+    stdin = sys.stdin.buffer.read() if args.stdin and not args.dry_run else None
+
+    def attempt(version: int | None) -> Any:
         if args.dry_run:
             payload = _resolve_host_dispatch_metadata(
                 caller_skill=args.caller_skill,
                 target=target,
                 args=script_args,
                 stdin_requested=args.stdin,
+                target_version=version,
                 repository_config=args.repository_config,
             ).as_payload()
             print(json.dumps(payload, indent=2, sort_keys=True))
-            return 0
-
-        stdin = sys.stdin.buffer.read() if args.stdin else None
-        completed = _dispatch_host(
+            return None
+        return _dispatch_host(
             caller_skill=args.caller_skill,
             target=target,
             args=script_args,
             stdin=stdin,
             capture_output=False,
             check=False,
+            target_version=version,
             warning_handler=_print_warning,
             repository_config=args.repository_config,
         )
+
+    try:
+        try:
+            completed = attempt(requested_version)
+        except InvocationError as exc:
+            if (
+                requested_version is None
+                or getattr(exc, "code", None) != _VERSION_MISMATCH_CODE
+            ):
+                raise
+            _print_warning(
+                InvocationDiagnostic(
+                    severity="warning",
+                    code="interface-version-pin-stale",
+                    message=str(exc),
+                    subject=target,
+                )
+            )
+            completed = attempt(None)
     except InvocationError as exc:
         if args.error_format == "json" and hasattr(exc, "as_payload"):
             print(json.dumps(exc.as_payload()), file=sys.stderr)
@@ -112,6 +166,8 @@ def main() -> int:
             print(f"error: {exc}", file=sys.stderr)
         return 2
 
+    if completed is None:
+        return 0
     return completed.returncode
 
 __all__ = ["main"]

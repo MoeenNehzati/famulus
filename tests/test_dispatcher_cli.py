@@ -12,6 +12,7 @@ import pytest
 import yaml
 
 from officina.dispatcher import cli
+from officina.dispatcher.errors import DirectBlueprintError
 
 
 @pytest.fixture
@@ -207,3 +208,177 @@ def test_live_cli_exposes_child_stderr_before_child_completes(
     assert stdout == "authorized\n"
     assert stderr == ""
     assert process.returncode == 0
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("probe.interface.stream", ("probe.interface.stream", None)),
+        ("probe.interface.stream@1", ("probe.interface.stream", 1)),
+        ("probe.interface.stream@12", ("probe.interface.stream", 12)),
+        # Not a usable pin: left intact so normal id validation rejects it.
+        ("probe.interface.stream@0", ("probe.interface.stream@0", None)),
+        ("probe.interface.stream@x", ("probe.interface.stream@x", None)),
+        ("probe.interface.stream@", ("probe.interface.stream@", None)),
+        ("probe.interface.stream@١", ("probe.interface.stream@١", None)),
+    ],
+)
+def test_split_target_version(raw: str, expected: tuple[str, int | None]) -> None:
+    assert cli._split_target_version(raw) == expected
+
+
+def _record_dispatch(monkeypatch, cli_args, results):
+    """Stub _dispatch_host, recording each target_version it is called with."""
+    calls: list[int | None] = []
+
+    def fake_dispatch(**kwargs):
+        calls.append(kwargs["target_version"])
+        outcome = results[len(calls) - 1]
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    monkeypatch.setattr(cli, "parse_cli", lambda: cli_args)
+    monkeypatch.setattr(cli, "_dispatch_host", fake_dispatch)
+    return calls
+
+
+_OK = subprocess.CompletedProcess(args=[], returncode=0, stdout=None, stderr=None)
+
+
+def test_cli_forwards_version_pin_and_strips_it_from_the_target(
+    monkeypatch: pytest.MonkeyPatch, cli_args: argparse.Namespace
+) -> None:
+    cli_args.target_or_skill = "connect-google._rtx.interface.authorize-services@1"
+    observed = {}
+
+    def fake_dispatch(**kwargs):
+        observed.update(kwargs)
+        return _OK
+
+    monkeypatch.setattr(cli, "parse_cli", lambda: cli_args)
+    monkeypatch.setattr(cli, "_dispatch_host", fake_dispatch)
+
+    assert cli.main() == 0
+    assert observed["target"] == "connect-google._rtx.interface.authorize-services"
+    assert observed["target_version"] == 1
+
+
+def test_cli_leaves_version_unset_when_the_target_is_unpinned(
+    monkeypatch: pytest.MonkeyPatch, cli_args: argparse.Namespace
+) -> None:
+    calls = _record_dispatch(monkeypatch, cli_args, [_OK])
+
+    assert cli.main() == 0
+    assert calls == [None]
+
+
+def test_cli_warns_and_resolves_anyway_when_a_version_pin_is_stale(
+    monkeypatch: pytest.MonkeyPatch,
+    cli_args: argparse.Namespace,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    target = "connect-google._rtx.interface.authorize-services"
+    cli_args.target_or_skill = f"{target}@1"
+    stale = DirectBlueprintError(
+        f"version mismatch for {target}: requested 1, available 2",
+        code="dispatcher.interface_version_mismatch",
+        target_module_id="connect-google._rtx",
+    )
+    calls = _record_dispatch(monkeypatch, cli_args, [stale, _OK])
+
+    assert cli.main() == 0
+    assert calls == [1, None]
+    stderr = capsys.readouterr().err
+    assert "warning: interface-version-pin-stale:" in stderr
+    assert "requested 1, available 2" in stderr
+    assert f"[{target}]" in stderr
+
+
+def test_cli_forwards_identical_stdin_to_both_attempts_of_a_stale_pin(
+    monkeypatch: pytest.MonkeyPatch,
+    cli_args: argparse.Namespace,
+    tmp_path: Path,
+) -> None:
+    """The retry must not re-read an already-drained stdin buffer."""
+    target = "connect-google._rtx.interface.authorize-services"
+    cli_args.target_or_skill = f"{target}@1"
+    cli_args.stdin = True
+    payload = b'{"services": ["drive"]}'
+    source = tmp_path / "stdin"
+    source.write_bytes(payload)
+
+    observed: list[bytes | None] = []
+
+    def fake_dispatch(**kwargs):
+        observed.append(kwargs["stdin"])
+        if len(observed) == 1:
+            raise DirectBlueprintError(
+                f"version mismatch for {target}: requested 1, available 2",
+                code="dispatcher.interface_version_mismatch",
+                target_module_id="connect-google._rtx",
+            )
+        return _OK
+
+    with source.open("rb") as handle:
+        monkeypatch.setattr(sys, "stdin", type("S", (), {"buffer": handle})())
+        monkeypatch.setattr(cli, "parse_cli", lambda: cli_args)
+        monkeypatch.setattr(cli, "_dispatch_host", fake_dispatch)
+        assert cli.main() == 0
+
+    assert observed == [payload, payload]
+
+
+def test_live_cli_accepts_a_version_pin_and_warns_when_it_is_stale(
+    live_stream_repository: tuple[Path, Path, Path],
+) -> None:
+    """End-to-end, through a real child process rather than a stub."""
+    config, release, _module_root = live_stream_repository
+    release.touch()  # let the child exit immediately
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(Path(__file__).resolve().parents[1] / "src")
+    environment["DISPATCHER_STREAM_RELEASE"] = str(release)
+
+    def run(target: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [
+                sys.executable, "-P", "-m", "officina.dispatcher.cli",
+                "--repository-config", str(config),
+                "--caller-skill", "probe",
+                target,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=environment,
+        )
+
+    matching = run("probe.interface.stream@1")
+    assert matching.returncode == 0, matching.stderr
+    assert matching.stdout == "authorized\n"
+    assert "interface-version-pin-stale" not in matching.stderr
+
+    stale = run("probe.interface.stream@7")
+    assert stale.returncode == 0, stale.stderr
+    assert stale.stdout == "authorized\n"
+    assert "warning: interface-version-pin-stale:" in stale.stderr
+    assert "requested 7, available 1" in stale.stderr
+
+    bare = run("probe.interface.stream")
+    assert bare.returncode == 0, bare.stderr
+    assert bare.stdout == "authorized\n"
+
+
+def test_cli_does_not_retry_failures_unrelated_to_the_version_pin(
+    monkeypatch: pytest.MonkeyPatch, cli_args: argparse.Namespace
+) -> None:
+    cli_args.target_or_skill = "connect-google._rtx.interface.authorize-services@1"
+    missing = DirectBlueprintError(
+        "interface not found",
+        code="dispatcher.interface_not_found",
+        target_module_id="connect-google._rtx",
+    )
+    calls = _record_dispatch(monkeypatch, cli_args, [missing])
+
+    assert cli.main() == 2
+    assert calls == [1]
