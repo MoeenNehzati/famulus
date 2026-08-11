@@ -204,7 +204,15 @@ def connect_services(
 ) -> dict:
     """Authorize once, then bind the returned descriptor to granted services."""
     if authorize is None:
-        from _loopback_oauth import authorize_services
+        # Both import modes, because this module has both. Run as a script the
+        # sibling resolves flat; loaded through the gateway __package__ is set
+        # and _rtx is not on sys.path, so the flat form raises ModuleNotFound
+        # -- and only here, at the moment authorization actually runs, since
+        # the tests inject `authorize` and never reach this line.
+        if __package__:
+            from ._loopback_oauth import authorize_services
+        else:
+            from _loopback_oauth import authorize_services
 
         authorize = authorize_services
     result = authorize(

@@ -125,10 +125,20 @@ def set_dispatch_interface(interface: PythonMachineInterface) -> None:
 
 
 def run_dispatcher(target_skill: str, script_interface: str, *args: str, stdin: str | None = None) -> str:
+    # Callers name the skill ("cloud-files"); the table is keyed by module id
+    # ("cloud-files._rtx"). The v6 inventory migration renamed the ids without
+    # updating the call sites, which made every entry in the table unreachable
+    # and every daily-plan run fail. Accepting both spellings fixes that in one
+    # place and keeps working whichever form a future caller uses.
     try:
         key = _DISPATCH_KEYS[(target_skill, script_interface)]
-    except KeyError as exc:
-        raise PlanError(f"unknown declared dispatch for {target_skill}:{script_interface}") from exc
+    except KeyError:
+        try:
+            key = _DISPATCH_KEYS[(f"{target_skill}._rtx", script_interface)]
+        except KeyError as exc:
+            raise PlanError(
+                f"unknown declared dispatch for {target_skill}:{script_interface}"
+            ) from exc
     try:
         result = _dispatch_interface.dispatch(
             key,
