@@ -833,6 +833,26 @@ def test_ci_runs_combined_full_suite_before_portability() -> None:
     assert "python3 repo_checks.py --suite tests --verbose" not in workflow
 
 
+def test_ci_shards_windows_repository_checks_for_parallel_diagnostics() -> None:
+    workflow = (
+        Path(__file__).resolve().parents[1]
+        / ".github"
+        / "workflows"
+        / "python-tests.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "task: validators" in workflow
+    assert "task: 'tests:shared'" in workflow
+    assert "task: 'tests:performance'" in workflow
+    assert 'if: matrix.task == \'combined\'' in workflow
+    assert 'if: matrix.task != \'combined\'' in workflow
+    assert (
+        'python3 repo_checks.py --suite full --task-id "${{ matrix.task }}" '
+        "--verbose"
+    ) in workflow
+    assert "timeout-minutes: 60" in workflow
+
+
 def test_ci_dependency_lock_covers_the_complete_test_environment() -> None:
     requirements = (
         Path(__file__).resolve().parents[1] / "requirements-ci.txt"
