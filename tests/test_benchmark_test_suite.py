@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -153,6 +154,126 @@ def test_no_prime_makes_only_requested_measured_calls(monkeypatch, tmp_path: Pat
 
     assert len(measured) == 2
     assert primes == []
+
+
+def test_benchmark_embeds_distinct_pytest_worker_metrics(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    benchmark = load_module()
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "repo_checks.py").write_text("", encoding="utf-8")
+    (tmp_path / "scripts" / "benchmark-command.py").write_text("", encoding="utf-8")
+    metric_paths: list[Path] = []
+
+    class FakeBenchmark:
+        @staticmethod
+        def benchmark_command(_command, **kwargs):
+            path = Path(kwargs["env"]["OFFICINA_PYTEST_WORKER_METRICS"])
+            metric_paths.append(path)
+            path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "session_seconds": 10.0,
+                        "workers": [
+                            {
+                                "worker_id": "gw0",
+                                "item_count": 2,
+                                "assigned_seconds": 8.0,
+                                "unassigned_seconds": 2.0,
+                                "assigned_fraction": 0.8,
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return {
+                "returncode": 0,
+                "wall_seconds": 10.0,
+                "cpu_seconds": 35.0,
+                "average_effective_cores": 3.5,
+            }
+
+    monkeypatch.setattr(benchmark, "_load_script", lambda *_args: FakeBenchmark)
+    monkeypatch.setattr(benchmark.platform, "platform", lambda: "test-platform")
+    monkeypatch.setattr(
+        benchmark,
+        "_git_output",
+        lambda _root, *args: b"commit\n" if args[0] == "rev-parse" else b"",
+    )
+
+    result = benchmark.run_benchmarks(
+        tmp_path,
+        "precommit",
+        tmp_path / "out.json",
+        2,
+        "warm",
+        8,
+        None,
+        prime=False,
+        measure_resources=True,
+    )
+
+    assert result["schema_version"] == 5
+    assert result["measurement_mode"] == "sampled-diagnostic"
+    assert len(set(metric_paths)) == 2
+    for run in result["runs"]:
+        assert run["classification"] == "diagnostic"
+        assert run["metrics"]["cpu_work_seconds"] == 35.0
+        assert run["metrics"]["aggregate_descendant_cpu_concurrency"] == 3.5
+        assert run["metrics"]["pytest_workers"]["workers"][0][
+            "assigned_fraction"
+        ] == 0.8
+
+
+def test_acceptance_benchmark_does_not_enable_worker_metrics(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    benchmark = load_module()
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "repo_checks.py").write_text("", encoding="utf-8")
+    (tmp_path / "scripts" / "benchmark-command.py").write_text("", encoding="utf-8")
+    stale_metrics = tmp_path / "out-artifacts" / "run-1-workers.json"
+    stale_metrics.parent.mkdir()
+    stale_metrics.write_text("stale\n", encoding="utf-8")
+
+    class FakeBenchmark:
+        @staticmethod
+        def benchmark_command(_command, **kwargs):
+            assert "OFFICINA_PYTEST_WORKER_METRICS" not in kwargs["env"]
+            return {
+                "returncode": 0,
+                "wall_seconds": 10.0,
+                "cpu_seconds": 35.0,
+                "average_effective_cores": 3.5,
+            }
+
+    monkeypatch.setattr(benchmark, "_load_script", lambda *_args: FakeBenchmark)
+    monkeypatch.setattr(benchmark.platform, "platform", lambda: "test-platform")
+    monkeypatch.setattr(
+        benchmark,
+        "_git_output",
+        lambda _root, *args: b"commit\n" if args[0] == "rev-parse" else b"",
+    )
+
+    result = benchmark.run_benchmarks(
+        tmp_path,
+        "precommit",
+        tmp_path / "out.json",
+        1,
+        "warm",
+        8,
+        None,
+        prime=False,
+        measure_resources=False,
+    )
+
+    assert result["runs"][0]["classification"] == "acceptance"
+    assert result["runs"][0]["metrics"]["pytest_workers"] is None
+    assert not stale_metrics.exists()
 
 
 def test_prime_adds_one_unmeasured_call(monkeypatch, tmp_path: Path) -> None:

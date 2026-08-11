@@ -130,4 +130,5 @@ When you add a new documentation contract:
 
 This keeps the rules in one place and avoids scattering doc-generation logic across unrelated scripts.
 
-For the local pre-commit order, GitHub Actions behavior, and Python test-suite boundaries, see [TESTING.md](../../TESTING.md).
+For the local pre-commit order, GitHub Actions behavior, and Python test-suite
+boundaries, see [docs/testing.md](../testing.md).

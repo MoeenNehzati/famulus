@@ -105,7 +105,26 @@ class _GraphState:
 
 @dataclass(frozen=True)
 class _PhaseResult:
-    """Record one started repository-check phase for timing output."""
+    """Record one completed repository-check phase for timing output.
+
+    Intent
+    ------
+    Carry phase identity, status, wall time, and optional JUnit evidence together.
+
+    Rationale
+    ---------
+    Partial timing reports must preserve every completed phase even when a
+    later phase fails or is interrupted.
+
+    Pseudocode
+    ----------
+    - set phase_result = task identity, exit status, wall time, and timing path
+    - return phase_result
+
+    Wraps
+    -----
+    - none
+    """
 
     task_id: str
     exit_code: int
@@ -710,9 +729,8 @@ class ValidatorPytestPlugin:
 
         Pseudocode
         ----------
-        - keep custom validator items
-        - keep items outside selected validator paths
-        - remove default items for selected validator paths
+        - set retained_items = custom validator items or items outside selected paths
+        - set items = retained items
 
         Wraps
         -----
@@ -806,8 +824,260 @@ class ValidatorPytestPlugin:
         return True
 
 
+class _WorkerAssignmentMetricsPlugin:
+    """Record how long each pytest worker has a test protocol assigned.
+
+    Intent
+    ------
+    Separate xdist scheduling occupancy from aggregate CPU consumed by pytest
+    workers and their descendant subprocesses.
+
+    Rationale
+    ---------
+    CPU-seconds divided by wall-seconds cannot show whether workers are waiting
+    for work. Pytest reports expose the setup, call, and teardown wall time for
+    the worker that executed each item, which provides the required assignment
+    measurement without modifying tests or the xdist scheduler.
+
+    Pseudocode
+    ----------
+    - set session_start = controller monotonic time
+    - for report in worker_reports:
+      - set assigned_seconds = prior assigned time plus report duration
+      - set item_count = prior count plus terminal item indicator
+    - set unassigned_seconds = session duration minus assigned time per worker
+    - set output_artifact = atomically serialized sorted worker records
+
+    Wraps
+    -----
+    - none
+    """
+
+    def __init__(self, output_path: Path) -> None:
+        """Initialize one controller-side metrics accumulator.
+
+        Intent
+        ------
+        Bind a report destination and empty per-worker aggregates.
+
+        Rationale
+        ---------
+        Workers emit reports to the controller, so no cross-process shared state
+        is required.
+
+        Pseudocode
+        ----------
+        - set output_path = resolved requested destination
+        - set session_start = zero
+        - set workers = empty aggregate mapping
+
+        Wraps
+        -----
+        - none
+        """
+        self.output_path = Path(output_path).resolve()
+        self.started_at = 0.0
+        self.workers: dict[str, dict[str, float | int]] = {}
+
+    def pytest_sessionstart(self, session: pytest.Session) -> None:
+        """Start the controller-side assignment clock.
+
+        Intent
+        ------
+        Establish the wall-time denominator shared by worker occupancy records.
+
+        Rationale
+        ---------
+        Worker readiness and reports are meaningful only relative to the same
+        pytest controller session.
+
+        Pseudocode
+        ----------
+        - set session_start = current monotonic time
+
+        Wraps
+        -----
+        - none
+        """
+
+        del session
+        self.started_at = time.monotonic()
+
+    @pytest.hookimpl(optionalhook=True)
+    def pytest_testnodeready(self, node: object) -> None:
+        """Retain workers that receive no completed items.
+
+        Intent
+        ------
+        Include every ready xdist worker in the final assignment report.
+
+        Rationale
+        ---------
+        Omitting zero-item workers would hide scheduler underutilization.
+
+        Pseudocode
+        ----------
+        - set worker_id = ready node gateway identity
+        - if worker_id is valid:
+          - set worker_aggregate = existing or empty aggregate
+
+        Wraps
+        -----
+        - none
+        """
+
+        gateway = getattr(node, "gateway", None)
+        worker_id = getattr(gateway, "id", None)
+        if isinstance(worker_id, str):
+            self._worker(worker_id)
+
+    def pytest_runtest_logreport(self, report: pytest.TestReport) -> None:
+        """Add one setup, call, or teardown report to its executing worker.
+
+        Intent
+        ------
+        Accumulate worker assignment duration and count each terminal test item.
+
+        Rationale
+        ---------
+        Pytest report duration includes fixture phases while call or failed setup
+        identifies one completed item without double counting teardown.
+
+        Pseudocode
+        ----------
+        - set worker_id = report worker identity or main
+        - set assigned_seconds = prior time plus report duration
+        - if report is call or terminal setup:
+          - set item_count = prior count plus one
+
+        Wraps
+        -----
+        - none
+        """
+
+        worker_id = getattr(report, "worker_id", None)
+        if not isinstance(worker_id, str):
+            node = getattr(report, "node", None)
+            worker_id = getattr(getattr(node, "gateway", None), "id", "main")
+        worker = self._worker(worker_id)
+        worker["assigned_seconds"] = float(worker["assigned_seconds"]) + float(
+            report.duration
+        )
+        terminal_setup = report.when == "setup" and (
+            bool(getattr(report, "skipped", False))
+            or bool(getattr(report, "failed", False))
+        )
+        if report.when == "call" or terminal_setup:
+            worker["item_count"] = int(worker["item_count"]) + 1
+
+    def pytest_sessionfinish(
+        self,
+        session: pytest.Session,
+        exitstatus: int,
+    ) -> None:
+        """Atomically persist assignment and idle time for every known worker.
+
+        Intent
+        ------
+        Produce one complete controller-owned worker assignment artifact.
+
+        Rationale
+        ---------
+        Atomic replacement prevents the benchmark harness from reading a partial
+        JSON report after pytest exits.
+
+        Pseudocode
+        ----------
+        - set session_seconds = elapsed controller session time
+        - for worker_id in sorted workers:
+          - set worker_fields = assigned and unassigned durations
+          - set records = records plus worker record
+        - set temporary_artifact = serialized schema payload
+        - set output_artifact = atomic replacement with temporary artifact
+
+        Wraps
+        -----
+        - none
+        """
+
+        del session, exitstatus
+        session_seconds = max(0.0, time.monotonic() - self.started_at)
+        records: list[dict[str, float | int | str]] = []
+        for worker_id in sorted(self.workers):
+            worker = self.workers[worker_id]
+            assigned = float(worker["assigned_seconds"])
+            unassigned = max(0.0, session_seconds - assigned)
+            records.append(
+                {
+                    "worker_id": worker_id,
+                    "item_count": int(worker["item_count"]),
+                    "assigned_seconds": assigned,
+                    "unassigned_seconds": unassigned,
+                    "assigned_fraction": (
+                        assigned / session_seconds if session_seconds else 0.0
+                    ),
+                }
+            )
+        payload = {
+            "schema_version": 1,
+            "session_seconds": session_seconds,
+            "workers": records,
+        }
+        self.output_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self.output_path.with_name(
+            f".{self.output_path.name}.{os.getpid()}.tmp"
+        )
+        temporary.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        temporary.replace(self.output_path)
+
+    def _worker(self, worker_id: str) -> dict[str, float | int]:
+        """Return the mutable aggregate for one controller-observed worker.
+
+        Intent
+        ------
+        Centralize zero-value initialization for ready nodes and test reports.
+
+        Rationale
+        ---------
+        Both hooks must address the same aggregate without duplicating defaults.
+
+        Pseudocode
+        ----------
+        - set worker = existing aggregate or zero-value aggregate
+        - return worker
+
+        Wraps
+        -----
+        - none
+        """
+
+        return self.workers.setdefault(
+            worker_id,
+            {"item_count": 0, "assigned_seconds": 0.0},
+        )
+
+
 def pytest_addoption(parser: pytest.Parser) -> None:
-    """Register private options for adding validators to normal collection."""
+    """Register private options for adding validators to normal collection.
+
+    Intent
+    ------
+    Expose the staged-root and validator-selection inputs consumed by the plugin.
+
+    Rationale
+    ---------
+    Pytest must parse these options before repository validators can join its
+    ordinary collection session.
+
+    Pseudocode
+    ----------
+    - set option_group = repository validator parser group
+    - set option_group = option group plus validator collection controls
+
+    Wraps
+    -----
+    - none
+    """
     group = parser.getgroup("officina repository validators")
     group.addoption(
         "--officina-run-validators",
@@ -822,7 +1092,57 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    """Register the validator collector in the same session as normal tests."""
+    """Register worker metrics and optional validator collection plugins.
+
+    Intent
+    ------
+    Add controller-only assignment reporting and place selected validators in
+    the same pytest session as ordinary items.
+
+    Rationale
+    ---------
+    Metrics must not be registered inside xdist workers, while validator
+    collection requires one validated repository view and staged-path snapshot.
+
+    Pseudocode
+    ----------
+    - if controller worker metrics path is configured:
+      - set plugin_registry = registry plus worker metrics plugin
+    - if validator collection is disabled:
+      - return
+    - set validator_inputs = roots, selection, and staged paths from pytest options
+    - if required validator inputs are absent:
+      - raise pytest usage error
+    - set plugin_registry = registry plus validator plugin
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._WorkerAssignmentMetricsPlugin:
+      why:
+        orchestrates: "Captures controller-side worker assignment evidence."
+
+    InstantiationsFromRepo
+    ----------------------
+    .ValidatorPytestPlugin:
+      why:
+        constructs: "Supplies selected validator items to the shared session."
+    officina._validator_snapshot._selected_validator_paths:
+      why:
+        transforms: "Resolves canonical validator IDs against the selected view."
+    officina._validator_snapshot._load_staged_paths:
+      why:
+        constructs: "Restores the immutable staged-path list for validators."
+    """
+    worker_metrics_path = os.environ.get("OFFICINA_PYTEST_WORKER_METRICS")
+    if worker_metrics_path and not hasattr(config, "workerinput"):
+        config.pluginmanager.register(
+            _WorkerAssignmentMetricsPlugin(Path(worker_metrics_path)),
+            "officina-worker-assignment-metrics",
+        )
     if not config.getoption("--officina-run-validators"):
         return
     tracked_root = config.getoption("--officina-validator-root")
@@ -963,7 +1283,34 @@ SUITE_TEST_PROFILES = {
 
 
 def _suite_runs(suite: str, task_id: str | None) -> tuple[str, ...]:
-    """Resolve one suite to combined pytest invocations without a validator gate."""
+    """Resolve one suite to its minimal ordered pytest invocations.
+
+    Intent
+    ------
+    Combine validator and functional phases whenever both belong to the suite.
+
+    Rationale
+    ---------
+    One combined invocation gives both item kinds the same xdist queue; only
+    load-sensitive performance thresholds retain a separate serial run.
+
+    Pseudocode
+    ----------
+    - if task_id is present:
+      - return task_id as the only run
+    - set pooled_phases = validator and shared-test phases in suite
+    - if both pooled phases are present:
+      - set runs = combined run
+    - else:
+      - set runs = non-performance suite phases
+    - if performance phase is present:
+      - set runs = runs plus performance phase
+    - return ordered runs
+
+    Wraps
+    -----
+    - none
+    """
     if task_id is not None:
         return (task_id,)
     phases = SUITE_PHASES[suite]
@@ -977,7 +1324,29 @@ def _suite_runs(suite: str, task_id: str | None) -> tuple[str, ...]:
 
 
 def _resolve_repository_view(suite: str, requested: str) -> str:
-    """Choose one import and collection tree for the complete pytest session."""
+    """Choose one import and collection tree for the complete pytest session.
+
+    Intent
+    ------
+    Apply the staged precommit policy while honoring explicit view selection.
+
+    Rationale
+    ---------
+    A pytest session must not combine staged validator inputs with working-tree
+    test imports.
+
+    Pseudocode
+    ----------
+    - if requested view is explicit:
+      - return requested view
+    - if suite is precommit:
+      - return staged view
+    - return working view
+
+    Wraps
+    -----
+    - none
+    """
     if requested != "auto":
         return requested
     return "staged" if suite == "precommit" else "working"
@@ -1005,8 +1374,7 @@ def _pytest_args(
     ----------
     - set pytest_arguments = source path option and selected verbosity
     - if jobs is greater than one:
-      - set pytest_arguments = arguments plus xdist worker and distribution
-        configuration supplied by suite policy
+      - set pytest_arguments = arguments plus xdist worker and distribution options
     - return pytest_arguments
 
     Wraps
@@ -1094,12 +1462,12 @@ def _suite_pytest_args(
     Pseudocode
     ----------
     - set distribution = loadgroup for full and pre-push; otherwise worksteal
-    - set pytest_arguments = common pytest arguments using distribution only
-      when jobs is greater than one
+    - set pytest_arguments = common arguments for jobs and distribution
     - if name is precommit:
       - set pytest_arguments = arguments plus configured deselections
-    - otherwise if name is pre-push:
-      - set pytest_arguments = arguments plus configured deselections
+    - else:
+      - if name is pre-push:
+        - set pytest_arguments = arguments plus configured deselections
     - return pytest_arguments
 
     Wraps
@@ -1112,7 +1480,10 @@ def _suite_pytest_args(
       why:
         constructs: "Builds the common pytest argument list extended by this suite."
     """
-    distribution = "loadgroup" if name in {"full", "pre-push"} else "worksteal"
+    if name in {"full", "pre-push"}:
+        distribution = "loadgroup"
+    else:
+        distribution = "worksteal"
     args = _pytest_args(
         verbose=verbose,
         jobs=jobs,
@@ -1336,10 +1707,56 @@ def _run_process(
     *,
     cwd: Path,
     task_id: str,
+    pycache_prefix: Path,
 ) -> int:
-    """Run one streaming child process and clean up its descendants on interrupt."""
+    """Run one pytest phase with isolated imports, bytecode, and interruption.
+
+    Intent
+    ------
+    Execute the selected staged or working repository view without writing
+    Python bytecode into that view or inheriting an unrelated source path.
+
+    Rationale
+    ---------
+    Staged mirrors must remain immutable during validation, while ordinary
+    imports should still benefit from a writable bytecode cache. A separate
+    process group also lets an interrupted root command terminate worker and
+    subprocess descendants as one phase.
+
+    Pseudocode
+    ----------
+    - set execution_root = resolved execution root
+    - set resolved_cache = resolved bytecode cache
+    - if bytecode cache is inside execution root:
+      - raise ValueError
+    - set child_environment = isolated source path and external bytecode cache
+    - set process = child command in a new process group
+    - if process is interrupted:
+      - @_terminate_task_process(process)
+      - return 130
+    - return process exit status
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._terminate_task_process:
+      why:
+        writes: "Stops the phase process group and all descendants on interruption."
+    """
+    execution_root = cwd.resolve()
+    resolved_pycache_prefix = pycache_prefix.resolve()
+    if (
+        resolved_pycache_prefix == execution_root
+        or resolved_pycache_prefix.is_relative_to(execution_root)
+    ):
+        raise ValueError("pycache prefix must be outside the execution root")
+    resolved_pycache_prefix.mkdir(parents=True, exist_ok=True)
     child_environment = os.environ.copy()
-    child_environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    child_environment.pop("PYTHONDONTWRITEBYTECODE", None)
+    child_environment["PYTHONPYCACHEPREFIX"] = str(resolved_pycache_prefix)
     source_root = str(cwd / "src")
     existing_pythonpath = child_environment.get("PYTHONPATH")
     child_environment["PYTHONPATH"] = os.pathsep.join(
@@ -1378,7 +1795,49 @@ def _pytest_phase_command(
     excluded_validator_ids: Sequence[str] = (),
     validator_paths: Sequence[Path] = (),
 ) -> list[str]:
-    """Build one pytest command for selected ordinary and validator items."""
+    """Build one pytest command for selected ordinary and validator items.
+
+    Intent
+    ------
+    Translate a resolved suite phase into one complete pytest argv.
+
+    Rationale
+    ---------
+    Suite deselection, xdist policy, validator plugin inputs, cache location,
+    and timing output must travel together to prevent invocation drift.
+
+    Pseudocode
+    ----------
+    - set profile = suite test profile
+    - if task is shared or combined:
+      - set phase_inputs = functional arguments and targets from profile
+    - else:
+      - if task is validators:
+        - set phase_inputs = validator arguments and targets
+      - else:
+        - if task is performance:
+          - set pytest_arguments = serial performance arguments
+          - set targets = performance targets
+        - else:
+          - raise ValueError
+    - if task includes validators:
+      - set pytest_arguments = arguments plus validator plugin inputs
+    - set pytest_arguments = arguments plus cache and optional timing path
+    - return Python pytest command
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._pytest_args:
+      why:
+        constructs: "Builds validator-only and serial performance pytest options."
+    ._suite_pytest_args:
+      why:
+        constructs: "Builds suite-specific functional and combined pytest options."
+    """
     profile = SUITE_TEST_PROFILES.get(suite, "full")
     if task_id in {"tests:shared", "combined"}:
         pytest_args = _suite_pytest_args(profile, verbose=verbose, jobs=jobs)
@@ -1435,7 +1894,26 @@ def _pytest_phase_command(
 
 
 def _capture_working_staged_paths(repo_root: Path) -> tuple[str, ...]:
-    """Return one immutable staged-path list for working-view validators."""
+    """Return one immutable staged-path list for working-view validators.
+
+    Intent
+    ------
+    Give working-view validators the same staged-path metadata shape as staged
+    mirror validators.
+
+    Rationale
+    ---------
+    Validator behavior may depend on which paths are staged even when source
+    bytes come from the working tree.
+
+    Pseudocode
+    ----------
+    - return capture_staged_paths(repo_root)
+
+    Wraps
+    -----
+    officina._validator_snapshot.capture_staged_paths -> preprocess: pass the repository root unchanged; postprocess: return captured paths unchanged; fixed_arguments: none
+    """
     return _validator_snapshot.capture_staged_paths(repo_root)
 
 
@@ -1445,7 +1923,37 @@ def _write_phase_timing_report(
     repo_root: Path,
     results: Sequence[_PhaseResult],
 ) -> None:
-    """Write timing schema version 1 from completed ordered phases."""
+    """Write timing schema version 1 from completed ordered phases.
+
+    Intent
+    ------
+    Persist task wall time and per-file pytest totals after every completed phase.
+
+    Rationale
+    ---------
+    Rewriting the full artifact after each phase preserves useful partial
+    evidence when a later phase fails or is interrupted.
+
+    Pseudocode
+    ----------
+    - set task_records = empty task records
+    - set file_records = empty file records
+    - for result in completed_results:
+      - set parsed_timing = JUnit timing when available
+      - set task_records = task records plus phase summary
+      - set file_records = file records plus parsed files
+    - set output_artifact = schema-version-1 sorted JSON
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._read_junit_timing:
+      why:
+        constructs: "Aggregates pytest testcase reports into per-file records."
+    """
     task_records: list[dict[str, object]] = []
     file_records: list[dict[str, object]] = []
     for result in results:
@@ -1514,8 +2022,8 @@ def run_suite(
     ----------
     - set repository_view = staged precommit or requested working/staged view
     - set pooled_items = selected validators plus ordinary tests
-    - run pooled_items in one pytest-xdist command without fail-fast
-    - run selected performance thresholds serially even after pooled failures
+    - set pooled_status = one pytest-xdist process for pooled items without fail-fast
+    - set performance_status = selected serial performance thresholds after pooled items
     - return the aggregate status
 
     Wraps
@@ -1527,6 +2035,12 @@ def run_suite(
     ._pytest_xdist_available:
       why:
         computes: "Confirms that a parallel worker budget can be executed."
+    ._write_phase_timing_report:
+      why:
+        computes: "Persists completed phase timing evidence after each phase."
+    .officina._validator_snapshot._selected_validator_paths:
+      why:
+        computes: "Resolves the exact validator paths for validator-only phases."
 
     InstantiationsFromRepo
     ----------------------
@@ -1539,6 +2053,18 @@ def run_suite(
     ._run_process:
       why:
         constructs: "Runs one streaming pytest process with interruption cleanup."
+    ._PhaseResult:
+      why:
+        constructs: "Records one completed phase for status and timing output."
+    ._capture_working_staged_paths:
+      why:
+        constructs: "Captures staged metadata for working-tree validator runs."
+    ._resolve_repository_view:
+      why:
+        constructs: "Resolves auto view selection before preparing the run."
+    ._suite_runs:
+      why:
+        constructs: "Resolves the ordered pytest phases selected by the suite."
     """
 
     root = Path(repo_root).resolve()
@@ -1633,10 +2159,14 @@ def run_suite(
                     excluded_validator_ids=effective_exclusions,
                     validator_paths=validator_paths,
                 )
+                phase_pycache_prefix = (
+                    artifact_root / "python-cache" / f"{index:04d}"
+                )
                 status = _run_process(
                     command,
                     cwd=execution_root,
                     task_id=report_task_id,
+                    pycache_prefix=phase_pycache_prefix,
                 )
                 duration = time.monotonic() - start
                 completed.append(

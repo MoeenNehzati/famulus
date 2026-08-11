@@ -321,7 +321,7 @@ Apply changes in this order:
 4. Enable the new cross-platform checks and update the canonical standard.
 5. Regenerate the live standard view, blueprints, permissions, and tracked
    projections through their existing owners.
-6. Add the sentinel and CI step, update `TESTING.md`, and run the complete
+6. Add the sentinel and CI step, update `docs/testing.md`, and run the complete
    Linux, macOS, and Windows matrix.
 7. Update the basis, commit the exact source state, and recertify
    dependency-first against that commit.

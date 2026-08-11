@@ -15,7 +15,7 @@ testing behavior remains governed by:
 - `docs/skill-blueprints.md`;
 - `docs/certification_and_drift.md`;
 - `references/blueprint/README.md`; and
-- `TESTING.md`.
+- `docs/testing.md`.
 
 The implementation should be explainable through five rules:
 

@@ -1,3 +1,10 @@
+"""Construct small committed version-4 repositories for certification tests.
+
+The helpers centralize deterministic blueprint, provenance, certificate, and
+in-memory signing-key setup so certification tests exercise the same artifact
+shape without repeating repository construction.
+"""
+
 from __future__ import annotations
 
 from copy import deepcopy
@@ -38,27 +45,157 @@ CHECKS = expected_certifier_checks(expected_schema_version=4)
 
 
 class MemorySecretBackend:
+    """Store test signing secrets in process memory.
+
+    Intent
+    ------
+    Provide the minimal secret-backend protocol needed by certificate fixtures.
+
+    Rationale
+    ---------
+    Test certificates need real signing behavior without accessing a host keyring.
+
+    Pseudocode
+    ----------
+    - set name = memory
+    - set secrets = namespace and key pairs mapped to secret strings
+
+    Wraps
+    -----
+    - none
+    """
+
     name = "memory"
 
     def __init__(self) -> None:
+        """Initialize an empty secret map.
+
+        Intent
+        ------
+        Give each fixture an isolated secret store.
+
+        Rationale
+        ---------
+        Reusing secrets across tests would make certificate setup order-dependent.
+
+        Pseudocode
+        ----------
+        - set values = empty mapping
+
+        Wraps
+        -----
+        - none
+        """
         self.values: dict[tuple[str, str], str] = {}
 
     def store(self, namespace: str, key: str, secret: str) -> None:
+        """Store one secret under a namespace and key.
+
+        Intent
+        ------
+        Implement the write operation of the test secret-backend protocol.
+
+        Rationale
+        ---------
+        Signing-key creation persists private material through this interface.
+
+        Pseudocode
+        ----------
+        - set stored_secret = secret at namespace and key
+
+        Wraps
+        -----
+        - none
+        """
         self.values[(namespace, key)] = secret
 
     def lookup(self, namespace: str, key: str) -> str | None:
+        """Return a stored secret or none.
+
+        Intent
+        ------
+        Implement the read operation of the test secret-backend protocol.
+
+        Rationale
+        ---------
+        Certificate helpers must retrieve the private key they previously stored.
+
+        Pseudocode
+        ----------
+        - return value at namespace and key or none
+
+        Wraps
+        -----
+        - none
+        """
         return self.values.get((namespace, key))
 
     def clear(self, namespace: str, key: str) -> bool:
+        """Remove a stored secret and report whether it existed.
+
+        Intent
+        ------
+        Implement the delete operation of the test secret-backend protocol.
+
+        Rationale
+        ---------
+        Tests need the same lifecycle surface as a persistent secret backend.
+
+        Pseudocode
+        ----------
+        - set removed_secret = value removed at namespace and key when present
+        - return whether a value was removed
+
+        Wraps
+        -----
+        - none
+        """
         return self.values.pop((namespace, key), None) is not None
 
 
 def write_yaml(path: Path, value: object) -> None:
+    """Write one fixture value as stable YAML.
+
+    Intent
+    ------
+    Materialize readable blueprint inputs for test repositories.
+
+    Rationale
+    ---------
+    A shared writer keeps directory creation and YAML ordering consistent.
+
+    Pseudocode
+    ----------
+    - set parent_directory = created parent directories
+    - set yaml_artifact = insertion-ordered YAML serialization
+
+    Wraps
+    -----
+    - none
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
 
 
 def contract() -> dict[str, object]:
+    """Return the minimal valid interface contract used by fixture modules.
+
+    Intent
+    ------
+    Supply blueprint fixtures with one deterministic public interface contract.
+
+    Rationale
+    ---------
+    Certification tests need schema-valid nodes but do not need behavioral variety.
+
+    Pseudocode
+    ----------
+    - return one unattended read-only string-output contract
+
+    Wraps
+    -----
+    - none
+    """
     return {
         "arguments": {},
         "preconditions": [],
@@ -118,6 +255,35 @@ def _write_module(
     source_interface: str,
     export_interface: str,
 ) -> None:
+    """Write one behavioral-source module and its exported interface.
+
+    Intent
+    ------
+    Add a schema-valid skill node to a version-4 fixture repository.
+
+    Rationale
+    ---------
+    Central construction keeps node relationships identical across tests.
+
+    Pseudocode
+    ----------
+    - set module_directory = created module directory and gateway instructions
+    - set source_blueprint = serialized behavioral source blueprint
+    - set module_blueprint = serialized module blueprint exporting source interface
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .contract:
+      why:
+        computes: "Supplies the source interface contract."
+    .write_yaml:
+      why:
+        computes: "Serializes both blueprint mappings."
+    """
     module = root / "skills" / module_id
     module.mkdir(parents=True)
     (module / "SKILL.md").write_text(f"{module_id} instructions.\n", encoding="utf-8")
@@ -171,11 +337,47 @@ def _write_module(
     )
 
 
-def create_v4_repository(
+def materialize_v4_repository(
     root: Path,
     *,
     extra_modules: tuple[str, ...] = (),
-):
+) -> str:
+    """Create and pin a committed v4 repository without graph computation.
+
+    Intent
+    ------
+    Materialize the shared committed input state for certification fixtures.
+
+    Rationale
+    ---------
+    Mechanical and source-overlay provenance must reference the exact commit
+    containing the fixture blueprints.
+
+    Pseudocode
+    ----------
+    - set repository = created or initialized test repository
+    - set schema_inputs = copied version-4 schemas and certification policy
+    - set fixture_modules = required and requested fixture modules
+    - set commit = committed mechanical candidate
+    - set provenance = mechanical and source-overlay pins at commit
+    - return commit
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._write_module:
+      why:
+        computes: "Materializes each fixture skill module."
+    officina.common.git_provenance.pin_blueprint_v4_mechanical_commit:
+      why:
+        computes: "Pins mechanical provenance to the fixture commit."
+    officina.common.git_provenance.pin_blueprint_v4_source_overlay_commit:
+      why:
+        computes: "Pins source-overlay provenance to the fixture commit."
+    """
     repository = (
         GitTestRepository.initialize_existing_empty(root)
         if root.is_dir()
@@ -249,6 +451,60 @@ def create_v4_repository(
     commit = repository.git("rev-parse", "HEAD").stdout.decode("ascii").strip()
     pin_blueprint_v4_mechanical_commit(root, commit)
     pin_blueprint_v4_source_overlay_commit(root, commit)
+    return commit
+
+
+def create_v4_repository(
+    root: Path,
+    *,
+    extra_modules: tuple[str, ...] = (),
+):
+    """Create a committed version-4 repository and compute its graph state.
+
+    Intent
+    ------
+    Return the canonical graph, node hashes, and source commit used by tests.
+
+    Rationale
+    ---------
+    Callers that do not need signed certificates should stop after graph setup.
+
+    Pseudocode
+    ----------
+    - commit = materialize_v4_repository(root)
+    - graph = load_repository_blueprint_graph(root)
+    - basis_paths = resolve_certification_basis_paths(root)
+    - set basis_hash = computed certification basis hash
+    - states = compute_node_hash_states(graph)
+    - return graph, states, and commit
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .materialize_v4_repository:
+      why:
+        constructs: "Creates and pins the committed fixture repository."
+    officina.common.blueprint_graph.load_repository_blueprint_graph:
+      why:
+        constructs: "Loads the fixture's canonical blueprint graph."
+    officina.common.certification_hashing.compute_node_hash_states:
+      why:
+        constructs: "Computes node states for certificate payloads."
+    officina.common.certification_hashing.resolve_certification_basis_paths:
+      why:
+        constructs: "Resolves files included in the certification basis."
+
+    CallsFromRepo
+    -------------
+    officina.common.certification_hashing.compute_certification_basis_hash:
+      why:
+        computes: "Hashes the fixture certification basis."
+    """
+    commit = materialize_v4_repository(root, extra_modules=extra_modules)
+    schema_root = root / "references" / "blueprint"
     graph = load_repository_blueprint_graph(
         root,
         schema_root=schema_root,
@@ -272,6 +528,26 @@ def create_v4_repository(
 
 
 def postorder(graph: object) -> tuple[str, ...]:
+    """Return certification graph node identifiers in dependency postorder.
+
+    Intent
+    ------
+    Order certificate creation so every dependency is certified first.
+
+    Rationale
+    ---------
+    Certificate payloads refer to dependency hashes and must follow graph order.
+
+    Pseudocode
+    ----------
+    - set children = each node mapped to certification children
+    - set ordered = unvisited children before each parent
+    - return ordered node identifiers
+
+    Wraps
+    -----
+    - none
+    """
     children = {node_id: [] for node_id in graph.nodes}
     for edge in graph.certification_edges:
         children[edge.source_node_id].append(edge.target_node_id)
@@ -279,6 +555,28 @@ def postorder(graph: object) -> tuple[str, ...]:
     visited: set[str] = set()
 
     def visit(node_id: str) -> None:
+        """Append one node after recursively visiting its children.
+
+        Intent
+        ------
+        Perform the depth-first step of fixture postordering.
+
+        Rationale
+        ---------
+        A visited set avoids repeats when dependencies converge.
+
+        Pseudocode
+        ----------
+        - return when node was visited
+        - set visited = visited plus node
+        - for child in sorted_children:
+          - set child_order = recursive visit result
+        - set ordered = ordered plus node
+
+        Wraps
+        -----
+        - none
+        """
         if node_id in visited:
             return
         visited.add(node_id)
@@ -299,6 +597,33 @@ def payload(
     commit: str,
     key_id: str,
 ) -> dict[str, object]:
+    """Build one deterministic unsigned certificate payload.
+
+    Intent
+    ------
+    Translate a fixture graph node and hash state into certificate data.
+
+    Rationale
+    ---------
+    Central payload construction keeps certificate records comparable across tests.
+
+    Pseudocode
+    ----------
+    - set node = graph node for node identifier
+    - set node_state = hash state for node identifier
+    - certifier = derive_certifier_identity(graph)
+    - return deterministic certificate payload from node, state, commit, and key
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    officina.common.certification_hashing.derive_certifier_identity:
+      why:
+        constructs: "Derives the certifier identity carried in the payload."
+    """
     node = graph.nodes[node_id]
     state = states[node_id]
     return {
@@ -324,6 +649,37 @@ def payload(
 
 
 def write_log(graph: object, node_id: str, entries: list[dict]) -> None:
+    """Write signed certificate envelopes for one graph node.
+
+    Intent
+    ------
+    Materialize the certificate log consumed by drift and certification tests.
+
+    Rationale
+    ---------
+    Canonical envelope serialization preserves production log framing.
+
+    Pseudocode
+    ----------
+    - set path = certificate log path for node
+    - set parent_directory = created certificate-log directory
+    - set log_artifact = canonical envelope bytes with newline framing
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    officina.common.certificate_records.canonical_certificate_envelope_bytes:
+      why:
+        computes: "Serializes each signed log entry canonically."
+    InstantiationsFromRepo
+    ----------------------
+    officina.common.certification_view.certificate_log_path:
+      why:
+        constructs: "Resolves the node's canonical certificate log path."
+    """
     path = certificate_log_path(graph.nodes[node_id])
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(
@@ -336,6 +692,58 @@ def create_certified_fixture(
     *,
     extra_modules: tuple[str, ...] = (),
 ):
+    """Create a version-4 repository with a valid signed certificate log.
+
+    Intent
+    ------
+    Return all repository, graph, signing, and key objects needed by tests.
+
+    Rationale
+    ---------
+    One fixture builder prevents repeated expensive and error-prone setup logic.
+
+    Pseudocode
+    ----------
+    - repository_fixture = create_v4_repository(root)
+    - set public_key_directory = created public-key directory
+    - backend = MemorySecretBackend()
+    - key = load_or_create_certificate_signing_key(public_key_directory)
+    - for node in postordered_nodes:
+      - set signed_certificate = signed deterministic payload
+      - set certificate_log = written signed certificate
+    - return fixture objects
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .payload:
+      why:
+        computes: "Builds each unsigned certificate payload."
+    .postorder:
+      why:
+        computes: "Orders nodes after their dependencies."
+    .write_log:
+      why:
+        computes: "Writes each node's signed certificate log."
+    officina.common.certificate_records.sign_certificate_payload:
+      why:
+        computes: "Signs each deterministic certificate payload."
+
+    InstantiationsFromRepo
+    ----------------------
+    .create_v4_repository:
+      why:
+        constructs: "Builds the committed repository and graph state."
+    .MemorySecretBackend:
+      why:
+        constructs: "Provides isolated secret storage for the fixture key."
+    officina.common.certificate_records.load_or_create_certificate_signing_key:
+      why:
+        constructs: "Creates the fixture signing identity and key material."
+    """
     graph, states, commit = create_v4_repository(
         root, extra_modules=extra_modules
     )

@@ -130,6 +130,91 @@ def test_real_pytest_collection_combines_validator_and_standard_items(
     assert ordinary_node in completed.stdout
 
 
+def test_worker_assignment_metrics_record_per_worker_busy_and_idle_time(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Measure scheduler assignment separately from descendant CPU usage."""
+    output = tmp_path / "workers.json"
+    clock = iter((10.0, 20.0))
+    monkeypatch.setattr(runner.time, "monotonic", lambda: next(clock))
+    plugin = runner._WorkerAssignmentMetricsPlugin(output)
+
+    plugin.pytest_sessionstart(SimpleNamespace())
+    for report in (
+        SimpleNamespace(worker_id="gw0", when="setup", duration=1.0, skipped=False),
+        SimpleNamespace(worker_id="gw0", when="call", duration=3.0, skipped=False),
+        SimpleNamespace(worker_id="gw0", when="teardown", duration=1.0, skipped=False),
+        SimpleNamespace(worker_id="gw1", when="setup", duration=2.0, skipped=True),
+    ):
+        plugin.pytest_runtest_logreport(report)
+    plugin.pytest_sessionfinish(SimpleNamespace(), 0)
+
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload == {
+        "schema_version": 1,
+        "session_seconds": 10.0,
+        "workers": [
+            {
+                "worker_id": "gw0",
+                "item_count": 1,
+                "assigned_seconds": 5.0,
+                "unassigned_seconds": 5.0,
+                "assigned_fraction": 0.5,
+            },
+            {
+                "worker_id": "gw1",
+                "item_count": 1,
+                "assigned_seconds": 2.0,
+                "unassigned_seconds": 8.0,
+                "assigned_fraction": 0.2,
+            },
+        ],
+    }
+
+
+def test_worker_metrics_plugin_registers_only_on_controller(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output = tmp_path / "workers.json"
+    monkeypatch.setenv("OFFICINA_PYTEST_WORKER_METRICS", str(output))
+
+    class PluginManager:
+        def __init__(self) -> None:
+            self.registered: list[tuple[object, str]] = []
+
+        def register(self, plugin: object, name: str) -> None:
+            self.registered.append((plugin, name))
+
+    controller = SimpleNamespace(
+        pluginmanager=PluginManager(),
+        getoption=lambda _name: False,
+    )
+    worker = SimpleNamespace(
+        pluginmanager=PluginManager(),
+        getoption=lambda _name: False,
+        workerinput={},
+    )
+
+    runner.pytest_configure(controller)
+    runner.pytest_configure(worker)
+
+    assert len(controller.pluginmanager.registered) == 1
+    plugin, name = controller.pluginmanager.registered[0]
+    assert isinstance(plugin, runner._WorkerAssignmentMetricsPlugin)
+    assert name == "officina-worker-assignment-metrics"
+    assert worker.pluginmanager.registered == []
+
+
+def test_worker_metrics_plugin_satisfies_pytest_hook_contract(tmp_path: Path) -> None:
+    """Catch hook parameters that pluggy cannot match to pytest specifications."""
+    plugin_manager = pytest.PytestPluginManager()
+    plugin_manager.register(
+        runner._WorkerAssignmentMetricsPlugin(tmp_path / "workers.json")
+    )
+
+
 def test_runner_supplies_repo_src_pythonpath() -> None:
     assert runner._pytest_args(verbose=False) == [
         "-o",
@@ -428,7 +513,13 @@ def test_sequential_flag_is_a_noop_compatibility_alias(
         for argument in command
     ]
     assert normalize(second_command) == normalize(first_command)
-    assert second_kwargs == first_kwargs
+    assert {
+        **second_kwargs,
+        "pycache_prefix": "<temporary>",
+    } == {
+        **first_kwargs,
+        "pycache_prefix": "<temporary>",
+    }
 
 
 def test_performance_phase_is_serial_and_uses_only_performance_nodes(
@@ -628,13 +719,40 @@ def test_probe_task_environment_is_copied_per_child_without_parent_mutation(
 
     monkeypatch.setenv("OFFICINA_FIXTURE_PROBE_DIR", str(tmp_path / "probe"))
     monkeypatch.delenv("OFFICINA_FIXTURE_PROBE_TASK_ID", raising=False)
+    monkeypatch.setenv("PYTHONDONTWRITEBYTECODE", "1")
+    monkeypatch.setenv("PYTHONPYCACHEPREFIX", str(tmp_path / "ambient-cache"))
     monkeypatch.setattr(runner.subprocess, "Popen", FakeProcess)
+    cache_one = tmp_path.parent / f"{tmp_path.name}-cache-one"
+    cache_two = tmp_path.parent / f"{tmp_path.name}-cache-two"
 
-    assert runner._run_process(["check", "one"], cwd=tmp_path, task_id="one") == 0
-    assert runner._run_process(["check", "two"], cwd=tmp_path, task_id="two") == 0
+    assert runner._run_process(
+        ["check", "one"],
+        cwd=tmp_path,
+        task_id="one",
+        pycache_prefix=cache_one,
+    ) == 0
+    assert runner._run_process(
+        ["check", "two"],
+        cwd=tmp_path,
+        task_id="two",
+        pycache_prefix=cache_two,
+    ) == 0
 
-    assert [environment["OFFICINA_FIXTURE_PROBE_TASK_ID"] for environment in received] == ["one", "two"]
+    assert [
+        environment["OFFICINA_FIXTURE_PROBE_TASK_ID"]
+        for environment in received
+    ] == ["one", "two"]
+    assert [environment["PYTHONPYCACHEPREFIX"] for environment in received] == [
+        str(cache_one.resolve()),
+        str(cache_two.resolve()),
+    ]
+    assert all(
+        "PYTHONDONTWRITEBYTECODE" not in environment
+        for environment in received
+    )
     assert "OFFICINA_FIXTURE_PROBE_TASK_ID" not in __import__("os").environ
+    assert os.environ["PYTHONDONTWRITEBYTECODE"] == "1"
+    assert os.environ["PYTHONPYCACHEPREFIX"] == str(tmp_path / "ambient-cache")
 
 
 def test_process_runner_keeps_execution_root_free_of_bytecode(
@@ -645,13 +763,40 @@ def test_process_runner_keeps_execution_root_free_of_bytecode(
     monkeypatch.delenv("PYTHONDONTWRITEBYTECODE", raising=False)
     monkeypatch.delenv("PYTHONPYCACHEPREFIX", raising=False)
     (tmp_path / "sample_module.py").write_text("VALUE = 1\n", encoding="utf-8")
+    observed_prefix = tmp_path / "observed-prefix.txt"
+    pycache_prefix = tmp_path.parent / f"{tmp_path.name}-pycache"
 
     assert runner._run_process(
-        [sys.executable, "-c", "import sample_module"],
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sample_module, sys; "
+                "from pathlib import Path; "
+                "Path('observed-prefix.txt').write_text("
+                "str(sys.pycache_prefix), encoding='utf-8')"
+            ),
+        ],
         cwd=tmp_path,
         task_id="bytecode-probe",
+        pycache_prefix=pycache_prefix,
     ) == 0
+    assert (
+        Path(observed_prefix.read_text(encoding="utf-8"))
+        == pycache_prefix.resolve()
+    )
+    assert tuple(pycache_prefix.rglob("*.pyc"))
     assert not tuple(tmp_path.rglob("*.pyc"))
+
+
+def test_process_runner_rejects_pycache_inside_execution_root(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="outside the execution root"):
+        runner._run_process(
+            [sys.executable, "-c", "pass"],
+            cwd=tmp_path,
+            task_id="invalid-bytecode-probe",
+            pycache_prefix=tmp_path / "pycache",
+        )
 
 
 def test_portability_suite_has_exact_early_failure_nodes() -> None:

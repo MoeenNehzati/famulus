@@ -160,7 +160,7 @@ Usage details and documentation for the launchers are in [docs/launchers.md](doc
 
 - [docs/contributors/documentation-system.md](docs/contributors/documentation-system.md) — documentation generation and validation
 - [docs/contributors/README.md](docs/contributors/README.md) — maintainer and skill-extension entrypoint
-- [TESTING.md](TESTING.md) — hook order, CI behavior, and Python test-suite boundaries
+- [docs/testing.md](docs/testing.md) — test commands, suite policy, hooks, CI, and parallel execution
 
 
 ## Maintainer Checks
@@ -171,7 +171,8 @@ These checks are for contributors working on the repository, not for ordinary pl
 - `python3 repo_checks.py --suite validators` — run the repository's documentation and contract validators.
 - `python3 repo_checks.py --suite full --verbose` — run the full Python suite, including installation tests.
 
-Hook order, CI behavior, and test-suite boundaries are documented in [TESTING.md](TESTING.md).
+Hook order, CI behavior, suite boundaries, and benchmark guidance are documented
+in [docs/testing.md](docs/testing.md).
 
 ## License
 

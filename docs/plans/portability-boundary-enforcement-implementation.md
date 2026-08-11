@@ -279,7 +279,7 @@ GitHub Actions.
 - Modify: `scripts/run-python-tests.py`
 - Modify: `tests/test_run_python_tests.py`
 - Modify: `.github/workflows/python-tests.yml`
-- Modify: `TESTING.md`
+- Modify: `docs/testing.md`
 
 **Interfaces:**
 
@@ -313,7 +313,7 @@ GitHub Actions.
   basis-covered.
 
 - [ ] Add the explicit portability suite and CI step between validators and the
-  full suite. Update `TESTING.md`.
+  full suite. Update `docs/testing.md`.
 
 - [ ] Run:
 

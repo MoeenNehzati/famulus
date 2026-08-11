@@ -42,7 +42,8 @@ Famulus enforces the documentation and skill contracts through repo validators, 
 - [`.githooks/pre-commit`](../../.githooks/pre-commit)
 - [`.github/workflows/python-tests.yml`](../../.github/workflows/python-tests.yml)
 
-For hook order, CI behavior, and Python test-suite boundaries, see [TESTING.md](../../TESTING.md).
+For hook order, CI behavior, and Python test-suite boundaries, see
+[docs/testing.md](../testing.md).
 
 ## Development-Facing Skill Areas
 
@@ -78,5 +79,5 @@ These skills support general software projects and repositories.
 
 - [docs/officina/scaffolding/README.md](../officina/scaffolding/README.md) — long-form explanation of the scaffolding layer and why it exists
 - [docs/contributors/documentation-system.md](documentation-system.md) — how doc generation and doc validation work
-- [TESTING.md](../../TESTING.md) — hook order, CI behavior, and Python test-suite boundaries
+- [docs/testing.md](../testing.md) — test commands, suite policy, hooks, CI, and parallel execution
 - [references/blueprint/README.md](../../references/blueprint/README.md) — blueprint reference index

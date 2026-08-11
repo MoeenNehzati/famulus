@@ -1,0 +1,176 @@
+# Repository Testing
+
+This is the canonical maintainer guide to the repository's Python tests,
+validators, local hook, CI jobs, and benchmark interfaces.
+
+## Commands
+
+Run the staged local gate used by the pre-commit hook:
+
+```bash
+python3 repo_checks.py --suite precommit
+```
+
+Run every validator and functional test, followed by the isolated performance
+thresholds:
+
+```bash
+python3 repo_checks.py --suite full --verbose
+```
+
+Other public suites are:
+
+```bash
+python3 repo_checks.py --suite validators
+python3 repo_checks.py --suite tests
+python3 repo_checks.py --suite pre-push
+python3 repo_checks.py --suite portability
+```
+
+Use `--jobs N` to choose the pytest-xdist worker count. The default is two
+thirds of the machine's logical CPUs, with a minimum of one. Requests above one
+require `pytest-xdist`.
+
+## Collection
+
+`repo_checks.py` is the only repository-check entry point.
+`src/officina/repository_checks.py` owns suite policy, repository views, pytest
+arguments, and validator integration. `pytest.ini` owns ordinary discovery:
+
+- roots: `tests/`, `hooks/tests/`, `skills/`, `src/officina/wakeup/tests/`, and
+  `validators/`;
+- file names: `test_*.py` and `validate_*.py`;
+- import mode: pytest `importlib` mode;
+- excluded template: `skills/initialize-tdd/assets/python/tests/`.
+
+The custom plugin turns repository validators into ordinary pytest function
+items. Pytest's default collector contributes the functional items. When a
+suite includes both, validator and functional items enter the same xdist queue
+and consume one worker budget. The runner does not maintain a second inventory
+of test directories.
+
+## Suites
+
+| Suite | Repository view by default | Contents |
+| --- | --- | --- |
+| `validators` | working | All selected repository validators. |
+| `tests` | working | Full functional selection, then performance thresholds serially. |
+| `precommit` | staged | Validators and the fast functional selection in one pytest invocation. |
+| `pre-push` | working | Validators and functional tests except docstring and performance tests. |
+| `portability` | working | Seven cross-platform boundary sentinels. |
+| `full` | working | Validators and all functional tests in one invocation, then performance thresholds serially. |
+
+The precommit selection excludes installation tests, Chrome tests, docstring
+tests, performance thresholds, the docstring validator, and the nested-module
+inventory assertion that requires a clean committed checkout. The latter is
+incompatible with a hook that necessarily runs while changes are staged.
+
+The full suite keeps `tests/test_dispatcher_performance.py` in a separate
+single-worker invocation. Its thresholds would be invalid under concurrent
+load. This is the only intentional second pytest invocation in a complete full
+run.
+
+No suite uses pytest fail-fast. A failure does not cancel already queued items,
+and performance thresholds still run after a pooled full-suite failure.
+
+## Repository views
+
+Every pytest session uses one internally consistent source tree:
+
+- `precommit` uses an exact temporary mirror of the Git index;
+- all other suites use the working tree by default;
+- `--repository-view staged` and `--repository-view working` override the
+  default;
+- CI's clean checkout already represents the commit under test.
+
+Unstaged and untracked files are absent from the staged mirror. This means a
+new implementation or test must be staged before the canonical precommit
+command can exercise it. Manual working-view validators may report untracked
+logs, build artifacts, or scratch files.
+
+The runner places Python bytecode and pytest caches outside the execution tree.
+This permits normal bytecode reuse without modifying the staged mirror.
+
+## Parallel execution
+
+Pytest-xdist is the only worker pool. The repository runner does not schedule a
+second layer of test processes.
+
+- Browser-free parallel suites use `--dist worksteal`.
+- `full` and `pre-push` use `--dist loadgroup`.
+- Chrome-backed tests share `xdist_group("browser")`, keeping the browser
+  modules on one worker while other workers remain available for ordinary
+  tests.
+- A one-worker run omits xdist arguments entirely.
+
+The hidden `--sequential` option is a deprecated compatibility alias. It does
+not select a different runner implementation. CI retains it temporarily while
+the simplified route is certified on Linux, macOS, and Windows.
+
+## Selection and timing interfaces
+
+Maintainers may repeat `--validator ID` or `--exclude-validator ID` for suites
+that contain validators. The private stable phase identifiers used by the
+benchmark harness are `validators`, `tests:shared`, and `tests:performance`.
+
+`--timing-output PATH` writes schema-version-1 JSON containing task wall time
+and pytest's per-file setup, call, and teardown totals. These totals do not
+include collection, controller startup, or unattributed scheduler overhead.
+
+See [testing-performance.md](testing-performance.md) for benchmark commands,
+metric definitions, and the current scaling evidence.
+
+## Local hook
+
+`.githooks/pre-commit` performs these operations in order:
+
+1. reject detached `HEAD`;
+2. regenerate `PROFILES.md` when configuration changed;
+3. regenerate and stage maintained documentation artifacts;
+4. regenerate the local README preview;
+5. scan staged content with `gitleaks`;
+6. run `python3 repo_checks.py --suite precommit`.
+
+The hook may update generated files in the index. Review the staged diff after
+it completes.
+
+## CI
+
+`.github/workflows/python-tests.yml` runs on pushes and pull requests to
+`master` and `main` using Linux, macOS, and Windows. Each matrix job installs
+pytest, pytest-xdist, the validator dependencies, and both supported assistant
+CLIs, then runs:
+
+1. the full repository suite;
+2. the portability sentinel;
+3. on macOS and Windows, the native keyring smoke;
+4. on macOS and Windows, the native recurring-scheduler smoke.
+
+The native smokes use `always()` so their platform evidence is still collected
+after an unrelated full-suite failure.
+
+## Platform skips
+
+Skips are repository-level coverage decisions. Each `pytest.skip`,
+`pytest.mark.skipif`, `unittest.SkipTest`, `unittest.skip`, or `self.skipTest`
+under a test root needs a nearby `famulus-skip` comment with:
+
+- `category`: an accepted skip category;
+- `reason`: why the condition is part of the supported contract;
+- `alternate`: where equivalent or nearest coverage exists.
+
+Do not skip a product failure merely because it appears on one host. Use an
+explicit platform contract and preserve alternate coverage.
+
+## Adding tests
+
+Place repository tests under `tests/` or `hooks/tests/`, wakeup tests under
+`src/officina/wakeup/tests/`, and skill runtime tests under
+`skills/<skill>/_rtx/tests/`. Update `pytest.ini` only when a discovery boundary
+changes. Update `src/officina/repository_checks.py` only when suite policy
+changes, and update this guide whenever either contract changes.
+
+Prefer normal pytest fixtures at the narrowest correct scope for immutable or
+resettable preparation. Keep real subprocess, filesystem, browser, and platform
+boundaries when they are the behavior under test. A faster test is not an
+improvement if it weakens the assertion or changes isolation semantics.

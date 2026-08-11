@@ -286,7 +286,7 @@ intentionally user-owned after this plan close.
 - Modify: `docs/certification_and_drift.md`
 - Modify: `docs/blueprint_search.md`
 - Modify: `README.md`
-- Modify: `TESTING.md`
+- Modify: `docs/testing.md`
 - Modify: `docs/contributors/README.md`
 - Modify: `skills/skill-maker/SKILL.md`
 - Modify: `skills/skill-certifier/SKILL.md`

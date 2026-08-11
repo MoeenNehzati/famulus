@@ -32,6 +32,7 @@ from test_support.v4_certification_fixtures import (
     MemorySecretBackend,
     contract,
     create_v4_repository,
+    materialize_v4_repository,
     write_yaml,
 )
 from test_support.git_repository import GitTestRepository
@@ -51,6 +52,26 @@ V5_AUTHORIZATION_FIXTURE = (
     / "blueprint_v5"
     / "authorization"
 )
+
+
+def test_materialize_v4_repository_skips_graph_and_hash_preparation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Build repository-only fixtures without unused graph preparation."""
+    from test_support import v4_certification_fixtures as fixtures
+
+    def unexpected(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("repository-only fixture performed graph preparation")
+
+    monkeypatch.setattr(fixtures, "load_repository_blueprint_graph", unexpected)
+    monkeypatch.setattr(fixtures, "compute_node_hash_states", unexpected)
+
+    commit = fixtures.materialize_v4_repository(tmp_path)
+
+    assert GitTestRepository(tmp_path).git("rev-parse", "HEAD").stdout.decode(
+        "ascii"
+    ).strip() == commit
 
 
 def test_certifier_does_not_expose_legacy_audit_health_authority() -> None:
@@ -81,7 +102,7 @@ def test_repository_fixture_preserves_exact_bytes_under_ambient_autocrlf(
     global_config.write_text("[core]\n\tautocrlf = true\n", encoding="utf-8")
     repository = tmp_path / "repo"
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(global_config))
-    create_v4_repository(repository)
+    materialize_v4_repository(repository)
     tracked = repository / "exact-bytes.txt"
     tracked.write_bytes(b"exact\r\nbytes\r\n")
 
@@ -299,7 +320,7 @@ def _as_v6_graph(graph):
 def test_live_certification_provisions_missing_canonical_key_root(
     tmp_path: Path,
 ) -> None:
-    _graph, _states, commit = create_v4_repository(tmp_path)
+    commit = materialize_v4_repository(tmp_path)
     public_key_root = certificate_public_key_root(tmp_path)
 
     result = _certify(
@@ -544,7 +565,7 @@ def test_private_writer_aborts_pre_append_races(
 def test_private_writer_allows_preexisting_but_rejects_new_untracked_file(
     tmp_path: Path,
 ) -> None:
-    create_v4_repository(tmp_path)
+    materialize_v4_repository(tmp_path)
     (tmp_path / "preexisting-untracked.txt").write_text(
         "preexisting\n",
         encoding="utf-8",
@@ -597,7 +618,7 @@ def test_private_writer_propagates_atomic_mode_to_existing_file_apis(
     allow_non_atomic: bool,
     overrides: dict[str, object],
 ) -> None:
-    create_v4_repository(tmp_path)
+    materialize_v4_repository(tmp_path)
     (tmp_path / "public-keys").mkdir()
     observed: dict[str, list[object]] = {
         "read": [],
@@ -650,7 +671,7 @@ def test_live_writer_does_not_require_migration_review_metadata(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    create_v4_repository(tmp_path)
+    materialize_v4_repository(tmp_path)
 
     def fail_if_read(_root: Path) -> str:
         raise AssertionError("live certification must not read migration-only refs")
@@ -675,7 +696,7 @@ def test_live_writer_does_not_require_migration_review_metadata(
 def test_private_writer_rejects_caller_supplied_gate_callbacks(
     tmp_path: Path,
 ) -> None:
-    create_v4_repository(tmp_path)
+    materialize_v4_repository(tmp_path)
 
     with pytest.raises(TypeError, match="semantic_audit"):
         _certify(
@@ -709,7 +730,7 @@ def test_private_writer_certifies_certifier_through_same_path(
 def test_private_writer_fails_closed_without_current_certifier(
     tmp_path: Path,
 ) -> None:
-    create_v4_repository(tmp_path)
+    materialize_v4_repository(tmp_path)
     shutil.rmtree(tmp_path / "skills" / "skill-certifier")
     repository = GitTestRepository(tmp_path)
     repository.git("add", "-A")
@@ -782,7 +803,7 @@ def test_private_writer_derives_repository_only_at_batch_boundaries(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    create_v4_repository(tmp_path)
+    materialize_v4_repository(tmp_path)
     real_compute = certifier.compute_node_hash_states
     calls = 0
 
@@ -802,7 +823,7 @@ def test_private_writer_runs_full_readiness_only_at_batch_boundaries(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    create_v4_repository(tmp_path)
+    materialize_v4_repository(tmp_path)
     real_readiness = certifier.check_commit_readiness
     calls = 0
 
@@ -902,7 +923,7 @@ def test_private_writer_rederives_every_final_state_after_append(
 def test_private_writer_rechecks_dependency_certificate_after_append(
     tmp_path: Path,
 ) -> None:
-    create_v4_repository(tmp_path)
+    materialize_v4_repository(tmp_path)
     graph = _add_cross_owner_contract(tmp_path)
     target = "demo-skill.source.gateway"
     dependency_id = "demo-skill.source.contract"
@@ -926,7 +947,7 @@ def test_private_writer_rechecks_dependency_certificate_after_append(
 def test_private_writer_orders_dependency_before_exact_target(
     tmp_path: Path,
 ) -> None:
-    create_v4_repository(tmp_path)
+    materialize_v4_repository(tmp_path)
     graph = _add_cross_owner_contract(tmp_path)
     target = "demo-skill.source.gateway"
     dependency = "demo-skill.source.contract"
@@ -968,7 +989,7 @@ def test_private_writer_audits_exact_dependency_postorder_twice_before_append(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    create_v4_repository(tmp_path)
+    materialize_v4_repository(tmp_path)
     repository_graph = _add_cross_owner_contract(tmp_path)
     target = "demo-skill.source.gateway"
     dependency = "demo-skill.source.contract"
@@ -1257,7 +1278,7 @@ def test_private_writer_route_audit_mismatch_fails_closed(
 def test_private_writer_rechecks_forced_untracked_input_after_append(
     tmp_path: Path,
 ) -> None:
-    create_v4_repository(tmp_path)
+    materialize_v4_repository(tmp_path)
     source_blueprint = (
         tmp_path / "skills" / "demo-skill" / "blueprints" / "gateway.yaml"
     )
@@ -1363,7 +1384,7 @@ def test_private_writers_cannot_append_against_one_predecessor(
 def test_completeness_findings_block_structural_draft_signing(
     tmp_path: Path,
 ) -> None:
-    create_v4_repository(tmp_path)
+    materialize_v4_repository(tmp_path)
     module_path = tmp_path / "skills" / "demo-skill" / "blueprint.yaml"
     declaration = yaml.safe_load(module_path.read_text(encoding="utf-8"))
     declaration.pop("description")

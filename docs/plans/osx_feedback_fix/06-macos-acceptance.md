@@ -34,7 +34,7 @@ Item 9, plus integrated verification of the installer, Google, and recurring inv
 - Create: `skills/install-assistant-tools/tests/test_managed_install_lifecycle.py`
 - Modify: `skills/recurring-tasks/tests/test_scheduler_live_smoke.py`
 - Modify: `.github/workflows/python-tests.yml`
-- Modify: `TESTING.md`
+- Modify: `docs/testing.md`
 - Modify through `skill-maker`: `skills/install-assistant-tools/SKILL.md`
 - Modify through `skill-maker`: `skills/recurring-tasks/SKILL.md`
 
