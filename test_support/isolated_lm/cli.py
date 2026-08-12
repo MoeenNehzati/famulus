@@ -6,12 +6,14 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 import json
+import math
 import os
 from pathlib import Path
 import stat
 import subprocess
 import sys
 import tempfile
+import threading
 from typing import NoReturn
 
 from test_support.isolated_lm.guest import (
@@ -51,9 +53,14 @@ IMAGE_RECORD_NAME = "source-image.json"
 
 _MAX_DIAGNOSTIC_BYTES = 2048
 _MAX_MANIFEST_BYTES = 1024 * 1024
+EXEC_TIMEOUT_SECONDS = 300.0
+MAX_EXEC_TIMEOUT_SECONDS = 3600.0
+EXEC_MAX_OUTPUT_BYTES = 1024 * 1024
+MAX_EXEC_OUTPUT_BYTES = 16 * 1024 * 1024
+_EXEC_REAP_TIMEOUT_SECONDS = 5.0
 
 _RUN_LIFECYCLES = frozenset(
-    {"prepared", "launch-failed", "running", "ready", "stopped"}
+    {"prepared", "launching", "launch-failed", "running", "ready", "stopped"}
 )
 _RUN_MANIFEST_FIELDS = frozenset(
     {
@@ -221,6 +228,37 @@ class _LoadedRun:
 
     record: RunRecord
     run_dir_identity: RunDirectoryIdentity
+
+
+@dataclass(frozen=True)
+class _BoundedProcessResult:
+    """Retain bounded child output and explicit deadline outcome facts.
+
+    Intent
+    ------
+    Carry one reaped process status plus independently capped stdout and stderr
+    bytes into the JSON transport.
+
+    Rationale
+    ---------
+    A timeout is not a guest exit code, and truncated evidence must remain
+    distinguishable from complete output without retaining unbounded bytes.
+
+    Pseudocode
+    ----------
+    - set fields = status, capped streams, timeout, and truncation facts
+
+    Wraps
+    -----
+    none
+    """
+
+    returncode: int
+    stdout: bytes
+    stderr: bytes
+    timed_out: bool
+    stdout_truncated: bool
+    stderr_truncated: bool
 
 
 class _StateReader:
@@ -597,6 +635,76 @@ class _StateReader:
         return decoded
 
 
+def _exec_timeout_argument(raw_value: str) -> float:
+    """Parse one finite positive exec timeout within the supported ceiling.
+
+    Intent
+    ------
+    Convert operator text into the seconds budget accepted by the bounded
+    process runner.
+
+    Rationale
+    ---------
+    Zero, non-finite, or excessive values could disable the promised deadline
+    or retain a local SSH process far beyond the documented operational bound.
+
+    Pseudocode
+    ----------
+    - set value = raw text parsed as floating-point seconds
+    - if value is not finite and within supported positive range:
+      - raise argparse argument error
+    - return timeout seconds
+
+    Wraps
+    -----
+    none
+    """
+    try:
+        value = float(raw_value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("exec timeout must be a number") from error
+    if not math.isfinite(value) or not 0 < value <= MAX_EXEC_TIMEOUT_SECONDS:
+        raise argparse.ArgumentTypeError(
+            f"exec timeout must be in (0, {MAX_EXEC_TIMEOUT_SECONDS:g}] seconds"
+        )
+    return value
+
+
+def _exec_output_argument(raw_value: str) -> int:
+    """Parse one positive per-stream byte cap within the supported ceiling.
+
+    Intent
+    ------
+    Convert operator text into the retained-byte limit applied independently to
+    stdout and stderr.
+
+    Rationale
+    ---------
+    An absent or excessive cap defeats memory bounds, while a zero cap erases
+    every diagnostic byte and does not satisfy the supported evidence contract.
+
+    Pseudocode
+    ----------
+    - set value = raw text parsed as a base-ten integer
+    - if value is outside the supported positive byte range:
+      - raise argparse argument error
+    - return byte cap
+
+    Wraps
+    -----
+    none
+    """
+    try:
+        value = int(raw_value, 10)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("exec output cap must be an integer") from error
+    if not 0 < value <= MAX_EXEC_OUTPUT_BYTES:
+        raise argparse.ArgumentTypeError(
+            f"exec output cap must be in [1, {MAX_EXEC_OUTPUT_BYTES}] bytes"
+        )
+    return value
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the complete and intentionally closed supported command surface.
 
@@ -667,6 +775,18 @@ def build_parser() -> argparse.ArgumentParser:
     execute = commands.add_parser("exec", help="execute an argv in one ready guest")
     _add_state_root(execute)
     _add_run_and_private_key(execute)
+    execute.add_argument(
+        "--timeout-seconds",
+        type=_exec_timeout_argument,
+        default=EXEC_TIMEOUT_SECONDS,
+        help="bounded guest command deadline in seconds (default: 300)",
+    )
+    execute.add_argument(
+        "--max-output-bytes",
+        type=_exec_output_argument,
+        default=EXEC_MAX_OUTPUT_BYTES,
+        help="retained byte cap for each output stream (default: 1048576)",
+    )
     execute.add_argument(
         "guest_argv",
         nargs=argparse.REMAINDER,
@@ -922,17 +1042,30 @@ def _write_private_atomic(path: Path, content: str) -> None:
         raise CliUsageError("manifest parent must be a real canonical directory")
     if path.is_symlink():
         raise CliUsageError("manifest path must not be a symlink")
-    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}-", dir=parent)
-    temporary_path = Path(temporary_name)
+    directory_flags = (
+        os.O_RDONLY
+        | os.O_DIRECTORY
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
+    parent_descriptor = os.open(parent, directory_flags)
+    temporary_path: Path | None = None
     try:
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{path.name}-", dir=parent
+        )
+        temporary_path = Path(temporary_name)
         with os.fdopen(descriptor, "w", encoding="utf-8") as output:
             os.chmod(output.fileno(), 0o600)
             output.write(content)
             output.flush()
             os.fsync(output.fileno())
         os.replace(temporary_path, path)
+        os.fsync(parent_descriptor)
     finally:
-        temporary_path.unlink(missing_ok=True)
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+        os.close(parent_descriptor)
 
 
 def _expect_exact_fields(
@@ -1627,6 +1760,158 @@ def _exec_argv(remainder: Sequence[str]) -> list[str]:
     return list(remainder[1:])
 
 
+def _run_bounded_process(
+    command: Sequence[str],
+    *,
+    timeout_seconds: float,
+    max_output_bytes: int,
+    popen: Callable[..., subprocess.Popen[bytes]] = subprocess.Popen,
+    thread_factory: Callable[..., threading.Thread] = threading.Thread,
+) -> _BoundedProcessResult:
+    """Run one shell-free child with concurrent capped output and hard cleanup.
+
+    Intent
+    ------
+    Drain stdout and stderr concurrently while retaining only the configured
+    prefix of each stream, enforcing one process deadline, and reaping the child
+    after either ordinary exit or forced timeout cleanup.
+
+    Rationale
+    ---------
+    Sequential pipe reads can deadlock when the other pipe fills, and
+    ``communicate`` retains unbounded bytes. Reader threads discard overflow as
+    it arrives, while the parent owns timeout, kill, wait, and join ordering.
+
+    Pseudocode
+    ----------
+    - set validated_bounds = finite positive timeout and output cap
+    - set process = shell-free Popen with stdout and stderr pipes
+    - set drainers = one capped draining thread per pipe
+    - set returncode = process result within timeout
+    - if deadline expires:
+      - set returncode = killed and reaped process result within cleanup timeout
+    - set drainers = joined within cleanup timeout
+    - if cleanup or a drainer failed:
+      - raise bounded process cleanup failure
+    - return status, retained bytes, timeout, and truncation facts
+
+    Wraps
+    -----
+    none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._BoundedProcessResult:
+      why:
+        constructs: "Returns the immutable bounded evidence consumed by exec JSON transport."
+    """
+    if (
+        not isinstance(timeout_seconds, (int, float))
+        or isinstance(timeout_seconds, bool)
+        or not math.isfinite(float(timeout_seconds))
+        or not 0 < float(timeout_seconds) <= MAX_EXEC_TIMEOUT_SECONDS
+    ):
+        raise ValueError("exec timeout is outside the supported positive bound")
+    if (
+        not isinstance(max_output_bytes, int)
+        or isinstance(max_output_bytes, bool)
+        or not 0 < max_output_bytes <= MAX_EXEC_OUTPUT_BYTES
+    ):
+        raise ValueError("exec output cap is outside the supported positive bound")
+    process = popen(
+        list(command),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        shell=False,
+    )
+    if process.stdout is None or process.stderr is None:
+        try:
+            process.kill()
+        finally:
+            process.wait(timeout=_EXEC_REAP_TIMEOUT_SECONDS)
+        raise RuntimeError("bounded process pipes were not created")
+
+    retained = {"stdout": bytearray(), "stderr": bytearray()}
+    totals = {"stdout": 0, "stderr": 0}
+    reader_errors: list[BaseException] = []
+
+    def drain(name: str, stream: object) -> None:
+        """Drain one child pipe while retaining only its configured prefix.
+
+        Intent
+        ------
+        Consume one output stream to EOF without allowing retained bytes to
+        exceed the public per-stream cap.
+
+        Rationale
+        ---------
+        Concurrent complete draining prevents pipe backpressure deadlocks while
+        discarded overflow preserves the memory bound.
+
+        Pseudocode
+        ----------
+        - while stream contains another block:
+          - set total = total bytes observed for named stream
+          - set retained = retained prefix within configured cap
+        - return after stream close
+
+        Wraps
+        -----
+        none
+        """
+        try:
+            while True:
+                block = stream.read(64 * 1024)  # type: ignore[attr-defined]
+                if not block:
+                    break
+                totals[name] += len(block)
+                available = max_output_bytes - len(retained[name])
+                if available > 0:
+                    retained[name].extend(block[:available])
+        except BaseException as error:
+            reader_errors.append(error)
+        finally:
+            stream.close()  # type: ignore[attr-defined]
+
+    threads = [
+        thread_factory(target=drain, args=("stdout", process.stdout), daemon=True),
+        thread_factory(target=drain, args=("stderr", process.stderr), daemon=True),
+    ]
+    for thread in threads:
+        thread.start()
+
+    timed_out = False
+    try:
+        returncode = process.wait(timeout=float(timeout_seconds))
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        try:
+            process.kill()
+        except ProcessLookupError:
+            pass
+        try:
+            returncode = process.wait(timeout=_EXEC_REAP_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired as error:
+            raise RuntimeError("timed-out exec process could not be reaped") from error
+    finally:
+        for thread in threads:
+            thread.join(timeout=_EXEC_REAP_TIMEOUT_SECONDS)
+
+    if any(thread.is_alive() for thread in threads):
+        raise RuntimeError("exec output drain did not finish after process cleanup")
+    if reader_errors:
+        raise RuntimeError("exec output drain failed") from reader_errors[0]
+    return _BoundedProcessResult(
+        returncode=returncode,
+        stdout=bytes(retained["stdout"]),
+        stderr=bytes(retained["stderr"]),
+        timed_out=timed_out,
+        stdout_truncated=totals["stdout"] > max_output_bytes,
+        stderr_truncated=totals["stderr"] > max_output_bytes,
+    )
+
+
 def _dispatch(args: argparse.Namespace, paths: RuntimePaths) -> int:
     """Delegate one parsed command to Tasks 1 through 4 and emit its result.
 
@@ -1701,6 +1986,9 @@ def _dispatch(args: argparse.Namespace, paths: RuntimePaths) -> int:
     ._exec_argv:
       why:
         transforms: "Returns the nonempty guest vector following the explicit separator."
+    ._run_bounded_process:
+      why:
+        constructs: "Returns bounded output and timeout facts from the shell-free SSH child."
     .CliUsageError:
       why:
         raises: "Raises structured input and lifecycle failures before unsupported delegation."
@@ -1776,24 +2064,33 @@ def _dispatch(args: argparse.Namespace, paths: RuntimePaths) -> int:
             )
         except ValueError as error:
             raise CliUsageError(str(error)) from error
-        completed = subprocess.run(
+        completed = _run_bounded_process(
             command,
-            check=False,
-            capture_output=True,
+            timeout_seconds=args.timeout_seconds,
+            max_output_bytes=args.max_output_bytes,
         )
         guest_stdout = completed.stdout.decode("utf-8", errors="replace")
         guest_stderr = completed.stderr.decode("utf-8", errors="replace")
-        ok = completed.returncode == 0
+        guest_exit_code = None if completed.timed_out else completed.returncode
+        ok = not completed.timed_out and completed.returncode == 0
         _emit_json(
             {
                 "command": "exec",
                 "ok": ok,
                 "run_id": record.run_id,
-                "guest_exit_code": completed.returncode,
+                "guest_exit_code": guest_exit_code,
+                "timeout_seconds": args.timeout_seconds,
+                "max_output_bytes": args.max_output_bytes,
+                "timed_out": completed.timed_out,
                 "stdout": guest_stdout,
                 "stderr": guest_stderr,
+                "stdout_truncated": completed.stdout_truncated,
+                "stderr_truncated": completed.stderr_truncated,
             }
         )
+        if completed.timed_out:
+            _diagnose(f"guest command timed out after {args.timeout_seconds:g} seconds")
+            return 1
         if not ok:
             _diagnose(f"guest command exited with status {completed.returncode}")
             return completed.returncode if 1 <= completed.returncode <= 255 else 1
@@ -1801,7 +2098,9 @@ def _dispatch(args: argparse.Namespace, paths: RuntimePaths) -> int:
 
     if args.command == "stop-run":
         _provided_identity(args.ssh_private_key, record)
-        if record.lifecycle not in {"launch-failed", "running", "ready", "stopped"}:
+        if record.lifecycle not in {
+            "launching", "launch-failed", "running", "ready", "stopped"
+        }:
             raise CliUsageError("stop-run requires a launched lifecycle")
         try:
             stopped = stop_run(

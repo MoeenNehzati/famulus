@@ -7,12 +7,14 @@ import os
 from pathlib import Path
 import socket
 import stat
+import subprocess
 from subprocess import CalledProcessError, CompletedProcess
 from typing import Any
 
 import pytest
 
 import test_support.isolated_lm.qemu as qemu_module
+import test_support.isolated_lm.model as model_module
 from test_support.isolated_lm.model import RunRecord, RuntimePaths, VmResources
 from test_support.isolated_lm.qemu import (
     allocate_loopback_port,
@@ -268,7 +270,7 @@ def test_start_persists_launch_facts_before_qemu_then_marks_running(
 
     def run_process(argv: list[str], **kwargs: object) -> CompletedProcess[object]:
         observed.append(json.loads(prepared_run.record_path.read_text(encoding="utf-8")))
-        assert kwargs == {"capture_output": True, "check": False}
+        assert kwargs == {"capture_output": True, "check": False, "timeout": 30.0}
         return CompletedProcess(argv, 0)
 
     running = start_run(
@@ -279,13 +281,127 @@ def test_start_persists_launch_facts_before_qemu_then_marks_running(
     )
 
     assert len(observed) == 1
-    assert observed[0]["lifecycle"] == "prepared"
+    assert observed[0]["lifecycle"] == "launching"
     assert observed[0]["ssh_port"] == 40222
     assert observed[0]["identity_file"] == str(identity_file)
     assert observed[0]["qemu_command"] == build_qemu_command(prepared_run, 40222)
     assert running.lifecycle == "running"
     assert prepared_run.record_path.read_text(encoding="utf-8") == running.to_json()
     assert prepared_run.record_path.stat().st_mode & 0o777 == 0o600
+
+
+def test_run_record_replace_fsyncs_retained_parent_directory(
+    prepared_run: RunRecord, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Order manifest durability as file fsync, replace, then directory fsync."""
+    events: list[str] = []
+    real_fsync = model_module.os.fsync
+    real_replace = model_module.os.replace
+
+    def record_fsync(descriptor: int) -> None:
+        events.append(
+            "directory-fsync"
+            if stat.S_ISDIR(os.fstat(descriptor).st_mode)
+            else "file-fsync"
+        )
+        real_fsync(descriptor)
+
+    def record_replace(source: Path, destination: Path) -> None:
+        events.append("replace")
+        real_replace(source, destination)
+
+    monkeypatch.setattr(model_module.os, "fsync", record_fsync)
+    monkeypatch.setattr(model_module.os, "replace", record_replace)
+    replace(prepared_run, lifecycle="launching").write_atomic()
+
+    assert events == ["file-fsync", "replace", "directory-fsync"]
+
+
+def test_run_record_directory_fsync_failure_leaves_no_temporary_manifest(
+    prepared_run: RunRecord, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Clean temporary entries even when post-replace directory durability fails."""
+    real_fsync = model_module.os.fsync
+
+    def fail_directory(descriptor: int) -> None:
+        if stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            raise OSError("directory fsync failed")
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(model_module.os, "fsync", fail_directory)
+    with pytest.raises(OSError, match="directory fsync"):
+        replace(prepared_run, lifecycle="launching").write_atomic()
+
+    assert list(prepared_run.run_dir.glob(".run.json-*")) == []
+
+
+def test_start_interruption_after_launching_persistence_never_invokes_qemu(
+    prepared_run: RunRecord,
+    identity_file: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Preserve recoverable launch authority if interrupted before invocation."""
+    real_write = RunRecord.write_atomic
+
+    def interrupt_after_write(record: RunRecord) -> None:
+        real_write(record)
+        if record.lifecycle == "launching":
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(RunRecord, "write_atomic", interrupt_after_write)
+    with pytest.raises(KeyboardInterrupt):
+        start_run(
+            prepared_run,
+            identity_file,
+            allocate_port=lambda: 40222,
+            run_process=lambda *args, **kwargs: pytest.fail("QEMU must not run"),
+        )
+
+    persisted = json.loads(prepared_run.record_path.read_text(encoding="utf-8"))
+    assert persisted["lifecycle"] == "launching"
+    assert persisted["qemu_command"] == build_qemu_command(prepared_run, 40222)
+
+
+def test_start_interruption_during_qemu_invocation_retains_launching(
+    prepared_run: RunRecord, identity_file: Path
+) -> None:
+    """Keep an interrupt-uncertain launch recoverable instead of calling it failed."""
+    with pytest.raises(KeyboardInterrupt):
+        start_run(
+            prepared_run,
+            identity_file,
+            allocate_port=lambda: 40222,
+            run_process=lambda *args, **kwargs: (_ for _ in ()).throw(
+                KeyboardInterrupt()
+            ),
+        )
+
+    assert json.loads(prepared_run.record_path.read_text())["lifecycle"] == "launching"
+
+
+def test_start_interruption_before_running_persistence_retains_launching(
+    prepared_run: RunRecord,
+    identity_file: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Leave successful-but-unpublished launch state recoverable after interruption."""
+    real_write = RunRecord.write_atomic
+
+    def interrupt_running_write(record: RunRecord) -> None:
+        if record.lifecycle == "running":
+            raise KeyboardInterrupt
+        real_write(record)
+
+    monkeypatch.setattr(RunRecord, "write_atomic", interrupt_running_write)
+    with pytest.raises(KeyboardInterrupt):
+        start_run(
+            prepared_run,
+            identity_file,
+            allocate_port=lambda: 40222,
+            run_process=lambda argv, **kwargs: CompletedProcess(argv, 0),
+        )
+
+    assert json.loads(prepared_run.record_path.read_text())["lifecycle"] == "launching"
 
 
 def test_start_marks_launch_failed_without_removing_logs(
@@ -309,6 +425,52 @@ def test_start_marks_launch_failed_without_removing_logs(
     assert persisted["lifecycle"] == "launch-failed"
     assert persisted["qemu_command"] == build_qemu_command(prepared_run, 40222)
     assert prepared_run.serial_log.read_bytes() == b"serial evidence"
+
+
+@pytest.mark.parametrize(
+    "launch_error",
+    [
+        subprocess.TimeoutExpired(["qemu-system-x86_64"], 30),
+        OSError("launch boundary failed"),
+    ],
+    ids=["timeout", "exception"],
+)
+def test_start_launch_uncertainty_retains_launching_when_exact_vm_exists(
+    prepared_run: RunRecord,
+    identity_file: Path,
+    launch_error: BaseException,
+) -> None:
+    """Never report launch failure while an exact QEMU process may be live."""
+    with pytest.raises(type(launch_error)):
+        start_run(
+            prepared_run,
+            identity_file,
+            allocate_port=lambda: 40222,
+            run_process=lambda *args, **kwargs: (_ for _ in ()).throw(launch_error),
+            list_proc_pids=lambda: [4312],
+            read_proc_cmdline=lambda pid: _matching_cmdline(prepared_run),
+        )
+
+    assert json.loads(prepared_run.record_path.read_text())["lifecycle"] == "launching"
+
+
+def test_start_launch_timeout_records_failed_only_after_exact_scan_finds_none(
+    prepared_run: RunRecord, identity_file: Path
+) -> None:
+    """Publish launch-failed only after process identity is verified absent."""
+    with pytest.raises(subprocess.TimeoutExpired):
+        start_run(
+            prepared_run,
+            identity_file,
+            allocate_port=lambda: 40222,
+            run_process=lambda *args, **kwargs: (_ for _ in ()).throw(
+                subprocess.TimeoutExpired(["qemu-system-x86_64"], 30)
+            ),
+            list_proc_pids=lambda: [4312],
+            read_proc_cmdline=lambda pid: b"other-program\0",
+        )
+
+    assert json.loads(prepared_run.record_path.read_text())["lifecycle"] == "launch-failed"
 
 
 @pytest.mark.parametrize("defect", ["relative", "symlink", "group-readable", "owner-unreadable"])
@@ -442,6 +604,7 @@ def test_stop_powers_off_then_marks_stopped_when_the_exact_process_disappears(
         run_process=lambda argv, **kwargs: (
             calls.append((argv, kwargs)) or CompletedProcess(argv, 0)
         ),
+        list_proc_pids=lambda: [123],
         read_proc_cmdline=lambda pid: next(cmdlines),
         qmp_quit=lambda path, timeout: pytest.fail("QMP must not run"),
     )
@@ -453,6 +616,122 @@ def test_stop_powers_off_then_marks_stopped_when_the_exact_process_disappears(
     assert calls[0][0][-1] == "sudo -n poweroff"
     assert stopped.lifecycle == "stopped"
     assert run.record_path.read_text(encoding="utf-8") == stopped.to_json()
+
+
+def test_stop_recovers_live_exact_process_when_pid_file_is_deleted(
+    prepared_run: RunRecord, identity_file: Path
+) -> None:
+    """Scan exact process identity before SSH when QEMU's PID file is lost."""
+    run = _launched(prepared_run, identity_file, lifecycle="ready")
+    events: list[str] = []
+    reads = iter((_matching_cmdline(run), None))
+
+    def list_pids() -> list[int]:
+        events.append("scan")
+        return [4312]
+
+    def read_cmdline(pid: int) -> bytes | None:
+        assert pid == 4312
+        return next(reads)
+
+    stopped = stop_run(
+        run,
+        run_process=lambda argv, **kwargs: (
+            events.append("ssh") or CompletedProcess(argv, 0)
+        ),
+        list_proc_pids=list_pids,
+        read_proc_cmdline=read_cmdline,
+        qmp_quit=lambda *args: pytest.fail("QMP must not run"),
+    )
+
+    assert events[:2] == ["scan", "ssh"]
+    assert stopped.lifecycle == "stopped"
+
+
+def test_stop_missing_pid_with_no_exact_match_records_verified_absence(
+    prepared_run: RunRecord, identity_file: Path
+) -> None:
+    """Treat a lost PID as absent only after the exact scan finds no match."""
+    run = _launched(prepared_run, identity_file, lifecycle="launching")
+    stopped = stop_run(
+        run,
+        run_process=lambda *args, **kwargs: pytest.fail("SSH must not run"),
+        list_proc_pids=lambda: [88],
+        read_proc_cmdline=lambda pid: b"qemu-system-x86_64\0-name\0other-vm\0",
+        qmp_quit=lambda *args: pytest.fail("QMP must not run"),
+    )
+
+    assert stopped.lifecycle == "stopped"
+
+
+def test_stop_fails_closed_when_exact_scan_finds_multiple_processes(
+    prepared_run: RunRecord, identity_file: Path
+) -> None:
+    """Refuse SSH and QMP when VM identity is not unique in procfs."""
+    run = _launched(prepared_run, identity_file, lifecycle="ready")
+    with pytest.raises(RuntimeError, match="multiple"):
+        stop_run(
+            run,
+            run_process=lambda *args, **kwargs: pytest.fail("SSH must not run"),
+            list_proc_pids=lambda: [4312, 4313],
+            read_proc_cmdline=lambda pid: _matching_cmdline(run),
+            qmp_quit=lambda *args: pytest.fail("QMP must not run"),
+        )
+
+    assert json.loads(run.record_path.read_text())["lifecycle"] == "ready"
+
+
+def test_stop_recovers_from_reused_recorded_pid_without_targeting_it(
+    prepared_run: RunRecord, identity_file: Path
+) -> None:
+    """Use the sole exact scan match instead of an unrelated reused PID."""
+    run = _launched(prepared_run, identity_file, lifecycle="ready")
+    run.pid_file.write_text("123\n", encoding="ascii")
+    events: list[object] = []
+    exact_live = True
+
+    def read_cmdline(pid: int) -> bytes | None:
+        nonlocal exact_live
+        events.append(("read", pid))
+        if pid == 123:
+            return b"unrelated-process\0"
+        if exact_live:
+            exact_live = False
+            return _matching_cmdline(run)
+        return None
+
+    stopped = stop_run(
+        run,
+        run_process=lambda argv, **kwargs: (
+            events.append("ssh") or CompletedProcess(argv, 0)
+        ),
+        list_proc_pids=lambda: [123, 456],
+        read_proc_cmdline=read_cmdline,
+        qmp_quit=lambda *args: pytest.fail("QMP must not run"),
+    )
+
+    assert "ssh" in events
+    assert events.index(("read", 123)) < events.index("ssh")
+    assert stopped.lifecycle == "stopped"
+
+
+def test_stop_exact_scan_requires_qemu_executable_as_well_as_name_and_overlay(
+    prepared_run: RunRecord, identity_file: Path
+) -> None:
+    """Do not authorize control from name and overlay arguments alone."""
+    run = _launched(prepared_run, identity_file, lifecycle="launching")
+    impostor = _matching_cmdline(run).replace(
+        b"qemu-system-x86_64\0", b"not-qemu-system-x86_64\0", 1
+    )
+    stopped = stop_run(
+        run,
+        run_process=lambda *args, **kwargs: pytest.fail("SSH must not run"),
+        list_proc_pids=lambda: [4312],
+        read_proc_cmdline=lambda pid: impostor,
+        qmp_quit=lambda *args: pytest.fail("QMP must not run"),
+    )
+
+    assert stopped.lifecycle == "stopped"
 
 
 def test_stop_uses_qmp_only_after_the_graceful_deadline_then_waits_again(
@@ -487,6 +766,7 @@ def test_stop_uses_qmp_only_after_the_graceful_deadline_then_waits_again(
         ),
         monotonic=clock.monotonic,
         sleep=lambda seconds: (events.append(f"sleep:{seconds}"), clock.sleep(seconds))[1],
+        list_proc_pids=lambda: [123],
         read_proc_cmdline=read_cmdline,
         qmp_quit=qmp_quit,
     )
@@ -496,24 +776,24 @@ def test_stop_uses_qmp_only_after_the_graceful_deadline_then_waits_again(
 
 
 @pytest.mark.parametrize("pid_text", ["", "not-a-pid", "0", "-2", "12 13"])
-def test_stop_rejects_a_malformed_pid_without_ssh_or_qmp(
+def test_stop_recovers_from_malformed_pid_when_exact_scan_finds_none(
     prepared_run: RunRecord, identity_file: Path, pid_text: str
 ) -> None:
-    """Catch malformed PID data selecting or controlling an unintended process."""
+    """Ignore malformed numeric authority and require exact-scan absence."""
     run = _launched(prepared_run, identity_file, lifecycle="ready")
     run.pid_file.write_text(pid_text, encoding="ascii")
     events: list[str] = []
 
-    with pytest.raises(RuntimeError, match="PID"):
-        stop_run(
-            run,
-            run_process=lambda argv, **kwargs: events.append("ssh"),
-            read_proc_cmdline=lambda pid: pytest.fail("malformed PID must not be read"),
-            qmp_quit=lambda path, timeout: events.append("qmp"),
-        )
+    stopped = stop_run(
+        run,
+        run_process=lambda argv, **kwargs: events.append("ssh"),
+        list_proc_pids=lambda: [],
+        read_proc_cmdline=lambda pid: pytest.fail("empty scan must not read a PID"),
+        qmp_quit=lambda path, timeout: events.append("qmp"),
+    )
 
     assert events == []
-    assert json.loads(run.record_path.read_text())["lifecycle"] == "ready"
+    assert stopped.lifecycle == "stopped"
 
 
 def test_stop_rejects_fifo_pid_without_path_read_or_blocking(
@@ -583,7 +863,7 @@ def test_stop_validates_recorded_identity_before_missing_pid_shortcut(
         )
 
 
-def test_stop_rejects_inexact_process_identity_without_ssh_or_qmp(
+def test_stop_does_not_target_inexact_recorded_pid_and_verifies_scan_absence(
     prepared_run: RunRecord, identity_file: Path
 ) -> None:
     """Catch substring matches authorizing shutdown of a different process."""
@@ -596,16 +876,16 @@ def test_stop_rejects_inexact_process_identity_without_ssh_or_qmp(
         + b".bak,if=virtio\0"
     )
 
-    with pytest.raises(RuntimeError, match="identity"):
-        stop_run(
-            run,
-            run_process=lambda argv, **kwargs: events.append("ssh"),
-            read_proc_cmdline=lambda pid: wrong,
-            qmp_quit=lambda path, timeout: events.append("qmp"),
-        )
+    stopped = stop_run(
+        run,
+        run_process=lambda argv, **kwargs: events.append("ssh"),
+        list_proc_pids=lambda: [123],
+        read_proc_cmdline=lambda pid: wrong,
+        qmp_quit=lambda path, timeout: events.append("qmp"),
+    )
 
     assert events == []
-    assert json.loads(run.record_path.read_text())["lifecycle"] == "ready"
+    assert stopped.lifecycle == "stopped"
 
 
 def test_stop_is_idempotent_when_the_recorded_process_is_already_absent(
@@ -641,6 +921,7 @@ def test_stop_timeout_leaves_lifecycle_unchanged(
             run_process=lambda argv, **kwargs: CompletedProcess(argv, 0),
             monotonic=clock.monotonic,
             sleep=clock.sleep,
+            list_proc_pids=lambda: [123],
             read_proc_cmdline=lambda pid: _matching_cmdline(run),
             qmp_quit=lambda path, timeout: None,
         )

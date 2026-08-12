@@ -11,7 +11,24 @@ import tempfile
 
 @dataclass(frozen=True)
 class VmResources:
-    """The fixed resource profile for one isolated VM."""
+    """The fixed resource profile for one isolated VM.
+
+    Intent
+    ------
+    Carry the supported CPU, memory, and disk allocation as immutable values.
+
+    Rationale
+    ---------
+    A named value object keeps resource facts explicit in every run record.
+
+    Pseudocode
+    ----------
+    - set fields = fixed VM resource defaults
+
+    Wraps
+    -----
+    none
+    """
 
     vcpus: int = 4
     memory_mib: int = 8192
@@ -20,7 +37,25 @@ class VmResources:
 
 @dataclass(frozen=True)
 class RuntimePaths:
-    """State paths derived from one explicitly selected absolute root."""
+    """State paths derived from one explicitly selected absolute root.
+
+    Intent
+    ------
+    Carry the root and its canonical runtime subdirectories as immutable paths.
+
+    Rationale
+    ---------
+    Explicit path authority prevents ambient environment state from selecting
+    storage locations.
+
+    Pseudocode
+    ----------
+    - set fields = root and canonical runtime subdirectories
+
+    Wraps
+    -----
+    none
+    """
 
     root: Path
     downloads: Path
@@ -29,7 +64,27 @@ class RuntimePaths:
 
     @classmethod
     def from_root(cls, root: Path) -> "RuntimePaths":
-        """Derive runtime paths without consulting the process environment."""
+        """Derive runtime paths without consulting the process environment.
+
+        Intent
+        ------
+        Validate one absolute state root and derive its fixed child paths.
+
+        Rationale
+        ---------
+        Central derivation keeps every command on the same explicit authority.
+
+        Pseudocode
+        ----------
+        - if root is not absolute:
+          - raise invalid state root
+        - set resolved = canonical root
+        - return runtime paths below resolved
+
+        Wraps
+        -----
+        none
+        """
         if not root.is_absolute():
             raise ValueError("state root must be absolute")
         resolved = root.resolve()
@@ -45,6 +100,10 @@ class RuntimePaths:
 class CloudImageRecord:
     """Preserve the authenticated provenance of one cached cloud image.
 
+    Intent
+    ------
+    Carry the authenticated source and cached-image facts as immutable data.
+
     Rationale
     ---------
     Later VM runs must be able to name the exact signed source and byte digest
@@ -52,14 +111,11 @@ class CloudImageRecord:
 
     Pseudocode
     ----------
-    - retain the three approved source URLs and verified image facts
-    - render paths and the UTC retrieval time as JSON scalar values
-    - serialize the mapping with stable key ordering and one trailing newline
+    - set fields = approved source URLs and verified image facts
 
-    Call boundary
-    -------------
-    ``prepare_cloud_image`` creates this immutable record after signature and
-    image-digest verification; Task 3 consumes its digest and cached path.
+    Wraps
+    -----
+    none
     """
 
     schema_version: int
@@ -75,6 +131,10 @@ class CloudImageRecord:
     def to_json(self) -> str:
         """Render a deterministic, newline-terminated record for evidence files.
 
+        Intent
+        ------
+        Serialize the complete authenticated-image record deterministically.
+
         Rationale
         ---------
         Stable serialization makes records comparable across invocations and
@@ -82,14 +142,12 @@ class CloudImageRecord:
 
         Pseudocode
         ----------
-        - convert the datetime and path fields to JSON scalar values
-        - encode the complete record with sorted keys and compact separators
-        - append one newline required by line-oriented record files
+        - set payload = complete record with JSON scalar path and time fields
+        - return sorted compact JSON plus one newline
 
-        Call boundary
-        -------------
-        Orchestration code may write the returned text directly to a run or
-        image manifest; this model method does not perform filesystem I/O.
+        Wraps
+        -----
+        none
         """
         return json.dumps(
             {
@@ -112,6 +170,10 @@ class CloudImageRecord:
 class RunRecord:
     """Freeze the complete artifact contract for one disposable VM run.
 
+    Intent
+    ------
+    Carry complete immutable artifact, provenance, and lifecycle authority.
+
     Rationale
     ---------
     A run must retain the verified backing-image digest and every private host
@@ -120,14 +182,11 @@ class RunRecord:
 
     Pseudocode
     ----------
-    - retain immutable run identity, resource, provenance, and artifact facts
-    - render paths as strings and resources as explicit scalar fields
-    - serialize with sorted keys and a final newline for stable evidence files
+    - set fields = immutable run identity, provenance, artifacts, and lifecycle
 
-    Call boundary
-    -------------
-    ``prepare_run`` creates the initial ``prepared`` record. Task 4 replaces
-    the optional launch fields and atomically rewrites the same record path.
+    Wraps
+    -----
+    none
     """
 
     schema_version: int
@@ -152,6 +211,10 @@ class RunRecord:
     def write_atomic(self) -> None:
         """Privately and atomically replace this run's evidence record.
 
+        Intent
+        ------
+        Durably replace the canonical run record with private complete JSON.
+
         Rationale
         ---------
         Launch and lifecycle transitions must never expose a partial JSON file
@@ -161,16 +224,18 @@ class RunRecord:
 
         Pseudocode
         ----------
-        - require the existing record directory to be a real absolute directory
-        - create a mode-0600 temporary file beside the final record
-        - write and fsync the canonical JSON, then atomically replace the record
-        - remove the temporary path on every incomplete write
+        - if record parent is not a real absolute directory:
+          - raise invalid record parent
+        - set parent_descriptor = retained no-follow directory descriptor
+        - set temporary_path = private sibling temporary file
+        - set temporary_file = written canonical JSON with synchronized bytes
+        - set record_path = atomic replacement of temporary path
+        - set parent_directory = synchronized retained descriptor
+        - return after temporary cleanup
 
-        Call boundary
-        -------------
-        QEMU lifecycle functions call this after ``dataclasses.replace``. The
-        initial guest-preparation writer remains responsible for creating the
-        first record before Task 4 can consume it.
+        Wraps
+        -----
+        none
         """
         path = self.record_path
         parent = path.parent
@@ -183,21 +248,37 @@ class RunRecord:
             raise ValueError("run record must have a real absolute parent directory")
         if path.is_symlink():
             raise ValueError("run record must not be a symlink")
-        descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}-", dir=parent)
-        temporary_path = Path(temporary_name)
+        directory_flags = (
+            os.O_RDONLY
+            | os.O_DIRECTORY
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0)
+        )
+        parent_descriptor = os.open(parent, directory_flags)
+        temporary_path: Path | None = None
         try:
+            descriptor, temporary_name = tempfile.mkstemp(
+                prefix=f".{path.name}-", dir=parent
+            )
+            temporary_path = Path(temporary_name)
             with os.fdopen(descriptor, "w", encoding="utf-8") as output:
                 os.chmod(output.fileno(), 0o600)
                 output.write(self.to_json())
                 output.flush()
                 os.fsync(output.fileno())
             os.replace(temporary_path, path)
+            os.fsync(parent_descriptor)
         finally:
-            if temporary_path.exists():
+            if temporary_path is not None and temporary_path.exists():
                 temporary_path.unlink()
+            os.close(parent_descriptor)
 
     def to_json(self) -> str:
         """Render a deterministic, newline-terminated VM run record.
+
+        Intent
+        ------
+        Serialize the complete run authority deterministically.
 
         Rationale
         ---------
@@ -206,14 +287,12 @@ class RunRecord:
 
         Pseudocode
         ----------
-        - convert every path to its already-confined absolute string form
-        - expand resource values rather than depending on dataclass encoding
-        - encode sorted compact JSON and append the record-file newline
+        - set payload = complete run fields with explicit path and resource scalars
+        - return sorted compact JSON plus one newline
 
-        Call boundary
-        -------------
-        ``prepare_run`` and later lifecycle code write this exact text to
-        ``record_path`` through their atomic file-writing boundary.
+        Wraps
+        -----
+        none
         """
         return json.dumps(
             {

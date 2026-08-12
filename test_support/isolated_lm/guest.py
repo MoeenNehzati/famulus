@@ -390,18 +390,30 @@ def _atomic_write_private(path: Path, content: str) -> None:
     -----
     none
     """
-    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}-", dir=path.parent)
-    temporary_path = Path(temporary_name)
+    directory_flags = (
+        os.O_RDONLY
+        | os.O_DIRECTORY
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
+    parent_descriptor = os.open(path.parent, directory_flags)
+    temporary_path: Path | None = None
     try:
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{path.name}-", dir=path.parent
+        )
+        temporary_path = Path(temporary_name)
         with os.fdopen(descriptor, "w", encoding="utf-8") as output:
             os.chmod(output.fileno(), 0o600)
             output.write(content)
             output.flush()
             os.fsync(output.fileno())
         os.replace(temporary_path, path)
+        os.fsync(parent_descriptor)
     finally:
-        if temporary_path.exists():
+        if temporary_path is not None and temporary_path.exists():
             temporary_path.unlink()
+        os.close(parent_descriptor)
 
 
 def prepare_run(

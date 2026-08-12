@@ -409,7 +409,7 @@ command through a remote shell, so encode the remote argument vector as one
 POSIX-quoted command string (for example with `shlex.join`) while continuing to
 invoke the local `ssh` process without a shell.
 
-Allocate the SSH port by binding an IPv4 loopback socket to port zero, reading the assigned port, and closing immediately before launch. Record the port and full argument vector in `run.json`. If QEMU exits nonzero, keep logs and mark the lifecycle state `launch-failed`.
+Allocate the SSH port by binding an IPv4 loopback socket to port zero, reading the assigned port, and closing immediately before launch. Record the port, identity, full argument vector, and lifecycle `launching` in `run.json` before the bounded QEMU invocation. Only a verified successful invocation becomes `running`. On timeout, exception, or nonzero exit, scan `/proc` for the exact QEMU executable, VM name, and overlay path: retain `launching` when one exact process exists, record `launch-failed` only when none exists, and fail closed when multiple exact processes exist.
 
 The private-key path is a Task 4 input. Record it together with the allocated
 SSH port and command by replacing the frozen `RunRecord` and atomically
@@ -422,15 +422,15 @@ the run directory.
 
 Poll `ssh ... true` until a monotonic deadline. On readiness, run `cloud-init status --wait`, require exit zero, and mark the run `ready`. `stop_run` first invokes `sudo -n poweroff`, waits for the PID to disappear, then uses QMP `quit` only if the bounded graceful timeout expires. It must never signal a PID until `/proc/<pid>/cmdline` contains the exact run's QEMU name and overlay path.
 
-`start_run` persists the port, identity, and command while the lifecycle remains
-`prepared`, then records `running` only after QEMU exits successfully; a nonzero
-launch records `launch-failed`. SSH or cloud-init timeout/failure leaves a live
-VM in `running` and raises. Before shutdown, reject malformed PID files and any
-live PID whose command line does not contain the exact VM name and overlay path.
-An already absent process stops idempotently. After graceful timeout, perform a
-bounded QMP capabilities/quit exchange and a second bounded disappearance wait;
-record `stopped` only after the PID disappears, otherwise retain the prior state
-and raise.
+`start_run` persists the port, identity, command, and `launching` lifecycle
+before QEMU, then records `running` only after QEMU exits successfully. SSH or
+cloud-init timeout/failure leaves a live VM in `running` and raises. Shutdown
+uses an exact `/proc` scan rather than trusting the PID file: a missing,
+malformed, or reused PID can recover one exact process; no exact match proves
+absence; multiple matches fail closed. Resolve process identity before SSH and
+QMP, and record `stopped` only after a final exact scan proves absence. After
+graceful timeout, perform a bounded QMP capabilities/quit exchange and a second
+bounded disappearance wait; otherwise retain the prior state and raise.
 
 Treat QMP as a framed stream: retain partial bytes until a newline, preserve
 trailing frames, ignore asynchronous events, and correlate capabilities/quit
@@ -506,7 +506,10 @@ ISOLATED_LM_STATE="${XDG_STATE_HOME:-${HOME}/.local/state}/famulus/isolated-lm-t
 
 `exec` must require a non-empty argument vector after `--`, pass those arguments
 directly to SSH without a local shell, and return the guest exit code, stdout,
-and stderr in its JSON result.
+and stderr in its JSON result. Add `--timeout-seconds` (default 300, maximum
+3600) and `--max-output-bytes` (default 1 MiB per stream, maximum 16 MiB).
+Drain both streams concurrently, retain only their configured prefixes, and
+publish stable timeout and truncation facts after deterministic kill/reap.
 
 - [x] **Step 4: Write the operator guide**
 
@@ -533,6 +536,16 @@ Run: `./repo_checks.py --suite validators`
 Run: `git diff --check`
 
 Expected: all commands PASS.
+
+#### Final review hardening
+
+- [x] Persist crash-recoverable `launching` authority before QEMU invocation.
+- [x] Recover exact QEMU identity through `/proc` when PID evidence is absent or stale.
+- [x] Bound exec time and retained output without changing the seven-command surface.
+- [x] Authenticate staged checksum evidence before canonical publication.
+- [x] Bound network acquisition and QEMU launch operations.
+- [x] Execute bounded `kvm-ok` in addition to checking `/dev/kvm` access.
+- [x] Fsync manifest/evidence parent directories after atomic replacement.
 
 - [x] **Step 6: Commit the task after approval**
 

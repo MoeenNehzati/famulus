@@ -1,7 +1,7 @@
 """Shell-free QEMU launch, bounded readiness, and identity-safe shutdown."""
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import replace
 import json
 import os
@@ -18,11 +18,13 @@ from test_support.isolated_lm.model import RunRecord
 
 READINESS_TIMEOUT_SECONDS = 600.0
 READINESS_POLL_SECONDS = 2.0
+LAUNCH_TIMEOUT_SECONDS = 30.0
 SHUTDOWN_TIMEOUT_SECONDS = 60.0
 SHUTDOWN_POLL_SECONDS = 1.0
 
 RunProcess = Callable[..., subprocess.CompletedProcess[object]]
 ProcCmdlineReader = Callable[[int], bytes | None]
+ProcPidLister = Callable[[], Iterable[int]]
 QmpQuitter = Callable[[Path, float], None]
 RunDirectoryIdentity = tuple[int, int]
 
@@ -501,6 +503,9 @@ def start_run(
     expected_run_dir_identity: RunDirectoryIdentity | None = None,
     allocate_port: Callable[[], int] = allocate_loopback_port,
     run_process: RunProcess = subprocess.run,
+    launch_timeout_seconds: float = LAUNCH_TIMEOUT_SECONDS,
+    list_proc_pids: ProcPidLister | None = None,
+    read_proc_cmdline: ProcCmdlineReader | None = None,
 ) -> RunRecord:
     """Persist launch authority, start QEMU, and record the truthful outcome.
 
@@ -545,26 +550,57 @@ def start_run(
     .build_qemu_command:
       why:
         constructs: "Returns the exact QEMU vector persisted before the child process starts."
+    ._positive_duration:
+      why:
+        transforms: "Returns the finite positive QEMU launch deadline duration."
+    ._find_unique_exact_process:
+      why:
+        transforms: "Returns the sole exact VM after an uncertain or failed launcher result."
     """
     _validate_prepared_run(run, expected_run_dir_identity)
     identity = validate_identity_file(identity_file)
     ssh_port = allocate_port()
     command = tuple(build_qemu_command(run, ssh_port))
+    launch_timeout = _positive_duration(launch_timeout_seconds, "QEMU launch timeout")
     launch_record = replace(
         run,
+        lifecycle="launching",
         ssh_port=ssh_port,
         identity_file=identity,
         qemu_command=command,
     )
     launch_record.write_atomic()
+    pid_lister = list_proc_pids or _list_proc_pids
+    cmdline_reader = read_proc_cmdline or _read_proc_cmdline
     try:
-        completed = run_process(list(command), check=False, capture_output=True)
-    except BaseException:
-        replace(launch_record, lifecycle="launch-failed").write_atomic()
+        completed = run_process(
+            list(command),
+            check=False,
+            capture_output=True,
+            timeout=launch_timeout,
+        )
+    except Exception as error:
+        try:
+            exact_pid = _find_unique_exact_process(
+                launch_record,
+                list_proc_pids=pid_lister,
+                read_proc_cmdline=cmdline_reader,
+            )
+        except RuntimeError as scan_error:
+            raise RuntimeError(
+                "QEMU launch outcome is uncertain and exact process recovery failed"
+            ) from scan_error
+        if exact_pid is None:
+            replace(launch_record, lifecycle="launch-failed").write_atomic()
         raise
     if completed.returncode != 0:
-        failed = replace(launch_record, lifecycle="launch-failed")
-        failed.write_atomic()
+        exact_pid = _find_unique_exact_process(
+            launch_record,
+            list_proc_pids=pid_lister,
+            read_proc_cmdline=cmdline_reader,
+        )
+        if exact_pid is None:
+            replace(launch_record, lifecycle="launch-failed").write_atomic()
         raise subprocess.CalledProcessError(
             completed.returncode,
             list(command),
@@ -743,6 +779,40 @@ def _read_proc_cmdline(pid: int) -> bytes | None:
         return None
 
 
+def _list_proc_pids() -> tuple[int, ...]:
+    """List positive numeric Linux process identifiers for exact recovery.
+
+    Intent
+    ------
+    Enumerate only numeric entries directly below procfs without interpreting
+    PID-file content or invoking a process-listing command.
+
+    Rationale
+    ---------
+    A QEMU daemon may survive while its PID file is absent or stale. Direct
+    procfs enumeration supplies the complete candidate set for argv matching.
+
+    Pseudocode
+    ----------
+    - set process_ids = positive decimal names directly below procfs
+    - return process_ids in numeric order
+
+    Wraps
+    -----
+    none
+    """
+    with os.scandir("/proc") as entries:
+        return tuple(
+            sorted(
+                int(entry.name)
+                for entry in entries
+                if entry.name.isascii()
+                and entry.name.isdigit()
+                and int(entry.name) > 0
+            )
+        )
+
+
 def _read_recorded_pid(pid_file: Path) -> int | None:
     """Read one bounded regular no-follow PID file without FIFO/device blocking.
 
@@ -837,6 +907,8 @@ def _matches_run_process(run: RunRecord, cmdline: bytes) -> bool:
         arguments = [part.decode("utf-8") for part in cmdline.split(b"\0") if part]
     except UnicodeDecodeError:
         return False
+    if not arguments or Path(arguments[0]).name != "qemu-system-x86_64":
+        return False
     expected_name = f"isolated-lm-{run.run_id}"
     has_name = any(
         arguments[index] == "-name" and arguments[index + 1] == expected_name
@@ -845,6 +917,115 @@ def _matches_run_process(run: RunRecord, cmdline: bytes) -> bool:
     expected_file = f"file={run.overlay}"
     has_overlay = any(expected_file in argument.split(",") for argument in arguments)
     return has_name and has_overlay
+
+
+def _find_unique_exact_process(
+    run: RunRecord,
+    *,
+    list_proc_pids: ProcPidLister,
+    read_proc_cmdline: ProcCmdlineReader,
+) -> int | None:
+    """Resolve procfs candidates to zero or one exact QEMU process.
+
+    Intent
+    ------
+    Recover a run's process identity from executable, VM name, and overlay argv
+    facts without trusting a missing, malformed, or reused PID file.
+
+    Rationale
+    ---------
+    Numeric PIDs are reusable and QEMU removes its PID file during exit. A
+    complete exact scan distinguishes verified absence from one recoverable VM
+    while treating duplicate exact matches as ambiguous authority.
+
+    Pseudocode
+    ----------
+    - set exact_matches = empty PID collection
+    - for pid in unique positive procfs PIDs:
+      - set cmdline = bounded process argv read
+      - if cmdline exactly matches run process identity:
+        - set exact_matches = exact_matches plus pid
+    - if more than one exact match exists:
+      - raise ambiguous process identity
+    - return sole PID or none
+
+    Wraps
+    -----
+    none
+
+    CallsFromRepo
+    -------------
+    ._matches_run_process:
+      why:
+        validates: "Requires the exact QEMU executable, VM name, and overlay for every candidate."
+    """
+    matches: list[int] = []
+    seen: set[int] = set()
+    for pid in list_proc_pids():
+        if (
+            not isinstance(pid, int)
+            or isinstance(pid, bool)
+            or pid <= 0
+            or pid in seen
+        ):
+            continue
+        seen.add(pid)
+        cmdline = read_proc_cmdline(pid)
+        if cmdline is not None and _matches_run_process(run, cmdline):
+            matches.append(pid)
+            if len(matches) > 1:
+                raise RuntimeError("multiple exact QEMU processes match this run")
+    return matches[0] if matches else None
+
+
+def _recover_run_process(
+    run: RunRecord,
+    *,
+    list_proc_pids: ProcPidLister,
+    read_proc_cmdline: ProcCmdlineReader,
+) -> int | None:
+    """Validate PID evidence, then resolve authority from a complete exact scan.
+
+    Intent
+    ------
+    Deliberately consume the optional PID artifact while making procfs argv
+    identity, rather than PID syntax or numeric reuse, the control authority.
+
+    Rationale
+    ---------
+    A malformed or mismatched PID must not target an unrelated process, but it
+    also must not make a surviving exact VM unrecoverable.
+
+    Pseudocode
+    ----------
+    - set recorded_pid = optional PID artifact or none after malformed input
+    - return @_find_unique_exact_process(run and procfs boundaries)
+
+    Wraps
+    -----
+    none
+
+    CallsFromRepo
+    -------------
+    ._read_recorded_pid:
+      why:
+        reads: "Consumes optional PID evidence without granting its numeric value authority."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._find_unique_exact_process:
+      why:
+        transforms: "Returns the sole exact live VM independently of PID-file correctness."
+    """
+    try:
+        _read_recorded_pid(run.pid_file)
+    except RuntimeError:
+        pass
+    return _find_unique_exact_process(
+        run,
+        list_proc_pids=list_proc_pids,
+        read_proc_cmdline=read_proc_cmdline,
+    )
 
 
 def _require_matching_process(
@@ -891,13 +1072,13 @@ def _require_matching_process(
 
 def _wait_for_process_exit(
     run: RunRecord,
-    pid: int,
     deadline: float,
     poll: float,
     *,
     monotonic: Callable[[], float],
     sleep: Callable[[float], None],
     read_proc_cmdline: ProcCmdlineReader,
+    list_proc_pids: ProcPidLister,
 ) -> bool:
     """Poll only the already-validated exact process until one bounded deadline.
 
@@ -914,7 +1095,7 @@ def _wait_for_process_exit(
     Pseudocode
     ----------
     - while true:
-      - if not @_require_matching_process(run and pid):
+      - if @_recover_run_process(run and procfs boundaries) is absent:
         - return true
       - set remaining = deadline minus monotonic clock
       - if remaining is nonpositive:
@@ -927,12 +1108,16 @@ def _wait_for_process_exit(
 
     CallsFromRepo
     -------------
-    ._require_matching_process:
+    ._recover_run_process:
       why:
-        validates: "Rechecks process absence or exact identity before every shutdown poll."
+        validates: "Rescans exact process identity before every shutdown poll."
     """
     while True:
-        if not _require_matching_process(run, pid, read_proc_cmdline):
+        if _recover_run_process(
+            run,
+            list_proc_pids=list_proc_pids,
+            read_proc_cmdline=read_proc_cmdline,
+        ) is None:
             return True
         remaining = deadline - monotonic()
         if remaining <= 0:
@@ -1290,6 +1475,7 @@ def stop_run(
     monotonic: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
     read_proc_cmdline: ProcCmdlineReader = _read_proc_cmdline,
+    list_proc_pids: ProcPidLister = _list_proc_pids,
     qmp_quit: QmpQuitter = _send_qmp_quit,
 ) -> RunRecord:
     """Stop only this exact QEMU process through two bounded shutdown phases.
@@ -1311,8 +1497,8 @@ def stop_run(
     - @validate_identity_file(recorded identity)
     - @_validate_run_artifacts(run and optional loaded directory identity)
     - durations = _positive_duration(shutdown inputs)
-    - pid = _read_recorded_pid(PID path)
-    - if pid is absent or not @_require_matching_process(run and pid):
+    - exact_pid = _recover_run_process(run and procfs boundaries)
+    - if exact_pid is absent:
       - return durably stopped record
     - poweroff_command = build_ssh_command(run and poweroff)
     - if @_wait_for_process_exit(run and graceful deadline):
@@ -1334,9 +1520,9 @@ def stop_run(
     ._validate_run_artifacts:
       why:
         validates: "Rechecks fixed and optional runtime artifacts at the stop lifecycle boundary."
-    ._require_matching_process:
+    ._recover_run_process:
       why:
-        validates: "Rejects a live PID unless exact VM name and overlay arguments still match."
+        validates: "Resolves exact process presence before SSH, QMP, and stopped persistence."
     ._wait_for_process_exit:
       why:
         validates: "Polls verified process identity within each graceful and forced deadline."
@@ -1346,9 +1532,9 @@ def stop_run(
     ._positive_duration:
       why:
         transforms: "Returns finite timeout and polling values for both shutdown phases."
-    ._read_recorded_pid:
+    ._recover_run_process:
       why:
-        transforms: "Returns an optional bounded positive PID from the no-follow runtime artifact."
+        transforms: "Returns the sole exact live VM or verified absence after a complete scan."
     .build_ssh_command:
       why:
         constructs: "Returns the isolated guest poweroff vector executed before QMP fallback."
@@ -1359,8 +1545,12 @@ def stop_run(
     _validate_run_artifacts(run, expected_run_dir_identity)
     timeout = _positive_duration(graceful_timeout_seconds, "shutdown timeout")
     poll = _positive_duration(poll_interval_seconds, "shutdown poll interval")
-    pid = _read_recorded_pid(run.pid_file)
-    if pid is None or not _require_matching_process(run, pid, read_proc_cmdline):
+    exact_pid = _recover_run_process(
+        run,
+        list_proc_pids=list_proc_pids,
+        read_proc_cmdline=read_proc_cmdline,
+    )
+    if exact_pid is None:
         stopped = replace(run, lifecycle="stopped")
         stopped.write_atomic()
         return stopped
@@ -1379,18 +1569,22 @@ def stop_run(
         pass
     if _wait_for_process_exit(
         run,
-        pid,
         graceful_deadline,
         poll,
         monotonic=monotonic,
         sleep=sleep,
         read_proc_cmdline=read_proc_cmdline,
+        list_proc_pids=list_proc_pids,
     ):
         stopped = replace(run, lifecycle="stopped")
         stopped.write_atomic()
         return stopped
 
-    if not _require_matching_process(run, pid, read_proc_cmdline):
+    if _recover_run_process(
+        run,
+        list_proc_pids=list_proc_pids,
+        read_proc_cmdline=read_proc_cmdline,
+    ) is None:
         stopped = replace(run, lifecycle="stopped")
         stopped.write_atomic()
         return stopped
@@ -1398,12 +1592,12 @@ def stop_run(
     forced_deadline = monotonic() + timeout
     if _wait_for_process_exit(
         run,
-        pid,
         forced_deadline,
         poll,
         monotonic=monotonic,
         sleep=sleep,
         read_proc_cmdline=read_proc_cmdline,
+        list_proc_pids=list_proc_pids,
     ):
         stopped = replace(run, lifecycle="stopped")
         stopped.write_atomic()

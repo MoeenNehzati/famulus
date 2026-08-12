@@ -3,7 +3,9 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 import inspect
+import os
 from pathlib import Path
+import stat
 from subprocess import CalledProcessError, CompletedProcess
 
 import pytest
@@ -37,6 +39,7 @@ class _Response:
         self._offset = 0
         self._fail_after_first_read = fail_after_first_read
         self._final_url = final_url
+        self.timeouts: list[float] = []
 
     def __enter__(self) -> "_Response":
         return self
@@ -56,6 +59,9 @@ class _Response:
     def geturl(self) -> str:
         return self._final_url
 
+    def settimeout(self, seconds: float) -> None:
+        self.timeouts.append(seconds)
+
 
 class _MappingOpener:
     """Serve fixed responses through the production opener interface."""
@@ -64,7 +70,8 @@ class _MappingOpener:
         self._responses = responses
         self._events = events
 
-    def open(self, url: str) -> _Response:
+    def open(self, url: str, timeout: float | None = None) -> _Response:
+        del timeout
         if self._events is not None:
             self._events.append(f"download:{url}")
         return self._responses[url]
@@ -217,7 +224,8 @@ def test_download_atomic_rejects_a_redirect_outside_the_exact_allowlist(
         def __init__(self, handler: object) -> None:
             self._handler = handler
 
-        def open(self, url: str) -> object:
+        def open(self, url: str, timeout: float | None = None) -> object:
+            del timeout
             calls.append(url)
             return self._handler.redirect_request(  # type: ignore[union-attr]
                 object(), None, 302, "redirect", {},
@@ -244,6 +252,69 @@ def test_download_atomic_discards_partial_file_when_transfer_fails(
     })
     with pytest.raises(OSError, match="interrupted download"):
         download_atomic(IMAGE_URL, destination)
+
+    assert not destination.exists()
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_download_uses_explicit_connect_and_read_timeouts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Bound both initial connection and each streamed read operation."""
+    response = _Response(b"payload")
+    open_timeouts: list[float] = []
+
+    class RecordingOpener:
+        def open(self, url: str, timeout: float) -> _Response:
+            assert url == IMAGE_URL
+            open_timeouts.append(timeout)
+            return response
+
+    monkeypatch.setattr(
+        image_module, "build_opener", lambda handler: RecordingOpener()
+    )
+    download_atomic(
+        IMAGE_URL,
+        tmp_path / IMAGE_FILENAME,
+        connect_timeout_seconds=7,
+        read_timeout_seconds=3,
+        total_timeout_seconds=20,
+        monotonic=lambda: 0,
+    )
+
+    assert open_timeouts == [7]
+    assert response.timeouts == [3, 3]
+
+
+def test_download_total_deadline_is_checked_between_chunks_and_cleans_partial(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Prevent repeated bounded reads from exceeding one monotonic acquisition budget."""
+    destination = tmp_path / IMAGE_FILENAME
+    clock = [0.0]
+
+    class SlowResponse(_Response):
+        def read(self, size: int = -1) -> bytes:
+            clock[0] += 2
+            return b"x" if clock[0] <= 4 else b""
+
+    response = SlowResponse(b"")
+
+    class SlowOpener:
+        def open(self, url: str, timeout: float) -> SlowResponse:
+            del url, timeout
+            return response
+
+    monkeypatch.setattr(image_module, "build_opener", lambda handler: SlowOpener())
+    with pytest.raises(TimeoutError, match="deadline"):
+        download_atomic(
+            IMAGE_URL,
+            destination,
+            connect_timeout_seconds=2,
+            read_timeout_seconds=2,
+            total_timeout_seconds=3,
+            monotonic=lambda: clock[0],
+        )
 
     assert not destination.exists()
     assert list(tmp_path.iterdir()) == []
@@ -325,6 +396,113 @@ def test_prepare_cloud_image_verifies_signature_before_caching_image(
         '\"schema_version\":1,\"signature_url\":\"https://cloud-images.ubuntu.com/noble/current/SHA256SUMS.gpg\",'
         f'\"verified_source_digest\":\"{digest}\"}}\n'
     )
+
+
+def test_bad_signature_preserves_prior_canonical_evidence_and_cleans_staging(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Never publish unauthenticated checksum evidence over a prior good pair."""
+    paths = RuntimePaths.from_root(tmp_path / "state")
+    paths.downloads.mkdir(parents=True)
+    checksums = paths.downloads / "SHA256SUMS"
+    signature = paths.downloads / "SHA256SUMS.gpg"
+    checksums.write_bytes(b"prior checksums")
+    signature.write_bytes(b"prior signature")
+    _install_opener(
+        monkeypatch,
+        {
+            CHECKSUMS_URL: _Response(f"{'a' * 64} *{IMAGE_FILENAME}\n".encode()),
+            SIGNATURE_URL: _Response(b"bad signature"),
+        },
+    )
+
+    with pytest.raises(CalledProcessError):
+        prepare_cloud_image(
+            paths,
+            run=lambda argv, **kwargs: (_ for _ in ()).throw(
+                CalledProcessError(1, argv)
+            ),
+        )
+
+    assert checksums.read_bytes() == b"prior checksums"
+    assert signature.read_bytes() == b"prior signature"
+    assert sorted(path.name for path in paths.downloads.iterdir()) == [
+        "SHA256SUMS", "SHA256SUMS.gpg"
+    ]
+
+
+def test_authenticated_evidence_is_parsed_before_publication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Authenticate and parse staged evidence before either canonical path changes."""
+    paths = RuntimePaths.from_root(tmp_path / "state")
+    image = b"abc"
+    digest = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    events: list[str] = []
+    _install_opener(
+        monkeypatch,
+        {
+            CHECKSUMS_URL: _Response(f"{digest} *{IMAGE_FILENAME}\n".encode()),
+            SIGNATURE_URL: _Response(b"signature"),
+            IMAGE_URL: _Response(image),
+        },
+        events,
+    )
+    real_parse = image_module.parse_sha256sums
+    real_replace = image_module.os.replace
+
+    def record_parse(text: str, filename: str) -> str:
+        events.append("parse")
+        return real_parse(text, filename)
+
+    def record_replace(source: Path, destination: Path) -> None:
+        if Path(destination).name in {"SHA256SUMS", "SHA256SUMS.gpg"}:
+            events.append(f"publish:{Path(destination).name}")
+        real_replace(source, destination)
+
+    monkeypatch.setattr(image_module, "parse_sha256sums", record_parse)
+    monkeypatch.setattr(image_module.os, "replace", record_replace)
+    prepare_cloud_image(
+        paths,
+        run=lambda argv, **kwargs: events.append("verify")
+        or CompletedProcess(argv, 0),
+    )
+
+    assert events.index("verify") < events.index("parse")
+    assert events.index("parse") < events.index("publish:SHA256SUMS")
+    assert events.index("parse") < events.index("publish:SHA256SUMS.gpg")
+    assert events.index("publish:SHA256SUMS.gpg") < events.index(
+        f"download:{IMAGE_URL}"
+    )
+
+
+def test_download_publication_fsyncs_file_then_replaces_then_fsyncs_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Make a published download name durable after its bytes and replacement."""
+    destination = tmp_path / IMAGE_FILENAME
+    _install_opener(monkeypatch, {IMAGE_URL: _Response(b"payload")})
+    events: list[str] = []
+    real_fsync = image_module.os.fsync
+    real_replace = image_module.os.replace
+
+    def record_fsync(descriptor: int) -> None:
+        events.append(
+            "directory-fsync"
+            if stat.S_ISDIR(os.fstat(descriptor).st_mode)
+            else "file-fsync"
+        )
+        real_fsync(descriptor)
+
+    def record_replace(source: Path, target: Path) -> None:
+        events.append("replace")
+        real_replace(source, target)
+
+    monkeypatch.setattr(image_module.os, "fsync", record_fsync)
+    monkeypatch.setattr(image_module.os, "replace", record_replace)
+    download_atomic(IMAGE_URL, destination)
+
+    assert events == ["file-fsync", "replace", "directory-fsync"]
 
 
 def test_create_overlay_uses_verified_absolute_backing_image(tmp_path: Path) -> None:

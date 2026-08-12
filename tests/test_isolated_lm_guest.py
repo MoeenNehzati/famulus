@@ -4,11 +4,14 @@ from __future__ import annotations
 from datetime import UTC, datetime
 import hashlib
 import json
+import os
 from pathlib import Path
+import stat
 from subprocess import CalledProcessError, CompletedProcess
 
 import pytest
 
+import test_support.isolated_lm.guest as guest_module
 from test_support.isolated_lm.guest import (
     prepare_run,
     render_meta_data,
@@ -22,6 +25,34 @@ from test_support.isolated_lm.model import CloudImageRecord, RuntimePaths, VmRes
 
 _PUBLIC_KEY = "ssh-ed25519 AAAATEST isolated-lm"
 _DIGEST = hashlib.sha256(b"base image").hexdigest()
+
+
+def test_initial_run_manifest_replace_fsyncs_parent_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Make initial prepared-run publication durable through its directory."""
+    destination = tmp_path / "run.json"
+    events: list[str] = []
+    real_fsync = guest_module.os.fsync
+    real_replace = guest_module.os.replace
+
+    def record_fsync(descriptor: int) -> None:
+        events.append(
+            "directory-fsync"
+            if stat.S_ISDIR(os.fstat(descriptor).st_mode)
+            else "file-fsync"
+        )
+        real_fsync(descriptor)
+
+    def record_replace(source: Path, target: Path) -> None:
+        events.append("replace")
+        real_replace(source, target)
+
+    monkeypatch.setattr(guest_module.os, "fsync", record_fsync)
+    monkeypatch.setattr(guest_module.os, "replace", record_replace)
+    guest_module._atomic_write_private(destination, "{}\n")
+
+    assert events == ["file-fsync", "replace", "directory-fsync"]
 
 
 def _image(path: Path) -> CloudImageRecord:

@@ -14,6 +14,7 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+import time
 from urllib.request import HTTPRedirectHandler, build_opener
 
 from test_support.isolated_lm.model import CloudImageRecord, RuntimePaths, VmResources
@@ -37,6 +38,10 @@ ALLOWED_SOURCE_URLS = frozenset({IMAGE_URL, CHECKSUMS_URL, SIGNATURE_URL})
 """The complete, closed set of URLs this acquisition boundary may request."""
 
 _SHA256SUM_LINE = re.compile(r"^([0-9A-Fa-f]{64}) [ *](.+)$")
+
+NETWORK_CONNECT_TIMEOUT_SECONDS = 30.0
+NETWORK_READ_TIMEOUT_SECONDS = 30.0
+NETWORK_TOTAL_TIMEOUT_SECONDS = 900.0
 
 
 def _validate_source_url(url: str) -> None:
@@ -308,6 +313,11 @@ def download_atomic(
     destination: Path,
     *,
     expected_digest: str | None = None,
+    connect_timeout_seconds: float = NETWORK_CONNECT_TIMEOUT_SECONDS,
+    read_timeout_seconds: float = NETWORK_READ_TIMEOUT_SECONDS,
+    total_timeout_seconds: float = NETWORK_TOTAL_TIMEOUT_SECONDS,
+    monotonic: Callable[[], float] = time.monotonic,
+    _deadline: float | None = None,
 ) -> Path:
     """Download an approved URL into a temporary file and atomically replace.
 
@@ -347,33 +357,195 @@ def download_atomic(
     .sha256_file:
       why:
         validates: "Compares nonempty temporary bytes with an expected authenticated digest."
+    ._set_response_read_timeout:
+      why:
+        writes: "Applies the smaller per-read and total budgets to each response read."
     """
+    for label, value in (
+        ("network connect timeout", connect_timeout_seconds),
+        ("network read timeout", read_timeout_seconds),
+        ("network total timeout", total_timeout_seconds),
+    ):
+        if (
+            not isinstance(value, (int, float))
+            or isinstance(value, bool)
+            or not 0 < float(value) < float("inf")
+        ):
+            raise ValueError(f"{label} must be finite and positive")
     _validate_source_url(url)
     destination.parent.mkdir(parents=True, exist_ok=True)
     opener = build_opener(_ApprovedRedirectHandler())
+    deadline = (
+        float(_deadline)
+        if _deadline is not None
+        else monotonic() + float(total_timeout_seconds)
+    )
+    directory_flags = (
+        os.O_RDONLY
+        | os.O_DIRECTORY
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
+    parent_descriptor = os.open(destination.parent, directory_flags)
     temporary_name: str | None = None
     try:
         with tempfile.NamedTemporaryFile(
             mode="wb", dir=destination.parent, prefix=f".{destination.name}-", delete=False
         ) as temporary:
             temporary_name = temporary.name
-            with opener.open(url) as response:  # type: ignore[union-attr]
+            remaining = deadline - monotonic()
+            if remaining <= 0:
+                raise TimeoutError("network download deadline expired")
+            with opener.open(  # type: ignore[union-attr]
+                url,
+                timeout=min(float(connect_timeout_seconds), remaining),
+            ) as response:
+                if monotonic() >= deadline:
+                    raise TimeoutError("network download deadline expired")
                 effective_url = response.geturl()  # type: ignore[union-attr]
                 try:
                     _validate_source_url(effective_url)
                 except ValueError as error:
                     raise ValueError(f"unapproved redirect target: {effective_url}") from error
-                while block := response.read(1024 * 1024):  # type: ignore[union-attr]
+                while True:
+                    remaining = deadline - monotonic()
+                    if remaining <= 0:
+                        raise TimeoutError("network download deadline expired")
+                    _set_response_read_timeout(
+                        response,
+                        min(float(read_timeout_seconds), remaining),
+                    )
+                    block = response.read(1024 * 1024)  # type: ignore[union-attr]
+                    if monotonic() > deadline:
+                        raise TimeoutError("network download deadline expired")
+                    if not block:
+                        break
                     temporary.write(block)
+            temporary.flush()
+            os.fsync(temporary.fileno())
         temporary_path = Path(temporary_name)
         if expected_digest is not None and sha256_file(temporary_path) != expected_digest.lower():
             raise ValueError("download digest mismatch")
         os.replace(temporary_path, destination)
+        os.fsync(parent_descriptor)
         temporary_name = None
         return destination.resolve()
     finally:
         if temporary_name is not None:
             Path(temporary_name).unlink(missing_ok=True)
+        os.close(parent_descriptor)
+
+
+def _set_response_read_timeout(response: object, seconds: float) -> None:
+    """Apply one explicit timeout to the active urllib response socket.
+
+    Intent
+    ------
+    Bound the next response read by the lesser of the read timeout and total
+    budget remaining.
+
+    Rationale
+    ---------
+    A connection timeout alone does not guarantee later response reads remain
+    bounded; urllib exposes the active socket through its HTTP response stack.
+
+    Pseudocode
+    ----------
+    - set timeout_setter = direct response seam or urllib buffered response socket seam
+    - if timeout_setter is unavailable:
+      - raise unsupported bounded response
+    - set read_timeout = applied through timeout_setter
+    - return after timeout configuration
+
+    Wraps
+    -----
+    none
+    """
+    direct = getattr(response, "settimeout", None)
+    if callable(direct):
+        direct(seconds)
+        return
+    file_pointer = getattr(response, "fp", None)
+    raw = getattr(file_pointer, "raw", None)
+    sock = getattr(raw, "_sock", None)
+    setter = getattr(sock, "settimeout", None)
+    if not callable(setter):
+        raise RuntimeError("network response does not expose a bounded read socket")
+    setter(seconds)
+
+
+def _staging_path(directory: Path, canonical_name: str) -> Path:
+    """Reserve and release one unpredictable same-filesystem staging name.
+
+    Intent
+    ------
+    Produce a currently absent private path beside canonical evidence for the
+    existing atomic downloader to populate.
+
+    Rationale
+    ---------
+    Authentication must operate on unpublished files, while same-directory
+    staging keeps later publication on the canonical filesystem.
+
+    Pseudocode
+    ----------
+    - set reserved_path = unpredictable private temporary entry in evidence directory
+    - set reserved_path = absent after closing and removing reservation
+    - return reserved_path
+
+    Wraps
+    -----
+    none
+    """
+    descriptor, name = tempfile.mkstemp(
+        prefix=f".{canonical_name}.staging-", dir=directory
+    )
+    os.close(descriptor)
+    path = Path(name)
+    path.unlink()
+    return path
+
+
+def _publish_staged(staged: Path, canonical: Path) -> None:
+    """Durably publish one authenticated staged evidence artifact.
+
+    Intent
+    ------
+    Replace a canonical evidence name only from a same-directory staged file
+    and synchronize that directory after the replacement.
+
+    Rationale
+    ---------
+    Publication before authentication can destroy prior trusted evidence, and
+    replacement without directory fsync may be lost after a host crash.
+
+    Pseudocode
+    ----------
+    - if staged and canonical paths do not share a parent:
+      - raise invalid evidence staging path
+    - set parent_descriptor = retained no-follow directory descriptor
+    - set canonical = atomic replacement from staged
+    - set parent_directory = synchronized through parent_descriptor
+    - return after descriptor close
+
+    Wraps
+    -----
+    none
+    """
+    if staged.parent != canonical.parent:
+        raise ValueError("staged evidence must share the canonical directory")
+    flags = (
+        os.O_RDONLY
+        | os.O_DIRECTORY
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
+    descriptor = os.open(canonical.parent, flags)
+    try:
+        os.replace(staged, canonical)
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def prepare_cloud_image(
@@ -381,6 +553,10 @@ def prepare_cloud_image(
     *,
     run: Callable[..., subprocess.CompletedProcess[object]] = subprocess.run,
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
+    connect_timeout_seconds: float = NETWORK_CONNECT_TIMEOUT_SECONDS,
+    read_timeout_seconds: float = NETWORK_READ_TIMEOUT_SECONDS,
+    total_timeout_seconds: float = NETWORK_TOTAL_TIMEOUT_SECONDS,
+    monotonic: Callable[[], float] = time.monotonic,
 ) -> CloudImageRecord:
     """Acquire and authenticate the pinned Ubuntu image into the runtime cache.
 
@@ -411,6 +587,12 @@ def prepare_cloud_image(
 
     CallsFromRepo
     -------------
+    .download_atomic:
+      why:
+        orchestrates: "Acquires staged evidence and verified image bytes within one total budget."
+    ._publish_staged:
+      why:
+        writes: "Durably publishes authenticated evidence only after staged-pair verification."
     .verify_signed_checksums:
       why:
         validates: "Authenticates checksum metadata before its image binding is parsed."
@@ -420,6 +602,9 @@ def prepare_cloud_image(
     ._prepare_cache_directory:
       why:
         constructs: "Returns each canonical cache directory used for acquired artifacts."
+    ._staging_path:
+      why:
+        constructs: "Returns unpredictable same-directory unpublished evidence paths."
     .download_atomic:
       why:
         constructs: "Returns published evidence and image paths after bounded acquisition checks."
@@ -429,15 +614,53 @@ def prepare_cloud_image(
     """
     downloads = _prepare_cache_directory(paths.root, paths.downloads)
     images = _prepare_cache_directory(paths.root, paths.images)
-    checksums = download_atomic(CHECKSUMS_URL, downloads / "SHA256SUMS")
-    signature = download_atomic(SIGNATURE_URL, downloads / "SHA256SUMS.gpg")
-    verify_signed_checksums(checksums, signature, KEYRING, run=run)
-    digest = parse_sha256sums(checksums.read_text(encoding="utf-8"), IMAGE_FILENAME)
-    cached_path = download_atomic(
-        IMAGE_URL,
-        images / IMAGE_FILENAME,
-        expected_digest=digest,
-    )
+    if (
+        not isinstance(total_timeout_seconds, (int, float))
+        or isinstance(total_timeout_seconds, bool)
+        or not 0 < float(total_timeout_seconds) < float("inf")
+    ):
+        raise ValueError("network total timeout must be finite and positive")
+    deadline = monotonic() + float(total_timeout_seconds)
+    staged_checksums = _staging_path(downloads, "SHA256SUMS")
+    staged_signature = _staging_path(downloads, "SHA256SUMS.gpg")
+    try:
+        download_atomic(
+            CHECKSUMS_URL,
+            staged_checksums,
+            connect_timeout_seconds=connect_timeout_seconds,
+            read_timeout_seconds=read_timeout_seconds,
+            total_timeout_seconds=total_timeout_seconds,
+            monotonic=monotonic,
+            _deadline=deadline,
+        )
+        download_atomic(
+            SIGNATURE_URL,
+            staged_signature,
+            connect_timeout_seconds=connect_timeout_seconds,
+            read_timeout_seconds=read_timeout_seconds,
+            total_timeout_seconds=total_timeout_seconds,
+            monotonic=monotonic,
+            _deadline=deadline,
+        )
+        verify_signed_checksums(staged_checksums, staged_signature, KEYRING, run=run)
+        digest = parse_sha256sums(
+            staged_checksums.read_text(encoding="utf-8"), IMAGE_FILENAME
+        )
+        _publish_staged(staged_checksums, downloads / "SHA256SUMS")
+        _publish_staged(staged_signature, downloads / "SHA256SUMS.gpg")
+        cached_path = download_atomic(
+            IMAGE_URL,
+            images / IMAGE_FILENAME,
+            expected_digest=digest,
+            connect_timeout_seconds=connect_timeout_seconds,
+            read_timeout_seconds=read_timeout_seconds,
+            total_timeout_seconds=total_timeout_seconds,
+            monotonic=monotonic,
+            _deadline=deadline,
+        )
+    finally:
+        staged_checksums.unlink(missing_ok=True)
+        staged_signature.unlink(missing_ok=True)
     retrieved_at = now().astimezone(UTC)
     return CloudImageRecord(
         schema_version=1,

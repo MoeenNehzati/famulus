@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
 
 import pytest
 
@@ -39,6 +40,7 @@ def test_host_preflight_requires_every_command_and_writable_kvm() -> None:
         open_kvm=lambda: (_ for _ in ()).throw(PermissionError("denied")),
         platform_name=lambda: "Linux-6-test-x86_64-with-glibc",
         machine=lambda: "x86_64",
+        run_process=lambda argv, **kwargs: subprocess.CompletedProcess(argv, 0),
     )
 
     assert not report.ok
@@ -50,6 +52,7 @@ def test_host_preflight_requires_every_command_and_writable_kvm() -> None:
         "platform:linux",
         "machine:x86_64",
         *[f"command:{name}" for name in REQUIRED_COMMANDS],
+        "kvm:acceleration",
         "kvm:read-write",
     ]
 
@@ -60,6 +63,7 @@ def test_host_preflight_rejects_non_linux_and_non_x86_64_hosts() -> None:
         open_kvm=lambda: None,
         platform_name=lambda: "Darwin-25.0.0-arm64",
         machine=lambda: "arm64",
+        run_process=lambda argv, **kwargs: subprocess.CompletedProcess(argv, 0),
     )
 
     assert not report.ok
@@ -67,3 +71,78 @@ def test_host_preflight_rejects_non_linux_and_non_x86_64_hosts() -> None:
     assert report.by_name("machine:x86_64").detail == "arm64"
     assert not report.by_name("platform:linux").ok
     assert not report.by_name("machine:x86_64").ok
+
+
+def test_host_preflight_executes_bounded_kvm_ok_and_requires_zero() -> None:
+    """Require cpu-checker's semantic acceleration probe, not command presence alone."""
+    calls: list[tuple[list[str], dict[str, object]]] = []
+
+    def run_process(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        calls.append((argv, kwargs))
+        return subprocess.CompletedProcess(argv, 0, b"KVM acceleration can be used\n", b"")
+
+    report = check_host(
+        which=lambda name: f"/usr/bin/{name}",
+        open_kvm=lambda: None,
+        platform_name=lambda: "Linux-test",
+        machine=lambda: "x86_64",
+        run_process=run_process,
+    )
+
+    assert report.by_name("kvm:acceleration").ok
+    assert "KVM acceleration" in report.by_name("kvm:acceleration").detail
+    assert calls == [(
+        ["/usr/bin/kvm-ok"],
+        {"capture_output": True, "check": False, "timeout": 5.0},
+    )]
+
+
+def test_host_preflight_reports_missing_kvm_ok_without_invocation() -> None:
+    """Keep missing cpu-checker distinct from a failed or timed-out probe."""
+    report = check_host(
+        which=lambda name: None if name == "kvm-ok" else f"/usr/bin/{name}",
+        open_kvm=lambda: None,
+        platform_name=lambda: "Linux-test",
+        machine=lambda: "x86_64",
+        run_process=lambda *args, **kwargs: pytest.fail("missing kvm-ok must not run"),
+    )
+
+    assert not report.by_name("kvm:acceleration").ok
+    assert report.by_name("kvm:acceleration").detail == "not run: kvm-ok not found"
+
+
+def test_host_preflight_reports_nonzero_and_bounded_kvm_ok_diagnostic() -> None:
+    """Expose a bounded cpu-checker failure without treating device access as enough."""
+    report = check_host(
+        which=lambda name: f"/usr/bin/{name}",
+        open_kvm=lambda: None,
+        platform_name=lambda: "Linux-test",
+        machine=lambda: "x86_64",
+        run_process=lambda argv, **kwargs: subprocess.CompletedProcess(
+            argv, 1, b"x" * 5000, b"KVM disabled by BIOS\n"
+        ),
+    )
+
+    check = report.by_name("kvm:acceleration")
+    assert not check.ok
+    assert "exit 1" in check.detail
+    assert "KVM disabled" in check.detail
+    assert len(check.detail.encode("utf-8")) <= 2048
+
+
+def test_host_preflight_reports_kvm_ok_timeout_and_device_failure() -> None:
+    """Retain both semantic-probe timeout and independent device-open failure."""
+    report = check_host(
+        which=lambda name: f"/usr/bin/{name}",
+        open_kvm=lambda: (_ for _ in ()).throw(PermissionError("device denied")),
+        platform_name=lambda: "Linux-test",
+        machine=lambda: "x86_64",
+        run_process=lambda argv, **kwargs: (_ for _ in ()).throw(
+            subprocess.TimeoutExpired(argv, kwargs["timeout"])
+        ),
+    )
+
+    assert not report.by_name("kvm:acceleration").ok
+    assert "timed out" in report.by_name("kvm:acceleration").detail
+    assert not report.by_name("kvm:read-write").ok
+    assert report.by_name("kvm:read-write").detail == "device denied"

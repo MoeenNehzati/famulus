@@ -8,8 +8,10 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import stat
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -107,6 +109,34 @@ def test_parser_exposes_only_supported_commands() -> None:
         if isinstance(action, argparse._SubParsersAction)
     )
     assert set(subparsers.choices) == SUPPORTED_COMMANDS
+
+
+def test_source_image_manifest_replace_fsyncs_parent_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Make authenticated source-image manifest publication directory-durable."""
+    destination = tmp_path / "source-image.json"
+    events: list[str] = []
+    real_fsync = cli.os.fsync
+    real_replace = cli.os.replace
+
+    def record_fsync(descriptor: int) -> None:
+        events.append(
+            "directory-fsync"
+            if stat.S_ISDIR(os.fstat(descriptor).st_mode)
+            else "file-fsync"
+        )
+        real_fsync(descriptor)
+
+    def record_replace(source: Path, target: Path) -> None:
+        events.append("replace")
+        real_replace(source, target)
+
+    monkeypatch.setattr(cli.os, "fsync", record_fsync)
+    monkeypatch.setattr(cli.os, "replace", record_replace)
+    cli._write_private_atomic(destination, "{}\n")
+
+    assert events == ["file-fsync", "replace", "directory-fsync"]
 
 
 def test_parser_rejects_abbreviated_state_root_option(
@@ -362,6 +392,31 @@ def test_status_reads_only_selected_manifest_without_mutation(
     assert _tree_state(state_root) == before
 
 
+def test_status_accepts_crash_recoverable_launching_manifest(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Keep status usable after launch facts persist but running does not."""
+    state_root = tmp_path / "state"
+    identity = (tmp_path / "identity").resolve()
+    identity.write_text("PRIVATE TEST KEY\n", encoding="utf-8")
+    identity.chmod(0o600)
+    record = replace(
+        _record_files(state_root),
+        lifecycle="launching",
+        ssh_port=40222,
+        identity_file=identity,
+    )
+    record = replace(record, qemu_command=tuple(cli.build_qemu_command(record, 40222)))
+    record.record_path.write_text(record.to_json(), encoding="utf-8")
+
+    assert main(
+        ["status", "--state-root", str(state_root), "--run-id", record.run_id]
+    ) == 0
+    payload, diagnostic = _json_stdout(capsys)
+    assert payload["lifecycle"] == "launching"
+    assert diagnostic == ""
+
+
 def test_status_does_not_access_recorded_identity_outside_state_root(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -518,6 +573,92 @@ def test_exec_requires_nonempty_argv_after_explicit_separator(
     assert "--" in str(second["error"])
 
 
+def test_exec_parser_accepts_documented_positive_bounded_options() -> None:
+    """Expose explicit exec deadline and per-stream output cap before guest argv."""
+    parsed = build_parser().parse_args(
+        [
+            "exec",
+            "--state-root", "/state",
+            "--run-id", "manual-001",
+            "--ssh-private-key", "/key",
+            "--timeout-seconds", "12.5",
+            "--max-output-bytes", "4096",
+            "--", "true",
+        ]
+    )
+
+    assert parsed.timeout_seconds == 12.5
+    assert parsed.max_output_bytes == 4096
+    assert parsed.guest_argv == ["--", "true"]
+
+
+@pytest.mark.parametrize(
+    ("option", "value"),
+    [
+        ("--timeout-seconds", "0"),
+        ("--timeout-seconds", "3601"),
+        ("--timeout-seconds", "nan"),
+        ("--max-output-bytes", "0"),
+        ("--max-output-bytes", str(16 * 1024 * 1024 + 1)),
+    ],
+)
+def test_exec_parser_rejects_unbounded_or_nonpositive_limits(
+    option: str, value: str
+) -> None:
+    """Reject limits that disable or exceed the supported execution bounds."""
+    with pytest.raises(cli.CliUsageError):
+        build_parser().parse_args(
+            [
+                "exec", "--state-root", "/state", "--run-id", "manual-001",
+                "--ssh-private-key", "/key", option, value, "--", "true",
+            ]
+        )
+
+
+def test_bounded_process_drains_and_caps_both_flooding_streams() -> None:
+    """Concurrent capped drains must not deadlock when both pipes exceed capacity."""
+    payload_size = 2 * 1024 * 1024
+    result = cli._run_bounded_process(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import os; "
+                f"os.write(1, b'o' * {payload_size}); "
+                f"os.write(2, b'e' * {payload_size})"
+            ),
+        ],
+        timeout_seconds=5,
+        max_output_bytes=1024,
+    )
+
+    assert result.returncode == 0
+    assert not result.timed_out
+    assert result.stdout == b"o" * 1024
+    assert result.stderr == b"e" * 1024
+    assert result.stdout_truncated
+    assert result.stderr_truncated
+
+
+def test_bounded_process_timeout_kills_and_reaps_child() -> None:
+    """A timed-out guest boundary must leave no unreaped local SSH process."""
+    result = cli._run_bounded_process(
+        [
+            sys.executable,
+            "-c",
+            "import os,time; print(os.getpid(), flush=True); time.sleep(30)",
+        ],
+        timeout_seconds=0.1,
+        max_output_bytes=1024,
+    )
+
+    child_pid = int(result.stdout.decode("ascii").strip())
+    assert result.timed_out
+    assert result.returncode != 0
+    with pytest.raises(ProcessLookupError):
+        os.kill(child_pid, 0)
+
+
 def test_exec_uses_recorded_ssh_boundary_and_returns_guest_exit_code(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -528,13 +669,18 @@ def test_exec_uses_recorded_ssh_boundary_and_returns_guest_exit_code(
     record = _ready_record(state_root, identity)
     calls: list[tuple[list[str], dict[str, object]]] = []
 
-    def fake_run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+    def fake_run(argv: list[str], **kwargs: object) -> SimpleNamespace:
         calls.append((argv, kwargs))
-        return subprocess.CompletedProcess(
-            argv, 7, stdout=b"guest out\n", stderr=b"guest err\n"
+        return SimpleNamespace(
+            returncode=7,
+            stdout=b"guest out\n",
+            stderr=b"guest err\n",
+            timed_out=False,
+            stdout_truncated=False,
+            stderr_truncated=False,
         )
 
-    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+    monkeypatch.setattr(cli, "_run_bounded_process", fake_run, raising=False)
     exit_code = main(
         [
             "exec",
@@ -556,15 +702,66 @@ def test_exec_uses_recorded_ssh_boundary_and_returns_guest_exit_code(
     assert payload == {
         "command": "exec",
         "guest_exit_code": 7,
+        "max_output_bytes": 1024 * 1024,
         "ok": False,
         "run_id": record.run_id,
         "stderr": "guest err\n",
+        "stderr_truncated": False,
         "stdout": "guest out\n",
+        "stdout_truncated": False,
+        "timed_out": False,
+        "timeout_seconds": 300.0,
     }
     assert diagnostic == "guest command exited with status 7\n"
     argv, kwargs = calls[0]
     assert argv == cli.build_ssh_command(record, ["printf", "%s", "hello world"])
-    assert kwargs == {"capture_output": True, "check": False}
+    assert kwargs == {"max_output_bytes": 1024 * 1024, "timeout_seconds": 300.0}
+
+
+def test_exec_timeout_emits_stable_json_facts_and_returns_one(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Distinguish deadline cleanup from a guest exit code without leaking output."""
+    state_root = tmp_path / "state"
+    identity = (tmp_path / "identity").resolve()
+    record = _ready_record(state_root, identity)
+    monkeypatch.setattr(
+        cli,
+        "_run_bounded_process",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=-9,
+            stdout=b"partial:\xff",
+            stderr=b"",
+            timed_out=True,
+            stdout_truncated=False,
+            stderr_truncated=False,
+        ),
+        raising=False,
+    )
+    assert main(
+        [
+            "exec", "--state-root", str(state_root), "--run-id", record.run_id,
+            "--ssh-private-key", str(identity), "--timeout-seconds", "0.25",
+            "--max-output-bytes", "64", "--", "sleep", "30",
+        ]
+    ) == 1
+    payload, diagnostic = _json_stdout(capsys)
+    assert payload == {
+        "command": "exec",
+        "guest_exit_code": None,
+        "max_output_bytes": 64,
+        "ok": False,
+        "run_id": record.run_id,
+        "stderr": "",
+        "stderr_truncated": False,
+        "stdout": "partial:\ufffd",
+        "stdout_truncated": False,
+        "timed_out": True,
+        "timeout_seconds": 0.25,
+    }
+    assert diagnostic == "guest command timed out after 0.25 seconds\n"
 
 
 def test_exec_replaces_invalid_utf8_without_losing_exit_or_streams(
@@ -576,11 +773,17 @@ def test_exec_replaces_invalid_utf8_without_losing_exit_or_streams(
     identity = (tmp_path / "identity").resolve()
     record = _ready_record(state_root, identity)
     monkeypatch.setattr(
-        cli.subprocess,
-        "run",
-        lambda argv, **kwargs: subprocess.CompletedProcess(
-            argv, 23, stdout=b"out:\xff\n", stderr=b"err:\xfe\n"
+        cli,
+        "_run_bounded_process",
+        lambda argv, **kwargs: SimpleNamespace(
+            returncode=23,
+            stdout=b"out:\xff\n",
+            stderr=b"err:\xfe\n",
+            timed_out=False,
+            stdout_truncated=False,
+            stderr_truncated=False,
         ),
+        raising=False,
     )
 
     assert main(
@@ -1090,6 +1293,41 @@ def test_stop_run_delegates_only_with_the_recorded_identity(
     assert rejected["ok"] is False
     assert "recorded identity" in str(rejected["error"])
     assert "OTHER PRIVATE KEY" not in json.dumps(rejected) + rejected_diagnostic
+
+
+def test_stop_run_accepts_crash_recoverable_launching_lifecycle(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Keep stop usable when launch facts persisted before running transition."""
+    state_root = tmp_path / "state"
+    identity = (tmp_path / "identity").resolve()
+    identity.write_text("PRIVATE TEST KEY\n", encoding="utf-8")
+    identity.chmod(0o600)
+    record = replace(
+        _record_files(state_root),
+        lifecycle="launching",
+        ssh_port=40222,
+        identity_file=identity,
+    )
+    record = replace(record, qemu_command=tuple(cli.build_qemu_command(record, 40222)))
+    record.record_path.write_text(record.to_json(), encoding="utf-8")
+    monkeypatch.setattr(
+        cli,
+        "stop_run",
+        lambda run, **kwargs: replace(run, lifecycle="stopped"),
+    )
+
+    assert main(
+        [
+            "stop-run", "--state-root", str(state_root), "--run-id", record.run_id,
+            "--ssh-private-key", str(identity),
+        ]
+    ) == 0
+    payload, diagnostic = _json_stdout(capsys)
+    assert payload["lifecycle"] == "stopped"
+    assert diagnostic == ""
 
 
 @pytest.mark.parametrize("defect", ["group-readable", "symlink"])
