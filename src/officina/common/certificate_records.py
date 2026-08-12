@@ -23,8 +23,10 @@ from .atomic_files import (
     AtomicWriteError,
     atomic_create_bytes,
     atomic_replace_bytes,
+    ensure_secure_directory,
     read_regular_file_bytes,
 )
+from .famulus_paths import resolve_famulus_paths
 
 
 CERTIFIER_SECRET_NAMESPACE = "skill-certifier"
@@ -37,15 +39,60 @@ class CertificateLogError(ValueError):
     """Raised when a signed certificate log is malformed or suspect."""
 
 
-def certificate_public_key_root(repo_root: Path) -> Path:
-    """Return the one repository-local public verification-key directory."""
+class CertificateStateConflict(ValueError):
+    """Raised when legacy and durable certificate identities cannot be reconciled."""
+
+
+@dataclass(frozen=True)
+class CertificateStatePaths:
+    """Durable certificate paths plus the optional one-time legacy source."""
+
+    public_key_root: Path
+    active_key_id: Path
+    legacy_public_key_root: Path | None = None
+
+    @property
+    def root(self) -> Path:
+        """Return the stable certificate lifecycle root."""
+
+        return self.public_key_root.parent
+
+
+def legacy_certificate_public_key_root(repo_root: Path) -> Path:
+    """Return the retired repository-local key root for one-time migration."""
 
     return (
-        Path(repo_root).resolve()
+        Path(repo_root).absolute()
         / "skills"
         / "skill-certifier"
         / ".certificates"
         / "public-keys"
+    )
+
+
+def certificate_public_key_root(repo_root: Path) -> Path:
+    """Compatibility alias for legacy repair and migration callers."""
+
+    return legacy_certificate_public_key_root(repo_root)
+
+
+def certificate_state_paths(
+    *,
+    platform: str,
+    home: Path,
+    repo_root: Path | None = None,
+) -> CertificateStatePaths:
+    """Resolve certificate identity below durable per-home Famulus data."""
+
+    famulus = resolve_famulus_paths(platform=platform, home=Path(home))
+    return CertificateStatePaths(
+        public_key_root=famulus.certificate_public_key_root,
+        active_key_id=famulus.certificate_public_key_root / ACTIVE_KEY_ID_NAME,
+        legacy_public_key_root=(
+            legacy_certificate_public_key_root(repo_root)
+            if repo_root is not None
+            else None
+        ),
     )
 
 
@@ -325,40 +372,29 @@ def load_or_create_certificate_signing_key(
 
 
 def provision_certificate_signing_material(
-    repo_root: Path,
+    paths: CertificateStatePaths,
     *,
     secret_backend: secret_store.SecretBackend | None = None,
     allow_non_atomic: bool = False,
 ) -> CertificateSigningKey:
-    """Provision and verify the cooperative certifier signing-key pair."""
+    """Provision and verify the durable cooperative certifier key pair."""
 
-    root = Path(repo_root).resolve()
-    public_key_root = certificate_public_key_root(root)
-    certifier_root = root / "skills" / "skill-certifier"
-    for current in (root / "skills", certifier_root):
-        try:
-            metadata = current.lstat()
-        except FileNotFoundError as exc:
+    if not isinstance(paths, CertificateStatePaths):
+        raise TypeError("paths must be CertificateStatePaths")
+    public_key_root = Path(paths.public_key_root).absolute()
+    if Path(paths.active_key_id).absolute() != public_key_root / ACTIVE_KEY_ID_NAME:
+        raise ValueError("active_key_id must belong to public_key_root")
+    ensure_secure_directory(public_key_root)
+    metadata = public_key_root.lstat()
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+        raise ValueError(f"unsafe certificate key directory: {public_key_root}")
+    if os.name == "posix" and stat.S_IMODE(metadata.st_mode) & 0o077:
+        public_key_root.chmod(0o700)
+        metadata = public_key_root.lstat()
+        if stat.S_IMODE(metadata.st_mode) & 0o077:
             raise ValueError(
-                f"certificate owner directory is missing: {current}"
-            ) from exc
-        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
-            raise ValueError(f"unsafe certificate owner directory: {current}")
-    for current in (certifier_root / ".certificates", public_key_root):
-        try:
-            metadata = current.lstat()
-        except FileNotFoundError:
-            current.mkdir(mode=0o700)
-            metadata = current.lstat()
-        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
-            raise ValueError(f"unsafe certificate key directory: {current}")
-        if os.name == "posix" and stat.S_IMODE(metadata.st_mode) & 0o077:
-            current.chmod(0o700)
-            metadata = current.lstat()
-            if stat.S_IMODE(metadata.st_mode) & 0o077:
-                raise ValueError(
-                    f"certificate key directory is not user-private: {current}"
-                )
+                f"certificate key directory is not user-private: {public_key_root}"
+            )
     created = load_or_create_certificate_signing_key(
         public_key_root,
         secret_backend=secret_backend,
@@ -372,6 +408,170 @@ def provision_certificate_signing_material(
     if verified.key_id != created.key_id:
         raise ValueError("certificate signing material failed post-provision verification")
     return verified
+
+
+def _validated_public_state(
+    public_key_root: Path,
+    *,
+    secret_backend: secret_store.SecretBackend | None,
+    allow_non_atomic: bool,
+) -> tuple[str, dict[str, bytes]] | None:
+    """Read one complete public state without following directory or file links."""
+
+    root = Path(public_key_root).absolute()
+    try:
+        metadata = root.lstat()
+    except FileNotFoundError:
+        return None
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+        raise CertificateStateConflict(f"unsafe certificate state root: {root}")
+    try:
+        entries = tuple(root.iterdir())
+        if not entries:
+            return None
+        key_id = load_active_certificate_key_id(
+            root,
+            allow_non_atomic=allow_non_atomic,
+        )
+        load_certificate_signing_key(
+            root,
+            secret_backend=secret_backend,
+            allow_non_atomic=allow_non_atomic,
+        )
+        retained: dict[str, bytes] = {}
+        for candidate in entries:
+            candidate_metadata = candidate.lstat()
+            if candidate.name == ACTIVE_KEY_ID_NAME:
+                if not stat.S_ISREG(candidate_metadata.st_mode):
+                    raise CertificateStateConflict(
+                        f"unsafe certificate selector: {candidate}"
+                    )
+                continue
+            if not candidate.name.endswith(".pub"):
+                raise CertificateStateConflict(
+                    f"unexpected certificate state entry: {candidate.name}"
+                )
+            if stat.S_ISLNK(candidate_metadata.st_mode) or not stat.S_ISREG(
+                candidate_metadata.st_mode
+            ):
+                raise CertificateStateConflict(
+                    f"unsafe certificate public key: {candidate}"
+                )
+            retained[candidate.name] = read_regular_file_bytes(
+                candidate,
+                allowed_root=root,
+                allow_non_atomic=allow_non_atomic,
+            )
+            load_certificate_public_key(
+                root,
+                "sha256:" + candidate.stem,
+                allow_non_atomic=allow_non_atomic,
+            )
+        if f"{_key_id_hex(key_id)}.pub" not in retained:
+            raise CertificateStateConflict("active certificate public key is missing")
+        return key_id, retained
+    except CertificateStateConflict:
+        raise
+    except (AtomicWriteError, OSError, TypeError, ValueError) as exc:
+        raise CertificateStateConflict(
+            f"invalid certificate state at {root}: {exc}"
+        ) from exc
+
+
+def migrate_legacy_certificate_state(
+    repo_root: Path,
+    paths: CertificateStatePaths,
+    *,
+    secret_backend: secret_store.SecretBackend | None,
+    allow_non_atomic: bool = False,
+) -> None:
+    """Move one matching legacy identity into durable state without rotation.
+
+    The installer caller owns the per-home ``InstallLock``.  This function
+    validates both sides before writing, publishes retained public keys first,
+    and commits the durable identity by creating ``active-key-id`` last.
+    """
+
+    expected_legacy = legacy_certificate_public_key_root(repo_root)
+    if (
+        paths.legacy_public_key_root is not None
+        and Path(paths.legacy_public_key_root).absolute() != expected_legacy
+    ):
+        raise CertificateStateConflict(
+            "legacy certificate root does not match repository root"
+        )
+    stable_root = Path(paths.public_key_root).absolute()
+    if Path(paths.active_key_id).absolute() != stable_root / ACTIVE_KEY_ID_NAME:
+        raise CertificateStateConflict("active_key_id must belong to public_key_root")
+    legacy_state = _validated_public_state(
+        expected_legacy,
+        secret_backend=secret_backend,
+        allow_non_atomic=allow_non_atomic,
+    )
+    stable_state = _validated_public_state(
+        stable_root,
+        secret_backend=secret_backend,
+        allow_non_atomic=allow_non_atomic,
+    )
+    if legacy_state is None:
+        return
+    if stable_state is not None:
+        if stable_state != legacy_state:
+            raise CertificateStateConflict(
+                "legacy and durable certificate identities conflict"
+            )
+        return
+
+    key_id, retained = legacy_state
+    ensure_secure_directory(stable_root)
+    created: list[Path] = []
+    try:
+        for name, payload in sorted(retained.items()):
+            destination = stable_root / name
+            if atomic_create_bytes(
+                destination,
+                payload,
+                allowed_root=stable_root,
+                mode=0o600,
+                allow_non_atomic=allow_non_atomic,
+            ):
+                created.append(destination)
+            else:
+                existing = read_regular_file_bytes(
+                    destination,
+                    allowed_root=stable_root,
+                    allow_non_atomic=allow_non_atomic,
+                )
+                if existing != payload:
+                    raise CertificateStateConflict(
+                        f"durable public key conflicts during migration: {name}"
+                    )
+        if not atomic_create_bytes(
+            paths.active_key_id,
+            (key_id + "\n").encode("ascii"),
+            allowed_root=stable_root,
+            mode=0o600,
+            allow_non_atomic=allow_non_atomic,
+        ):
+            raise CertificateStateConflict(
+                "durable certificate selector appeared during migration"
+            )
+    except BaseException:
+        for candidate in reversed(created):
+            try:
+                candidate.unlink()
+            except FileNotFoundError:
+                pass
+        raise
+    migrated = _validated_public_state(
+        stable_root,
+        secret_backend=secret_backend,
+        allow_non_atomic=allow_non_atomic,
+    )
+    if migrated != legacy_state:
+        raise CertificateStateConflict(
+            "durable certificate state failed post-migration verification"
+        )
 
 
 def rotate_certificate_signing_key(

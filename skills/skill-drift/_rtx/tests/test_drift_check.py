@@ -12,7 +12,7 @@ MODULE_PATH = Path(__file__).resolve().parents[1] / "_check_drift_state.py"
 SRC_ROOT = MODULE_PATH.parents[3] / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
-from officina.common.certificate_records import certificate_public_key_root
+import officina.common.certificate_records as certificate_records
 from test_support.v4_certification_fixtures import create_certified_fixture
 from .. import _check_drift_state as checker
 
@@ -236,13 +236,16 @@ def test_v4_drift_propagates_explicit_non_atomic_fallback(
     assert observed == [True]
 
 
-def test_default_public_key_location_is_certifier_owned(tmp_path: Path) -> None:
-    assert certificate_public_key_root(tmp_path) == (
+def test_drift_uses_the_same_stable_certificate_root_as_certifier(
+    tmp_path: Path,
+) -> None:
+    expected = certificate_records.certificate_state_paths(
+        platform=sys.platform, home=tmp_path
+    )
+
+    assert checker._stable_certificate_state_paths(home=tmp_path) == expected
+    assert expected.public_key_root != certificate_records.legacy_certificate_public_key_root(
         tmp_path
-        / "skills"
-        / "skill-certifier"
-        / ".certificates"
-        / "public-keys"
     )
 
 
@@ -599,7 +602,7 @@ def test_active_v4_plugin_is_rejected_after_canonical_v5_cutover(
     active = claude_home / "plugins" / "cache" / "market" / "demo" / "2"
     stale = claude_home / "plugins" / "cache" / "market" / "demo" / "1"
     _graph, public_key_root = _certified(active)
-    default_key_root = certificate_public_key_root(active)
+    default_key_root = certificate_records.legacy_certificate_public_key_root(active)
     default_key_root.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(public_key_root, default_key_root)
     _make_unsupported_module(stale, "stale-skill")

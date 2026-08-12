@@ -35,10 +35,10 @@ from officina.common.certification_hashing import (
     route_smoke_trace_signature,
 )
 from officina.common.certificate_records import (
-    certificate_public_key_root,
+    CertificateStatePaths,
+    certificate_state_paths,
     canonical_certificate_envelope_bytes,
     certificate_entry_hash,
-    load_or_create_certificate_signing_key,
     parse_certificate_log,
     provision_certificate_signing_material,
     sign_certificate_payload,
@@ -91,6 +91,17 @@ from officina.runtime.python_machine_interface import (
     logical_python_package_name,
     trace_python_route_smoke_dependencies_batch,
 )
+
+
+def _stable_certificate_state_paths(
+    *, home: Path | None = None
+) -> CertificateStatePaths:
+    """Resolve signing identity outside replaceable repository/plugin sources."""
+
+    return certificate_state_paths(
+        platform=sys.platform,
+        home=Path.home() if home is None else Path(home),
+    )
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 OUTPUT_SCHEMA_VERSION = 1
@@ -1661,9 +1672,9 @@ def _certify_v4_repository(
     officina.common.atomic_files.read_regular_file_bytes:
       why:
         computes: "Reads frozen tracked and local inputs for digest comparison."
-    officina.common.certificate_records.certificate_public_key_root:
+    ._stable_certificate_state_paths:
       why:
-        computes: "Locates the public-key directory used when the writer provisions signing material."
+        computes: "Locates durable per-home certificate identity outside replaceable repository sources."
     officina.common.certification_hashing.expected_certifier_checks:
       why:
         validates: "Checks that the gate list matches the schema-versioned registry."
@@ -1721,9 +1732,6 @@ def _certify_v4_repository(
     officina.common.certificate_records.certificate_entry_hash:
       why:
         serializes: "Entry hashes are carried into log-tail verification and the next append expectation."
-    officina.common.certificate_records.load_or_create_certificate_signing_key:
-      why:
-        constructs: "Signing keys are carried into payload signing and public-key provisioning."
     officina.common.certificate_records.parse_certificate_log:
       why:
         constructs: "Existing log entries are carried into previous-entry hash and currentness checks."
@@ -2305,18 +2313,15 @@ officina.common.git_provenance.run_git:
                     f"tracked certification input changed {phase}: {path}"
                 )
 
-    if Path(public_key_root).resolve() == certificate_public_key_root(root):
-        key = provision_certificate_signing_material(
-            root,
-            secret_backend=secret_backend,
-            allow_non_atomic=allow_non_atomic,
-        )
-    else:
-        key = load_or_create_certificate_signing_key(
-            public_key_root,
-            secret_backend=secret_backend,
-            allow_non_atomic=allow_non_atomic,
-        )
+    key_root = Path(public_key_root).absolute()
+    key = provision_certificate_signing_material(
+        CertificateStatePaths(
+            public_key_root=key_root,
+            active_key_id=key_root / "active-key-id",
+        ),
+        secret_backend=secret_backend,
+        allow_non_atomic=allow_non_atomic,
+    )
     written: list[str] = []
     for node_id in order:
         log_path = certificate_log_path(graph.nodes[node_id])
@@ -3443,9 +3448,9 @@ def certify(
 
     CallsFromRepo
     -------------
-    officina.common.certificate_records.certificate_public_key_root:
+    ._stable_certificate_state_paths:
       why:
-        computes: "Supplies the public-key root passed into the private writer."
+        computes: "Supplies the durable per-home public-key root passed into the private writer."
     officina.common.certification_view.certificate_log_path:
       why:
         computes: "Maps each certified node to the log path reported in public outcomes."
@@ -3513,7 +3518,7 @@ def certify(
     result = _certify_v4_repository(
         repository,
         target_node_ids=tuple(sorted(requested_node_ids)),
-        public_key_root=certificate_public_key_root(repository),
+        public_key_root=_stable_certificate_state_paths().public_key_root,
         secret_backend=None,
         reviewed_commit=reviewed_commit,
         certified_at=timestamp

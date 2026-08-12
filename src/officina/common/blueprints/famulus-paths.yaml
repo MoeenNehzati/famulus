@@ -47,7 +47,7 @@ interfaces:
       - id: result
         audience: machine
         description: FamulusPaths dataclass instance with data, config, state, runtime,
-          and user-bin path fields.
+          durable certificate-state, and user-bin path fields.
         direct_io_ref: return-value
         cardinality:
           minimum: 1
@@ -69,7 +69,7 @@ interfaces:
         - result
         effects: []
         caller_action: Use the returned FamulusPaths fields to locate install, config,
-          state, and runtime directories.
+          state, runtime, and durable certificate directories.
       - id: invalid-home
         class: refusal
         outputs: []

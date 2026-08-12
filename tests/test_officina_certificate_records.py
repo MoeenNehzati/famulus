@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import stat
 from pathlib import Path
 
@@ -13,7 +14,6 @@ from officina.common.certificate_records import (
     canonical_certificate_envelope_bytes,
     canonical_certificate_payload_bytes,
     certificate_entry_hash,
-    certificate_public_key_root,
     load_active_certificate_key_id,
     load_certificate_public_key,
     load_certificate_signing_key,
@@ -24,6 +24,7 @@ from officina.common.certificate_records import (
     sign_certificate_payload,
     verify_certificate_envelope,
 )
+from officina.common.famulus_paths import resolve_famulus_paths
 
 
 class MemorySecretBackend:
@@ -40,6 +41,22 @@ class MemorySecretBackend:
 
     def clear(self, namespace: str, key: str) -> bool:
         return self.values.pop((namespace, key), None) is not None
+
+    def snapshot(self) -> dict[tuple[str, str], str]:
+        return dict(self.values)
+
+
+def _state_paths(tmp_path: Path):
+    return certificate_records.certificate_state_paths(
+        platform="linux",
+        home=tmp_path / "home",
+        repo_root=tmp_path / "plugin-cache" / "famulus",
+    )
+
+
+def _copy_public_state(source: Path, destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(source, destination)
 
 
 def _certificate_payload(key_id: str, previous_entry_hash: str | None) -> dict[str, object]:
@@ -123,37 +140,187 @@ def test_ed25519_key_lifecycle_uses_secret_store_and_windows_safe_public_filenam
     assert next(iter(backend.values.values())).startswith("base64:")
 
 
-def test_certificate_signing_material_provisioning_is_idempotent_and_verified(
+def test_plugin_cache_replacement_preserves_certificate_identity(
     tmp_path: Path,
 ) -> None:
-    skills_root = tmp_path / "skills"
-    certifier_root = skills_root / "skill-certifier"
-    certifier_root.mkdir(parents=True)
-    if os.name == "posix":
-        skills_root.chmod(0o755)
-        certifier_root.chmod(0o755)
+    paths = _state_paths(tmp_path)
     backend = MemorySecretBackend()
+    plugin_cache = tmp_path / "plugin-cache"
+    plugin_cache.mkdir(parents=True)
 
     first = provision_certificate_signing_material(
-        tmp_path,
+        paths,
         secret_backend=backend,
     )
+    shutil.rmtree(plugin_cache)
+    plugin_cache.mkdir(parents=True)
     second = provision_certificate_signing_material(
-        tmp_path,
+        paths,
         secret_backend=backend,
     )
 
     assert second.key_id == first.key_id
-    public_key_root = certificate_public_key_root(tmp_path)
-    assert load_active_certificate_key_id(public_key_root) == first.key_id
+    assert load_active_certificate_key_id(paths.public_key_root) == first.key_id
     assert load_certificate_signing_key(
-        public_key_root,
+        paths.public_key_root,
         secret_backend=backend,
     ).key_id == first.key_id
     if os.name == "posix":
-        assert public_key_root.stat().st_mode & 0o077 == 0
-        assert stat.S_IMODE(skills_root.stat().st_mode) == 0o755
-        assert stat.S_IMODE(certifier_root.stat().st_mode) == 0o755
+        assert paths.public_key_root.stat().st_mode & 0o077 == 0
+    stored_private = next(iter(backend.values.values())).encode("ascii")
+    assert all(
+        stored_private not in candidate.read_bytes()
+        for candidate in tmp_path.rglob("*")
+        if candidate.is_file()
+    )
+
+
+@pytest.mark.parametrize("stable_state", ["missing", "empty", "matching"])
+def test_legacy_state_migrates_idempotently(
+    tmp_path: Path,
+    stable_state: str,
+) -> None:
+    paths = _state_paths(tmp_path)
+    assert paths.legacy_public_key_root is not None
+    backend = MemorySecretBackend()
+    paths.legacy_public_key_root.mkdir(parents=True)
+    legacy_key = load_or_create_certificate_signing_key(
+        paths.legacy_public_key_root,
+        secret_backend=backend,
+    )
+    if stable_state == "empty":
+        paths.public_key_root.mkdir(parents=True)
+    elif stable_state == "matching":
+        _copy_public_state(paths.legacy_public_key_root, paths.public_key_root)
+
+    certificate_records.migrate_legacy_certificate_state(
+        tmp_path / "plugin-cache" / "famulus",
+        paths,
+        secret_backend=backend,
+    )
+    first = paths.active_key_id.read_bytes()
+    certificate_records.migrate_legacy_certificate_state(
+        tmp_path / "plugin-cache" / "famulus",
+        paths,
+        secret_backend=backend,
+    )
+
+    assert paths.active_key_id.read_bytes() == first
+    assert load_certificate_signing_key(
+        paths.public_key_root,
+        secret_backend=backend,
+    ).key_id == legacy_key.key_id
+
+
+def test_conflicting_legacy_and_stable_state_fails_without_rotation(
+    tmp_path: Path,
+) -> None:
+    paths = _state_paths(tmp_path)
+    assert paths.legacy_public_key_root is not None
+    backend = MemorySecretBackend()
+    paths.legacy_public_key_root.mkdir(parents=True)
+    paths.public_key_root.mkdir(parents=True)
+    load_or_create_certificate_signing_key(
+        paths.legacy_public_key_root,
+        secret_backend=backend,
+    )
+    stable_key = load_or_create_certificate_signing_key(
+        paths.public_key_root,
+        secret_backend=backend,
+    )
+    before = backend.snapshot()
+
+    with pytest.raises(certificate_records.CertificateStateConflict):
+        certificate_records.migrate_legacy_certificate_state(
+            tmp_path / "plugin-cache" / "famulus",
+            paths,
+            secret_backend=backend,
+        )
+
+    assert backend.snapshot() == before
+    assert load_active_certificate_key_id(paths.public_key_root) == stable_key.key_id
+
+
+@pytest.mark.parametrize("linked_root", ["legacy", "stable"])
+def test_legacy_migration_rejects_linked_state_roots_without_secret_changes(
+    tmp_path: Path,
+    linked_root: str,
+) -> None:
+    paths = _state_paths(tmp_path)
+    assert paths.legacy_public_key_root is not None
+    backend = MemorySecretBackend()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    if linked_root == "legacy":
+        paths.legacy_public_key_root.parent.mkdir(parents=True)
+        paths.legacy_public_key_root.symlink_to(outside, target_is_directory=True)
+    else:
+        paths.legacy_public_key_root.mkdir(parents=True)
+        load_or_create_certificate_signing_key(
+            paths.legacy_public_key_root,
+            secret_backend=backend,
+        )
+        paths.public_key_root.parent.mkdir(parents=True)
+        paths.public_key_root.symlink_to(outside, target_is_directory=True)
+    before = backend.snapshot()
+
+    with pytest.raises(certificate_records.CertificateStateConflict):
+        certificate_records.migrate_legacy_certificate_state(
+            tmp_path / "plugin-cache" / "famulus",
+            paths,
+            secret_backend=backend,
+        )
+
+    assert backend.snapshot() == before
+    assert not list(outside.iterdir())
+
+
+def test_legacy_migration_removes_public_candidates_before_selector_commit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = _state_paths(tmp_path)
+    assert paths.legacy_public_key_root is not None
+    backend = MemorySecretBackend()
+    paths.legacy_public_key_root.mkdir(parents=True)
+    load_or_create_certificate_signing_key(
+        paths.legacy_public_key_root,
+        secret_backend=backend,
+    )
+    real_create = certificate_records.atomic_create_bytes
+
+    def fail_selector(path: Path, data: bytes, **kwargs: object) -> bool:
+        if Path(path).name == "active-key-id":
+            raise OSError("injected selector failure")
+        return real_create(path, data, **kwargs)
+
+    monkeypatch.setattr(certificate_records, "atomic_create_bytes", fail_selector)
+
+    with pytest.raises(OSError, match="injected selector failure"):
+        certificate_records.migrate_legacy_certificate_state(
+            tmp_path / "plugin-cache" / "famulus",
+            paths,
+            secret_backend=backend,
+        )
+
+    assert not list(paths.public_key_root.iterdir())
+
+
+def test_certificate_paths_are_stable_famulus_state_not_repository_state(
+    tmp_path: Path,
+) -> None:
+    repo_root = tmp_path / "plugin-cache" / "famulus"
+    paths = certificate_records.certificate_state_paths(
+        platform="linux",
+        home=tmp_path / "home",
+        repo_root=repo_root,
+    )
+    famulus = resolve_famulus_paths(platform="linux", home=tmp_path / "home")
+
+    assert paths.public_key_root == famulus.certificate_public_key_root
+    assert paths.active_key_id == famulus.certificate_public_key_root / "active-key-id"
+    assert paths.legacy_public_key_root == certificate_records.legacy_certificate_public_key_root(repo_root)
+    assert repo_root not in paths.public_key_root.parents
 
 
 def test_ed25519_sign_verify_detects_payload_tamper_and_wrong_key(tmp_path: Path) -> None:

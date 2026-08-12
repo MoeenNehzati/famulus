@@ -41,6 +41,10 @@ class FamulusPaths:
     worker_root: Path
     launcher_profile_root: Path
 
+    # Durable certificate identity, independent of replaceable plugin sources.
+    certificate_state_root: Path
+    certificate_public_key_root: Path
+
     # Feature-specific config/state subdirectories.
     recurring_config_root: Path
     recurring_state_root: Path
@@ -91,6 +95,8 @@ def resolve_famulus_paths(*, platform: str, home: Path) -> FamulusPaths:
         python_install_dir=data_root / "python",
         worker_root=state_root / "workers",
         launcher_profile_root=data_root / "launcher-profiles",
+        certificate_state_root=data_root / "certificates",
+        certificate_public_key_root=data_root / "certificates" / "public-keys",
         recurring_config_root=config_root / "recurring-tasks",
         recurring_state_root=state_root / "recurring-tasks",
         email_triage_state_root=state_root / "email-triage",

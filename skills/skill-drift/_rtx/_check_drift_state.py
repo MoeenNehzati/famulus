@@ -29,7 +29,10 @@ else:
         observed_skill_sources,
     )
 from officina.common.certification_hashing import CertificationHashError, NodeHashState
-from officina.common.certificate_records import certificate_public_key_root
+from officina.common.certificate_records import (
+    CertificateStatePaths,
+    certificate_state_paths,
+)
 from officina.common.blueprint_graph import (
     RepositoryBlueprintGraph,
     load_repository_blueprint_graph,
@@ -50,6 +53,17 @@ OUTPUT_SCHEMA_VERSION = 1
 
 class DriftCheckError(RuntimeError):
     """Raised when certificate state cannot be read for an exact scope."""
+
+
+def _stable_certificate_state_paths(
+    *, home: Path | None = None
+) -> CertificateStatePaths:
+    """Resolve verification material outside replaceable plugin sources."""
+
+    return certificate_state_paths(
+        platform=sys.platform,
+        home=Path.home() if home is None else Path(home),
+    )
 
 
 @dataclass(frozen=True)
@@ -394,7 +408,7 @@ def _derive_for_source(
     try:
         derived = derive_repository_certification_state(
             source.package_root,
-            public_key_root=certificate_public_key_root(source.package_root),
+            public_key_root=_stable_certificate_state_paths().public_key_root,
             expected_schema_version=expected_schema_version,
             schema_root=(
                 source.package_root / "references" / "blueprint"

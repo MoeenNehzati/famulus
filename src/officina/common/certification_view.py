@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
+import sys
 from typing import Any, Mapping, Protocol, Sequence
 
 import jsonschema
@@ -26,7 +27,8 @@ from .certification_hashing import (
 from .atomic_files import AtomicWriteError, read_regular_file_bytes
 from .certificate_records import (
     CertificateLogError,
-    certificate_public_key_root,
+    CertificateStatePaths,
+    certificate_state_paths,
     parse_certificate_log,
 )
 from .blueprint_graph import (
@@ -510,10 +512,22 @@ class RepositoryCertificationState:
     certification_basis_hash: str
     certifier_identity: Mapping[str, object]
     currentness: CertificateCurrentnessReport
+    public_key_root: Path | None = None
 
 
 class RepositoryCertificationError(ValueError):
     """Raised when the canonical repository certification state cannot be derived."""
+
+
+def _stable_certificate_state_paths(
+    *, home: Path | None = None
+) -> CertificateStatePaths:
+    """Resolve public verification identity from durable per-home state."""
+
+    return certificate_state_paths(
+        platform=sys.platform,
+        home=Path.home() if home is None else Path(home),
+    )
 
 
 def derive_repository_certification_state(
@@ -585,15 +599,16 @@ def derive_repository_certification_state(
             node_id: expected_certifier_checks(expected_schema_version)
             for node_id in graph.nodes
         }
+        selected_public_key_root = (
+            _stable_certificate_state_paths().public_key_root
+            if public_key_root is None
+            else Path(public_key_root)
+        )
         currentness = evaluate_certificate_currentness(
             graph,
             states,
             repo_root=root,
-            public_key_root=(
-                certificate_public_key_root(root)
-                if public_key_root is None
-                else Path(public_key_root)
-            ),
+            public_key_root=selected_public_key_root,
             source_commit=snapshot.commit,
             certifier_identity=certifier_identity,
             checks_by_node=checks_by_node,
@@ -618,6 +633,7 @@ def derive_repository_certification_state(
         certification_basis_hash=basis_hash,
         certifier_identity=certifier_identity,
         currentness=currentness,
+        public_key_root=selected_public_key_root,
     )
 
 
@@ -703,7 +719,11 @@ def _certifier_renewal_state_admissible(
         validator = schema_validator(
             load_schema(schema_root / "certificate.schema.json")
         )
-        public_key_root = certificate_public_key_root(root)
+        public_key_root = (
+            state.public_key_root
+            if state.public_key_root is not None
+            else _stable_certificate_state_paths().public_key_root
+        )
         existing: set[str] = set()
         for node_id in order:
             node = state.graph.nodes[node_id]
@@ -870,6 +890,7 @@ class RepositoryCertificationView(CertificateCurrentnessView):
 def repository_certification_view(
     repo_root: Path,
     *,
+    public_key_root: Path | None = None,
     expected_schema_version: int = 6,
     schema_root: Path | None = None,
     allow_non_atomic: bool = False,
@@ -878,6 +899,7 @@ def repository_certification_view(
 
     state = derive_repository_certification_state(
         repo_root,
+        public_key_root=public_key_root,
         expected_schema_version=expected_schema_version,
         schema_root=schema_root,
         allow_non_atomic=allow_non_atomic,

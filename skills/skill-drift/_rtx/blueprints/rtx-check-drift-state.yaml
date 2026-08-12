@@ -95,6 +95,18 @@ interfaces:
           reason: Derive commit-backed hash inputs.
           sensitivity: derived-private
           system: git
+        - access: read
+          content: durable active key ID and retained Ed25519 public keys
+          formats:
+          - text
+          - pem
+          id: read-4
+          medium: home-filesystem
+          path: <famulus-data>/certificates/public-keys/{active-key-id,*.pub}
+          path_match: glob
+          reason: Verify installed modules against the stable per-home certificate identity.
+          sensitivity: credential
+          system: filesystem
         writes:
         - access: write
           content: hash report
@@ -294,6 +306,18 @@ interfaces:
           reason: Evaluate commit-backed certificate inputs.
           sensitivity: derived-private
           system: git
+        - access: read
+          content: durable active key ID and retained Ed25519 public keys
+          formats:
+          - text
+          - pem
+          id: read-4
+          medium: home-filesystem
+          path: <famulus-data>/certificates/public-keys/{active-key-id,*.pub}
+          path_match: glob
+          reason: Verify installed modules against the stable per-home certificate identity.
+          sensitivity: credential
+          system: filesystem
         writes:
         - access: write
           content: derived certificate drift report

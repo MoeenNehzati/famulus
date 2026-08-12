@@ -19,12 +19,12 @@ SRC_ROOT = MODULE_PATH.parents[3] / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 from officina.common.certificate_records import (
-    certificate_public_key_root,
     certificate_entry_hash,
     load_or_create_certificate_signing_key,
     parse_certificate_log,
     rotate_certificate_signing_key,
 )
+import officina.common.certificate_records as certificate_records
 from officina.runtime.python_machine_interface import (
     logical_python_package_name,
 )
@@ -321,16 +321,28 @@ def test_live_certification_provisions_missing_canonical_key_root(
     tmp_path: Path,
 ) -> None:
     commit = materialize_v4_repository(tmp_path)
-    public_key_root = certificate_public_key_root(tmp_path)
+    paths = certificate_records.CertificateStatePaths(
+        public_key_root=tmp_path / "stable" / "public-keys",
+        active_key_id=tmp_path / "stable" / "public-keys" / "active-key-id",
+        legacy_public_key_root=None,
+    )
 
     result = _certify(
         tmp_path,
-        public_key_root=public_key_root,
+        public_key_root=paths.public_key_root,
         secret_backend=MemorySecretBackend(),
     )
 
     assert result.source_commit == commit
-    assert (public_key_root / "active-key-id").is_file()
+    assert paths.active_key_id.is_file()
+
+
+def test_certifier_uses_stable_famulus_certificate_root(tmp_path: Path) -> None:
+    expected = certificate_records.certificate_state_paths(
+        platform=sys.platform, home=tmp_path
+    )
+
+    assert certifier._stable_certificate_state_paths(home=tmp_path) == expected
 
 
 def test_private_writer_issues_parseable_append_only_certificate(

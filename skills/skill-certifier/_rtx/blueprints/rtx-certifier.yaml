@@ -63,7 +63,8 @@ interfaces:
           synchronization checks, and the scoped route-smoke dependency audit before
           signing.
       - external-side-effect: Creates or reuses certifier signing material and appends
-          signed records to affected node histories.
+          signed records to affected node histories; signing identity lives in durable
+          per-home Famulus state rather than the reviewed repository.
       - external-side-effect: Regenerates each selected module's certificate-backed
           pooled review after certificate currentness verification.
       - external-side-effect: Requires an explicit repository-bound reviewed commit;
@@ -106,6 +107,18 @@ interfaces:
             and after appends.
           sensitivity: derived-private
           system: git
+        - access: read
+          content: durable active key ID and retained Ed25519 public keys
+          formats:
+          - text
+          - pem
+          id: read-3
+          medium: home-filesystem
+          path: <famulus-data>/certificates/public-keys/{active-key-id,*.pub}
+          path_match: glob
+          reason: Reuse the stable signing identity across plugin-cache replacements.
+          sensitivity: credential
+          system: filesystem
         writes:
         - access: write
           content: certificate signing material
@@ -115,7 +128,7 @@ interfaces:
           - secret-store-entry
           id: write-1
           medium: local-filesystem
-          path: skills/skill-certifier/.certificates/public-keys
+          path: <famulus-data>/certificates/public-keys
           path_match: exact
           reason: Create or reuse retained Ed25519 verification material and the active-key
             selector while storing private material through the configured secret

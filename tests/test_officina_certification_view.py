@@ -4,16 +4,17 @@ import base64
 from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
+import sys
 from types import SimpleNamespace
 
 import pytest
 import yaml
 
 import officina.common.certification_view as certification_view_module
+import officina.common.certificate_records as certificate_records
 from officina.common.certification_hashing import NodeHashState, compute_node_hash_states
 from officina.common.certificate_records import (
     canonical_certificate_envelope_bytes,
-    certificate_public_key_root,
     certificate_entry_hash,
     load_or_create_certificate_signing_key,
     parse_certificate_log,
@@ -72,6 +73,18 @@ CHECKS = (
         "findings": [],
     },
 )
+
+
+def test_certification_view_uses_stable_famulus_certificate_root(
+    tmp_path: Path,
+) -> None:
+    expected = certificate_records.certificate_state_paths(
+        platform=sys.platform, home=tmp_path
+    )
+
+    assert certification_view_module._stable_certificate_state_paths(
+        home=tmp_path
+    ) == expected
 
 
 def _authorization_result(
@@ -1177,7 +1190,7 @@ def test_repository_view_admits_only_exact_self_recertification_for_valid_stale_
     tmp_path: Path,
 ) -> None:
     graph, states, commit = create_v4_repository(tmp_path)
-    public_key_root = certificate_public_key_root(tmp_path)
+    public_key_root = certificate_records.legacy_certificate_public_key_root(tmp_path)
     public_key_root.mkdir(parents=True)
     backend = MemorySecretBackend()
     key = load_or_create_certificate_signing_key(
@@ -1208,7 +1221,12 @@ def test_repository_view_admits_only_exact_self_recertification_for_valid_stale_
         _write_log(graph, node_id, [signed[node_id]])
     rotate_certificate_signing_key(public_key_root, secret_backend=backend)
 
-    view = repository_certification_view(tmp_path, expected_schema_version=4, schema_root=SCHEMA_ROOT)
+    view = repository_certification_view(
+        tmp_path,
+        public_key_root=public_key_root,
+        expected_schema_version=4,
+        schema_root=SCHEMA_ROOT,
+    )
     assert all(
         "suspect-certificate-log" in view.report.nodes[node_id].concerns
         for node_id in certifier_targets
@@ -1252,7 +1270,12 @@ def test_repository_view_admits_only_exact_self_recertification_for_valid_stale_
     ).decode("ascii")
     _write_log(graph, corrupt_node_id, [corrupt])
 
-    assert not repository_certification_view(tmp_path, expected_schema_version=4, schema_root=SCHEMA_ROOT).check_bootstrap(
+    assert not repository_certification_view(
+        tmp_path,
+        public_key_root=public_key_root,
+        expected_schema_version=4,
+        schema_root=SCHEMA_ROOT,
+    ).check_bootstrap(
         caller_module_id="skill-certifier",
         target_module_id="skill-certifier",
         terminal_module_id="skill-certifier",
@@ -1398,7 +1421,7 @@ def test_renewal_rejects_nonprefix_second_root_provider_history(
         "provider.source.gateway",
         "skill-certifier.source.provider-client",
     )
-    public_key_root = certificate_public_key_root(tmp_path)
+    public_key_root = certificate_records.legacy_certificate_public_key_root(tmp_path)
     public_key_root.mkdir(parents=True)
     key = load_or_create_certificate_signing_key(
         public_key_root,
@@ -1462,7 +1485,7 @@ def test_renewal_rejects_signed_entry_for_different_log_subject(
 ) -> None:
     create_v4_repository(tmp_path)
     state = derive_repository_certification_state(tmp_path, expected_schema_version=4, schema_root=SCHEMA_ROOT)
-    public_key_root = certificate_public_key_root(tmp_path)
+    public_key_root = certificate_records.legacy_certificate_public_key_root(tmp_path)
     public_key_root.mkdir(parents=True)
     key = load_or_create_certificate_signing_key(
         public_key_root,
@@ -1486,7 +1509,12 @@ def test_renewal_rejects_signed_entry_for_different_log_subject(
             )
         ],
     )
-    state = derive_repository_certification_state(tmp_path, expected_schema_version=4, schema_root=SCHEMA_ROOT)
+    state = derive_repository_certification_state(
+        tmp_path,
+        public_key_root=public_key_root,
+        expected_schema_version=4,
+        schema_root=SCHEMA_ROOT,
+    )
     assert "subject-mismatch" in state.currentness.nodes[log_node_id].concerns
 
     assert not certification_view_module._certifier_renewal_state_admissible(
