@@ -8,18 +8,10 @@ dependencies:
   reason: Loads Python package support from __init__.py.
   source: install.source.init
   version: 1
-description: Owns the stable, path-fixed launch resolver deployed at <runtime_root>/bootstrap/resolvers/v1/launch.py
-  (resolvers/launch.py's own source -- a dependency-free, stdlib-only script that
-  imports nothing beyond the Python standard library, since it runs under the user's
-  ambient Python before any interpreter handoff). It reads current.json at launch
-  time, using a minimal read-only reimplementation of officina.install.runtime_pointer's
-  containment check, and execs into the active managed-runtime release's interpreter,
-  so generated launcher shims (dispatcher, invoke-skill, ...) never need to embed
-  a release-specific repo checkout or interpreter path that goes stale when the repo
-  moves or a new release is activated. launcher_entry.py is a thin, ordinarily-importable
-  wrapper around the same resolver source, used only by tests (the Task 4/5-style
-  cross-check against officina.install.runtime_pointer's real containment check) --
-  production code never imports either module.
+description: Owns the dependency-free fixed bootstrap and immutable resolver-bundle
+  entry. For v3, bootstrap validates and executes the pointer-selected content-addressed
+  bundle, which validates its trust sidecar before handing control to the managed
+  interpreter. Legacy v1/v2 pointers remain launchable.
 gateway:
   language: Python
   path: launcher_entry.py
@@ -50,6 +42,16 @@ interfaces:
         unmet_outcome: unresolved-pointer
         caller_action: Finish installing/activating a managed-runtime release (officina.install.runtime_pointer.activate_release)
           before invoking a generated launcher.
+      - id: resolver-bundle-valid
+        description: Pointer schema v3 must name a complete content-addressed resolver
+          bundle whose manifest and file digests validate.
+        check:
+          kind: argument
+          argument_ref: argv
+          predicate: present
+        unmet_outcome: unresolved-pointer
+        caller_action: Repair the resolver cache through Phase 1; never execute an
+          unvalidated bundle.
       interaction:
         mode: unattended
       caller_warnings:
@@ -93,7 +95,8 @@ interfaces:
         state_effect: read-only
         lifecycle: finite
         consistency:
-          live: current.json is read once per invocation, immediately before the exec.
+          live: current.json is read for bundle selection and re-read by the selected
+            bundle before the managed-interpreter exec.
         verification:
         - method: direct-io-state
           direct_io_ref: pointer-file
@@ -116,7 +119,15 @@ interfaces:
           formats:
           - json
           sensitivity: public
-          path: <runtime_root>/bootstrap/resolvers/v1/trusted-roots.json
+          path: <runtime_root>/resolvers/bundles/<resolver-bundle-id>/trusted-roots.json
+        - id: resolver-manifest
+          medium: local-filesystem
+          access: read
+          content: Digest manifest binding resolver code and trust sidecar bytes
+          formats:
+          - json
+          sensitivity: public
+          path: <runtime_root>/resolvers/bundles/<resolver-bundle-id>/manifest.json
         writes:
         - id: return-value
           medium: local-system

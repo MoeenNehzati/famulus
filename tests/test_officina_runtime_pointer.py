@@ -53,6 +53,54 @@ def test_v2_pointer_carries_validated_repository_configuration(tmp_path: Path) -
     assert json.loads((runtime_root / "current.json").read_text())["schema_version"] == 2
 
 
+def test_v3_pointer_round_trips_resolver_bundle_id(tmp_path: Path) -> None:
+    runtime_root = tmp_path / "runtime"
+    release_dir = runtime_root / "releases" / "release"
+    python_bin = release_dir / "venv" / "bin" / "python"
+    python_bin.parent.mkdir(parents=True)
+    python_bin.write_text("#!/bin/sh\n")
+    bundle_id = "a" * 64
+    repository = tmp_path / "repository"
+    (repository / "skills").mkdir(parents=True)
+    config = repository / "officina.toml"
+    config.write_text('schema_version = 1\n[modules]\nroots = ["skills"]\n')
+
+    activated = activate_release(
+        runtime_root=runtime_root,
+        release_dir=release_dir,
+        python_bin=python_bin,
+        repository_config=config,
+        resolver_bundle_id=bundle_id,
+    )
+    loaded = load_current_pointer(runtime_root=runtime_root)
+
+    assert activated.resolver_bundle_id == bundle_id
+    assert loaded.resolver_bundle_id == bundle_id
+    assert json.loads((runtime_root / "current.json").read_text())["schema_version"] == 3
+
+
+@pytest.mark.parametrize("bundle_id", ("", "../escape", "g" * 64, "a" * 63))
+def test_v3_pointer_rejects_invalid_resolver_bundle_id(tmp_path: Path, bundle_id: str) -> None:
+    runtime_root = tmp_path / "runtime"
+    release_dir = runtime_root / "releases" / "release"
+    python_bin = release_dir / "venv" / "bin" / "python"
+    python_bin.parent.mkdir(parents=True)
+    python_bin.write_text("#!/bin/sh\n")
+    repository = tmp_path / "repository"
+    (repository / "skills").mkdir(parents=True)
+    config = repository / "officina.toml"
+    config.write_text('schema_version = 1\n[modules]\nroots = ["skills"]\n')
+
+    with pytest.raises(RuntimePointerError, match="resolver_bundle_id"):
+        activate_release(
+            runtime_root=runtime_root,
+            release_dir=release_dir,
+            python_bin=python_bin,
+            repository_config=config,
+            resolver_bundle_id=bundle_id,
+        )
+
+
 def test_v2_pointer_rejects_missing_repository_configuration(tmp_path: Path) -> None:
     runtime_root = tmp_path / "runtime"
     runtime_root.mkdir()

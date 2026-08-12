@@ -4,8 +4,8 @@ dependencies:
 - blueprint:
     base: module-root
     path: blueprints/runtime-pointer.yaml
-  reason: build-candidate-release activates the finished release through the shared
-    runtime-pointer source.
+  reason: activate-prepared-release commits a validated release through the shared
+    runtime-pointer source; preparation does not mutate current.json.
   source: install.source.runtime-pointer
   version: 1
 - blueprint:
@@ -14,9 +14,8 @@ dependencies:
   reason: Loads Python package support from __init__.py.
   source: install.source.init
   version: 1
-description: Reads runtime_dependencies.json schema v2 and builds a versioned managed-runtime
-  candidate containing a verified first-party Officina wheel, pinned core packages,
-  and declared module dependencies before atomic activation.
+description: Prepares a validated managed-runtime release and immutable content-addressed
+  resolver bundle without pointer mutation, then exposes separate activation and pruning.
 gateway:
   language: Python
   path: managed_runtime.py
@@ -36,8 +35,15 @@ interfaces:
               description: Return the deduplicated, sorted pip install specs declared
                 for a platform in runtime_dependencies.json schema v2.
             - value: build-candidate-release
-              description: Create a new release, install and verify the first-party
-                dispatcher artifact plus dependencies, and activate it.
+              description: Compatibility operation that prepares and immediately activates.
+            - value: prepare-candidate-release
+              description: Build and validate one exact release and resolver bundle
+                without changing current.json.
+            - value: activate-prepared-release
+              description: Revalidate prepared state and atomically write pointer schema v3.
+            - value: prune-old-releases
+              description: After the complete transaction, retain current plus one previous
+                exact release and remove older exact children.
         manifest-path:
           description: Path to runtime_dependencies.json schema v2 to read declared
             module dependencies from.
@@ -116,10 +122,8 @@ interfaces:
       interaction:
         mode: unattended
       caller_warnings:
-      - external-side-effect: build-candidate-release creates a release beneath runtime-root,
-          builds and installs a first-party wheel plus dependencies through uv-bin,
-          validates it in isolation, and atomically activates it; it never builds
-          routing state.
+      - external-side-effect: prepare-candidate-release publishes inactive state only;
+          activation and post-transaction pruning are explicit later operations.
       outputs:
       - id: result
         audience: machine
@@ -200,11 +204,11 @@ interfaces:
             verify_then_decide: Load the current pointer and compare release_id before
               retrying.
           partial_effects_on_failure:
-            possible: A release directory may exist on disk with a failed or partial
-              venv if the batch install fails; it is never activated.
+            possible: The exact failed candidate is removed and current.json preserved;
+              a compatible immutable resolver bundle may remain cached.
           rollback_on_failure:
-            unavailable: A failed candidate release directory is left on disk for
-              inspection rather than deleted automatically.
+            unavailable: A failure after pointer replacement retains the selected release
+              and pointer for journal recovery and is never described as rollback.
         verification:
         - method: direct-io-state
           direct_io_ref: release-directory
@@ -254,6 +258,15 @@ interfaces:
           - json
           sensitivity: user-private
           path: <runtime-root>/current.json
+        - id: resolver-bundle
+          medium: local-filesystem
+          access: read-write
+          content: Immutable resolver, trust sidecar, and digest manifest.
+          formats:
+          - python
+          - json
+          sensitivity: public
+          path: <runtime-root>/resolvers/bundles/<sha256>
         - id: return-value
           medium: local-system
           access: write

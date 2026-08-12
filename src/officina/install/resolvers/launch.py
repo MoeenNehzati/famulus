@@ -24,6 +24,7 @@ implementation on a shared table of adversarial test vectors.
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import sys
 from pathlib import Path
@@ -98,9 +99,32 @@ def _require_repository_config(path: Path) -> Path:
     return path
 
 
+def _require_bundle_id(value: object) -> str:
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise ResolverError("resolver_bundle_id must be a lowercase SHA-256 digest")
+    return value
+
+
+def _require_entry_parent(path: Path, *, root: Path, label: str) -> None:
+    """Validate an entry's parent without following its final symlink."""
+    if not path.is_absolute():
+        raise ResolverError(f"{label} must be an absolute path: {path}")
+    try:
+        path.parent.resolve().relative_to(root.resolve())
+    except ValueError as exc:
+        raise ResolverError(f"{label} must live under runtime_root: {path}") from exc
+
+
 def _load_current_pointer(
-    runtime_root: Path, *, trusted_roots: tuple[Path, ...]
-) -> Path | tuple[Path, Path]:
+    runtime_root: Path,
+    *,
+    trusted_roots: tuple[Path, ...],
+    defer_v3_interpreter_validation: bool = False,
+) -> Path | tuple[Path, Path] | tuple[Path, Path, str]:
     """Read current.json beneath ``runtime_root`` and return its validated
     ``python_bin`` entry path (unresolved -- see
     ``_require_contained_or_trusted``)."""
@@ -114,7 +138,7 @@ def _load_current_pointer(
     if not isinstance(payload, dict):
         raise ResolverError("current.json must contain a JSON object")
     schema_version = payload.get("schema_version")
-    if schema_version not in {1, 2}:
+    if schema_version not in {1, 2, 3}:
         raise ResolverError(
             f"unsupported current.json schema_version: {payload.get('schema_version')!r}"
         )
@@ -126,23 +150,33 @@ def _load_current_pointer(
     # runtime_source is never allowed to resolve outside runtime_root -- only
     # python_bin may land in a trusted interpreter store.
     _require_contained_or_trusted(runtime_source, root=runtime_root, trusted_roots=(), label="runtime_source")
-    _require_contained_or_trusted(
-        python_bin, root=runtime_root, trusted_roots=trusted_roots, label="python_bin"
-    )
+    if schema_version == 3 and defer_v3_interpreter_validation:
+        _require_entry_parent(python_bin, root=runtime_root, label="python_bin")
+    else:
+        _require_contained_or_trusted(
+            python_bin, root=runtime_root, trusted_roots=trusted_roots, label="python_bin"
+        )
     repository_config = None
-    if schema_version == 2:
+    if schema_version in {2, 3}:
         try:
             repository_config = _require_repository_config(
                 Path(payload["repository_config"])
             )
         except (KeyError, TypeError) as exc:
             raise ResolverError(f"current.json missing required key: {exc}") from exc
+    if schema_version == 3:
+        try:
+            bundle_id = _require_bundle_id(payload["resolver_bundle_id"])
+        except KeyError as exc:
+            raise ResolverError(f"current.json missing required key: {exc}") from exc
+        assert repository_config is not None
+        return python_bin, repository_config, bundle_id
     if repository_config is None:
         return python_bin
     return python_bin, repository_config
 
 
-def _trusted_interpreter_roots() -> tuple[Path, ...]:
+def _trusted_interpreter_roots(resolver_path: Path | None = None) -> tuple[Path, ...]:
     """Return the trusted-interpreter-store allowlist for this resolver.
 
     Deployment writes this resolver alongside a sibling data file
@@ -153,7 +187,7 @@ def _trusted_interpreter_roots() -> tuple[Path, ...]:
     instead of re-deriving trust itself, since it must not shell out to
     ``uv`` or import anything beyond the standard library.
     """
-    trust_file = Path(__file__).resolve().parent / "trusted-roots.json"
+    trust_file = (resolver_path or Path(__file__)).absolute().parent / "trusted-roots.json"
     if not trust_file.exists():
         return ()
     try:
@@ -165,6 +199,43 @@ def _trusted_interpreter_roots() -> tuple[Path, ...]:
     return tuple(Path(entry) for entry in entries if isinstance(entry, str))
 
 
+def _validate_resolver_bundle(runtime_root: Path, bundle_id: str) -> Path:
+    """Validate a content-addressed bundle using only standard-library code."""
+    bundle_id = _require_bundle_id(bundle_id)
+    bundle_dir = runtime_root / "resolvers" / "bundles" / bundle_id
+    if bundle_dir.is_symlink() or not bundle_dir.is_dir():
+        raise ResolverError(f"resolver bundle is missing or unsafe: {bundle_id}")
+    files: dict[str, bytes] = {}
+    try:
+        for name in ("launch.py", "trusted-roots.json", "manifest.json"):
+            path = bundle_dir / name
+            if path.is_symlink() or not path.is_file():
+                raise ResolverError(f"resolver bundle file is missing or unsafe: {name}")
+            files[name] = path.read_bytes()
+        if hashlib.sha256(files["manifest.json"]).hexdigest() != bundle_id:
+            raise ResolverError("resolver bundle manifest digest does not match its id")
+        manifest = json.loads(files["manifest.json"])
+        expected = {
+            "files": {
+                "launch.py": hashlib.sha256(files["launch.py"]).hexdigest(),
+                "trusted-roots.json": hashlib.sha256(files["trusted-roots.json"]).hexdigest(),
+            },
+            "schema_version": 1,
+        }
+        if manifest != expected:
+            raise ResolverError("resolver bundle file digest validation failed")
+        roots = json.loads(files["trusted-roots.json"])
+        if not isinstance(roots, list) or any(
+            not isinstance(root, str) or not Path(root).is_absolute() for root in roots
+        ):
+            raise ResolverError("resolver bundle trust data is invalid")
+    except ResolverError:
+        raise
+    except (OSError, UnicodeError, ValueError, TypeError) as exc:
+        raise ResolverError(f"cannot validate resolver bundle: {exc}") from exc
+    return bundle_dir
+
+
 def main(argv: list[str]) -> int:
     """Resolve the active release from ``current.json`` and exec into it.
 
@@ -172,14 +243,40 @@ def main(argv: list[str]) -> int:
     ``<runtime_root>/bootstrap/resolvers/v1/launch.py``. ``argv[1:]`` is
     forwarded unchanged as the new process's argv.
     """
-    runtime_root = Path(argv[0]).resolve().parents[3]
+    invoked_path = Path(argv[0]).absolute()
+    runtime_root = invoked_path.parents[3]
+    running_from_bundle = invoked_path.parent.parent.name == "bundles"
     try:
         loaded_pointer = _load_current_pointer(
-            runtime_root, trusted_roots=_trusted_interpreter_roots()
+            runtime_root,
+            trusted_roots=_trusted_interpreter_roots(invoked_path),
+            defer_v3_interpreter_validation=not running_from_bundle,
         )
-        if isinstance(loaded_pointer, tuple):
+        if isinstance(loaded_pointer, tuple) and len(loaded_pointer) == 3:
+            python_bin, repository_config, bundle_id = loaded_pointer
+            bundle_dir = _validate_resolver_bundle(runtime_root, bundle_id)
+            bundle_launch = bundle_dir / "launch.py"
+            if not running_from_bundle:
+                os.execv(
+                    sys.executable,
+                    [sys.executable, str(bundle_launch), *argv[1:]],
+                )
+                return 1
+            if invoked_path != bundle_launch:
+                raise ResolverError(
+                    "active resolver bundle does not match the invoked bundle"
+                )
+            # Re-load now that the selected bundle's own trust sidecar is known.
+            loaded_pointer = _load_current_pointer(
+                runtime_root,
+                trusted_roots=_trusted_interpreter_roots(bundle_launch),
+            )
+            python_bin, repository_config, _bundle_id = loaded_pointer
+        elif isinstance(loaded_pointer, tuple):
             python_bin, repository_config = loaded_pointer
         else:
+            if running_from_bundle:
+                raise ResolverError("legacy pointer cannot select a resolver bundle")
             python_bin = loaded_pointer
             repository_config = None
     except ResolverError as exc:

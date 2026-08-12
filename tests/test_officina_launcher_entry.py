@@ -14,6 +14,7 @@ import officina.install.launcher_entry as launcher_entry
 import officina.install.runtime_pointer as runtime_pointer
 from officina.common.famulus_paths import resolve_famulus_paths
 from officina.install.launcher_entry import ResolverError, main
+import officina.install.managed_runtime as managed_runtime
 from officina.install.managed_runtime import build_candidate_release, uv_python_install_dir
 from officina.install.runtime_pointer import RuntimePointerError, activate_release
 
@@ -194,6 +195,75 @@ def test_main_injects_repository_config_from_v2_pointer(tmp_path, monkeypatch):
     ]
 
 
+def test_v3_bootstrap_execs_the_pointer_selected_immutable_bundle(tmp_path, monkeypatch):
+    runtime_root = tmp_path / "runtime"
+    release_dir = runtime_root / "releases" / "release"
+    python_bin = release_dir / "venv" / "bin" / "python"
+    python_bin.parent.mkdir(parents=True)
+    python_bin.write_text("#!/bin/sh\n")
+    repository = tmp_path / "repository"
+    (repository / "skills").mkdir(parents=True)
+    config = repository / "officina.toml"
+    config.write_text('schema_version = 1\n[modules]\nroots = ["skills"]\n')
+    selected = managed_runtime._publish_resolver_bundle(
+        runtime_root=runtime_root,
+        trusted_interpreter_roots=(tmp_path / "trusted-one",),
+    )
+    later = managed_runtime._publish_resolver_bundle(
+        runtime_root=runtime_root,
+        trusted_interpreter_roots=(tmp_path / "trusted-two",),
+    )
+    assert later != selected
+    activate_release(
+        runtime_root=runtime_root,
+        release_dir=release_dir,
+        python_bin=python_bin,
+        repository_config=config,
+        resolver_bundle_id=selected,
+    )
+    recorded = {}
+
+    def fake_execv(path, argv):
+        recorded["path"] = path
+        recorded["argv"] = argv
+
+    monkeypatch.setattr("os.execv", fake_execv)
+    main(_resolver_argv(runtime_root, "--help"))
+
+    selected_launch = runtime_root / "resolvers" / "bundles" / selected / "launch.py"
+    assert recorded["path"] == sys.executable
+    assert recorded["argv"] == [sys.executable, str(selected_launch), "--help"]
+
+
+def test_v3_bootstrap_rejects_tampered_selected_bundle(tmp_path, monkeypatch, capsys):
+    runtime_root = tmp_path / "runtime"
+    release_dir = runtime_root / "releases" / "release"
+    python_bin = release_dir / "venv" / "bin" / "python"
+    python_bin.parent.mkdir(parents=True)
+    python_bin.write_text("#!/bin/sh\n")
+    repository = tmp_path / "repository"
+    (repository / "skills").mkdir(parents=True)
+    config = repository / "officina.toml"
+    config.write_text('schema_version = 1\n[modules]\nroots = ["skills"]\n')
+    bundle_id = managed_runtime._publish_resolver_bundle(
+        runtime_root=runtime_root,
+        trusted_interpreter_roots=(),
+    )
+    activate_release(
+        runtime_root=runtime_root,
+        release_dir=release_dir,
+        python_bin=python_bin,
+        repository_config=config,
+        resolver_bundle_id=bundle_id,
+    )
+    bundle_launch = runtime_root / "resolvers" / "bundles" / bundle_id / "launch.py"
+    bundle_launch.chmod(0o755)
+    bundle_launch.write_text("tampered\n")
+
+    assert main(_resolver_argv(runtime_root, "--help")) == 1
+    assert "resolver bundle" in capsys.readouterr().err
+
+
 def test_deployed_stable_launcher_runs_an_installed_dispatcher_without_pythonpath(
     tmp_path,
 ):
@@ -330,7 +400,7 @@ def test_launcher_entry_never_imports_officina():
     import ast
 
     tree = ast.parse(RESOLVER_SOURCE.read_text(encoding="utf-8"))
-    stdlib_only = {"__future__", "json", "os", "sys", "pathlib"}
+    stdlib_only = {"__future__", "hashlib", "json", "os", "sys", "pathlib"}
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:

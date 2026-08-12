@@ -5,11 +5,13 @@ import os
 import shutil
 import subprocess
 import tomllib
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from officina.common import atomic_files
+import officina.install.managed_runtime as managed_runtime
 from officina.install.managed_runtime import (
     ManagedRuntimeError,
     _source_revision,
@@ -156,7 +158,7 @@ def test_declared_python_packages_matches_today_baseline():
         "cryptography>=44.0.1",
         "dateparser",
         "jsonschema>=4",
-        "keyring",
+        "keyring==25.6.0",
         "marker-pdf",
         "PyYAML>=6",
         "rich",
@@ -202,7 +204,7 @@ def test_declared_python_packages_include_optional_false_excludes_marker_pdf():
         "cryptography>=44.0.1",
         "dateparser",
         "jsonschema>=4",
-        "keyring",
+        "keyring==25.6.0",
         "PyYAML>=6",
         "rich",
     )
@@ -327,6 +329,285 @@ def test_build_candidate_release_provisions_venv_before_installing_packages(monk
     assert calls[1][0] == str(FAKE_UV_BIN)
 
 
+def _prepare_repo_candidate(monkeypatch, tmp_path):
+    calls: list[list[str]] = []
+    monkeypatch.setattr(
+        "subprocess.run",
+        fake_uv_subprocess_run(calls, trusted_python_dir=tmp_path / "uv-python-store"),
+    )
+    prepared = managed_runtime.prepare_candidate_release(
+        runtime_root=tmp_path / "runtime",
+        manifest_path=REAL_MANIFEST,
+        platform="linux",
+        uv_bin=FAKE_UV_BIN,
+        python_version="3.11",
+        repo_root=REPO_ROOT,
+        include_optional_dependencies=False,
+    )
+    return prepared, calls
+
+
+def test_prepare_candidate_release_builds_validated_release_without_writing_pointer(
+    monkeypatch, tmp_path
+):
+    prepared, _calls = _prepare_repo_candidate(monkeypatch, tmp_path)
+
+    assert prepared.python_bin.exists()
+    assert prepared.release_dir.name == prepared.release_id
+    assert prepared.repository_config == (REPO_ROOT / "officina.toml").resolve()
+    assert len(prepared.resolver_bundle_id) == 64
+    assert not (tmp_path / "runtime" / "current.json").exists()
+
+
+@pytest.mark.parametrize(
+    "boundary",
+    (
+        "directory-created",
+        "venv-created",
+        "dependencies-installed",
+        "wheel-built",
+        "probe-completed",
+        "artifact-written",
+        "bundle-published",
+    ),
+)
+def test_prepare_failure_removes_only_the_exact_new_candidate(
+    monkeypatch, tmp_path, boundary
+):
+    runtime_root = tmp_path / "runtime"
+    releases_root = runtime_root / "releases"
+    older = releases_root / "older-known-good"
+    older.mkdir(parents=True)
+    sentinel = older / "sentinel"
+    sentinel.write_text("preserve me\n")
+    monkeypatch.setattr(
+        managed_runtime,
+        "_new_release_id",
+        lambda: "2026-08-12T00-00-00Z-c0ffee",
+    )
+    calls: list[list[str]] = []
+    monkeypatch.setattr(
+        "subprocess.run",
+        fake_uv_subprocess_run(calls, trusted_python_dir=tmp_path / "uv-python-store"),
+    )
+
+    def fail(message):
+        def raising(*args, **kwargs):
+            raise ManagedRuntimeError(message)
+
+        return raising
+
+    if boundary == "directory-created":
+        monkeypatch.setattr(managed_runtime, "_create_release_venv", fail(boundary))
+    elif boundary == "venv-created":
+        monkeypatch.setattr(managed_runtime, "_run_dependency_install", fail(boundary))
+    elif boundary == "dependencies-installed":
+        monkeypatch.setattr(managed_runtime, "_build_officina_wheel", fail(boundary))
+    elif boundary == "wheel-built":
+        real_install = managed_runtime._run_dependency_install
+        install_count = 0
+
+        def fail_second_install(**kwargs):
+            nonlocal install_count
+            install_count += 1
+            if install_count == 2:
+                raise ManagedRuntimeError(boundary)
+            return real_install(**kwargs)
+
+        monkeypatch.setattr(managed_runtime, "_run_dependency_install", fail_second_install)
+    elif boundary == "probe-completed":
+        real_replace = atomic_files.atomic_replace_bytes
+
+        def fail_artifact(path, *args, **kwargs):
+            if Path(path).name == "artifact.json":
+                raise OSError(boundary)
+            return real_replace(path, *args, **kwargs)
+
+        monkeypatch.setattr(managed_runtime.atomic_files, "atomic_replace_bytes", fail_artifact)
+    elif boundary == "artifact-written":
+        monkeypatch.setattr(managed_runtime, "_uv_python_install_dir", fail(boundary))
+    else:
+        real_validate = managed_runtime._validate_resolver_bundle
+
+        def fail_after_publish(*args, **kwargs):
+            real_validate(*args, **kwargs)
+            raise ManagedRuntimeError(boundary)
+
+        monkeypatch.setattr(managed_runtime, "_validate_resolver_bundle", fail_after_publish)
+
+    with pytest.raises((ManagedRuntimeError, OSError), match=boundary):
+        managed_runtime.prepare_candidate_release(
+            runtime_root=runtime_root,
+            manifest_path=REAL_MANIFEST,
+            platform="linux",
+            uv_bin=FAKE_UV_BIN,
+            python_version="3.11",
+            repo_root=REPO_ROOT,
+            include_optional_dependencies=False,
+        )
+
+    assert sentinel.read_text() == "preserve me\n"
+    assert sorted(path.name for path in releases_root.iterdir()) == ["older-known-good"]
+    assert not (runtime_root / "current.json").exists()
+
+
+def test_prepare_release_id_collision_never_removes_existing_release(monkeypatch, tmp_path):
+    runtime_root = tmp_path / "runtime"
+    release_id = "2026-08-12T00-00-00Z-c0ffee"
+    existing = runtime_root / "releases" / release_id
+    existing.mkdir(parents=True)
+    sentinel = existing / "sentinel"
+    sentinel.write_text("existing release\n")
+    monkeypatch.setattr(managed_runtime, "_new_release_id", lambda: release_id)
+
+    with pytest.raises(FileExistsError):
+        managed_runtime.prepare_candidate_release(
+            runtime_root=runtime_root,
+            manifest_path=REAL_MANIFEST,
+            platform="linux",
+            uv_bin=FAKE_UV_BIN,
+            python_version="3.11",
+            repo_root=REPO_ROOT,
+            include_optional_dependencies=False,
+        )
+
+    assert sentinel.read_text() == "existing release\n"
+
+
+def test_activate_prepared_release_writes_v3_pointer_selecting_published_bundle(
+    monkeypatch, tmp_path
+):
+    prepared, _calls = _prepare_repo_candidate(monkeypatch, tmp_path)
+
+    pointer = managed_runtime.activate_prepared_release(tmp_path / "runtime", prepared)
+    payload = json.loads((tmp_path / "runtime" / "current.json").read_text())
+
+    assert pointer.resolver_bundle_id == prepared.resolver_bundle_id
+    assert payload["schema_version"] == 3
+    assert payload["resolver_bundle_id"] == prepared.resolver_bundle_id
+    bundle = tmp_path / "runtime" / "resolvers" / "bundles" / prepared.resolver_bundle_id
+    manifest_bytes = (bundle / "manifest.json").read_bytes()
+    assert __import__("hashlib").sha256(manifest_bytes).hexdigest() == prepared.resolver_bundle_id
+
+
+def test_activation_revalidates_bundle_and_preserves_prior_pointer_on_tamper(
+    monkeypatch, tmp_path
+):
+    prepared, _calls = _prepare_repo_candidate(monkeypatch, tmp_path)
+    runtime_root = tmp_path / "runtime"
+    prior_release = runtime_root / "releases" / "prior"
+    prior_python = prior_release / "venv" / "bin" / "python"
+    prior_python.parent.mkdir(parents=True)
+    prior_python.write_text("#!/bin/sh\n")
+    from officina.install.runtime_pointer import activate_release
+
+    activate_release(runtime_root=runtime_root, release_dir=prior_release, python_bin=prior_python)
+    prior_bytes = (runtime_root / "current.json").read_bytes()
+    bundle_launch = (
+        runtime_root
+        / "resolvers"
+        / "bundles"
+        / prepared.resolver_bundle_id
+        / "launch.py"
+    )
+    bundle_launch.chmod(0o755)
+    bundle_launch.write_text("tampered\n")
+
+    with pytest.raises(ManagedRuntimeError, match="resolver bundle"):
+        managed_runtime.activate_prepared_release(runtime_root, prepared)
+
+    assert (runtime_root / "current.json").read_bytes() == prior_bytes
+
+
+def test_pointer_validation_failure_preserves_prior_pointer_and_candidate(
+    monkeypatch, tmp_path
+):
+    prepared, _calls = _prepare_repo_candidate(monkeypatch, tmp_path)
+    runtime_root = tmp_path / "runtime"
+    prior_release = runtime_root / "releases" / "prior"
+    prior_python = prior_release / "venv" / "bin" / "python"
+    prior_python.parent.mkdir(parents=True)
+    prior_python.write_text("#!/bin/sh\n")
+    from officina.install.runtime_pointer import activate_release
+
+    activate_release(runtime_root=runtime_root, release_dir=prior_release, python_bin=prior_python)
+    prior_bytes = (runtime_root / "current.json").read_bytes()
+
+    with pytest.raises(ManagedRuntimeError, match="pointer validation"):
+        managed_runtime.activate_prepared_release(
+            runtime_root,
+            replace(prepared, repository_config=tmp_path / "missing" / "officina.toml"),
+        )
+
+    assert (runtime_root / "current.json").read_bytes() == prior_bytes
+    assert prepared.release_dir.is_dir()
+
+
+def test_pointer_replace_failure_preserves_prior_pointer_and_candidate(monkeypatch, tmp_path):
+    prepared, _calls = _prepare_repo_candidate(monkeypatch, tmp_path)
+    runtime_root = tmp_path / "runtime"
+    prior_release = runtime_root / "releases" / "prior"
+    prior_python = prior_release / "venv" / "bin" / "python"
+    prior_python.parent.mkdir(parents=True)
+    prior_python.write_text("#!/bin/sh\n")
+    from officina.install.runtime_pointer import activate_release
+
+    activate_release(runtime_root=runtime_root, release_dir=prior_release, python_bin=prior_python)
+    prior_bytes = (runtime_root / "current.json").read_bytes()
+    monkeypatch.setattr(
+        "officina.install.runtime_pointer.atomic_replace_bytes",
+        lambda *args, **kwargs: (_ for _ in ()).throw(OSError("pointer-replace")),
+    )
+
+    with pytest.raises(OSError, match="pointer-replace"):
+        managed_runtime.activate_prepared_release(runtime_root, prepared)
+
+    assert (runtime_root / "current.json").read_bytes() == prior_bytes
+    assert prepared.release_dir.is_dir()
+
+
+def test_failure_after_pointer_replace_keeps_new_pointer_for_journal_recovery(
+    monkeypatch, tmp_path
+):
+    prepared, _calls = _prepare_repo_candidate(monkeypatch, tmp_path)
+    runtime_root = tmp_path / "runtime"
+    from officina.install import runtime_pointer
+
+    real_replace = runtime_pointer.atomic_replace_bytes
+
+    def replace_then_report_uncertain(*args, **kwargs):
+        real_replace(*args, **kwargs)
+        raise OSError("journal-before-advance")
+
+    monkeypatch.setattr(runtime_pointer, "atomic_replace_bytes", replace_then_report_uncertain)
+
+    with pytest.raises(OSError, match="journal-before-advance"):
+        managed_runtime.activate_prepared_release(runtime_root, prepared)
+
+    payload = json.loads((runtime_root / "current.json").read_text())
+    assert payload["release_id"] == prepared.release_id
+    assert payload["resolver_bundle_id"] == prepared.resolver_bundle_id
+    assert prepared.release_dir.is_dir()
+
+
+def test_pruning_is_explicit_and_retains_current_plus_one_previous(monkeypatch, tmp_path):
+    prepared, _calls = _prepare_repo_candidate(monkeypatch, tmp_path)
+    runtime_root = tmp_path / "runtime"
+    managed_runtime.activate_prepared_release(runtime_root, prepared)
+    for release_id in ("2026-01-01T00-00-00Z-aaaaaa", "2026-01-02T00-00-00Z-bbbbbb"):
+        release = runtime_root / "releases" / release_id
+        release.mkdir()
+        (release / "sentinel").write_text(release_id)
+
+    assert len(tuple((runtime_root / "releases").iterdir())) == 3
+    removed = managed_runtime.prune_old_releases(runtime_root)
+
+    assert tuple(path.name for path in removed) == ("2026-01-01T00-00-00Z-aaaaaa",)
+    assert sorted(path.name for path in (runtime_root / "releases").iterdir()) == sorted(
+        (prepared.release_id, "2026-01-02T00-00-00Z-bbbbbb")
+    )
+
+
 def test_build_candidate_release_failure_writes_no_pointer(monkeypatch, tmp_path):
     def fail(*a, **k):
         raise ManagedRuntimeError("simulated failure")
@@ -440,9 +721,9 @@ def test_deploy_resolver_writes_through_atomic_replace_bytes_not_plain_copy(monk
         python_version="3.11",
     )
 
-    assert len(atomic_calls) == 1
+    assert len(atomic_calls) == 2
     resolver_path = runtime_root / "bootstrap" / "resolvers" / "v1" / "launch.py"
-    args, kwargs = atomic_calls[0]
+    args, kwargs = next(call for call in atomic_calls if call[0][0] == resolver_path)
     assert args[0] == resolver_path
     assert kwargs["mode"] == 0o755
     assert resolver_path.exists()

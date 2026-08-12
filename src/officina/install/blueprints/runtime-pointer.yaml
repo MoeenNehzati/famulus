@@ -7,8 +7,8 @@ dependencies:
   reason: Loads Python package support from __init__.py.
   source: install.source.init
   version: 1
-description: Reads and atomically activates the current.json pointer that selects
-  which installed runtime release is live.
+description: Reads legacy pointer schemas v1/v2 and current schema v3, and atomically
+  activates the runtime release plus immutable resolver bundle selected by v3.
 gateway:
   language: Python
   path: runtime_pointer.py
@@ -27,7 +27,7 @@ interfaces:
             - value: load-current
               description: Load and validate the current release pointer beneath runtime-root.
             - value: activate-release
-              description: Atomically point current.json at release-dir's python-bin.
+              description: Atomically write current.json; resolver bundle writes use schema v3.
         runtime-root:
           description: Managed-runtime root directory that owns current.json and every
             release directory.
@@ -64,6 +64,12 @@ interfaces:
             must_exist: false
             access: read
             opaque_content: true
+        resolver-bundle-id:
+          description: Lowercase SHA-256 digest selecting the immutable resolver bundle.
+          required: false
+          sensitivity: public
+          type:
+            kind: string
       preconditions:
       - id: absolute-pointer-paths
         description: For activate-release, python-bin and release-dir must be absolute
@@ -82,8 +88,8 @@ interfaces:
       outputs:
       - id: result
         audience: machine
-        description: RuntimePointer dataclass instance with release_id, runtime_source,
-          and python_bin fields.
+        description: RuntimePointer with release, interpreter, repository configuration,
+          and optional resolver_bundle_id fields.
         direct_io_ref: return-value
         cardinality:
           minimum: 1
@@ -159,8 +165,8 @@ interfaces:
             idempotent: Activating the same release again writes the same pointer
               contents.
           on_uncertain_completion:
-            verify_then_decide: Load the current pointer and compare release_id before
-              retrying.
+            verify_then_decide: Load current.json and compare release_id plus resolver_bundle_id;
+              a visible new pointer is committed state for journal recovery.
           partial_effects_on_failure:
             impossible: A candidate that fails existence validation is rejected before
               current.json is touched, leaving any prior pointer untouched.

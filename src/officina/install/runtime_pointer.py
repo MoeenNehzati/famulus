@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -22,6 +23,19 @@ class RuntimePointer:
     runtime_source: Path
     python_bin: Path
     repository_config: Path | None = None
+    resolver_bundle_id: str | None = None
+
+
+_RESOLVER_BUNDLE_ID_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _require_resolver_bundle_id(value: object) -> str:
+    """Return one canonical SHA-256 bundle identifier or fail closed."""
+    if not isinstance(value, str) or _RESOLVER_BUNDLE_ID_RE.fullmatch(value) is None:
+        raise RuntimePointerError(
+            "resolver_bundle_id must be a 64-character lowercase SHA-256 digest"
+        )
+    return value
 
 
 def _pointer_path(runtime_root: Path) -> Path:
@@ -123,7 +137,7 @@ def load_current_pointer(
     if not isinstance(payload, dict):
         raise RuntimePointerError("current.json must contain a JSON object")
     schema_version = payload.get("schema_version")
-    if schema_version not in {1, 2}:
+    if schema_version not in {1, 2, 3}:
         raise RuntimePointerError(
             f"unsupported current.json schema_version: {payload.get('schema_version')!r}"
         )
@@ -138,7 +152,7 @@ def load_current_pointer(
     )
     _require_contained(runtime_source, root=runtime_root, label="runtime_source")
     repository_config = None
-    if schema_version == 2:
+    if schema_version in {2, 3}:
         try:
             repository_config = Path(payload["repository_config"])
             validated = load_repository_configuration(repository_config)
@@ -151,11 +165,22 @@ def load_current_pointer(
                 f"invalid repository_config: {exc}"
             ) from exc
         repository_config = validated.config_path
+    resolver_bundle_id = None
+    if schema_version == 3:
+        try:
+            resolver_bundle_id = _require_resolver_bundle_id(
+                payload["resolver_bundle_id"]
+            )
+        except KeyError as exc:
+            raise RuntimePointerError(
+                f"current.json missing required key: {exc}"
+            ) from exc
     return RuntimePointer(
         release_id=release_id,
         runtime_source=runtime_source,
         python_bin=python_bin,
         repository_config=repository_config,
+        resolver_bundle_id=resolver_bundle_id,
     )
 
 
@@ -166,6 +191,7 @@ def activate_release(
     python_bin: Path,
     repository_config: Path | None = None,
     trusted_interpreter_roots: tuple[Path, ...] = (),
+    resolver_bundle_id: str | None = None,
 ) -> RuntimePointer:
     """Atomically point current.json at ``release_dir``'s ``python_bin``.
 
@@ -196,20 +222,31 @@ def activate_release(
         except RepositoryConfigurationError as exc:
             raise RuntimePointerError(f"invalid repository_config: {exc}") from exc
         repository_config = validated_config.config_path
+    if resolver_bundle_id is not None:
+        resolver_bundle_id = _require_resolver_bundle_id(resolver_bundle_id)
+        if repository_config is None:
+            raise RuntimePointerError(
+                "schema v3 activation requires a validated repository_config"
+            )
     pointer = RuntimePointer(
         release_id=release_dir.name,
         runtime_source=release_dir,
         python_bin=python_bin,
         repository_config=repository_config,
+        resolver_bundle_id=resolver_bundle_id,
     )
     payload = {
-        "schema_version": 2 if repository_config is not None else 1,
+        "schema_version": (
+            3 if resolver_bundle_id is not None else 2 if repository_config is not None else 1
+        ),
         "release_id": pointer.release_id,
         "runtime_source": str(pointer.runtime_source),
         "python_bin": str(pointer.python_bin),
     }
     if repository_config is not None:
         payload["repository_config"] = str(repository_config)
+    if resolver_bundle_id is not None:
+        payload["resolver_bundle_id"] = resolver_bundle_id
     atomic_replace_bytes(
         _pointer_path(runtime_root),
         json.dumps(payload, indent=2).encode("utf-8"),

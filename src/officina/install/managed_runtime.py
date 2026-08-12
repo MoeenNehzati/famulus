@@ -3,12 +3,10 @@ runtime_dependencies.json manifest, installing all declared Python
 dependencies in one atomic batch instead of ambient, best-effort per-package
 pip calls.
 
-`build_candidate_release` is called from `_phase_entry.py`, ahead of
-`scaffold.run`, so a real managed-runtime release (and the dependency-free
-launcher resolver deployed alongside it -- see `_deploy_resolver`) exists
-before any launcher shim that execs into it is generated. `_install_scaffold.py`
-separately consumes `declared_python_packages` for its own ambient,
-ahead-of-managed-runtime ecosystem ambient package installs.
+``prepare_candidate_release`` builds and validates an immutable candidate and
+resolver bundle without changing ``current.json``.  The transaction owner may
+then complete its other pre-commit checks and call
+``activate_prepared_release`` at the pointer commit boundary.
 """
 from __future__ import annotations
 
@@ -20,11 +18,17 @@ import secrets
 import shutil
 import subprocess
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from officina.common import atomic_files, toml_io
 from officina.common.git_provenance import run_git
-from officina.install.runtime_pointer import RuntimePointer, activate_release
+from officina.install.runtime_pointer import (
+    RuntimePointer,
+    RuntimePointerError,
+    activate_release,
+    load_current_pointer,
+)
 
 _VERSION_OPERATOR_RE = re.compile(r"^(==|>=|<=|!=|~=|>|<)")
 
@@ -47,11 +51,25 @@ def _dependency_install_timeout_seconds() -> float:
 # docstring for why it must never be imported here (it must stay
 # stdlib-only and runnable under the user's ambient Python).
 _RESOLVER_SOURCE = Path(__file__).resolve().parent / "resolvers" / "launch.py"
+_RELEASE_ID_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z-[0-9a-f]{6}$")
+_BUNDLE_ID_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 class ManagedRuntimeError(Exception):
     """Raised when the runtime dependency manifest is unreadable/unsupported
     or the batch dependency install fails."""
+
+
+@dataclass(frozen=True)
+class PreparedRelease:
+    """Validated but inactive runtime state owned by the installer transaction."""
+
+    release_id: str
+    release_dir: Path
+    python_bin: Path
+    repository_config: Path
+    trusted_interpreter_roots: tuple[Path, ...]
+    resolver_bundle_id: str
 
 
 def _package_spec(name: str, version: str | None) -> str:
@@ -451,50 +469,413 @@ def _uv_python_install_dir(uv_bin: Path) -> Path:
     return Path(stdout)
 
 
-def _deploy_resolver(*, runtime_root: Path, trusted_interpreter_roots: tuple[Path, ...]) -> None:
-    """Deploy the dependency-free resolver and its trust sidecar to the
-    fixed path every generated launcher shim execs into
-    (``<runtime_root>/bootstrap/resolvers/v1/launch.py``), alongside a
-    ``trusted-roots.json`` sidecar (a flat JSON list of absolute path
-    strings) that resolver's ``_trusted_interpreter_roots()`` reads.
+def _json_bytes(payload: object) -> bytes:
+    return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
-    Idempotent: overwrites any prior deployment with the current resolver
-    source and trust list, so it is safe to call on every successful
-    activation. Called from ``build_candidate_release`` *before*
-    ``activate_release`` writes current.json (not after): a deployment
-    failure here must not leave a release activated with a missing or
-    broken resolver. Any ``OSError`` (missing source, permissions, disk
-    full, a concurrent-install race on the resolver directory) is converted
-    to ``ManagedRuntimeError`` so callers get the same clean, typed failure
-    as every other managed-runtime error, not a raw traceback.
-    """
+
+def _fsync_directory(path: Path) -> None:
+    """Durably record a directory-entry mutation where the host supports it."""
+    if os.name != "posix":
+        return
+    descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _remove_exact_release_candidate(releases_root: Path, release_id: str) -> None:
+    """Remove only the freshly allocated immediate child and sync its parent."""
+    if _RELEASE_ID_RE.fullmatch(release_id) is None:
+        raise ManagedRuntimeError(f"refusing to remove invalid release id: {release_id!r}")
+    release_dir = releases_root / release_id
+    if release_dir.parent.absolute() != releases_root.absolute():
+        raise ManagedRuntimeError("refusing to remove a non-child release candidate")
+    if release_dir.is_symlink():
+        release_dir.unlink()
+    elif release_dir.exists():
+        if not release_dir.is_dir():
+            raise ManagedRuntimeError(
+                f"refusing to remove non-directory release candidate: {release_dir}"
+            )
+        shutil.rmtree(release_dir)
+    _fsync_directory(releases_root)
+
+
+def _resolver_bundle_material(
+    trusted_interpreter_roots: tuple[Path, ...],
+) -> tuple[bytes, bytes, bytes, str]:
+    resolver_bytes = _RESOLVER_SOURCE.read_bytes()
+    roots: list[str] = []
+    for root in trusted_interpreter_roots:
+        if not root.is_absolute():
+            raise ManagedRuntimeError(f"trusted interpreter root must be absolute: {root}")
+        rendered = str(root.resolve())
+        if rendered not in roots:
+            roots.append(rendered)
+    trust_bytes = _json_bytes(roots)
+    manifest_bytes = _json_bytes(
+        {
+            "schema_version": 1,
+            "files": {
+                "launch.py": hashlib.sha256(resolver_bytes).hexdigest(),
+                "trusted-roots.json": hashlib.sha256(trust_bytes).hexdigest(),
+            },
+        }
+    )
+    return resolver_bytes, trust_bytes, manifest_bytes, hashlib.sha256(manifest_bytes).hexdigest()
+
+
+def _validate_resolver_bundle(*, runtime_root: Path, resolver_bundle_id: str) -> Path:
+    """Validate the named immutable resolver bundle and return its directory."""
+    if _BUNDLE_ID_RE.fullmatch(resolver_bundle_id) is None:
+        raise ManagedRuntimeError("invalid resolver bundle identifier")
+    bundle_dir = runtime_root / "resolvers" / "bundles" / resolver_bundle_id
+    if bundle_dir.is_symlink() or not bundle_dir.is_dir():
+        raise ManagedRuntimeError(f"resolver bundle is missing or unsafe: {resolver_bundle_id}")
+    try:
+        files = {
+            name: atomic_files.read_regular_file_bytes(
+                bundle_dir / name, allowed_root=bundle_dir
+            )
+            for name in ("launch.py", "trusted-roots.json", "manifest.json")
+        }
+        if hashlib.sha256(files["manifest.json"]).hexdigest() != resolver_bundle_id:
+            raise ManagedRuntimeError("resolver bundle manifest digest does not match its id")
+        manifest = json.loads(files["manifest.json"])
+        if manifest != {
+            "files": {
+                "launch.py": hashlib.sha256(files["launch.py"]).hexdigest(),
+                "trusted-roots.json": hashlib.sha256(files["trusted-roots.json"]).hexdigest(),
+            },
+            "schema_version": 1,
+        }:
+            raise ManagedRuntimeError("resolver bundle file digest validation failed")
+        roots = json.loads(files["trusted-roots.json"])
+        if not isinstance(roots, list) or any(
+            not isinstance(root, str) or not Path(root).is_absolute() for root in roots
+        ):
+            raise ManagedRuntimeError("resolver bundle trust data is invalid")
+    except ManagedRuntimeError:
+        raise
+    except (OSError, UnicodeError, ValueError, TypeError) as exc:
+        raise ManagedRuntimeError(f"could not validate resolver bundle: {exc}") from exc
+    return bundle_dir
+
+
+def _publish_resolver_bundle(
+    *, runtime_root: Path, trusted_interpreter_roots: tuple[Path, ...]
+) -> str:
+    """Publish resolver code and trust data once under their manifest digest."""
+    resolver_bytes, trust_bytes, manifest_bytes, bundle_id = _resolver_bundle_material(
+        trusted_interpreter_roots
+    )
+    bundles_root = runtime_root / "resolvers" / "bundles"
+    staging_root = runtime_root / "resolvers" / "staging"
+    try:
+        atomic_files.ensure_secure_directory(bundles_root)
+        atomic_files.ensure_secure_directory(staging_root)
+        bundle_dir = bundles_root / bundle_id
+        if bundle_dir.exists():
+            _validate_resolver_bundle(
+                runtime_root=runtime_root, resolver_bundle_id=bundle_id
+            )
+            return bundle_id
+        stage_dir = staging_root / secrets.token_hex(16)
+        stage_dir.mkdir(mode=0o700)
+        try:
+            for name, data, mode in (
+                ("launch.py", resolver_bytes, 0o555),
+                ("trusted-roots.json", trust_bytes, 0o444),
+                ("manifest.json", manifest_bytes, 0o444),
+            ):
+                atomic_files.atomic_create_bytes(
+                    stage_dir / name, data, allowed_root=stage_dir, mode=mode
+                )
+            _fsync_directory(stage_dir)
+            os.replace(stage_dir, bundle_dir)
+            _fsync_directory(bundles_root)
+        finally:
+            if stage_dir.exists():
+                shutil.rmtree(stage_dir)
+        _validate_resolver_bundle(
+            runtime_root=runtime_root, resolver_bundle_id=bundle_id
+        )
+        return bundle_id
+    except ManagedRuntimeError:
+        raise
+    except OSError as exc:
+        raise ManagedRuntimeError(f"could not publish resolver bundle: {exc}") from exc
+
+
+def _deploy_resolver(
+    *, runtime_root: Path, trusted_interpreter_roots: tuple[Path, ...]
+) -> None:
+    """Deploy the fixed bootstrap, retaining legacy v1/v2 trust compatibility."""
     try:
         resolver_dir = runtime_root / "bootstrap" / "resolvers" / "v1"
-        resolver_dir.mkdir(parents=True, exist_ok=True)
-        resolver_path = resolver_dir / "launch.py"
-        resolver_bytes = _RESOLVER_SOURCE.read_bytes()
-        # atomic_replace_bytes (not shutil.copy2): resolver_path is the
-        # fixed path every generated launcher shim and every scheduled
-        # recurring-tasks job execs into, and build_candidate_release runs
-        # again on every install-then-update flow against the same
-        # runtime_root -- a plain copy2 here could race a job that is
-        # mid-exec into this exact file, handing it a torn read. mode=0o755
-        # makes the file executable as part of the same atomic write, so no
-        # separate chmod is needed afterward.
+        atomic_files.ensure_secure_directory(resolver_dir)
         atomic_files.atomic_replace_bytes(
-            resolver_path, resolver_bytes, allowed_root=resolver_dir, mode=0o755
+            resolver_dir / "launch.py",
+            _RESOLVER_SOURCE.read_bytes(),
+            allowed_root=resolver_dir,
+            mode=0o755,
         )
-        trust_file = resolver_dir / "trusted-roots.json"
-        trust_file.write_text(
-            json.dumps([str(root) for root in trusted_interpreter_roots]),
-            encoding="utf-8",
+        atomic_files.atomic_replace_bytes(
+            resolver_dir / "trusted-roots.json",
+            _json_bytes([str(root.resolve()) for root in trusted_interpreter_roots]),
+            allowed_root=resolver_dir,
+            mode=0o600,
         )
     except OSError as exc:
-        # atomic_files.AtomicWriteError is itself an OSError subclass, so
-        # this also covers a confined-write rejection (symlink resolver
-        # directory, non-regular destination, etc.), not just plain I/O
-        # failures.
         raise ManagedRuntimeError(f"could not deploy the launcher resolver: {exc}") from exc
+
+
+def _prepare_candidate_release(
+    *,
+    runtime_root: Path,
+    manifest_path: Path,
+    platform: str,
+    uv_bin: Path,
+    python_version: str,
+    repo_root: Path,
+    include_optional_dependencies: bool = True,
+    build_wheel: bool,
+) -> PreparedRelease:
+    """Build and validate one candidate without mutating ``current.json``.
+
+    ``python_version`` should be the pinned ``managed_python.preferred``
+    value from install-info.toml (see officina.install.install_info); it is
+    passed straight through to ``uv venv --python``.
+
+    Every exception after allocation removes only the exact new release child
+    and durably records that removal.  Published content-addressed resolver
+    bundles may remain cached; older releases are never pruned here.
+    """
+    repo_root = Path(repo_root).resolve()
+    repository_config = repo_root / toml_io.repository_config_filename()
+    packages = declared_python_packages(
+        manifest_path, platform=platform, include_optional=include_optional_dependencies
+    )
+    release_id = _new_release_id()
+    release_dir = runtime_root / "releases" / release_id
+    releases_root = runtime_root / "releases"
+    atomic_files.ensure_secure_directory(releases_root)
+    allocated = False
+    try:
+        release_dir.mkdir(mode=0o700)
+        allocated = True
+        venv_dir = release_dir / "venv"
+        python_bin = _venv_python_bin(venv_dir, platform=platform)
+
+        _create_release_venv(uv_bin=uv_bin, venv_dir=venv_dir, python_version=python_version)
+        if build_wheel:
+            from officina.common.repository_configuration import load_repository_configuration
+
+            try:
+                load_repository_configuration(repository_config)
+            except Exception as exc:
+                raise ManagedRuntimeError(f"invalid repository configuration: {exc}") from exc
+            _run_dependency_install(
+                uv_bin=uv_bin, python_bin=python_bin, packages=_CORE_RUNTIME_PACKAGES
+            )
+            wheel, wheel_sha256, source_revision = _build_officina_wheel(
+                uv_bin=uv_bin,
+                python_bin=python_bin,
+                repo_root=repo_root,
+                artifact_dir=release_dir / "artifacts",
+            )
+            _run_dependency_install(
+                uv_bin=uv_bin, python_bin=python_bin, packages=(str(wheel),)
+            )
+            module_packages = tuple(
+                package for package in packages
+                if not re.match(r"(?i)^(?:pyyaml|setuptools)(?:[<>=!~].*)?$", package)
+            )
+            _run_dependency_install(
+                uv_bin=uv_bin, python_bin=python_bin, packages=module_packages
+            )
+            _validate_candidate_runtime(python_bin=python_bin)
+            atomic_files.atomic_replace_bytes(
+                release_dir / "artifact.json",
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "wheel": wheel.name,
+                        "wheel_sha256": wheel_sha256,
+                        "source_revision": source_revision,
+                    },
+                    indent=2,
+                ).encode("utf-8"),
+                allowed_root=release_dir,
+                mode=0o600,
+            )
+        else:
+            module_packages = tuple(
+                package for package in packages
+                if not re.match(r"(?i)^(?:pyyaml|setuptools)(?:[<>=!~].*)?$", package)
+            )
+            _run_dependency_install(
+                uv_bin=uv_bin,
+                python_bin=python_bin,
+                packages=(*_CORE_RUNTIME_PACKAGES, *module_packages),
+            )
+            _install_officina_self(
+                repo_root=repo_root,
+                venv_dir=venv_dir,
+                platform=platform,
+                python_version=python_version,
+            )
+
+        trusted_interpreter_roots = (_uv_python_install_dir(uv_bin),)
+        bundle_id = _publish_resolver_bundle(
+            runtime_root=runtime_root,
+            trusted_interpreter_roots=trusted_interpreter_roots,
+        )
+        _deploy_resolver(
+            runtime_root=runtime_root,
+            trusted_interpreter_roots=trusted_interpreter_roots,
+        )
+        _validate_resolver_bundle(
+            runtime_root=runtime_root, resolver_bundle_id=bundle_id
+        )
+        return PreparedRelease(
+            release_id=release_id,
+            release_dir=release_dir,
+            python_bin=python_bin,
+            repository_config=repository_config,
+            trusted_interpreter_roots=trusted_interpreter_roots,
+            resolver_bundle_id=bundle_id,
+        )
+    except BaseException:
+        if allocated:
+            _remove_exact_release_candidate(releases_root, release_id)
+        raise
+
+
+def prepare_candidate_release(
+    *,
+    runtime_root: Path,
+    manifest_path: Path,
+    platform: str,
+    uv_bin: Path,
+    python_version: str,
+    repo_root: Path,
+    include_optional_dependencies: bool,
+) -> PreparedRelease:
+    """Build a wheel-backed, validated candidate without activating it."""
+    return _prepare_candidate_release(
+        runtime_root=runtime_root,
+        manifest_path=manifest_path,
+        platform=platform,
+        uv_bin=uv_bin,
+        python_version=python_version,
+        repo_root=repo_root,
+        include_optional_dependencies=include_optional_dependencies,
+        build_wheel=True,
+    )
+
+
+def _validate_prepared_release(runtime_root: Path, prepared: PreparedRelease) -> None:
+    if prepared.release_dir.parent.absolute() != (runtime_root / "releases").absolute():
+        raise ManagedRuntimeError("prepared release is not an immediate release child")
+    if prepared.release_dir.name != prepared.release_id or not prepared.release_dir.is_dir():
+        raise ManagedRuntimeError("prepared release identity does not match its directory")
+    if not prepared.python_bin.exists():
+        raise ManagedRuntimeError("prepared release interpreter is missing")
+    artifact_path = prepared.release_dir / "artifact.json"
+    if artifact_path.exists():
+        try:
+            artifact = json.loads(
+                atomic_files.read_regular_file_bytes(
+                    artifact_path, allowed_root=prepared.release_dir
+                )
+            )
+            wheel = prepared.release_dir / "artifacts" / artifact["wheel"]
+            wheel_bytes = atomic_files.read_regular_file_bytes(
+                wheel, allowed_root=prepared.release_dir
+            )
+            if hashlib.sha256(wheel_bytes).hexdigest() != artifact["wheel_sha256"]:
+                raise ManagedRuntimeError("prepared release wheel digest is invalid")
+            _validate_candidate_runtime(python_bin=prepared.python_bin)
+        except ManagedRuntimeError:
+            raise
+        except (OSError, UnicodeError, ValueError, TypeError, KeyError) as exc:
+            raise ManagedRuntimeError(f"prepared release artifact is invalid: {exc}") from exc
+    _validate_resolver_bundle(
+        runtime_root=runtime_root,
+        resolver_bundle_id=prepared.resolver_bundle_id,
+    )
+
+
+def activate_prepared_release(
+    runtime_root: Path, prepared: PreparedRelease
+) -> RuntimePointer:
+    """Revalidate a prepared release and atomically activate pointer schema v3."""
+    _validate_prepared_release(runtime_root, prepared)
+    try:
+        return activate_release(
+            runtime_root=runtime_root,
+            release_dir=prepared.release_dir,
+            python_bin=prepared.python_bin,
+            repository_config=prepared.repository_config,
+            trusted_interpreter_roots=prepared.trusted_interpreter_roots,
+            resolver_bundle_id=prepared.resolver_bundle_id,
+        )
+    except RuntimePointerError as exc:
+        raise ManagedRuntimeError(f"prepared release pointer validation failed: {exc}") from exc
+
+
+def _bundle_trusted_roots(runtime_root: Path, bundle_id: str) -> tuple[Path, ...]:
+    bundle = _validate_resolver_bundle(
+        runtime_root=runtime_root, resolver_bundle_id=bundle_id
+    )
+    payload = json.loads((bundle / "trusted-roots.json").read_text(encoding="utf-8"))
+    return tuple(Path(entry) for entry in payload)
+
+
+def prune_old_releases(runtime_root: Path) -> tuple[Path, ...]:
+    """Retain the active and newest prior exact release; remove older children."""
+    try:
+        raw_pointer = json.loads(
+            atomic_files.read_regular_file_bytes(
+                runtime_root / "current.json", allowed_root=runtime_root
+            )
+        )
+        trusted_roots: tuple[Path, ...] = ()
+        if raw_pointer.get("schema_version") == 3:
+            trusted_roots = _bundle_trusted_roots(
+                runtime_root, raw_pointer["resolver_bundle_id"]
+            )
+        pointer = load_current_pointer(
+            runtime_root=runtime_root,
+            trusted_interpreter_roots=trusted_roots,
+        )
+        releases_root = runtime_root / "releases"
+        exact = sorted(
+            path for path in releases_root.iterdir()
+            if _RELEASE_ID_RE.fullmatch(path.name) is not None
+            and path.is_dir()
+            and not path.is_symlink()
+        )
+        previous = next(
+            (path for path in reversed(exact) if path.name != pointer.release_id),
+            None,
+        )
+        retained = {pointer.release_id}
+        if previous is not None:
+            retained.add(previous.name)
+        removed: list[Path] = []
+        for path in exact:
+            if path.name in retained:
+                continue
+            _remove_exact_release_candidate(releases_root, path.name)
+            removed.append(path)
+        return tuple(removed)
+    except ManagedRuntimeError:
+        raise
+    except (OSError, UnicodeError, ValueError, TypeError, KeyError, RuntimePointerError) as exc:
+        raise ManagedRuntimeError(f"could not prune managed runtime releases: {exc}") from exc
 
 
 def build_candidate_release(
@@ -507,123 +888,21 @@ def build_candidate_release(
     repo_root: Path | None = None,
     include_optional_dependencies: bool = True,
 ) -> RuntimePointer:
-    """Create a new release directory, provision its managed interpreter,
-    install its declared Python dependencies, install Officina, verify the
-    candidate when a repository is explicit, and activate the release.
-
-    ``python_version`` should be the pinned ``managed_python.preferred``
-    value from install-info.toml (see officina.install.install_info); it is
-    passed straight through to ``uv venv --python``.
-
-    Production callers pass ``repo_root`` explicitly. That path is validated,
-    built as a wheel, installed, probed in isolation, and recorded by wheel
-    digest plus Git revision or copied-source fingerprint. The omitted-root
-    compatibility path retains the target branch's direct package-copy
-    behavior for low-level callers.
-
-    ``include_optional_dependencies`` controls whether large, single-skill
-    packages (see ``_OPTIONAL_HEAVY_PACKAGE_NAMES``) are installed. Defaults
-    to ``True`` here so existing/lower-level callers keep today's behavior;
-    ``_phase_entry.py``'s interactive install flow defaults the *user-facing*
-    choice to ``False`` and passes the result through explicitly.
-
-    On any failure (bad manifest, failed venv creation, failed batch
-    install, failed Officina build or validation, failed self-install, or
-    failed resolver deployment), no release is activated: current.json is
-    left untouched and no new pointer is written. The dependency-free launcher
-    resolver and its trust sidecar are deployed *before* activation for exactly
-    this reason: a deployment failure must prevent activation, not follow it.
-    """
+    """Compatibility API: prepare and immediately activate one candidate."""
     explicit_repo_root = repo_root is not None
     if repo_root is None:
         repo_root = Path(__file__).resolve().parents[3]
-    repo_root = Path(repo_root).resolve()
-    repository_config = repo_root / toml_io.repository_config_filename()
-    packages = declared_python_packages(
-        manifest_path, platform=platform, include_optional=include_optional_dependencies
-    )
-    release_id = _new_release_id()
-    release_dir = runtime_root / "releases" / release_id
-    release_dir.mkdir(parents=True, exist_ok=True)
-    venv_dir = release_dir / "venv"
-    python_bin = _venv_python_bin(venv_dir, platform=platform)
-
-    _create_release_venv(uv_bin=uv_bin, venv_dir=venv_dir, python_version=python_version)
-    if explicit_repo_root:
-        try:
-            from officina.common.repository_configuration import load_repository_configuration
-
-            load_repository_configuration(repository_config)
-        except Exception as exc:
-            raise ManagedRuntimeError(f"invalid repository configuration: {exc}") from exc
-        _run_dependency_install(
-            uv_bin=uv_bin,
-            python_bin=python_bin,
-            packages=_CORE_RUNTIME_PACKAGES,
-        )
-        wheel, wheel_sha256, source_revision = _build_officina_wheel(
-            uv_bin=uv_bin,
-            python_bin=python_bin,
-            repo_root=repo_root,
-            artifact_dir=release_dir / "artifacts",
-        )
-        _run_dependency_install(
-            uv_bin=uv_bin,
-            python_bin=python_bin,
-            packages=(str(wheel),),
-        )
-        module_packages = tuple(
-            package
-            for package in packages
-            if not re.match(r"(?i)^(?:pyyaml|setuptools)(?:[<>=!~].*)?$", package)
-        )
-        _run_dependency_install(
-            uv_bin=uv_bin,
-            python_bin=python_bin,
-            packages=module_packages,
-        )
-        _validate_candidate_runtime(python_bin=python_bin)
-        atomic_files.atomic_replace_bytes(
-            release_dir / "artifact.json",
-            json.dumps(
-                {
-                    "schema_version": 1,
-                    "wheel": wheel.name,
-                    "wheel_sha256": wheel_sha256,
-                    "source_revision": source_revision,
-                },
-                indent=2,
-            ).encode("utf-8"),
-            allowed_root=release_dir,
-            mode=0o600,
-        )
-    else:
-        module_packages = tuple(
-            package
-            for package in packages
-            if not re.match(r"(?i)^(?:pyyaml|setuptools)(?:[<>=!~].*)?$", package)
-        )
-        _run_dependency_install(
-            uv_bin=uv_bin,
-            python_bin=python_bin,
-            packages=(*_CORE_RUNTIME_PACKAGES, *module_packages),
-        )
-        _install_officina_self(
-            repo_root=repo_root,
-            venv_dir=venv_dir,
-            platform=platform,
-            python_version=python_version,
-        )
-
-    trusted_interpreter_roots = (_uv_python_install_dir(uv_bin),)
-    _deploy_resolver(runtime_root=runtime_root, trusted_interpreter_roots=trusted_interpreter_roots)
-    return activate_release(
+    prepared = _prepare_candidate_release(
         runtime_root=runtime_root,
-        release_dir=release_dir,
-        python_bin=python_bin,
-        repository_config=repository_config,
-        trusted_interpreter_roots=trusted_interpreter_roots,
+        manifest_path=manifest_path,
+        platform=platform,
+        uv_bin=uv_bin,
+        python_version=python_version,
+        repo_root=repo_root,
+        include_optional_dependencies=include_optional_dependencies,
+        build_wheel=explicit_repo_root,
     )
+    return activate_prepared_release(runtime_root, prepared)
 
 
 # Public alias: whatever deploys officina.install.resolvers.launch (the
@@ -637,7 +916,11 @@ uv_python_install_dir = _uv_python_install_dir
 
 __all__ = [
     "ManagedRuntimeError",
+    "PreparedRelease",
+    "activate_prepared_release",
     "build_candidate_release",
     "declared_python_packages",
+    "prepare_candidate_release",
+    "prune_old_releases",
     "uv_python_install_dir",
 ]
