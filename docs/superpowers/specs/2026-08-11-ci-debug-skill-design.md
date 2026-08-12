@@ -1,785 +1,95 @@
 # CI Debug Skill Design
 
-## Goal
+## Purpose
 
-Create a repository-owned `ci-debug` skill that turns remote CI repair into a
-repeatable, evidence-driven workflow. It must isolate the smallest failing
-boundary, preserve sufficient evidence, constrain the repair to evidence-backed
-paths, and expand verification through the exact required GitHub Actions matrix
-before user-approved integration.
+Make CI repair efficient from a local machine by separating complete
+certification from targeted debugging.
 
-Its core is a two-loop coordinator: the outer loop runs the complete matrix and
-forms repair units; isolated subagents run the inner targeted repair/probe loops
-on temporary branches; the coordinator integrates returned patches sequentially
-and repeats the complete matrix until it is exactly green.
-
-The system covers pytest failures and non-pytest failures such as setup,
-dependency installation, collection, validators, native smoke checks, timeouts,
-infrastructure, and artifact failures.
-
-## Verified Problem
-
-The current workflow is useful as a certification gate but inefficient as a
-debugger:
-
-- every `master` push starts the full operating-system matrix;
-- the workflow has no default-branch `workflow_dispatch` entry point, so a
-  feature branch cannot bootstrap dispatch by adding one only on that branch;
-- repository tasks cannot select one test path or node;
-- hosted runners disappear without preserving structured failure state;
-- JUnit data produced by `repo_checks.py` is currently temporary;
-- child-process output is streamed without durable, redacted phase logs;
-- `--sequential` is a compatibility no-op, not a serial execution control;
-- native smoke checks are workflow-owned rather than runner-owned; and
-- a repair cannot be certified on its branch against an exact, complete matrix
-  before reaching `master`.
-
-The August 11 Windows failure is representative: four jobs passed, while the
-shared Windows task failed after seven minutes because a migration test found
-its repository dirty. The vanished runner did not preserve the dirty paths at
-the moment of failure or provide a clean, condition-controlled reproducer.
-
-A security audit also found credential-bearing HTTP(S) userinfo in the local
-configured remote. Its value must never be printed or persisted. Sanitizing
-that configuration is a separate prerequisite requiring explicit user
-authorization; the implementation must fail closed until it is resolved.
-
-## Design Principles
-
-1. `repo_checks.py` owns execution and emits one versioned diagnostic schema.
-2. GitHub Actions only selects reviewed targets, supplies conditions, and
-   uploads runner output.
-3. `run-matrix` is the sole authority for overall CI green. `run-probe` can
-   establish only the result of one bounded matrix element or selection.
-4. Every conclusion is bound to an exact candidate and an exact attempt.
-5. Classification reruns use a separate fresh hosted job/VM at the same commit,
-   never the contaminated failed host or checkout.
-6. Incident evidence constrains the allowed repair paths and any expansion is
-   explicit and recorded.
-7. CI green is evidence, not Git authority. Commit, push, and integration remain
-   governed by `git-workflow` and explicit user approval.
-8. Diagnostic output is untrusted and secret-bearing until it passes redaction
-   and a deterministic prohibited-data scan.
-9. Parallel repair agents own isolated temporary branches. Only the coordinator
-   advances the authoritative candidate or cleans incident-owned branches.
-
-## Registered Node Architecture
-
-The exact node graph is part of the design rather than an implementation
-detail.
-
-### Discoverable instruction node: `ci-debug`
-
-The Markdown layer is split by the two loops in the repair algorithm:
-
-| Instruction source | Exported interface | Canonical responsibility |
-| --- | --- | --- |
-| `ci-debug.source.gateway` (`SKILL.md`) | `ci-debug.interface.default` v1 | Coordinate the outer full-matrix loop, form repair units, delegate bounded parallel work, integrate returned patches sequentially, and repeat until the exact matrix is green or progress stops. |
-| `ci-debug.source.instructions-repair-element` (`instructions/repair-element.md`) | `ci-debug.interface.repair-element` v1 | Run one isolated inner diagnosis/patch/probe loop for an assigned matrix element and failure cluster, returning patch commits and evidence without integrating them. |
-
-`SKILL.md` contains only the router, outer algorithm, shared safety rules, and
-coordinator ownership. It does not duplicate the inner repair procedure. The
-routed instruction file loads only for a repair subagent and is complete given
-the assigned repair-unit record; it does not require sibling instruction files.
-
-The gateway source declares `uses_interfaces` on
-`ci-debug._rtx.interface.run-matrix@1`. The repair-element source declares
-`uses_interfaces` on `ci-debug._rtx.interface.run-probe@1`. Instruction code
-invokes those process-bound interfaces through `dispatcher`; it never imports
-or executes runtime files directly.
-
-**REQUIRED BACKGROUND:** Use `git-workflow` for the bounded branch, commit,
-push, integration, and cleanup operations described below. The runtime records
-Git state but has no Git mutation authority.
-
-### Non-discoverable Python child node: `ci-debug._rtx`
-
-- Node marker: `skills/ci-debug/_rtx/blueprint.yaml`.
-- Its only public machine surfaces are the two execution contracts:
-
-  | Behavioral source | Source interface | Exported interface |
-  | --- | --- | --- |
-  | `ci-debug._rtx.source.rtx-run-matrix` | `ci-debug._rtx.source.rtx-run-matrix.interface.run-matrix` | `ci-debug._rtx.interface.run-matrix` v1 |
-  | `ci-debug._rtx.source.rtx-run-probe` | `ci-debug._rtx.source.rtx-run-probe.interface.run-probe` | `ci-debug._rtx.interface.run-probe` v1 |
-
-- `run-matrix` runs or resumes the exact complete required matrix for a
-  candidate and returns a `MatrixReport`. It may run independently of an
-  existing debugging incident; in that case it creates a minimal standalone
-  certification record. `MatrixReport.overall_green` is true only when every
-  required element is present, current, and successful.
-- `run-probe` runs or resumes one matrix element against either a bounded
-  failure selection or the whole element and returns a `ProbeReport`. It never
-  emits or implies overall matrix green.
-- Each child export sets `allow_all_modules: false` and
-  `allowed_callers: [ci-debug]`.
-- The parent's `_rtx` namespace export is version 1. Its `surface.only` map
-  contains exactly the two exported interfaces above at version 1. Each
-  `interface_access` entry sets `allow_all_modules: false` and
-  `allowed_callers: []`. The runtime is not independently discoverable.
-
-Transport and persistence are private supporting sources, not public module
-interfaces:
-
-- `ci-debug._rtx.source.rtx-incident-state.interface.incident-state`;
-- `ci-debug._rtx.source.rtx-failure-ledger.interface.failure-ledger`;
-- `ci-debug._rtx.source.rtx-github-transport.interface.github-transport`; and
-- `ci-debug._rtx.source.rtx-artifact-bundle.interface.artifact-bundle`.
-
-The two public behavioral sources declare exact `uses_interfaces` edges to the
-private source interfaces they need. Source-to-source calls use the injected
-Python machine-interface dispatch path; no public interface exposes raw GitHub
-transport, artifact storage, or incident-file operations.
-
-The runtime reuses authorized common interfaces rather than duplicating them.
-The exact `uses_interfaces` edges are:
-
-- `rtx-incident-state` and `rtx-failure-ledger` use
-  `common.interface.atomic-files` and
-  `common.interface.repository-paths`;
-- `rtx-github-transport` uses `common.interface.repository-paths` and a new
-  `common.interface.git-provenance-read`;
-- `rtx-artifact-bundle` uses `common.interface.atomic-files`; and
-- `rtx-run-matrix` and `rtx-run-probe` depend only on their declared private
-  source interfaces.
-
-The common blueprint must authorize `ci-debug._rtx` on those exact interfaces.
-The existing `common.interface.git-provenance` is too broad because it includes
-Git execution and materialization operations. Before authorizing the runtime,
-split out `common.interface.git-provenance-read`, backed by
-`common.source.git-provenance.interface.read-only`. Its only operations resolve
-the repository root, read HEAD/tree/blob object IDs, read porcelain status,
-list diff paths between two objects, and report a boolean for HTTP(S) remote
-userinfo. It returns no raw remote URL and exposes no generic Git execution,
-ref mutation, pinning, or commit-tree materialization. These common-node changes
-are part of the implementation scope and certification dependency graph.
-
-Before authoring either node, `skill-maker` must refresh the four applicable
-standards roots and their complete pinned closures and facts:
-
-- instruction module;
-- instruction behavioral source;
-- Python module; and
-- Python behavioral source.
-
-## Ownership Boundaries
-
-### `repo_checks.py`
-
-The canonical repository runner owns:
-
-- the dispatch table for suites, tasks, validators, native checks, and valid
-  selector combinations;
-- target resolution and exact child-process argv;
-- worker count, repeat count, phase ordering, and timeout policy;
-- durable, redacted phase logs, JUnit, timing data, and failure hooks;
-- Git state before execution, at the moment of failure, and after execution;
-- classification-plan generation and experiment execution inside the separate
-  hosted job/VM provisioned by the workflow; and
-- one versioned diagnostic bundle schema shared by automatic and manual runs.
-
-`src/officina/repository_checks.py` remains the underlying repository-check
-implementation where appropriate. The public runner and implementation must not
-diverge in task or diagnostic semantics.
-
-### `ci-debug._rtx`
-
-The deterministic runtime owns the implementation shared by `run-matrix` and
-`run-probe`:
-
-- starting or resuming an incident or standalone certification session;
-- validating candidate identity and GitHub metadata;
-- validating typed selection inputs against the runner-owned dispatch table;
-- dispatching the requested matrix or probe through `gh` without shell
-  interpolation;
-- correlating a dispatch with its exact run and attempt;
-- watching, downloading, validating, and recording artifacts;
-- enforcing evidence-backed repair scope before dispatch or integration; and
-- producing a concise redacted incident summary.
-
-It may inspect and record Git state. It may not create or remove worktrees,
-commit, push, merge, delete branches, rewrite history, or integrate.
-
-### GitHub Actions
-
-The workflow owns only:
-
-- trigger and permission declarations;
-- a reviewed mapping from typed inputs to runner invocations;
-- a dependency-free diagnostic prelude that creates a minimal bundle before
-  checkout or any other fallible setup step;
-- environment and dependency setup, with every repository-owned setup command
-  executed through a redacting capture wrapper after checkout;
-- invoking `repo_checks.py`; and
-- finalizing and attempting to upload the already scanned diagnostic bundle
-  with `always()`.
-
-The workflow does not parse pytest failures, classify incidents, or construct a
-second test inventory. Third-party actions such as checkout and setup-python are
-fully pinned, receive no diagnostic free-form input or repository secrets, and
-run before repository code is available. Their platform-owned console output is
-outside the total-redaction guarantee and is explicitly identified as such;
-secrets must never be passed to those steps. The dependency-free prelude ensures
-that their failures still leave safe, schema-minimal evidence for the finalizer
-to publish when publication succeeds.
-
-## Core Repair Algorithm
-
-The default instruction interface owns one fixed-point loop:
+## Core algorithm
 
 ```text
-candidate = exact pushed candidate SHA
+candidate = exact pushed SHA
 
-while true:
-    matrix = run-matrix(candidate)
-    if matrix.overall_green:
-        stop green
+while run-ci(candidate) is red:
+    failures = group the report by matrix element
 
-    repair_units = group matrix failures by element and failure signature
-    coalesce only clearly identical cross-element signatures
-
-    in bounded parallel, for each repair_unit:
-        run repair-element in an isolated temporary branch/worktree
-
-        active = repair_unit.failures
+    in bounded parallel, for each failing element:
+        active = its failing selectors
         while active is not empty:
-            diagnose and commit one evidence-backed patch
-            probe = run-probe(branch_head, repair_unit.element, active)
-            ledger.record(probe)
-            active = probe.persistent union probe.novel
-            stop blocked if the ledger detects a cycle or progress limit
+            diagnose and patch one failure class
+            push the repair candidate
+            report = run-targeted-tests(candidate, element, active)
+            active = report.failures
+            stop blocked if the same active set repeats without a relevant change
 
-        element = run-probe(branch_head, repair_unit.element, whole-element)
-        if element is red:
-            active = element.failures
-            continue the inner loop
+        run-targeted-tests(candidate, whole element)
+        return the patch only when the whole element is green
 
-        return patch commits and probe evidence to the coordinator
-
-    coordinator reviews and integrates returned patches sequentially
-    candidate = new exact pushed candidate SHA
+    review and integrate returned patches sequentially
+    candidate = exact pushed integrated SHA
 ```
 
-`run-matrix` is the only operation that can terminate the outer loop as green.
-A selected-failure probe becoming green is insufficient; the subagent must next
-probe its whole matrix element. A whole-element probe becoming green is still
-insufficient for overall certification.
+Only `run-ci` can establish overall green.
 
-The failure ledger never replaces history with only the latest set. For every
-probe it records `resolved`, `persistent`, and `novel` signatures plus the exact
-candidate and condition key. The next active set is `persistent union novel`.
-Repeating the same active signature set without a discriminating patch or
-condition change is a cycle, not progress. The inner loop then returns
-`blocked` with evidence rather than retrying indefinitely.
+## Interfaces
 
-Parallelism is bounded by available agent slots. If subagents are unavailable,
-the same repair units run sequentially. Failures from different matrix elements
-are not automatically independent: exact matching signatures may be coalesced
-into one repair unit, and overlapping path scopes are flagged for coordinator
-review rather than mutated concurrently.
+### Instruction interfaces
 
-## Temporary Repair Branches
+- `ci-debug.interface.default` owns the outer loop, parallel delegation,
+  sequential integration, and final full-CI requirement.
+- `ci-debug.interface.repair-element` owns the inner patch/targeted-test loop for
+  one assigned matrix element.
 
-At incident start, the coordinator obtains explicit `git-workflow` approval for
-a bounded mutation envelope: the incident ID, exact base SHA, branch namespace,
-allowed paths, and permission to create, commit, push, and later remove only
-incident-owned temporary branches. The namespace is:
+### Machine interfaces
 
-```text
-codex/ci-debug/<incident>/<matrix-element>/<attempt>
-```
+- `ci-debug._rtx.interface.run-ci` forwards a complete remote matrix request to
+  the canonical repository runner.
+- `ci-debug._rtx.interface.run-targeted-tests` forwards one matrix element plus
+  one explicit selector, a previous report containing the active failure set,
+  or a whole-element request.
 
-`<matrix-element>` is the manifest's normalized Git-safe slug, not an arbitrary
-workflow or test string.
+The adapters add no CI policy. The repository runner owns suites, selectors,
+matrix membership, OS support, workers, GitHub transport, correlation,
+diagnostics, artifacts, and report schemas.
 
-Each repair subagent may create an isolated worktree and branch from the exact
-assigned candidate, commit only within its approved scope, push the branch for
-remote probes, and add ordinary commits while its inner loop continues. It may
-not integrate into the coordinator candidate, widen scope, delete branches, or
-force-push. It returns commit SHAs, the complete diff, and probe evidence.
+## Git and agent ownership
 
-The coordinator integrates accepted patches one at a time. Every integration
-creates a new candidate identity and invalidates probe evidence tied to an older
-candidate. A still-applicable returned patch may be applied to the new candidate
-only after scope review and a fresh affected-element probe. If it conflicts or
-its assumptions changed, the coordinator creates a new attempt branch from the
-new candidate; it never rebases or force-pushes an old attempt branch.
+Repair subagents may work on isolated temporary branches when explicitly
+authorized through `git-workflow`. They return commits, diffs, and test reports.
+They do not integrate or clean branches. The coordinator integrates accepted
+patches sequentially and reruns complete CI for the new exact SHA.
 
-Temporary branches and worktrees remain available as reproducers until the
-integrated candidate reaches `confirmed`. The coordinator then removes only the
-local worktrees, local branches, and remote branches recorded as owned by that
-incident. It preserves the incident ledger, commit identities, reports, and
-artifact references. For `blocked` or `abandoned` incidents, cleanup requires a
-separate explicit decision so unfinished evidence is not destroyed.
+Machine interfaces never create worktrees or branches, commit, push, merge,
+delete branches, or clean worktrees.
 
-## Two-Stage Rollout
+## Useful safeguards retained
 
-GitHub only accepts `workflow_dispatch` for a workflow present on the default
-branch. Therefore the feature cannot be proven by first adding dispatch only on
-its development branch.
+- Exact SHA, not branch name, identifies tested code.
+- Each repair subagent owns only one matrix element and evidence-backed path
+  scope.
+- A selected failure rerun is followed by a whole-element rerun.
+- A whole-element pass is followed by complete CI after integration.
+- The next active set comes from the latest targeted report; resolved failures
+  are not retried.
+- An unchanged failure set without a relevant change stops as blocked.
+- Reports are evidence, not Git authority.
 
-### Stage 0: default-branch dispatch bootstrap
+## Dependencies and rollout
 
-Land a workflow-only adapter through the existing full CI path. It adds an
-inert, typed manual entry point using only current task-level and full-matrix
-capabilities. It does not add arbitrary selectors or depend on unmerged runner
-code. Workflow policy tests prove that push and pull-request behavior is
-unchanged.
+The separate repository-runner plan must provide refined local selection plus
+`remote matrix` and `remote probe`. Until those commands exist, the skill can
+be structurally and locally tested but must fail closed for live remote work.
 
-After that adapter is merged to the default branch, create the implementation
-branch from the adapter commit. Branch dispatch can then select the branch ref
-and exercise the evolving workflow and runner.
+GitHub's manual workflow entry point must exist on the default branch before a
+feature branch can use it. Land that bootstrap first, then implement the runner,
+then exercise the skill against a temporary branch.
 
-### Stage 1: diagnostic implementation
+## Acceptance
 
-Add runner-owned selection and diagnostics, the registered skill/runtime, state
-handling, workflow artifact upload, and policy tests. Re-certify every affected
-node and repository certification root before relying on live results.
-
-### Stage 2: exact candidate certification
-
-Run the full required matrix against the implementation candidate, integrate
-only through an explicitly approved `git-workflow` action, then monitor the
-automatic default-branch run for confirmation.
-
-Actor-restricted interactive access is deferred until after the core workflow
-is accepted. It is not a v1 dependency or acceptance criterion.
-
-## Typed Selection Model
-
-One runner-owned machine-readable dispatch table enumerates valid combinations
-across separate axes:
-
-- `suite`: current repository suites such as `validators`, `tests`,
-  `precommit`, `pre-push`, `portability`, and `full`;
-- `task_id`: compatible tasks such as `validators`, `tests:shared`,
-  `tests:browser`, and `tests:performance`;
-- `validator_ids`: a bounded subset of registered validators;
-- `functional_selectors`: tracked test paths or pytest node IDs;
-- `native_check`: first-class keyring or scheduler smoke tasks;
-- `os`, supported Python version, worker count, repeat count, and named
-  condition profile.
-
-`portability` is a suite currently mapped to the shared-test task, not a task
-ID. Browser membership differs between existing suite profiles and must be
-represented explicitly in the dispatch table. Native smokes move under
-`repo_checks.py` as first-class tasks so the canonical runner remains the sole
-execution owner.
-
-Functional selectors are invalid for validators and native checks unless the
-dispatch table explicitly defines a compatible selector type. A pytest selector
-must resolve to a tracked test under approved test roots and belong to the
-selected suite/task. An optional keyword expression is passed as one validated
-argv value. Arbitrary pytest flags, environment assignments, and commands are
-rejected.
-
-Serial execution means `jobs=1`. The workflow must not rely on the existing
-`--sequential` compatibility alias; the alias may remain explicitly documented
-as a no-op until removed.
-
-## Failure and Condition Identity
-
-The runner emits two separate identifiers:
-
-- `failure_signature`: an OS/task-independent identity derived from failure
-  kind, failing node or phase, exception/result type, and top repository frame;
-- `condition_key`: the OS, task, worker count, order seed, suite/profile,
-  dependency-lock digest, runner image, and tool versions for one observation.
-
-Failure kinds include setup/dependency, collection, validator, ordinary test,
-native smoke, timeout/hang, cancellation, infrastructure, and
-diagnostic/artifact failure. A new signature creates a linked child incident
-rather than silently redefining the original failure.
-
-Classification labels remain observational:
-
-- `serial-reproduced`;
-- `enclosing-selection-correlated`;
-- `parallel-associated`; and
-- `cross-platform-differential`.
-
-Stronger causal language requires repeated observations and an order
-permutation or another discriminating experiment. A difference between hosted
-operating systems is not by itself proof of platform causation.
-
-## Persistent Incident State
-
-Canonical incident state lives under the owning skill node at
-`skills/ci-debug/_rtx/_state/<incident-id>/` and is excluded from Git by an
-exact ignore rule. The runtime authority declares the exact owned-filesystem
-regular expression. `_build/ci-debug/` contains only reproducible derived local
-reports and downloaded copies; it is never the canonical state store.
-
-A standalone `run-matrix` call uses the same owner and schema subset under
-`skills/ci-debug/_rtx/_state/certifications/<request-id>/`; it does not create
-repair units or authorize Git mutations.
-
-Each incident records:
-
-- immutable incident ID, parent/child relationships, and failure signature;
-- failing base SHA and tree SHA;
-- current expected head SHA, tree SHA, workflow blob SHA, and request
-  fingerprint;
-- workflow, run ID, attempt, event, actor, job ID, required-job manifest, and
-  intended artifact names, bundle-content digests, and post-upload GitHub
-  artifact IDs/digests;
-- typed target, condition key, actual runner image, dependency and tool
-  versions;
-- evidence-linked allowed paths and separately approved scope expansions;
-- repair-unit assignments, owned temporary branches/worktrees, repair commits,
-  and cleanup disposition;
-- the append-only resolved/persistent/novel failure ledger; and
-- every verification result with provenance.
-
-Incident, repair-unit, and operational attempt state are separate.
-
-Incident states are `captured`, `matrix-running`, `matrix-red`, `repairing`,
-`matrix-green`, `integrated`, `confirmed`, `inconclusive`, `blocked`, and
-`abandoned`.
-
-Repair-unit states are `assigned`, `active`, `target-green`, `element-green`,
-`returned`, `accepted`, `blocked`, and `superseded`.
-
-Attempt states are `prepared`, `queued`, `running`, `collecting`, `completed`,
-`interrupted`, `cancelled-before-start`, `cancelled-running`,
-`superseded-before-start`, and `infrastructure-failed`. Classification outcome
-is a separate enum: `not-attempted`, `reproduced`, `not-reproduced`,
-`inconclusive-contaminated`, and `inconclusive-infrastructure`. Bundle
-publication is also separate: `not-produced`, `bundle-produced`,
-`bundle-publication-refused`, and `upload-failed`.
-
-The normative transition and invalidation rules are:
-
-| Event | Required prior state | Result | Invalidation/effect |
-| --- | --- | --- | --- |
-| incident capture | none | `captured` | Records failing-base identity |
-| `run-matrix` starts | `captured`, `repairing`, or `matrix-red` | `matrix-running` | Binds one exact candidate |
-| exact matrix fails | `matrix-running` | `matrix-red` | Creates failure ledger entries and repair units |
-| exact matrix passes | `matrix-running` | `matrix-green` | Makes candidate eligible for approved integration |
-| repair units assigned | `matrix-red` | `repairing` | Creates isolated unit branches from the candidate |
-| selected failure probe passes | repair unit `active` | repair unit `target-green` | Requires a whole-element probe next |
-| whole-element probe passes | repair unit `target-green` | repair unit `element-green` | Permits patch return, not overall green |
-| patch returned | repair unit `element-green` | repair unit `returned` | Coordinator reviews scope and evidence |
-| patch integrated | repair unit `returned` | repair unit `accepted`; incident `matrix-running` | Creates a new candidate and invalidates older candidate results |
-| probe repeats an unchanged failure state | repair unit `active` | repair unit `blocked` | Stops the inner loop with cycle evidence |
-| candidate SHA/tree/workflow/input changes | any active/green repair unit | repair unit `superseded` | Requires fresh validation against the new candidate |
-| approved integration observed | `matrix-green` | `integrated` | Records the distinct integrated identity |
-| integrated matrix passes | `integrated` | `confirmed` | Closes the incident |
-| explicit stop | any nonterminal incident state | `blocked` or `abandoned` | No green state transfers; cleanup remains explicit |
-
-Attempt transitions proceed in order from `prepared` to `queued`, `running`,
-`collecting`, and `completed`, with the declared interruption, cancellation,
-supersession, or infrastructure terminal reachable only from applicable earlier
-states. A queued concurrency supersession becomes `superseded-before-start`.
-Manual cancellation of a running job becomes `cancelled-running`; its bundle
-publication is best-effort. An interrupted monitor can resume from its persisted
-run ID. Tests exhaust every allowed and rejected transition.
-
-## Candidate and Matrix Binding
-
-Every attempt is bound to:
-
-- expected commit SHA and tree SHA;
-- workflow blob SHA;
-- normalized typed inputs and request fingerprint;
-- run ID and attempt;
-- exact required-job manifest; and
-- intended artifact name and bundle-content digest, followed after upload by the
-  GitHub artifact ID and GitHub artifact digest in canonical incident state.
-
-Branch names are locators, not identities. Inspection must prove that the run's
-`headSha` equals the incident's expected SHA. Every dispatch includes a
-high-entropy request ID as a typed input and projects it into `run-name`. The
-dispatcher correlates on that queryable request ID plus exact SHA, event, and
-actor, or uses a directly returned API run ID; it never assumes the newest run
-is the requested run. The artifact manifest repeats the request ID for final
-verification. If repository policy permits, an immutable temporary tag may be
-used as an additional locator.
-
-`matrix-green` requires every required job and required conditional check in the
-manifest to succeed for that exact candidate. Missing, cancelled, stale,
-unexpectedly skipped, or extra-required jobs prevent certification. Push/PR and
-manual-full workflows derive from the same machine-readable matrix manifest, or
-policy tests prove their manifests identical.
-
-If the default branch advances or integration changes the commit/tree through a
-merge or squash, either certify the prospective integration commit/tree before
-integration or treat the integrated result as a new candidate and rerun the
-required matrix. Branch green never transfers implicitly to a different tree.
-
-## Diagnostic Bundle and Redaction
-
-Automatic push/PR failures and all manual runs attempt publication of a
-short-retention bundle. The unique intended artifact name includes run ID,
-attempt, OS, task, and job identity. Upload uses `if-no-files-found: error`.
-Queued runs superseded before starting cannot produce a bundle. Manual
-cancellation while running, prohibited-data refusal, and upload failure are
-explicit safe non-artifact outcomes rather than false preservation guarantees.
-GitHub's run/job/step conclusion remains the outer evidence for those outcomes.
-
-The versioned bundle contains:
-
-- a manifest with schema version, exact candidate and request identity, job ID,
-  intended artifact name, condition key, and a canonical digest over the
-  payload-file digest list (excluding the manifest itself);
-- a concise summary and verification history;
-- redacted durable phase logs, JUnit XML, and timing JSON;
-- structured argv with sensitive values replaced, never a reconstructed raw
-  shell command;
-- allowlisted runtime, dependency, runner-image, and owned-process metadata;
-- Git status and changed/untracked paths before execution, at failure-hook time,
-  and after execution; and
-- bounded target evidence such as screenshots or native-check diagnostics.
-
-The three Git snapshots show when a change was observed; without additional
-filesystem/process attribution they do not claim which process wrote it.
-
-Owned child-process output is captured and redacted before it reaches durable
-logs or the console. Local-variable dumps and `--showlocals` are disabled by
-default. Redaction covers stdout/stderr, console summaries, phase logs, JUnit,
-JSON, Markdown, nested structures, filenames, argv, and error messages. Remote
-URLs and unrestricted process command lines are never collected. Process
-metadata is limited to allowlisted descendants started by the runner.
-
-Before upload, a deterministic prohibited-data scan covers the entire bundle.
-Any hit sets `bundle-publication-refused`, prevents upload, and emits only a safe
-diagnostic code. A successful upload returns the GitHub artifact ID and digest;
-those values are stored as outer metadata in canonical incident state and
-validated during collection. They are never embedded self-referentially in the
-artifact whose bytes determine the digest. Tests seed secrets through stdout,
-logs, JUnit, summaries, argv, and nested records and prove none survive.
-
-Workflow input values are placed in environment variables and read by Python;
-free-form values are never interpolated as `${{ inputs.selector }}` inside a
-`run:` script. Selectors reject control characters and paths outside approved
-test roots. Artifact names use a selector hash, never the raw selector.
-
-## Clean Classification Reruns
-
-After a failed attempt, the runner first finalizes evidence from that failed
-workspace and emits a bounded classification plan. The workflow provisions a
-separate hosted job/VM, checks out the same expected SHA, uses a new cache
-namespace, downloads the failed-attempt evidence, and invokes `repo_checks.py`
-with that plan. The workflow provisions isolation; the runner still owns the
-experiment and schema. Classification never runs again on the failed host or in
-its checkout.
-
-The smallest reproducing selection depends on failure kind: a pytest node or
-file, validator, native check, setup phase, or bounded task. The runner reruns
-the original failing selection under the same controllable conditions before
-varying workers, selection, order, or operating system. Hosted `*-latest`
-images and fresh VMs are not identical conditions; actual image/tool versions
-are recorded and drift is reported as a confounder.
-
-If a separate clean hosted job cannot be established or exact identity cannot be
-proved, classification outcome is `inconclusive-contaminated` or
-`inconclusive-infrastructure` as applicable. Classification does not proceed.
-Repeats and order permutations are explicit bounded experiments, not implicit
-retry loops.
-
-Controllable dependencies are pinned. Python caching uses the reviewed CI
-requirements lock/path. Node caching is enabled only with a lockfile and
-`npm ci`; Claude/Codex CLI versions are checked into a reviewed manifest and
-their installation is skipped for irrelevant tasks.
-
-## Repair Scope and Git Policy
-
-An incident begins with an evidence-linked allowed path set for each repair
-unit. Before every `run-probe` and proposed integration, the runtime compares
-the complete unit-branch diff against that set. An unrelated path fails closed.
-A scope expansion requires explicit approval and is recorded with its evidence
-and approving action. Standalone `run-matrix` certification is read-only with
-respect to Git and does not require a repair allowlist.
-
-The coordinator and subagents use only the incident-owned worktrees and branches
-authorized through `git-workflow`. They never edit a dirty primary checkout or
-stage unrelated files. The incident-level approval envelope authorizes ordinary
-commits and pushes only within its exact branch namespace and path scope;
-integration and cleanup remain coordinator actions. The runtime can verify
-these operations but cannot perform them.
-
-The skill does not use these as default repairs:
-
-- skipping, deselecting, or weakening the failing test;
-- increasing a timeout without evidence about consumed time;
-- permanently disabling parallelism because a serial observation passes;
-- broad dependency upgrades;
-- reducing operating-system or native integration coverage; or
-- combining a new failure signature into an unrelated patch.
-
-## Verification Boundaries
-
-The core algorithm above owns verification order. Its reports have deliberately
-non-overlapping authority:
-
-- a selected-target `ProbeReport` updates one repair unit's failure ledger;
-- a whole-element `ProbeReport` can mark only that repair unit
-  `element-green`;
-- a complete `MatrixReport` can mark one exact candidate `matrix-green`; and
-- a complete `MatrixReport` for the integrated default-branch candidate can
-  mark the incident `confirmed`.
-
-Inapplicable checks are recorded with a policy reason, never silently skipped.
-`matrix-green` is evidence that a candidate is eligible for user-approved
-integration, not authority to integrate it. Any candidate commit, tree,
-workflow, or normalized-input change invalidates every older green conclusion.
-
-## Workflow Safety and Performance
-
-- Permissions are least-privilege and explicit.
-- `gh` has a declared minimum version and required token scopes.
-- Monitoring uses `gh run watch --exit-status` and validates the exact run and
-  attempt before recording a conclusion.
-- `run-name` includes the typed high-entropy request ID used for correlation.
-- Targeted-run concurrency groups are partitioned by incident. They may
-  supersede an obsolete queued attempt but set `cancel-in-progress: false` so a
-  running attempt can finalize evidence. Full certification uses a distinct
-  group and is never cancelled by a targeted run.
-- Pip caching keys `requirements-ci.txt` (or its reviewed replacement).
-- Node downloads are cached only from the reviewed lock/manifest.
-- CLI installation is skipped where the dispatch table says it is irrelevant.
-- Timing data may support balanced deterministic Windows shards, but shard
-  membership becomes part of the runner-owned manifest.
-- Worker count remains an explicit condition; increasing workers is not a
-  substitute for isolation.
-
-Interactive `tmate` access is deferred. If designed later, it requires a
-dedicated manual-only job, `contents: read`, checkout with
-`persist-credentials: false`, no repository/organization/environment secrets,
-actor restriction, registered-key preflight, a short timeout, a fully pinned
-action SHA, and removal of credential-bearing Git configuration before the
-shell starts. It receives a separate security review and acceptance gate.
-
-## Error Handling
-
-The runtime fails closed when a ref is absent, `headSha` differs, a selector is
-invalid, the branch is not pushed, GitHub authentication is missing, the `gh`
-version/scopes are insufficient, a remote contains HTTP(S) userinfo, artifacts
-do not match the requested attempt, the matrix is incomplete, prohibited data
-is detected, scope contains unapproved paths, or workflow metadata is
-ambiguous. Errors expose a safe code and the unresolved boundary without
-printing credentials or raw remotes.
-
-Network and GitHub API failures do not alter incident conclusions. Artifact
-upload runs under `always()` but does not overwrite the test result; simultaneous
-test and artifact failures are recorded as separate outcomes.
-
-## Testing and Mandatory Certification
-
-Implementation follows test-driven slices:
-
-1. Stage 0 workflow policy tests and live default-branch dispatch bootstrap;
-2. exact instruction routing and the two-interface machine surface, including
-   proof that `run-probe` cannot emit overall green;
-3. dispatch-table, parser, selector, control-character, path-escape, and
-   incompatible-axis rejection;
-4. failure identity, condition identity, exhaustive incident/repair-unit/attempt/
-   classification/publication transitions, and candidate invalidation;
-5. failure-ledger resolved/persistent/novel updates, signature coalescing, and
-   cycle/stall detection;
-6. mocked `gh` dispatch correlation, watch, interruption, and artifact download;
-7. dependency-free setup-failure bundles, durable runner diagnostics, and Git
-   failure-hook capture;
-8. separate-hosted-job classification and same-host rerun rejection;
-9. whole-bundle seeded-secret redaction and prohibited-data scanning;
-10. evidence-backed path enforcement and approved scope expansion;
-11. isolated temporary-branch creation, append-only commits, sequential
-    coordinator integration, stale-result invalidation, and confirmed cleanup;
-12. simulated outer and inner loops with bounded parallel agents and sequential
-    fallback;
-13. workflow equivalence, unique artifacts, concurrency partitioning, and exact
-   full-matrix completeness;
-14. pytest and at least one non-pytest incident;
-15. one live temporary-branch probe followed by the exact full branch
-    matrix; and
-16. default-branch confirmation and incident-owned branch cleanup after
-    user-approved integration.
-
-Changes to `repo_checks.py` and `src/officina/repository_checks.py` affect
-declared repository certification-basis roots. Therefore certification is not
-optional: implementation must perform dependency-first recertification of all
-affected nodes, a full-repository certification migration for the changed
-roots, and fresh certification of `ci-debug` and `ci-debug._rtx`. Existing
-precommit and pre-push gates also remain required.
-
-## Acceptance Criteria
-
-- `SKILL.md` owns the outer matrix loop and shared policy; the routed
-  `repair-element` instruction source owns the inner loop without duplicated
-  procedure text.
-- The child exposes exactly `run-matrix` and `run-probe`; transport, artifacts,
-  incident state, and the failure ledger remain private source interfaces.
-- `run-matrix` can certify any exact pushed candidate without a prior incident
-  and is the only interface capable of returning overall green.
-- `run-probe` runs one selected failure set or one complete matrix element and
-  cannot certify the complete matrix.
-- The default branch first contains the task-level/manual dispatch adapter, and
-  branch dispatch is proven from a descendant of that commit.
-- One skill invocation repeatedly runs the complete matrix, delegates bounded
-  repair units, integrates returned patches sequentially, and stops only at
-  exact matrix green or an evidenced blocked state.
-- Parallel repair subagents commit and push only on incident-owned temporary
-  branches; none can mutate the coordinator candidate or clean up branches.
-- Every selected-failure success is followed by a whole-element probe, and every
-  integrated candidate is followed by a complete `run-matrix` evaluation.
-- The failure ledger preserves resolved, persistent, and novel signatures and
-  stops an unchanged cycle instead of retrying indefinitely.
-- The coordinator removes recorded temporary worktrees and local/remote
-  branches only after the integrated candidate is `confirmed`.
-- A pushed debugging branch runs one selected test on one selected OS without
-  running unrelated suites.
-- Automatic failures and manual successes/failures attempt publication of a
-  schema-valid, redacted artifact; cancellation, scan refusal, and upload failure
-  produce their exact safe non-artifact states without claiming preservation.
-- Checkout/setup/dependency failures can produce the dependency-free minimal
-  schema without relying on repository code.
-- Classification runs in a separate hosted job/VM at the exact failed SHA;
-  inability to establish it produces the applicable inconclusive outcome.
-- At least one pytest and one non-pytest incident traverse the state model.
-- Seeded secrets are absent from repository-owned console output, logs, JUnit,
-  summaries, argv, nested records, filenames, and uploaded artifacts. Pinned
-  third-party setup steps receive no secret-bearing values.
-- An unrelated changed path blocks dispatch/integration, while an explicitly
-  approved evidence-backed expansion succeeds and is recorded.
-- Every required job succeeds for the exact candidate SHA/tree/workflow/input
-  fingerprint; missing, stale, cancelled, or unexpectedly skipped jobs block
-  `matrix-green`.
-- A changed candidate invalidates prior downstream green states.
-- Request correlation is unique by queryable `run-name` request ID plus exact
-  SHA/event/actor, and the manifest repeats the request ID.
-- Mandatory dependency-first and full-repository recertification succeeds.
-- Git mutations remain inside the incident-level `git-workflow` approval
-  envelope; integration and cleanup remain coordinator-owned.
-- The primary checkout and unrelated dirty state remain untouched.
-- The integrated default-branch candidate reaches `confirmed` only after its own
-  required matrix passes.
-
-## Implementation Sequence
-
-1. With separate explicit authorization, sanitize the credential-bearing local
-   remote configuration without printing its value.
-2. Land the Stage 0 workflow-only dispatch adapter through existing CI.
-3. Branch from that default-branch adapter commit.
-4. Refresh the four standards closures; author the gateway outer loop, routed
-   repair-element source, and the exact `run-matrix`/`run-probe` contracts.
-5. Implement private incident, failure-ledger, GitHub-transport, and artifact
-   sources plus runner diagnostics and workflow upload in TDD slices.
-6. Add bounded subagent orchestration, temporary-branch ownership, sequential
-   integration, invalidation, and confirmed cleanup.
-7. Perform mandatory dependency-first and repository-wide recertification.
-8. Run the exact complete matrix for the immutable candidate.
-9. Integrate only through the approved `git-workflow` envelope.
-10. Monitor the integrated candidate to `confirmed`, then clean its owned
-    temporary branches and worktrees.
-11. Consider separately reviewed interactive access only if artifact-driven
-   debugging remains insufficient.
-
-## Non-goals
-
-- Replacing GitHub Actions or the canonical repository runner.
-- Automatically repairing arbitrary failures without evidence review.
-- Granting the runtime autonomous Git mutation authority.
-- Providing a general-purpose remote shell service in v1.
-- Persisting hosted runners after workflow completion.
-- Introducing self-hosted runner infrastructure in v1.
-- Treating targeted debug runs as a substitute for exact full-matrix
-  certification.
+- Full CI reports every failing matrix element.
+- Independent elements can be delegated in parallel.
+- A repair subagent can rerun only its assigned failures, then its whole
+  element.
+- The integrated exact SHA is accepted only after complete CI is green.
+- No runner, transport, artifact, or persistent-state behavior is duplicated in
+  the skill.

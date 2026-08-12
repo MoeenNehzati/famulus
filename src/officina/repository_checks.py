@@ -51,6 +51,13 @@ DOCSTRING_TESTS = {
     "tests/test_docstrings_validator.py",
 }
 PERFORMANCE_TESTS = {"tests/test_dispatcher_performance.py"}
+NATIVE_KEYRING_TESTS = {
+    "tests/test_officina_secret_store.py::"
+    "test_default_backend_native_roundtrip_when_available"
+}
+NATIVE_SCHEDULER_TESTS = {
+    "skills/recurring-tasks/_rtx/tests/test_scheduler_live_smoke.py"
+}
 PRECOMMIT_EXCLUDED_TESTS = {
     "tests/test_nested_module_migration.py::"
     "TestNestedModuleMigrationContract::"
@@ -1283,6 +1290,88 @@ SUITE_TEST_PROFILES = {
     "full": "full",
 }
 
+SELECTABLE_TEST_TASKS = {
+    "native:keyring": tuple(sorted(NATIVE_KEYRING_TESTS)),
+    "native:scheduler": tuple(sorted(NATIVE_SCHEDULER_TESTS)),
+    "tests:shared": None,
+    "tests:install": tuple(sorted(INSTALLATION_TESTS)),
+    "tests:browser": tuple(sorted(CHROME_TESTS)),
+    "tests:docstrings": tuple(sorted(DOCSTRING_TESTS)),
+    "tests:portability": tuple(sorted(PORTABILITY_TESTS)),
+    "tests:performance": tuple(sorted(PERFORMANCE_TESTS)),
+}
+SELECTABLE_TASKS = ("validators", *SELECTABLE_TEST_TASKS)
+
+
+def normalize_test_selectors(
+    repo_root: Path,
+    task_id: str,
+    raw_selectors: Sequence[str],
+) -> tuple[str, ...]:
+    """Return stable repository-relative pytest selectors for one task.
+
+    Intent
+    ------
+    Constrain targeted debugging to real test files owned by the selected task.
+
+    Rationale
+    ---------
+    Pytest accepts option-like expressions and paths outside the repository. A
+    remote-facing selector must instead be data with a small, auditable shape.
+
+    Pseudocode
+    ----------
+    - require one selectable pytest task
+    - normalize separators and split each optional node suffix
+    - reject control characters, absolute paths, traversal, and missing files
+    - require a repository test directory and specialized-task membership
+    - deduplicate selectors without changing their order
+
+    Wraps
+    -----
+    - none
+    """
+
+    if task_id not in SELECTABLE_TEST_TASKS:
+        raise ValueError("pytest selectors require one selectable test task")
+    root = Path(repo_root).resolve()
+    owned_targets = SELECTABLE_TEST_TASKS[task_id]
+    owned_files = (
+        {
+            target.partition("::")[0].replace("\\", "/")
+            for target in owned_targets
+        }
+        if owned_targets is not None
+        else None
+    )
+    normalized: list[str] = []
+    for raw_selector in raw_selectors:
+        if not raw_selector or any(ord(character) < 32 for character in raw_selector):
+            raise ValueError("test selector contains an empty or control value")
+        selector = raw_selector.replace("\\", "/")
+        file_part, separator, node_suffix = selector.partition("::")
+        relative = Path(file_part)
+        if relative.is_absolute() or ".." in relative.parts:
+            raise ValueError("test selector must be repository-relative")
+        try:
+            resolved = (root / relative).resolve(strict=True)
+            repository_path = resolved.relative_to(root).as_posix()
+        except (OSError, ValueError) as exc:
+            raise ValueError("test selector does not name a repository file") from exc
+        path_parts = Path(repository_path).parts
+        if (
+            not resolved.is_file()
+            or resolved.suffix != ".py"
+            or "tests" not in path_parts
+        ):
+            raise ValueError("test selector must name a Python file under a test root")
+        if owned_files is not None and repository_path not in owned_files:
+            raise ValueError(f"selector does not belong to task {task_id!r}")
+        value = repository_path + (f"::{node_suffix}" if separator else "")
+        if value not in normalized:
+            normalized.append(value)
+    return tuple(normalized)
+
 
 def _suite_runs(suite: str, task_id: str | None) -> tuple[str, ...]:
     """Resolve one suite to its minimal ordered pytest invocations.
@@ -1740,6 +1829,7 @@ def _run_process(
     - if bytecode cache is inside execution root:
       - raise ValueError
     - set child_environment = isolated source path and external bytecode cache
+    - set any task-owned native smoke opt-in in the child only
     - set process = child command in a new process group
     - if process is interrupted:
       - @_terminate_task_process(process)
@@ -1772,6 +1862,10 @@ def _run_process(
     child_environment["PYTHONPATH"] = os.pathsep.join(
         part for part in (source_root, existing_pythonpath) if part
     )
+    if task_id == "native:keyring":
+        child_environment["FAMULUS_REQUIRE_NATIVE_KEYRING"] = "1"
+    elif task_id == "native:scheduler":
+        child_environment["FAMULUS_RUN_SCHEDULER_SMOKE"] = "1"
     popen_kwargs: dict[str, object] = {
         "cwd": cwd,
         "env": child_environment,
@@ -1804,6 +1898,7 @@ def _pytest_phase_command(
     validator_ids: Sequence[str] = (),
     excluded_validator_ids: Sequence[str] = (),
     validator_paths: Sequence[Path] = (),
+    selectors: Sequence[str] = (),
 ) -> list[str]:
     """Build one pytest command for selected ordinary and validator items.
 
@@ -1825,9 +1920,9 @@ def _pytest_phase_command(
       - if task is validators:
         - set phase_inputs = validator arguments and targets
       - else:
-      - if task is browser or performance:
-          - set pytest_arguments = serial arguments
-          - set targets = selected phase targets
+      - if task is a specialized test or native smoke:
+          - set pytest_arguments = task-appropriate arguments
+          - set targets = the task's owned test nodes
         - else:
           - raise ValueError
     - if task includes validators:
@@ -1864,8 +1959,25 @@ def _pytest_phase_command(
     elif task_id == "tests:browser":
         pytest_args = _pytest_args(verbose=verbose, jobs=1)
         targets = sorted(CHROME_TESTS)
+    elif task_id == "tests:install":
+        pytest_args = _pytest_args(verbose=verbose, jobs=jobs)
+        targets = sorted(INSTALLATION_TESTS)
+    elif task_id == "tests:docstrings":
+        pytest_args = _pytest_args(verbose=verbose, jobs=1)
+        targets = sorted(DOCSTRING_TESTS)
+    elif task_id == "tests:portability":
+        pytest_args = _pytest_args(verbose=verbose, jobs=1)
+        targets = sorted(PORTABILITY_TESTS)
+    elif task_id == "native:keyring":
+        pytest_args = _pytest_args(verbose=verbose, jobs=1)
+        targets = sorted(NATIVE_KEYRING_TESTS)
+    elif task_id == "native:scheduler":
+        pytest_args = _pytest_args(verbose=verbose, jobs=1)
+        targets = sorted(NATIVE_SCHEDULER_TESTS)
     else:
         raise ValueError(f"not a pytest phase: {task_id}")
+    if selectors:
+        targets = list(selectors)
     if task_id in {"combined", "validators"}:
         if (
             validator_root is None
@@ -2019,6 +2131,7 @@ def run_suite(
     task_id: str | None = None,
     task_cache_dir: Path | None = None,
     repository_view: str = "auto",
+    selectors: Sequence[str] = (),
 ) -> int:
     """Run one named repository verification suite.
 
@@ -2087,8 +2200,8 @@ def run_suite(
         )
     phases = SUITE_PHASES[suite]
     if task_id is not None:
-        if task_id not in phases:
-            raise ValueError(f"task {task_id!r} is not part of suite {suite!r}")
+        if task_id not in SELECTABLE_TASKS:
+            raise ValueError(f"unknown repository-check task {task_id!r}")
         phases = (task_id,)
     if task_cache_dir is not None and task_id is None:
         raise ValueError("task_cache_dir requires task_id")
@@ -2171,6 +2284,7 @@ def run_suite(
                     validator_ids=validator_ids,
                     excluded_validator_ids=effective_exclusions,
                     validator_paths=validator_paths,
+                    selectors=selectors,
                 )
                 phase_pycache_prefix = (
                     artifact_root / "python-cache" / f"{index:04d}"
@@ -2243,6 +2357,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         constructs: "Builds the private staged-child result payload and status."
     """
 
+    arguments = tuple(sys.argv[1:] if argv is None else argv)
+    if arguments and arguments[0] == "remote":
+        from officina.repo_checks import remote
+
+        return remote.main(arguments[1:])
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--suite",
@@ -2293,9 +2413,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--task",
         "--task-id",
-        choices=("validators", "tests:shared", "tests:browser", "tests:performance"),
-        help=argparse.SUPPRESS,
+        dest="task_id",
+        choices=SELECTABLE_TASKS,
+        help="Run one repository-check task; --task-id remains a compatibility alias.",
+    )
+    parser.add_argument(
+        "--selector",
+        action="append",
+        dest="selectors",
+        help="Run one repository-relative pytest file or node; may be repeated.",
     )
     parser.add_argument("--task-cache-dir", type=Path, help=argparse.SUPPRESS)
     parser.add_argument(
@@ -2308,7 +2436,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--display-root", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--result-path", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--staged-paths-file", type=Path, help=argparse.SUPPRESS)
-    args = parser.parse_args(argv)
+    args = parser.parse_args(arguments)
     if args.jobs < 1:
         parser.error("--jobs must be at least 1")
     if args.jobs > 1 and not _pytest_xdist_available():
@@ -2317,10 +2445,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     if args.task_cache_dir is not None and args.task_id is None:
         parser.error("--task-cache-dir requires --task-id")
-    if args.task_id is not None and args.task_id not in SUITE_PHASES[args.suite]:
-        parser.error(
-            f"task {args.task_id!r} is not part of suite {args.suite!r}"
-        )
+    if args.selectors and args.task_id is None:
+        parser.error("--selector requires --task")
+    if args.selectors and args.task_id == "validators":
+        parser.error("--selector requires a pytest task; use --validator instead")
+    try:
+        selectors = normalize_test_selectors(
+            args.repo_root,
+            args.task_id,
+            args.selectors or (),
+        ) if args.selectors else ()
+    except ValueError as exc:
+        parser.error(str(exc))
     if args.tracked_root is not None:
         if (
             args.display_root is None
@@ -2358,4 +2494,5 @@ def main(argv: Sequence[str] | None = None) -> int:
         task_id=args.task_id,
         task_cache_dir=args.task_cache_dir,
         repository_view=args.repository_view,
+        selectors=selectors,
     )

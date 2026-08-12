@@ -586,7 +586,10 @@ GRAPH_SPECS: dict[str, dict] = {
                     group(
                         "coding",
                         "coding",
-                        [node("initialize-tdd", "initialize-tdd", **INDIGO)],
+                        [
+                            node("ci-debug", "ci-debug", **INDIGO),
+                            node("initialize-tdd", "initialize-tdd", **INDIGO),
+                        ],
                         direction="RIGHT",
                         padding={"top": 38, "right": 12, "bottom": 12, "left": 12},
                         **INDIGO,
@@ -639,7 +642,8 @@ GRAPH_SPECS: dict[str, dict] = {
             {"source": "skill-maker", "target": "update-standards", "hidden": True},
             {"source": "git-workflow", "target": "semantic-integration", "hidden": True},
             {"source": "semantic-integration", "target": "hook-maker", "hidden": True},
-            {"source": "update-standards", "target": "initialize-tdd", "hidden": True},
+            {"source": "update-standards", "target": "ci-debug", "hidden": True},
+            {"source": "ci-debug", "target": "initialize-tdd", "hidden": True},
             {"source": "initialize-tdd", "target": "cloud-files", "hidden": True},
             {"source": "cloud-files", "target": "fix-bisync", "hidden": True},
             {"source": "fix-bisync", "target": "pdf-to-markdown", "hidden": True},

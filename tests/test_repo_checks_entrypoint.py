@@ -53,6 +53,23 @@ def test_root_entrypoint_exposes_named_suites() -> None:
     assert "--jobs" in completed.stdout
 
 
+def test_root_entrypoint_exposes_remote_matrix_and_probe_help() -> None:
+    """Catch a root launcher that cannot reach the remote debugging interface."""
+
+    for command in (("remote", "--help"), ("remote", "matrix", "--help"), ("remote", "probe", "--help")):
+        completed = subprocess.run(
+            [sys.executable, str(ENTRYPOINT), *command],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="strict",
+            check=False,
+        )
+        assert completed.returncode == 0, completed.stderr
+        assert "remote" in completed.stdout.casefold() or command[1] in completed.stdout
+
+
 def test_legacy_execution_entrypoints_are_removed() -> None:
     assert not (REPO_ROOT / "repo_tests.py").exists()
     assert not (REPO_ROOT / "validators" / "runner.py").exists()

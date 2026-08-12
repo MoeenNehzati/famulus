@@ -1,0 +1,20 @@
+content:
+- instructions/repair-element\.md
+dependencies: []
+description: Owns the isolated repair, probe, and evidence-return loop for one assigned
+  CI matrix element.
+gateway:
+  language: Markdown
+  path: instructions/repair-element.md
+id: ci-debug.source.instructions-repair-element
+interfaces:
+  ci-debug.source.instructions-repair-element.interface.repair-element:
+    version: 1
+node_type: behavioral_source
+schema_version: 6
+uses_interfaces:
+- interface: ci-debug._rtx.interface.run-targeted-tests
+  version: 1
+- interface: git-workflow.interface.default
+  version: 1
+version: 1

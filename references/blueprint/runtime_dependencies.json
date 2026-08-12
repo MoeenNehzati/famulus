@@ -35,6 +35,16 @@
         }
       }
     },
+    "ci-debug": {
+      "interfaces": {
+        "ci-debug._rtx.interface.run-ci": {
+          "dependencies": []
+        },
+        "ci-debug._rtx.interface.run-targeted-tests": {
+          "dependencies": []
+        }
+      }
+    },
     "cloud-files": {
       "interfaces": {
         "cloud-files._rtx.interface.ensure-oauth": {
