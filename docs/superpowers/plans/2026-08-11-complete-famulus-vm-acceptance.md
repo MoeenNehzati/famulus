@@ -18,6 +18,7 @@
 - The public package gate cannot pass until the resolved marketplace commit and payload digest equal the expected published artifact.
 - Missing KVM, assistant CLI, Secret Service prerequisite, or network access is a failed dedicated acceptance run, not a skip.
 - Live acceptance runs as the unprivileged guest; prerequisite installation is a separate recorded operator action.
+- Acting-LM runs use a digest-bound acceptance config whose `agent.model_tier` defaults to `cheap`; the Codex adapter resolves that tier to `gpt-5.6-luna` and passes it explicitly with `codex exec --model`. Never inherit an ambient or more expensive model default.
 
 ---
 
@@ -147,12 +148,13 @@ git commit -m "feat: supervise VM Secret Service sessions"
 - Test: `tests/test_isolated_lm_scenario.py`
 
 **Interfaces:**
-- Adds CLI: `run-scenario --scenario complete-install-v1 --acquisition {candidate,public}`.
-- Produces: versioned `ScenarioReport` with per-step pass/fail, exact command identity, bounded evidence, contamination status, and final verdict.
+- Adds CLI: `run-scenario --scenario complete-install-v1 --acquisition {candidate,public} --config PATH`.
+- Produces: versioned `ScenarioReport` with per-step pass/fail, exact command identity, bounded evidence, contamination status, resolved acting-model identity, and final verdict.
+- Produces: versioned acceptance config with `agent.model_tier`, `agent.models`, and optional explicit `agent.model_override`; the default tier is `cheap` and initially maps to `gpt-5.6-luna`.
 
 - [ ] **Step 1: Add RED schema and ordering tests**
 
-Reject unknown fields/steps, duplicate IDs, unbounded commands, secret-bearing fields, missing cleanup, missing profile, and acquisition-specific assertions. Assert cleanup runs after any failure.
+Reject unknown fields/steps, duplicate IDs, unbounded commands, secret-bearing fields, missing cleanup, missing profile, acquisition-specific assertions, unknown or unmapped model tiers, and configs that would inherit an ambient model. Assert cleanup runs after any failure.
 
 - [ ] **Step 2: Encode exact scenario steps**
 
@@ -170,6 +172,15 @@ differs from the documentation bundle digest record in the run manifest.
 - [ ] **Step 3: Implement deterministic execution and reporting**
 
 Use only catalog-bound scenario commands and manifest-bound artifacts. Each step has one timeout and output cap. Errors use closed categories; reports exclude raw secret-bearing streams. Record human intervention as contamination.
+
+Resolve the acting model once during preflight from the digest-bound acceptance
+config. Invoke Codex shell-free with `codex exec --model <resolved-model>` for
+every acting-LM process. Do not silently substitute the Codex default if the
+configured tier or model is unavailable. Record the config digest, requested
+tier, resolved model, Codex CLI version, and explicit-override status. Unit tests
+must prove the default resolves to the cheap mapping, a one-field tier change
+selects another configured mapping, explicit overrides are visible in evidence,
+and no expensive tier can be selected implicitly.
 
 - [ ] **Step 4: Add malicious leak tests**
 
@@ -232,6 +243,10 @@ git commit -m "feat: extract sanitized VM acceptance evidence"
 
 Create a source/plugin artifact and public-documentation bundle from exact `HEAD`; record SHA-256 and source commit. Verify `git status --porcelain` is empty before building.
 
+Create and digest the run's acceptance config. Use the default
+`agent.model_tier=cheap` mapping unless this specific run is explicitly declared
+as a model comparison. Record the resolved model before starting either profile.
+
 - [ ] **Step 2: Prepare a fresh VM and operator prerequisites**
 
 Install `dbus-daemon` and `gnome-keyring` as a separately recorded sudo step; record package versions. Prove the baseline contains no Famulus state or reusable keyring secret before scenario start.
@@ -268,6 +283,10 @@ This requires explicit user authorization at execution time. Record the resultin
 - [ ] **Step 2: Prepare a new fresh VM from the same sealed baseline**
 
 Do not reuse the candidate-acceptance overlay or keyring. Install the same recorded OS prerequisites and assistant-host version.
+
+Reuse the candidate gate's digest-bound acting-model config and resolved model
+for comparability. A changed tier or explicit model override creates a separate
+comparison verdict rather than replacing the public-package acceptance result.
 
 - [ ] **Step 3: Run `complete-install-v1` with public acquisition**
 

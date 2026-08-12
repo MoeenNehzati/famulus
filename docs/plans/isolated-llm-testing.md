@@ -28,6 +28,16 @@ The LM's report is qualitative evidence, not proof of success. Assertions about
 files, messages, calendar events, installed state, and cleanup must come from
 independent probes wherever practical.
 
+The acting LM is a versioned run input. A host-owned acceptance config exposes
+one easy selection knob, `agent.model_tier`, which defaults to `cheap`; a mapping
+in the same config resolves tiers to concrete provider model IDs. The initial
+Codex mapping resolves `cheap` to `gpt-5.6-luna`, and the harness passes that
+model explicitly rather than inheriting Codex's ambient default. The requested
+tier, resolved model, config digest, Codex CLI version, and any explicit model
+override are recorded in the run evidence. Candidate and public-package gates
+use the same resolved model unless a separately labeled comparison run is
+requested.
+
 Each run receives two versioned inputs: an immutable Famulus candidate and the
 public documentation the LM is allowed to use. The candidate may be a release,
 repository revision, or locally built distributable artifact, but its identity

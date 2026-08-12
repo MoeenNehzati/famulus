@@ -260,6 +260,20 @@ Famulus installer/preflight processes run as the unprivileged guest and never
 invoke `sudo` or `pkexec`; public OS prerequisites are installed in a separate,
 recorded operator step.
 
+The acting LM is selected through one host-owned, versioned acceptance-config
+object rather than being hard-coded into a scenario. Its `agent.model_tier`
+defaults to `cheap`; `agent.models` maps that tier to a concrete model ID. For
+the initial Codex adapter, `cheap` resolves to `gpt-5.6-luna`, the current
+cost-sensitive GPT-5.6 model. The adapter passes the resolved ID explicitly with
+`codex exec --model`; it never inherits an ambient or more expensive default.
+Changing the test model is therefore a config edit, not a scenario or harness
+code change. An exact-model override is permitted only when explicitly present
+in the run config. Unknown tiers, missing mappings, and implicit fallback fail
+preflight. The config digest, requested tier, resolved model ID, Codex CLI
+version, and any explicit override are retained in sanitized evidence. Candidate
+and public gates use the same resolved model unless the operator deliberately
+records a comparison run.
+
 Candidate and public acceptance are distinct acquisition gates with identical
 post-acquisition assertions. Candidate acceptance installs a production-shaped
 local marketplace/plugin artifact whose archive and documentation digests map
