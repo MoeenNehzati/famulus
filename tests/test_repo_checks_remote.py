@@ -255,6 +255,58 @@ def test_remote_probe_replays_failed_files_from_a_prior_matrix_report(
     )
 
 
+@pytest.mark.parametrize(
+    ("selector_arguments", "expected_field"),
+    [
+        (
+            ["--selector", "tests/test_broken.py"],
+            'selector=["tests/test_broken.py"]',
+        ),
+        (
+            [
+                "--selector",
+                "tests/test_broken.py",
+                "--selector",
+                "tests/test_other.py::test_case",
+            ],
+            'selector=["tests/test_broken.py","tests/test_other.py::test_case"]',
+        ),
+    ],
+)
+def test_remote_probe_preserves_direct_selector_cardinality_in_dispatch(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    selector_arguments: list[str],
+    expected_field: str,
+) -> None:
+    """Catch direct selectors changing shape or collapsing to the final value."""
+
+    gh = FakeGh(conclusion="success")
+    status = remote.main(
+        [
+            "probe",
+            "--ref",
+            "repair",
+            "--expected-sha",
+            "a" * 40,
+            "--os",
+            "windows-latest",
+            "--task",
+            "tests:shared",
+            *selector_arguments,
+            "--output-dir",
+            str(tmp_path),
+        ],
+        gh=gh,
+        sleep=lambda _seconds: None,
+    )
+
+    assert status == 0
+    json.loads(capsys.readouterr().out)
+    dispatch = next(call for call in gh.calls if call[:2] == ("workflow", "run"))
+    assert expected_field in dispatch
+
+
 def test_exact_sha_mismatch_fails_before_dispatch(
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,

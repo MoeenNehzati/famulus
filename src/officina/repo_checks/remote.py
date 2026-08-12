@@ -109,7 +109,7 @@ def build_parser() -> argparse.ArgumentParser:
     probe.add_argument("--os", required=True)
     probe.add_argument("--task", required=True)
     selection = probe.add_mutually_exclusive_group(required=True)
-    selection.add_argument("--selector")
+    selection.add_argument("--selector", action="append")
     selection.add_argument("--from-report")
     selection.add_argument("--whole-element", action="store_true")
     probe.add_argument("--jobs", type=int)
@@ -498,7 +498,9 @@ def run(args: argparse.Namespace, *, gh: GhClient, sleep: Callable[[float], None
     ).stdout.strip()
     if remote_sha.casefold() != args.expected_sha.casefold():
         raise RemoteError("candidate_sha_mismatch", "remote ref does not match expected SHA")
-    selectors: list[str] = [args.selector] if args.remote_command == "probe" and args.selector else []
+    selectors: list[str] = []
+    if args.remote_command == "probe" and args.selector:
+        selectors = args.selector
     if args.remote_command == "probe" and args.from_report:
         selectors = _load_replay(args.from_report, repository, args.os, args.task)
     if args.remote_command == "probe" and args.task == "combined" and selectors:
