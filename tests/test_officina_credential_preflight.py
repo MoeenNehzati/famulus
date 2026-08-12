@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import importlib.util
 import json
 import os
 import pickle
@@ -244,9 +245,63 @@ def encoded_canaries(secret: str) -> set[str]:
     }
 
 
+def _load_runtime_module(name: str, path: Path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _persist_through_real_repository_sinks(
+    tmp_path: Path,
+    *,
+    payload: dict[str, object],
+    retained_output: str,
+) -> tuple[Path, Path, Path]:
+    """Exercise real durable install-record and retained-log writers.
+
+    Task 3 does not wire preflight into the Phase 1 journal or manifest yet.
+    Persist the exact closed result through their shared production serializer,
+    then retain the real CLI output through the repository's run-log writer.
+    """
+    repository_root = Path(__file__).parents[1]
+    state_record = _load_runtime_module(
+        "credential_preflight_state_record_sink",
+        repository_root / "skills/install-assistant-tools/_rtx/_state_record.py",
+    )
+    run_record = _load_runtime_module(
+        "credential_preflight_retained_log_sink",
+        repository_root / "skills/recurring-tasks/_rtx/_run_record.py",
+    )
+    state_root = tmp_path / "install-state"
+    state_root.mkdir(mode=0o700)
+    journal_path = state_root / "transaction-journal.json"
+    manifest_path = state_root / "install-manifest.json"
+    state_record._atomic_json_replace(journal_path, payload, state_root=state_root)
+    state_record._atomic_json_replace(manifest_path, payload, state_root=state_root)
+
+    log_dir = tmp_path / "retained-test-logs"
+    record = run_record.JobRunRecord(
+        job_name="credential-preflight-test",
+        started_at="2026-08-12T00:00:00Z",
+        finished_at="2026-08-12T00:00:01Z",
+        process_exit_code=1,
+        inner_status="error",
+        success=False,
+        reason=retained_output.rstrip("\n"),
+        run_id="credential-preflight-test-run",
+    )
+    run_record.write_run_record(log_dir=log_dir, record=record)
+    retained_log_path = log_dir / record.job_name / "latest.json"
+    return journal_path, manifest_path, retained_log_path
+
+
 def test_backend_exception_and_raw_streams_cannot_leak_probe_secret(
     capsys,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     secret = 'CANARY-"\\' + "a" * 64
 
@@ -256,22 +311,34 @@ def test_backend_exception_and_raw_streams_cannot_leak_probe_secret(
         timeout_seconds=2,
     )
 
-    captured = capsys.readouterr()
-    rendered = json.dumps(result.as_json())
-    sink_paths = [
-        tmp_path / "result.json",
-        tmp_path / "install.journal.json",
-        tmp_path / "install.manifest.json",
-        tmp_path / "retained-test.log",
-    ]
-    for sink_path in sink_paths:
-        sink_path.write_text(rendered + captured.out + captured.err, encoding="utf-8")
-    combined = rendered + captured.out + captured.err + "".join(
-        sink_path.read_text(encoding="utf-8") for sink_path in sink_paths
+    backend_streams = capsys.readouterr()
+    monkeypatch.setattr(preflight, "probe_native_store", lambda: result)
+    assert main(["--json"]) == 1
+    cli_streams = capsys.readouterr()
+    payload = result.as_json()
+    sink_paths = _persist_through_real_repository_sinks(
+        tmp_path,
+        payload=payload,
+        retained_output=cli_streams.out,
+    )
+    journal_path, manifest_path, retained_log_path = sink_paths
+    assert json.loads(cli_streams.out) == payload
+    assert json.loads(journal_path.read_bytes()) == payload
+    assert json.loads(manifest_path.read_bytes()) == payload
+    assert json.loads(retained_log_path.read_bytes())["reason"] == cli_streams.out.rstrip(
+        "\n"
+    )
+    combined = (
+        backend_streams.out.encode("utf-8")
+        + backend_streams.err.encode("utf-8")
+        + cli_streams.out.encode("utf-8")
+        + cli_streams.err.encode("utf-8")
+        + json.dumps(payload).encode("utf-8")
+        + b"".join(sink_path.read_bytes() for sink_path in sink_paths)
     )
     assert result.code is CredentialPreflightCode.ROUNDTRIP_FAILED
     for canary in encoded_canaries(secret):
-        assert canary not in combined
+        assert canary.encode("utf-8") not in combined
 
 
 @pytest.mark.parametrize("mode", ["false-delete", "retain-delete"])
@@ -559,16 +626,23 @@ def test_timeout_terminates_backend_descendant_process_tree(tmp_path: Path) -> N
         pytest.fail("backend descendant survived the bounded probe timeout")
 
 
-def _write_rejected_backend_module(tmp_path: Path) -> tuple[Path, Path]:
+def _write_rejected_backend_module(tmp_path: Path) -> tuple[Path, Path, Path]:
     module_root = tmp_path / "selection-module"
     module_root.mkdir()
     access_log = tmp_path / "backend-access.log"
+    selection_log = tmp_path / "backend-selection.log"
     (module_root / "evil_backend.py").write_text(
         "from keyring.backend import KeyringBackend\n"
         "from pathlib import Path\n"
         "import os\n"
+        "def _event(value):\n"
+        "    with Path(os.environ['FAMULUS_TEST_SELECTION_LOG']).open('a', encoding='utf-8') as stream:\n"
+        "        stream.write(value + '\\n')\n"
+        "_event('import:evil_backend')\n"
         "class EvilKeyring(KeyringBackend):\n"
-        "    priority = 100\n"
+        "    priority = 1000000\n"
+        "    def __init__(self):\n"
+        "        _event('initialize:evil_backend.EvilKeyring')\n"
         "    def _touch(self, operation):\n"
         "        Path(os.environ['FAMULUS_TEST_ACCESS_LOG']).write_text(operation)\n"
         "    def get_password(self, service, username):\n"
@@ -578,25 +652,59 @@ def _write_rejected_backend_module(tmp_path: Path) -> tuple[Path, Path]:
         "    def delete_password(self, service, username):\n"
         "        self._touch('delete')\n"
         "def initialize():\n"
-        "    return None\n",
+        "    _event('entry-point:evil')\n",
         encoding="utf-8",
     )
-    return module_root, access_log
+    source_root = Path(__file__).parents[1] / "src"
+    (module_root / "run_selection.py").write_text(
+        textwrap.dedent(
+            f"""
+            import json
+            import keyring
+            import os
+            import sys
+            from importlib import metadata
+            from pathlib import Path
+            sys.path.insert(0, {str(source_root)!r})
+            from officina.install.credential_preflight import probe_native_store
+
+            selected = keyring.get_keyring()
+            selected_identity = f"{{type(selected).__module__}}.{{type(selected).__name__}}"
+            with Path(os.environ["FAMULUS_TEST_SELECTION_LOG"]).open(
+                "a", encoding="utf-8"
+            ) as stream:
+                stream.write("selected:" + selected_identity + "\\n")
+
+            if __name__ == "__main__":
+                result = probe_native_store(timeout_seconds=10)
+                print(json.dumps({{
+                    "keyring_version": metadata.version("keyring"),
+                    "selected_identity": selected_identity,
+                    "result": result.as_json(),
+                }}, separators=(",", ":"), sort_keys=True))
+            """
+        ),
+        encoding="utf-8",
+    )
+    return module_root, access_log, selection_log
 
 
 @pytest.mark.parametrize("selection_route", ["environment", "config", "entry-point"])
 def test_real_keyring_selection_routes_are_rejected_before_backend_access(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     selection_route: str,
 ) -> None:
-    module_root, access_log = _write_rejected_backend_module(tmp_path)
-    monkeypatch.syspath_prepend(str(module_root))
-    monkeypatch.setenv("FAMULUS_TEST_ACCESS_LOG", str(access_log))
-    monkeypatch.delenv("PYTHON_KEYRING_BACKEND", raising=False)
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    module_root, access_log, selection_log = _write_rejected_backend_module(tmp_path)
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = os.pathsep.join(
+        [str(module_root), str(Path(__file__).parents[1] / "src")]
+    )
+    environment["FAMULUS_TEST_ACCESS_LOG"] = str(access_log)
+    environment["FAMULUS_TEST_SELECTION_LOG"] = str(selection_log)
+    environment.pop("PYTHON_KEYRING_BACKEND", None)
+    environment["XDG_CONFIG_HOME"] = str(tmp_path / "config")
     if selection_route == "environment":
-        monkeypatch.setenv("PYTHON_KEYRING_BACKEND", "evil_backend.EvilKeyring")
+        environment["PYTHON_KEYRING_BACKEND"] = "evil_backend.EvilKeyring"
     elif selection_route == "config":
         config = tmp_path / "config" / "python_keyring" / "keyringrc.cfg"
         config.parent.mkdir(parents=True)
@@ -618,9 +726,28 @@ def test_real_keyring_selection_routes_are_rejected_before_backend_access(
             encoding="utf-8",
         )
 
-    result = probe_native_store(timeout_seconds=10)
+    completed = subprocess.run(
+        [sys.executable, str(module_root / "run_selection.py")],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=25,
+        check=True,
+    )
+    payload = json.loads(completed.stdout)
+    events = selection_log.read_text(encoding="utf-8").splitlines()
 
-    assert result.code is CredentialPreflightCode.UNSUPPORTED_BACKEND
+    assert payload["selected_identity"] == "evil_backend.EvilKeyring"
+    assert payload["keyring_version"] == "25.6.0"
+    assert payload["result"]["code"] == "unsupported_backend"
+    assert events.count("import:evil_backend") >= 2
+    assert events.count("initialize:evil_backend.EvilKeyring") >= 2
+    assert events.count("selected:evil_backend.EvilKeyring") >= 2
+    if selection_route == "entry-point":
+        assert events.count("entry-point:evil") >= 2
+    else:
+        assert "entry-point:evil" not in events
     assert not access_log.exists()
 
 
