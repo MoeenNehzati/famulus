@@ -29,6 +29,35 @@ class MemoryBackend:
         return self.values.pop((namespace, key), None) is not None
 
 
+class Keyring:
+    __module__ = {
+        "linux": "keyring.backends.SecretService",
+        "darwin": "keyring.backends.macOS",
+        "win32": "keyring.backends.Windows",
+    }.get(sys.platform, "unsupported")
+    priority = 1
+
+    def __init__(self) -> None:
+        self.values: dict[tuple[str, str], str] = {}
+        self.calls: list[tuple[str, str, str]] = []
+
+    def set_password(self, service: str, username: str, password: str) -> None:
+        self.calls.append(("set", service, username))
+        self.values[(service, username)] = password
+
+    def get_password(self, service: str, username: str) -> str | None:
+        self.calls.append(("get", service, username))
+        return self.values.get((service, username))
+
+    def delete_password(self, service: str, username: str) -> None:
+        self.calls.append(("delete", service, username))
+        self.values.pop((service, username), None)
+
+
+if sys.platform == "win32":
+    Keyring.__name__ = "WinVaultKeyring"
+
+
 class UsableBackend:
     priority = 1
 
@@ -78,7 +107,14 @@ class PasswordDeleteError(KeyringError):
     pass
 
 
+class KeyringLocked(KeyringError):
+    pass
+
+
 def install_fake_keyring(monkeypatch: pytest.MonkeyPatch, fake: FakeKeyring) -> None:
+    if isinstance(fake.backend, Keyring):
+        fake.backend.values = fake.values
+        fake.backend.calls = fake.calls
     keyring_module = types.ModuleType("keyring")
     keyring_module.__path__ = []
     keyring_module.get_keyring = fake.get_keyring
@@ -88,11 +124,16 @@ def install_fake_keyring(monkeypatch: pytest.MonkeyPatch, fake: FakeKeyring) -> 
 
     errors_module = types.ModuleType("keyring.errors")
     errors_module.KeyringError = KeyringError
+    errors_module.KeyringLocked = KeyringLocked
     errors_module.PasswordDeleteError = PasswordDeleteError
     keyring_module.errors = errors_module
 
+    native_module = types.ModuleType(Keyring.__module__)
+    setattr(native_module, Keyring.__name__, Keyring)
+
     monkeypatch.setitem(sys.modules, "keyring", keyring_module)
     monkeypatch.setitem(sys.modules, "keyring.errors", errors_module)
+    monkeypatch.setitem(sys.modules, Keyring.__module__, native_module)
 
 
 def test_store_lookup_require_and_clear_with_injected_backend() -> None:
@@ -135,7 +176,7 @@ def test_target_name_has_project_prefix() -> None:
 
 
 def test_keyring_backend_uses_canonical_service_and_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = FakeKeyring()
+    fake = FakeKeyring(backend=Keyring())
     install_fake_keyring(monkeypatch, fake)
 
     secret_store.store("email-client", "personal:imap", "s3cret")
@@ -164,16 +205,90 @@ def test_keyring_backend_rejects_unusable_backend(monkeypatch: pytest.MonkeyPatc
 
 
 def test_keyring_errors_are_normalized(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = FakeKeyring()
+    fake = FakeKeyring(backend=Keyring())
     install_fake_keyring(monkeypatch, fake)
 
     def fail_set_password(service: str, username: str, password: str) -> None:
         raise KeyringError("backend refused")
 
-    sys.modules["keyring"].set_password = fail_set_password
+    fake.backend.set_password = fail_set_password
 
-    with pytest.raises(secret_store.SecretStoreError, match="backend refused"):
+    with pytest.raises(secret_store.SecretStoreError) as raised:
         secret_store.store("email-client", "personal:imap", "s3cret")
+
+    assert "backend refused" not in str(raised.value)
+    assert "s3cret" not in str(raised.value)
+
+
+def test_locked_keyring_error_is_static_and_typed(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = FakeKeyring(backend=Keyring())
+    install_fake_keyring(monkeypatch, fake)
+
+    def locked_get_password(service: str, username: str) -> str | None:
+        del service, username
+        raise KeyringLocked("CANARY-backend-detail")
+
+    fake.backend.get_password = locked_get_password
+
+    with pytest.raises(secret_store.SecretStoreLocked) as raised:
+        secret_store.lookup("email-client", "personal:imap")
+
+    assert "CANARY" not in str(raised.value)
+    assert raised.value.__cause__ is None
+
+
+@pytest.mark.parametrize(
+    "backend",
+    [
+        UsableBackend(),
+        type("Keyring", (), {"__module__": "keyrings.alt.file", "priority": 1})(),
+        type("ChainerBackend", (), {"__module__": "keyring.backends.chainer", "priority": 10})(),
+    ],
+)
+def test_positive_priority_non_native_backend_is_rejected_before_store(
+    monkeypatch: pytest.MonkeyPatch, backend
+) -> None:
+    fake = FakeKeyring(backend=backend)
+    install_fake_keyring(monkeypatch, fake)
+
+    with pytest.raises(secret_store.SecretStoreUnavailable):
+        secret_store.store("email-client", "personal:imap", "s3cret")
+
+    assert fake.calls == []
+
+
+def test_keyring_version_must_match_audited_pin(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = FakeKeyring(backend=Keyring())
+    install_fake_keyring(monkeypatch, fake)
+    monkeypatch.setattr(secret_store.metadata, "version", lambda _name: "25.5.0")
+
+    with pytest.raises(secret_store.SecretStoreUnavailable):
+        secret_store.store("email-client", "personal:imap", "s3cret")
+
+    assert fake.calls == []
+
+
+def test_validated_backend_instance_is_reused_for_store_lookup_and_delete(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    validated = Keyring()
+    unvalidated = Keyring()
+    selected = iter([validated, unvalidated])
+    fake = FakeKeyring(backend=validated)
+    install_fake_keyring(monkeypatch, fake)
+    sys.modules["keyring"].get_keyring = lambda: next(selected)
+    sys.modules["keyring"].set_password = unvalidated.set_password
+    sys.modules["keyring"].get_password = unvalidated.get_password
+    sys.modules["keyring"].delete_password = unvalidated.delete_password
+
+    adapter = secret_store.KeyringSecretBackend()
+    adapter.store("email-client", "personal:imap", "s3cret")
+
+    assert validated.values[("Famulus:email-client", "personal:imap")] == "s3cret"
+    assert adapter.lookup("email-client", "personal:imap") == "s3cret"
+    assert adapter.clear("email-client", "personal:imap")
+    assert validated.values == {}
+    assert unvalidated.calls == []
 
 
 def test_default_backend_native_roundtrip_when_available() -> None:

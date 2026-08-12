@@ -14,11 +14,14 @@ content:
 - managed_runtime\.py
 - launcher_entry\.py
 - install_lock\.py
+- credential_preflight\.py
+- credential_preflight_linux_osx_windows\.py
 - resolvers/launch\.py
 - uv_bootstrap\.py
 description: Parses pinned bootstrap/runtime versions, manages the atomic current.json
   pointer, builds verified managed releases containing the first-party Officina wheel
-  plus schema-v2 declared dependencies, provides the stable path-fixed launcher resolver,
+  plus schema-v2 declared dependencies, probes only audited native credential storage
+  through a closed child protocol, provides the stable path-fixed launcher resolver,
   and bootstraps a machine-local managed uv binary.
 exports:
   install.interface.install-info:
@@ -63,6 +66,13 @@ exports:
       - install-assistant-tools
       - install-assistant-tools._rtx
     source_interface: install.source.install-lock.interface.python-api
+  install.interface.credential-preflight:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - install-assistant-tools
+      - install-assistant-tools._rtx
+    source_interface: install.source.credential-preflight.interface.python-api
 gateway:
   language: Python
   path: __init__.py
@@ -99,4 +109,8 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/install-lock.yaml
+  install.source.credential-preflight:
+    blueprint:
+      base: module-root
+      path: blueprints/credential-preflight.yaml
 version: 1

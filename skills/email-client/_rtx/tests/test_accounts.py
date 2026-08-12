@@ -143,27 +143,38 @@ def test_registry_file_permissions_are_owner_only(config_dir):
 
 @pytest.fixture
 def fake_keyring(tmp_path):
-    """A fake keyring package with process-persistent JSON storage."""
+    """An audited-identity keyring fixture with process-persistent JSON storage."""
     module_dir = tmp_path / "fake-keyring"
     keyring_dir = module_dir / "keyring"
-    keyring_dir.mkdir(parents=True)
+    backends_dir = keyring_dir / "backends"
+    backends_dir.mkdir(parents=True)
     log_file = tmp_path / "keyring-calls.log"
     store_file = tmp_path / "keyring-store.json"
+    backend_module, backend_class = {
+        "linux": ("SecretService", "Keyring"),
+        "darwin": ("macOS", "Keyring"),
+        "win32": ("Windows", "WinVaultKeyring"),
+    }[sys.platform]
     (keyring_dir / "__init__.py").write_text(
-        """
+        f"""
+from . import errors
+from .backends.{backend_module} import {backend_class}
+
+_backend = {backend_class}()
+
+
+def get_keyring():
+    return _backend
+"""
+    )
+    (backends_dir / "__init__.py").write_text("")
+    (backends_dir / f"{backend_module}.py").write_text(
+        f"""
 import json
 import os
 from pathlib import Path
 
-from . import errors
-
-
-class Backend:
-    priority = 1
-
-
-def get_keyring():
-    return Backend()
+from keyring import errors
 
 
 def _store_path():
@@ -177,7 +188,7 @@ def _log_path():
 def _read():
     path = _store_path()
     if not path.exists():
-        return {}
+        return {{}}
     return json.loads(path.read_text())
 
 
@@ -190,25 +201,26 @@ def _log(*parts):
         fh.write(" ".join(parts) + "\\n")
 
 
-def set_password(service, username, password):
-    _log("set", service, username)
-    data = _read()
-    data.setdefault(service, {})[username] = password
-    _write(data)
+class {backend_class}:
+    priority = 1
 
+    def set_password(self, service, username, password):
+        _log("set", service, username)
+        data = _read()
+        data.setdefault(service, {{}})[username] = password
+        _write(data)
 
-def get_password(service, username):
-    _log("get", service, username)
-    return _read().get(service, {}).get(username)
+    def get_password(self, service, username):
+        _log("get", service, username)
+        return _read().get(service, {{}}).get(username)
 
-
-def delete_password(service, username):
-    _log("delete", service, username)
-    data = _read()
-    if username not in data.get(service, {}):
-        raise errors.PasswordDeleteError(username)
-    del data[service][username]
-    _write(data)
+    def delete_password(self, service, username):
+        _log("delete", service, username)
+        data = _read()
+        if username not in data.get(service, {{}}):
+            raise errors.PasswordDeleteError(username)
+        del data[service][username]
+        _write(data)
 """
     )
     (keyring_dir / "errors.py").write_text(

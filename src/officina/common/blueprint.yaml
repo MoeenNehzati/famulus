@@ -18,6 +18,7 @@ content:
 - google_credentials\.py
 - interface_injection_migration\.py
 - migration_candidate\.py
+- native_keyring_linux_osx_windows\.py
 - nested_module_migration\.py
 - oauth_json\.py
 - pooled_blueprint\.py

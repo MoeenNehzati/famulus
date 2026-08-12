@@ -6,15 +6,31 @@ uses the host credential store when one is available.
 """
 from __future__ import annotations
 
+import importlib
+from importlib import metadata
 from typing import Protocol
 
+from officina.common.native_keyring_linux_osx_windows import (
+    NATIVE_BACKENDS,
+    current_platform_name,
+)
 
+
+PINNED_KEYRING_VERSION = "25.6.0"
 class SecretStoreError(RuntimeError):
     """Base error for credential-store failures."""
 
 
 class SecretStoreUnavailable(SecretStoreError):
     """Raised when the current host has no usable credential backend."""
+
+
+class SecretStoreUnsupportedBackend(SecretStoreUnavailable):
+    """Raised when keyring selected a backend outside the audited allowlist."""
+
+
+class SecretStoreLocked(SecretStoreError):
+    """Raised when the selected native credential store is locked."""
 
 
 class SecretNotFoundError(SecretStoreError):
@@ -90,55 +106,60 @@ class KeyringSecretBackend:
 
     name = "keyring"
 
+    def __init__(self) -> None:
+        self._validated_backend: object | None = None
+
+    def backend_identity(self) -> str:
+        """Return the audited concrete backend identity without reading a secret."""
+        return native_backend_identity(self._selected_backend())
+
     def store(self, namespace: str, key: str, secret: str) -> None:
-        module = self._keyring_module()
+        selected = self._selected_backend()
         try:
-            module.set_password(_service_name(namespace), key, secret)
+            selected.set_password(_service_name(namespace), key, secret)
         except self._keyring_error_classes() as exc:
-            raise SecretStoreError(f"could not store secret for {target_name(namespace, key)}: {exc}") from exc
+            self._raise_normalized_error("store", namespace, key, exc)
 
     def lookup(self, namespace: str, key: str) -> str | None:
-        module = self._keyring_module()
+        selected = self._selected_backend()
         try:
-            return module.get_password(_service_name(namespace), key)
+            return selected.get_password(_service_name(namespace), key)
         except self._keyring_error_classes() as exc:
-            raise SecretStoreError(f"could not read secret for {target_name(namespace, key)}: {exc}") from exc
+            self._raise_normalized_error("read", namespace, key, exc)
 
     def clear(self, namespace: str, key: str) -> bool:
         if self.lookup(namespace, key) is None:
             return False
 
-        module = self._keyring_module()
+        selected = self._selected_backend()
         try:
-            module.delete_password(_service_name(namespace), key)
+            selected.delete_password(_service_name(namespace), key)
             return True
         except self._password_delete_error_class():
             return False
         except self._keyring_error_classes() as exc:
-            raise SecretStoreError(f"could not clear secret for {target_name(namespace, key)}: {exc}") from exc
+            self._raise_normalized_error("clear", namespace, key, exc)
 
     def _keyring_module(self):
         try:
             import keyring
-        except ModuleNotFoundError as exc:
-            raise SecretStoreUnavailable("the keyring package is not installed") from exc
+        except ModuleNotFoundError:
+            raise SecretStoreUnavailable("the keyring package is not installed") from None
 
-        self._ensure_usable_backend(keyring)
         return keyring
 
-    def _ensure_usable_backend(self, module) -> None:
+    def _selected_backend(self):
+        if self._validated_backend is not None:
+            return self._validated_backend
+        module = self._keyring_module()
+        _require_pinned_keyring_version()
         try:
-            backend = module.get_keyring()
-        except self._keyring_error_classes() as exc:
-            raise SecretStoreUnavailable(f"no usable keyring backend: {exc}") from exc
-
-        backend_name = f"{backend.__class__.__module__}.{backend.__class__.__name__}".lower()
-        if ".fail." in backend_name or ".null." in backend_name:
-            raise SecretStoreUnavailable(f"no usable keyring backend: {backend}")
-
-        priority = getattr(backend, "priority", None)
-        if isinstance(priority, (int, float)) and priority <= 0:
-            raise SecretStoreUnavailable(f"no usable keyring backend: {backend}")
+            selected = module.get_keyring()
+        except self._keyring_error_classes():
+            raise SecretStoreUnavailable("no usable keyring backend") from None
+        native_backend_identity(selected)
+        self._validated_backend = selected
+        return selected
 
     def _keyring_error_classes(self) -> tuple[type[Exception], ...]:
         try:
@@ -154,6 +175,85 @@ class KeyringSecretBackend:
             return Exception
         return keyring.errors.PasswordDeleteError
 
+    def _raise_normalized_error(
+        self,
+        operation: str,
+        namespace: str,
+        key: str,
+        exc: BaseException,
+    ) -> None:
+        """Raise a static public error without retaining backend-controlled text."""
+        error_name = type(exc).__name__.lower()
+        message = f"could not {operation} secret for {target_name(namespace, key)}"
+        if error_name in {"keyringlocked", "lockedexception"}:
+            raise SecretStoreLocked(message) from None
+        if error_name in {
+            "initerror",
+            "nokeyringerror",
+            "secretservicenotavailableexception",
+            "dbuserror",
+            "dbusexception",
+            "serviceunknown",
+            "connectionerror",
+        }:
+            raise SecretStoreUnavailable("the native credential service is unavailable") from None
+        raise SecretStoreError(message) from None
+
 
 def _service_name(namespace: str) -> str:
     return f"Famulus:{namespace}"
+
+
+def native_backend_identity(
+    backend: object,
+    *,
+    platform_name: str | None = None,
+    package_version: str | None = None,
+) -> str:
+    """Validate and return one concrete audited native keyring class name.
+
+    Validation is deliberately independent of backend priority. Alternate,
+    chained, custom, Null, Fail, and test backends remain unsupported even when
+    they advertise a positive priority or successfully round-trip a value.
+    """
+    actual_version = package_version
+    if actual_version is None:
+        actual_version = _keyring_package_version()
+    if actual_version != PINNED_KEYRING_VERSION:
+        raise SecretStoreUnsupportedBackend(
+            "the selected keyring package version is not audited"
+        )
+
+    selected_platform = current_platform_name() if platform_name is None else platform_name
+    backend_type = type(backend)
+    identity = f"{backend_type.__module__}.{backend_type.__name__}"
+    if identity not in NATIVE_BACKENDS.get(selected_platform, set()):
+        raise SecretStoreUnsupportedBackend(
+            "no usable keyring backend; the selected backend is not audited native"
+        )
+    module_name, _, class_name = identity.rpartition(".")
+    try:
+        canonical_type = getattr(importlib.import_module(module_name), class_name)
+    except (AttributeError, ImportError, ModuleNotFoundError):
+        raise SecretStoreUnsupportedBackend(
+            "no usable keyring backend; the audited native class is unavailable"
+        ) from None
+    if type(backend) is not canonical_type:
+        raise SecretStoreUnsupportedBackend(
+            "no usable keyring backend; the selected class identity is not canonical"
+        )
+    return identity
+
+
+def _keyring_package_version() -> str:
+    try:
+        return metadata.version("keyring")
+    except metadata.PackageNotFoundError:
+        raise SecretStoreUnavailable("the keyring package is not installed") from None
+
+
+def _require_pinned_keyring_version() -> None:
+    if _keyring_package_version() != PINNED_KEYRING_VERSION:
+        raise SecretStoreUnsupportedBackend(
+            "the selected keyring package version is not audited"
+        )

@@ -42,13 +42,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -57,13 +57,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -72,13 +72,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -87,13 +87,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -102,13 +102,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -117,13 +117,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -132,13 +132,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -147,13 +147,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -162,13 +162,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -177,13 +177,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -192,13 +192,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             }
           ]
         }
@@ -222,13 +222,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             },
             {
               "kind": "python-package",
@@ -259,13 +259,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -285,13 +285,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             },
             {
               "kind": "python-package",
@@ -322,13 +322,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             }
           ]
         }
@@ -528,13 +528,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             },
             {
               "kind": "python-package",
@@ -741,13 +741,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             },
             {
               "kind": "python-package",
@@ -954,13 +954,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             },
             {
               "kind": "python-package",
@@ -1156,13 +1156,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             },
             {
               "kind": "python-package",
@@ -1197,13 +1197,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             },
             {
               "kind": "python-package",
@@ -1245,13 +1245,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             },
             {
               "kind": "python-package",
@@ -1293,13 +1293,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             },
             {
               "kind": "python-package",
@@ -1341,13 +1341,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             },
             {
               "kind": "python-package",
@@ -1389,13 +1389,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             },
             {
               "kind": "python-package",
@@ -1437,13 +1437,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             },
             {
               "kind": "python-package",
@@ -1485,13 +1485,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             },
             {
               "kind": "python-package",
@@ -1533,13 +1533,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             },
             {
               "kind": "python-package",
@@ -1581,13 +1581,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             },
             {
               "kind": "python-package",
@@ -1662,13 +1662,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             },
             {
               "kind": "python-package",
@@ -1721,13 +1721,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             },
             {
               "kind": "python-package",
@@ -1780,13 +1780,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             },
             {
               "kind": "python-package",
@@ -1839,13 +1839,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             },
             {
               "kind": "python-package",
@@ -1898,13 +1898,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             },
             {
               "kind": "python-package",
@@ -1957,13 +1957,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             },
             {
               "kind": "python-package",
@@ -2185,13 +2185,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             },
             {
               "kind": "python-package",
@@ -2274,13 +2274,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -2289,13 +2289,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -2307,13 +2307,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -2322,13 +2322,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             }
           ]
         }
@@ -2403,13 +2403,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             },
             {
               "kind": "python-package",
@@ -2454,13 +2454,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             }
           ]
         }
@@ -2484,13 +2484,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             },
             {
               "kind": "python-package",
@@ -2664,13 +2664,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -2833,13 +2833,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -3002,13 +3002,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -3028,13 +3028,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -3197,13 +3197,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -3388,13 +3388,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             },
             {
               "kind": "python-package",
@@ -3568,13 +3568,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -3737,13 +3737,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -3906,13 +3906,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -4075,13 +4075,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -4244,13 +4244,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -4292,13 +4292,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -4483,13 +4483,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             },
             {
               "kind": "python-package",
@@ -4663,13 +4663,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -4832,13 +4832,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             }
           ]
         }
@@ -6903,13 +6903,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             }
           ]
         }
@@ -6933,13 +6933,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             }
           ]
         },
@@ -6959,13 +6959,13 @@
             {
               "kind": "python-package",
               "name": "keyring",
-              "version": "any",
+              "version": "25.6.0",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
+              "reason": "Provides the audited native system credential-store API imported by secret_store.py."
             }
           ]
         }
