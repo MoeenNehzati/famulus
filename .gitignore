@@ -21,7 +21,6 @@ settings.json
 # Node runtime state
 **/.certificates/
 **/.pooled-blueprint-review.yaml
-skills/email-triage/state/
 skills/daily-plan/state/
 skills/email-triage/_rtx/triage.log
 
