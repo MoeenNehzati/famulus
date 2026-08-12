@@ -998,6 +998,22 @@ def test_ci_workflow_dispatches_a_full_matrix_or_one_safe_probe() -> None:
             assert "${{ inputs." not in line
 
 
+def test_ci_artifact_uploads_include_hidden_repository_check_evidence() -> None:
+    """Catch upload-artifact silently excluding the hidden evidence directory."""
+
+    workflow = (
+        Path(__file__).resolve().parents[1]
+        / ".github"
+        / "workflows"
+        / "python-tests.yml"
+    ).read_text(encoding="utf-8")
+
+    upload_count = workflow.count("uses: actions/upload-artifact@")
+    assert upload_count == 2
+    assert workflow.count("path: .repo-checks/*.json") == upload_count
+    assert workflow.count("include-hidden-files: true") == upload_count
+
+
 def test_ci_dependency_lock_covers_the_complete_test_environment() -> None:
     requirements = (
         Path(__file__).resolve().parents[1] / "requirements-ci.txt"

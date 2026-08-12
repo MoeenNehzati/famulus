@@ -171,6 +171,7 @@ jobs:
         with:
           name: repo-checks-${{ matrix.artifact }}-${{ github.run_id }}
           path: .repo-checks/*.json
+          include-hidden-files: true
           if-no-files-found: warn
 
   probe:
@@ -286,4 +287,5 @@ jobs:
         with:
           name: repo-checks-probe-${{ github.run_id }}
           path: .repo-checks/*.json
+          include-hidden-files: true
           if-no-files-found: warn
