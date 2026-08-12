@@ -825,7 +825,10 @@ def test_native_smoke_opt_ins_are_scoped_to_their_child_processes(
             ["check"],
             cwd=tmp_path,
             task_id=task_id,
-            pycache_prefix=tmp_path.parent / f"{tmp_path.name}-{task_id}",
+            pycache_prefix=(
+                tmp_path.parent
+                / f"{tmp_path.name}-{task_id.replace(':', '-')}"
+            ),
         ) == 0
 
     assert received[0]["FAMULUS_REQUIRE_NATIVE_KEYRING"] == "1"
