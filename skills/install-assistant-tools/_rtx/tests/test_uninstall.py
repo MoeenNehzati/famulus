@@ -31,9 +31,9 @@ SCRIPTS = REPO_ROOT / "skills" / "install-assistant-tools" / "_rtx"
 sys.path.insert(0, str(SCRIPTS))
 
 if __package__ and __package__.count('.') >= 1:
-    from .._state_record import Manifest, manifest_path
+    from .._state_record import Manifest, manifest_path, manifest_state_root
 else:
-    from _state_record import Manifest, manifest_path  # noqa: E402
+    from _state_record import Manifest, manifest_path, manifest_state_root  # noqa: E402
 if __package__ and __package__.count('.') >= 1:
     from .. import _config_bridge as dev_link
 else:
@@ -337,7 +337,10 @@ def _seed_legacy_config_dir_entry(installed: dict[str, Path]) -> Path:
     config_dir.mkdir(parents=True, exist_ok=True)
     (config_dir / "config.json").write_text('{"remote_llm_root": "assistant"}\n', encoding="utf-8")
 
-    manifest = Manifest(manifest_path(installed["home"]))
+    manifest = Manifest(
+        manifest_path(installed["home"]),
+        state_root=manifest_state_root(installed["home"]),
+    )
     manifest.record("config_dir", path=str(config_dir), purge_only=True)
     manifest.save()
     return config_dir
@@ -375,9 +378,7 @@ def test_report_lists_actions(installed):
 
 
 def test_missing_manifest_is_hard_error(installed):
-    manifest = (
-        installed["home"] / ".local" / "state" / "assistant-tools" / "install-manifest.json"
-    )
+    manifest = manifest_path(installed["home"])
     assert manifest.exists()
     manifest.unlink()  # simulate hand-deleted manifest
 

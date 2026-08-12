@@ -454,7 +454,7 @@ def test_runtime_missing_root_nofollow_open_fails_closed(
     real_open = atomic_files.os.open
 
     def unsupported_open(path, flags: int, mode: int = 0o777, *, dir_fd=None) -> int:
-        if dir_fd is None and Path(path) == tmp_path:
+        if dir_fd is not None and path == tmp_path.name:
             raise NotImplementedError("root no-follow open is unavailable")
         return real_open(path, flags, mode, dir_fd=dir_fd)
 
@@ -483,7 +483,7 @@ def test_runtime_missing_intermediate_dir_fd_open_closes_root_fd(
         if dir_fd is not None and path == "parent":
             raise TypeError("intermediate dir_fd open is unavailable")
         descriptor = real_open(path, flags, mode, dir_fd=dir_fd)
-        if dir_fd is None and Path(path) == allowed_root:
+        if dir_fd is not None and path == allowed_root.name:
             root_fd = descriptor
         return descriptor
 

@@ -331,7 +331,9 @@ _ALLOWED_LEFTOVERS = {
     ".config/cloud-files/config.json",
     # the manifest correctly stays while it still tracks kept artifacts
     # (the cloud-files config above); it is removed on a fully clean run
-    ".local/state/assistant-tools/install-manifest.json",
+    ".local/state/famulus/install/install-manifest.json",
+    # native ownership is kernel-held; the rendezvous file intentionally persists
+    ".local/state/famulus/install/operation.lock",
 }
 
 

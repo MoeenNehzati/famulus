@@ -13,6 +13,7 @@ content:
 - runtime_pointer\.py
 - managed_runtime\.py
 - launcher_entry\.py
+- install_lock\.py
 - resolvers/launch\.py
 - uv_bootstrap\.py
 description: Parses pinned bootstrap/runtime versions, manages the atomic current.json
@@ -55,6 +56,13 @@ exports:
       - install-assistant-tools
       - install-assistant-tools._rtx
     source_interface: install.source.uv-bootstrap.interface.python-api
+  install.interface.install-lock:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - install-assistant-tools
+      - install-assistant-tools._rtx
+    source_interface: install.source.install-lock.interface.python-api
 gateway:
   language: Python
   path: __init__.py
@@ -87,4 +95,8 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/uv-bootstrap.yaml
+  install.source.install-lock:
+    blueprint:
+      base: module-root
+      path: blueprints/install-lock.yaml
 version: 1

@@ -45,9 +45,9 @@ if __package__:
 else:
     from _install_launcher import platform_launcher_installer
 if __package__:
-    from ._state_record import Manifest, manifest_path
+    from ._state_record import Manifest, manifest_path, manifest_state_root
 else:
-    from _state_record import Manifest, manifest_path
+    from _state_record import Manifest, manifest_path, manifest_state_root
 if __package__:
     from ._fs_links import log, make_link, default_bin_dir
 else:
@@ -303,7 +303,9 @@ def run(
     agents = list(launcher_closure(agents, install_invoke_skill=install_invoke_skill))
 
     if manifest is None and not dry_run:
-        manifest = Manifest(manifest_path(home))
+        manifest = Manifest(
+            manifest_path(home), state_root=manifest_state_root(home)
+        )
     if dry_run:
         manifest = None
 

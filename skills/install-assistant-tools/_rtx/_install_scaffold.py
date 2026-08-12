@@ -36,6 +36,7 @@ if not __package__:
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 from officina.common.famulus_paths import resolve_famulus_paths
+from officina.install.install_lock import InstallLock
 from officina.install.managed_runtime import declared_python_packages
 
 if __package__:
@@ -43,9 +44,9 @@ if __package__:
 else:
     from _install_launcher import LauncherInstallResult, platform_launcher_installer
 if __package__:
-    from ._state_record import Manifest, manifest_path
+    from ._state_record import Manifest, manifest_path, manifest_state_root
 else:
-    from _state_record import Manifest, manifest_path
+    from _state_record import Manifest, manifest_path, manifest_state_root
 if __package__:
     from ._shell_block import ensure_rc_vars
 else:
@@ -311,7 +312,10 @@ def ensure_path_windows(bin_dir: Path, dry_run: bool, manifest: Manifest | None 
         manifest.record("registry_env", path=str(bin_dir), names=["PATH"])
 
 
-def run(
+INSTALL_LOCK_TIMEOUT_SECONDS = 30.0
+
+
+def _run_locked(
     *,
     repo_root: Path,
     home: Path | None = None,
@@ -324,7 +328,9 @@ def run(
     bin_dir = bin_dir or default_bin_dir(home=home)
 
     if manifest is None and not dry_run:
-        manifest = Manifest(manifest_path(home))
+        manifest = Manifest(
+            manifest_path(home), state_root=manifest_state_root(home)
+        )
     if dry_run:
         manifest = None
 
@@ -366,6 +372,34 @@ def run(
     log("Scaffold complete." if status == 0 else "Scaffold incomplete.")
     log(f"  Bin dir: {bin_dir}")
     return status
+
+
+def run(
+    *,
+    repo_root: Path,
+    home: Path | None = None,
+    bin_dir: Path | None = None,
+    shell_rc: Path | None = None,
+    dry_run: bool = False,
+    manifest: Manifest | None = None,
+    _install_lock_held: bool = False,
+) -> int:
+    """Run scaffold repair while holding the shared per-home installer lock."""
+    selected_home = home or Path.home()
+    arguments = dict(
+        repo_root=repo_root,
+        home=selected_home,
+        bin_dir=bin_dir,
+        shell_rc=shell_rc,
+        dry_run=dry_run,
+        manifest=manifest,
+    )
+    if dry_run or _install_lock_held:
+        return _run_locked(**arguments)
+    with InstallLock.for_home(
+        selected_home, timeout_seconds=INSTALL_LOCK_TIMEOUT_SECONDS
+    ):
+        return _run_locked(**arguments)
 
 
 class Interface(PythonArgvMachineInterface):

@@ -33,13 +33,16 @@ import sys
 import tempfile
 from pathlib import Path
 
+REPO_SRC = Path(__file__).resolve().parents[3] / "src"
+if not __package__ and str(REPO_SRC) not in sys.path:
+    sys.path.insert(0, str(REPO_SRC))
 if not __package__:
     sys.path.insert(0, str(Path(__file__).parent))
 
 if __package__:
-    from ._state_record import Manifest, manifest_path
+    from ._state_record import Manifest, manifest_path, manifest_state_root
 else:
-    from _state_record import Manifest, manifest_path  # noqa: E402
+    from _state_record import Manifest, manifest_path, manifest_state_root  # noqa: E402
 if __package__:
     from ._shell_block import BLOCK_BEGIN, BLOCK_END
 else:
@@ -52,7 +55,10 @@ if __package__:
 else:
     from _fs_links import default_bin_dir  # noqa: E402
 
+from officina.install.install_lock import InstallLock
+
 REPO_ROOT_DEFAULT = Path(__file__).resolve().parents[3]
+INSTALL_LOCK_TIMEOUT_SECONDS = 30.0
 
 
 # ── Reporting ─────────────────────────────────────────────────────────────────
@@ -453,7 +459,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-system-shell-rc", action="store_true")
     parser.add_argument("--repo-root", metavar="DIR")
     parser.add_argument("--manifest", metavar="FILE",
-        help="Install manifest to replay (default: <home>/.local/state/assistant-tools/install-manifest.json)")
+        help=(
+            "Install manifest to replay (default: canonical Famulus install-state "
+            "manifest; overrides must remain beneath that state root)"
+        ))
     parser.add_argument("--no-pip", action="store_true",
         help="Do not uninstall the script_dispatcher pip package")
     parser.add_argument("--no-git-hooks", action="store_true",
@@ -464,9 +473,8 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> None:
-    args = parse_args()
-    home = Path(args.home) if args.home else Path.home()
+def _run_locked(args: argparse.Namespace, *, home: Path) -> None:
+    """Replay one manifest while the caller retains the canonical home lock."""
     repo_root = Path(args.repo_root) if args.repo_root else REPO_ROOT_DEFAULT
     claude_home = Path(args.claude_home or os.environ.get("CLAUDE_HOME") or home / ".claude")
     codex_home = Path(args.codex_home or os.environ.get("CODEX_HOME") or home / ".codex")
@@ -482,7 +490,10 @@ def main() -> None:
     report = Report()
     dry_run = args.dry_run
 
-    manifest = Manifest(Path(args.manifest) if args.manifest else manifest_path(home))
+    manifest = Manifest(
+        Path(args.manifest) if args.manifest else manifest_path(home),
+        state_root=manifest_state_root(home),
+    )
     if manifest.entries:
         print(f"Replaying install manifest: {manifest.path}")
         replay_manifest(
@@ -508,6 +519,15 @@ def main() -> None:
         file=sys.stderr,
     )
     sys.exit(1)
+
+
+def main() -> None:
+    args = parse_args()
+    home = Path(args.home) if args.home else Path.home()
+    with InstallLock.for_home(
+        home, timeout_seconds=INSTALL_LOCK_TIMEOUT_SECONDS
+    ):
+        _run_locked(args, home=home)
 
 
 if __name__ == "__main__":

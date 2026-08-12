@@ -243,7 +243,7 @@ class SetupSymlinksTests(unittest.TestCase):
             (skills_dir / "proof-audit").symlink_to(repo_root / "skills" / "proof-audit")
             (skills_dir / ".system").mkdir()
             (skills_dir / ".system" / "keep.txt").write_text("system\n", encoding="utf-8")
-            manifest = Manifest(base / "manifest.json")
+            manifest = Manifest(base / "manifest.json", state_root=base)
             manifest.record(
                 "symlink", path=str(skills_dir), target=str(repo_root / "skills")
             )

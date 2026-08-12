@@ -35,6 +35,7 @@ if not __package__:
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 from officina.common.famulus_paths import resolve_famulus_paths
 from officina.install.install_info import load_install_info
+from officina.install.install_lock import InstallLock
 import officina.install.managed_runtime as managed_runtime
 import officina.install.runtime_pointer as runtime_pointer
 import officina.install.uv_bootstrap as uv_bootstrap
@@ -251,7 +252,10 @@ def _run_google_onboarding_step(
     # connect-google's conversational flow.
 
 
-def run(
+INSTALL_LOCK_TIMEOUT_SECONDS = 30.0
+
+
+def _run_locked(
     *,
     home: Path | None = None,
     bin_dir: Path | None = None,
@@ -315,7 +319,14 @@ def run(
             log("Installation stopped because the managed-runtime candidate build failed.")
             return candidate_status
 
-    scaffold_status = scaffold.run(repo_root=repo_root, home=home, bin_dir=bin_dir, shell_rc=shell_rc, dry_run=dry_run)
+    scaffold_status = scaffold.run(
+        repo_root=repo_root,
+        home=home,
+        bin_dir=bin_dir,
+        shell_rc=shell_rc,
+        dry_run=dry_run,
+        _install_lock_held=True,
+    )
     if scaffold_status:
         log()
         log("Installation stopped because scaffold failed.")
@@ -359,6 +370,49 @@ def run(
             "you through it."
         )
     return 0
+
+
+def run(
+    *,
+    home: Path | None = None,
+    bin_dir: Path | None = None,
+    shell_rc: Path | None = None,
+    codex_home: Path | None = None,
+    claude_home: Path | None = None,
+    dry_run: bool = False,
+    non_interactive: bool = False,
+    dev_mode: bool | None = None,
+    repo_path: Path | None = None,
+    agents: list[str] | None = None,
+    default_llm: str | None = None,
+    google_services: list[str] | None = None,
+    gmail_nickname: str | None = None,
+    include_optional_dependencies: bool | None = None,
+) -> int:
+    """Run the complete install beneath the shared per-home native lock."""
+    selected_home = home or Path.home()
+    arguments = dict(
+        home=selected_home,
+        bin_dir=bin_dir,
+        shell_rc=shell_rc,
+        codex_home=codex_home,
+        claude_home=claude_home,
+        dry_run=dry_run,
+        non_interactive=non_interactive,
+        dev_mode=dev_mode,
+        repo_path=repo_path,
+        agents=agents,
+        default_llm=default_llm,
+        google_services=google_services,
+        gmail_nickname=gmail_nickname,
+        include_optional_dependencies=include_optional_dependencies,
+    )
+    if dry_run:
+        return _run_locked(**arguments)
+    with InstallLock.for_home(
+        selected_home, timeout_seconds=INSTALL_LOCK_TIMEOUT_SECONDS
+    ):
+        return _run_locked(**arguments)
 
 
 class Interface(PythonArgvMachineInterface):

@@ -11,7 +11,7 @@ from pathlib import Path
 
 _CAPABILITY_ERROR = "secure directory-relative replacement is unavailable"
 _UNCONDITIONAL_APPEND = object()
-_DIR_FD_OPERATIONS = (os.open, os.stat, os.unlink, os.link, os.rename)
+_DIR_FD_OPERATIONS = (os.open, os.stat, os.unlink, os.link, os.rename, os.mkdir)
 _NOFOLLOW_OPERATIONS = (os.stat, os.link)
 
 
@@ -244,7 +244,7 @@ def _open_parent(path: Path, allowed_root: Path) -> tuple[int, str]:
 
     flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
     try:
-        directory_fd = _secure_open(root, flags)
+        directory_fd = _open_absolute_directory(root, create=False)
     except AtomicWriteError:
         raise
     except OSError as exc:
@@ -268,6 +268,53 @@ def _open_parent(path: Path, allowed_root: Path) -> tuple[int, str]:
         except BaseException:
             pass
         raise
+
+
+def _open_absolute_directory(path: Path, *, create: bool) -> int:
+    """Walk an absolute POSIX directory from ``/`` without following links."""
+    _require_secure_operations()
+    absolute = Path(path).absolute()
+    if not absolute.is_absolute():
+        raise AtomicWriteError(f"directory root must be absolute: {path}")
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    descriptor = _secure_open(Path(absolute.anchor), flags)
+    try:
+        for component in absolute.parts[1:]:
+            if component in {"", ".", ".."}:
+                raise AtomicWriteError(f"invalid directory root component: {component!r}")
+            if create:
+                try:
+                    os.mkdir(component, 0o700, dir_fd=descriptor)
+                except FileExistsError:
+                    pass
+            try:
+                next_descriptor = _secure_open(component, flags, dir_fd=descriptor)
+            except AtomicWriteError:
+                raise
+            except OSError as exc:
+                raise AtomicWriteError(
+                    f"cannot securely open directory root: {path}"
+                ) from exc
+            os.close(descriptor)
+            descriptor = next_descriptor
+        return descriptor
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+def ensure_secure_directory(path: Path) -> None:
+    """Create and validate an absolute directory through retained no-follow handles."""
+    absolute = Path(path).absolute()
+    if os.name == "posix":
+        descriptor = _open_absolute_directory(absolute, create=True)
+        os.close(descriptor)
+        return
+    if os.name == "nt":
+        handle = _windows_open_root(absolute, create=True)
+        _windows_close_handle(handle)
+        return
+    raise AtomicWriteError(_CAPABILITY_ERROR)
 
 
 def _reject_unsafe_final(parent_fd: int, name: str) -> bool:
@@ -875,10 +922,15 @@ def _windows_validate_handle(
         raise AtomicWriteError(f"native handle is not a {kind}: {display}")
 
 
-def _windows_open_root(root: Path) -> int:
+def _windows_open_root(root: Path, *, create: bool = False) -> int:
+    """Walk a native root from its volume/share handle without reparse traversal."""
+    absolute = Path(root).absolute()
+    anchor = Path(absolute.anchor)
+    if not absolute.is_absolute() or not absolute.anchor:
+        raise AtomicWriteError(f"directory root must be absolute: {root}")
     kernel32, _advapi32, _ntdll = _windows_modules()
     handle = kernel32.CreateFileW(
-        str(root),
+        str(anchor),
         _WIN_DIR_ACCESS | 0x1 | 0x00020000,
         _WIN_SHARE_ALL,
         None,
@@ -889,11 +941,22 @@ def _windows_open_root(root: Path) -> int:
     if handle == ctypes.c_void_p(-1).value:
         error = ctypes.get_last_error()
         if error in {2, 3}:
-            raise FileNotFoundError(root)
-        raise _windows_call_error(f"cannot securely open allowed root {root}", error)
+            raise FileNotFoundError(anchor)
+        raise _windows_call_error(f"cannot securely open volume root {anchor}", error)
     value = int(handle)
     try:
-        _windows_validate_handle(value, expect_directory=True, display=root)
+        _windows_validate_handle(value, expect_directory=True, display=anchor)
+        for component in absolute.parts[1:]:
+            next_handle, _information = _windows_open_validated(
+                value,
+                component,
+                access=_WIN_DIR_ACCESS | 0x00020000,
+                disposition=3 if create else 1,
+                options=0x1 | 0x20,
+                directory=True,
+            )
+            _windows_close_handle(value)
+            value = next_handle
     except BaseException:
         _windows_close_handle(value)
         raise

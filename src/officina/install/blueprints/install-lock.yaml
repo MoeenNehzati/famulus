@@ -1,0 +1,190 @@
+content:
+- install_lock\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/init.yaml
+  reason: Loads Python package support from __init__.py.
+  source: install.source.init
+  version: 1
+description: Serializes every mutating operation for one Famulus home through a
+  persistent native kernel lock held on one descriptor, with bounded contention
+  and automatic ownership release on process death.
+gateway:
+  language: Python
+  path: install_lock.py
+id: install.source.install-lock
+interfaces:
+  install.source.install-lock.interface.python-api:
+    contract:
+      arguments:
+        lock-path:
+          description: Persistent operation-lock path in the selected home's Famulus
+            state directory.
+          direct_io_ref: operation-lock
+          required: true
+          sensitivity: user-private
+          type:
+            access: read-write
+            kind: file
+            must_exist: false
+            opaque_content: true
+            relative_to: caller-cwd
+            syntax: literal
+        state-root:
+          description: Explicit canonical Famulus install-state directory that must
+            contain lock-path and whose complete ancestor chain is opened without
+            following symbolic links or reparse points.
+          direct_io_ref: operation-lock
+          required: true
+          sensitivity: user-private
+          type:
+            access: read-write
+            kind: dir
+            must_exist: false
+            relative_to: caller-cwd
+            syntax: literal
+        timeout-seconds:
+          default: 30.0
+          description: Maximum non-negative duration to wait for the native lock.
+          required: false
+          sensitivity: public
+          type:
+            kind: number
+            minimum: 0
+      caller_warnings:
+      - external-side-effect: First use may create the persistent operation-lock file;
+          callers must retain the context for the complete home mutation.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: Native lock ownership state.
+          formats:
+          - binary
+          id: operation-lock
+          medium: local-filesystem
+          path: <lock-path>
+          sensitivity: user-private
+        writes:
+        - access: read-write
+          content: Persistent native-lock rendezvous file.
+          formats:
+          - binary
+          id: operation-lock
+          medium: local-filesystem
+          path: <lock-path>
+          sensitivity: user-private
+        - access: write
+          content: Entered InstallLock context manager.
+          formats:
+          - text
+          id: return-value
+          medium: local-system
+          sensitivity: public
+      execution:
+        consistency:
+          live: Lock ownership is acquired from and released to the kernel during
+            the context lifetime.
+        effects:
+        - action: create
+          confirmation_evidence:
+            direct_io_ref: operation-lock
+            kind: direct-io
+          direct_io_ref: operation-lock
+          id: lock-rendezvous-state
+          may_occur_in_outcomes:
+          - completed
+          reversibility:
+            irreversible: The persistent empty lock file is retained; kernel ownership
+              is always released on context exit or process death.
+          value_source:
+            argument_ref: lock-path
+            kind: argument
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            per_effect_only: Native flock or locking acquisition grants one exclusive
+              owner; lock-file creation is independent and never used as ownership evidence.
+          concurrent_invocations:
+            safe: One contender enters and every bounded contender receives install_busy.
+          idempotency:
+            idempotent: Reusing the persistent rendezvous path does not change ownership
+              semantics or protected state.
+          on_uncertain_completion:
+            verify_then_decide: Retry native acquisition; never inspect a PID, delete
+              the lock file, or infer stale ownership from its existence.
+          partial_effects_on_failure:
+            impossible: Contention raises install_busy before the caller's protected
+              context is entered.
+          rollback_on_failure:
+            automatic: The descriptor is closed after failed acquisition and native
+              ownership is released on context exit or process death.
+        state_effect: mutating
+        verification:
+        - direct_io_ref: operation-lock
+          method: direct-io-state
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Keep the context entered across the complete install, repair,
+          certificate migration, or uninstall operation.
+        class: success
+        effects:
+        - lock-rendezvous-state
+        id: completed
+        outputs:
+        - result
+      - caller_action: Report install_busy without mutating protected home state; retry
+          only after the other operation finishes.
+        class: error
+        effects: []
+        id: install-busy
+        outputs: []
+      - caller_action: Correct the lock path or timeout before retrying.
+        class: refusal
+        effects: []
+        id: invalid-lock
+        outputs: []
+      outputs:
+      - audience: machine
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Entered InstallLock context manager.
+        direct_io_ref: return-value
+        empty: Never empty on success.
+        id: result
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          description: Python InstallLock instance.
+          kind: string
+          sensitivity: public
+      preconditions:
+      - caller_action: Supply the canonical operation-lock path within one home state
+          root, the explicit canonical state root, and a non-negative timeout.
+        check:
+          argument_ref: state-root
+          kind: argument
+          predicate: present
+        description: The lock path must be strictly below state-root; every existing
+          root and parent component must be a real directory, and the lock leaf must
+          be absent or a regular non-link file.
+        id: safe-lock-path
+        unmet_outcome: invalid-lock
+    description: Provides the native InstallLock context manager and install_busy error.
+    version: 2
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+schema_version: 6
+uses_interfaces: []
+version: 2

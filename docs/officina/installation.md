@@ -279,7 +279,7 @@ uninstall.py [--home DIR] [--claude-home DIR] [--codex-home DIR]
 ```
 
 Manifest-based only — every install step above records what it did in
-`<home>/.local/state/assistant-tools/install-manifest.json`, and uninstall
+`<home>/.local/state/famulus/install/install-manifest.json`, and uninstall
 replays exactly those entries in reverse. If that manifest is missing (e.g.
 deleted by hand, or a pre-manifest install), uninstall refuses outright and
 asks you to re-run the installer once first (idempotently) to regenerate it,
@@ -287,7 +287,7 @@ rather than guessing at what to remove by filename pattern.
 
 | Flag | Meaning |
 |---|---|
-| `--manifest FILE` | Use a manifest at a non-default path |
+| `--manifest FILE` | Use a manifest at a non-default path beneath the canonical Famulus install-state root |
 | `--no-pip` | Skip cleanup of obsolete separately installed dispatcher packages |
 | `--no-git-hooks` | Don't unset `git config core.hooksPath` |
 | `--purge` | Also remove OAuth credentials/configs under `~/.config/cloud-files` and `~/.config/g-calendar` (left alone by default) |
@@ -312,7 +312,8 @@ lists every action as removed / skipped / left / **FAILED**.
 | Claude home | `$CLAUDE_HOME`, else `~/.claude` |
 | Worker dirs | `<repo-root>/workers/{assistant,collab,coauthor}` |
 | Git hooks | `<repo-root>/.githooks` (dev mode only) |
-| Install manifest | `<home>/.local/state/assistant-tools/install-manifest.json` |
+| Install manifest | `<home>/.local/state/famulus/install/install-manifest.json` |
+| Installer operation lock | `<home>/.local/state/famulus/install/operation.lock` |
 
 `$AI` is **not** in this table on purpose — it's only ever set by `dev_link.py`
 (dev mode). Plugin-mode installs never export it; `dispatcher` and

@@ -63,9 +63,9 @@ from officina.common import codex_toml, toml_io
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 if __package__:
-    from ._state_record import Manifest, manifest_path
+    from ._state_record import Manifest, manifest_path, manifest_state_root
 else:
-    from _state_record import Manifest, manifest_path
+    from _state_record import Manifest, manifest_path, manifest_state_root
 if __package__:
     from ._fs_links import make_link
 else:
@@ -522,7 +522,9 @@ def run(
     home = home or Path.home()
 
     if manifest is None and not dry_run:
-        manifest = Manifest(manifest_path(home))
+        manifest = Manifest(
+            manifest_path(home), state_root=manifest_state_root(home)
+        )
     if dry_run:
         manifest = None
 
