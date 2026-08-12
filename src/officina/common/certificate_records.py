@@ -21,9 +21,12 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 from . import secret_store
 from .atomic_files import (
     AtomicWriteError,
+    TrackedFileCreation,
     atomic_create_bytes,
+    atomic_create_bytes_tracked,
     atomic_replace_bytes,
     ensure_secure_directory,
+    read_regular_directory_entries,
     read_regular_file_bytes,
 )
 from .famulus_paths import resolve_famulus_paths
@@ -204,6 +207,12 @@ def load_active_certificate_key_id(
         allowed_root=root,
         allow_non_atomic=allow_non_atomic,
     )
+    return _active_key_id_from_bytes(raw)
+
+
+def _active_key_id_from_bytes(raw: bytes) -> str:
+    """Validate and decode one complete active-key selector."""
+
     try:
         key_id = raw.decode("ascii").removesuffix("\n")
     except UnicodeDecodeError as exc:
@@ -228,6 +237,15 @@ def load_certificate_public_key(
         allowed_root=root,
         allow_non_atomic=allow_non_atomic,
     )
+    return _public_key_from_bytes(pem, key_id)
+
+
+def _public_key_from_bytes(
+    pem: bytes,
+    key_id: str,
+) -> Ed25519PublicKey:
+    """Validate one retained PEM against its filename-derived key ID."""
+
     try:
         public_key = serialization.load_pem_public_key(pem)
     except (TypeError, ValueError) as exc:
@@ -420,56 +438,33 @@ def _validated_public_state(
 
     root = Path(public_key_root).absolute()
     try:
-        metadata = root.lstat()
-    except FileNotFoundError:
-        return None
-    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
-        raise CertificateStateConflict(f"unsafe certificate state root: {root}")
-    try:
-        entries = tuple(root.iterdir())
+        entries = read_regular_directory_entries(root)
         if not entries:
             return None
-        key_id = load_active_certificate_key_id(
-            root,
-            allow_non_atomic=allow_non_atomic,
-        )
-        load_certificate_signing_key(
-            root,
-            secret_backend=secret_backend,
-            allow_non_atomic=allow_non_atomic,
-        )
+        by_name = {entry.name: entry.data for entry in entries}
+        selector = by_name.pop(ACTIVE_KEY_ID_NAME, None)
+        if selector is None:
+            raise CertificateStateConflict("active certificate selector is missing")
+        key_id = _active_key_id_from_bytes(selector)
         retained: dict[str, bytes] = {}
-        for candidate in entries:
-            candidate_metadata = candidate.lstat()
-            if candidate.name == ACTIVE_KEY_ID_NAME:
-                if not stat.S_ISREG(candidate_metadata.st_mode):
-                    raise CertificateStateConflict(
-                        f"unsafe certificate selector: {candidate}"
-                    )
-                continue
-            if not candidate.name.endswith(".pub"):
+        for name, payload in by_name.items():
+            if not name.endswith(".pub"):
                 raise CertificateStateConflict(
-                    f"unexpected certificate state entry: {candidate.name}"
+                    f"unexpected certificate state entry: {name}"
                 )
-            if stat.S_ISLNK(candidate_metadata.st_mode) or not stat.S_ISREG(
-                candidate_metadata.st_mode
-            ):
-                raise CertificateStateConflict(
-                    f"unsafe certificate public key: {candidate}"
-                )
-            retained[candidate.name] = read_regular_file_bytes(
-                candidate,
-                allowed_root=root,
-                allow_non_atomic=allow_non_atomic,
-            )
-            load_certificate_public_key(
-                root,
-                "sha256:" + candidate.stem,
-                allow_non_atomic=allow_non_atomic,
-            )
+            retained[name] = payload
+            _public_key_from_bytes(payload, "sha256:" + Path(name).stem)
         if f"{_key_id_hex(key_id)}.pub" not in retained:
             raise CertificateStateConflict("active certificate public key is missing")
+        secret = secret_store.require(
+            CERTIFIER_SECRET_NAMESPACE,
+            _private_key_secret_name(key_id),
+            backend=secret_backend,
+        )
+        _decode_private_key(secret, key_id)
         return key_id, retained
+    except FileNotFoundError:
+        return None
     except CertificateStateConflict:
         raise
     except (AtomicWriteError, OSError, TypeError, ValueError) as exc:
@@ -524,18 +519,18 @@ def migrate_legacy_certificate_state(
 
     key_id, retained = legacy_state
     ensure_secure_directory(stable_root)
-    created: list[Path] = []
+    created: list[TrackedFileCreation] = []
     try:
         for name, payload in sorted(retained.items()):
             destination = stable_root / name
-            if atomic_create_bytes(
+            tracked = atomic_create_bytes_tracked(
                 destination,
                 payload,
                 allowed_root=stable_root,
                 mode=0o600,
-                allow_non_atomic=allow_non_atomic,
-            ):
-                created.append(destination)
+            )
+            if tracked is not None:
+                created.append(tracked)
             else:
                 existing = read_regular_file_bytes(
                     destination,
@@ -556,13 +551,20 @@ def migrate_legacy_certificate_state(
             raise CertificateStateConflict(
                 "durable certificate selector appeared during migration"
             )
-    except BaseException:
+    except BaseException as exc:
+        cleanup_error: BaseException | None = None
         for candidate in reversed(created):
             try:
-                candidate.unlink()
-            except FileNotFoundError:
-                pass
+                candidate.remove()
+            except BaseException as removal_error:
+                if cleanup_error is None:
+                    cleanup_error = removal_error
+        if cleanup_error is not None:
+            raise cleanup_error from exc
         raise
+    else:
+        for candidate in created:
+            candidate.release()
     migrated = _validated_public_state(
         stable_root,
         secret_backend=secret_backend,

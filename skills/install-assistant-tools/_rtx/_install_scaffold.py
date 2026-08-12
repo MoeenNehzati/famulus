@@ -184,16 +184,18 @@ def _import_certificate_records():
     function's ``ModuleNotFoundError`` handling below).
     """
     from officina.common.certificate_records import (
-        certificate_public_key_root,
+        certificate_state_paths,
         provision_certificate_signing_material,
     )
 
-    return certificate_public_key_root, provision_certificate_signing_material
+    return certificate_state_paths, provision_certificate_signing_material
 
 
 def install_certificate_signing_material(
     repo_root: Path,
     dry_run: bool,
+    *,
+    home: Path | None = None,
 ) -> LauncherInstallResult:
     """Provision the existing certifier key lifecycle as one required capability."""
 
@@ -207,7 +209,7 @@ def install_certificate_signing_material(
             workflows=workflows,
         )
     try:
-        certificate_public_key_root, provision_certificate_signing_material = (
+        certificate_state_paths, provision_certificate_signing_material = (
             _import_certificate_records()
         )
     except ModuleNotFoundError as exc:
@@ -233,8 +235,13 @@ def install_certificate_signing_material(
             ),
         )
     try:
-        provision_certificate_signing_material(repo_root)
-        path = certificate_public_key_root(repo_root)
+        paths = certificate_state_paths(
+            platform=sys.platform,
+            home=Path.home() if home is None else Path(home),
+            repo_root=repo_root,
+        )
+        provision_certificate_signing_material(paths)
+        path = paths.public_key_root
     except Exception as exc:
         return LauncherInstallResult(
             name="certificate-signing-material",
@@ -346,7 +353,7 @@ def _run_locked(
     ]
     if any(_declares_package(package, "cryptography") for package in declared_packages):
         capability_results.append(
-            install_certificate_signing_material(repo_root, dry_run)
+            install_certificate_signing_material(repo_root, dry_run, home=home)
         )
 
     if sys.platform == "win32":

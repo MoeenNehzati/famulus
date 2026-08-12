@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import ctypes
+from dataclasses import dataclass
 import os
 import secrets
 import stat
 from pathlib import Path
+from typing import Callable
 
 
 _CAPABILITY_ERROR = "secure directory-relative replacement is unavailable"
@@ -162,6 +164,67 @@ class AtomicWriteError(OSError):
     pass
 
 
+@dataclass(frozen=True)
+class ConfinedFileIdentity:
+    """Stable native identity for one confined regular file."""
+
+    platform: str
+    volume: int
+    file_id: int | bytes
+
+
+@dataclass(frozen=True)
+class ConfinedRegularFile:
+    """One regular file read relative to a retained directory handle."""
+
+    name: str
+    data: bytes
+    identity: ConfinedFileIdentity
+
+
+class TrackedFileCreation:
+    """Own the retained handles needed to clean up one exact created file."""
+
+    def __init__(
+        self,
+        identity: ConfinedFileIdentity,
+        *,
+        remove: Callable[[], None],
+        release: Callable[[], None],
+    ) -> None:
+        self.identity = identity
+        self._remove = remove
+        self._release = release
+        self._closed = False
+
+    def remove(self) -> None:
+        """Remove only the exact created file, then release retained handles."""
+
+        if self._closed:
+            raise AtomicWriteError("tracked file creation is already closed")
+        try:
+            self._remove()
+        finally:
+            self._closed = True
+            self._release()
+
+    def release(self) -> None:
+        """Retain the created file and release its cleanup handles."""
+
+        if self._closed:
+            return
+        self._closed = True
+        self._release()
+
+
+def _posix_file_identity(metadata: os.stat_result) -> ConfinedFileIdentity:
+    return ConfinedFileIdentity(
+        platform="posix",
+        volume=int(metadata.st_dev),
+        file_id=int(metadata.st_ino),
+    )
+
+
 def _require_secure_operations() -> None:
     supports_dir_fd = getattr(os, "supports_dir_fd", set())
     supports_follow_symlinks = getattr(os, "supports_follow_symlinks", set())
@@ -290,6 +353,8 @@ def _open_absolute_directory(path: Path, *, create: bool) -> int:
             try:
                 next_descriptor = _secure_open(component, flags, dir_fd=descriptor)
             except AtomicWriteError:
+                raise
+            except FileNotFoundError:
                 raise
             except OSError as exc:
                 raise AtomicWriteError(
@@ -527,6 +592,123 @@ def _posix_atomic_create_bytes(
         cleanup_error = _cleanup_write(parent_fd, temp_name, temp_created)
         if failure is None and cleanup_error is not None:
             raise cleanup_error
+
+
+def _posix_atomic_create_bytes_tracked(
+    path: Path,
+    data: bytes,
+    *,
+    allowed_root: Path,
+    mode: int,
+) -> TrackedFileCreation | None:
+    """Create a file and retain its parent descriptor for exact cleanup."""
+
+    parent_fd, name = _open_parent(path, allowed_root)
+    temp_name = f".{name}.tmp-{secrets.token_hex(8)}"
+    temp_created = False
+    transferred = False
+    failure: BaseException | None = None
+    try:
+        if _reject_unsafe_final(parent_fd, name):
+            return None
+        descriptor = _open_temp(parent_fd, temp_name, mode)
+        temp_created = True
+        identity = _posix_file_identity(os.fstat(descriptor))
+        _write_and_sync(descriptor, data)
+        try:
+            _secure_link(parent_fd, temp_name, name)
+        except FileExistsError:
+            _reject_unsafe_final(parent_fd, name)
+            return None
+        linked = _secure_stat(parent_fd, name)
+        if _posix_file_identity(linked) != identity:
+            raise AtomicWriteError(
+                f"destination changed during tracked create: {name}"
+            )
+        _unlink_if_present(parent_fd, temp_name)
+        temp_created = False
+        os.fsync(parent_fd)
+
+        def release() -> None:
+            os.close(parent_fd)
+
+        def remove() -> None:
+            try:
+                current = _secure_stat(parent_fd, name)
+            except FileNotFoundError as exc:
+                raise AtomicWriteError(
+                    f"tracked destination changed before cleanup: {name}"
+                ) from exc
+            if (
+                not stat.S_ISREG(current.st_mode)
+                or _posix_file_identity(current) != identity
+            ):
+                raise AtomicWriteError(
+                    f"tracked destination changed before cleanup: {name}"
+                )
+            _secure_unlink(parent_fd, name)
+            os.fsync(parent_fd)
+
+        transferred = True
+        return TrackedFileCreation(
+            identity,
+            remove=remove,
+            release=release,
+        )
+    except BaseException as exc:
+        failure = exc
+        raise
+    finally:
+        if not transferred:
+            cleanup_error = _cleanup_write(
+                parent_fd,
+                temp_name,
+                temp_created,
+            )
+            if failure is None and cleanup_error is not None:
+                raise cleanup_error
+
+
+def _posix_read_regular_directory_entries(
+    root: Path,
+) -> tuple[ConfinedRegularFile, ...]:
+    """Read a directory through one retained no-follow descriptor walk."""
+
+    descriptor = _open_absolute_directory(root, create=False)
+    try:
+        try:
+            names = sorted(os.listdir(descriptor))
+        except (NotImplementedError, TypeError) as exc:
+            raise AtomicWriteError(_CAPABILITY_ERROR) from exc
+        entries: list[ConfinedRegularFile] = []
+        for name in names:
+            if name in {"", ".", ".."} or "/" in name:
+                raise AtomicWriteError(
+                    f"invalid confined directory entry: {name!r}"
+                )
+            child = _secure_open(
+                name,
+                os.O_RDONLY | os.O_NOFOLLOW,
+                dir_fd=descriptor,
+            )
+            try:
+                metadata = os.fstat(child)
+                if not stat.S_ISREG(metadata.st_mode):
+                    raise AtomicWriteError(
+                        f"confined directory entry is not a regular file: {name}"
+                    )
+                entries.append(
+                    ConfinedRegularFile(
+                        name=name,
+                        data=_read_descriptor_bytes(child),
+                        identity=_posix_file_identity(metadata),
+                    )
+                )
+            finally:
+                os.close(child)
+        return tuple(entries)
+    finally:
+        os.close(descriptor)
 
 
 def _read_descriptor_bytes(descriptor: int) -> bytes:
@@ -845,6 +1027,7 @@ def _windows_modules():
         declare(advapi32, "GetAclInformation", [pointer, pointer, dword, ctypes.c_int32], boolean)
         declare(advapi32, "GetAce", [pointer, dword, pointer_out], boolean)
         declare(ntdll, "NtCreateFile", [ctypes.POINTER(_WinHandle), dword, ctypes.POINTER(_WinObjectAttributes), ctypes.POINTER(_WinIoStatusBlock), pointer, dword, dword, dword, dword, pointer, dword], ctypes.c_int32)
+        declare(ntdll, "NtQueryDirectoryFile", [_WinHandle, _WinHandle, pointer, pointer, ctypes.POINTER(_WinIoStatusBlock), pointer, dword, ctypes.c_int32, ctypes.c_ubyte, pointer, ctypes.c_ubyte], ctypes.c_int32)
         declare(ntdll, "NtSetInformationFile", [_WinHandle, ctypes.POINTER(_WinIoStatusBlock), pointer, dword, ctypes.c_int32], ctypes.c_int32)
         declare(ntdll, "RtlNtStatusToDosError", [ctypes.c_int32], dword)
     except (AttributeError, OSError, TypeError) as exc:
@@ -1199,6 +1382,108 @@ def _windows_file_id(handle: int) -> tuple[int, bytes]:
     return int(information.VolumeSerialNumber), file_id
 
 
+def _windows_confined_identity(handle: int) -> ConfinedFileIdentity:
+    volume, file_id = _windows_file_id(handle)
+    return ConfinedFileIdentity(
+        platform="windows",
+        volume=volume,
+        file_id=file_id,
+    )
+
+
+def _windows_directory_entry_names(handle: int) -> tuple[str, ...]:
+    """Enumerate names through a retained native directory handle."""
+
+    _kernel32, _advapi32, ntdll = _windows_modules()
+    names: list[str] = []
+    restart = True
+    while True:
+        buffer = ctypes.create_string_buffer(64 * 1024)
+        io_status = _WinIoStatusBlock()
+        status = int(
+            ntdll.NtQueryDirectoryFile(
+                _WinHandle(handle),
+                None,
+                None,
+                None,
+                ctypes.byref(io_status),
+                buffer,
+                len(buffer),
+                12,
+                0,
+                None,
+                int(restart),
+            )
+        )
+        unsigned_status = status & 0xFFFFFFFF
+        if unsigned_status == 0x80000006:  # STATUS_NO_MORE_FILES
+            break
+        if status < 0 and unsigned_status != 0x80000005:  # STATUS_BUFFER_OVERFLOW
+            raise _windows_nt_error(status, "cannot enumerate native directory")
+        used = int(io_status.Information)
+        if used <= 0:
+            raise AtomicWriteError("native directory enumeration made no progress")
+        offset = 0
+        while offset + 12 <= used:
+            next_offset = int.from_bytes(
+                buffer.raw[offset : offset + 4], "little"
+            )
+            name_length = int.from_bytes(
+                buffer.raw[offset + 8 : offset + 12], "little"
+            )
+            end = offset + 12 + name_length
+            if name_length % 2 or end > used:
+                raise AtomicWriteError("invalid native directory entry")
+            try:
+                name = buffer.raw[offset + 12 : end].decode("utf-16-le")
+            except UnicodeDecodeError as exc:
+                raise AtomicWriteError("invalid native directory entry") from exc
+            if name not in {".", ".."}:
+                _windows_component_utf16(name)
+                names.append(name)
+            if next_offset == 0:
+                break
+            if next_offset < 12 or offset + next_offset > used:
+                raise AtomicWriteError("invalid native directory entry offset")
+            offset += next_offset
+        restart = False
+    return tuple(sorted(names))
+
+
+def _windows_read_regular_directory_entries(
+    root: Path,
+) -> tuple[ConfinedRegularFile, ...]:
+    """Read files relative to one retained no-reparse directory handle."""
+
+    root_handle = _windows_open_root(root)
+    try:
+        entries: list[ConfinedRegularFile] = []
+        for name in _windows_directory_entry_names(root_handle):
+            child = -1
+            try:
+                child, _information = _windows_open_validated(
+                    root_handle,
+                    name,
+                    access=_WIN_READ_ACCESS,
+                    disposition=1,
+                    options=_WIN_FILE_OPTIONS,
+                    directory=False,
+                )
+                entries.append(
+                    ConfinedRegularFile(
+                        name=name,
+                        data=_windows_read_handle(child),
+                        identity=_windows_confined_identity(child),
+                    )
+                )
+            finally:
+                if child >= 0:
+                    _windows_close_handle(child)
+        return tuple(entries)
+    finally:
+        _windows_close_handle(root_handle)
+
+
 def _windows_security_material() -> tuple[object, ctypes.c_void_p, object, _WinSecurityDescriptor]:
     """Build a protected one-ACE DACL and absolute descriptor for this user."""
 
@@ -1547,6 +1832,87 @@ def _windows_atomic_create_bytes(
     return _windows_atomic_write_bytes(path, data, allowed_root=allowed_root, replace=False)
 
 
+def _windows_atomic_create_bytes_tracked(
+    path: Path,
+    data: bytes,
+    *,
+    allowed_root: Path,
+    mode: int,
+) -> TrackedFileCreation | None:
+    """Create a file while retaining native handles for exact cleanup."""
+
+    del mode
+    parents, parts = _windows_open_parent(path, allowed_root)
+    parent_handle, name = parents[-1], parts[-1]
+    temp_handle = -1
+    renamed = False
+    transferred = False
+    try:
+        _windows_verify_parent_chain(parents, parts)
+        if _windows_existing_regular(parent_handle, name):
+            return None
+        temp_handle, _temp_name = _windows_write_temp(parent_handle, name, data)
+        identity = _windows_confined_identity(temp_handle)
+        _windows_verify_parent_chain(parents, parts)
+        renamed = _windows_rename_handle(
+            temp_handle,
+            parent_handle,
+            name,
+            replace=False,
+        )
+        if not renamed:
+            _windows_existing_regular(parent_handle, name)
+            return None
+        _windows_flush_handle(temp_handle)
+        _windows_verify_named_handle(parent_handle, name, temp_handle)
+        if _windows_read_handle(temp_handle) != data:
+            raise AtomicWriteError(f"post-write reread failed: {name}")
+        _windows_require_restrictive_acl(temp_handle, name)
+
+        def release() -> None:
+            _windows_close_chain(parents + [temp_handle])
+
+        def remove() -> None:
+            verifier = -1
+            try:
+                verifier, _information = _windows_open_validated(
+                    parent_handle,
+                    name,
+                    access=_WIN_READ_ACCESS,
+                    disposition=1,
+                    options=_WIN_FILE_OPTIONS,
+                    directory=False,
+                )
+                if _windows_confined_identity(verifier) != identity:
+                    raise AtomicWriteError(
+                        f"tracked destination changed before cleanup: {name}"
+                    )
+                _windows_mark_delete(temp_handle)
+            except FileNotFoundError as exc:
+                raise AtomicWriteError(
+                    f"tracked destination changed before cleanup: {name}"
+                ) from exc
+            finally:
+                if verifier >= 0:
+                    _windows_close_handle(verifier)
+
+        transferred = True
+        return TrackedFileCreation(
+            identity,
+            remove=remove,
+            release=release,
+        )
+    finally:
+        if not transferred:
+            try:
+                if temp_handle >= 0:
+                    _windows_mark_delete(temp_handle)
+            finally:
+                _windows_close_chain(
+                    parents + ([temp_handle] if temp_handle >= 0 else [])
+                )
+
+
 def _windows_lock_handle(handle: int) -> _WinOverlapped:
     # LockFileEx serializes cooperative writers on the complete file range.
     kernel32, _advapi32, _ntdll = _windows_modules()
@@ -1753,6 +2119,40 @@ def atomic_create_bytes(
             operation="create",
         )
         return result is True
+
+
+def atomic_create_bytes_tracked(
+    path: Path,
+    data: bytes,
+    *,
+    allowed_root: Path,
+    mode: int,
+) -> TrackedFileCreation | None:
+    """Create a file and retain native cleanup authority for that exact identity."""
+
+    if os.name == "nt":
+        return _windows_atomic_create_bytes_tracked(
+            path,
+            data,
+            allowed_root=allowed_root,
+            mode=mode,
+        )
+    return _posix_atomic_create_bytes_tracked(
+        path,
+        data,
+        allowed_root=allowed_root,
+        mode=mode,
+    )
+
+
+def read_regular_directory_entries(
+    root: Path,
+) -> tuple[ConfinedRegularFile, ...]:
+    """Read one directory entirely through retained no-follow native handles."""
+
+    if os.name == "nt":
+        return _windows_read_regular_directory_entries(root)
+    return _posix_read_regular_directory_entries(root)
 
 
 def atomic_append_bytes(

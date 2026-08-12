@@ -248,6 +248,45 @@ def test_run_warns_but_does_not_block_when_no_managed_release_is_active(tmp_path
     assert "NOTE: no managed-runtime release is active yet" in output
 
 
+def test_run_provisions_certificate_material_under_supplied_home(
+    tmp_path,
+    monkeypatch,
+):
+    """The locked repair entrypoint passes durable state paths to provisioning."""
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    write_runtime_dependencies_manifest(repo_root, ["cryptography"])
+    home = tmp_path / "home"
+    home.mkdir()
+    bin_dir = home / "bin"
+    rc_file = home / ".bashrc"
+    rc_file.write_text("")
+    calls = []
+    monkeypatch.setattr(
+        certificate_records,
+        "provision_certificate_signing_material",
+        lambda paths: calls.append(paths),
+    )
+    expected = certificate_records.certificate_state_paths(
+        platform="linux",
+        home=home,
+        repo_root=repo_root,
+    )
+
+    status = scaffold.run(
+        repo_root=repo_root,
+        home=home,
+        bin_dir=bin_dir,
+        shell_rc=rc_file,
+        dry_run=False,
+    )
+
+    assert status == 0
+    assert calls == [expected]
+
+
 def test_required_python_packages_preserve_declared_versions(tmp_path):
     repo_root = tmp_path / "repo"
     manifest = repo_root / scaffold.RUNTIME_DEPENDENCIES_MANIFEST
@@ -377,33 +416,34 @@ def test_certificate_signing_material_capability_uses_shared_owner(
     monkeypatch,
 ):
     calls = []
-    public_key_root = tmp_path / "repo" / "keys"
-    monkeypatch.setattr(
-        certificate_records,
-        "provision_certificate_signing_material",
-        lambda repo_root: calls.append(repo_root),
+    home = tmp_path / "home"
+    expected = certificate_records.certificate_state_paths(
+        platform=scaffold.sys.platform,
+        home=home,
+        repo_root=tmp_path / "repo",
     )
     monkeypatch.setattr(
         certificate_records,
-        "certificate_public_key_root",
-        lambda repo_root: public_key_root,
+        "provision_certificate_signing_material",
+        lambda paths: calls.append(paths),
     )
 
     result = scaffold.install_certificate_signing_material(
         tmp_path / "repo",
         dry_run=False,
+        home=home,
     )
 
-    assert calls == [tmp_path / "repo"]
+    assert calls == [expected]
     assert result.status == "installed"
-    assert result.path == public_key_root
+    assert result.path == expected.public_key_root
 
 
 def test_certificate_signing_material_capability_fails_closed(
     tmp_path,
     monkeypatch,
 ):
-    def fail(_repo_root):
+    def fail(_paths):
         raise ValueError("verification failed")
 
     monkeypatch.setattr(
@@ -415,6 +455,7 @@ def test_certificate_signing_material_capability_fails_closed(
     result = scaffold.install_certificate_signing_material(
         tmp_path / "repo",
         dry_run=False,
+        home=tmp_path / "home",
     )
 
     assert result.blocks_install()

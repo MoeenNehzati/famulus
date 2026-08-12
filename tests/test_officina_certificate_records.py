@@ -3,12 +3,15 @@ from __future__ import annotations
 import os
 import shutil
 import stat
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 import officina.common.certificate_records as certificate_records
 import officina.common.atomic_files as atomic_files
+from officina.common.atomic_files import AtomicWriteError
 from officina.common.certificate_records import (
     CertificateLogError,
     canonical_certificate_envelope_bytes,
@@ -275,6 +278,148 @@ def test_legacy_migration_rejects_linked_state_roots_without_secret_changes(
     assert not list(outside.iterdir())
 
 
+@pytest.mark.parametrize("linked_state", ["legacy", "stable"])
+def test_legacy_migration_rejects_intermediate_linked_components(
+    tmp_path: Path,
+    linked_state: str,
+) -> None:
+    home = tmp_path / "home"
+    repo_root = tmp_path / "plugin-cache" / "famulus"
+    outside = tmp_path / "outside"
+    backend = MemorySecretBackend()
+    if linked_state == "legacy":
+        outside_repo = outside / "famulus"
+        outside_legacy = certificate_records.legacy_certificate_public_key_root(
+            outside_repo
+        )
+        outside_legacy.mkdir(parents=True)
+        load_or_create_certificate_signing_key(
+            outside_legacy,
+            secret_backend=backend,
+        )
+        (tmp_path / "plugin-cache").symlink_to(
+            outside, target_is_directory=True
+        )
+    else:
+        paths_without_link = certificate_records.certificate_state_paths(
+            platform="linux",
+            home=home,
+            repo_root=repo_root,
+        )
+        assert paths_without_link.legacy_public_key_root is not None
+        paths_without_link.legacy_public_key_root.mkdir(parents=True)
+        load_or_create_certificate_signing_key(
+            paths_without_link.legacy_public_key_root,
+            secret_backend=backend,
+        )
+        outside_local = outside / "local"
+        outside_stable = (
+            outside_local / "share" / "famulus" / "certificates" / "public-keys"
+        )
+        _copy_public_state(
+            paths_without_link.legacy_public_key_root,
+            outside_stable,
+        )
+        home.mkdir()
+        (home / ".local").symlink_to(outside_local, target_is_directory=True)
+    paths = certificate_records.certificate_state_paths(
+        platform="linux",
+        home=home,
+        repo_root=repo_root,
+    )
+    before = backend.snapshot()
+    linked_root = (
+        paths.legacy_public_key_root
+        if linked_state == "legacy"
+        else paths.public_key_root
+    )
+    assert linked_root is not None
+
+    with pytest.raises(AtomicWriteError):
+        atomic_files.read_regular_directory_entries(linked_root)
+    with pytest.raises((certificate_records.CertificateStateConflict, AtomicWriteError)):
+        certificate_records.migrate_legacy_certificate_state(
+            repo_root,
+            paths,
+            secret_backend=backend,
+        )
+
+    assert backend.snapshot() == before
+
+
+# famulus-skip: category=platform-contract; reason=requires native Win32 junction behavior; alternate=POSIX intermediate-symlink regression runs on non-Windows hosts
+@pytest.mark.skipif(sys.platform != "win32", reason="native Windows contract")
+@pytest.mark.parametrize("linked_state", ["legacy", "stable"])
+def test_legacy_migration_rejects_intermediate_windows_junctions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    linked_state: str,
+) -> None:
+    home = tmp_path / "home"
+    local_app_data = home / "AppData" / "Local"
+    monkeypatch.setenv("LOCALAPPDATA", str(local_app_data))
+    repo_root = tmp_path / "plugin-cache" / "famulus"
+    outside = tmp_path / "outside"
+    backend = MemorySecretBackend()
+    paths = certificate_records.certificate_state_paths(
+        platform="win32",
+        home=home,
+        repo_root=repo_root,
+    )
+    assert paths.legacy_public_key_root is not None
+
+    if linked_state == "legacy":
+        outside_legacy = certificate_records.legacy_certificate_public_key_root(
+            outside / "famulus"
+        )
+        outside_legacy.mkdir(parents=True)
+        load_or_create_certificate_signing_key(
+            outside_legacy,
+            secret_backend=backend,
+        )
+        junction = repo_root.parent
+        junction.parent.mkdir(parents=True)
+        target = outside
+    else:
+        paths.legacy_public_key_root.mkdir(parents=True)
+        load_or_create_certificate_signing_key(
+            paths.legacy_public_key_root,
+            secret_backend=backend,
+        )
+        outside_stable = outside / "Famulus" / "certificates" / "public-keys"
+        _copy_public_state(paths.legacy_public_key_root, outside_stable)
+        local_app_data.mkdir(parents=True)
+        junction = local_app_data / "Famulus"
+        target = outside / "Famulus"
+
+    result = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(junction), str(target)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode:
+        # famulus-skip: category=platform-contract; reason=junction creation is unavailable on this Windows host; alternate=POSIX intermediate-symlink regression runs on non-Windows hosts
+        pytest.skip(f"Windows junction creation unavailable: {result.stderr}")
+
+    linked_root = (
+        paths.legacy_public_key_root
+        if linked_state == "legacy"
+        else paths.public_key_root
+    )
+    before = backend.snapshot()
+    with pytest.raises(AtomicWriteError, match="reparse"):
+        atomic_files.read_regular_directory_entries(linked_root)
+    with pytest.raises(certificate_records.CertificateStateConflict):
+        certificate_records.migrate_legacy_certificate_state(
+            repo_root,
+            paths,
+            secret_backend=backend,
+        )
+
+    assert backend.snapshot() == before
+
+
 def test_legacy_migration_removes_public_candidates_before_selector_commit(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -304,6 +449,100 @@ def test_legacy_migration_removes_public_candidates_before_selector_commit(
         )
 
     assert not list(paths.public_key_root.iterdir())
+
+
+def test_legacy_migration_does_not_remove_replaced_candidate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = _state_paths(tmp_path)
+    assert paths.legacy_public_key_root is not None
+    backend = MemorySecretBackend()
+    paths.legacy_public_key_root.mkdir(parents=True)
+    load_or_create_certificate_signing_key(
+        paths.legacy_public_key_root,
+        secret_backend=backend,
+    )
+    real_create = certificate_records.atomic_create_bytes_tracked
+    replacement = b"replacement owned by another writer"
+
+    def replace_candidate(path: Path, data: bytes, **kwargs: object):
+        if Path(path).name == "active-key-id":
+            raise OSError("injected selector failure")
+        created = real_create(path, data, **kwargs)
+        assert created is not None
+        Path(path).unlink()
+        Path(path).write_bytes(replacement)
+        return created
+
+    monkeypatch.setattr(
+        certificate_records,
+        "atomic_create_bytes_tracked",
+        replace_candidate,
+    )
+    monkeypatch.setattr(
+        certificate_records,
+        "atomic_create_bytes",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            OSError("injected selector failure")
+        ),
+    )
+
+    with pytest.raises(AtomicWriteError, match="changed"):
+        certificate_records.migrate_legacy_certificate_state(
+            tmp_path / "plugin-cache" / "famulus",
+            paths,
+            secret_backend=backend,
+        )
+
+    public_files = list(paths.public_key_root.glob("*.pub"))
+    assert len(public_files) == 1
+    assert public_files[0].read_bytes() == replacement
+
+
+def test_legacy_migration_cleanup_uses_retained_parent_after_path_swap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = _state_paths(tmp_path)
+    assert paths.legacy_public_key_root is not None
+    backend = MemorySecretBackend()
+    paths.legacy_public_key_root.mkdir(parents=True)
+    load_or_create_certificate_signing_key(
+        paths.legacy_public_key_root,
+        secret_backend=backend,
+    )
+    real_create = certificate_records.atomic_create_bytes_tracked
+    moved_root = paths.public_key_root.with_name("moved-public-keys")
+    outside = tmp_path / "outside-cleanup"
+    replacement = b"outside replacement"
+
+    def swap_parent(path: Path, data: bytes, **kwargs: object):
+        if Path(path).name == "active-key-id":
+            raise OSError("injected selector failure")
+        created = real_create(path, data, **kwargs)
+        assert created is not None
+        paths.public_key_root.rename(moved_root)
+        outside.mkdir()
+        (outside / Path(path).name).write_bytes(replacement)
+        paths.public_key_root.symlink_to(outside, target_is_directory=True)
+        return created
+
+    monkeypatch.setattr(
+        certificate_records,
+        "atomic_create_bytes_tracked",
+        swap_parent,
+    )
+
+    with pytest.raises(AtomicWriteError):
+        certificate_records.migrate_legacy_certificate_state(
+            tmp_path / "plugin-cache" / "famulus",
+            paths,
+            secret_backend=backend,
+        )
+
+    assert (outside / next(outside.iterdir()).name).read_bytes() == replacement
+    assert not list(moved_root.glob("*.pub"))
 
 
 def test_certificate_paths_are_stable_famulus_state_not_repository_state(
