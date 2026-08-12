@@ -135,14 +135,38 @@ def set_runtime_dispatch_context(
     )
 
 
+# The runner executes exactly one interface per process, so the dispatcher's
+# resolved identity describes the process, not one object. Skills legitimately
+# factor shared dispatch into a helper module that constructs its own
+# interface at import time; those objects are never the one the runner
+# configured, and without this they dispatch with no repository config at all.
+# Set only by the runner, which owns the process: leaving
+# set_runtime_dispatch_context free of process state keeps unit tests that
+# configure an object from leaking into unrelated ones.
+_PROCESS_DISPATCH_CONTEXT: RuntimeDispatchContext | None = None
+
+
+def set_process_dispatch_context(context: RuntimeDispatchContext | None) -> None:
+    """Publish (or clear) the dispatch context for this whole process."""
+
+    global _PROCESS_DISPATCH_CONTEXT
+    _PROCESS_DISPATCH_CONTEXT = context
+
+
 def runtime_dispatch_context(
     interface: "PythonMachineInterface",
 ) -> RuntimeDispatchContext:
-    """Return dispatcher-resolved runtime identity for one loaded interface."""
+    """Return dispatcher-resolved runtime identity for one loaded interface.
+
+    An object's own context wins; the process context is the fallback for
+    objects the runner never saw.
+    """
 
     context = getattr(interface, _RUNTIME_DISPATCH_CONTEXT_ATTRIBUTE, None)
     if isinstance(context, RuntimeDispatchContext):
         return context
+    if _PROCESS_DISPATCH_CONTEXT is not None:
+        return _PROCESS_DISPATCH_CONTEXT
     return RuntimeDispatchContext()
 
 

@@ -1020,6 +1020,83 @@ def test_logical_loader_replaces_hostile_cached_package_state(
     assert sys.modules[target.logical_package] is hostile
 
 
+def test_main_shares_dispatch_context_with_a_helper_modules_own_instance(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A helper module's own interface object must still resolve the config.
+
+    Skills factor shared dispatch into a helper module that builds its own
+    interface at import time (list-manager's `_cloud_transport._DISPATCHER`,
+    daily-plan's `_day_model._dispatch_interface`). The runner only ever
+    configures the ONE interface it loaded, so those helper objects saw an
+    empty context and every nested dispatch through them died with
+    "dispatcher requires the exact repository configuration path" -- which is
+    what kept email-triage failing after its own run completed.
+
+    The context describes the process, not one object: the runner executes
+    exactly one interface per process. Anything dispatching in that process
+    is entitled to it.
+    """
+    seen = {}
+
+    class Helper(PythonMachineInterface):
+        """Stands in for a helper module's import-time instance."""
+
+    helper = Helper()
+
+    class Interface(PythonMachineInterface):
+        def run(self, args):
+            context = python_interface.runtime_dispatch_context(helper)
+            seen["repository_config"] = context.repository_config
+            seen["repo_root"] = context.repo_root
+            return 0
+
+    monkeypatch.setattr(
+        python_runner, "load_interface", lambda *a, **k: Interface()
+    )
+
+    config_path = tmp_path / "officina.toml"
+    result = main(
+        [
+            "--runtime-caller-module-id",
+            "demo-rtx",
+            "--runtime-repo-root",
+            str(tmp_path),
+            "--runtime-repository-config",
+            str(config_path),
+            "_rtx/_demo.py",
+            "Interface",
+        ]
+    )
+
+    assert result == 0
+    assert seen["repository_config"] == config_path
+    assert seen["repo_root"] == tmp_path
+
+
+def test_runtime_dispatch_context_prefers_an_objects_own_context(
+    tmp_path: Path,
+) -> None:
+    """The process fallback must not overwrite an explicitly configured one."""
+    own = PythonMachineInterface()
+    python_interface.set_process_dispatch_context(
+        python_interface.RuntimeDispatchContext(
+            caller_module_id="process", repository_config=tmp_path / "process.toml"
+        )
+    )
+    try:
+        python_interface.set_runtime_dispatch_context(
+            own, caller_module_id="own", repository_config=tmp_path / "own.toml"
+        )
+        assert (
+            python_interface.runtime_dispatch_context(own).repository_config
+            == tmp_path / "own.toml"
+        )
+    finally:
+        python_interface.set_process_dispatch_context(None)
+
+
 def test_main_attaches_runtime_dispatch_context(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

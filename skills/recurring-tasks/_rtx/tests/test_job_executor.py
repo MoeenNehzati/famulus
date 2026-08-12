@@ -176,6 +176,63 @@ def test_evaluate_success_contract_fails_on_nonzero_exit_regardless_of_contract(
     assert "1" in result.reason
 
 
+def test_failure_reason_carries_the_error_from_the_run_output():
+    """A bare exit code sent six days of outages to a log nobody read.
+
+    The cause was in the job's own log the whole time; every reporting hop
+    above it replaced that line with "process exit code 1". The record is
+    where the two paths meet -- the health-check log renders `reason`
+    verbatim -- so carrying the salient line here is what makes the failure
+    legible without opening the run log.
+    """
+    output = (
+        "warning: certification-status-unavailable: precomputed status\n"
+        "Error: failed to read model instructions file "
+        "/gone/agents/assistant.md: No such file or directory (os error 2)\n"
+    )
+    result = evaluate_success_contract(
+        process_exit_code=1, inner_status=None, contract={}, run_output=output
+    )
+    assert result.success is False
+    assert "process exit code 1" in result.reason
+    assert "failed to read model instructions file" in result.reason
+
+
+def test_failure_reason_carries_the_error_when_only_inner_status_failed():
+    """The exit code is 0 here, so the run output is the only evidence."""
+    output = "error: lists-read failed: dispatcher requires the exact repository configuration path\n"
+    result = evaluate_success_contract(
+        process_exit_code=0,
+        inner_status="error",
+        contract={"require_inner_status": "ok"},
+        run_output=output,
+    )
+    assert result.success is False
+    assert "lists-read failed" in result.reason
+
+
+def test_failure_reason_skips_traceback_scaffolding_and_caps_length():
+    output = (
+        "Traceback (most recent call last):\n"
+        '  File "/x/y.py", line 3, in run\n'
+        "    ^^^^^^^^\n"
+        "socket.gaierror: " + "z" * 400 + "\n"
+    )
+    result = evaluate_success_contract(
+        process_exit_code=1, inner_status=None, contract={}, run_output=output
+    )
+    assert "socket.gaierror" in result.reason
+    assert 'File "' not in result.reason
+    assert len(result.reason) < 300
+
+
+def test_failure_reason_is_unchanged_when_the_run_produced_no_usable_output():
+    result = evaluate_success_contract(
+        process_exit_code=1, inner_status=None, contract={}, run_output="\n\n"
+    )
+    assert result.reason == "process exit code 1"
+
+
 def test_evaluate_success_contract_passes_when_inner_status_matches_required():
     contract = {"require_inner_status": "ok"}
     result = evaluate_success_contract(process_exit_code=0, inner_status="ok", contract=contract)

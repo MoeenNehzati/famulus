@@ -132,9 +132,15 @@ def render_healthcheck_cron(
     healthcheck_arg = shlex.quote(str(healthcheck))
     log_arg = shlex.quote(str(log_file))
     title = shlex.quote("Recurring tasks need attention")
-    body = shlex.quote(
-        "The recurring-tasks health check failed. See its health-check log."
+    # The checker leaves its findings beside its log; read them into the body
+    # so the popup names what broke instead of only that something did. When
+    # the checker could not start at all there is no file to read, and the
+    # fallback says exactly that rather than implying a job failed.
+    summary_arg = shlex.quote(str(log_file.parent / "last-failure.txt"))
+    fallback = shlex.quote(
+        "The recurring-tasks health check could not run. See its health-check log."
     )
+    body = f'"$(cat {summary_arg} 2>/dev/null || echo {fallback})"'
     runtime_dir = f"/run/user/{uid}"
     return (
         "0 */4 * * * "

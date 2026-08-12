@@ -32,6 +32,8 @@ from .python_machine_interface import (
     PythonProcessTarget,
     PythonProcessTargetError,
     coerce_exit_code,
+    runtime_dispatch_context,
+    set_process_dispatch_context,
     set_runtime_dispatch_context,
 )
 
@@ -919,7 +921,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             repo_root=runtime_repo_root,
             repository_config=runtime_repository_config,
         )
-        return run_python_machine_interface(interface, interface_argv)
+        # Also publish it process-wide, so a helper module that builds its own
+        # interface at import time can dispatch. This process runs exactly one
+        # interface, so there is no other identity it could mean. Cleared on
+        # the way out: in production the process exits here anyway, but tests
+        # call main() in-process, and a context left standing would attach
+        # itself to the next unrelated interface.
+        set_process_dispatch_context(runtime_dispatch_context(interface))
+        try:
+            return run_python_machine_interface(interface, interface_argv)
+        finally:
+            set_process_dispatch_context(None)
 
     try:
         if package_snapshot is not None:

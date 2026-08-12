@@ -58,6 +58,42 @@ HEALTHCHECK_LOG = SKILL_ROOT / "logs" / "healthcheck" / "run.log"
 INCOMPLETE_RUN_GRACE_SECONDS = 3600 + 600
 
 
+# The sentinel that raises the desktop popup runs from cron, in a separate
+# failure domain, and so cannot see this process's findings. This file is the
+# one channel between them: the checker writes why it failed, the sentinel
+# reads it into the notification body. Kept short on purpose -- a popup that
+# quotes a stack trace is a popup nobody reads.
+HEALTHCHECK_SUMMARY = HEALTHCHECK_LOG.parent / "last-failure.txt"
+_SUMMARY_MAX_REASONS = 3
+_SUMMARY_REASON_LIMIT = 160
+
+
+def write_failure_summary(failures: list[str]) -> None:
+    """Record why this check failed, for the sentinel to show.
+
+    Carries a timestamp because the sentinel also fires when the checker
+    could not start at all, in which case what it reads is the previous
+    run's file; the time is what makes that visible rather than misleading.
+    """
+    HEALTHCHECK_SUMMARY.parent.mkdir(parents=True, exist_ok=True)
+    when = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    shown = failures[:_SUMMARY_MAX_REASONS]
+    lines = [f"{len(failures)} problem(s) found at {when}:"]
+    for reason in shown:
+        if len(reason) > _SUMMARY_REASON_LIMIT:
+            reason = reason[: _SUMMARY_REASON_LIMIT - 1].rstrip() + "…"
+        lines.append(f"- {reason}")
+    remaining = len(failures) - len(shown)
+    if remaining > 0:
+        lines.append(f"- (+{remaining} more; see the health-check log)")
+    HEALTHCHECK_SUMMARY.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def clear_failure_summary() -> None:
+    """Drop the stale reason once every check passes."""
+    HEALTHCHECK_SUMMARY.unlink(missing_ok=True)
+
+
 def log(msg: str) -> None:
     """Write one health-check report line.
 
@@ -327,8 +363,10 @@ def main(argv: list[str] | None = None) -> int:
     # Report
     if problems == 0:
         log("OK: All checks passed")
+        clear_failure_summary()
     else:
         log(f"FAIL: {problems} problem(s) found")
+        write_failure_summary(failures)
 
     log("=== healthcheck done ===\n")
     return 1 if problems > 0 else 0

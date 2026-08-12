@@ -104,6 +104,48 @@ def _tolerated_failure(
     return None
 
 
+# Lines that are always present and never explain anything. Certification
+# warnings precede every dispatcher call; the run markers are this module's
+# own bookkeeping.
+_UNINFORMATIVE_PREFIXES = (
+    "warning: certification-status-unavailable",
+    "--- RUN ",
+    "--- process ",
+)
+
+# Traceback scaffolding. The frame lines and carets carry no meaning once
+# separated from the whole traceback, but the exception line below them does,
+# and it is what a reader actually needs.
+_TRACEBACK_SCAFFOLDING = ('File "', "^", "~", "Traceback (most recent call last):")
+
+_REASON_DETAIL_LIMIT = 200
+
+
+def _salient_failure_line(run_output: str) -> str | None:
+    """Return the most explanatory line from a failed run's output.
+
+    Scans backwards because a job's last words are its complaint. Returns
+    None when nothing usable remains, so callers keep their bare summary
+    rather than appending noise.
+    """
+    for raw_line in reversed(run_output.splitlines()):
+        line = raw_line.strip()
+        if not line or line.startswith(_UNINFORMATIVE_PREFIXES):
+            continue
+        if line.startswith(_TRACEBACK_SCAFFOLDING):
+            continue
+        if len(line) > _REASON_DETAIL_LIMIT:
+            line = line[: _REASON_DETAIL_LIMIT - 1].rstrip() + "…"
+        return line
+    return None
+
+
+def _explained(summary: str, run_output: str) -> str:
+    """Append the run's own error to a summary when it has one to give."""
+    detail = _salient_failure_line(run_output)
+    return f"{summary}: {detail}" if detail else summary
+
+
 def evaluate_success_contract(
     *,
     process_exit_code: int,
@@ -127,7 +169,10 @@ def evaluate_success_contract(
         tolerated = _tolerated_failure(process_exit_code, contract, run_output)
         if tolerated is None:
             return SuccessEvaluation(
-                success=False, reason=f"process exit code {process_exit_code}"
+                success=False,
+                reason=_explained(
+                    f"process exit code {process_exit_code}", run_output
+                ),
             )
         return SuccessEvaluation(
             success=True,
@@ -138,7 +183,10 @@ def evaluate_success_contract(
     if required is not None and inner_status != required:
         return SuccessEvaluation(
             success=False,
-            reason=f"inner status {inner_status!r} != required {required!r}",
+            reason=_explained(
+                f"inner status {inner_status!r} != required {required!r}",
+                run_output,
+            ),
         )
 
     return SuccessEvaluation(success=True)
