@@ -1150,7 +1150,10 @@ def test_logical_descriptor_and_snapshot_sources_have_identical_identities(
     target = _logical_target("demo-rtx")
     monkeypatch.chdir(module_root)
     paths = (module_root / "__init__.py", module_root / "helper.py", module_root / "runtime.py")
-    descriptors = [os.open(path, os.O_RDONLY) for path in paths]
+    descriptors = [
+        os.open(path, os.O_RDONLY | getattr(os, "O_BINARY", 0))
+        for path in paths
+    ]
     try:
         descriptor_sources = python_runner._load_bound_package_sources(
                 tuple(
@@ -1195,6 +1198,10 @@ def test_logical_bound_transport_rejects_bare_sibling_import_after_live_swap(
         encode_runtime_python_package_snapshot,
     )
 
+    if transport == "descriptor" and os.name == "nt":
+        # famulus-skip: category=platform-contract; reason=Windows denies renaming an open CRT descriptor; alternate=the snapshot parameter exercises the same bound-source isolation contract
+        pytest.skip("Windows cannot rename an open descriptor")
+
     module_root = tmp_path / "skills" / "demo" / "_rtx"
     module_root.mkdir(parents=True)
     (module_root / "__init__.py").write_text("", encoding="utf-8")
@@ -1218,7 +1225,10 @@ def test_logical_bound_transport_rejects_bare_sibling_import_after_live_swap(
     sys.path.insert(0, "")
 
     if transport == "descriptor":
-        descriptors = [os.open(path, os.O_RDONLY) for path in paths]
+        descriptors = [
+            os.open(path, os.O_RDONLY | getattr(os, "O_BINARY", 0))
+            for path in paths
+        ]
         try:
             helper.replace(module_root / "captured-helper.py")
             helper.write_text(

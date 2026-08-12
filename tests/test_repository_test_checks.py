@@ -46,7 +46,7 @@ def test_named_suites_resolve_to_ordered_native_phases() -> None:
         "validators": ("validators",),
         "tests": ("tests:shared", "tests:performance"),
         "precommit": ("validators", "tests:shared"),
-        "pre-push": ("validators", "tests:shared"),
+        "pre-push": ("validators", "tests:shared", "tests:browser"),
         "portability": ("tests:shared",),
         "full": ("validators", "tests:shared", "tests:performance"),
     }
@@ -55,7 +55,10 @@ def test_named_suites_resolve_to_ordered_native_phases() -> None:
 def test_combined_suites_share_one_pooled_run() -> None:
     """Catch reconstruction of a validator-first execution barrier."""
     assert runner._suite_runs("precommit", task_id=None) == ("combined",)
-    assert runner._suite_runs("pre-push", task_id=None) == ("combined",)
+    assert runner._suite_runs("pre-push", task_id=None) == (
+        "combined",
+        "tests:browser",
+    )
     assert runner._suite_runs("full", task_id=None) == (
         "combined",
         "tests:performance",
@@ -235,13 +238,12 @@ def test_runner_adds_exact_xdist_worker_count_for_parallel_jobs() -> None:
     ]
 
 
-@pytest.mark.parametrize("suite", ["full", "pre-push"])
-def test_browser_suites_use_loadgroup(suite: str) -> None:
-    args = runner._suite_pytest_args(suite, verbose=False, jobs=6)
+def test_full_browser_suite_uses_loadgroup() -> None:
+    args = runner._suite_pytest_args("full", verbose=False, jobs=6)
     assert args[args.index("--dist") + 1] == "loadgroup"
 
 
-@pytest.mark.parametrize("suite", ["precommit", "portability"])
+@pytest.mark.parametrize("suite", ["precommit", "pre-push", "portability"])
 def test_browser_free_suites_keep_worksteal(suite: str) -> None:
     args = runner._suite_pytest_args(suite, verbose=False, jobs=6)
     assert args[args.index("--dist") + 1] == "worksteal"
@@ -288,12 +290,14 @@ def test_precommit_defers_installation_chrome_docstring_and_performance_tests() 
     )
 
 
-def test_prepush_restores_installation_and_chrome_but_defers_slow_tests() -> None:
+def test_prepush_defers_browser_and_slow_tests_from_parallel_pool() -> None:
     deselected = _deselected_tests(
         runner._suite_pytest_args("pre-push", verbose=False)
     )
 
-    assert deselected == runner.DOCSTRING_TESTS | runner.PERFORMANCE_TESTS
+    assert deselected == (
+        runner.CHROME_TESTS | runner.DOCSTRING_TESTS | runner.PERFORMANCE_TESTS
+    )
 
 
 def test_docstring_validator_is_reserved_for_full_unless_explicit(
@@ -508,7 +512,7 @@ def test_sequential_flag_is_a_noop_compatibility_alias(
         "cache_dir=<temporary>"
         if argument.startswith("cache_dir=")
         else "staged-paths=<temporary>"
-        if argument.endswith("/staged-paths.json")
+        if Path(argument).name == "staged-paths.json"
         else argument
         for argument in command
     ]
@@ -543,6 +547,20 @@ def test_performance_phase_is_serial_and_uses_only_performance_nodes(
     ]
     assert "-n" not in command
     assert command[-len(runner.PERFORMANCE_TESTS) :] == sorted(runner.PERFORMANCE_TESTS)
+
+
+def test_browser_phase_is_serial_and_uses_only_browser_modules(tmp_path: Path) -> None:
+    command = runner._pytest_phase_command(
+        "pre-push",
+        "tests:browser",
+        verbose=False,
+        jobs=8,
+        cache_dir=tmp_path / "cache",
+        timing_path=None,
+    )
+
+    assert "-n" not in command
+    assert command[-len(runner.CHROME_TESTS) :] == sorted(runner.CHROME_TESTS)
 
 
 def test_xdist_required_for_parallel_jobs(monkeypatch) -> None:
@@ -833,6 +851,27 @@ def test_ci_runs_combined_full_suite_before_portability() -> None:
     assert "python3 repo_checks.py --suite tests --verbose" not in workflow
 
 
+def test_ci_shards_windows_repository_checks_for_parallel_diagnostics() -> None:
+    workflow = (
+        Path(__file__).resolve().parents[1]
+        / ".github"
+        / "workflows"
+        / "python-tests.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "task: validators" in workflow
+    assert "task: 'tests:shared'" in workflow
+    assert "task: 'tests:performance'" in workflow
+    assert workflow.count("jobs: 4") == 3
+    assert 'if: matrix.task == \'combined\'' in workflow
+    assert 'if: matrix.task != \'combined\'' in workflow
+    assert (
+        'python3 repo_checks.py --suite full --task-id "${{ matrix.task }}" '
+        '--verbose --jobs "${{ matrix.jobs }}"'
+    ) in workflow
+    assert "timeout-minutes: 60" in workflow
+
+
 def test_ci_dependency_lock_covers_the_complete_test_environment() -> None:
     requirements = (
         Path(__file__).resolve().parents[1] / "requirements-ci.txt"
@@ -847,6 +886,7 @@ def test_ci_dependency_lock_covers_the_complete_test_environment() -> None:
         "cryptography==44.0.1",
         "lark==1.3.1",
         "pyflakes==3.2.0",
+        "tzdata==2026.3",
     ]
 
 

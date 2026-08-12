@@ -118,6 +118,8 @@ def test_linux_dispatcher_and_invoke_skill_are_extensionless(tmp_path):
     assert sys.executable not in invoke_text
 
 
+# famulus-skip: category=platform-contract; reason=the Linux wakeup bundle executes POSIX launchers; alternate=test_windows_dispatcher_and_invoke_skill_are_batch_launchers covers native Windows launchers
+@pytest.mark.skipif(os.name == "nt", reason="POSIX launcher execution")
 def test_linux_wakeup_bundle_runs_both_names_through_managed_resolver(tmp_path, monkeypatch):
     """Removing either public command or forwarding it to the wrong module breaks the installed wakeup CLI."""
     installer = platform_launcher_installer("linux")

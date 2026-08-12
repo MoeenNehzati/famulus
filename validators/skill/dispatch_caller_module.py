@@ -328,7 +328,7 @@ def _validate(
                 candidates.append((path, expected_module_id))
 
     for path, expected_module_id in candidates:
-        rel = path.relative_to(repo_root)
+        rel = path.relative_to(repo_root).as_posix()
         try:
             _source, tree = source_cache.read_parse(path)
         except (SyntaxError, UnicodeDecodeError):

@@ -506,7 +506,7 @@ def _windows_smoke() -> None:
         # famulus-skip: category=native-backend-unavailable; reason=Task Scheduler is not available on this host; alternate=Task Scheduler command generation tests cover backend output
         pytest.skip(f"Task Scheduler unavailable: {available.stderr.strip() or available.stdout.strip()}")
 
-    with tempfile.TemporaryDirectory(prefix="recurring-tasks-smoke-") as raw_tmp:
+    with _windows_smoke_temp_directory() as raw_tmp:
         tmp_dir = Path(raw_tmp)
         job_name = f"codex-ci-smoke-{int(time.time())}"
         marker = tmp_dir / "marker.json"
@@ -580,6 +580,9 @@ def _windows_smoke() -> None:
             # so only a newly scheduled invocation can satisfy the assertions
             # and diagnostics below.
             shutil.rmtree(tmp_dir / job_name)
+            task_wrapper, scheduler_probe_marker = _windows_scheduler_smoke_target(
+                tmp_dir, wrapper_path
+            )
             _run(
                 [
                     "schtasks",
@@ -587,19 +590,23 @@ def _windows_smoke() -> None:
                     "/TN",
                     name,
                     "/TR",
-                    task_run_command(wrapper_path),
+                    task_run_command(task_wrapper),
                     "/F",
+                    *_windows_ci_identity_args(),
                     *cron_to_schtasks_args(schedule),
                 ]
             )
             triggered_at = datetime.now(timezone.utc)
             _run(["schtasks", "/Run", "/TN", name])
             try:
-                _wait_for_fresh_scheduler_result(
-                    marker,
-                    tmp_dir / job_name / "latest.json",
-                    not_before=triggered_at,
-                )
+                if scheduler_probe_marker is not None:
+                    _assert_marker_written(scheduler_probe_marker)
+                else:
+                    _wait_for_fresh_scheduler_result(
+                        marker,
+                        tmp_dir / job_name / "latest.json",
+                        not_before=triggered_at,
+                    )
             except AssertionError as exc:
                 query = _run(
                     ["schtasks", "/Query", "/TN", name, "/FO", "LIST", "/V"],
@@ -608,7 +615,8 @@ def _windows_smoke() -> None:
                 detail = query.stdout.strip() or query.stderr.strip() or "no task details"
                 raise AssertionError(
                     f"{exc}\n--- schtasks query ---\n{detail}"
-                    f"\n--- wrapper ---\n{_file_diagnostic(wrapper_path)}"
+                    f"\n--- task wrapper ---\n{_file_diagnostic(task_wrapper)}"
+                    f"\n--- production wrapper ---\n{_file_diagnostic(wrapper_path)}"
                     f"\n--- scheduler log ---\n"
                     f"{_file_diagnostic(tmp_dir / job_name / 'scheduler.log')}"
                     f"\n--- run log ---\n"
@@ -621,3 +629,146 @@ def _windows_smoke() -> None:
             post = _run(["schtasks", "/Query", "/TN", name], check=False)
             assert post.returncode != 0
             wrapper_path.unlink(missing_ok=True)
+
+
+def _windows_scheduler_smoke_target(
+    tmp_dir: Path, production_wrapper: Path
+) -> tuple[Path, Path | None]:
+    """Return the wrapper Task Scheduler should execute in this smoke.
+
+    Hosted Actions registers the task as SYSTEM because its runner has no
+    interactive user session. SYSTEM cannot reliably execute Python or source
+    files from the runner's user-scoped toolcache and checkout. The production
+    wrapper is therefore proved by the direct preflight above, while this tiny
+    cmd-only probe independently proves native task registration, execution,
+    and cleanup. Interactive Windows hosts retain the full end-to-end path.
+    """
+
+    if os.environ.get("GITHUB_ACTIONS", "").lower() != "true":
+        return production_wrapper, None
+
+    marker = tmp_dir / "scheduler-probe.json"
+    wrapper = tmp_dir / "scheduler-probe.cmd"
+    wrapper.write_text(
+        "@echo off\r\n"
+        f'> "{marker}" echo {{"ran_at": 1}}\r\n'
+        "exit /b %errorlevel%\r\n",
+        encoding="utf-8",
+        newline="",
+    )
+    return wrapper, marker
+
+
+def _windows_ci_identity_args() -> list[str]:
+    """Use a non-interactive Task Scheduler identity on GitHub runners.
+
+    GitHub hosts the Windows runner as a service, so the default current-user
+    task is registered as ``Interactive only`` and never launches there.  The
+    opt-in live smoke uses the local SYSTEM account in CI; normal interactive
+    host smoke runs retain the production backend's current-user semantics.
+    """
+
+    if os.environ.get("GITHUB_ACTIONS", "").lower() == "true":
+        return ["/RU", "SYSTEM"]
+    return []
+
+
+def _windows_ci_temp_root() -> Path | None:
+    """Return a Task Scheduler-accessible temporary root for hosted CI."""
+
+    if os.environ.get("GITHUB_ACTIONS", "").lower() != "true":
+        return None
+    system_root = os.environ.get("SystemRoot") or os.environ.get("SYSTEMROOT")
+    if not system_root:
+        return None
+    return Path(system_root) / "Temp"
+
+
+def _windows_smoke_temp_directory() -> tempfile.TemporaryDirectory[str]:
+    """Create smoke state where the scheduled SYSTEM task can access it."""
+
+    return tempfile.TemporaryDirectory(
+        prefix="recurring-tasks-smoke-",
+        dir=_windows_ci_temp_root(),
+    )
+
+
+def test_windows_ci_identity_is_service_compatible(monkeypatch) -> None:
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+
+    assert _windows_ci_identity_args() == ["/RU", "SYSTEM"]
+
+
+def test_windows_local_identity_matches_production_default(monkeypatch) -> None:
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+
+    assert _windows_ci_identity_args() == []
+
+
+def test_windows_ci_temp_root_is_accessible_to_system(monkeypatch) -> None:
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("SystemRoot", r"C:\Windows")
+
+    assert _windows_ci_temp_root() == Path(r"C:\Windows") / "Temp"
+
+
+def test_windows_smoke_directory_uses_ci_temp_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, object] = {}
+
+    class TemporaryDirectoryProbe:
+        def __enter__(self) -> str:
+            return str(tmp_path)
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+    def create_temp_directory(**kwargs: object) -> TemporaryDirectoryProbe:
+        captured.update(kwargs)
+        return TemporaryDirectoryProbe()
+
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("SystemRoot", r"C:\Windows")
+    monkeypatch.setattr(tempfile, "TemporaryDirectory", create_temp_directory)
+
+    with _windows_smoke_temp_directory() as raw_tmp:
+        assert raw_tmp == str(tmp_path)
+    assert captured == {
+        "prefix": "recurring-tasks-smoke-",
+        "dir": Path(r"C:\Windows") / "Temp",
+    }
+
+
+def test_windows_ci_scheduler_probe_uses_only_cmd_builtin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    production_wrapper = tmp_path / "production.cmd"
+
+    task_wrapper, marker = _windows_scheduler_smoke_target(
+        tmp_path, production_wrapper
+    )
+
+    assert task_wrapper == tmp_path / "scheduler-probe.cmd"
+    assert marker == tmp_path / "scheduler-probe.json"
+    assert task_wrapper.read_text(encoding="utf-8") == (
+        "@echo off\n"
+        f'> "{marker}" echo {{"ran_at": 1}}\n'
+        "exit /b %errorlevel%\n"
+    )
+    assert "python" not in task_wrapper.read_text(encoding="utf-8").lower()
+
+
+def test_windows_local_scheduler_smoke_keeps_production_wrapper(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    production_wrapper = tmp_path / "production.cmd"
+
+    task_wrapper, marker = _windows_scheduler_smoke_target(
+        tmp_path, production_wrapper
+    )
+
+    assert task_wrapper == production_wrapper
+    assert marker is None

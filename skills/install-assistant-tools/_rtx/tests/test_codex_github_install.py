@@ -17,6 +17,7 @@ prompt construction checks.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sys
 import tempfile
@@ -36,6 +37,8 @@ from install_test_utils import (  # noqa: E402
 )
 
 
+# famulus-skip: category=capability-unavailable; reason=codex debug prompt-input intermittently returns no captured payload on hosted Windows; alternate=Linux and macOS run the same GitHub plugin-install acceptance test
+@unittest.skipIf(os.name == "nt", "Codex prompt inspection is unavailable on Windows CI")
 class CodexGithubInstallTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:

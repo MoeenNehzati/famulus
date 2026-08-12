@@ -355,9 +355,15 @@ def _test_race_delay() -> None:
     has passed, before the mutation and save -- lets a test deterministically
     hold a writer inside the exact check-to-write gap that a lock (rather
     than a bare revision check) is required to close. No-op unless
-    LIST_MANAGER_TEST_RACE_DELAY is set; only used by
+    LIST_MANAGER_TEST_RACE_DELAY is set. When
+    LIST_MANAGER_TEST_RACE_READY_FILE is also set, touch that path before the
+    delay so the test can observe that the writer owns the lock instead of
+    guessing from process-startup timing. Both controls are used only by
     test_update_concurrent_writers_are_serialized_by_the_lock.
     """
+    ready_file = os.environ.get("LIST_MANAGER_TEST_RACE_READY_FILE")
+    if ready_file:
+        Path(ready_file).touch()
     delay = os.environ.get("LIST_MANAGER_TEST_RACE_DELAY")
     if delay:
         time.sleep(float(delay))

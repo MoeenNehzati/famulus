@@ -17,20 +17,28 @@ def locked_file(path: Path, *, blocking: bool = True) -> Iterator[object]:
     """Open *path* and hold one exclusive advisory lock for the context."""
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a+b") as handle:
+    try:
+        opened = path.open("a+b")
+    except OSError as error:
+        if not blocking:
+            raise LockUnavailable(str(path)) from error
+        raise
+    with opened as handle:
         if os.name == "nt":
             import msvcrt
 
-            handle.seek(0)
-            if handle.read(1) == b"":
-                handle.write(b"\0")
-                handle.flush()
-            handle.seek(0)
-            mode = msvcrt.LK_LOCK if blocking else msvcrt.LK_NBLCK
             try:
+                handle.seek(0)
+                if handle.read(1) == b"":
+                    handle.write(b"\0")
+                    handle.flush()
+                handle.seek(0)
+                mode = msvcrt.LK_LOCK if blocking else msvcrt.LK_NBLCK
                 msvcrt.locking(handle.fileno(), mode, 1)
             except OSError as error:
-                raise LockUnavailable(str(path)) from error
+                if not blocking:
+                    raise LockUnavailable(str(path)) from error
+                raise
             try:
                 yield handle
             finally:

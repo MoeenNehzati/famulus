@@ -60,7 +60,7 @@ PRECOMMIT_EXCLUDED_TESTS = {
     *DOCSTRING_TESTS,
     *PERFORMANCE_TESTS,
 }
-PREPUSH_EXCLUDED_TESTS = DOCSTRING_TESTS | PERFORMANCE_TESTS
+PREPUSH_EXCLUDED_TESTS = CHROME_TESTS | DOCSTRING_TESTS | PERFORMANCE_TESTS
 SUITE_EXCLUDED_VALIDATORS = {
     "precommit": {"repo/docstrings"},
     "pre-push": {"repo/docstrings"},
@@ -1239,6 +1239,8 @@ def run_validators_with_pytest(
     pytest_arguments = [
         "-q",
         "--disable-warnings",
+        "--rootdir",
+        str(tracked_root),
         "--confcutdir",
         str(tracked_root),
     ]
@@ -1268,7 +1270,7 @@ SUITE_PHASES = {
     "validators": ("validators",),
     "tests": ("tests:shared", "tests:performance"),
     "precommit": ("validators", "tests:shared"),
-    "pre-push": ("validators", "tests:shared"),
+    "pre-push": ("validators", "tests:shared", "tests:browser"),
     "portability": ("tests:shared",),
     "full": ("validators", "tests:shared", "tests:performance"),
 }
@@ -1303,6 +1305,7 @@ def _suite_runs(suite: str, task_id: str | None) -> tuple[str, ...]:
       - set runs = combined run
     - else:
       - set runs = non-performance suite phases
+    - append non-pooled phases such as the serial browser phase
     - if performance phase is present:
       - set runs = runs plus performance phase
     - return ordered runs
@@ -1316,7 +1319,13 @@ def _suite_runs(suite: str, task_id: str | None) -> tuple[str, ...]:
     phases = SUITE_PHASES[suite]
     pooled = {"validators", "tests:shared"}.intersection(phases)
     runs: list[str] = ["combined"] if pooled == {"validators", "tests:shared"} else []
-    if not runs:
+    if runs:
+        runs.extend(
+            phase
+            for phase in phases
+            if phase not in pooled and phase != "tests:performance"
+        )
+    else:
         runs.extend(phase for phase in phases if phase != "tests:performance")
     if "tests:performance" in phases:
         runs.append("tests:performance")
@@ -1454,14 +1463,15 @@ def _suite_pytest_args(
 
     Rationale
     ---------
-    Browser-containing full and pre-push suites use ``loadgroup`` so their
-    shared browser marker forms one work unit. Browser-free parallel suites use
-    ``worksteal``. Serial suites emit no xdist arguments. Precommit exclusions
-    remain repository policy and belong with suite selection.
+    Browser-containing full suites use ``loadgroup`` so their shared browser
+    marker forms one work unit. The pre-push browser phase runs separately and
+    serially, while its pooled phase uses ``worksteal``. Serial suites emit no
+    xdist arguments. Precommit exclusions remain repository policy and belong
+    with suite selection.
 
     Pseudocode
     ----------
-    - set distribution = loadgroup for full and pre-push; otherwise worksteal
+    - set distribution = loadgroup for full; otherwise worksteal
     - set pytest_arguments = common arguments for jobs and distribution
     - if name is precommit:
       - set pytest_arguments = arguments plus configured deselections
@@ -1480,7 +1490,7 @@ def _suite_pytest_args(
       why:
         constructs: "Builds the common pytest argument list extended by this suite."
     """
-    if name in {"full", "pre-push"}:
+    if name == "full":
         distribution = "loadgroup"
     else:
         distribution = "worksteal"
@@ -1815,9 +1825,9 @@ def _pytest_phase_command(
       - if task is validators:
         - set phase_inputs = validator arguments and targets
       - else:
-        - if task is performance:
-          - set pytest_arguments = serial performance arguments
-          - set targets = performance targets
+      - if task is browser or performance:
+          - set pytest_arguments = serial arguments
+          - set targets = selected phase targets
         - else:
           - raise ValueError
     - if task includes validators:
@@ -1851,6 +1861,9 @@ def _pytest_phase_command(
     elif task_id == "tests:performance":
         pytest_args = _pytest_args(verbose=verbose, jobs=1)
         targets = sorted(PERFORMANCE_TESTS)
+    elif task_id == "tests:browser":
+        pytest_args = _pytest_args(verbose=verbose, jobs=1)
+        targets = sorted(CHROME_TESTS)
     else:
         raise ValueError(f"not a pytest phase: {task_id}")
     if task_id in {"combined", "validators"}:
@@ -2281,7 +2294,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument(
         "--task-id",
-        choices=("validators", "tests:shared", "tests:performance"),
+        choices=("validators", "tests:shared", "tests:browser", "tests:performance"),
         help=argparse.SUPPRESS,
     )
     parser.add_argument("--task-cache-dir", type=Path, help=argparse.SUPPRESS)

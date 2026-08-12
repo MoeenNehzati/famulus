@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from copy import deepcopy
-from functools import cache
 from pathlib import Path
 
 import jsonschema
@@ -21,9 +20,12 @@ def _load(name: str) -> dict:
     return json.loads((SCHEMA_ROOT / name).read_text(encoding="utf-8"))
 
 
-@cache
 def _validator(name: str = "schema.json") -> jsonschema.Draft7Validator:
-    """Reuse immutable schema validators while documents remain per-test."""
+    """Build a validator with a fresh legacy resolver for each test use.
+
+    RefResolver tracks resolution scope internally, so sharing it through a
+    cached validator makes later fragment validation depend on test order.
+    """
 
     schema = _load(name)
     store = {

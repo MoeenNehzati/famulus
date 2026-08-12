@@ -127,6 +127,8 @@ def test_session_env_keeps_a_usable_inherited_runtime_dir(monkeypatch, tmp_path)
     assert env["DBUS_SESSION_BUS_ADDRESS"] == f"unix:path={runtime}/bus"
 
 
+# famulus-skip: category=platform-contract; reason=systemd unit PATH rendering is a POSIX contract; alternate=Windows scheduler path tests cover native command resolution
+@pytest.mark.skipif(os.name == "nt", reason="systemd PATH contract")
 def test_job_search_dirs_match_the_units_own_path():
     """The checker's search path and the unit's PATH= must not drift apart.
 

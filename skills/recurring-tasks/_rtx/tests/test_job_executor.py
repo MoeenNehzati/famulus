@@ -447,7 +447,12 @@ def test_run_job_leaves_the_in_flight_marker_when_the_executor_is_killed(tmp_pat
     surviving marker the health check reads the job as healthy while it never
     completed.
     """
-    jobs_file = _write_jobs_file(tmp_path, command="/bin/sleep 300")
+    jobs_file = _write_jobs_file(
+        tmp_path,
+        command=json.dumps(
+            f'"{sys.executable}" -c "import time; time.sleep(300)"'
+        ),
+    )
     log_dir = tmp_path / "logs"
     runner = tmp_path / "runner.py"
     runner.write_text(
@@ -476,7 +481,12 @@ def test_run_job_leaves_the_in_flight_marker_when_the_executor_is_killed(tmp_pat
 
 
 def test_run_job_kills_and_records_a_job_that_exceeds_its_timeout(tmp_path, monkeypatch):
-    jobs_file = _write_jobs_file(tmp_path, command="/bin/sleep 60")
+    jobs_file = _write_jobs_file(
+        tmp_path,
+        command=json.dumps(
+            f'"{sys.executable}" -c "import time; time.sleep(60)"'
+        ),
+    )
     log_dir = tmp_path / "logs"
     monkeypatch.setattr(job_executor, "JOB_TIMEOUT_SECONDS", 1)
 

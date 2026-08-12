@@ -13,6 +13,7 @@ repo state.
 from __future__ import annotations
 
 import io
+import os
 import subprocess
 import sys
 import tempfile
@@ -423,13 +424,20 @@ class SetupSymlinksTests(unittest.TestCase):
             claude_home = home / "claude"
             codex_home = home / "codex"
 
-            output = self.capture_run(
-                repo_root=repo_root,
-                home=home,
-                claude_home=claude_home,
-                codex_home=codex_home,
-                dry_run=False,
-            )
+            with mock.patch.dict(
+                os.environ,
+                {
+                    "GIT_DIR": str(ROOT_DIR / ".git"),
+                    "GIT_WORK_TREE": str(ROOT_DIR),
+                },
+            ):
+                output = self.capture_run(
+                    repo_root=repo_root,
+                    home=home,
+                    claude_home=claude_home,
+                    codex_home=codex_home,
+                    dry_run=False,
+                )
 
             self.assertIn("not a git checkout; skipping git hooks setup", output)
 

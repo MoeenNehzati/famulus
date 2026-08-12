@@ -148,6 +148,8 @@ def _validate(repo_root: Path, graph: object | None) -> list[str]:
             continue
 
         if len(parts) >= 4 and parts[2] == RTX_DIR_NAME:
+            if any(part in EXEMPT_RTX_DIRNAMES for part in parts[3:-1]):
+                continue
             if _registered_child_artifact(path, graph):
                 continue
             errors.extend(_validate_rtx_path(path, rel_path))

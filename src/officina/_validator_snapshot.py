@@ -691,11 +691,13 @@ def _capture_repository_snapshot(repo_root: Path) -> _RepositorySnapshot:
             "\tbare = false\n"
             "\tlogallrefupdates = false\n",
             encoding="utf-8",
+            newline="",
         )
         common_objects = _source_git_common_dir(repo_root) / "objects"
         (snapshot_git_dir / "objects" / "info" / "alternates").write_text(
             f"{common_objects}\n",
             encoding="utf-8",
+            newline="",
         )
         head_after_result = _run_source_git(
             repo_root,
@@ -722,11 +724,13 @@ def _capture_repository_snapshot(repo_root: Path) -> _RepositorySnapshot:
             (snapshot_git_dir / "HEAD").write_text(
                 f"{head_commit}\n",
                 encoding="ascii",
+                newline="",
             )
         else:
             (snapshot_git_dir / "HEAD").write_text(
                 "ref: refs/heads/validator-unborn\n",
                 encoding="ascii",
+                newline="",
             )
         return _RepositorySnapshot(
             snapshot_root,
@@ -843,6 +847,7 @@ def _build_isolated_git_dir(
         (isolated_git_dir / "HEAD").write_text(
             "ref: refs/heads/validator-mirror\n",
             encoding="utf-8",
+            newline="",
         )
         (isolated_git_dir / "config").write_text(
             "[core]\n"
@@ -851,6 +856,7 @@ def _build_isolated_git_dir(
             "\tbare = false\n"
             "\tlogallrefupdates = false\n",
             encoding="utf-8",
+            newline="",
         )
         shutil.copy2(snapshot.index_path, isolated_git_dir / "index")
         for shared_index in snapshot.git_dir.glob("sharedindex.*"):

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import importlib
 from pathlib import Path
 
@@ -159,9 +158,7 @@ def test_rejects_relative_config_path(tmp_path: Path) -> None:
     module = _repository_configuration_module()
 
     with pytest.raises(module.RepositoryConfigurationError, match="absolute"):
-        module.load_repository_configuration(
-            Path(os.path.relpath(repository / "officina.toml", Path.cwd()))
-        )
+        module.load_repository_configuration(Path("relative/officina.toml"))
 
 
 def test_rejects_wrong_config_filename(tmp_path: Path) -> None:

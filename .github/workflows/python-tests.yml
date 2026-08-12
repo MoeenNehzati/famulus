@@ -8,10 +8,25 @@ on:
 
 jobs:
   test:
+    name: test (${{ matrix.os }}, ${{ matrix.task }})
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            task: combined
+          - os: macos-latest
+            task: combined
+          - os: windows-latest
+            task: validators
+            jobs: 4
+          - os: windows-latest
+            task: 'tests:shared'
+            jobs: 4
+          - os: windows-latest
+            task: 'tests:performance'
+            jobs: 4
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -34,21 +49,33 @@ jobs:
         run: npm install -g @anthropic-ai/claude-code @openai/codex
 
       - name: Run repository checks
+        if: matrix.task == 'combined'
         # Retain the compatibility alias until the phased default is certified
         # on every matrix OS; it intentionally selects no alternate code path.
         run: python3 repo_checks.py --suite full --verbose --sequential
 
+      - name: Run repository check shard
+        if: matrix.task != 'combined'
+        run: python3 repo_checks.py --suite full --task-id "${{ matrix.task }}" --verbose --jobs "${{ matrix.jobs }}"
+
       - name: Run portability sentinel
+        if: matrix.task == 'combined' || matrix.task == 'tests:shared'
         run: python3 repo_checks.py --suite portability --verbose
 
       - name: Run native keyring smoke
-        if: always() && (matrix.os == 'macos-latest' || matrix.os == 'windows-latest')
+        if: >-
+          always() &&
+          ((matrix.os == 'macos-latest' && matrix.task == 'combined') ||
+          (matrix.os == 'windows-latest' && matrix.task == 'tests:performance'))
         env:
           FAMULUS_REQUIRE_NATIVE_KEYRING: '1'
         run: python3 -m pytest -q tests/test_officina_secret_store.py::test_default_backend_native_roundtrip_when_available
 
       - name: Run native recurring scheduler smoke
-        if: always() && (matrix.os == 'macos-latest' || matrix.os == 'windows-latest')
+        if: >-
+          always() &&
+          ((matrix.os == 'macos-latest' && matrix.task == 'combined') ||
+          (matrix.os == 'windows-latest' && matrix.task == 'tests:performance'))
         env:
           FAMULUS_RUN_SCHEDULER_SMOKE: '1'
         run: python3 -m pytest -q skills/recurring-tasks/_rtx/tests/test_scheduler_live_smoke.py

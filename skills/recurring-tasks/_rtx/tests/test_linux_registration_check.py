@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import sys
+import os
 from pathlib import Path
+
+import pytest
 
 SKILL_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(SKILL_DIR.parents[2] / "src"))
@@ -46,6 +49,8 @@ def test_reports_missing_service(tmp_path):
     assert reason == "my-job: service unit missing"
 
 
+# famulus-skip: category=platform-contract; reason=systemd unit text uses POSIX paths and newlines; alternate=Windows registration drift tests cover the native scheduler backend
+@pytest.mark.skipif(os.name == "nt", reason="systemd unit contract")
 def test_detects_service_and_timer_drift(tmp_path):
     backend = LinuxScheduleBackend()
     context = _context(tmp_path)

@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 import sys
 from collections.abc import Mapping
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = REPO_ROOT / "src"
@@ -231,7 +231,7 @@ def _iter_skill_markdown(repo_root: Path):
         if not path.is_dir() or path.name == ".system":
             continue
         for md_path in sorted(path.rglob("*.md")):
-            rel_path = md_path.relative_to(repo_root)
+            rel_path = PurePosixPath(md_path.relative_to(repo_root).as_posix())
             if any(part in _EXCLUDED_PARTS for part in rel_path.parts):
                 continue
             yield md_path, rel_path

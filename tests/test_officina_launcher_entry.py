@@ -194,6 +194,8 @@ def test_main_injects_repository_config_from_v2_pointer(tmp_path, monkeypatch):
     ]
 
 
+# famulus-skip: category=platform-contract; reason=the deployed stable launcher is a POSIX executable; alternate=Windows launcher contract tests cover native batch launchers
+@pytest.mark.skipif(os.name == "nt", reason="POSIX launcher execution")
 def test_deployed_stable_launcher_runs_an_installed_dispatcher_without_pythonpath(
     tmp_path,
 ):

@@ -1017,7 +1017,7 @@ class TestNestedModuleMigrationContract:
             b'REPO_ROOT\n    / "validators"\n    / "skill"\n'
             in plan.planned_files[
                 "tests/validate_blueprint_relationships.py"
-            ]
+            ].replace(b"\r\n", b"\n")
         )
         assert (
             b"validators/skill/dispatch_caller_module.py"
@@ -1795,7 +1795,7 @@ class TestNestedModuleMigrationContract:
 
         with pytest.raises(
             _api().NestedModuleMigrationError,
-            match="certificate history.*regular|symlink|confined",
+            match="certificate history.*regular|symlink|confined|tracked input",
         ):
             _api().build_nested_module_migration(repository.root)
 
@@ -1819,7 +1819,7 @@ class TestNestedModuleMigrationContract:
 
         with pytest.raises(
             _api().NestedModuleMigrationError,
-            match="validator.*regular|symlink|confined",
+            match="validator.*regular|symlink|confined|tracked input",
         ):
             _api().build_nested_module_migration(repository.root)
 
@@ -2257,7 +2257,13 @@ class TestNestedModuleMigrationContract:
         repository = _fixture_repository(tmp_path)
         probe = repository.root / "skills/skill-maker/validators/probe.py"
         probe.chmod(0o755)
-        _commit(repository, "preserve executable validator mode")
+        repository.git("add", "-A")
+        repository.git(
+            "update-index",
+            "--chmod=+x",
+            "skills/skill-maker/validators/probe.py",
+        )
+        repository.git("commit", "-qm", "preserve executable validator mode")
         plan = _api().build_nested_module_migration(repository.root)
         dry_run = plan.render_manifest()
 
@@ -2525,7 +2531,9 @@ class TestNestedModuleMigrationContract:
         migrated = plan.planned_files[
             "skills/producer/_rtx/tests/test_runtime.py"
         ]
-        assert b"RTX = Path(__file__).parent.parent\n" in migrated
+        assert b"RTX = Path(__file__).parent.parent\n" in migrated.replace(
+            b"\r\n", b"\n"
+        )
 
     def test_git_index_mode_is_authoritative_when_filesystem_mode_is_unreliable(
         self,
@@ -2533,8 +2541,16 @@ class TestNestedModuleMigrationContract:
     ) -> None:
         repository = _fixture_repository(tmp_path)
         runtime = repository.root / "skills/producer/_rtx/runtime.py"
-        runtime.chmod(0o755)
-        _commit(repository, "executable runtime")
+        initial_mode = repository.git(
+            "ls-files", "--stage", "--", "skills/producer/_rtx/runtime.py"
+        ).stdout.split(maxsplit=1)[0]
+        if initial_mode == b"100755":
+            repository.git(
+                "update-index", "--chmod=-x", "skills/producer/_rtx/runtime.py"
+            )
+            repository.git("commit", "-qm", "normalize runtime mode")
+        repository.git("update-index", "--chmod=+x", "skills/producer/_rtx/runtime.py")
+        repository.git("commit", "-qm", "executable runtime")
         repository.git("config", "core.filemode", "false")
         runtime.chmod(0o644)
         assert repository.git("status", "--porcelain=v1", "-z").stdout == b""
