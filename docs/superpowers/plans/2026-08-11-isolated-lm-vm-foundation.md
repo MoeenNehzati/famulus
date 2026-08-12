@@ -1,5 +1,8 @@
 # Isolated LM VM Foundation Implementation Plan
 
+Status: completed and live-accepted on 2026-08-11 America/New_York
+(2026-08-12 UTC).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Create and manually validate a disposable, Famulus-free Ubuntu VM from a verified cloud image using direct QEMU/KVM.
@@ -36,6 +39,7 @@ This plan implements the first independently testable slice of Workstream 1: hos
 - `scripts/isolated-lm-vm.py` — thin executable repository entrypoint.
 - `tests/test_isolated_lm_*.py` — unit and orchestration-contract coverage with no live virtualization requirement.
 - `docs/isolated-lm-testing.md` — operator commands, state layout, trust boundary, and manual acceptance procedure.
+- `test_support/isolated_lm/README.md` — colocated host requirements and initial setup.
 
 ---
 
@@ -566,7 +570,7 @@ git commit -m "docs: add isolated VM operator workflow"
 - Consumes: the supported CLI, Ubuntu package manager, KVM device, and internet access to Ubuntu cloud images.
 - Produces: one stopped run whose manifest proves verified image acquisition, KVM launch, cloud-init completion, SSH access, resource allocation, and bounded shutdown.
 
-- [ ] **Step 1: Obtain explicit approval and install only the approved packages**
+- [x] **Step 1: Obtain explicit approval and install only the approved packages**
 
 Run outside the Codex sandbox:
 
@@ -577,7 +581,7 @@ sudo apt install cpu-checker qemu-system-x86 qemu-utils cloud-image-utils ubuntu
 
 Expected: all packages install successfully. Do not install libvirt, Docker, or optional virtualization managers.
 
-- [ ] **Step 2: Verify KVM and create host-only harness credentials**
+- [x] **Step 2: Verify KVM and create host-only harness credentials**
 
 Run:
 
@@ -591,7 +595,7 @@ ssh-keygen -t ed25519 -N '' -f "$ISOLATED_LM_STATE/keys/isolated-lm"
 
 Expected: `kvm-ok` reports acceleration available; preflight emits `ok: true`. If `/dev/kvm` is permission-denied, add only the invoking user to the `kvm` group, re-login, and repeat. Do not loosen device permissions globally.
 
-- [ ] **Step 3: Acquire the verified source and prepare one run**
+- [x] **Step 3: Acquire the verified source and prepare one run**
 
 Run:
 
@@ -602,7 +606,7 @@ Run:
 
 Expected: signed checksums verify, the source digest matches, and `manual-001/run.json` reports `prepared`.
 
-- [ ] **Step 4: Boot, reach, and inspect the clean guest**
+- [x] **Step 4: Boot, reach, and inspect the clean guest**
 
 Run:
 
@@ -618,14 +622,14 @@ Through the harness `exec` command, record outputs for:
 ./scripts/isolated-lm-vm.py exec --state-root "$ISOLATED_LM_STATE" --run-id manual-001 --ssh-private-key "$ISOLATED_LM_STATE/keys/isolated-lm" -- uname -a
 ./scripts/isolated-lm-vm.py exec --state-root "$ISOLATED_LM_STATE" --run-id manual-001 --ssh-private-key "$ISOLATED_LM_STATE/keys/isolated-lm" -- python3 --version
 ./scripts/isolated-lm-vm.py exec --state-root "$ISOLATED_LM_STATE" --run-id manual-001 --ssh-private-key "$ISOLATED_LM_STATE/keys/isolated-lm" -- dpkg-query -W cloud-init openssh-server ca-certificates curl python3
-./scripts/isolated-lm-vm.py exec --state-root "$ISOLATED_LM_STATE" --run-id manual-001 --ssh-private-key "$ISOLATED_LM_STATE/keys/isolated-lm" -- find / -xdev -iname '*famulus*'
-./scripts/isolated-lm-vm.py exec --state-root "$ISOLATED_LM_STATE" --run-id manual-001 --ssh-private-key "$ISOLATED_LM_STATE/keys/isolated-lm" -- find / -xdev -iname '*officina*'
+./scripts/isolated-lm-vm.py exec --state-root "$ISOLATED_LM_STATE" --run-id manual-001 --ssh-private-key "$ISOLATED_LM_STATE/keys/isolated-lm" -- sh -c '! command -v famulus && ! command -v officina && ! command -v codex'
+./scripts/isolated-lm-vm.py exec --state-root "$ISOLATED_LM_STATE" --run-id manual-001 --ssh-private-key "$ISOLATED_LM_STATE/keys/isolated-lm" -- sudo -n find / -xdev '(' -iname '*famulus*' -o -iname '*officina*' ')' ! -path /home/famulus-test -print
 ./scripts/isolated-lm-vm.py exec --state-root "$ISOLATED_LM_STATE" --run-id manual-001 --ssh-private-key "$ISOLATED_LM_STATE/keys/isolated-lm" -- mount
 ```
 
 Expected: cloud-init is complete; declared packages exist; there is no Famulus/Officina state; no host checkout is mounted; `run.json` reports `ready` with the exact QEMU argument vector and SSH port.
 
-- [ ] **Step 5: Stop the guest and verify bounded cleanup state**
+- [x] **Step 5: Stop the guest and verify bounded cleanup state**
 
 Run:
 
@@ -636,7 +640,7 @@ Run:
 
 Expected: no matching QEMU process remains; the manifest reports `stopped`; evidence files remain; the overlay is retained for review rather than silently deleted.
 
-- [ ] **Step 6: Run the repository verification checkpoint**
+- [x] **Step 6: Run the repository verification checkpoint**
 
 Run:
 
@@ -648,6 +652,43 @@ git diff --check
 
 Expected: all commands PASS. Report the pre-existing full-suite baseline failures separately; do not attribute them to this work without a reproducing focused test.
 
-- [ ] **Step 7: Review the live evidence before continuing**
+- [x] **Step 7: Review the live evidence before continuing**
 
 Review `run.json`, the source-image record, serial log, process absence, guest package output, mount output, and forbidden-state scan. Only after this review passes, write the follow-up Codex-authentication and baseline-sealing implementation plan.
+
+#### Live acceptance record
+
+The final acceptance run used run ID `acceptance-20260811` on 2026-08-11
+America/New_York (2026-08-12 UTC). It verified:
+
+- all five approved host packages at their recorded installed versions, all 12
+  preflight checks, successful `kvm-ok`, and read/write `/dev/kvm` access;
+- authenticated acquisition of the Ubuntu image with SHA-256
+  `0533b0655c32e68b31d792ecd6ccfca95abdbc536c4446874fe0513bd4140ffe`;
+- a 4-vCPU, 8-GiB, 40-GiB guest reaching `ready`, with cloud-init reporting
+  `done` and no errors;
+- the declared guest packages, outbound HTTPS, the absence of Famulus,
+  Officina, Codex, and the maintainer checkout, and no host filesystem mount;
+- one SSH listener bound only to `127.0.0.1`, with one exact QEMU process;
+- guest exit-status propagation, independent stdout/stderr truncation, and the
+  execution deadline; and
+- bounded shutdown, lifecycle `stopped`, no remaining listener or exact QEMU
+  process, and retained manifest, overlay, seed, serial log, known-hosts, and
+  signed source evidence.
+
+The first final-acceptance acquisition exposed a Python 3.13 integration defect:
+`HTTPResponse` detaches its socket after a complete small read, and the EOF
+iteration was rejected as if it were an unbounded live response. A focused
+RED/GREEN regression now permits the missing socket only when urllib reports the
+response already closed. The same live acquisition then succeeded.
+
+#### Subsequent public-package trial
+
+A separate disposable run, `package-20260811`, tested the public
+`famulus@nullkit` `0.1.0` package pinned to marketplace commit
+`0f9b98e0d55f2f55e2c8d40b8ad86fdcdc78e41e`. Codex marketplace and plugin
+installation passed, but the package's documented direct scaffold and its full
+non-interactive Phase 1 installer both exited 1 on mandatory certificate-signing
+material. See `docs/isolated-lm-testing.md` for the evidence and root cause.
+This is a package-layer blocker for the broader Workstream 1 install criterion;
+it does not change this plan's completed VM-foundation verdict.

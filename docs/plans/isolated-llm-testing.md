@@ -74,6 +74,15 @@ clone is discarded after evidence and cleanup status are recorded.
 **Outcome:** A single command or short documented procedure creates a disposable
 test VM from a known baseline.
 
+The direct-QEMU VM-foundation slice was implemented and live-accepted on
+2026-08-11 America/New_York (2026-08-12 UTC). It covers verified source-image
+acquisition, disposable overlays and NoCloud seeds, host preflight, bounded VM
+lifecycle control, loopback-only SSH, guest inspection, and retained evidence.
+The unchecked items below remain real scope: the guest is not yet a sealed,
+Codex-authenticated baseline, and candidate injection, scenario execution, and
+automated guest contamination checks are not implemented. See
+`docs/isolated-lm-testing.md` for the accepted foundation boundary and evidence.
+
 ### Initial implementation profile
 
 The first supported configuration is an Ubuntu 25.10 x86-64 host running an
@@ -152,6 +161,15 @@ one of these only through a later design change tied to a verified requirement.
   dependencies.
 - [ ] Install Famulus-owned dependencies through the documented Famulus path or
   test them as explicit public preconditions rather than hiding them in the image.
+  A credential-free public-package trial on 2026-08-11 installed Codex CLI
+  `0.147.0` and pinned `famulus@nullkit` `0.1.0` to marketplace commit
+  `0f9b98e0d55f2f55e2c8d40b8ad86fdcdc78e41e`. Marketplace/plugin installation
+  succeeded, but both the README's direct scaffold command and the full
+  non-interactive Phase 1 installer exited 1 on mandatory certificate-signing
+  material. The ambient interpreter lacked `keyring`; the managed runtime's
+  headless keyring exposed only its unusable fail backend. This item remains
+  unchecked until the package provisions a usable supported secret-store path
+  and its minimum-install documentation matches its runtime prerequisite.
 - [x] Automate or document baseline creation sufficiently that it can be rebuilt
   without relying on the original maintainer's VM.
 - [ ] Authenticate the assistant host, seal the Famulus-free baseline, and

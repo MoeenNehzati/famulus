@@ -5,10 +5,10 @@ verified Ubuntu Server 24.04 LTS amd64 cloud image, creates a disposable QCOW2
 overlay and NoCloud seed, launches the guest through direct QEMU/KVM, reaches it
 through a host-loopback SSH forward, and performs bounded shutdown.
 
-Live VM acceptance is a separate checkpoint. This foundation does not install
-or authenticate Codex, seal a baseline, reject Famulus state inside a guest,
-inject a Famulus candidate or documentation bundle, run a scenario, or extract
-a sanitized report.
+The foundation's live VM acceptance is recorded below. This foundation does not
+install or authenticate Codex, seal a baseline, automatically reject Famulus
+state inside a guest, inject a Famulus candidate or documentation bundle, run a
+scenario, or extract a sanitized report.
 
 ## Supported host and packages
 
@@ -211,6 +211,111 @@ it is not a shared guest filesystem.
 - Missing, corrupt, stale, escaped, or symlinked manifest: commands fail closed
   and never repair it. Preserve the directory as evidence, inspect it manually,
   and use a new run ID. Do not make status rewrite paths or lifecycle values.
+
+## Latest live acceptance
+
+Result: **PASS for the VM-foundation scope** on 2026-08-11 America/New_York
+(2026-08-12 UTC), using run ID `acceptance-20260811`.
+
+The host had these approved package versions:
+
+```text
+cloud-image-utils          0.33-1
+cpu-checker                0.7-1.4
+qemu-system-x86            1:10.1.0+ds-5ubuntu2.7
+qemu-utils                 1:10.1.0+ds-5ubuntu2.7
+ubuntu-cloudimage-keyring  2023.11.28.1
+```
+
+Observed acceptance evidence:
+
+- all 12 preflight checks passed, including bounded `kvm-ok` and read/write
+  `/dev/kvm` access;
+- signed-source acquisition succeeded with digest
+  `0533b0655c32e68b31d792ecd6ccfca95abdbc536c4446874fe0513bd4140ffe`;
+- the guest exposed 4 vCPUs, approximately 8 GiB RAM, and a 40 GiB disk;
+- cloud-init reported `done` without errors, and the declared generic guest
+  packages were installed;
+- outbound HTTPS returned 200; the only inbound listener was the recorded SSH
+  forward on `127.0.0.1`;
+- no Famulus, Officina, or Codex executable was present, a privileged root scan
+  found no Famulus/Officina-named path after excluding the intentional
+  `/home/famulus-test` username, the maintainer checkout path was absent, and
+  the mount table contained no host filesystem;
+- a guest status 7 propagated as process status 7 with both streams preserved;
+  a 64-byte cap truncated each stream independently and recorded both flags;
+  and a one-second deadline returned `timed_out: true` with no guest exit code;
+- the run remained `ready` after adverse command probes, then bounded shutdown
+  persisted `stopped`; independent host inspection found neither the loopback
+  listener nor an exact QEMU process afterward; and
+- the run manifest, 40-GiB sparse QCOW2 overlay, seed, serial log, known-hosts,
+  signed checksums, signature, source-image record, and source image remain in
+  the explicit external state root for diagnosis.
+
+The live run also found and closed one Python 3.13 compatibility defect in
+authenticated acquisition. A complete small `HTTPResponse` read detaches its
+socket before the downloader's final EOF iteration. The downloader now accepts
+that missing socket only when urllib reports the response already closed; an
+open response still must expose a timeout-capable socket. A focused regression
+failed before the change, passed after it, and the original live acquisition
+then succeeded.
+
+This result does not certify the next-plan capabilities listed below.
+
+## Public Famulus package acceptance
+
+Result: **FAIL at the package-install layer** on 2026-08-11
+America/New_York (2026-08-12 UTC), using disposable run
+`package-20260811`. The VM foundation itself remained healthy and shut down
+cleanly.
+
+The credential-free test used:
+
+- Codex CLI `0.147.0`, installed inside the guest with OpenAI's standalone
+  Linux installer from `https://chatgpt.com/codex/install.sh`;
+- installer SHA-256
+  `ba92dd27e5c06f0d3bbc58bfa4b9cfb6599cd2742fbb1f92a2765e6c07dedb5a`;
+- public marketplace commit
+  `0f9b98e0d55f2f55e2c8d40b8ad86fdcdc78e41e` from
+  `https://github.com/MoeenNehzati/famulus.git`; and
+- `famulus@nullkit` version `0.1.0`, whose installed plugin-manifest SHA-256
+  was `6c127fbcbcbf205e9a4287e22ecfec0c883a44ac23fa9f8e3dbf9ff5d88ebd48`.
+
+Codex registered the pinned `nullkit` marketplace, listed the package, and
+installed it as enabled without requiring host credentials. The package then
+failed both relevant setup paths:
+
+1. The README's minimum direct `_install_scaffold.py --repo-root ...` command
+   exited 1. It wrote four launchers without an active managed runtime, so the
+   initial `dispatcher` and `llm-wakeup` launchers raised `FileNotFoundError`.
+   It also failed the required `certificate-signing-material` capability because
+   `keyring` was unavailable to the installer process.
+2. The full non-interactive `_phase_entry.py --non-interactive --no-dev-mode
+   --no-optional-deps` command bootstrapped managed `uv 0.11.29`, built and
+   activated the managed runtime, and repaired the launchers, but still exited
+   1 on the same mandatory certificate capability.
+
+The failure is reproducible and localized. Certificate provisioning runs in
+Ubuntu's ambient Python, where `cryptography` is present but `keyring` is not.
+The newly built managed runtime does contain `keyring`, but a headless Ubuntu
+Server exposes only `keyring.backends.fail.Keyring` with priority zero, which is
+not a usable secret backend. Installing an ambient dependency or forcing an
+insecure fallback was deliberately not used to hide this package defect.
+
+After the failed full install, the managed `dispatcher` and `llm-wakeup` were
+operational; dispatcher resolved a real list-manager interface from the
+installed plugin, with certification status unavailable. The manifest-based
+uninstaller then removed all four generated launchers and the managed shell
+block, retaining only the documented worker directory. Codex removed the
+plugin and marketplace successfully. The managed runtime remained, consistent
+with the documented rule that installed Python dependencies are not reversed.
+No exact QEMU process or SSH listener remained after bounded VM shutdown.
+
+Therefore the public package does not yet satisfy the broader plan's
+from-scratch installation requirement on the declared clean Ubuntu Server
+baseline. Fixing certificate provisioning and reconciling the README's direct
+scaffold command with its managed-runtime prerequisite are package work, not VM
+foundation work.
 
 ## Next-plan boundary
 

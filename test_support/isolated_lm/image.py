@@ -453,6 +453,8 @@ def _set_response_read_timeout(response: object, seconds: float) -> None:
     ----------
     - set timeout_setter = direct response seam or urllib buffered response socket seam
     - if timeout_setter is unavailable:
+      - if response is already closed:
+        - return because the next read is the local end-of-file result
       - raise unsupported bounded response
     - set read_timeout = applied through timeout_setter
     - return after timeout configuration
@@ -470,6 +472,9 @@ def _set_response_read_timeout(response: object, seconds: float) -> None:
     sock = getattr(raw, "_sock", None)
     setter = getattr(sock, "settimeout", None)
     if not callable(setter):
+        is_closed = getattr(response, "isclosed", None)
+        if callable(is_closed) and is_closed():
+            return
         raise RuntimeError("network response does not expose a bounded read socket")
     setter(seconds)
 

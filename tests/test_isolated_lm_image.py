@@ -286,6 +286,60 @@ def test_download_uses_explicit_connect_and_read_timeouts(
     assert response.timeouts == [3, 3]
 
 
+def test_download_accepts_urllib_socket_detachment_after_complete_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Treat Python urllib's post-EOF socket detachment as completed input."""
+    timeouts: list[float] = []
+
+    class Socket:
+        def settimeout(self, seconds: float) -> None:
+            timeouts.append(seconds)
+
+    class Raw:
+        _sock = Socket()
+
+    class Buffer:
+        raw = Raw()
+
+    class ClosingResponse:
+        def __init__(self) -> None:
+            self.fp: Buffer | None = Buffer()
+            self._returned_payload = False
+
+        def __enter__(self) -> "ClosingResponse":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def geturl(self) -> str:
+            return IMAGE_URL
+
+        def isclosed(self) -> bool:
+            return self.fp is None
+
+        def read(self, size: int = -1) -> bytes:
+            del size
+            if self._returned_payload:
+                return b""
+            self._returned_payload = True
+            self.fp = None
+            return b"payload"
+
+    class ClosingOpener:
+        def open(self, url: str, timeout: float) -> ClosingResponse:
+            del url, timeout
+            return ClosingResponse()
+
+    monkeypatch.setattr(image_module, "build_opener", lambda handler: ClosingOpener())
+
+    destination = tmp_path / IMAGE_FILENAME
+    assert download_atomic(IMAGE_URL, destination) == destination.resolve()
+    assert destination.read_bytes() == b"payload"
+    assert timeouts == [30]
+
+
 def test_download_total_deadline_is_checked_between_chunks_and_cleans_partial(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
