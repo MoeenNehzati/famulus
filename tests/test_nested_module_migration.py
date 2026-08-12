@@ -2265,6 +2265,11 @@ class TestNestedModuleMigrationContract:
             "skills/skill-maker/validators/probe.py",
         )
         repository.git("commit", "-qm", "preserve executable validator mode")
+        # Keep the committed index mode authoritative on filesystems that cannot
+        # reflect Git's executable bit, including Windows checkout volumes.
+        repository.git("config", "core.filemode", "false")
+        probe.chmod(0o644)
+        assert repository.git("status", "--porcelain=v1", "-z").stdout == b""
         plan = _api().build_nested_module_migration(repository.root)
         dry_run = plan.render_manifest()
 
