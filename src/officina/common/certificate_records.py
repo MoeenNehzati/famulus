@@ -438,7 +438,10 @@ def _validated_public_state(
 
     root = Path(public_key_root).absolute()
     try:
-        entries = read_regular_directory_entries(root)
+        try:
+            entries = read_regular_directory_entries(root)
+        except FileNotFoundError:
+            return None
         if not entries:
             return None
         by_name = {entry.name: entry.data for entry in entries}
@@ -463,8 +466,6 @@ def _validated_public_state(
         )
         _decode_private_key(secret, key_id)
         return key_id, retained
-    except FileNotFoundError:
-        return None
     except CertificateStateConflict:
         raise
     except (AtomicWriteError, OSError, TypeError, ValueError) as exc:

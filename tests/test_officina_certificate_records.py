@@ -347,6 +347,52 @@ def test_legacy_migration_rejects_intermediate_linked_components(
     assert backend.snapshot() == before
 
 
+def test_legacy_migration_rejects_child_disappearing_after_enumeration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = _state_paths(tmp_path)
+    assert paths.legacy_public_key_root is not None
+    backend = MemorySecretBackend()
+    paths.legacy_public_key_root.mkdir(parents=True)
+    load_or_create_certificate_signing_key(
+        paths.legacy_public_key_root,
+        secret_backend=backend,
+    )
+    before = backend.snapshot()
+    real_open = atomic_files._secure_open
+
+    def disappear_public_key(
+        path: str | Path,
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        if (
+            dir_fd is not None
+            and str(path).endswith(".pub")
+            and not flags & os.O_DIRECTORY
+        ):
+            raise FileNotFoundError(path)
+        return real_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(atomic_files, "_secure_open", disappear_public_key)
+
+    with pytest.raises(
+        certificate_records.CertificateStateConflict,
+        match="disappeared",
+    ):
+        certificate_records.migrate_legacy_certificate_state(
+            tmp_path / "plugin-cache" / "famulus",
+            paths,
+            secret_backend=backend,
+        )
+
+    assert backend.snapshot() == before
+    assert not paths.public_key_root.exists()
+
+
 # famulus-skip: category=platform-contract; reason=requires native Win32 junction behavior; alternate=POSIX intermediate-symlink regression runs on non-Windows hosts
 @pytest.mark.skipif(sys.platform != "win32", reason="native Windows contract")
 @pytest.mark.parametrize("linked_state", ["legacy", "stable"])

@@ -686,11 +686,19 @@ def _posix_read_regular_directory_entries(
                 raise AtomicWriteError(
                     f"invalid confined directory entry: {name!r}"
                 )
-            child = _secure_open(
-                name,
-                os.O_RDONLY | os.O_NOFOLLOW,
-                dir_fd=descriptor,
-            )
+            try:
+                child = _secure_open(
+                    name,
+                    os.O_RDONLY
+                    | os.O_NOFOLLOW
+                    | os.O_NONBLOCK
+                    | getattr(os, "O_CLOEXEC", 0),
+                    dir_fd=descriptor,
+                )
+            except FileNotFoundError as exc:
+                raise AtomicWriteError(
+                    f"confined directory entry disappeared: {name}"
+                ) from exc
             try:
                 metadata = os.fstat(child)
                 if not stat.S_ISREG(metadata.st_mode):
@@ -970,6 +978,7 @@ _WINDOWS_APIS: tuple[object, object, object] | None = None
 # FileRenameInfoEx and FILE_ID_INFO; LockFileEx and FlushFileBuffers; and
 # handle-based GetSecurityInfo/SetSecurityInfo.
 _WIN_SHARE_ALL = 0x1 | 0x2 | 0x4
+_WIN_LIST_DIRECTORY = 0x1
 _WIN_DIR_ACCESS = 0x20 | 0x80 | 0x00100000
 _WIN_READ_ACCESS = 0x1 | 0x80 | 0x00020000 | 0x00100000
 _WIN_MUTATE_ACCESS = (
@@ -1105,7 +1114,12 @@ def _windows_validate_handle(
         raise AtomicWriteError(f"native handle is not a {kind}: {display}")
 
 
-def _windows_open_root(root: Path, *, create: bool = False) -> int:
+def _windows_open_root(
+    root: Path,
+    *,
+    create: bool = False,
+    final_access: int | None = None,
+) -> int:
     """Walk a native root from its volume/share handle without reparse traversal."""
     absolute = Path(root).absolute()
     anchor = Path(absolute.anchor)
@@ -1129,11 +1143,16 @@ def _windows_open_root(root: Path, *, create: bool = False) -> int:
     value = int(handle)
     try:
         _windows_validate_handle(value, expect_directory=True, display=anchor)
-        for component in absolute.parts[1:]:
+        components = absolute.parts[1:]
+        for index, component in enumerate(components):
             next_handle, _information = _windows_open_validated(
                 value,
                 component,
-                access=_WIN_DIR_ACCESS | 0x00020000,
+                access=(
+                    final_access
+                    if final_access is not None and index == len(components) - 1
+                    else _WIN_DIR_ACCESS | 0x00020000
+                ),
                 disposition=3 if create else 1,
                 options=0x1 | 0x20,
                 directory=True,
@@ -1455,20 +1474,28 @@ def _windows_read_regular_directory_entries(
 ) -> tuple[ConfinedRegularFile, ...]:
     """Read files relative to one retained no-reparse directory handle."""
 
-    root_handle = _windows_open_root(root)
+    root_handle = _windows_open_root(
+        root,
+        final_access=_WIN_DIR_ACCESS | 0x00020000 | _WIN_LIST_DIRECTORY,
+    )
     try:
         entries: list[ConfinedRegularFile] = []
         for name in _windows_directory_entry_names(root_handle):
             child = -1
             try:
-                child, _information = _windows_open_validated(
-                    root_handle,
-                    name,
-                    access=_WIN_READ_ACCESS,
-                    disposition=1,
-                    options=_WIN_FILE_OPTIONS,
-                    directory=False,
-                )
+                try:
+                    child, _information = _windows_open_validated(
+                        root_handle,
+                        name,
+                        access=_WIN_READ_ACCESS,
+                        disposition=1,
+                        options=_WIN_FILE_OPTIONS,
+                        directory=False,
+                    )
+                except FileNotFoundError as exc:
+                    raise AtomicWriteError(
+                        f"confined directory entry disappeared: {name}"
+                    ) from exc
                 entries.append(
                     ConfinedRegularFile(
                         name=name,

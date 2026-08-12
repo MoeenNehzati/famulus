@@ -91,6 +91,74 @@ def _windows_native_acl_is_restrictive(path: Path, allowed_root: Path) -> bool:
             atomic_files._windows_close_chain(parents)
 
 
+def test_windows_directory_enumeration_requests_list_directory_access(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Model NtQueryDirectoryFile rejecting a root without FILE_LIST_DIRECTORY."""
+
+    closed: list[int] = []
+
+    def open_root(
+        _root: Path,
+        *,
+        create: bool = False,
+        final_access: int | None = None,
+    ) -> int:
+        assert not create
+        if final_access is None or not final_access & 0x1:
+            raise PermissionError("simulated STATUS_ACCESS_DENIED")
+        return 47
+
+    monkeypatch.setattr(atomic_files, "_windows_open_root", open_root)
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_directory_entry_names",
+        lambda _handle: (),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_close_handle",
+        closed.append,
+    )
+
+    assert atomic_files._windows_read_regular_directory_entries(tmp_path) == ()
+    assert closed == [47]
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_directory_enumeration_rejects_fifo_without_blocking(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "public-keys"
+    root.mkdir()
+    fifo = root / "unexpected.pub"
+    os.mkfifo(fifo)
+    outcomes: list[BaseException | tuple[object, ...]] = []
+
+    def enumerate_root() -> None:
+        try:
+            outcomes.append(atomic_files.read_regular_directory_entries(root))
+        except BaseException as exc:
+            outcomes.append(exc)
+
+    worker = threading.Thread(target=enumerate_root, daemon=True)
+    worker.start()
+    worker.join(timeout=0.5)
+    finished_promptly = not worker.is_alive()
+    if not finished_promptly:
+        # Unblock the deliberately vulnerable RED implementation so this
+        # bounded regression cannot strand a reader thread in the test run.
+        descriptor = os.open(fifo, os.O_RDWR | os.O_NONBLOCK)
+        os.close(descriptor)
+        worker.join(timeout=1)
+
+    assert finished_promptly, "FIFO classification blocked in open()"
+    assert len(outcomes) == 1
+    assert isinstance(outcomes[0], AtomicWriteError)
+    assert "not a regular file" in str(outcomes[0])
+
+
 def test_existing_final_symlink_is_rejected(tmp_path: Path) -> None:
     victim = tmp_path / "victim"
     victim.write_text("safe", encoding="utf-8")
