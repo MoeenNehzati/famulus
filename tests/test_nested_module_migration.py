@@ -2299,9 +2299,19 @@ class TestNestedModuleMigrationContract:
 
         assert candidate.manifest_bytes == dry_run
         assert candidate.commit
-        assert (
-            candidate.root / "validators/skill/probe.py"
-        ).stat().st_mode & 0o777 == 0o755
+        # famulus-raw-git: category=run-git-contract; reason=the committed candidate mode is authoritative where filesystem executable bits are unavailable
+        committed_probe = api.run_git(
+            candidate.root,
+            "ls-tree",
+            candidate.commit,
+            "--",
+            "validators/skill/probe.py",
+        ).stdout
+        assert committed_probe.split(maxsplit=1)[0] == b"100755"
+        if sys.platform != "win32":
+            assert (
+                candidate.root / "validators/skill/probe.py"
+            ).stat().st_mode & 0o777 == 0o755
         second = _api().build_nested_module_migration(candidate.root)
         assert second.is_noop
         assert second.operations == ()
