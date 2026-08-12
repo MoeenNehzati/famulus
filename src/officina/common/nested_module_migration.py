@@ -3980,6 +3980,10 @@ def _materialize(
                 "materialize nested module v5 candidate",
                 changed,
                 commit_timestamp=_DETERMINISTIC_COMMIT_DATE,
+                file_modes={
+                    Path(relative): mode
+                    for relative, mode in plan.file_mode_map.items()
+                },
             )
             _verify_committed_outputs(output, commit, plan)
             cutover = candidate_cutover_manifest(
@@ -4062,9 +4066,15 @@ def _materialize(
             cutover_manifest=cutover,
             cutover_paths=tuple(sorted(actual_paths)),
         )
-    except Exception:
+    except Exception as exc:
         if output.exists():
-            shutil.rmtree(output)
+            try:
+                shutil.rmtree(output)
+            except OSError as cleanup_error:
+                exc.add_note(
+                    "failed to remove incomplete migration candidate: "
+                    f"{cleanup_error}"
+                )
         raise
 
 

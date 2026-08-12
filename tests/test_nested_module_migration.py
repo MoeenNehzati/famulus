@@ -2253,7 +2253,9 @@ class TestNestedModuleMigrationContract:
         assert payload["manifest_sha256"] == reviewed_hash
 
     def test_materialized_candidate_is_idempotent_and_matches_dry_run(
-        self, tmp_path: Path
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         repository = _fixture_repository(tmp_path)
         probe = repository.root / "skills/skill-maker/validators/probe.py"
@@ -2270,10 +2272,30 @@ class TestNestedModuleMigrationContract:
         repository.git("config", "core.filemode", "false")
         probe.chmod(0o644)
         assert repository.git("status", "--porcelain=v1", "-z").stdout == b""
-        plan = _api().build_nested_module_migration(repository.root)
+        api = _api()
+        plan = api.build_nested_module_migration(repository.root)
         dry_run = plan.render_manifest()
+        candidate_root = tmp_path / "candidate"
+        original_run_git = api.run_git
 
-        candidate = plan.materialize(tmp_path / "candidate")
+        def initialize_without_worktree_filemodes(
+            repo_root: Path,
+            *args: str,
+            **kwargs: Any,
+        ) -> subprocess.CompletedProcess[bytes]:
+            result = original_run_git(repo_root, *args, **kwargs)
+            if Path(repo_root) == candidate_root and args == ("init", "-q"):
+                original_run_git(
+                    repo_root,
+                    "config",
+                    "core.filemode",
+                    "false",
+                )
+            return result
+
+        monkeypatch.setattr(api, "run_git", initialize_without_worktree_filemodes)
+
+        candidate = plan.materialize(candidate_root)
 
         assert candidate.manifest_bytes == dry_run
         assert candidate.commit
@@ -2287,6 +2309,35 @@ class TestNestedModuleMigrationContract:
             second.certificate_input_hashes
         )
         assert repository.git("status", "--porcelain=v1", "-z").stdout == b""
+
+    def test_failed_materialization_preserves_error_when_cleanup_fails(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        api = _api()
+        plan = api.build_nested_module_migration(
+            _fixture_repository(tmp_path).root
+        )
+        primary = api.NestedModuleMigrationError("primary candidate failure")
+
+        def fail_verification(*_args: Any, **_kwargs: Any) -> None:
+            raise primary
+
+        def fail_cleanup(_path: Path) -> None:
+            raise PermissionError("locked Git object")
+
+        monkeypatch.setattr(api, "_verify_committed_outputs", fail_verification)
+        monkeypatch.setattr(api.shutil, "rmtree", fail_cleanup)
+
+        with pytest.raises(api.NestedModuleMigrationError) as caught:
+            plan.materialize(tmp_path / "candidate")
+
+        assert caught.value is primary
+        assert any(
+            "locked Git object" in note
+            for note in getattr(caught.value, "__notes__", ())
+        )
 
     def test_planning_reads_tracked_inputs_only_from_the_captured_commit(
         self,
