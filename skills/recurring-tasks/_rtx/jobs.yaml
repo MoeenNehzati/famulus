@@ -16,7 +16,11 @@ jobs:
       - "Please try again"
 - name: daily-plan
   description: Generate or show today's daily plan, including potential-actions triage
-  command: invoke-skill daily-plan
+  # Backend named explicitly, as email-triage does. ASSISTANT_DEFAULT reaches
+  # interactive shells through the rc block, which the scheduler never reads,
+  # so invoke-skill would otherwise fall back to its built-in default and the
+  # job would run on a backend nobody chose.
+  command: ASSISTANT_DEFAULT=claude invoke-skill daily-plan
   schedule: 0 7 * * *
   enabled: true
   # daily-plan now self-reports: _plan_storage writes state/status.json with
