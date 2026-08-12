@@ -2,6 +2,7 @@
 """Regenerate host scheduler entries from jobs.yaml."""
 import os
 import sys
+import tempfile
 from pathlib import Path
 from argparse import ArgumentParser
 
@@ -74,6 +75,17 @@ def _repair_healthcheck_cron(context: ScheduleContext) -> None:
     reason to fail a scheduler sync that otherwise succeeded.
     """
     if not sys.platform.startswith("linux"):
+        return
+    # The rendered entry embeds this file's own location, so a sync running from
+    # a copy of the repository would point the user's real crontab at that copy.
+    # The repository checks run validators from a mirror under the temp
+    # directory, which is then deleted -- leaving the health check invoking a
+    # path that no longer exists and alarming every four hours about itself.
+    if SKILL_DIR.is_relative_to(Path(tempfile.gettempdir()).resolve()):
+        print(
+            "Skipped health-check cron repair: running from a temporary copy "
+            f"of the skill tree ({SKILL_DIR})."
+        )
         return
     # Imported here, not at module scope: _setup_runner imports this module,
     # so a top-level import back would be circular.

@@ -254,6 +254,12 @@ if __name__ == "__main__":
 
 def test_live_sync_repairs_the_healthcheck_cron_entry(monkeypatch, tmp_path):
     monkeypatch.setattr(unit_writer.sys, "platform", "linux")
+    # The suite itself runs from a temp mirror under the repository checks, and
+    # the repair refuses to run from one. Pin a real-looking tree so this case
+    # exercises the repair rather than the guard.
+    monkeypatch.setattr(
+        unit_writer, "SKILL_DIR", Path.home() / "not-a-temp-checkout" / "_rtx"
+    )
     calls = []
 
     def _fake_install(**kwargs):
@@ -279,6 +285,9 @@ def test_sync_survives_a_host_with_no_cron(monkeypatch, tmp_path, capsys):
     cron-less Linux host this would have taken the scheduler sync down with it.
     """
     monkeypatch.setattr(unit_writer.sys, "platform", "linux")
+    monkeypatch.setattr(
+        unit_writer, "SKILL_DIR", Path.home() / "not-a-temp-checkout" / "_rtx"
+    )
 
     def _raise(**kwargs):
         from .._setup_runner import CronUnavailableError
@@ -309,3 +318,32 @@ def _install_fake_cron_installer(monkeypatch, replacement):
     from .. import _setup_runner
 
     monkeypatch.setattr(_setup_runner, "install_healthcheck_cron", replacement)
+
+
+def test_sync_from_a_temporary_copy_leaves_the_real_crontab_alone(
+    monkeypatch, tmp_path, capsys
+):
+    """A sync running from a mirrored checkout must not touch the user's cron.
+
+    The repository checks run validators from a mirror under the temp
+    directory. Because the rendered entry embeds this file's own location, a
+    sync there rewrote the real crontab to invoke the mirror -- which is then
+    deleted, so the health check began failing every four hours by pointing at
+    a path that no longer existed, and reported it as a job problem.
+    """
+    monkeypatch.setattr(unit_writer.sys, "platform", "linux")
+    monkeypatch.setattr(
+        unit_writer, "SKILL_DIR", Path(tempfile.gettempdir()) / "mirror" / "_rtx"
+    )
+    monkeypatch.setattr(
+        unit_writer, "platform_schedule_backend", lambda: _NullBackend()
+    )
+
+    def _must_not_run(**kwargs):
+        raise AssertionError("a mirrored checkout must not rewrite the crontab")
+
+    _install_fake_cron_installer(monkeypatch, _must_not_run)
+
+    unit_writer.sync_units([], tmp_path / "units", unit_writer.LOG_DIR, live=True)
+
+    assert "temporary copy" in capsys.readouterr().out
