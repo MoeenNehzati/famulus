@@ -83,6 +83,26 @@ Codex-authenticated baseline, and candidate injection, scenario execution, and
 automated guest contamination checks are not implemented. See
 `docs/isolated-lm-testing.md` for the accepted foundation boundary and evidence.
 
+### Current delivery order
+
+The public-package trial showed that VM isolation is no longer the immediate
+blocker. Complete Workstream 1 in this order:
+
+1. [Complete Famulus installer](../superpowers/plans/2026-08-11-complete-famulus-installer.md):
+   fix fresh-install ordering, native credential-store preflight, stable
+   certificate state, transaction recovery, uninstall/purge, and automated
+   minimum/maximal install profiles.
+2. [Complete Famulus VM acceptance](../superpowers/plans/2026-08-11-complete-famulus-vm-acceptance.md):
+   add immutable candidate/docs transfer, secret stdin, supervised Secret
+   Service, scenario execution, sanitized extraction, committed-candidate
+   acceptance, and finally published-package acceptance.
+3. Authenticate and seal the reusable Famulus-free LM baseline only after the
+   package-install gate is reproducible. Continue with the general scenario
+   protocol and test matrix after that baseline exists.
+
+The audited design governing both plans is
+[Complete Famulus installation acceptance](../superpowers/specs/2026-08-11-complete-famulus-install-acceptance-design.md).
+
 ### Initial implementation profile
 
 The first supported configuration is an Ubuntu 25.10 x86-64 host running an
@@ -132,6 +152,8 @@ openssh-server
 ca-certificates
 curl
 python3
+dbus-daemon
+gnome-keyring
 Codex CLI
 ```
 
@@ -141,6 +163,12 @@ cloud-image URL, release identifier, and verified digest; after provisioning,
 record the installed guest-package versions and the digest of the sealed base
 image. Do not place assistant conversation history, private Famulus knowledge,
 or reusable scenario data in the baseline.
+
+`dbus-daemon` and `gnome-keyring` are generic native credential-service
+prerequisites, not Famulus-owned Python dependencies. The baseline contains the
+packages but no created login keyring, reusable unlock secret, Famulus signing
+key, or running acceptance session. Each disposable run creates and tears down
+its own supervised D-Bus/Secret Service session.
 
 #### Famulus-owned dependencies excluded from the baseline
 
@@ -311,18 +339,21 @@ unnecessarily expand the LM's authority.
 
 ## Implementation order
 
-1. Establish and manually validate the Famulus-free Linux VM baseline.
-2. Define immutable candidate and documentation inputs, then define the scenario
-   acceptance contract and report format.
-3. Prepare dedicated integration fixtures and validate their health and reset
+This general roadmap is subordinate to the Workstream 1 delivery order above:
+
+1. Complete the audited installer/security plan.
+2. Complete candidate transfer and the committed-candidate/public-package VM
+   acceptance gates, then authenticate and seal the Famulus-free Linux baseline.
+3. Define the broader LM scenario acceptance contract and report format.
+4. Prepare dedicated integration fixtures and validate their health and reset
    procedures.
-4. Run installation, credential-free, email, cloud-file, and calendar scenarios
+5. Run credential-free, email, cloud-file, and calendar scenarios
    manually through a fresh LM.
-5. Add independent probes and produce the first overall Famulus verdict.
-6. Add recovery, cross-skill, persistence, reinstall, uninstall, and purge
-   coverage.
-7. Automate clone creation, preflight, evidence collection, and disposal only
-   after the manual workflow has stabilized.
+6. Add independent probes and produce the first overall Famulus verdict.
+7. Add recovery, cross-skill, and persistence coverage beyond the complete
+   installer lifecycle already exercised by Workstream 1.
+8. Automate clone creation, preflight, evidence collection, and disposal only
+   after the broader manual LM workflow has stabilized.
 
 ## Completion criteria
 
