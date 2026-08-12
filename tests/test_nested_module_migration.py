@@ -257,6 +257,7 @@ class TestNestedModuleMigrationContract:
         }
         assert existing_children == {
             "bib-audit",
+            "ci-debug",
             "cloud-files",
             "connect-google",
             "daily-plan",
