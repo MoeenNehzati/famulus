@@ -122,7 +122,20 @@ Claude settings: $CLAUDE_HOME/{agent}_claude_setting.json""")
             *args,
         ]
     elif backend == "codex":
-        cmd = ["codex", "--profile", agent, *args]
+        # Supply the instructions path now rather than trusting whatever the
+        # installed profile config recorded. Codex resolves a relative
+        # model_instructions_file under $CODEX_HOME and fails hard when the
+        # file is missing, so a path stored at install time is a cache with no
+        # invalidation -- when the repo moves, every launch dies seconds in.
+        # `-c` overrides the profile's own value, and the claude branch above
+        # already resolves its agent definition this same way.
+        agent_md = Path(ai_root) / "agents" / f"{agent}.md"
+        cmd = [
+            "codex",
+            "-c", f"model_instructions_file={agent_md}",
+            "--profile", agent,
+            *args,
+        ]
     else:
         print(f"{agent}: unknown backend '{backend}'", file=sys.stderr)
         sys.exit(1)

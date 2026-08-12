@@ -62,3 +62,53 @@ def test_worker_dir_falls_back_to_famulus_paths_when_ai_unset(monkeypatch, tmp_p
 
     assert "Documents" not in str(result)
     assert result != _agent_launch._repo_root() / "workers" / "assistant"
+
+
+def _codex_command(monkeypatch, tmp_path, agent="assistant"):
+    """Return the argv the codex backend would exec, without execing it."""
+    monkeypatch.setenv("AI", str(tmp_path))
+    captured: list[list[str]] = []
+    monkeypatch.setattr(
+        _agent_launch.os, "execvp", lambda _file, argv: captured.append(argv)
+    )
+    monkeypatch.setattr(sys, "platform", "linux")
+    _agent_launch.launch(agent=agent, default_backend="codex", args=["--local", "exec"])
+    return captured[0]
+
+
+def test_codex_backend_supplies_the_agent_instructions_at_launch(monkeypatch, tmp_path):
+    """The instructions path must be resolved now, not stored at install time.
+
+    A path baked into the profile config is a cache with no invalidation: when
+    the repo moved, Codex kept resolving the old location, failed to read the
+    file, and every scheduled job died seconds after starting. Nothing could
+    repair it, because the installer treats an existing profile copy as
+    machine-local state.
+
+    The claude backend already resolves its agent definition at launch. This
+    makes codex symmetric, which is what removes the stale-path failure mode
+    rather than detecting it later.
+    """
+    argv = _codex_command(monkeypatch, tmp_path)
+
+    expected = f"model_instructions_file={tmp_path / 'agents' / 'assistant.md'}"
+    assert "-c" in argv
+    assert expected in argv
+    # The override must precede the profile it is overriding.
+    assert argv.index("-c") < argv.index("--profile")
+
+
+def test_codex_instructions_override_survives_a_repo_that_moved(monkeypatch, tmp_path):
+    """Whatever a previously-installed profile config says is irrelevant."""
+    moved = tmp_path / "new-location"
+    (moved / "agents").mkdir(parents=True)
+    monkeypatch.setenv("AI", str(moved))
+    captured: list[list[str]] = []
+    monkeypatch.setattr(
+        _agent_launch.os, "execvp", lambda _file, argv: captured.append(argv)
+    )
+    monkeypatch.setattr(sys, "platform", "linux")
+
+    _agent_launch.launch(agent="collab", default_backend="codex", args=["--local"])
+
+    assert f"model_instructions_file={moved / 'agents' / 'collab.md'}" in captured[0]
