@@ -19,9 +19,10 @@ dependencies:
   reason: Resolves durable per-home certificate state outside replaceable plugin sources.
   source: common.source.famulus-paths
   version: 1
-description: Canonicalizes certificate payloads and envelopes, manages Ed25519 certification
-  keys in durable Famulus state, migrates matching legacy public state without rotation,
-  signs and verifies certificates, and validates append-only hash-linked certificate logs.
+description: Canonicalizes certificate payloads and envelopes, transactionally stages,
+  commits, and exactly aborts Ed25519 certification keys in durable Famulus state,
+  migrates matching legacy public state without rotation, signs and verifies certificates,
+  and validates append-only hash-linked certificate logs.
 gateway:
   language: Python
   path: certificate_records.py
@@ -58,6 +59,14 @@ interfaces:
               value: load-key
             - description: Create or verify the initial Ed25519 signing material.
               value: provision-signing-material
+            - description: Stage one exact inactive Ed25519 pair without changing the
+                active selector.
+              value: stage-signing-material
+            - description: Commit or resume a staged pair through the active selector.
+              value: commit-staged-signing-material
+            - description: Remove one exact inactive staged pair and prove private-secret
+                absence.
+              value: abort-staged-signing-material
             - description: Fail closed or atomically migrate matching repository-local
                 public state into durable Famulus state.
               value: migrate-legacy-state
@@ -83,6 +92,9 @@ interfaces:
       caller_warnings:
       - external-side-effect: Provisioning and rotation write retained public verification
           material and store private key material in the configured secret backend.
+      - external-side-effect: The caller must hold the per-home install lock and reuse
+          the exact concrete secret-backend object throughout stage, commit, verification,
+          abort, and purge.
       direct_io:
         network: []
         reads:
@@ -146,7 +158,8 @@ interfaces:
       execution:
         consistency:
           live: Verification and key loading use the active selector and retained
-            public files observed during the call; canonicalization is deterministic.
+            public files observed during the call; staged transactions bind the exact
+            backend object and tracked public-file identity; canonicalization is deterministic.
         effects:
         - action: update
           confirmation_evidence:
@@ -157,6 +170,7 @@ interfaces:
           may_occur_in_outcomes:
           - signing-key-created
           - signing-key-rotated
+          - signing-key-staged
           - key-write-failed
           reversibility:
             compensatable: Restore the prior active selector while retaining generated
@@ -173,6 +187,7 @@ interfaces:
           may_occur_in_outcomes:
           - signing-key-created
           - signing-key-rotated
+          - signing-key-staged
           - key-write-failed
           reversibility:
             compensatable: Clear an unused generated private key from the configured
@@ -183,23 +198,27 @@ interfaces:
         lifecycle: finite
         mutation_safety:
           atomicity:
-            per_effect_only: Public files and the active selector are atomic per file;
-              secret-store and filesystem changes are separate effects.
+            per_effect_only: A unique private/public pair is verified before one atomic
+              selector replacement; secret-store and filesystem writes remain separate
+              effects whose exact inactive candidate is compensatable.
           concurrent_invocations:
-            safe: Exclusive public-key creation and post-write reload detect collisions;
-              callers serialize intentional rotations.
+            safe: The caller holds the one per-home install lock across staging,
+              commit or abort, and post-commit verification; explicit rotation uses the
+              same serialization requirement.
           idempotency:
-            non_idempotent: Rotation and absent-key provisioning generate fresh random
-              key material.
+            idempotent: A valid active identity returns created false without rotation;
+              absent-key staging and explicit rotation generate fresh random material.
           on_uncertain_completion:
-            verify_then_decide: Reload the active selector, public key, and private-key
-              pair before generating another key.
+            verify_then_decide: A selector naming the staged key resumes as committed;
+              a prior selector permits exact abort; a malformed or third selector fails
+              closed without deleting either potentially active pair.
           partial_effects_on_failure:
-            possible: Generated public or private material can remain retained when
-              a later selector update fails.
+            possible: A pair remains retained after selector replacement or when selector
+              state is ambiguous so recovery never claims rollback.
           rollback_on_failure:
-            available: Initial provisioning clears its secret if public-key creation
-              fails; rotation preserves historical public material.
+            available: Before selector replacement, abort clears and verifies absence
+              of the exact secret, removes only the identity-bound public candidate, and
+              durably syncs its parent; after replacement the pair is retained as committed.
         state_effect: mutating
         verification:
         - method: output-schema
@@ -229,6 +248,15 @@ interfaces:
         - key-files
         - secret-material
         id: signing-key-rotated
+        outputs:
+        - result
+      - caller_action: Journal the non-secret staged identity and later commit or abort
+          it through the same backend object while holding the install lock.
+        class: success
+        effects:
+        - key-files
+        - secret-material
+        id: signing-key-staged
         outputs:
         - result
       - caller_action: Reject malformed values, invalid hashes or signatures, broken

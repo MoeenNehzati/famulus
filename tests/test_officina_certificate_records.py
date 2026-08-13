@@ -5,6 +5,8 @@ import shutil
 import stat
 import subprocess
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -13,10 +15,16 @@ import officina.common.certificate_records as certificate_records
 import officina.common.atomic_files as atomic_files
 from officina.common.atomic_files import AtomicWriteError
 from officina.common.certificate_records import (
+    CertificateCleanupError,
     CertificateLogError,
+    CertificateProvisioningError,
+    CertificateStateConflict,
+    StagedCertificateKey,
+    abort_staged_certificate,
     canonical_certificate_envelope_bytes,
     canonical_certificate_payload_bytes,
     certificate_entry_hash,
+    commit_staged_certificate,
     load_active_certificate_key_id,
     load_certificate_public_key,
     load_certificate_signing_key,
@@ -25,9 +33,11 @@ from officina.common.certificate_records import (
     provision_certificate_signing_material,
     rotate_certificate_signing_key,
     sign_certificate_payload,
+    stage_certificate_signing_material,
     verify_certificate_envelope,
 )
 from officina.common.famulus_paths import resolve_famulus_paths
+from officina.install.install_lock import InstallLock
 
 
 class MemorySecretBackend:
@@ -47,6 +57,22 @@ class MemorySecretBackend:
 
     def snapshot(self) -> dict[tuple[str, str], str]:
         return dict(self.values)
+
+
+class RetainingClearBackend(MemorySecretBackend):
+    def clear(self, namespace: str, key: str) -> bool:
+        return (namespace, key) in self.values
+
+
+class StoreThenFailBackend(MemorySecretBackend):
+    def __init__(self) -> None:
+        super().__init__()
+        self.submitted_secret: str | None = None
+
+    def store(self, namespace: str, key: str, secret: str) -> None:
+        super().store(namespace, key, secret)
+        self.submitted_secret = secret
+        raise RuntimeError("backend leaked " + secret)
 
 
 def _state_paths(tmp_path: Path):
@@ -176,6 +202,284 @@ def test_plugin_cache_replacement_preserves_certificate_identity(
         for candidate in tmp_path.rglob("*")
         if candidate.is_file()
     )
+
+
+def test_staging_existing_valid_identity_is_idempotent(tmp_path: Path) -> None:
+    paths = _state_paths(tmp_path)
+    backend = MemorySecretBackend()
+    active = provision_certificate_signing_material(paths, secret_backend=backend)
+    before = backend.snapshot()
+
+    staged = stage_certificate_signing_material(paths, secret_backend=backend)
+    committed = commit_staged_certificate(paths, staged, secret_backend=backend)
+
+    assert isinstance(staged, StagedCertificateKey)
+    assert staged.key_id == active.key_id
+    assert staged.public_key_path == (
+        paths.public_key_root / f"{active.key_id.removeprefix('sha256:')}.pub"
+    )
+    assert staged.secret_target.endswith(active.key_id)
+    assert not staged.created
+    assert committed.key_id == active.key_id
+    assert backend.snapshot() == before
+    assert len(list(paths.public_key_root.glob("*.pub"))) == 1
+
+
+def test_failure_after_private_secret_store_cleans_exact_target_without_leak(
+    tmp_path: Path,
+) -> None:
+    paths = _state_paths(tmp_path)
+    backend = StoreThenFailBackend()
+
+    with pytest.raises(CertificateProvisioningError) as captured:
+        stage_certificate_signing_material(paths, secret_backend=backend)
+
+    assert backend.submitted_secret is not None
+    assert backend.submitted_secret not in str(captured.value)
+    assert backend.snapshot() == {}
+    assert not list(paths.public_key_root.glob("*.pub"))
+    assert not paths.active_key_id.exists()
+
+
+@pytest.mark.parametrize(
+    "boundary",
+    ["public-key-created", "selector-intent-journaled"],
+)
+def test_pre_selector_failure_aborts_exact_staged_pair(
+    tmp_path: Path,
+    boundary: str,
+) -> None:
+    paths = _state_paths(tmp_path)
+    backend = MemorySecretBackend()
+    staged = stage_certificate_signing_material(paths, secret_backend=backend)
+    assert boundary
+    assert staged.created
+    assert staged.public_key_path.is_file()
+    assert len(backend.values) == 1
+    assert not paths.active_key_id.exists()
+
+    abort_staged_certificate(paths, staged, secret_backend=backend)
+
+    assert backend.snapshot() == {}
+    assert not staged.public_key_path.exists()
+    assert not paths.active_key_id.exists()
+
+
+def test_commit_recovers_selector_write_that_completed_before_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = _state_paths(tmp_path)
+    backend = MemorySecretBackend()
+    staged = stage_certificate_signing_material(paths, secret_backend=backend)
+    real_replace = certificate_records.atomic_replace_bytes
+
+    def replace_then_raise(*args, **kwargs) -> None:
+        real_replace(*args, **kwargs)
+        raise OSError("selector-write-uncertain")
+
+    monkeypatch.setattr(certificate_records, "atomic_replace_bytes", replace_then_raise)
+
+    committed = commit_staged_certificate(paths, staged, secret_backend=backend)
+
+    assert committed.key_id == staged.key_id
+    assert load_active_certificate_key_id(paths.public_key_root) == staged.key_id
+    assert staged.public_key_path.is_file()
+    assert len(backend.values) == 1
+
+
+def test_post_selector_verification_failure_retains_pair_for_resume(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = _state_paths(tmp_path)
+    backend = MemorySecretBackend()
+    staged = stage_certificate_signing_material(paths, secret_backend=backend)
+    real_load = certificate_records.load_certificate_signing_key
+
+    def fail_active_verification(*args, **kwargs):
+        raise ValueError("verification failed")
+
+    monkeypatch.setattr(
+        certificate_records,
+        "load_certificate_signing_key",
+        fail_active_verification,
+    )
+    with pytest.raises(CertificateProvisioningError, match="verification"):
+        commit_staged_certificate(paths, staged, secret_backend=backend)
+
+    assert paths.active_key_id.read_text() == staged.key_id + "\n"
+    assert staged.public_key_path.is_file()
+    assert len(backend.values) == 1
+
+    abort_staged_certificate(paths, staged, secret_backend=backend)
+    assert paths.active_key_id.read_text() == staged.key_id + "\n"
+    assert staged.public_key_path.is_file()
+    assert len(backend.values) == 1
+
+    monkeypatch.setattr(certificate_records, "load_certificate_signing_key", real_load)
+    resumed = commit_staged_certificate(paths, staged, secret_backend=backend)
+    assert resumed.key_id == staged.key_id
+
+
+def test_abort_fails_closed_on_malformed_selector_without_deleting_candidate(
+    tmp_path: Path,
+) -> None:
+    paths = _state_paths(tmp_path)
+    backend = MemorySecretBackend()
+    staged = stage_certificate_signing_material(paths, secret_backend=backend)
+    paths.active_key_id.write_bytes(b"malformed\n")
+    before = backend.snapshot()
+
+    with pytest.raises(CertificateStateConflict, match="selector"):
+        abort_staged_certificate(paths, staged, secret_backend=backend)
+
+    assert backend.snapshot() == before
+    assert staged.public_key_path.is_file()
+    assert paths.active_key_id.read_bytes() == b"malformed\n"
+
+
+def test_abort_fails_closed_on_third_selector_without_deleting_either_pair(
+    tmp_path: Path,
+) -> None:
+    paths = _state_paths(tmp_path)
+    backend = MemorySecretBackend()
+    staged = stage_certificate_signing_material(paths, secret_backend=backend)
+    third_root = tmp_path / "third-public-keys"
+    third_root.mkdir()
+    third = load_or_create_certificate_signing_key(
+        third_root,
+        secret_backend=backend,
+    )
+    third_public = third_root / f"{third.key_id.removeprefix('sha256:')}.pub"
+    target_public = paths.public_key_root / third_public.name
+    shutil.copyfile(third_public, target_public)
+    paths.active_key_id.write_text(third.key_id + "\n")
+    before = backend.snapshot()
+
+    with pytest.raises(CertificateStateConflict, match="selector"):
+        abort_staged_certificate(paths, staged, secret_backend=backend)
+
+    assert backend.snapshot() == before
+    assert staged.public_key_path.is_file()
+    assert target_public.is_file()
+    assert load_active_certificate_key_id(paths.public_key_root) == third.key_id
+
+
+def test_stage_commit_and_abort_require_same_backend_object(tmp_path: Path) -> None:
+    paths = _state_paths(tmp_path)
+    bound = MemorySecretBackend()
+    replacement = MemorySecretBackend()
+    staged = stage_certificate_signing_material(paths, secret_backend=bound)
+
+    with pytest.raises(CertificateProvisioningError, match="backend"):
+        commit_staged_certificate(paths, staged, secret_backend=replacement)
+    with pytest.raises(CertificateProvisioningError, match="backend"):
+        abort_staged_certificate(paths, staged, secret_backend=replacement)
+
+    assert replacement.snapshot() == {}
+    assert staged.public_key_path.is_file()
+    assert len(bound.values) == 1
+    abort_staged_certificate(paths, staged, secret_backend=bound)
+
+
+def test_abort_cleanup_failure_is_typed_static_and_preserves_public_half(
+    tmp_path: Path,
+) -> None:
+    paths = _state_paths(tmp_path)
+    backend = RetainingClearBackend()
+    staged = stage_certificate_signing_material(paths, secret_backend=backend)
+    secret = next(iter(backend.values.values()))
+
+    with pytest.raises(CertificateCleanupError) as captured:
+        abort_staged_certificate(paths, staged, secret_backend=backend)
+
+    assert str(captured.value) == "certificate key cleanup failed"
+    assert secret not in str(captured.value)
+    assert staged.public_key_path.is_file()
+    assert len(backend.values) == 1
+
+
+def test_abort_refuses_replaced_public_candidate_identity(tmp_path: Path) -> None:
+    paths = _state_paths(tmp_path)
+    backend = MemorySecretBackend()
+    staged = stage_certificate_signing_material(paths, secret_backend=backend)
+    staged.public_key_path.unlink()
+    staged.public_key_path.write_bytes(b"replacement")
+
+    with pytest.raises(CertificateCleanupError) as captured:
+        abort_staged_certificate(paths, staged, secret_backend=backend)
+
+    assert str(captured.value) == "certificate public-key cleanup failed"
+    assert backend.snapshot() == {}
+    assert staged.public_key_path.read_bytes() == b"replacement"
+
+
+def test_rotation_failure_before_selector_replace_preserves_active_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    public_key_root = tmp_path / "public-keys"
+    public_key_root.mkdir()
+    backend = MemorySecretBackend()
+    active = load_or_create_certificate_signing_key(
+        public_key_root,
+        secret_backend=backend,
+    )
+    before = backend.snapshot()
+
+    monkeypatch.setattr(
+        certificate_records,
+        "atomic_replace_bytes",
+        lambda *args, **kwargs: (_ for _ in ()).throw(OSError("replace failed")),
+    )
+    with pytest.raises(CertificateProvisioningError, match="selector"):
+        rotate_certificate_signing_key(public_key_root, secret_backend=backend)
+
+    assert load_active_certificate_key_id(public_key_root) == active.key_id
+    assert backend.snapshot() == before
+    assert len(list(public_key_root.glob("*.pub"))) == 1
+
+
+def test_two_provisioners_under_home_lock_create_one_pair(tmp_path: Path) -> None:
+    paths = _state_paths(tmp_path)
+    home = tmp_path / "home"
+    entered_store = threading.Event()
+    release_store = threading.Event()
+
+    class BlockingFirstStoreBackend(MemorySecretBackend):
+        def __init__(self) -> None:
+            super().__init__()
+            self.first = True
+
+        def store(self, namespace: str, key: str, secret: str) -> None:
+            super().store(namespace, key, secret)
+            if self.first:
+                self.first = False
+                entered_store.set()
+                assert release_store.wait(timeout=2)
+
+    backend = BlockingFirstStoreBackend()
+
+    def provision() -> str:
+        with InstallLock.for_home(home, timeout_seconds=2):
+            return provision_certificate_signing_material(
+                paths,
+                secret_backend=backend,
+            ).key_id
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(provision)
+        assert entered_store.wait(timeout=2)
+        second = pool.submit(provision)
+        assert not second.done()
+        release_store.set()
+        key_ids = {first.result(timeout=3), second.result(timeout=3)}
+
+    assert len(key_ids) == 1
+    assert len(backend.values) == 1
+    assert len(list(paths.public_key_root.glob("*.pub"))) == 1
+    assert load_active_certificate_key_id(paths.public_key_root) in key_ids
 
 
 @pytest.mark.parametrize("stable_state", ["missing", "empty", "matching"])
