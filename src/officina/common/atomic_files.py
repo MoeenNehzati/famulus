@@ -12,6 +12,7 @@ from typing import Callable
 
 
 _CAPABILITY_ERROR = "secure directory-relative replacement is unavailable"
+_TRACKED_CREATE_ERROR = "tracked file creation failed"
 _UNCONDITIONAL_APPEND = object()
 _DIR_FD_OPERATIONS = (os.open, os.stat, os.unlink, os.link, os.rename, os.mkdir)
 _NOFOLLOW_OPERATIONS = (os.stat, os.link)
@@ -606,6 +607,7 @@ def _posix_atomic_create_bytes_tracked(
     parent_fd, name = _open_parent(path, allowed_root)
     temp_name = f".{name}.tmp-{secrets.token_hex(8)}"
     temp_created = False
+    linked_created = False
     transferred = False
     failure: BaseException | None = None
     try:
@@ -620,6 +622,7 @@ def _posix_atomic_create_bytes_tracked(
         except FileExistsError:
             _reject_unsafe_final(parent_fd, name)
             return None
+        linked_created = True
         linked = _secure_stat(parent_fd, name)
         if _posix_file_identity(linked) != identity:
             raise AtomicWriteError(
@@ -657,7 +660,25 @@ def _posix_atomic_create_bytes_tracked(
         )
     except BaseException as exc:
         failure = exc
-        raise
+        if not linked_created:
+            raise
+        try:
+            current = _secure_stat(parent_fd, name)
+        except FileNotFoundError:
+            pass
+        except BaseException:
+            raise AtomicWriteError(_TRACKED_CREATE_ERROR) from None
+        else:
+            if (
+                stat.S_ISREG(current.st_mode)
+                and _posix_file_identity(current) == identity
+            ):
+                try:
+                    _secure_unlink(parent_fd, name)
+                    os.fsync(parent_fd)
+                except BaseException:
+                    raise AtomicWriteError(_TRACKED_CREATE_ERROR) from None
+        raise AtomicWriteError(_TRACKED_CREATE_ERROR) from None
     finally:
         if not transferred:
             cleanup_error = _cleanup_write(

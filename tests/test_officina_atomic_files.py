@@ -17,6 +17,7 @@ from officina.common.atomic_files import (
     atomic_append_bytes,
     atomic_compare_and_append_bytes,
     atomic_create_bytes,
+    atomic_create_bytes_tracked,
     atomic_replace_bytes,
 )
 
@@ -182,6 +183,115 @@ def test_create_rejects_existing_final_symlink(tmp_path: Path) -> None:
         atomic_create_bytes(target, b"new", allowed_root=tmp_path, mode=0o600)
 
     assert victim.read_bytes() == b"safe"
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_tracked_create_identity_verification_failure_removes_linked_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "key"
+    other = tmp_path / "other"
+    other.write_bytes(b"other")
+    real_secure_stat = atomic_files._secure_stat
+    injected = False
+
+    def corrupt_link_identity(parent_fd: int, name: str) -> os.stat_result:
+        nonlocal injected
+        if name == target.name and target.exists() and not injected:
+            injected = True
+            return other.stat()
+        return real_secure_stat(parent_fd, name)
+
+    monkeypatch.setattr(atomic_files, "_secure_stat", corrupt_link_identity)
+
+    with pytest.raises(AtomicWriteError) as captured:
+        atomic_create_bytes_tracked(
+            target,
+            b"secret-free-public-key",
+            allowed_root=tmp_path,
+            mode=0o600,
+        )
+
+    assert str(captured.value) == "tracked file creation failed"
+    assert injected
+    assert not target.exists()
+    assert _temp_entries(tmp_path, target.name) == []
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_tracked_create_directory_fsync_failure_removes_linked_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "key"
+    real_fsync = atomic_files.os.fsync
+    injected = False
+    directory_syncs = 0
+
+    def fail_first_publish_directory_sync(descriptor: int) -> None:
+        nonlocal injected, directory_syncs
+        if stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            directory_syncs += 1
+            if target.exists() and not injected:
+                injected = True
+                raise OSError("directory sync failed")
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(atomic_files.os, "fsync", fail_first_publish_directory_sync)
+
+    with pytest.raises(AtomicWriteError) as captured:
+        atomic_create_bytes_tracked(
+            target,
+            b"secret-free-public-key",
+            allowed_root=tmp_path,
+            mode=0o600,
+        )
+
+    assert str(captured.value) == "tracked file creation failed"
+    assert injected
+    assert directory_syncs == 2
+    assert not target.exists()
+    assert _temp_entries(tmp_path, target.name) == []
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_tracked_create_post_link_cleanup_preserves_replacement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "key"
+    replacement = b"replacement-public-key"
+    real_fsync = atomic_files.os.fsync
+    injected = False
+
+    def replace_before_publish_directory_sync_fails(descriptor: int) -> None:
+        nonlocal injected
+        if stat.S_ISDIR(os.fstat(descriptor).st_mode) and target.exists() and not injected:
+            injected = True
+            target.unlink()
+            target.write_bytes(replacement)
+            raise OSError("directory sync failed after replacement")
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(
+        atomic_files.os,
+        "fsync",
+        replace_before_publish_directory_sync_fails,
+    )
+
+    with pytest.raises(AtomicWriteError) as captured:
+        atomic_create_bytes_tracked(
+            target,
+            b"secret-free-public-key",
+            allowed_root=tmp_path,
+            mode=0o600,
+        )
+
+    assert str(captured.value) == "tracked file creation failed"
+    assert injected
+    assert target.read_bytes() == replacement
+    assert _temp_entries(tmp_path, target.name) == []
 
 
 @_POSIX_DESCRIPTOR_ONLY

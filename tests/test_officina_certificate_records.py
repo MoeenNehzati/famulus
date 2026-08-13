@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import os
 import shutil
 import stat
@@ -241,28 +242,158 @@ def test_failure_after_private_secret_store_cleans_exact_target_without_leak(
     assert not paths.active_key_id.exists()
 
 
-@pytest.mark.parametrize(
-    "boundary",
-    ["public-key-created", "selector-intent-journaled"],
-)
-def test_pre_selector_failure_aborts_exact_staged_pair(
+def test_post_public_creation_staging_failure_removes_exact_pair(
     tmp_path: Path,
-    boundary: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = _state_paths(tmp_path)
+    backend = MemorySecretBackend()
+    monkeypatch.setattr(
+        certificate_records,
+        "_bind_staged_key",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("failure after public creation")
+        ),
+    )
+
+    with pytest.raises(CertificateProvisioningError) as captured:
+        stage_certificate_signing_material(paths, secret_backend=backend)
+
+    assert str(captured.value) == "certificate public-key staging failed"
+    assert backend.snapshot() == {}
+    assert not list(paths.public_key_root.glob("*.pub"))
+    assert not paths.active_key_id.exists()
+
+
+def test_selector_intent_journal_failure_aborts_exact_staged_pair(
+    tmp_path: Path,
 ) -> None:
     paths = _state_paths(tmp_path)
     backend = MemorySecretBackend()
     staged = stage_certificate_signing_material(paths, secret_backend=backend)
-    assert boundary
-    assert staged.created
-    assert staged.public_key_path.is_file()
-    assert len(backend.values) == 1
-    assert not paths.active_key_id.exists()
 
-    abort_staged_certificate(paths, staged, secret_backend=backend)
+    def journal_selector_intent() -> None:
+        raise OSError("selector intent journal failed")
+
+    with pytest.raises(OSError, match="selector intent journal failed"):
+        try:
+            journal_selector_intent()
+        except BaseException:
+            abort_staged_certificate(paths, staged, secret_backend=backend)
+            raise
 
     assert backend.snapshot() == {}
     assert not staged.public_key_path.exists()
     assert not paths.active_key_id.exists()
+
+
+def test_public_provisioner_aborts_failed_pre_selector_pair_verification(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = _state_paths(tmp_path)
+    backend = MemorySecretBackend()
+    active = provision_certificate_signing_material(paths, secret_backend=backend)
+    before = backend.snapshot()
+    staged = certificate_records._stage_generated_certificate_key(
+        paths.public_key_root,
+        prior_key_id=active.key_id,
+        secret_backend=backend,
+    )
+    monkeypatch.setattr(
+        certificate_records,
+        "stage_certificate_signing_material",
+        lambda *_args, **_kwargs: staged,
+    )
+    real_read = certificate_records.read_regular_file_bytes
+
+    def corrupt_staged_public_read(
+        path: Path,
+        *,
+        allowed_root: Path,
+        allow_non_atomic: bool = False,
+    ) -> bytes:
+        if Path(path).absolute() == staged.public_key_path.absolute():
+            return b"corrupt staged public key"
+        return real_read(
+            path,
+            allowed_root=allowed_root,
+            allow_non_atomic=allow_non_atomic,
+        )
+
+    monkeypatch.setattr(
+        certificate_records,
+        "read_regular_file_bytes",
+        corrupt_staged_public_read,
+    )
+
+    with pytest.raises(
+        CertificateProvisioningError,
+        match="staged certificate pair verification failed",
+    ):
+        provision_certificate_signing_material(paths, secret_backend=backend)
+
+    assert backend.snapshot() == before
+    assert not staged.public_key_path.exists()
+    assert paths.active_key_id.read_text(encoding="ascii") == active.key_id + "\n"
+    assert load_certificate_signing_key(
+        paths.public_key_root,
+        secret_backend=backend,
+    ).key_id == active.key_id
+
+
+def test_transactional_apis_require_explicit_non_none_backend() -> None:
+    paths = certificate_records.CertificateStatePaths(
+        public_key_root=Path("public-keys"),
+        active_key_id=Path("public-keys/active-key-id"),
+    )
+    staged = StagedCertificateKey(
+        key_id="sha256:" + "0" * 64,
+        public_key_path=Path("public-keys") / ("0" * 64 + ".pub"),
+        secret_target="Famulus:skill-certifier:ed25519-private-key:sha256:" + "0" * 64,
+        created=True,
+    )
+
+    for operation, args in (
+        (stage_certificate_signing_material, (paths,)),
+        (commit_staged_certificate, (paths, staged)),
+        (abort_staged_certificate, (paths, staged)),
+    ):
+        assert "allow_non_atomic" not in inspect.signature(operation).parameters
+        with pytest.raises(TypeError):
+            inspect.signature(operation).bind(*args)
+        with pytest.raises(TypeError, match="secret_backend"):
+            operation(*args, secret_backend=None)
+
+
+def test_commit_selector_replace_is_always_atomic(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = _state_paths(tmp_path)
+    backend = MemorySecretBackend()
+    staged = stage_certificate_signing_material(paths, secret_backend=backend)
+    real_replace = certificate_records.atomic_replace_bytes
+    calls: list[dict[str, object]] = []
+
+    def capture_replace(*args, **kwargs) -> None:
+        calls.append(dict(kwargs))
+        real_replace(*args, **kwargs)
+
+    monkeypatch.setattr(certificate_records, "atomic_replace_bytes", capture_replace)
+
+    committed = commit_staged_certificate(paths, staged, secret_backend=backend)
+
+    assert committed.key_id == staged.key_id
+    assert calls == [
+        {
+            "allowed_root": paths.public_key_root,
+            "mode": 0o600,
+        }
+    ]
+    assert "allow_non_atomic" not in inspect.signature(
+        commit_staged_certificate
+    ).parameters
 
 
 def test_commit_recovers_selector_write_that_completed_before_error(
@@ -1041,7 +1172,7 @@ def test_certificate_history_mode_verifies_inactive_retained_final_entry(
     ) == (first,)
 
 
-def test_certificate_key_lifecycle_propagates_explicit_non_atomic_fallback(
+def test_certificate_key_lifecycle_keeps_fallback_outside_exact_transaction(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1129,8 +1260,9 @@ def test_certificate_key_lifecycle_propagates_explicit_non_atomic_fallback(
     )
 
     assert create_flags and all(create_flags)
-    assert replace_flags == [True]
-    assert read_flags and all(read_flags)
+    assert replace_flags == [False]
+    assert True in read_flags
+    assert False in read_flags
 
 
 def test_certificate_key_bootstrap_works_through_real_capability_fallback(

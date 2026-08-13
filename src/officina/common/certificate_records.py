@@ -490,12 +490,14 @@ def _staged_secret_target(key_id: str) -> str:
 
 def _require_bound_backend(
     staged: StagedCertificateKey,
-    supplied: secret_store.SecretBackend | None,
+    supplied: secret_store.SecretBackend,
 ) -> secret_store.SecretBackend:
     if not isinstance(staged, StagedCertificateKey):
         raise TypeError("staged must be StagedCertificateKey")
+    if supplied is None:
+        raise TypeError("secret_backend must be an explicit backend object")
     bound = _staged_binding(staged).secret_backend
-    if supplied is not None and supplied is not bound:
+    if supplied is not bound:
         raise CertificateProvisioningError(
             "certificate transaction backend identity changed"
         )
@@ -687,18 +689,30 @@ def _stage_generated_certificate_key(
             _clear_staged_secret(key_id, secret_backend=secret_backend)
             continue
 
-        staged = StagedCertificateKey(
-            key_id=key_id,
-            public_key_path=_public_key_path(public_key_root, key_id),
-            secret_target=_staged_secret_target(key_id),
-            created=True,
-        )
-        return _bind_staged_key(
-            staged,
-            secret_backend=secret_backend,
-            public_creation=tracked,
-            prior_key_id=prior_key_id,
-        )
+        try:
+            staged = StagedCertificateKey(
+                key_id=key_id,
+                public_key_path=_public_key_path(public_key_root, key_id),
+                secret_target=_staged_secret_target(key_id),
+                created=True,
+            )
+            return _bind_staged_key(
+                staged,
+                secret_backend=secret_backend,
+                public_creation=tracked,
+                prior_key_id=prior_key_id,
+            )
+        except BaseException:
+            _clear_staged_secret(key_id, secret_backend=secret_backend)
+            try:
+                tracked.remove()
+            except BaseException:
+                raise CertificateCleanupError(
+                    "certificate public-key cleanup failed"
+                ) from None
+            raise CertificateProvisioningError(
+                "certificate public-key staging failed"
+            ) from None
     raise CertificateProvisioningError(
         "could not allocate unique certificate signing material"
     )
@@ -707,8 +721,7 @@ def _stage_generated_certificate_key(
 def stage_certificate_signing_material(
     paths: CertificateStatePaths,
     *,
-    secret_backend: secret_store.SecretBackend | None = None,
-    allow_non_atomic: bool = False,
+    secret_backend: secret_store.SecretBackend,
 ) -> StagedCertificateKey:
     """Validate the active identity or create one inactive exact key pair.
 
@@ -716,19 +729,21 @@ def stage_certificate_signing_material(
     This operation never creates or replaces the active selector.
     """
 
+    if secret_backend is None:
+        raise TypeError("secret_backend must be an explicit backend object")
     public_key_root = _validated_transaction_paths(paths)
     ensure_secure_directory(public_key_root)
-    backend = _resolve_secret_backend(secret_backend)
+    backend = secret_backend
     try:
         active = load_certificate_signing_key(
             public_key_root,
             secret_backend=backend,
-            allow_non_atomic=allow_non_atomic,
+            allow_non_atomic=False,
         )
     except FileNotFoundError:
         if _selector_key_id(
             public_key_root,
-            allow_non_atomic=allow_non_atomic,
+            allow_non_atomic=False,
         ) is not None:
             raise CertificateStateConflict(
                 "active certificate state is incomplete"
@@ -757,8 +772,7 @@ def abort_staged_certificate(
     paths: CertificateStatePaths,
     staged: StagedCertificateKey,
     *,
-    secret_backend: secret_store.SecretBackend | None = None,
-    allow_non_atomic: bool = False,
+    secret_backend: secret_store.SecretBackend,
 ) -> None:
     """Remove only an inactive exact candidate; retain committed/ambiguous state."""
 
@@ -768,7 +782,7 @@ def abort_staged_certificate(
     state = _selector_state(
         public_key_root,
         staged,
-        allow_non_atomic=allow_non_atomic,
+        allow_non_atomic=False,
     )
     if state == "staged":
         _release_staged_public(staged)
@@ -800,8 +814,7 @@ def commit_staged_certificate(
     paths: CertificateStatePaths,
     staged: StagedCertificateKey,
     *,
-    secret_backend: secret_store.SecretBackend | None = None,
-    allow_non_atomic: bool = False,
+    secret_backend: secret_store.SecretBackend,
 ) -> CertificateSigningKey:
     """Commit or resume one staged identity without rolling back ambiguity."""
 
@@ -811,14 +824,14 @@ def commit_staged_certificate(
     state = _selector_state(
         public_key_root,
         staged,
-        allow_non_atomic=allow_non_atomic,
+        allow_non_atomic=False,
     )
     if state == "staged":
         loaded = _load_committed_staged_pair(
             public_key_root,
             staged,
             secret_backend=backend,
-            allow_non_atomic=allow_non_atomic,
+            allow_non_atomic=False,
         )
         _release_staged_public(staged)
         return loaded
@@ -833,7 +846,7 @@ def commit_staged_certificate(
         public_key_root,
         staged,
         secret_backend=backend,
-        allow_non_atomic=allow_non_atomic,
+        allow_non_atomic=False,
     )
     try:
         atomic_replace_bytes(
@@ -841,20 +854,19 @@ def commit_staged_certificate(
             (staged.key_id + "\n").encode("ascii"),
             allowed_root=public_key_root,
             mode=0o600,
-            allow_non_atomic=allow_non_atomic,
         )
     except BaseException:
         state = _selector_state(
             public_key_root,
             staged,
-            allow_non_atomic=allow_non_atomic,
+            allow_non_atomic=False,
         )
         if state == "staged":
             loaded = _load_committed_staged_pair(
                 public_key_root,
                 staged,
                 secret_backend=backend,
-                allow_non_atomic=allow_non_atomic,
+                allow_non_atomic=False,
             )
             _release_staged_public(staged)
             return loaded
@@ -863,7 +875,6 @@ def commit_staged_certificate(
                 paths,
                 staged,
                 secret_backend=backend,
-                allow_non_atomic=allow_non_atomic,
             )
             raise CertificateProvisioningError(
                 "certificate selector commit failed"
@@ -876,7 +887,7 @@ def commit_staged_certificate(
         public_key_root,
         staged,
         secret_backend=backend,
-        allow_non_atomic=allow_non_atomic,
+        allow_non_atomic=False,
     )
     _release_staged_public(staged)
     return loaded
@@ -906,14 +917,20 @@ def provision_certificate_signing_material(
     staged = stage_certificate_signing_material(
         paths,
         secret_backend=backend,
-        allow_non_atomic=allow_non_atomic,
     )
-    return commit_staged_certificate(
-        paths,
-        staged,
-        secret_backend=backend,
-        allow_non_atomic=allow_non_atomic,
-    )
+    try:
+        return commit_staged_certificate(
+            paths,
+            staged,
+            secret_backend=backend,
+        )
+    except BaseException:
+        abort_staged_certificate(
+            paths,
+            staged,
+            secret_backend=backend,
+        )
+        raise
 
 
 def _validated_public_state(
@@ -1105,7 +1122,6 @@ def rotate_certificate_signing_key(
         paths,
         staged,
         secret_backend=backend,
-        allow_non_atomic=allow_non_atomic,
     )
 
 

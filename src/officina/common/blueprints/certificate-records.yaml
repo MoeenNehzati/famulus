@@ -95,6 +95,9 @@ interfaces:
       - external-side-effect: The caller must hold the per-home install lock and reuse
           the exact concrete secret-backend object throughout stage, commit, verification,
           abort, and purge.
+      - external-side-effect: Transactional stage, commit, and abort require that backend
+          object explicitly and expose no non-atomic fallback; selector replacement always
+          uses the secure atomic path.
       direct_io:
         network: []
         reads:
@@ -173,8 +176,8 @@ interfaces:
           - signing-key-staged
           - key-write-failed
           reversibility:
-            compensatable: Restore the prior active selector while retaining generated
-              public keys for historical verification.
+            compensatable: Before selector replacement, abort the exact inactive candidate;
+              after replacement, retain the pair as committed and claim no rollback.
           value_source:
             kind: output
             output_ref: result
