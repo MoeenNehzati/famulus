@@ -451,6 +451,33 @@ def test_task_selector_runs_only_the_requested_phase(
     assert calls[0][1]["task_id"] == "validators"
 
 
+def test_portability_task_keeps_its_identity_at_the_process_boundary(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Catch portability evidence mislabeled as the broader shared task."""
+
+    calls = []
+    monkeypatch.setattr(
+        runner,
+        "_run_process",
+        lambda command, **kwargs: calls.append((command, kwargs)) or 0,
+    )
+
+    assert runner.run_suite(
+        tmp_path,
+        "full",
+        task_id="tests:portability",
+        jobs=1,
+    ) == 0
+
+    assert len(calls) == 1
+    assert calls[0][1]["task_id"] == "tests:portability"
+    assert calls[0][0][-len(runner.PORTABILITY_TESTS) :] == sorted(
+        runner.PORTABILITY_TESTS
+    )
+
+
 def test_phase_runner_continues_to_performance_after_pooled_failure(
     tmp_path: Path,
     monkeypatch,
@@ -709,10 +736,11 @@ def test_timing_output_cli_is_forwarded_to_suite(
                 "validator_ids": (),
                 "excluded_validator_ids": (),
                 "timing_output": timing_output,
-                    "task_id": None,
-                    "task_cache_dir": None,
-                    "repository_view": "auto",
-                },
+                "task_id": None,
+                "task_cache_dir": None,
+                "repository_view": "auto",
+                "selectors": (),
+            },
         )
     ]
 
@@ -771,6 +799,44 @@ def test_probe_task_environment_is_copied_per_child_without_parent_mutation(
     assert "OFFICINA_FIXTURE_PROBE_TASK_ID" not in __import__("os").environ
     assert os.environ["PYTHONDONTWRITEBYTECODE"] == "1"
     assert os.environ["PYTHONPYCACHEPREFIX"] == str(tmp_path / "ambient-cache")
+
+
+def test_native_smoke_opt_ins_are_scoped_to_their_child_processes(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Catch native CI probes that depend on workflow-only environment wiring."""
+
+    received = []
+
+    class FakeProcess:
+        def __init__(self, _command, **kwargs):
+            received.append(kwargs["env"])
+
+        def wait(self):
+            return 0
+
+    monkeypatch.delenv("FAMULUS_REQUIRE_NATIVE_KEYRING", raising=False)
+    monkeypatch.delenv("FAMULUS_RUN_SCHEDULER_SMOKE", raising=False)
+    monkeypatch.setattr(runner.subprocess, "Popen", FakeProcess)
+
+    for task_id in ("native:keyring", "native:scheduler"):
+        assert runner._run_process(
+            ["check"],
+            cwd=tmp_path,
+            task_id=task_id,
+            pycache_prefix=(
+                tmp_path.parent
+                / f"{tmp_path.name}-{task_id.replace(':', '-')}"
+            ),
+        ) == 0
+
+    assert received[0]["FAMULUS_REQUIRE_NATIVE_KEYRING"] == "1"
+    assert "FAMULUS_RUN_SCHEDULER_SMOKE" not in received[0]
+    assert received[1]["FAMULUS_RUN_SCHEDULER_SMOKE"] == "1"
+    assert "FAMULUS_REQUIRE_NATIVE_KEYRING" not in received[1]
+    assert "FAMULUS_REQUIRE_NATIVE_KEYRING" not in os.environ
+    assert "FAMULUS_RUN_SCHEDULER_SMOKE" not in os.environ
 
 
 def test_process_runner_keeps_execution_root_free_of_bytecode(
@@ -842,7 +908,7 @@ def test_ci_runs_combined_full_suite_before_portability() -> None:
 
     full = workflow.index("python3 repo_checks.py --suite full --verbose")
     portability = workflow.index(
-        "python3 repo_checks.py --suite portability --verbose"
+        "python3 repo_checks.py --suite full --task tests:portability"
     )
 
     assert full < portability
@@ -870,6 +936,82 @@ def test_ci_shards_windows_repository_checks_for_parallel_diagnostics() -> None:
         '--verbose --jobs "${{ matrix.jobs }}"'
     ) in workflow
     assert "timeout-minutes: 60" in workflow
+
+
+def test_ci_workflow_dispatches_a_full_matrix_or_one_safe_probe() -> None:
+    """Catch remote debugging inputs that bypass exact-SHA or argv boundaries."""
+
+    workflow = (
+        Path(__file__).resolve().parents[1]
+        / ".github"
+        / "workflows"
+        / "python-tests.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "workflow_dispatch:" in workflow
+    for input_name in (
+        "mode",
+        "request_id",
+        "expected_sha",
+        "os",
+        "task",
+        "selector",
+        "jobs",
+        "profile",
+    ):
+        assert f"      {input_name}:" in workflow
+    assert "run-name:" in workflow
+    assert "inputs.request_id" in workflow
+    assert "permissions:\n  contents: read" in workflow
+    assert "persist-credentials: false" in workflow
+    assert "inputs.mode == 'matrix'" in workflow
+    assert "inputs.mode == 'probe'" in workflow
+    assert "REPO_CHECKS_EXPECTED_SHA: ${{ inputs.expected_sha }}" in workflow
+    assert "REPO_CHECKS_TASK: ${{ inputs.task }}" in workflow
+    assert "REPO_CHECKS_SELECTOR: ${{ inputs.selector }}" in workflow
+    assert 'json.loads(os.environ["REPO_CHECKS_SELECTOR"])' in workflow
+    assert 'command.extend(["--selector", selector])' in workflow
+    assert 'if task != "combined":' in workflow
+    assert "inputs.selector == '[]'" in workflow
+    assert workflow.count("Run probe portability sentinel") == 1
+    assert workflow.count("Run probe native keyring smoke") == 1
+    assert workflow.count("Run probe native recurring scheduler smoke") == 1
+    assert "--task native:keyring" in workflow
+    assert "--task native:scheduler" in workflow
+    assert ".repo-checks/portability.json" in workflow
+    assert ".repo-checks/native-keyring.json" in workflow
+    assert ".repo-checks/native-scheduler.json" in workflow
+    assert '["git", "rev-parse", "HEAD"]' in workflow
+    assert "--timing-output" in workflow
+    assert "if: always()" in workflow
+    assert "actions/upload-artifact@" in workflow
+
+    in_run_block = False
+    for line in workflow.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith("run:"):
+            in_run_block = True
+            continue
+        if in_run_block and line and not line.startswith(" " * 10):
+            in_run_block = False
+        if in_run_block:
+            assert "${{ inputs." not in line
+
+
+def test_ci_artifact_uploads_include_hidden_repository_check_evidence() -> None:
+    """Catch upload-artifact silently excluding the hidden evidence directory."""
+
+    workflow = (
+        Path(__file__).resolve().parents[1]
+        / ".github"
+        / "workflows"
+        / "python-tests.yml"
+    ).read_text(encoding="utf-8")
+
+    upload_count = workflow.count("uses: actions/upload-artifact@")
+    assert upload_count == 2
+    assert workflow.count("path: .repo-checks/*.json") == upload_count
+    assert workflow.count("include-hidden-files: true") == upload_count
 
 
 def test_ci_dependency_lock_covers_the_complete_test_environment() -> None:

@@ -1,0 +1,11 @@
+content:
+- __init__\.py
+dependencies: []
+description: Provides the thin repository-runner process invocation shared by both CI-debug interfaces.
+gateway: {language: Python>=3.11, path: __init__.py}
+id: ci-debug._rtx.source.rtx-init
+interfaces: {}
+node_type: behavioral_source
+schema_version: 6
+uses_interfaces: []
+version: 1

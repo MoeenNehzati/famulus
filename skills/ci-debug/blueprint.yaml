@@ -1,0 +1,65 @@
+authority:
+  owns_filesystem: []
+children:
+  _rtx: {}
+content:
+- (?:SKILL\.md|instructions/repair-element\.md|tests/test_ci_debug_instructions\.py)
+description: Coordinates evidence-bounded remote CI repair through an outer matrix loop
+  and isolated repair-element routes.
+discovery:
+  mechanism: skill
+  catalog:
+    domain: software-development
+    topics:
+    - repository-workflow
+    - task-automation
+    - assistant-assurance
+    visibility: listed
+  activated_by:
+  - user-request
+  - skill-workflow
+  persistent_modifier: false
+exports:
+  ci-debug.interface.default:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: ci-debug.source.gateway.interface.default
+  ci-debug.interface.repair-element:
+    access:
+      allow_all_modules: false
+      allowed_callers: []
+    source_interface: ci-debug.source.instructions-repair-element.interface.repair-element
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: ci-debug
+namespace_exports:
+  _rtx:
+    version: 1
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    surface:
+      only:
+        ci-debug._rtx.interface.run-ci: 1
+        ci-debug._rtx.interface.run-targeted-tests: 1
+    interface_access:
+      ci-debug._rtx.interface.run-ci:
+        allow_all_modules: false
+        allowed_callers: []
+      ci-debug._rtx.interface.run-targeted-tests:
+        allow_all_modules: false
+        allowed_callers: []
+node_type: module
+schema_version: 6
+sources:
+  ci-debug.source.gateway:
+    blueprint:
+      base: module-root
+      path: blueprints/gateway.yaml
+  ci-debug.source.instructions-repair-element:
+    blueprint:
+      base: module-root
+      path: blueprints/instructions-repair-element.yaml
+version: 1

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import os
 from pathlib import Path
 import re
-from typing import Iterable
+from typing import Iterable, Mapping
 
 from .atomic_files import AtomicWriteError, atomic_replace_bytes
 from .git_provenance import run_git
@@ -79,6 +79,7 @@ def candidate_commit(
     paths: Iterable[Path],
     *,
     commit_timestamp: str | None = None,
+    file_modes: Mapping[Path, int] | None = None,
 ) -> str:
     selected = tuple(sorted(set(paths)))
     if not selected:
@@ -125,6 +126,15 @@ def candidate_commit(
         )
         + b"\0",
     )
+    for path, mode in sorted((file_modes or {}).items()):
+        _require_relative_path(path, "candidate mode")
+        run_git(
+            candidate_root,
+            "update-index",
+            "--chmod=+x" if mode & 0o111 else "--chmod=-x",
+            "--",
+            path.as_posix(),
+        )
     if commit_timestamp is None:
         run_git(candidate_root, "commit", "-qm", message)
         return (

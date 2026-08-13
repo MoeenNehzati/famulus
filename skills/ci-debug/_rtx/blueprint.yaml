@@ -1,0 +1,36 @@
+authority:
+  owns_filesystem: []
+  suggested_permissions:
+    bash:
+    - command: [python3, -m, officina.runtime.python_machine_interface_runner, _run_ci.py, Interface]
+      reason: Delegate the complete remote matrix to the repository-owned runner.
+    - command: [python3, -m, officina.runtime.python_machine_interface_runner, _run_targeted_tests.py, Interface]
+      reason: Delegate one selected matrix element to the repository-owned runner.
+    network: []
+children: {}
+content:
+- __init__\.py
+- _run_ci\.py
+- _run_targeted_tests\.py
+- tests/.*
+description: Thin process adapters from CI-debug to the repository-owned check runner.
+exports:
+  ci-debug._rtx.interface.run-ci:
+    access: {allow_all_modules: false, allowed_callers: [ci-debug]}
+    source_interface: ci-debug._rtx.source.rtx-run-ci.interface.run-ci
+  ci-debug._rtx.interface.run-targeted-tests:
+    access: {allow_all_modules: false, allowed_callers: [ci-debug]}
+    source_interface: ci-debug._rtx.source.rtx-run-targeted-tests.interface.run-targeted-tests
+gateway: {language: Python>=3.11, path: __init__.py}
+id: ci-debug._rtx
+namespace_exports: {}
+node_type: module
+schema_version: 6
+sources:
+  ci-debug._rtx.source.rtx-init:
+    blueprint: {base: module-root, path: blueprints/rtx-init.yaml}
+  ci-debug._rtx.source.rtx-run-ci:
+    blueprint: {base: module-root, path: blueprints/rtx-run-ci.yaml}
+  ci-debug._rtx.source.rtx-run-targeted-tests:
+    blueprint: {base: module-root, path: blueprints/rtx-run-targeted-tests.yaml}
+version: 1

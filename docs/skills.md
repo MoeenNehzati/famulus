@@ -47,6 +47,7 @@ The graph gives a visual overview of the live skill set. The sections below are 
 
 ### Listed
 
+- `ci-debug` — GitHub Actions CI is red, matrix failures need isolated repair, or repeated full reruns make remote diagnosis inefficient _(topics: repository-workflow, task-automation, assistant-assurance; activated by: user request, skill workflow)_
 - `git-workflow` — Branch-safety checks and commit hygiene for any repo _(topics: repository-workflow; activated by: user request, skill workflow)_
 - `initialize-tdd` — Scaffold a staged, approval-gated TDD project _(topics: repository-workflow, assistant-assurance; activated by: user request)_
 

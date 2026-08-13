@@ -1,0 +1,22 @@
+content:
+- SKILL\.md
+dependencies: []
+description: Owns the CI-debug router, full-matrix fixed point, and repair-unit
+  coordination.
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: ci-debug.source.gateway
+interfaces:
+  ci-debug.source.gateway.interface.default:
+    version: 1
+node_type: behavioral_source
+schema_version: 6
+uses_interfaces:
+- interface: ci-debug._rtx.interface.run-ci
+  version: 1
+- interface: ci-debug.source.instructions-repair-element.interface.repair-element
+  version: 1
+- interface: git-workflow.interface.default
+  version: 1
+version: 1
