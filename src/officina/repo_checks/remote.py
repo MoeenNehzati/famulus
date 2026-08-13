@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import secrets
 import subprocess
@@ -104,7 +105,9 @@ def build_parser() -> argparse.ArgumentParser:
     for command in (matrix, probe):
         command.add_argument("--ref", required=True)
         command.add_argument("--expected-sha", required=True)
-        command.add_argument("--output-dir", required=True)
+        destination = command.add_mutually_exclusive_group(required=True)
+        destination.add_argument("--output-dir")
+        destination.add_argument("--context")
         command.add_argument("--timeout", type=int)
     probe.add_argument("--os", required=True)
     probe.add_argument("--task", required=True)
@@ -160,6 +163,67 @@ def _output_root(path: str) -> Path:
         raise RemoteError("invalid_output_dir", "output directory cannot be a symlink")
     candidate.mkdir(parents=True, exist_ok=True)
     return candidate.resolve()
+
+
+def _context_setup(context_root: Path, repository: str) -> None:
+    """Create or validate the stable, non-secret identity of one debug session.
+
+    Intent
+    ------
+    Bind a reusable local context to exactly one GitHub repository and workflow.
+
+    Rationale
+    ---------
+    Stable setup avoids reconstruction after an agent or process restart, while
+    exact equality and fresh caller-side authentication prevent cached context
+    from becoming authority or silently crossing repository boundaries.
+
+    Pseudocode
+    ----------
+    - set expected setup = schema, repository identity, and workflow
+    - if context setup is absent:
+      - write a private temporary JSON file
+      - atomically hard-link it into place without replacing another creator
+    - load the established regular file
+    - if its complete value differs from expected setup:
+      - raise context mismatch
+
+    Security
+    --------
+    The setup contains no token, authentication output, remote URL, environment,
+    ref, or SHA. Authentication and candidate identity remain live checks.
+    """
+
+    destination = context_root / "context.json"
+    expected = {
+        "schema_version": 1,
+        "repository": repository,
+        "workflow": WORKFLOW,
+    }
+    if not destination.exists():
+        temporary = context_root / f".context-{secrets.token_hex(8)}.tmp"
+        temporary.write_text(json.dumps(expected, indent=2) + "\n", encoding="utf-8")
+        try:
+            os.link(temporary, destination)
+        except FileExistsError:
+            pass
+        except OSError as exc:
+            raise RemoteError(
+                "invalid_context", "debug context setup is unavailable"
+            ) from exc
+        finally:
+            temporary.unlink(missing_ok=True)
+    if destination.is_symlink() or not destination.is_file():
+        raise RemoteError("invalid_context", "debug context setup is unavailable")
+    try:
+        actual = json.loads(destination.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise RemoteError("invalid_context", "debug context setup is invalid") from exc
+    if actual != expected:
+        raise RemoteError(
+            "context_mismatch",
+            "debug context belongs to another repository or workflow",
+        )
 
 
 def _repository(gh: GhClient) -> str:
@@ -400,6 +464,7 @@ def _build_report(
     run_id: int,
     run: dict[str, object],
     failures: dict[str, dict[str, list[str]]],
+    requested_selectors: Sequence[str],
 ) -> dict[str, object]:
     wanted_prefix = "test" if args.remote_command == "matrix" else "probe"
     elements: list[dict[str, object]] = []
@@ -458,8 +523,10 @@ def _build_report(
         "mode": args.remote_command,
         "request_id": request_id,
         "repository": repository,
+        "workflow": WORKFLOW,
         "ref": args.ref,
         "expected_sha": args.expected_sha.lower(),
+        "requested_selectors": list(requested_selectors),
         "run_id": run_id,
         "run_url": run.get("url"),
         "conclusion": "green" if green else "red",
@@ -468,9 +535,30 @@ def _build_report(
     }
 
 
-def _write_report(output_root: Path, report: dict[str, object]) -> None:
-    destination = output_root / "run-report.json"
-    temporary = output_root / ".run-report.json.tmp"
+def _write_report(
+    output_root: Path,
+    report: dict[str, object],
+    *,
+    persistent_context: bool,
+) -> None:
+    """Atomically persist one report in compatibility or immutable-session form.
+
+    A persistent context receives a request-owned directory, so independent
+    matrix elements cannot overwrite each other's evidence. Legacy output mode
+    retains the established latest-report path for callers outside CI-debug.
+    """
+    if persistent_context:
+        run_root = output_root / "runs" / str(report["request_id"])
+        try:
+            run_root.mkdir(parents=True, exist_ok=False)
+        except OSError as exc:
+            raise RemoteError(
+                "invalid_context", "current-run report directory is unavailable"
+            ) from exc
+        destination = run_root / "run-report.json"
+    else:
+        destination = output_root / "run-report.json"
+    temporary = output_root / f".run-report-{report['request_id']}.tmp"
     temporary.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     temporary.replace(destination)
 
@@ -479,13 +567,15 @@ def run(args: argparse.Namespace, *, gh: GhClient, sleep: Callable[[float], None
     """Execute one validated dispatch, correlation, poll, and collection cycle."""
 
     _validate_arguments(args)
-    output_root = _output_root(args.output_dir)
+    output_root = _output_root(args.context or args.output_dir)
     repository = _repository(gh)
     _checked(
         gh,
         ("workflow", "view", WORKFLOW, "--repo", repository),
         "workflow_unavailable",
     )
+    if args.context:
+        _context_setup(output_root, repository)
     remote_sha = _checked(
         gh,
         (
@@ -567,8 +657,9 @@ def run(args: argparse.Namespace, *, gh: GhClient, sleep: Callable[[float], None
         run_id=run_id,
         run=completed,
         failures=_artifact_failures(artifact_root),
+        requested_selectors=selectors,
     )
-    _write_report(output_root, report)
+    _write_report(output_root, report, persistent_context=bool(args.context))
     return report
 
 

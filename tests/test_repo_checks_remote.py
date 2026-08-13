@@ -28,12 +28,14 @@ class FakeGh:
         *,
         conclusion: str = "failure",
         remote_sha: str = "a" * 40,
+        repository: str = "owner/repository",
         probe_os: str = "windows-latest",
         probe_task: str = "tests:shared",
     ):
         self.calls: list[tuple[str, ...]] = []
         self.conclusion = conclusion
         self.remote_sha = remote_sha
+        self.repository = repository
         self.probe_os = probe_os
         self.probe_task = probe_task
 
@@ -42,7 +44,7 @@ class FakeGh:
         if arguments[:2] == ("auth", "status"):
             return SimpleNamespace(returncode=0, stdout="", stderr="")
         if arguments[:2] == ("repo", "view"):
-            return SimpleNamespace(returncode=0, stdout="owner/repository\n", stderr="")
+            return SimpleNamespace(returncode=0, stdout=f"{self.repository}\n", stderr="")
         if arguments[:2] == ("workflow", "view"):
             return SimpleNamespace(returncode=0, stdout="Python Tests\n", stderr="")
         if arguments[0] == "api":
@@ -52,7 +54,7 @@ class FakeGh:
         if arguments[:2] == ("run", "list"):
             request_id = next(
                 value.partition("request_id=")[2]
-                for call in self.calls
+                for call in reversed(self.calls)
                 for value in call
                 if value.startswith("request_id=")
             )
@@ -194,6 +196,123 @@ def test_remote_matrix_dispatches_collects_and_reports_every_job(
     assert not any("token" in value.casefold() for call in gh.calls for value in call)
 
 
+def test_remote_context_persists_only_stable_setup_and_immutable_run_report(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    """Catch resumable setup leaking credentials or overwriting run evidence."""
+
+    context = tmp_path / "ci-session"
+    gh = FakeGh()
+    status = remote.main(
+        [
+            "matrix",
+            "--ref",
+            "repair",
+            "--expected-sha",
+            "a" * 40,
+            "--context",
+            str(context),
+        ],
+        gh=gh,
+        sleep=lambda _seconds: None,
+    )
+
+    assert status == 1
+    report = json.loads(capsys.readouterr().out)
+    setup = json.loads((context / "context.json").read_text(encoding="utf-8"))
+    assert setup == {
+        "schema_version": 1,
+        "repository": "owner/repository",
+        "workflow": "python-tests.yml",
+    }
+    persisted = context / "runs" / report["request_id"] / "run-report.json"
+    assert json.loads(persisted.read_text(encoding="utf-8")) == report
+    assert not (context / "run-report.json").exists()
+    serialized = json.dumps(setup).casefold()
+    assert "token" not in serialized
+    assert "credential" not in serialized
+
+
+def test_remote_context_survives_restart_and_appends_immutable_reports(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    """Catch a new runner process recreating setup or replacing prior evidence."""
+
+    context = tmp_path / "ci-session"
+    arguments = [
+        "probe",
+        "--ref",
+        "repair",
+        "--expected-sha",
+        "a" * 40,
+        "--os",
+        "windows-latest",
+        "--task",
+        "tests:shared",
+        "--selector",
+        "tests/test_broken.py",
+        "--context",
+        str(context),
+    ]
+
+    assert remote.main(arguments, gh=FakeGh(), sleep=lambda _seconds: None) == 1
+    first = json.loads(capsys.readouterr().out)
+    original_setup = (context / "context.json").read_bytes()
+
+    assert remote.main(arguments, gh=FakeGh(), sleep=lambda _seconds: None) == 1
+    second = json.loads(capsys.readouterr().out)
+
+    assert first["request_id"] != second["request_id"]
+    assert (context / "context.json").read_bytes() == original_setup
+    reports = sorted((context / "runs").glob("*/run-report.json"))
+    assert len(reports) == 2
+    assert {json.loads(path.read_text(encoding="utf-8"))["request_id"] for path in reports} == {
+        first["request_id"],
+        second["request_id"],
+    }
+
+
+def test_remote_context_revalidates_live_auth_and_rejects_repository_mismatch(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    """Catch persisted setup bypassing auth or silently switching repositories."""
+
+    context = tmp_path / "ci-session"
+    context.mkdir()
+    (context / "context.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "repository": "owner/repository",
+                "workflow": "python-tests.yml",
+            }
+        ),
+        encoding="utf-8",
+    )
+    gh = FakeGh(repository="other/repository")
+    status = remote.main(
+        [
+            "matrix",
+            "--ref",
+            "repair",
+            "--expected-sha",
+            "a" * 40,
+            "--context",
+            str(context),
+        ],
+        gh=gh,
+        sleep=lambda _seconds: None,
+    )
+
+    assert status == 2
+    assert json.loads(capsys.readouterr().out)["error"] == "context_mismatch"
+    assert gh.calls[0][:2] == ("auth", "status")
+    assert not any(call[:2] == ("workflow", "run") for call in gh.calls)
+
+
 def test_remote_probe_replays_failed_files_from_a_prior_matrix_report(
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
@@ -302,7 +421,9 @@ def test_remote_probe_preserves_direct_selector_cardinality_in_dispatch(
     )
 
     assert status == 0
-    json.loads(capsys.readouterr().out)
+    report = json.loads(capsys.readouterr().out)
+    assert report["workflow"] == "python-tests.yml"
+    assert report["requested_selectors"] == selector_arguments[1::2]
     dispatch = next(call for call in gh.calls if call[:2] == ("workflow", "run"))
     assert expected_field in dispatch
 

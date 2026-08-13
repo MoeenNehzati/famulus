@@ -35,6 +35,10 @@ def test_gateway_contains_only_the_outer_loop() -> None:
     for phrase in (
         "while its report is red",
         "group failures by matrix element",
+        "one non-secret debug context",
+        "immutable request-scoped reports",
+        "still revalidate authentication",
+        "failure ledger, branch assignments, and agent state outside",
         "bounded parallel",
         "integrate accepted patches sequentially",
         "use `ci-debug._rtx.interface.run-ci` again",
@@ -53,9 +57,13 @@ def test_repair_route_contains_the_targeted_inner_loop() -> None:
     )
     for phrase in (
         "while failures remain",
+        "smallest failure-containing selector set",
+        "reuse that context for every targeted invocation",
         "patch only evidence-backed paths",
         "use `ci-debug._rtx.interface.run-targeted-tests`",
-        "replace the failure set",
+        "replace only the probed ledger entries",
+        "retain every unprobed failure",
+        "executed every requested selector",
         "same set repeats",
         "whole matrix element",
         "without integration or cleanup",

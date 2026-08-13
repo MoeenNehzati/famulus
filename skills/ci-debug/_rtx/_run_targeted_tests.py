@@ -23,24 +23,46 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--os", required=True)
     parser.add_argument("--task", required=True)
     selection = parser.add_mutually_exclusive_group(required=True)
-    selection.add_argument("--selector")
+    selection.add_argument("--selector", action="append")
+    selection.add_argument("--selectors-json")
     selection.add_argument("--from-report")
     selection.add_argument("--whole-element", action="store_true")
     parser.add_argument("--jobs", type=int)
     parser.add_argument("--profile")
-    parser.add_argument("--output-dir", required=True)
+    destination = parser.add_mutually_exclusive_group(required=True)
+    destination.add_argument("--output-dir")
+    destination.add_argument("--context")
     parser.add_argument("--timeout", type=int, default=1800)
     args = parser.parse_args(argv)
 
+    selectors = list(args.selector or ())
+    if args.selectors_json:
+        try:
+            decoded_selectors = json.loads(args.selectors_json)
+        except json.JSONDecodeError as exc:
+            parser.error(f"--selectors-json must be valid JSON: {exc}")
+        if (
+            not isinstance(decoded_selectors, list)
+            or not decoded_selectors
+            or not all(isinstance(item, str) and item for item in decoded_selectors)
+        ):
+            parser.error("--selectors-json must be a non-empty list of strings")
+        selectors = decoded_selectors
+
+    destination_args = (
+        ["--context", args.context]
+        if args.context
+        else ["--output-dir", args.output_dir]
+    )
     runner_args = [
         "remote", "probe", "--ref", args.ref,
         "--expected-sha", args.expected_sha,
         "--os", args.os, "--task", args.task,
-        "--output-dir", args.output_dir,
+        *destination_args,
         "--timeout", str(args.timeout),
     ]
-    if args.selector:
-        runner_args.extend(("--selector", args.selector))
+    for selector in selectors:
+        runner_args.extend(("--selector", selector))
     if args.from_report:
         runner_args.extend(("--from-report", args.from_report))
     if args.whole_element:

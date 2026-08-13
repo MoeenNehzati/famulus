@@ -20,16 +20,23 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo-root", required=True)
     parser.add_argument("--ref", required=True)
     parser.add_argument("--expected-sha", required=True)
-    parser.add_argument("--output-dir", required=True)
+    destination = parser.add_mutually_exclusive_group(required=True)
+    destination.add_argument("--output-dir")
+    destination.add_argument("--context")
     parser.add_argument("--timeout", type=int, default=7200)
     args = parser.parse_args(argv)
     try:
+        destination_args = (
+            ("--context", args.context)
+            if args.context
+            else ("--output-dir", args.output_dir)
+        )
         return invoke_runner(
             Path(args.repo_root),
             (
                 "remote", "matrix", "--ref", args.ref,
                 "--expected-sha", args.expected_sha,
-                "--output-dir", args.output_dir,
+                *destination_args,
                 "--timeout", str(args.timeout),
             ),
             timeout_seconds=args.timeout,

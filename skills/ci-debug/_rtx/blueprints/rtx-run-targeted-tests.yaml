@@ -17,12 +17,13 @@ interfaces:
         expected-sha: {description: Exact repair candidate SHA., required: true, sensitivity: public, type: {kind: string, sensitivity: public}}
         os: {description: Runner-owned matrix OS identifier., required: true, sensitivity: public, type: {kind: string, sensitivity: public}}
         task: {description: Runner-owned task identifier., required: true, sensitivity: public, type: {kind: string, sensitivity: public}}
-        selector: {description: Optional single failing test selector., required: false, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+        selector: {description: One exact failing test selector for compatibility., required: false, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+        selectors-json: {description: JSON array containing the exact failing test selector set., required: false, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
         from-report: {description: Optional prior runner report whose failure set should be replayed., required: false, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
         whole-element: {default: false, description: Run the complete selected matrix element., required: false, sensitivity: public, type: {kind: flag}}
         jobs: {description: Optional runner worker override., required: false, sensitivity: public, type: {kind: integer}}
         profile: {description: Optional runner-owned profile., required: false, sensitivity: public, type: {kind: string, sensitivity: public}}
-        output-dir: {description: Local directory for runner reports., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+        context: {description: Persistent non-secret debug context shared with the coordinator., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
         timeout: {default: 1800, description: Maximum runner wait in seconds., required: false, sensitivity: public, type: {kind: integer}}
       caller_warnings:
       - external-side-effect: The repository runner may dispatch remote CI; this interface does not mutate Git.
@@ -33,7 +34,7 @@ interfaces:
         writes:
         - {id: result, medium: stdout, system: agent-runtime, access: write, content: targeted runner report, formats: [json], sensitivity: derived-private}
         - {id: diagnostics, medium: stderr, system: agent-runtime, access: write, content: runner diagnostics, formats: [text], sensitivity: derived-private}
-        - {id: reports, medium: local-filesystem, system: filesystem, access: write, path: <output-dir>/**, path_match: glob, content: runner-owned reports, formats: [json, text, xml], sensitivity: derived-private}
+        - {id: reports, medium: local-filesystem, system: filesystem, access: write, path: <context>/**, path_match: glob, content: non-secret setup and runner-owned reports, formats: [json, text, xml], sensitivity: derived-private}
       execution:
         consistency: {snapshot: One invocation is bound to one exact candidate and matrix element.}
         effects:
@@ -42,22 +43,22 @@ interfaces:
           direct_io_ref: reports
           id: write-reports
           may_occur_in_outcomes: [reported]
-          reversibility: {reversible: Remove the runner-owned output directory.}
-          value_source: {argument_ref: output-dir, kind: argument}
+          reversibility: {reversible: Remove the runner-owned context after retaining any required evidence.}
+          value_source: {argument_ref: context, kind: argument}
         lifecycle: finite
         state_effect: mutating
         mutation_safety:
           atomicity: {non_atomic: The delegated remote run and report writes are separate effects.}
           concurrent_invocations: {safe: Independent matrix elements may run concurrently.}
           idempotency: {non_idempotent: Repeating may dispatch another remote run.}
-          on_uncertain_completion: {verify_then_decide: Inspect the runner output directory before dispatching again.}
+          on_uncertain_completion: {verify_then_decide: Inspect the request-scoped reports in the context before dispatching again.}
           partial_effects_on_failure: {possible: A remote run may continue after local interruption.}
           rollback_on_failure: {unavailable: The interface does not cancel or delete remote runs.}
         verification: [{method: output-schema, output_ref: result}]
       helpers: []
       interaction: {mode: unattended}
       outcomes:
-      - {id: reported, class: partial, effects: [write-reports], outputs: [result], caller_action: Replace the active failure set from this report; never infer complete-CI green.}
+      - {id: reported, class: partial, effects: [write-reports], outputs: [result], caller_action: Update only the probed failures from this report; never infer complete-CI green.}
       outputs:
       - {id: result, audience: both, cardinality: {minimum: 1, maximum: 1}, description: Canonical targeted runner report., direct_io_ref: result, empty: Never empty on a completed runner invocation., ordering: stable, pagination: {kind: none}, truncation: {kind: none}, type: {kind: string, sensitivity: derived-private}}
       preconditions: []
@@ -69,22 +70,28 @@ interfaces:
       - allow_stdin: false
         min_positionals: 0
         max_positionals: 0
-        allowed_flags: [--repo-root, --ref, --expected-sha, --os, --task, --selector, --jobs, --profile, --output-dir, --timeout]
-        required_flags: [--repo-root, --ref, --expected-sha, --os, --task, --selector, --output-dir]
-        flag_patterns: {--repo-root: '^.+$', --ref: '^.+$', --expected-sha: '^[0-9a-f]{40}$', --os: '^[A-Za-z0-9._-]+$', --task: '^[A-Za-z0-9:._-]+$', --selector: '^.+$', --jobs: '^[1-9][0-9]*$', --profile: '^[A-Za-z0-9._-]+$', --output-dir: '^.+$', --timeout: '^[1-9][0-9]*$'}
+        allowed_flags: [--repo-root, --ref, --expected-sha, --os, --task, --selector, --jobs, --profile, --context, --timeout]
+        required_flags: [--repo-root, --ref, --expected-sha, --os, --task, --selector, --context]
+        flag_patterns: {--repo-root: '^.+$', --ref: '^.+$', --expected-sha: '^[0-9a-f]{40}$', --os: '^[A-Za-z0-9._-]+$', --task: '^[A-Za-z0-9:._-]+$', --selector: '^.+$', --jobs: '^[1-9][0-9]*$', --profile: '^[A-Za-z0-9._-]+$', --context: '^.+$', --timeout: '^[1-9][0-9]*$'}
       - allow_stdin: false
         min_positionals: 0
         max_positionals: 0
-        allowed_flags: [--repo-root, --ref, --expected-sha, --os, --task, --from-report, --jobs, --profile, --output-dir, --timeout]
-        required_flags: [--repo-root, --ref, --expected-sha, --os, --task, --from-report, --output-dir]
-        flag_patterns: {--repo-root: '^.+$', --ref: '^.+$', --expected-sha: '^[0-9a-f]{40}$', --os: '^[A-Za-z0-9._-]+$', --task: '^[A-Za-z0-9:._-]+$', --from-report: '^.+$', --jobs: '^[1-9][0-9]*$', --profile: '^[A-Za-z0-9._-]+$', --output-dir: '^.+$', --timeout: '^[1-9][0-9]*$'}
+        allowed_flags: [--repo-root, --ref, --expected-sha, --os, --task, --selectors-json, --jobs, --profile, --context, --timeout]
+        required_flags: [--repo-root, --ref, --expected-sha, --os, --task, --selectors-json, --context]
+        flag_patterns: {--repo-root: '^.+$', --ref: '^.+$', --expected-sha: '^[0-9a-f]{40}$', --os: '^[A-Za-z0-9._-]+$', --task: '^[A-Za-z0-9:._-]+$', --selectors-json: '^\[.+\]$', --jobs: '^[1-9][0-9]*$', --profile: '^[A-Za-z0-9._-]+$', --context: '^.+$', --timeout: '^[1-9][0-9]*$'}
       - allow_stdin: false
         min_positionals: 0
         max_positionals: 0
-        allowed_flags: [--repo-root, --ref, --expected-sha, --os, --task, --whole-element, --jobs, --profile, --output-dir, --timeout]
-        required_flags: [--repo-root, --ref, --expected-sha, --os, --task, --whole-element, --output-dir]
-        flag_patterns: {--repo-root: '^.+$', --ref: '^.+$', --expected-sha: '^[0-9a-f]{40}$', --os: '^[A-Za-z0-9._-]+$', --task: '^[A-Za-z0-9:._-]+$', --jobs: '^[1-9][0-9]*$', --profile: '^[A-Za-z0-9._-]+$', --output-dir: '^.+$', --timeout: '^[1-9][0-9]*$'}
-    usage: --repo-root REPO --ref REF --expected-sha SHA --os OS --task TASK (--selector NODE | --from-report PATH | --whole-element) --output-dir DIR [--jobs N] [--profile PROFILE] [--timeout SECONDS]
+        allowed_flags: [--repo-root, --ref, --expected-sha, --os, --task, --from-report, --jobs, --profile, --context, --timeout]
+        required_flags: [--repo-root, --ref, --expected-sha, --os, --task, --from-report, --context]
+        flag_patterns: {--repo-root: '^.+$', --ref: '^.+$', --expected-sha: '^[0-9a-f]{40}$', --os: '^[A-Za-z0-9._-]+$', --task: '^[A-Za-z0-9:._-]+$', --from-report: '^.+$', --jobs: '^[1-9][0-9]*$', --profile: '^[A-Za-z0-9._-]+$', --context: '^.+$', --timeout: '^[1-9][0-9]*$'}
+      - allow_stdin: false
+        min_positionals: 0
+        max_positionals: 0
+        allowed_flags: [--repo-root, --ref, --expected-sha, --os, --task, --whole-element, --jobs, --profile, --context, --timeout]
+        required_flags: [--repo-root, --ref, --expected-sha, --os, --task, --whole-element, --context]
+        flag_patterns: {--repo-root: '^.+$', --ref: '^.+$', --expected-sha: '^[0-9a-f]{40}$', --os: '^[A-Za-z0-9._-]+$', --task: '^[A-Za-z0-9:._-]+$', --jobs: '^[1-9][0-9]*$', --profile: '^[A-Za-z0-9._-]+$', --context: '^.+$', --timeout: '^[1-9][0-9]*$'}
+    usage: --repo-root REPO --ref REF --expected-sha SHA --os OS --task TASK (--selectors-json JSON | --selector NODE | --from-report PATH | --whole-element) --context DIR [--jobs N] [--profile PROFILE] [--timeout SECONDS]
     version: 1
 node_type: behavioral_source
 platform_support: {linux: true, macos: true, windows: true}

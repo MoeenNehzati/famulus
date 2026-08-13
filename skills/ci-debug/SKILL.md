@@ -24,12 +24,24 @@ Public Interfaces:
 <!-- END BLUEPRINT CONTRACT -->
 # CI Debug
 
+Create or reuse one non-secret debug context and supply it to every
+`ci-debug._rtx.interface.run-ci` and repair-element invocation. The context
+owns stable repository/workflow identity and immutable request-scoped reports;
+it never owns credentials, credential-bearing URLs, or raw authentication
+output. Persisted setup is a handoff aid, not authority: each invocation must
+still revalidate authentication, repository identity, and the exact pushed
+candidate. Keep the coordinator's failure ledger, branch assignments, and agent
+state outside the machine-owned context; do not extend its schema ad hoc.
+
 Use `ci-debug._rtx.interface.run-ci` for the exact pushed candidate.
 
 While its report is red:
 
-1. Group failures by matrix element. Give each repair subagent one element, its
-   failing selectors, the report, and an allowed path scope.
+1. Group failures by matrix element. Give each repair subagent one element, the
+   shared debug context, smallest selector set containing its known failures,
+   the report, and an allowed path scope. Prefer exact failing test nodes, then
+   the smallest set of containing test files when exact nodes are unavailable.
+   Do not include selectors already known to pass.
 2. Run independent repair elements in bounded parallel through
    `ci-debug.interface.repair-element`; use a sequential fallback when workers
    are unavailable.
