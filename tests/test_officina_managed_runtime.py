@@ -86,6 +86,24 @@ def test_source_revision_falls_back_to_packaged_source_fingerprint(
     assert _source_revision(repo_root) != first
 
 
+def test_release_source_digest_ignores_generated_bytecode_but_detects_source_tamper(
+    tmp_path,
+):
+    installed_source = tmp_path / "officina"
+    installed_source.mkdir()
+    module = installed_source / "runtime.py"
+    module.write_text("VALUE = 1\n")
+    original = managed_runtime._directory_digest(installed_source)
+
+    cache = installed_source / "__pycache__" / "runtime.cpython-311.pyc"
+    cache.parent.mkdir()
+    cache.write_bytes(b"interpreter-generated cache")
+    assert managed_runtime._directory_digest(installed_source) == original
+
+    module.write_text("VALUE = 2\n")
+    assert managed_runtime._directory_digest(installed_source) != original
+
+
 def test_source_revision_ignores_parent_repository_and_ambient_git_routing(
     monkeypatch,
     tmp_path,
@@ -278,8 +296,9 @@ def test_build_candidate_release_creates_venv_then_one_batch_pip_install(monkeyp
         python_version="3.11",
     )
 
-    assert len(calls) == 3  # uv venv, one batch pip-install call (not per-package), uv python dir
-    venv_call, pip_call, python_dir_call = calls
+    assert len(calls) == 7
+    venv_call, pip_call, *probe_and_trust_calls = calls
+    python_dir_call = probe_and_trust_calls[2]
     assert venv_call == [str(FAKE_UV_BIN), "venv", "--python", "3.11", str(pointer.runtime_source / "venv")]
     assert pip_call[:4] == [str(FAKE_UV_BIN), "pip", "install", "--python"]
     assert pip_call[4] == str(pointer.python_bin)
@@ -501,7 +520,14 @@ def test_activation_revalidates_bundle_and_preserves_prior_pointer_on_tamper(
     prior_python.write_text("#!/bin/sh\n")
     from officina.install.runtime_pointer import activate_release
 
-    activate_release(runtime_root=runtime_root, release_dir=prior_release, python_bin=prior_python)
+    activate_release(
+        runtime_root=runtime_root,
+        release_dir=prior_release,
+        python_bin=prior_python,
+        trusted_interpreter_roots=prepared.trusted_interpreter_roots,
+        repository_config=prepared.repository_config,
+        resolver_bundle_id=prepared.resolver_bundle_id,
+    )
     prior_bytes = (runtime_root / "current.json").read_bytes()
     bundle_launch = (
         runtime_root
@@ -519,6 +545,85 @@ def test_activation_revalidates_bundle_and_preserves_prior_pointer_on_tamper(
     assert (runtime_root / "current.json").read_bytes() == prior_bytes
 
 
+def test_activation_requires_artifact_metadata_and_reprobes_candidate(monkeypatch, tmp_path):
+    prepared, _calls = _prepare_repo_candidate(monkeypatch, tmp_path)
+    runtime_root = tmp_path / "runtime"
+    (prepared.release_dir / "artifact.json").unlink()
+    probe_calls = []
+    monkeypatch.setattr(
+        managed_runtime,
+        "_validate_candidate_runtime",
+        lambda **kwargs: probe_calls.append(kwargs),
+    )
+
+    with pytest.raises(ManagedRuntimeError, match="artifact"):
+        managed_runtime.activate_prepared_release(runtime_root, prepared)
+
+    assert probe_calls == []
+    assert not (runtime_root / "current.json").exists()
+
+
+def test_activation_reprobes_even_a_previously_validated_candidate(monkeypatch, tmp_path):
+    prepared, _calls = _prepare_repo_candidate(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        managed_runtime,
+        "_validate_candidate_runtime",
+        lambda **kwargs: (_ for _ in ()).throw(ManagedRuntimeError("reprobe failed")),
+    )
+
+    with pytest.raises(ManagedRuntimeError, match="reprobe failed"):
+        managed_runtime.activate_prepared_release(tmp_path / "runtime", prepared)
+
+    assert not (tmp_path / "runtime" / "current.json").exists()
+
+
+def test_activation_rejects_release_symlink_and_mismatched_identity(monkeypatch, tmp_path):
+    prepared, _calls = _prepare_repo_candidate(monkeypatch, tmp_path)
+    runtime_root = tmp_path / "runtime"
+    alias = runtime_root / "releases" / "2026-08-12T00-00-00Z-badbad"
+    try:
+        alias.symlink_to(prepared.release_dir, target_is_directory=True)
+    except OSError as exc:
+        # famulus-skip: category=platform-contract; reason=some Windows runners deny directory-symlink creation; alternate=Linux and macOS exercise exact release-symlink rejection
+        pytest.skip(f"symlink creation is unavailable: {exc}")
+
+    with pytest.raises(ManagedRuntimeError, match="symlink|identity|immediate"):
+        managed_runtime.activate_prepared_release(
+            runtime_root,
+            replace(prepared, release_id=alias.name, release_dir=alias),
+        )
+
+    assert not (runtime_root / "current.json").exists()
+
+
+def test_activation_rejects_python_entry_from_another_release(monkeypatch, tmp_path):
+    prepared, _calls = _prepare_repo_candidate(monkeypatch, tmp_path)
+    runtime_root = tmp_path / "runtime"
+    other_python = runtime_root / "releases" / "other" / "venv" / "bin" / "python"
+    other_python.parent.mkdir(parents=True)
+    other_python.write_text("#!/bin/sh\n")
+
+    with pytest.raises(ManagedRuntimeError, match="python_bin|interpreter"):
+        managed_runtime.activate_prepared_release(
+            runtime_root,
+            replace(prepared, python_bin=other_python),
+        )
+
+    assert not (runtime_root / "current.json").exists()
+
+
+def test_activation_requires_prepared_trust_to_equal_bundle_sidecar(monkeypatch, tmp_path):
+    prepared, _calls = _prepare_repo_candidate(monkeypatch, tmp_path)
+
+    with pytest.raises(ManagedRuntimeError, match="trust"):
+        managed_runtime.activate_prepared_release(
+            tmp_path / "runtime",
+            replace(prepared, trusted_interpreter_roots=(tmp_path / "forged-trust",)),
+        )
+
+    assert not (tmp_path / "runtime" / "current.json").exists()
+
+
 def test_pointer_validation_failure_preserves_prior_pointer_and_candidate(
     monkeypatch, tmp_path
 ):
@@ -530,7 +635,14 @@ def test_pointer_validation_failure_preserves_prior_pointer_and_candidate(
     prior_python.write_text("#!/bin/sh\n")
     from officina.install.runtime_pointer import activate_release
 
-    activate_release(runtime_root=runtime_root, release_dir=prior_release, python_bin=prior_python)
+    activate_release(
+        runtime_root=runtime_root,
+        release_dir=prior_release,
+        python_bin=prior_python,
+        trusted_interpreter_roots=prepared.trusted_interpreter_roots,
+        repository_config=prepared.repository_config,
+        resolver_bundle_id=prepared.resolver_bundle_id,
+    )
     prior_bytes = (runtime_root / "current.json").read_bytes()
 
     with pytest.raises(ManagedRuntimeError, match="pointer validation"):
@@ -552,7 +664,14 @@ def test_pointer_replace_failure_preserves_prior_pointer_and_candidate(monkeypat
     prior_python.write_text("#!/bin/sh\n")
     from officina.install.runtime_pointer import activate_release
 
-    activate_release(runtime_root=runtime_root, release_dir=prior_release, python_bin=prior_python)
+    activate_release(
+        runtime_root=runtime_root,
+        release_dir=prior_release,
+        python_bin=prior_python,
+        trusted_interpreter_roots=prepared.trusted_interpreter_roots,
+        repository_config=prepared.repository_config,
+        resolver_bundle_id=prepared.resolver_bundle_id,
+    )
     prior_bytes = (runtime_root / "current.json").read_bytes()
     monkeypatch.setattr(
         "officina.install.runtime_pointer.atomic_replace_bytes",
@@ -591,21 +710,222 @@ def test_failure_after_pointer_replace_keeps_new_pointer_for_journal_recovery(
 
 
 def test_pruning_is_explicit_and_retains_current_plus_one_previous(monkeypatch, tmp_path):
-    prepared, _calls = _prepare_repo_candidate(monkeypatch, tmp_path)
     runtime_root = tmp_path / "runtime"
-    managed_runtime.activate_prepared_release(runtime_root, prepared)
-    for release_id in ("2026-01-01T00-00-00Z-aaaaaa", "2026-01-02T00-00-00Z-bbbbbb"):
-        release = runtime_root / "releases" / release_id
-        release.mkdir()
-        (release / "sentinel").write_text(release_id)
+    calls: list = []
+    releases = [
+        _prepare_and_activate_named(
+            monkeypatch,
+            tmp_path,
+            runtime_root,
+            release_id,
+            calls,
+        )
+        for release_id in (
+            "2026-01-01T00-00-00Z-aaaaaa",
+            "2026-01-02T00-00-00Z-bbbbbb",
+            "2026-01-03T00-00-00Z-cccccc",
+        )
+    ]
 
     assert len(tuple((runtime_root / "releases").iterdir())) == 3
     removed = managed_runtime.prune_old_releases(runtime_root)
 
     assert tuple(path.name for path in removed) == ("2026-01-01T00-00-00Z-aaaaaa",)
     assert sorted(path.name for path in (runtime_root / "releases").iterdir()) == sorted(
-        (prepared.release_id, "2026-01-02T00-00-00Z-bbbbbb")
+        (releases[1].release_id, releases[2].release_id)
     )
+
+
+def _prepare_and_activate_named(monkeypatch, tmp_path, runtime_root, release_id, calls):
+    monkeypatch.setattr(managed_runtime, "_new_release_id", lambda: release_id)
+    monkeypatch.setattr(
+        "subprocess.run",
+        fake_uv_subprocess_run(calls, trusted_python_dir=tmp_path / "uv-python-store"),
+    )
+    prepared = managed_runtime.prepare_candidate_release(
+        runtime_root=runtime_root,
+        manifest_path=REAL_MANIFEST,
+        platform="linux",
+        uv_bin=FAKE_UV_BIN,
+        python_version="3.11",
+        repo_root=REPO_ROOT,
+        include_optional_dependencies=False,
+    )
+    managed_runtime.activate_prepared_release(runtime_root, prepared)
+    return prepared
+
+
+def test_pruning_uses_durable_activation_order_not_random_release_suffix(
+    monkeypatch, tmp_path
+):
+    runtime_root = tmp_path / "runtime"
+    calls = []
+    first = _prepare_and_activate_named(
+        monkeypatch, tmp_path, runtime_root, "2026-08-12T00-00-00Z-ffffff", calls
+    )
+    second = _prepare_and_activate_named(
+        monkeypatch, tmp_path, runtime_root, "2026-08-12T00-00-00Z-000000", calls
+    )
+    current = _prepare_and_activate_named(
+        monkeypatch, tmp_path, runtime_root, "2026-08-12T00-00-00Z-aaaaaa", calls
+    )
+
+    removed = managed_runtime.prune_old_releases(runtime_root)
+
+    assert tuple(path.name for path in removed) == (first.release_id,)
+    assert second.release_dir.is_dir()
+    assert current.release_dir.is_dir()
+
+
+def test_pruning_ignores_regex_shaped_sentinel_and_tampered_candidate(
+    monkeypatch, tmp_path
+):
+    runtime_root = tmp_path / "runtime"
+    calls = []
+    first = _prepare_and_activate_named(
+        monkeypatch, tmp_path, runtime_root, "2026-08-12T00-00-00Z-111111", calls
+    )
+    current = _prepare_and_activate_named(
+        monkeypatch, tmp_path, runtime_root, "2026-08-12T00-00-00Z-222222", calls
+    )
+    sentinel = runtime_root / "releases" / "2026-08-12T00-00-00Z-000000"
+    sentinel.mkdir()
+    (sentinel / "sentinel").write_text("user state\n")
+    tampered = runtime_root / "releases" / "2026-08-12T00-00-00Z-101010"
+    shutil.copytree(first.release_dir, tampered)
+    (tampered / "artifact.json").write_text("{}")
+
+    assert managed_runtime.prune_old_releases(runtime_root) == ()
+    assert sentinel.is_dir()
+    assert tampered.is_dir()
+    assert first.release_dir.is_dir()
+    assert current.release_dir.is_dir()
+
+
+def test_pruning_ignores_metadata_bearing_malformed_name_without_partial_deletion(
+    monkeypatch, tmp_path
+):
+    runtime_root = tmp_path / "runtime"
+    calls = []
+    first = _prepare_and_activate_named(
+        monkeypatch, tmp_path, runtime_root, "2026-08-12T00-00-00Z-111111", calls
+    )
+    previous = _prepare_and_activate_named(
+        monkeypatch, tmp_path, runtime_root, "2026-08-12T00-00-00Z-222222", calls
+    )
+    current = _prepare_and_activate_named(
+        monkeypatch, tmp_path, runtime_root, "2026-08-12T00-00-00Z-333333", calls
+    )
+    malformed = runtime_root / "releases" / "metadata-bearing-third-state"
+    shutil.copytree(first.release_dir, malformed)
+
+    ordered = (
+        (first.release_dir, 10),
+        (malformed, 20),
+        (previous.release_dir, 30),
+        (current.release_dir, 40),
+    )
+    for release_dir, activated_at_ns in ordered:
+        artifact_path = release_dir / "artifact.json"
+        artifact = json.loads(artifact_path.read_text())
+        artifact["release_id"] = release_dir.name
+        artifact_path.write_text(json.dumps(artifact))
+        activation_path = release_dir / "activation.json"
+        activation = json.loads(activation_path.read_text())
+        activation["release_id"] = release_dir.name
+        activation["activated_at_ns"] = activated_at_ns
+        activation_path.write_text(json.dumps(activation))
+
+    removed = managed_runtime.prune_old_releases(runtime_root)
+
+    assert tuple(path.name for path in removed) == (first.release_id,)
+    assert not first.release_dir.exists()
+    assert malformed.is_dir()
+    assert previous.release_dir.is_dir()
+    assert current.release_dir.is_dir()
+
+
+def test_pruning_rejects_malformed_current_identity_without_removing_anything(
+    monkeypatch, tmp_path
+):
+    runtime_root = tmp_path / "runtime"
+    calls = []
+    first = _prepare_and_activate_named(
+        monkeypatch, tmp_path, runtime_root, "2026-08-12T00-00-00Z-111111", calls
+    )
+    current = _prepare_and_activate_named(
+        monkeypatch, tmp_path, runtime_root, "2026-08-12T00-00-00Z-222222", calls
+    )
+    payload = json.loads((runtime_root / "current.json").read_text())
+    payload["release_id"] = first.release_id
+    (runtime_root / "current.json").write_text(json.dumps(payload))
+
+    with pytest.raises(ManagedRuntimeError, match="release_id"):
+        managed_runtime.prune_old_releases(runtime_root)
+
+    assert first.release_dir.is_dir()
+    assert current.release_dir.is_dir()
+
+
+@pytest.mark.parametrize("tamper", ("missing", "negative-time"))
+def test_pruning_requires_valid_activation_metadata_for_current_release(
+    monkeypatch, tmp_path, tamper
+):
+    runtime_root = tmp_path / "runtime"
+    calls = []
+    releases = [
+        _prepare_and_activate_named(
+            monkeypatch,
+            tmp_path,
+            runtime_root,
+            release_id,
+            calls,
+        )
+        for release_id in (
+            "2026-08-12T00-00-00Z-111111",
+            "2026-08-12T00-00-00Z-222222",
+            "2026-08-12T00-00-00Z-333333",
+        )
+    ]
+    activation_path = releases[-1].release_dir / "activation.json"
+    if tamper == "missing":
+        activation_path.unlink()
+    else:
+        activation = json.loads(activation_path.read_text())
+        activation["activated_at_ns"] = -1
+        activation_path.write_text(json.dumps(activation))
+
+    with pytest.raises(ManagedRuntimeError, match="current.*activation"):
+        managed_runtime.prune_old_releases(runtime_root)
+
+    assert all(release.release_dir.is_dir() for release in releases)
+
+
+def test_release_hierarchy_is_fsynced_before_pointer_replace(monkeypatch, tmp_path):
+    events = []
+    real_fsync = managed_runtime._fsync_directory
+    real_replace = __import__(
+        "officina.install.runtime_pointer", fromlist=["atomic_replace_bytes"]
+    ).atomic_replace_bytes
+
+    def record_fsync(path):
+        events.append(("fsync", Path(path)))
+        return real_fsync(path)
+
+    def record_pointer(path, *args, **kwargs):
+        events.append(("pointer", Path(path)))
+        return real_replace(path, *args, **kwargs)
+
+    monkeypatch.setattr(managed_runtime, "_fsync_directory", record_fsync)
+    prepared, _calls = _prepare_repo_candidate(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        "officina.install.runtime_pointer.atomic_replace_bytes", record_pointer
+    )
+    managed_runtime.activate_prepared_release(tmp_path / "runtime", prepared)
+
+    pointer_index = next(i for i, event in enumerate(events) if event[0] == "pointer")
+    assert ("fsync", prepared.release_dir) in events[:pointer_index]
+    assert ("fsync", prepared.release_dir.parent) in events[:pointer_index]
 
 
 def test_build_candidate_release_failure_writes_no_pointer(monkeypatch, tmp_path):
@@ -661,11 +981,19 @@ def test_build_candidate_release_resolver_deploy_failure_writes_no_pointer(monke
     monkeypatch.setattr(
         "subprocess.run", fake_uv_subprocess_run(calls, trusted_python_dir=tmp_path / "uv-python-store")
     )
+    runtime_root = tmp_path / "runtime"
+    resolver_path = runtime_root / "bootstrap" / "resolvers" / "v1" / "launch.py"
+    real_atomic_replace_bytes = atomic_files.atomic_replace_bytes
+
+    def fail_resolver_deploy(*args, **kwargs):
+        if args[0] == resolver_path:
+            raise OSError("simulated disk full")
+        return real_atomic_replace_bytes(*args, **kwargs)
+
     monkeypatch.setattr(
         "officina.install.managed_runtime.atomic_files.atomic_replace_bytes",
-        lambda *a, **k: (_ for _ in ()).throw(OSError("simulated disk full")),
+        fail_resolver_deploy,
     )
-    runtime_root = tmp_path / "runtime"
 
     with pytest.raises(ManagedRuntimeError):
         build_candidate_release(
@@ -721,9 +1049,10 @@ def test_deploy_resolver_writes_through_atomic_replace_bytes_not_plain_copy(monk
         python_version="3.11",
     )
 
-    assert len(atomic_calls) == 2
     resolver_path = runtime_root / "bootstrap" / "resolvers" / "v1" / "launch.py"
-    args, kwargs = next(call for call in atomic_calls if call[0][0] == resolver_path)
+    resolver_calls = [call for call in atomic_calls if call[0][0] == resolver_path]
+    assert len(resolver_calls) == 1
+    args, kwargs = resolver_calls[0]
     assert args[0] == resolver_path
     assert kwargs["mode"] == 0o755
     assert resolver_path.exists()

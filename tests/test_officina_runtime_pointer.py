@@ -12,6 +12,34 @@ from officina.install.runtime_pointer import (
     load_current_pointer,
 )
 
+BUNDLE_ID = "a" * 64
+
+
+def _repository_config(tmp_path: Path) -> Path:
+    repository = tmp_path / "repository"
+    (repository / "skills").mkdir(parents=True, exist_ok=True)
+    config = repository / "officina.toml"
+    config.write_text('schema_version = 1\n[modules]\nroots = ["skills"]\n')
+    return config
+
+
+def _activate_v3(
+    *,
+    tmp_path: Path,
+    runtime_root: Path,
+    release_dir: Path,
+    python_bin: Path,
+    trusted_interpreter_roots: tuple[Path, ...] = (),
+):
+    return activate_release(
+        runtime_root=runtime_root,
+        release_dir=release_dir,
+        python_bin=python_bin,
+        trusted_interpreter_roots=trusted_interpreter_roots,
+        repository_config=_repository_config(tmp_path),
+        resolver_bundle_id=BUNDLE_ID,
+    )
+
 
 def test_activate_release_writes_pointer_atomically(tmp_path: Path) -> None:
     runtime_root = tmp_path / "runtime"
@@ -22,7 +50,12 @@ def test_activate_release_writes_pointer_atomically(tmp_path: Path) -> None:
     python_bin = release_dir / "venv" / "bin" / "python"
     python_bin.write_text("#!/bin/sh\n")
 
-    activate_release(runtime_root=runtime_root, release_dir=release_dir, python_bin=python_bin)
+    _activate_v3(
+        tmp_path=tmp_path,
+        runtime_root=runtime_root,
+        release_dir=release_dir,
+        python_bin=python_bin,
+    )
 
     pointer = load_current_pointer(runtime_root=runtime_root)
     assert pointer.release_id == "2026-07-27T00-00-00Z-abc123"
@@ -40,15 +73,16 @@ def test_v2_pointer_carries_validated_repository_configuration(tmp_path: Path) -
     config = repository / "officina.toml"
     config.write_text('schema_version = 1\n[modules]\nroots = ["skills"]\n')
 
-    activated = activate_release(
-        runtime_root=runtime_root,
-        release_dir=release_dir,
-        python_bin=python_bin,
-        repository_config=config,
-    )
+    runtime_root.mkdir(parents=True, exist_ok=True)
+    (runtime_root / "current.json").write_text(json.dumps({
+        "schema_version": 2,
+        "release_id": "release",
+        "runtime_source": str(release_dir),
+        "python_bin": str(python_bin),
+        "repository_config": str(config),
+    }))
     loaded = load_current_pointer(runtime_root=runtime_root)
 
-    assert activated.repository_config == config
     assert loaded.repository_config == config
     assert json.loads((runtime_root / "current.json").read_text())["schema_version"] == 2
 
@@ -59,11 +93,8 @@ def test_v3_pointer_round_trips_resolver_bundle_id(tmp_path: Path) -> None:
     python_bin = release_dir / "venv" / "bin" / "python"
     python_bin.parent.mkdir(parents=True)
     python_bin.write_text("#!/bin/sh\n")
-    bundle_id = "a" * 64
-    repository = tmp_path / "repository"
-    (repository / "skills").mkdir(parents=True)
-    config = repository / "officina.toml"
-    config.write_text('schema_version = 1\n[modules]\nroots = ["skills"]\n')
+    bundle_id = BUNDLE_ID
+    config = _repository_config(tmp_path)
 
     activated = activate_release(
         runtime_root=runtime_root,
@@ -99,6 +130,49 @@ def test_v3_pointer_rejects_invalid_resolver_bundle_id(tmp_path: Path, bundle_id
             repository_config=config,
             resolver_bundle_id=bundle_id,
         )
+
+
+def test_activate_release_rejects_missing_bundle_id_without_pointer_mutation(
+    tmp_path: Path,
+) -> None:
+    runtime_root = tmp_path / "runtime"
+    release_dir = runtime_root / "releases" / "release"
+    python_bin = release_dir / "venv" / "bin" / "python"
+    python_bin.parent.mkdir(parents=True)
+    python_bin.write_text("#!/bin/sh\n")
+    prior = b'{"schema_version":1,"sentinel":"old"}'
+    runtime_root.mkdir(exist_ok=True)
+    (runtime_root / "current.json").write_bytes(prior)
+
+    with pytest.raises(RuntimePointerError, match="resolver_bundle_id"):
+        activate_release(
+            runtime_root=runtime_root,
+            release_dir=release_dir,
+            python_bin=python_bin,
+        )
+
+    assert (runtime_root / "current.json").read_bytes() == prior
+
+
+def test_load_current_pointer_binds_release_id_to_runtime_source_name(tmp_path: Path) -> None:
+    runtime_root = tmp_path / "runtime"
+    release_dir = runtime_root / "releases" / "actual"
+    python_bin = release_dir / "venv" / "bin" / "python"
+    python_bin.parent.mkdir(parents=True)
+    python_bin.write_text("#!/bin/sh\n")
+    (runtime_root / "current.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "release_id": "forged",
+                "runtime_source": str(release_dir),
+                "python_bin": str(python_bin),
+            }
+        )
+    )
+
+    with pytest.raises(RuntimePointerError, match="release_id"):
+        load_current_pointer(runtime_root=runtime_root)
 
 
 def test_v2_pointer_rejects_missing_repository_configuration(tmp_path: Path) -> None:
@@ -191,7 +265,12 @@ def test_activate_release_rejects_python_bin_outside_runtime_root(tmp_path: Path
     outside_python.write_text("#!/bin/sh\n")
 
     with pytest.raises(RuntimePointerError):
-        activate_release(runtime_root=runtime_root, release_dir=release_dir, python_bin=outside_python)
+        _activate_v3(
+            tmp_path=tmp_path,
+            runtime_root=runtime_root,
+            release_dir=release_dir,
+            python_bin=outside_python,
+        )
 
 
 def test_activate_release_rejects_python_bin_symlink_to_untrusted_target(tmp_path: Path) -> None:
@@ -208,7 +287,12 @@ def test_activate_release_rejects_python_bin_symlink_to_untrusted_target(tmp_pat
     python_bin.symlink_to(attacker_binary)
 
     with pytest.raises(RuntimePointerError):
-        activate_release(runtime_root=runtime_root, release_dir=release_dir, python_bin=python_bin)
+        _activate_v3(
+            tmp_path=tmp_path,
+            runtime_root=runtime_root,
+            release_dir=release_dir,
+            python_bin=python_bin,
+        )
 
 
 def test_load_current_pointer_rejects_python_bin_symlink_to_untrusted_target(tmp_path: Path) -> None:
@@ -251,7 +335,8 @@ def test_activate_release_accepts_python_bin_symlink_into_trusted_interpreter_ro
     real_interpreter.write_text("#!/bin/sh\n")
     python_bin.symlink_to(real_interpreter)
 
-    pointer = activate_release(
+    pointer = _activate_v3(
+        tmp_path=tmp_path,
         runtime_root=runtime_root,
         release_dir=release_dir,
         python_bin=python_bin,
@@ -302,11 +387,21 @@ def test_failed_activation_leaves_prior_pointer_untouched(tmp_path: Path) -> Non
     good = releases_root / "good-release"
     (good / "venv" / "bin").mkdir(parents=True)
     (good / "venv" / "bin" / "python").write_text("#!/bin/sh\n")
-    activate_release(runtime_root=runtime_root, release_dir=good, python_bin=good / "venv" / "bin" / "python")
+    _activate_v3(
+        tmp_path=tmp_path,
+        runtime_root=runtime_root,
+        release_dir=good,
+        python_bin=good / "venv" / "bin" / "python",
+    )
 
     missing_python = releases_root / "bad-release" / "venv" / "bin" / "python"
     with pytest.raises(RuntimePointerError):
-        activate_release(runtime_root=runtime_root, release_dir=missing_python.parents[1], python_bin=missing_python)
+        _activate_v3(
+            tmp_path=tmp_path,
+            runtime_root=runtime_root,
+            release_dir=missing_python.parents[1],
+            python_bin=missing_python,
+        )
 
     pointer = load_current_pointer(runtime_root=runtime_root)
     assert pointer.release_id == "good-release"

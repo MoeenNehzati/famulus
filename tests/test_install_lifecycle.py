@@ -84,9 +84,9 @@ def test_first_install_never_invokes_ambient_python(monkeypatch, tmp_path):
     early-return guard (managed_runtime.py) and skip the `uv pip install`
     call entirely, so a regression that leaked `sys.executable` into
     specifically *that* call site would pass undetected. Asserting
-    `len(calls) == 3` below proves all three real call sites (`uv venv`,
-    `uv pip install`, `uv python dir`) actually fired, not just two of
-    them.
+    `len(calls) == 7` below proves all three uv call sites (`uv venv`,
+    `uv pip install`, `uv python dir`) and both pairs of isolated candidate
+    probes (preparation and activation) actually fired.
     """
     poison = "/should/never/be/used/python3"
     monkeypatch.setattr(sys, "executable", poison)
@@ -121,8 +121,8 @@ def test_first_install_never_invokes_ambient_python(monkeypatch, tmp_path):
     _build(monkeypatch, calls, tmp_path, runtime_root)
 
     assert calls, "expected build_candidate_release to invoke subprocess.run at all"
-    assert len(calls) == 3, (
-        "expected exactly 3 real uv call sites (venv, pip install, python dir) "
+    assert len(calls) == 7, (
+        "expected 3 uv call sites plus 4 isolated candidate probes "
         f"to have fired, got {len(calls)}: {calls}"
     )
     pip_install_calls = [c for c in calls if len(c) > 2 and c[1:3] == ["pip", "install"]]
@@ -200,6 +200,8 @@ def test_rollback_reactivates_previous_release(monkeypatch, tmp_path):
         release_dir=first.runtime_source,
         python_bin=first.python_bin,
         trusted_interpreter_roots=(trusted_python_dir,),
+        repository_config=first.repository_config,
+        resolver_bundle_id=first.resolver_bundle_id,
     )
     assert rolled_back.release_id == first.release_id
 

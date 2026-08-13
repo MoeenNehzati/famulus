@@ -84,6 +84,25 @@ def _deploy_resolver(runtime_root: Path, *, trusted_roots: tuple[Path, ...] = ()
     return resolver_path
 
 
+def _write_legacy_pointer(
+    runtime_root: Path,
+    release_dir: Path,
+    python_bin: Path,
+    *,
+    repository_config: Path | None = None,
+) -> None:
+    payload = {
+        "schema_version": 2 if repository_config is not None else 1,
+        "release_id": release_dir.name,
+        "runtime_source": str(release_dir),
+        "python_bin": str(python_bin),
+    }
+    if repository_config is not None:
+        payload["repository_config"] = str(repository_config)
+    runtime_root.mkdir(parents=True, exist_ok=True)
+    (runtime_root / "current.json").write_text(json.dumps(payload))
+
+
 # ── main()/pointer-resolution behavior ───────────────────────────────────────
 
 
@@ -117,7 +136,7 @@ def test_main_execs_into_pointer_python_bin(tmp_path, monkeypatch):
     (release_dir / "venv" / "bin").mkdir(parents=True)
     python_bin = release_dir / "venv" / "bin" / "python"
     python_bin.write_text("#!/bin/sh\n")
-    activate_release(runtime_root=runtime_root, release_dir=release_dir, python_bin=python_bin)
+    _write_legacy_pointer(runtime_root, release_dir, python_bin)
 
     recorded = {}
 
@@ -142,11 +161,7 @@ def test_main_preserves_validated_venv_python_symlink_path(tmp_path, monkeypatch
     python_bin = release_dir / "venv" / "bin" / "python"
     python_bin.parent.mkdir(parents=True)
     python_bin.symlink_to(real_python)
-    activate_release(
-        runtime_root=runtime_root,
-        release_dir=release_dir,
-        python_bin=python_bin,
-    )
+    _write_legacy_pointer(runtime_root, release_dir, python_bin)
     recorded = {}
 
     def fake_execv(path, argv):
@@ -170,10 +185,10 @@ def test_main_injects_repository_config_from_v2_pointer(tmp_path, monkeypatch):
     (repository / "skills").mkdir(parents=True)
     config = repository / "officina.toml"
     config.write_text('schema_version = 1\n[modules]\nroots = ["skills"]\n')
-    activate_release(
-        runtime_root=runtime_root,
-        release_dir=release_dir,
-        python_bin=python_bin,
+    _write_legacy_pointer(
+        runtime_root,
+        release_dir,
+        python_bin,
         repository_config=config,
     )
     recorded = {}
@@ -264,6 +279,160 @@ def test_v3_bootstrap_rejects_tampered_selected_bundle(tmp_path, monkeypatch, ca
     assert "resolver bundle" in capsys.readouterr().err
 
 
+def test_bundle_process_rejects_pointer_advance_between_validation_and_exec(
+    tmp_path, monkeypatch, capsys
+):
+    runtime_root = tmp_path / "runtime"
+    bundle_a = managed_runtime._publish_resolver_bundle(
+        runtime_root=runtime_root,
+        trusted_interpreter_roots=(tmp_path / "trust-a",),
+    )
+    bundle_b = managed_runtime._publish_resolver_bundle(
+        runtime_root=runtime_root,
+        trusted_interpreter_roots=(tmp_path / "trust-b",),
+    )
+    invoked = runtime_root / "resolvers" / "bundles" / bundle_a / "launch.py"
+    python_a = runtime_root / "releases" / "a" / "venv" / "bin" / "python"
+    python_b = runtime_root / "releases" / "b" / "venv" / "bin" / "python"
+    config = tmp_path / "repo" / "officina.toml"
+    config.parent.mkdir()
+    config.write_text('schema_version = 1\n[modules]\nroots = ["."]\n')
+    loads = iter(
+        (
+            (python_a, config, bundle_a),
+            (python_b, config, bundle_b),
+        )
+    )
+    monkeypatch.setattr(
+        launcher_entry._resolver,
+        "_load_current_pointer",
+        lambda *args, **kwargs: next(loads),
+    )
+    monkeypatch.setattr(
+        launcher_entry._resolver,
+        "_validate_resolver_bundle",
+        lambda *args, **kwargs: invoked.parent,
+    )
+    executed = []
+    monkeypatch.setattr("os.execv", lambda path, argv: executed.append((path, argv)))
+
+    assert main([str(invoked), "--help"]) == 1
+    assert executed == []
+    assert "changed" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("linked_ancestor", ("resolvers", "bundles"))
+def test_bundle_validator_rejects_symlinked_storage_ancestor(tmp_path, linked_ancestor):
+    outside = tmp_path / "outside"
+    outside_runtime = outside / "runtime"
+    bundle_id = managed_runtime._publish_resolver_bundle(
+        runtime_root=outside_runtime,
+        trusted_interpreter_roots=(),
+    )
+    runtime_root = tmp_path / "runtime"
+    runtime_root.mkdir()
+    try:
+        if linked_ancestor == "resolvers":
+            (runtime_root / "resolvers").symlink_to(
+                outside_runtime / "resolvers", target_is_directory=True
+            )
+        else:
+            (runtime_root / "resolvers").mkdir()
+            (runtime_root / "resolvers" / "bundles").symlink_to(
+                outside_runtime / "resolvers" / "bundles", target_is_directory=True
+            )
+    except OSError as exc:
+        # famulus-skip: category=platform-contract; reason=some Windows runners deny directory-symlink creation; alternate=Linux and macOS exercise resolver-ancestor symlink rejection
+        pytest.skip(f"symlink creation is unavailable: {exc}")
+
+    with pytest.raises(ResolverError, match="symlink|unsafe"):
+        launcher_entry._resolver._validate_resolver_bundle(runtime_root, bundle_id)
+
+
+@pytest.mark.parametrize("fail_preparation", (False, True), ids=("success", "failure"))
+def test_preparation_preserves_legacy_pointer_trust_sidecar(
+    tmp_path, monkeypatch, fail_preparation
+):
+    runtime_root = tmp_path / "runtime"
+    old_store = tmp_path / "old-uv-store"
+    old_python = old_store / "cpython" / "bin" / "python"
+    old_python.parent.mkdir(parents=True)
+    old_python.write_text("#!/bin/sh\n")
+    release = runtime_root / "releases" / "legacy"
+    python_bin = release / "venv" / "bin" / "python"
+    python_bin.parent.mkdir(parents=True)
+    python_bin.symlink_to(old_python)
+    repository = tmp_path / "legacy-repo"
+    (repository / "skills").mkdir(parents=True)
+    config = repository / "officina.toml"
+    config.write_text('schema_version = 1\n[modules]\nroots = ["skills"]\n')
+    runtime_root.mkdir(exist_ok=True)
+    (runtime_root / "current.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "release_id": "legacy",
+                "runtime_source": str(release),
+                "python_bin": str(python_bin),
+                "repository_config": str(config),
+            }
+        )
+    )
+    _deploy_resolver(runtime_root, trusted_roots=(old_store,))
+    original_trust = (
+        runtime_root / "bootstrap" / "resolvers" / "v1" / "trusted-roots.json"
+    ).read_bytes()
+    calls = []
+    monkeypatch.setattr(
+        "subprocess.run",
+        __import__("test_support.uv_subprocess", fromlist=["fake_uv_subprocess_run"])
+        .fake_uv_subprocess_run(calls, trusted_python_dir=tmp_path / "new-uv-store"),
+    )
+    if fail_preparation:
+        real_validate = managed_runtime._validate_resolver_bundle
+        validation_count = 0
+
+        def fail_second_validation(*args, **kwargs):
+            nonlocal validation_count
+            validation_count += 1
+            result = real_validate(*args, **kwargs)
+            if validation_count == 2:
+                raise managed_runtime.ManagedRuntimeError("after legacy bootstrap")
+            return result
+
+        monkeypatch.setattr(
+            managed_runtime, "_validate_resolver_bundle", fail_second_validation
+        )
+        with pytest.raises(managed_runtime.ManagedRuntimeError):
+            managed_runtime.prepare_candidate_release(
+                runtime_root=runtime_root,
+                manifest_path=REAL_MANIFEST,
+                platform="linux",
+                uv_bin=Path("/fake/uv"),
+                python_version="3.11",
+                repo_root=REPO_ROOT,
+                include_optional_dependencies=False,
+            )
+    else:
+        managed_runtime.prepare_candidate_release(
+            runtime_root=runtime_root,
+            manifest_path=REAL_MANIFEST,
+            platform="linux",
+            uv_bin=Path("/fake/uv"),
+            python_version="3.11",
+            repo_root=REPO_ROOT,
+            include_optional_dependencies=False,
+        )
+    recorded = []
+    monkeypatch.setattr("os.execv", lambda path, argv: recorded.append((path, argv)))
+
+    assert main(_resolver_argv(runtime_root, "--help")) == 1
+    assert recorded[0][0] == str(python_bin)
+    assert (
+        runtime_root / "bootstrap" / "resolvers" / "v1" / "trusted-roots.json"
+    ).read_bytes() == original_trust
+
+
 def test_deployed_stable_launcher_runs_an_installed_dispatcher_without_pythonpath(
     tmp_path,
 ):
@@ -295,11 +464,16 @@ def test_deployed_stable_launcher_runs_an_installed_dispatcher_without_pythonpat
     installed_package = Path(purelib_result.stdout.strip()) / "officina"
     shutil.copytree(SRC_DIR / "officina", installed_package)
     config = REPO_ROOT / "officina.toml"
+    bundle_id = managed_runtime._publish_resolver_bundle(
+        runtime_root=runtime_root,
+        trusted_interpreter_roots=(),
+    )
     activate_release(
         runtime_root=runtime_root,
         release_dir=release_dir,
         python_bin=python_bin,
         repository_config=config,
+        resolver_bundle_id=bundle_id,
     )
     _deploy_resolver(runtime_root)
     dispatcher = tmp_path / "bin" / "dispatcher"

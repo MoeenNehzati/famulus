@@ -147,10 +147,16 @@ def load_current_pointer(
         release_id = payload["release_id"]
     except KeyError as exc:
         raise RuntimePointerError(f"current.json missing required key: {exc}") from exc
+    if not isinstance(release_id, str) or not release_id:
+        raise RuntimePointerError("current.json release_id must be a non-empty string")
     _require_contained_or_trusted(
         python_bin, root=runtime_root, trusted_roots=trusted_interpreter_roots, label="python_bin"
     )
     _require_contained(runtime_source, root=runtime_root, label="runtime_source")
+    if runtime_source.name != release_id:
+        raise RuntimePointerError(
+            "current.json release_id must match runtime_source directory name"
+        )
     repository_config = None
     if schema_version in {2, 3}:
         try:
@@ -222,12 +228,15 @@ def activate_release(
         except RepositoryConfigurationError as exc:
             raise RuntimePointerError(f"invalid repository_config: {exc}") from exc
         repository_config = validated_config.config_path
-    if resolver_bundle_id is not None:
-        resolver_bundle_id = _require_resolver_bundle_id(resolver_bundle_id)
-        if repository_config is None:
-            raise RuntimePointerError(
-                "schema v3 activation requires a validated repository_config"
-            )
+    if resolver_bundle_id is None:
+        raise RuntimePointerError(
+            "resolver_bundle_id is required for every new runtime pointer"
+        )
+    resolver_bundle_id = _require_resolver_bundle_id(resolver_bundle_id)
+    if repository_config is None:
+        raise RuntimePointerError(
+            "schema v3 activation requires a validated repository_config"
+        )
     pointer = RuntimePointer(
         release_id=release_dir.name,
         runtime_source=release_dir,
@@ -236,17 +245,14 @@ def activate_release(
         resolver_bundle_id=resolver_bundle_id,
     )
     payload = {
-        "schema_version": (
-            3 if resolver_bundle_id is not None else 2 if repository_config is not None else 1
-        ),
+        "schema_version": 3,
         "release_id": pointer.release_id,
         "runtime_source": str(pointer.runtime_source),
         "python_bin": str(pointer.python_bin),
     }
     if repository_config is not None:
         payload["repository_config"] = str(repository_config)
-    if resolver_bundle_id is not None:
-        payload["resolver_bundle_id"] = resolver_bundle_id
+    payload["resolver_bundle_id"] = resolver_bundle_id
     atomic_replace_bytes(
         _pointer_path(runtime_root),
         json.dumps(payload, indent=2).encode("utf-8"),

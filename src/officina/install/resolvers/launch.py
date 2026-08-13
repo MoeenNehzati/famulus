@@ -202,7 +202,15 @@ def _trusted_interpreter_roots(resolver_path: Path | None = None) -> tuple[Path,
 def _validate_resolver_bundle(runtime_root: Path, bundle_id: str) -> Path:
     """Validate a content-addressed bundle using only standard-library code."""
     bundle_id = _require_bundle_id(bundle_id)
-    bundle_dir = runtime_root / "resolvers" / "bundles" / bundle_id
+    resolvers_dir = runtime_root / "resolvers"
+    bundles_dir = resolvers_dir / "bundles"
+    for label, directory in (
+        ("resolvers", resolvers_dir),
+        ("bundles", bundles_dir),
+    ):
+        if directory.is_symlink() or not directory.is_dir():
+            raise ResolverError(f"resolver bundle {label} ancestor is missing or unsafe")
+    bundle_dir = bundles_dir / bundle_id
     if bundle_dir.is_symlink() or not bundle_dir.is_dir():
         raise ResolverError(f"resolver bundle is missing or unsafe: {bundle_id}")
     files: dict[str, bytes] = {}
@@ -272,6 +280,10 @@ def main(argv: list[str]) -> int:
                 trusted_roots=_trusted_interpreter_roots(bundle_launch),
             )
             python_bin, repository_config, _bundle_id = loaded_pointer
+            if _bundle_id != bundle_id:
+                raise ResolverError(
+                    "current resolver bundle changed during launch; retry from bootstrap"
+                )
         elif isinstance(loaded_pointer, tuple):
             python_bin, repository_config = loaded_pointer
         else:
