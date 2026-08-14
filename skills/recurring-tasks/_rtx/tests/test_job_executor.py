@@ -176,6 +176,51 @@ def test_evaluate_success_contract_fails_on_nonzero_exit_regardless_of_contract(
     assert "1" in result.reason
 
 
+def test_tolerated_exit_does_not_excuse_a_missing_inner_status():
+    """A tolerated exit code excuses the exit code, not the unfinished work.
+
+    email-triage's contract pairs `require_inner_status: ok` with
+    `ignore_exit_codes: [1]` and a pattern list including "Please try again".
+    Tolerance used to return success before the inner status was read, so a
+    run that stopped mid-way and never advanced its watermark scored a full
+    success as long as its output contained that very common phrase.
+    """
+    contract = {
+        "require_inner_status": "ok",
+        "ignore_exit_codes": [1],
+        "ignore_exit_log_patterns": ["Please try again"],
+    }
+    result = evaluate_success_contract(
+        process_exit_code=1,
+        inner_status="pending",
+        contract=contract,
+        run_output="rate limited. Please try again later.\n",
+    )
+    assert result.success is False
+    # Both facts have to survive into the reason: the exit was tolerated AND
+    # the job never reported finishing. Reporting only one sends whoever
+    # reads the health check after the wrong problem.
+    assert "tolerated" in result.reason
+    assert "pending" in result.reason
+
+
+def test_tolerated_exit_still_succeeds_when_inner_status_is_satisfied():
+    """The tolerance path must keep working for a run that did finish."""
+    contract = {
+        "require_inner_status": "ok",
+        "ignore_exit_codes": [1],
+        "ignore_exit_log_patterns": ["Please try again"],
+    }
+    result = evaluate_success_contract(
+        process_exit_code=1,
+        inner_status="ok",
+        contract=contract,
+        run_output="transient hiccup. Please try again later.\n",
+    )
+    assert result.success is True
+    assert "tolerated" in result.reason
+
+
 def test_failure_reason_carries_the_error_from_the_run_output():
     """A bare exit code sent six days of outages to a log nobody read.
 

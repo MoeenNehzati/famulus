@@ -164,11 +164,11 @@ on fuzzy title matching.
 - CFP / application: `Submit to [name]; deadline [deadline]` or `Apply to [name]; deadline [deadline]` → `triage`
 - Optional signup: `Sign up for [name]; deadline/date [date or deadline]` → `triage`
 
-**When no deadline can be derived:** `deadline` is a required field on both
-`todo` and `triage` entries, so an item with no date in the message cannot be
-filed without one and cannot be left out. Do not ask the user and do not invent
-a plausible-looking date. Use **one week from today**, and append
-` (default 1-week deadline)` to the title, e.g.:
+**When no deadline can be derived, or only a vague one can:** `deadline` is a
+required field on both `todo` and `triage` entries, so an item with no usable
+date in the message cannot be filed without one and cannot be left out. Do not
+ask the user and do not invent a plausible-looking date. Use **one week from
+today**, and append ` (default 1-week deadline)` to the title, e.g.:
 
 ```yaml
 - title: Review Google security alert (default 1-week deadline)
@@ -178,6 +178,13 @@ a plausible-looking date. Use **one week from today**, and append
 The suffix is what keeps this honest: the date is openly marked as a
 placeholder the run chose, not a date the sender gave, so it reads correctly on
 the list and can be found later with a plain text search.
+
+A **vague** deadline counts as no deadline for this rule. "End of the week",
+"soon", "before the term starts" all need a decision nobody is present to make,
+so they take the same one-week default and the same title suffix rather than
+becoming a question. Only a date you could write on a calendar without asking
+anyone counts as derived. A specific date stated in the message is always used
+as-is, with no suffix.
 
 Other optional fields (`location`, `description`) are still omitted rather than
 guessed when unknown — this rule covers `deadline` only.

@@ -162,8 +162,21 @@ def evaluate_success_contract(
     `success:` block declared (or an empty one) passes on exit code alone;
     this is intentional so jobs without an inner-status mechanism aren't
     penalized for never reporting one.
+
+    `ignore_exit_codes`/`ignore_exit_log_patterns` excuse a *known-transient
+    exit code*; they do not excuse a missing inner status. Tolerance used to
+    return success immediately, before require_inner_status was ever read, so
+    a job that hit its usage limit and stopped mid-run scored a full success
+    while its own state file said it had never finished. That is the same
+    invisibility require_inner_status exists to prevent, reachable through a
+    different door: an agent CLI's output matching a pattern as broad as
+    "Please try again" was enough to excuse an unfinished run. Both gates now
+    have to pass — the exit code has to be one we tolerate AND the job has to
+    say it finished.
     """
     contract = contract or {}
+    required = contract.get("require_inner_status")
+    tolerated: str | None = None
 
     if process_exit_code != 0:
         tolerated = _tolerated_failure(process_exit_code, contract, run_output)
@@ -174,19 +187,22 @@ def evaluate_success_contract(
                     f"process exit code {process_exit_code}", run_output
                 ),
             )
+
+    if required is not None and inner_status != required:
+        summary = f"inner status {inner_status!r} != required {required!r}"
+        if tolerated is not None:
+            # Name the tolerated exit too. Without it this reads as a plain
+            # inner-status miss and hides that the run also died on a
+            # tolerated exit code -- two different things to fix.
+            summary = (
+                f"exit {process_exit_code} tolerated ({tolerated!r}) but {summary}"
+            )
+        return SuccessEvaluation(success=False, reason=_explained(summary, run_output))
+
+    if tolerated is not None:
         return SuccessEvaluation(
             success=True,
             reason=f"exit {process_exit_code} tolerated: matched {tolerated!r}",
-        )
-
-    required = contract.get("require_inner_status")
-    if required is not None and inner_status != required:
-        return SuccessEvaluation(
-            success=False,
-            reason=_explained(
-                f"inner status {inner_status!r} != required {required!r}",
-                run_output,
-            ),
         )
 
     return SuccessEvaluation(success=True)
