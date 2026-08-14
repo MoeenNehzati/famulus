@@ -6,6 +6,20 @@ Use `email-client.interface.default` to read and send email. Use `list-manager.i
 
 **IMPORTANT: Never ask the user for a lookback period or watermark date. The date always comes from the `email-triage._rtx.interface.scripts-get-cutoff` interface. If that interface emits a warning or fails, report it to the user — but do not ask them to supply a date instead.**
 
+**IMPORTANT: A triage run must never stop to ask the user a question.** This
+skill runs unattended on a schedule, where nobody is present to answer. Pausing
+does not defer the work — it strands it: the run never reaches Step 6, so the
+watermark never advances, so the very next run refetches the same emails and
+stops at the same place. A question asked here is a failure that repeats on
+every future run until a human intervenes.
+
+Every branch in these instructions therefore has a decided outcome. Where a
+value is missing, the rule for it says what to do (see the default-deadline rule
+in Step 4). Where something genuinely cannot be filed, latch the failure via
+`scripts-mark-failure` in Step 6 — that surfaces it through the health check —
+rather than prompting. Anything the user should weigh in on goes into the Step 5
+summary, which they read; it never becomes a precondition for finishing the run.
+
 **Decision logging:** After every classification, invoke the `email-triage._rtx.interface.scripts-log-decision` interface:
 
 `email-triage._rtx.interface.scripts-log-decision <account> <id> "<from>" "<subject>" <DECISION> "<reason>"`
@@ -150,7 +164,23 @@ on fuzzy title matching.
 - CFP / application: `Submit to [name]; deadline [deadline]` or `Apply to [name]; deadline [deadline]` → `triage`
 - Optional signup: `Sign up for [name]; deadline/date [date or deadline]` → `triage`
 
-If deadline or date is unknown, omit rather than guess.
+**When no deadline can be derived:** `deadline` is a required field on both
+`todo` and `triage` entries, so an item with no date in the message cannot be
+filed without one and cannot be left out. Do not ask the user and do not invent
+a plausible-looking date. Use **one week from today**, and append
+` (default 1-week deadline)` to the title, e.g.:
+
+```yaml
+- title: Review Google security alert (default 1-week deadline)
+  deadline: 2026-08-20
+```
+
+The suffix is what keeps this honest: the date is openly marked as a
+placeholder the run chose, not a date the sender gave, so it reads correctly on
+the list and can be found later with a plain text search.
+
+Other optional fields (`location`, `description`) are still omitted rather than
+guessed when unknown — this rule covers `deadline` only.
 
 **Dedup:** before adding to `triage`, scan for a case-insensitive substring match on the key noun (sender name, event name, program name). If a match exists in any state (`[ ]`, `[+]`, or `[-]`), skip — the item has already been triaged. Log with `DEDUP` and note the matched item. Use `list-manager.interface.default` to add new items.
 

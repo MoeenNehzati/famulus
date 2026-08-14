@@ -60,13 +60,19 @@ def test_load_cutoff_legacy_date_only_watermark(monkeypatch, tmp_path):
 
 # ── clear_stale_error ────────────────────────────────────────────────────────
 
-def test_clear_stale_error_resets_error_to_ok(monkeypatch, tmp_path):
+def test_clear_stale_error_unlatches_error_without_claiming_success(monkeypatch, tmp_path):
     state_dir = _isolate(monkeypatch, tmp_path)
     state_dir.mkdir(parents=True)
     (state_dir / "status.json").write_text(json.dumps({"result": "error", "message": "boom"}))
     fe.clear_stale_error()
     status = json.loads((state_dir / "status.json").read_text())
-    assert status["result"] == "ok"
+    # Unlatched, so update_watermark is free to run again...
+    assert status["result"] != "error"
+    # ...but not "ok": that word is update_watermark's alone, written only
+    # after the watermark actually advances. If the reset claimed it, the
+    # scheduler's require_inner_status: ok contract would pass for a run that
+    # stalled immediately after starting.
+    assert status["result"] == "pending"
 
 
 def test_clear_stale_error_leaves_ok_status_untouched(monkeypatch, tmp_path):

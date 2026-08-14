@@ -99,7 +99,18 @@ def clear_stale_error():
         except (json.JSONDecodeError, OSError):
             status = {}
         if status.get("result") == "error":
-            STATUS_FILE.write_text(json.dumps({"result": "ok", "message": "reset at start of new run"}, indent=2))
+            # "pending", not "ok": this only unlatches the previous run's error
+            # so update_watermark can run again -- it says nothing about how
+            # THIS run goes. Writing "ok" here made the reset indistinguishable
+            # from a finished run, and the scheduler's require_inner_status: ok
+            # contract reads whatever status.json holds after the run starts.
+            # A run that reset the latch and then stalled before Step 6 scored
+            # a full success while its watermark never moved, which is exactly
+            # how a stuck triage stayed invisible for days. Only
+            # update_watermark.py writes "ok", and only after it advances.
+            STATUS_FILE.write_text(
+                json.dumps({"result": "pending", "message": "reset at start of new run"}, indent=2)
+            )
 
 
 def filter_envelopes(envelopes, cutoff_dt):
