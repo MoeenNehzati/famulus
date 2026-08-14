@@ -190,6 +190,7 @@ if sys.platform == "win32":
 _NATIVE_BACKEND_IDENTITY = f"{Keyring.__module__}.{Keyring.__name__}"
 _TARGET_ONE = "native-preflight-" + "1" * 32
 _TARGET_TWO = "native-preflight-" + "2" * 32
+_TARGET_THREE = "native-preflight-" + "3" * 32
 
 
 @pytest.fixture(autouse=True)
@@ -1532,30 +1533,77 @@ def test_managed_worker_collision_exhaustion_is_terminal_and_proves_absence(
     absence_proven: bool,
     expected_code: CredentialWorkerCode,
 ) -> None:
-    """Collision exhaustion cannot leave the retained worker usable or unproven."""
+    """Distinct collisions are never deleted and exhaustion is terminal."""
     worker = _armed_worker_for_failure_tests()
-    cleanup_calls: list[str] = []
+    collided_targets = (_TARGET_ONE, _TARGET_TWO)
+    targets = iter((*collided_targets, _TARGET_THREE))
+    sent_messages: list[dict[str, object]] = []
+    absence_calls: list[str] = []
+    emergency_cleanup_targets: list[str] = []
     monkeypatch.setattr(preflight, "_MAX_TARGET_ATTEMPTS", 2)
-    monkeypatch.setattr(preflight, "_new_target_id", lambda: _TARGET_ONE)
+    monkeypatch.setattr(preflight, "_new_target_id", lambda: next(targets))
     monkeypatch.setattr(
-        worker,
-        "_request",
-        lambda *_a, **_k: (_ for _ in ()).throw(
-            CredentialWorkerError(CredentialWorkerCode.TARGET_COLLISION)
-        ),
+        preflight.uuid,
+        "uuid4",
+        lambda: types.SimpleNamespace(hex="collision-request"),
+    )
+
+    def record_request(
+        _channel: object,
+        message: bytes,
+        _deadline: float,
+    ) -> None:
+        sent_messages.append(json.loads(message.decode("utf-8")))
+
+    monkeypatch.setattr(preflight, "_send_frame", record_request)
+    monkeypatch.setattr(
+        preflight,
+        "_recv_worker_response",
+        lambda *_a: {
+            "protocol_version": 1,
+            "request_id": "collision-request",
+            "ok": False,
+            "code": CredentialWorkerCode.TARGET_COLLISION.value,
+            "result": None,
+        },
     )
     monkeypatch.setattr(
         worker,
         "_force_cleanup",
-        lambda: cleanup_calls.append("cleanup") or absence_proven,
+        lambda: absence_calls.append("cleanup") or absence_proven,
     )
+
+    def emergency_cleanup(
+        _executable: str,
+        target_id: str,
+        _deadline: float,
+    ) -> bool:
+        emergency_cleanup_targets.append(target_id)
+        if target_id in collided_targets:
+            raise AssertionError("collision target must never be deleted")
+        return True
+
+    monkeypatch.setattr(preflight, "_run_managed_cleanup", emergency_cleanup)
 
     with pytest.raises(CredentialWorkerError) as caught:
         worker.preflight()
 
     assert caught.value.code is expected_code
-    assert cleanup_calls == ["cleanup"]
+    assert [message["payload"] for message in sent_messages] == [
+        {"target_id": target_id} for target_id in collided_targets
+    ]
+    assert emergency_cleanup_targets == []
+    assert absence_calls == ["cleanup"]
     assert worker._failed is True
+    assert worker._terminal_code is expected_code
+
+    with pytest.raises(CredentialWorkerError) as subsequent:
+        worker.preflight()
+
+    assert subsequent.value.code is expected_code
+    assert len(sent_messages) == 2
+    assert emergency_cleanup_targets == [_TARGET_THREE]
+    assert absence_calls == ["cleanup"]
 
 
 def test_worker_state_collision_is_nonterminal_and_second_target_succeeds(
@@ -1993,7 +2041,11 @@ def test_startup_process_failures_are_closed_bounded_and_cleaned(
             ),
         )
     else:
-        monkeypatch.setattr(preflight.subprocess, "Popen", lambda *_a, **_k: process)
+        monkeypatch.setattr(
+            preflight.subprocess,
+            "Popen",
+            lambda *_a, **_k: process,
+        )
         monkeypatch.setattr(
             preflight,
             "_prepare_subprocess_containment",
@@ -2262,6 +2314,126 @@ def test_managed_cleanup_setup_and_termination_exceptions_are_closed(
     assert not preflight._run_managed_cleanup(
         "/managed/python", _TARGET_ONE, time.monotonic() + 5
     )
+
+
+@pytest.mark.parametrize(
+    ("failure_stage", "expected_absence_route"),
+    [
+        ("popen", None),
+        ("containment", "direct"),
+        ("parent_channel_close", "tree"),
+        ("close_descriptors", "tree"),
+    ],
+)
+@pytest.mark.parametrize("absence_proven", [True, False])
+def test_managed_cleanup_resource_failures_are_closed_and_check_final_absence(
+    monkeypatch: pytest.MonkeyPatch,
+    failure_stage: str,
+    expected_absence_route: str | None,
+    absence_proven: bool,
+) -> None:
+    """Cleanup resource faults return False and retain the absence boundary."""
+
+    class Channel:
+        def close(self) -> None:
+            if failure_stage == "parent_channel_close":
+                raise OSError("secret channel-close detail")
+
+    channel = Channel()
+    process = object()
+    containment_handle = object()
+    deadline = time.monotonic() + 5
+    absence_calls: list[tuple[str, float | None]] = []
+    descriptor_calls: list[tuple[int, ...]] = []
+
+    monkeypatch.setattr(
+        preflight,
+        "_anonymous_duplex_pair",
+        lambda: (channel, (10, 11)),
+    )
+    monkeypatch.setattr(
+        preflight,
+        "_subprocess_channel_arguments",
+        lambda _fds: ("--managed-worker-fds", (10, 11), {"pass_fds": ()}),
+    )
+    if failure_stage == "popen":
+        monkeypatch.setattr(
+            preflight.subprocess,
+            "Popen",
+            lambda *_a, **_k: (_ for _ in ()).throw(
+                OSError("secret Popen detail")
+            ),
+        )
+    else:
+        monkeypatch.setattr(preflight.subprocess, "Popen", lambda *_a, **_k: process)
+    if failure_stage == "containment":
+        monkeypatch.setattr(
+            preflight,
+            "_prepare_subprocess_containment",
+            lambda _process: (_ for _ in ()).throw(
+                OSError("secret containment detail")
+            ),
+        )
+    else:
+        monkeypatch.setattr(
+            preflight,
+            "_prepare_subprocess_containment",
+            lambda _process: containment_handle,
+        )
+
+    def close_descriptors(descriptors: tuple[int, ...]) -> None:
+        descriptor_calls.append(descriptors)
+        if failure_stage == "close_descriptors":
+            raise OSError("secret descriptor-close detail")
+
+    monkeypatch.setattr(preflight, "_close_descriptors", close_descriptors)
+    monkeypatch.setattr(preflight, "_await_worker_ready", lambda *_a: None)
+    monkeypatch.setattr(preflight, "_send_frame", lambda *_a: None)
+    monkeypatch.setattr(
+        preflight,
+        "_recv_frame",
+        lambda *_a: preflight._encode_child_message(
+            {
+                "schema_version": 1,
+                "ok": True,
+                "code": None,
+                "backend": _NATIVE_BACKEND_IDENTITY,
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        preflight,
+        "_terminate_subprocess_direct",
+        lambda _process, deadline=None: (
+            absence_calls.append(("direct", deadline)) or absence_proven
+        ),
+    )
+    monkeypatch.setattr(
+        preflight,
+        "_terminate_and_verify_subprocess_tree",
+        lambda _containment, _process, deadline=None: (
+            absence_calls.append(("tree", deadline)) or absence_proven
+        ),
+    )
+
+    assert (
+        preflight._run_managed_cleanup(
+            "/managed/python",
+            _TARGET_ONE,
+            deadline,
+        )
+        is False
+    )
+    assert absence_calls == (
+        [] if expected_absence_route is None else [(expected_absence_route, deadline)]
+    )
+    expected_descriptor_calls = {
+        "popen": [(10, 11)],
+        "containment": [(10, 11)],
+        "parent_channel_close": [(10, 11), ()],
+        "close_descriptors": [(10, 11), (10, 11)],
+    }
+    assert descriptor_calls == expected_descriptor_calls[failure_stage]
 
 
 def test_channel_deadline_expiry_maps_to_timeout() -> None:
