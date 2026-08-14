@@ -7,14 +7,48 @@ content:
 dependencies: []
 description: >-
   Marks the installer runtime directory as a Python package and owns
-  the durable manifest plus schema-v2 transaction journal. Transaction journals
-  reject version 1 rather than inferring certificate authority from staged_key_id;
-  they bind secret-free certificate intents, acknowledged progress, and the exact
-  deterministic certificate-selector mutation ID. Certificate-selector records also
-  bind the lexical active-key-id basename, absent-or-prior exact byte snapshot, intended
-  active exact byte snapshot, and null generic ownership. Persisted paths are not
-  authority: Task 6D must recompute and compare the canonical selector path before
-  certificate-specific recovery, and generic pending-mutation recovery refuses this kind.
+  the durable manifest plus schema-v3 transaction journal and mandatory mutation
+  recorder. Generic mutation IDs bind the transaction, stable operation key, semantic
+  kind, logical resource kind and ID, intended closed state, and exact none/upsert/forget
+  ownership delta; the observed before-state remains durable but is deliberately outside
+  the deterministic request ID. The recorder durably saves pending before re-observation
+  and apply, verifies the intended state, saves the manifest delta first, and only then
+  clears pending and records completion. Its own atomic journal and manifest writes are
+  internal bookkeeping exempt from recursive recording. Generic recovery only classifies:
+  intended state is adopted, expected state remains pending for an identical recorder
+  request to resume, and every third state is refused. Filesystem regular-file observation
+  and journal states share a 1,048,576-byte cap, enforced before reads and while streaming
+  and before recorder pending publication or apply.
+  Windows registry string values and local Git-config values allow empty strings but are
+  capped at 65,536 UTF-8 bytes; registry observation accepts only exact integer REG_SZ or
+  REG_EXPAND_SZ types, and converts non-not-found OS failures to static diagnostics. Git
+  observation requires a finite positive non-boolean timeout, binds `git config --local`
+  to the validated repository, scrubs all repository/config-selection environment, and
+  concurrently drains pipes while retaining at most 65,537 stdout bytes including the
+  required NUL delimiter and 65,536 stderr bytes. Overflow or timeout terminates and, if
+  needed, kills and reaps the direct child. Capture uses the public low-level asyncio
+  subprocess transport/protocol contract: callback buffers are capped independently,
+  the first overflowing channel is paused before cleanup, parent pipe transports are
+  explicitly closed, and no blocking synchronous Windows pipe probe or reader thread
+  exists. The synchronous CLI boundary rejects an already-active
+  event loop before spawning; unsupported platform subprocess loops fail with static
+  diagnostics. Async transport setup, capture, bounded drain, and cleanup share one
+  absolute deadline budget. A direct child that exits while a descendant retains either
+  pipe is refused after a bounded drain grace. This helper does not own or claim
+  termination of descendant process trees. Callers must supply
+  absolute lexically normalized filesystem IDs with no dot segments and independently
+  validate their authorized semantic target. Git repository IDs are lexical absolute
+  paths; Git key identity lowercases only the case-insensitive section and terminal
+  variable while preserving case-sensitive subsection spelling. Supported registry
+  identity accepts only nonempty printable ASCII names, canonicalizes HKCU and ASCII-case
+  equivalents, and treats only a literal backslash as a subkey separator; a forward slash
+  remains literal name data.
+  Logical identities are canonical JSON, never fake paths. Valid schema-v2 certificate-only records are
+  normalized to the filesystem resource representation, while version 1 and v2 generic
+  pending mutations are rejected. Certificate-selector validation remains specialized:
+  it binds the lexical active-key-id basename, exact snapshots, and prior Task-6B ID;
+  generic recovery refuses it before observation, and Task 6D must recompute its canonical
+  path before certificate recovery.
 gateway:
   language: Python
   path: __init__.py

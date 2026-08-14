@@ -7,14 +7,19 @@ fallback cannot know about.
 """
 from __future__ import annotations
 
+import asyncio
 import io
 import hashlib
 import json
 import os
+import re
 import stat
 import subprocess
 import sys
+import time
+import types
 from contextlib import redirect_stderr, redirect_stdout
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -64,6 +69,8 @@ UNINSTALL = SCRIPTS / "_install_uninstall.py"
 requires_symlink = pytest.mark.skipif(
     not can_create_symlink(), reason="symlinks unavailable"
 )
+
+state_record = sys.modules[JournalMutation.__module__]
 
 
 # ── Manifest unit tests ───────────────────────────────────────────────────────
@@ -155,6 +162,37 @@ def _journal(*, pending_mutation: JournalMutation | None) -> TransactionJournal:
     )
 
 
+def _filesystem_mutation(
+    target: Path,
+    *,
+    intended_after: dict[str, object],
+    expected_before: dict[str, object] | None = None,
+    ownership_entry: dict[str, object] | None = None,
+    operation_key: str = "test.filesystem",
+    kind: str = "file",
+) -> JournalMutation:
+    ownership_delta = (
+        {"action": "none"}
+        if ownership_entry is None
+        else {"action": "upsert", "entry": ownership_entry}
+    )
+    fields = {
+        "operation_key": operation_key,
+        "kind": kind,
+        "resource_kind": "filesystem",
+        "resource_id": str(target),
+        "intended_after": intended_after,
+        "ownership_delta": ownership_delta,
+    }
+    return JournalMutation(
+        mutation_id=state_record.mutation_id_for(
+            transaction_id="1" * 32, **fields
+        ),
+        expected_before=expected_before or {"kind": "absent"},
+        **fields,
+    )
+
+
 def _certificate_intent() -> CertificateMutationIntent:
     key_id = "sha256:" + "a" * 64
     return CertificateMutationIntent(
@@ -239,7 +277,7 @@ def _journal_v2(
     )
 
 
-def test_transaction_journal_v2_round_trip_preserves_certificate_intent(
+def test_transaction_journal_v3_round_trip_preserves_certificate_intent(
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "state" / "transaction-journal.json"
@@ -247,7 +285,7 @@ def test_transaction_journal_v2_round_trip_preserves_certificate_intent(
 
     journal.save(path, state_root=path.parent)
 
-    assert json.loads(path.read_bytes())["version"] == 2
+    assert json.loads(path.read_bytes())["version"] == 3
     assert TransactionJournal.load(path, state_root=path.parent) == journal
 
 
@@ -313,13 +351,10 @@ def test_transaction_journal_v2_rejects_certificate_state_invariant_breaks(
     pending = None
     if pending_kind is not None:
         target = tmp_path / "dispatcher"
-        pending = JournalMutation(
-            mutation_id="4" * 32,
+        pending = _filesystem_mutation(
+            target,
             kind=pending_kind,
-            path=str(target),
-            expected_before={"kind": "absent"},
             intended_after={"kind": "file", "mode": 0o600, "size": 0, "sha256": hashlib.sha256(b"").hexdigest()},
-            ownership_entry=None,
         )
 
     with pytest.raises(StateRecordError, match=error):
@@ -549,11 +584,8 @@ def test_transaction_journal_round_trip_preserves_exact_mutation_metadata(
     tmp_path: Path,
 ) -> None:
     target = tmp_path / "bin" / "dispatcher"
-    mutation = JournalMutation(
-        mutation_id="mutation-001",
-        kind="file",
-        path=str(target),
-        expected_before={"kind": "absent"},
+    mutation = _filesystem_mutation(
+        target,
         intended_after={
             "kind": "file",
             "mode": 0o755,
@@ -582,7 +614,7 @@ def test_transaction_journal_rejects_malformed_json(tmp_path: Path) -> None:
 def test_transaction_journal_rejects_duplicate_json_fields(tmp_path: Path) -> None:
     path = tmp_path / "transaction-journal.json"
     encoded = json.dumps(_journal_v2().to_dict())
-    encoded = encoded.replace('"version": 2', '"version": 2, "version": 2', 1)
+    encoded = encoded.replace('"version": 3', '"version": 3, "version": 3', 1)
     path.write_text(encoded, encoding="utf-8")
 
     with pytest.raises(StateRecordError, match="invalid transaction journal"):
@@ -605,11 +637,8 @@ def test_transaction_journal_rejects_incomplete_file_state(tmp_path: Path) -> No
     target = tmp_path / "dispatcher"
 
     with pytest.raises(StateRecordError, match="intended_after"):
-        JournalMutation(
-            mutation_id="mutation-001",
-            kind="file",
-            path=str(target),
-            expected_before={"kind": "absent"},
+        _filesystem_mutation(
+            target,
             intended_after={"kind": "file"},
             ownership_entry={"kind": "file", "path": str(target)},
         )
@@ -658,11 +687,8 @@ def test_manifest_rejects_intermediate_directory_symlink(tmp_path: Path) -> None
 
 def test_complete_journal_rejects_pending_mutation(tmp_path: Path) -> None:
     target = tmp_path / "dispatcher"
-    mutation = JournalMutation(
-        mutation_id="mutation-001",
-        kind="file",
-        path=str(target),
-        expected_before={"kind": "absent"},
+    mutation = _filesystem_mutation(
+        target,
         intended_after={
             "kind": "file",
             "mode": 0o600,
@@ -689,11 +715,8 @@ def test_complete_journal_rejects_pending_mutation(tmp_path: Path) -> None:
 
 def test_journal_rejects_pending_id_already_completed(tmp_path: Path) -> None:
     target = tmp_path / "dispatcher"
-    mutation = JournalMutation(
-        mutation_id="mutation-001",
-        kind="file",
-        path=str(target),
-        expected_before={"kind": "absent"},
+    mutation = _filesystem_mutation(
+        target,
         intended_after={
             "kind": "file",
             "mode": 0o600,
@@ -714,7 +737,7 @@ def test_journal_rejects_pending_id_already_completed(tmp_path: Path) -> None:
             certificate_intent=None,
             certificate_progress="committed",
             pending_mutation=mutation,
-            completed_mutation_ids=("mutation-001",),
+            completed_mutation_ids=(mutation.mutation_id,),
         )
 
 
@@ -726,11 +749,8 @@ def test_transaction_journal_load_rejects_impossible_state_machine_transition(
     tmp_path: Path, phase: str, pending_completed: bool
 ) -> None:
     target = tmp_path / "dispatcher"
-    mutation = JournalMutation(
-        mutation_id="mutation-001",
-        kind="file",
-        path=str(target),
-        expected_before={"kind": "absent"},
+    mutation = _filesystem_mutation(
+        target,
         intended_after={
             "kind": "file",
             "mode": 0o600,
@@ -741,7 +761,7 @@ def test_transaction_journal_load_rejects_impossible_state_machine_transition(
     )
     path = tmp_path / "transaction-journal.json"
     payload = {
-        "version": 2,
+        "version": 3,
         "transaction_id": "1" * 32,
         "phase": phase,
         "prior_release_id": None,
@@ -752,13 +772,15 @@ def test_transaction_journal_load_rejects_impossible_state_machine_transition(
         "certificate_progress": "committed",
         "pending_mutation": {
             "mutation_id": mutation.mutation_id,
+            "operation_key": mutation.operation_key,
             "kind": mutation.kind,
-            "path": mutation.path,
+            "resource_kind": mutation.resource_kind,
+            "resource_id": mutation.resource_id,
             "expected_before": mutation.expected_before,
             "intended_after": mutation.intended_after,
-            "ownership_entry": mutation.ownership_entry,
+            "ownership_delta": mutation.ownership_delta,
         },
-        "completed_mutation_ids": ["mutation-001"] if pending_completed else [],
+        "completed_mutation_ids": [mutation.mutation_id] if pending_completed else [],
     }
     path.write_text(json.dumps(payload), encoding="utf-8")
 
@@ -766,7 +788,1490 @@ def test_transaction_journal_load_rejects_impossible_state_machine_transition(
         TransactionJournal.load(path, state_root=tmp_path)
 
 
-def test_recovery_performs_untouched_pending_mutation_and_verifies_result(
+def _logical_mutation_fields(tmp_path: Path) -> dict[str, object]:
+    target = tmp_path / "bin" / "dispatcher"
+    intended = {
+        "kind": "file",
+        "mode": 0o755,
+        "size": len(b"dispatcher\n"),
+        "sha256": hashlib.sha256(b"dispatcher\n").hexdigest(),
+    }
+    return {
+        "operation_key": "scaffold.dispatcher",
+        "kind": "file",
+        "resource_kind": "filesystem",
+        "resource_id": str(target),
+        "intended_after": intended,
+        "ownership_delta": {
+            "action": "upsert",
+            "entry": {"kind": "file", "path": str(target)},
+        },
+    }
+
+
+def test_mutation_id_is_canonical_deterministic_and_excludes_before_state(
+    tmp_path: Path,
+) -> None:
+    fields = _logical_mutation_fields(tmp_path)
+
+    first = state_record.mutation_id_for(transaction_id="1" * 32, **fields)
+    second = state_record.mutation_id_for(
+        transaction_id="1" * 32,
+        **dict(reversed(list(fields.items()))),
+    )
+
+    assert first == second
+    assert len(first) == 32
+    assert re.fullmatch(r"[0-9a-f]{32}", first)
+    assert first == hashlib.sha256(
+        json.dumps(
+            {
+                "domain": "famulus-install-mutation-v1",
+                "intended_after": fields["intended_after"],
+                "kind": fields["kind"],
+                "operation_key": fields["operation_key"],
+                "ownership_delta": fields["ownership_delta"],
+                "resource_id": fields["resource_id"],
+                "resource_kind": fields["resource_kind"],
+                "transaction_id": "1" * 32,
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()[:32]
+
+
+@pytest.mark.parametrize("resource_kind", ["filesystem", "windows_registry", "git_config"])
+def test_journal_v3_round_trip_closes_logical_resource_schema(
+    tmp_path: Path,
+    resource_kind: str,
+) -> None:
+    if resource_kind == "filesystem":
+        resource_id = str(tmp_path / "dispatcher")
+        state: dict[str, object] = {"kind": "absent"}
+        assert Path(resource_id).is_absolute()
+    elif resource_kind == "windows_registry":
+        resource_id = state_record.windows_registry_resource_id(
+            hive="HKEY_CURRENT_USER", key="Environment", name="AI"
+        )
+        state = {
+            "kind": "windows_registry_value",
+            "value_type": 1,
+            "value": "C:/AI",
+        }
+    else:
+        resource_id = state_record.git_config_resource_id(
+            repo=tmp_path / "repo", key="core.hooksPath"
+        )
+        state = {"kind": "git_config_value", "value": ".githooks"}
+        assert Path(json.loads(resource_id)["repo"]).is_absolute()
+    delta = {"action": "none"}
+    operation_key = "logical.write"
+    mutation = state_record.JournalMutation(
+        mutation_id=state_record.mutation_id_for(
+            transaction_id="1" * 32,
+            operation_key=operation_key,
+            kind="logical_value",
+            resource_kind=resource_kind,
+            resource_id=resource_id,
+            intended_after=state,
+            ownership_delta=delta,
+        ),
+        operation_key=operation_key,
+        kind="logical_value",
+        resource_kind=resource_kind,
+        resource_id=resource_id,
+        expected_before={"kind": "absent"},
+        intended_after=state,
+        ownership_delta=delta,
+    )
+    path = tmp_path / "state" / "transaction-journal.json"
+    journal = _journal(pending_mutation=mutation)
+
+    journal.save(path, state_root=path.parent)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    assert payload["version"] == 3
+    assert set(payload["pending_mutation"]) == {
+        "mutation_id",
+        "operation_key",
+        "kind",
+        "resource_kind",
+        "resource_id",
+        "expected_before",
+        "intended_after",
+        "ownership_delta",
+    }
+    assert TransactionJournal.load(path, state_root=path.parent) == journal
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "error"),
+    [
+        ("mutation_id", "A" * 32, "mutation_id"),
+        ("operation_key", "", "operation_key"),
+        ("resource_kind", "path", "resource_kind"),
+        ("resource_id", "", "resource_id"),
+        ("ownership_delta", {"action": "invented"}, "ownership_delta"),
+        (
+            "intended_after",
+            {"kind": "windows_registry_value", "value_type": 1, "value": "x"},
+            "intended_after",
+        ),
+    ],
+)
+def test_journal_v3_rejects_noncanonical_or_cross_kind_fields(
+    tmp_path: Path, field: str, value: object, error: str
+) -> None:
+    fields = _logical_mutation_fields(tmp_path)
+    kwargs = {
+        "mutation_id": state_record.mutation_id_for(
+            transaction_id="1" * 32, **fields
+        ),
+        "expected_before": {"kind": "absent"},
+        **fields,
+    }
+    kwargs[field] = value
+
+    with pytest.raises(StateRecordError, match=error):
+        state_record.JournalMutation(**kwargs)
+
+
+@pytest.mark.parametrize(
+    "delta",
+    [
+        {"action": "upsert"},
+        {"action": "upsert", "entry": {"kind": "file"}},
+        {"action": "forget"},
+        {"action": "forget", "kind": "file", "path": ""},
+        {"action": "none", "entry": {"kind": "file", "path": "/x"}},
+    ],
+)
+def test_journal_v3_rejects_open_or_incomplete_ownership_delta(
+    tmp_path: Path, delta: dict[str, object]
+) -> None:
+    fields = _logical_mutation_fields(tmp_path)
+    fields["ownership_delta"] = delta
+
+    with pytest.raises(StateRecordError, match="ownership_delta"):
+        state_record.mutation_id_for(transaction_id="1" * 32, **fields)
+
+
+def test_journal_v3_normalizes_valid_v2_certificate_selector_only(
+    tmp_path: Path,
+) -> None:
+    intent = _certificate_intent()
+    selector = _certificate_selector_mutation(tmp_path, intent)
+    path = tmp_path / "transaction-journal.json"
+    payload = _journal_v2(
+        certificate_progress="staged", pending_mutation=selector
+    ).to_dict()
+    payload["version"] = 2
+    payload["pending_mutation"] = {
+        "mutation_id": selector.mutation_id,
+        "kind": selector.kind,
+        "path": selector.path,
+        "expected_before": selector.expected_before,
+        "intended_after": selector.intended_after,
+        "ownership_entry": selector.ownership_entry,
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    loaded = TransactionJournal.load(path, state_root=tmp_path)
+
+    assert loaded.pending_mutation.resource_kind == "filesystem"
+    assert loaded.pending_mutation.resource_id == selector.path
+    assert loaded.pending_mutation.operation_key == "certificate.selector"
+    assert loaded.pending_mutation.ownership_delta == {"action": "none"}
+    assert loaded.to_dict()["version"] == 3
+
+
+def test_journal_v3_normalizes_valid_v2_completed_certificate_selector(
+    tmp_path: Path,
+) -> None:
+    intent = _certificate_intent()
+    selector = _certificate_selector_mutation(tmp_path, intent)
+    path = tmp_path / "transaction-journal.json"
+    payload = _journal_v2(
+        certificate_progress="committed", pending_mutation=None
+    ).to_dict()
+    payload["version"] = 2
+    payload["completed_mutation_ids"] = [selector.mutation_id]
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    loaded = TransactionJournal.load(path, state_root=tmp_path)
+
+    assert loaded.pending_mutation is None
+    assert loaded.completed_mutation_ids == (selector.mutation_id,)
+    assert loaded.to_dict()["version"] == 3
+
+
+@pytest.mark.parametrize("route", ["construct", "load"])
+@pytest.mark.parametrize(
+    "field",
+    [
+        "transaction_id",
+        "operation_key",
+        "kind",
+        "resource_kind",
+        "resource_id",
+        "intended_after",
+        "ownership_delta",
+    ],
+)
+def test_fixed_mutation_id_rejects_each_independently_changed_bound_field(
+    tmp_path: Path, route: str, field: str
+) -> None:
+    fields = _logical_mutation_fields(tmp_path)
+    fixed_id = state_record.mutation_id_for(transaction_id="1" * 32, **fields)
+    mutation_payload = {
+        "mutation_id": fixed_id,
+        "expected_before": {"kind": "absent"},
+        **fields,
+    }
+    transaction_id = "1" * 32
+    if field == "transaction_id":
+        transaction_id = "2" * 32
+    elif field == "operation_key":
+        mutation_payload[field] = "scaffold.other"
+    elif field == "kind":
+        mutation_payload[field] = "other_file"
+    elif field == "resource_id":
+        mutation_payload[field] = str(tmp_path / "bin" / "other")
+    elif field == "intended_after":
+        mutation_payload[field] = {"kind": "absent"}
+    elif field == "ownership_delta":
+        mutation_payload[field] = {"action": "none"}
+    else:
+        mutation_payload.update(
+            resource_kind="git_config",
+            resource_id=state_record.git_config_resource_id(
+                repo=tmp_path, key="core.hooksPath"
+            ),
+            intended_after={"kind": "git_config_value", "value": ".githooks"},
+        )
+
+    if route == "construct":
+        mutation = state_record.JournalMutation.from_dict(mutation_payload)
+        with pytest.raises(StateRecordError, match="canonical request"):
+            replace(
+                _journal(pending_mutation=None),
+                transaction_id=transaction_id,
+                pending_mutation=mutation,
+            )
+    else:
+        payload = _journal(pending_mutation=None).to_dict()
+        payload["transaction_id"] = transaction_id
+        payload["pending_mutation"] = mutation_payload
+        path = tmp_path / f"{field}.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        with pytest.raises(StateRecordError, match="canonical request"):
+            TransactionJournal.load(path, state_root=tmp_path)
+
+
+def test_journal_v3_rejects_v2_generic_pending_mutation(tmp_path: Path) -> None:
+    path = tmp_path / "transaction-journal.json"
+    payload = _journal(pending_mutation=None).to_dict()
+    payload["version"] = 2
+    payload["pending_mutation"] = {
+        "mutation_id": "4" * 32,
+        "kind": "file",
+        "path": str(tmp_path / "dispatcher"),
+        "expected_before": {"kind": "absent"},
+        "intended_after": {"kind": "absent"},
+        "ownership_entry": None,
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(StateRecordError, match="version 2.*certificate"):
+        TransactionJournal.load(path, state_root=tmp_path)
+
+
+def test_journal_v3_rejects_v2_generic_completed_mutation_id(tmp_path: Path) -> None:
+    path = tmp_path / "transaction-journal.json"
+    payload = _journal_v2().to_dict()
+    payload["version"] = 2
+    payload["completed_mutation_ids"] = ["4" * 32]
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(StateRecordError, match="version 2.*certificate"):
+        TransactionJournal.load(path, state_root=tmp_path)
+
+
+def test_journal_version_rejects_float_equal_to_supported_integer(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "transaction-journal.json"
+    payload = _journal_v2().to_dict()
+    payload["version"] = 3.0
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(StateRecordError, match="unsupported transaction journal version"):
+        TransactionJournal.load(path, state_root=tmp_path)
+
+
+def test_logical_resource_identity_factories_do_not_encode_fake_paths(
+    tmp_path: Path,
+) -> None:
+    registry_id = state_record.windows_registry_resource_id(
+        hive="HKEY_CURRENT_USER", key="Environment", name="AI"
+    )
+    git_id = state_record.git_config_resource_id(
+        repo=tmp_path / "repo", key="core.hooksPath"
+    )
+
+    assert json.loads(registry_id) == {
+        "hive": "HKEY_CURRENT_USER",
+        "key": "environment",
+        "name": "ai",
+    }
+    assert json.loads(git_id) == {
+        "key": "core.hookspath",
+        "repo": str((tmp_path / "repo").absolute()),
+        "scope": "local",
+    }
+    assert not Path(registry_id).is_absolute()
+    assert not Path(git_id).is_absolute()
+
+
+def test_logical_resource_identity_preserves_registry_slash_and_git_subsections(
+    tmp_path: Path,
+) -> None:
+    registry_slash = state_record.windows_registry_resource_id(
+        hive="hkcu", key="Environment/Variables", name="AI_HOME"
+    )
+    registry_backslash = state_record.windows_registry_resource_id(
+        hive="HKEY_CURRENT_USER", key="Environment\\Variables", name="AI_HOME"
+    )
+    registry_case_alias = state_record.windows_registry_resource_id(
+        hive="hKeY_cUrReNt_UsEr", key="environment/variables", name="ai_home"
+    )
+    assert json.loads(registry_slash) == {
+        "hive": "HKEY_CURRENT_USER",
+        "key": "environment/variables",
+        "name": "ai_home",
+    }
+    assert registry_slash == registry_case_alias
+    assert registry_slash != registry_backslash
+
+    aliased_repo = tmp_path / "parent" / ".." / "repo"
+    canonical = state_record.git_config_resource_id(
+        repo=aliased_repo, key="Remote.Origin.Fetch"
+    )
+    distinct = state_record.git_config_resource_id(
+        repo=tmp_path / "repo", key="remote.origin.fetch"
+    )
+    assert json.loads(canonical) == {
+        "key": "remote.Origin.fetch",
+        "repo": str(tmp_path / "repo"),
+        "scope": "local",
+    }
+    assert canonical != distinct
+
+
+@pytest.mark.parametrize("field", ["hive", "key", "name"])
+@pytest.mark.parametrize("unsupported", ["Straße", "line\nbreak", "delete\x7f"])
+def test_registry_identity_rejects_non_printable_ascii_before_id_creation(
+    monkeypatch: pytest.MonkeyPatch, field: str, unsupported: str
+) -> None:
+    ascii_id = state_record.windows_registry_resource_id(
+        hive="HKCU", key="Strasse", name="AI"
+    )
+    monkeypatch.setattr(
+        state_record,
+        "_canonical_json_text",
+        lambda _payload: pytest.fail("invalid registry identity reached ID creation"),
+    )
+
+    with pytest.raises(StateRecordError, match="printable ASCII"):
+        identity = {"hive": "HKCU", "key": "Environment", "name": "AI"}
+        identity[field] = unsupported
+        state_record.windows_registry_resource_id(**identity)
+    assert "strasse" in ascii_id
+
+
+@pytest.mark.parametrize("alias_kind", ["parent", "current", "duplicate-separator"])
+def test_filesystem_resource_identity_rejects_native_lexical_aliases(
+    tmp_path: Path, alias_kind: str
+) -> None:
+    if alias_kind == "parent":
+        alias = str(tmp_path / "a" / ".." / "b")
+    elif alias_kind == "current":
+        alias = str(tmp_path) + os.sep + "." + os.sep + "b"
+    else:
+        alias = str(tmp_path) + os.sep + os.sep + "b"
+    assert Path(alias).is_absolute()
+
+    with pytest.raises(StateRecordError, match="canonical"):
+        state_record.mutation_id_for(
+            transaction_id="1" * 32,
+            operation_key="file.write",
+            kind="file",
+            resource_kind="filesystem",
+            resource_id=alias,
+            intended_after={"kind": "absent"},
+            ownership_delta={"action": "none"},
+        )
+
+
+def test_windows_registry_observer_returns_closed_absent_and_value_states() -> None:
+    values: dict[str, tuple[object, int]] = {"AI": ("C:/AI", 1)}
+
+    class Key:
+        def __enter__(self) -> object:
+            return object()
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+    fake_winreg = types.SimpleNamespace(
+        HKEY_CURRENT_USER=object(),
+        KEY_READ=1,
+        OpenKey=lambda *_args: Key(),
+        QueryValueEx=lambda _key, name: (
+            values[name]
+            if name in values
+            else (_ for _ in ()).throw(FileNotFoundError(name))
+        ),
+    )
+
+    assert state_record.snapshot_windows_registry_value(
+        hive=fake_winreg.HKEY_CURRENT_USER,
+        key="Environment",
+        name="AI",
+        winreg_module=fake_winreg,
+    ) == {"kind": "windows_registry_value", "value_type": 1, "value": "C:/AI"}
+    assert state_record.snapshot_windows_registry_value(
+        hive=fake_winreg.HKEY_CURRENT_USER,
+        key="Environment",
+        name="MISSING",
+        winreg_module=fake_winreg,
+    ) == {"kind": "absent"}
+
+    values["BINARY"] = ("not-a-string-registry-type", 3)
+    with pytest.raises(StateRecordError, match="value_type"):
+        state_record.snapshot_windows_registry_value(
+            hive=fake_winreg.HKEY_CURRENT_USER,
+            key="Environment",
+            name="BINARY",
+            winreg_module=fake_winreg,
+        )
+
+    values["FLOAT-TYPE"] = ("value", 1.0)
+    with pytest.raises(StateRecordError, match="value_type"):
+        state_record.snapshot_windows_registry_value(
+            hive=fake_winreg.HKEY_CURRENT_USER,
+            key="Environment",
+            name="FLOAT-TYPE",
+            winreg_module=fake_winreg,
+        )
+
+    values["EMPTY"] = ("", 1)
+    assert state_record.snapshot_windows_registry_value(
+        hive=fake_winreg.HKEY_CURRENT_USER,
+        key="Environment",
+        name="EMPTY",
+        winreg_module=fake_winreg,
+    ) == {"kind": "windows_registry_value", "value_type": 1, "value": ""}
+
+
+def test_git_config_observer_closes_absent_single_and_multiple_values(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    results = iter(
+        [
+            (1, b"", b""),
+            (0, b".githooks\0", b""),
+            (0, b"one\0two\0", b""),
+            (0, b"\0", b""),
+        ]
+    )
+    monkeypatch.setattr(
+        state_record, "_bounded_process_capture", lambda *_a, **_kw: next(results)
+    )
+
+    assert state_record.snapshot_git_config_value(
+        repo=tmp_path, key="core.hooksPath"
+    ) == {"kind": "absent"}
+    assert state_record.snapshot_git_config_value(
+        repo=tmp_path, key="core.hooksPath"
+    ) == {"kind": "git_config_value", "value": ".githooks"}
+    with pytest.raises(StateRecordError, match="multiple"):
+        state_record.snapshot_git_config_value(
+            repo=tmp_path, key="core.hooksPath"
+        )
+    assert state_record.snapshot_git_config_value(
+        repo=tmp_path, key="core.hooksPath"
+    ) == {"kind": "git_config_value", "value": ""}
+
+
+def test_git_config_observer_does_not_misclassify_an_error_as_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        state_record,
+        "_bounded_process_capture",
+        lambda *_a, **_kw: (1, b"", b"permission denied"),
+    )
+
+    with pytest.raises(StateRecordError, match="observation failed"):
+        state_record.snapshot_git_config_value(
+            repo=tmp_path, key="core.hooksPath"
+        )
+
+
+def test_git_config_observer_constructs_exact_shell_free_capture_contract(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        state_record.os,
+        "environ",
+        {
+            "PATH": "/controlled/bin",
+            "FAMULUS_TEST_SENTINEL": "retained",
+            "GIT_DIR": str(tmp_path / "attacker.git"),
+            "GIT_WORK_TREE": str(tmp_path / "attacker-tree"),
+            "GIT_COMMON_DIR": str(tmp_path / "attacker-common"),
+            "GIT_CONFIG": str(tmp_path / "attacker-config"),
+            "GIT_CONFIG_GLOBAL": str(tmp_path / "attacker-global"),
+            "GIT_CONFIG_SYSTEM": str(tmp_path / "attacker-system"),
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "core.hooksPath",
+            "GIT_CONFIG_VALUE_0": "attacker-hooks",
+            "GIT_INDEX_FILE": str(tmp_path / "attacker-index"),
+            "GIT_OBJECT_DIRECTORY": str(tmp_path / "attacker-objects"),
+            "GIT_ALTERNATE_OBJECT_DIRECTORIES": str(tmp_path / "other-objects"),
+        },
+    )
+    observed: tuple[list[str], dict[str, object]] | None = None
+
+    def capture_run(command: list[str], **kwargs: object) -> tuple[int, bytes, bytes]:
+        nonlocal observed
+        observed = (command, kwargs)
+        return 0, b".githooks\0", b""
+
+    monkeypatch.setattr(state_record, "_bounded_process_capture", capture_run)
+
+    assert state_record.snapshot_git_config_value(
+        repo=tmp_path, key="core.Team.hooksPath", timeout_seconds=1.25
+    ) == {"kind": "git_config_value", "value": ".githooks"}
+    assert observed == (
+        [
+            "git",
+            "-C",
+            str(tmp_path),
+            "config",
+            "--local",
+            "--null",
+            "--get-all",
+            "core.Team.hookspath",
+        ],
+        {
+            "environment": {
+                "PATH": "/controlled/bin",
+                "FAMULUS_TEST_SENTINEL": "retained",
+            },
+            "timeout_seconds": 1.25,
+            "stdout_limit": 65537,
+            "stderr_limit": 65536,
+        },
+    )
+
+
+@pytest.mark.parametrize("timeout", [float("nan"), float("inf"), -float("inf")])
+def test_git_config_observer_rejects_nonfinite_timeout(
+    tmp_path: Path, timeout: float
+) -> None:
+    with pytest.raises(StateRecordError, match="timeout"):
+        state_record.snapshot_git_config_value(
+            repo=tmp_path, key="core.hooksPath", timeout_seconds=timeout
+        )
+
+
+def test_git_capture_rejects_an_active_event_loop_before_spawning(
+    tmp_path: Path,
+) -> None:
+    marker = tmp_path / "child-spawned"
+
+    async def invoke_sync_boundary() -> None:
+        with pytest.raises(StateRecordError, match="active event loop"):
+            state_record._bounded_process_capture(
+                [
+                    sys.executable,
+                    "-c",
+                    "import pathlib,sys; pathlib.Path(sys.argv[1]).touch()",
+                    str(marker),
+                ],
+                environment=os.environ,
+                timeout_seconds=1.0,
+                stdout_limit=16,
+                stderr_limit=16,
+            )
+
+    asyncio.run(invoke_sync_boundary())
+    assert not marker.exists()
+
+
+def test_async_capture_kills_reaps_and_closes_after_terminate_does_not_exit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    retained: dict[str, object] = {}
+    events: list[str] = []
+
+    async def exercise() -> None:
+        loop = asyncio.get_running_loop()
+
+        class FakePipeTransport:
+            def __init__(self, protocol: object, descriptor: int) -> None:
+                self.protocol = protocol
+                self.descriptor = descriptor
+                self.closed = False
+                self.paused = False
+
+            def pause_reading(self) -> None:
+                self.paused = True
+
+            def close(self) -> None:
+                if self.closed:
+                    return
+                self.closed = True
+                events.append(f"pipe-{self.descriptor}-close")
+                self.protocol.pipe_connection_lost(self.descriptor, None)
+
+        class FakeSubprocessTransport:
+            def __init__(self, protocol: object) -> None:
+                self.protocol = protocol
+                self.returncode: int | None = None
+                self.closed = False
+                self.pipes = {
+                    descriptor: FakePipeTransport(protocol, descriptor)
+                    for descriptor in (1, 2)
+                }
+
+            def get_returncode(self) -> int | None:
+                return self.returncode
+
+            def get_pipe_transport(self, descriptor: int) -> FakePipeTransport:
+                return self.pipes[descriptor]
+
+            def terminate(self) -> None:
+                events.append("terminate")
+
+            def kill(self) -> None:
+                events.append("kill")
+                loop.call_soon(self._reap_after_kill)
+
+            def _reap_after_kill(self) -> None:
+                events.append("reap")
+                self.returncode = -9
+                self.protocol.process_exited()
+
+            def close(self) -> None:
+                events.append("transport-close")
+                self.closed = True
+                for pipe in self.pipes.values():
+                    pipe.close()
+                self.protocol.connection_lost(None)
+
+        async def fake_subprocess_exec(
+            protocol_factory: object, *command: str, **kwargs: object
+        ) -> tuple[object, object]:
+            assert command == (sys.executable, "-c", "pass")
+            assert kwargs == {
+                "stdin": subprocess.DEVNULL,
+                "stdout": subprocess.PIPE,
+                "stderr": subprocess.PIPE,
+                "env": {},
+                "shell": False,
+                "bufsize": 0,
+            }
+            protocol = protocol_factory()
+            transport = FakeSubprocessTransport(protocol)
+            retained.update(protocol=protocol, transport=transport)
+            protocol.connection_made(transport)
+            protocol.pipe_data_received(1, b"abcd")
+            protocol.pipe_data_received(2, b"ef")
+            return transport, protocol
+
+        monkeypatch.setattr(loop, "subprocess_exec", fake_subprocess_exec)
+        with pytest.raises(StateRecordError, match="closed bound"):
+            await state_record._bounded_process_capture_async(
+                [sys.executable, "-c", "pass"],
+                environment={},
+                timeout_seconds=1.0,
+                stdout_limit=3,
+                stderr_limit=2,
+            )
+        assert asyncio.all_tasks() == {asyncio.current_task()}
+
+    asyncio.run(exercise())
+
+    protocol = retained["protocol"]
+    transport = retained["transport"]
+    assert protocol.standard_output == b"abc"
+    assert protocol.standard_error == b"ef"
+    assert events == [
+        "terminate",
+        "kill",
+        "reap",
+        "pipe-1-close",
+        "pipe-2-close",
+        "transport-close",
+    ]
+    assert transport.returncode == -9
+    assert transport.closed is True
+    assert transport.pipes[1].paused is True
+    assert transport.pipes[2].paused is False
+    assert all(pipe.closed for pipe in transport.pipes.values())
+
+
+def test_async_capture_uses_one_absolute_deadline_across_every_phase(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    setup_deadlines: list[float] = []
+    phase_deadlines: list[tuple[str, float]] = []
+    retained: dict[str, object] = {}
+
+    async def exercise() -> None:
+        real_loop = asyncio.get_running_loop()
+
+        class FakePipeTransport:
+            def __init__(self, protocol: object, descriptor: int) -> None:
+                self.protocol = protocol
+                self.descriptor = descriptor
+                self.closed = False
+
+            def close(self) -> None:
+                self.closed = True
+                self.protocol.pipe_connection_lost(self.descriptor, None)
+
+        class FakeSubprocessTransport:
+            def __init__(self, protocol: object) -> None:
+                self.protocol = protocol
+                self.returncode: int | None = None
+                self.closed = False
+                self.pipes = {
+                    descriptor: FakePipeTransport(protocol, descriptor)
+                    for descriptor in (1, 2)
+                }
+
+            def get_returncode(self) -> int | None:
+                return self.returncode
+
+            def get_pipe_transport(self, descriptor: int) -> FakePipeTransport:
+                return self.pipes[descriptor]
+
+            def terminate(self) -> None:
+                pytest.fail("the direct child is already reaped before cleanup")
+
+            def kill(self) -> None:
+                pytest.fail("the direct child is already reaped before cleanup")
+
+            def close(self) -> None:
+                self.closed = True
+
+        class FakeProtocol:
+            def __init__(self, *, stdout_limit: int, stderr_limit: int) -> None:
+                assert (stdout_limit, stderr_limit) == (8, 8)
+                self.transport: FakeSubprocessTransport | None = None
+                self.overflow = False
+                self.failed = False
+                self._closed_pipes: set[int] = set()
+                self._connection_closed = False
+
+            @property
+            def standard_output(self) -> bytes:
+                return b""
+
+            @property
+            def standard_error(self) -> bytes:
+                return b""
+
+            @property
+            def pipes_closed(self) -> bool:
+                return self._closed_pipes == {1, 2}
+
+            @property
+            def connection_closed(self) -> bool:
+                return self._connection_closed
+
+            def connection_made(self, transport: object) -> None:
+                self.transport = transport
+
+            def pipe_connection_lost(
+                self, descriptor: int, exception: Exception | None
+            ) -> None:
+                assert exception is None
+                self._closed_pipes.add(descriptor)
+
+            def process_exited(self) -> None:
+                pass
+
+            def connection_lost(self, exception: Exception | None) -> None:
+                assert exception is None
+                self._connection_closed = True
+
+            async def wait_for_change(self, *, deadline: float) -> bool:
+                assert self.transport is not None
+                if self.transport.returncode is None:
+                    phase_deadlines.append(("work", deadline))
+                    fake_loop.now = 100.4
+                    self.transport.returncode = 0
+                    self.process_exited()
+                    return True
+                if not self.pipes_closed:
+                    phase_deadlines.append(("drain", deadline))
+                    fake_loop.now = 100.6
+                    return False
+                phase_deadlines.append(("cleanup", deadline))
+                self.connection_lost(None)
+                return True
+
+        class FakeLoop:
+            def __init__(self) -> None:
+                self.now = 100.0
+
+            def time(self) -> float:
+                return self.now
+
+            async def subprocess_exec(
+                self, protocol_factory: object, *_command: str, **_kwargs: object
+            ) -> tuple[object, object]:
+                protocol = protocol_factory()
+                transport = FakeSubprocessTransport(protocol)
+                retained.update(protocol=protocol, transport=transport)
+                protocol.connection_made(transport)
+                self.now = 100.2
+                return transport, protocol
+
+        class RecordingTimeout:
+            async def __aenter__(self) -> None:
+                return None
+
+            async def __aexit__(self, *_args: object) -> None:
+                return None
+
+        fake_loop = FakeLoop()
+
+        def recording_timeout(delay: float) -> RecordingTimeout:
+            setup_deadlines.append(fake_loop.time() + delay)
+            return RecordingTimeout()
+
+        monkeypatch.setattr(state_record.asyncio, "get_running_loop", lambda: fake_loop)
+        monkeypatch.setattr(state_record.asyncio, "timeout", recording_timeout)
+        monkeypatch.setattr(state_record, "_BoundedCaptureProtocol", FakeProtocol)
+        with pytest.raises(
+            StateRecordError, match="^Git config observation failed$"
+        ):
+            await state_record._bounded_process_capture_async(
+                [sys.executable, "-c", "pass"],
+                environment={},
+                timeout_seconds=1.0,
+                stdout_limit=8,
+                stderr_limit=8,
+            )
+        assert real_loop.is_running()
+
+    asyncio.run(exercise())
+
+    protocol = retained["protocol"]
+    transport = retained["transport"]
+    assert setup_deadlines == [pytest.approx(100.75)]
+    assert phase_deadlines == [
+        ("work", pytest.approx(100.21)),
+        ("drain", pytest.approx(100.5)),
+        ("cleanup", pytest.approx(101.0)),
+    ]
+    assert transport.returncode == 0
+    assert transport.closed is True
+    assert protocol.pipes_closed is True
+    assert protocol.connection_closed is True
+
+
+def test_async_capture_rejects_unsupported_platform_loop_with_static_diagnostic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw = "sensitive platform subprocess diagnostic"
+
+    async def exercise() -> None:
+        loop = asyncio.get_running_loop()
+
+        async def unsupported_subprocess_exec(
+            *_args: object, **_kwargs: object
+        ) -> tuple[object, object]:
+            raise NotImplementedError(raw)
+
+        monkeypatch.setattr(loop, "subprocess_exec", unsupported_subprocess_exec)
+        with pytest.raises(
+            StateRecordError, match="^Git config observation failed$"
+        ) as caught:
+            await state_record._bounded_process_capture_async(
+                ["git", "config"],
+                environment={},
+                timeout_seconds=1.0,
+                stdout_limit=3,
+                stderr_limit=2,
+            )
+        assert raw not in str(caught.value)
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("channel", ["stdout", "stderr"])
+def test_git_capture_terminates_real_child_on_capture_overflow(channel: str) -> None:
+    stream = "stdout" if channel == "stdout" else "stderr"
+    script = (
+        "import sys,time; "
+        f"sys.{stream}.buffer.write(b'x' * 70000); sys.{stream}.buffer.flush(); "
+        "time.sleep(10)"
+    )
+    started = time.monotonic()
+    with pytest.raises(StateRecordError, match="closed bound"):
+        state_record._bounded_process_capture(
+            [sys.executable, "-c", script],
+            environment=os.environ,
+            timeout_seconds=5.0,
+            stdout_limit=65536,
+            stderr_limit=65536,
+        )
+
+    assert time.monotonic() - started < 3.0
+
+
+def test_git_capture_accepts_simultaneous_exact_real_child_output_caps() -> None:
+    script = (
+        "import sys; "
+        "sys.stdout.buffer.write(b'x' * 65536 + b'\\0'); "
+        "sys.stderr.buffer.write(b'y' * 65536)"
+    )
+
+    returncode, standard_output, standard_error = state_record._bounded_process_capture(
+        [sys.executable, "-c", script],
+        environment=os.environ,
+        timeout_seconds=2.0,
+        stdout_limit=65537,
+        stderr_limit=65536,
+    )
+
+    assert returncode == 0
+    assert standard_output == b"x" * 65536 + b"\0"
+    assert standard_error == b"y" * 65536
+
+
+def test_git_capture_reaps_real_child_on_timeout() -> None:
+    with pytest.raises(
+        StateRecordError, match="^Git config observation failed$"
+    ):
+        state_record._bounded_process_capture(
+            [sys.executable, "-c", "import time; time.sleep(10)"],
+            environment=os.environ,
+            timeout_seconds=0.1,
+            stdout_limit=16,
+            stderr_limit=16,
+        )
+
+
+def test_git_capture_refuses_descendant_held_pipes_without_reader_leaks(
+    tmp_path: Path,
+) -> None:
+    stop_path = tmp_path / "stop-descendant"
+    done_path = tmp_path / "descendant-done"
+    pid_path = tmp_path / "descendant-pid"
+    descendant = (
+        "import pathlib,sys,time; "
+        "stop=pathlib.Path(sys.argv[1]); done=pathlib.Path(sys.argv[2]); "
+        "\nwhile not stop.exists(): time.sleep(0.01)\n"
+        "done.write_text('done', encoding='utf-8')"
+    )
+    wrapper = (
+        "import pathlib,subprocess,sys; "
+        "child=subprocess.Popen([sys.executable,'-c',sys.argv[1],sys.argv[2],sys.argv[3]],"
+        " stdout=sys.stdout,stderr=sys.stderr); "
+        "pathlib.Path(sys.argv[4]).write_text(str(child.pid),encoding='ascii')"
+    )
+    started = time.monotonic()
+    try:
+        with pytest.raises(
+            StateRecordError, match="^Git config observation failed$"
+        ):
+            state_record._bounded_process_capture(
+                [
+                    sys.executable,
+                    "-c",
+                    wrapper,
+                    descendant,
+                    str(stop_path),
+                    str(done_path),
+                    str(pid_path),
+                ],
+                environment=os.environ,
+                timeout_seconds=5.0,
+                stdout_limit=16,
+                stderr_limit=16,
+            )
+        assert time.monotonic() - started < 3.0
+    finally:
+        stop_path.write_text("stop", encoding="ascii")
+        cleanup_deadline = time.monotonic() + 2.0
+        while not done_path.exists() and time.monotonic() < cleanup_deadline:
+            time.sleep(0.01)
+        descendant_pid = pid_path.read_text() if pid_path.exists() else "unknown"
+        assert done_path.exists(), f"descendant {descendant_pid} did not exit"
+
+
+def test_filesystem_observer_rejects_oversized_file_before_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "large"
+    path.write_bytes(b"x" * (state_record._MAX_FILESYSTEM_FILE_BYTES + 1))
+
+    monkeypatch.setattr(
+        state_record.os,
+        "read",
+        lambda *_args: (_ for _ in ()).throw(
+            AssertionError("oversized file must be rejected before reading")
+        ),
+    )
+    with pytest.raises(StateRecordError, match="closed bound"):
+        state_record.snapshot_path_state(path)
+
+
+def test_filesystem_observer_enforces_bound_while_streaming(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "growing"
+    path.write_bytes(b"x" * (state_record._MAX_FILESYSTEM_FILE_BYTES + 1))
+    real_metadata = path.stat()
+    monkeypatch.setattr(
+        state_record.os,
+        "fstat",
+        lambda _descriptor: types.SimpleNamespace(
+            st_mode=real_metadata.st_mode,
+            st_size=state_record._MAX_FILESYSTEM_FILE_BYTES,
+        ),
+    )
+
+    with pytest.raises(StateRecordError, match="closed bound"):
+        state_record.snapshot_path_state(path)
+
+
+def test_filesystem_mutation_id_rejects_state_above_observer_bound(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(StateRecordError, match="closed bound"):
+        state_record.mutation_id_for(
+            transaction_id="1" * 32,
+            operation_key="file.write",
+            kind="file",
+            resource_kind="filesystem",
+            resource_id=str(tmp_path / "file"),
+            intended_after={
+                "kind": "file",
+                "mode": 0o600,
+                "size": state_record._MAX_FILESYSTEM_FILE_BYTES + 1,
+                "sha256": "0" * 64,
+            },
+            ownership_delta={"action": "none"},
+        )
+
+
+def test_recorder_rejects_oversized_filesystem_state_before_pending_or_apply(
+    tmp_path: Path,
+) -> None:
+    recorder = _recorder(tmp_path)
+    applied = False
+
+    def apply() -> None:
+        nonlocal applied
+        applied = True
+
+    with pytest.raises(StateRecordError, match="closed bound"):
+        recorder.mutate(
+            operation_key="file.write",
+            kind="file",
+            resource_kind="filesystem",
+            resource_id=str(tmp_path / "file"),
+            intended_after={
+                "kind": "file",
+                "mode": 0o600,
+                "size": state_record._MAX_FILESYSTEM_FILE_BYTES + 1,
+                "sha256": "0" * 64,
+            },
+            ownership_delta={"action": "none"},
+            observe=lambda: {"kind": "absent"},
+            apply=apply,
+        )
+
+    durable = TransactionJournal.load(
+        tmp_path / "state" / "transaction-journal.json",
+        state_root=tmp_path / "state",
+    )
+    assert durable.pending_mutation is None
+    assert applied is False
+
+
+def test_windows_registry_observer_wraps_operating_system_errors() -> None:
+    raw = "sensitive registry diagnostic"
+    fake_winreg = types.SimpleNamespace(
+        KEY_READ=1,
+        OpenKey=lambda *_args: (_ for _ in ()).throw(PermissionError(raw)),
+    )
+
+    with pytest.raises(
+        StateRecordError, match="^Windows registry observation failed$"
+    ) as caught:
+        state_record.snapshot_windows_registry_value(
+            hive=object(), key="Environment", name="AI", winreg_module=fake_winreg
+        )
+    assert raw not in str(caught.value)
+
+
+def _recorder(
+    tmp_path: Path,
+    *,
+    journal: TransactionJournal | None = None,
+) -> object:
+    state_root = tmp_path / "state"
+    journal_path = state_root / "transaction-journal.json"
+    selected = journal or _journal(pending_mutation=None)
+    if not journal_path.exists():
+        selected.save(journal_path, state_root=state_root)
+    return state_record.MutationRecorder(
+        journal=selected,
+        journal_path=journal_path,
+        state_root=state_root,
+        manifest=Manifest(state_root / "install-manifest.json", state_root=state_root),
+    )
+
+
+def _mutate_dispatcher(recorder: object, target: Path, apply: object) -> str:
+    intended = {
+        "kind": "file",
+        "mode": 0o755,
+        "size": len(b"dispatcher\n"),
+        "sha256": hashlib.sha256(b"dispatcher\n").hexdigest(),
+    }
+    return recorder.mutate(
+        operation_key="scaffold.dispatcher",
+        kind="file",
+        resource_kind="filesystem",
+        resource_id=str(target),
+        intended_after=intended,
+        ownership_delta={
+            "action": "upsert",
+            "entry": {"kind": "file", "path": str(target)},
+        },
+        observe=lambda: snapshot_path_state(target),
+        apply=apply,
+    )
+
+
+def test_mutation_recorder_orders_pending_effect_manifest_then_completion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "bin" / "dispatcher"
+    target.parent.mkdir()
+    recorder = _recorder(tmp_path)
+    journal_path = tmp_path / "state" / "transaction-journal.json"
+    manifest_path_value = tmp_path / "state" / "install-manifest.json"
+    events: list[str] = []
+    real_journal_save = TransactionJournal.save
+    real_manifest_save = Manifest.save
+
+    def journal_save(journal: TransactionJournal, *args: object, **kwargs: object) -> None:
+        events.append("journal-pending" if journal.pending_mutation else "journal-complete")
+        real_journal_save(journal, *args, **kwargs)
+
+    def manifest_save(manifest: Manifest) -> None:
+        assert TransactionJournal.load(
+            journal_path, state_root=journal_path.parent
+        ).pending_mutation is not None
+        events.append("manifest")
+        real_manifest_save(manifest)
+
+    monkeypatch.setattr(TransactionJournal, "save", journal_save)
+    monkeypatch.setattr(Manifest, "save", manifest_save)
+
+    def apply() -> None:
+        assert TransactionJournal.load(
+            journal_path, state_root=journal_path.parent
+        ).pending_mutation is not None
+        events.append("effect")
+        target.write_bytes(b"dispatcher\n")
+        target.chmod(0o755)
+
+    mutation_id = _mutate_dispatcher(recorder, target, apply)
+
+    assert events == ["journal-pending", "effect", "manifest", "journal-complete"]
+    assert recorder.journal.pending_mutation is None
+    assert recorder.journal.completed_mutation_ids == (mutation_id,)
+    assert json.loads(manifest_path_value.read_text(encoding="utf-8"))["entries"] == [
+        {"kind": "file", "path": str(target)}
+    ]
+
+
+@pytest.mark.parametrize("boundary", ["before_effect", "during_effect", "after_effect"])
+def test_mutation_recorder_leaves_durable_pending_across_effect_crashes(
+    tmp_path: Path, boundary: str
+) -> None:
+    target = tmp_path / "bin" / "dispatcher"
+    target.parent.mkdir()
+    recorder = _recorder(tmp_path)
+
+    def apply() -> None:
+        if boundary == "before_effect":
+            raise RuntimeError("crash")
+        target.write_bytes(b"partial" if boundary == "during_effect" else b"dispatcher\n")
+        target.chmod(0o755)
+        raise RuntimeError("crash")
+
+    with pytest.raises(RuntimeError, match="crash"):
+        _mutate_dispatcher(recorder, target, apply)
+
+    durable = TransactionJournal.load(
+        tmp_path / "state" / "transaction-journal.json",
+        state_root=tmp_path / "state",
+    )
+    assert durable.pending_mutation is not None
+    assert durable.completed_mutation_ids == ()
+    assert not (tmp_path / "state" / "install-manifest.json").exists()
+
+
+def test_mutation_recorder_recovers_same_request_and_rejects_changed_request(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "bin" / "dispatcher"
+    target.parent.mkdir()
+    first = _recorder(tmp_path)
+
+    def crash_after_effect() -> None:
+        target.write_bytes(b"dispatcher\n")
+        target.chmod(0o755)
+        raise RuntimeError("crash")
+
+    with pytest.raises(RuntimeError):
+        _mutate_dispatcher(first, target, crash_after_effect)
+    durable = TransactionJournal.load(
+        tmp_path / "state" / "transaction-journal.json",
+        state_root=tmp_path / "state",
+    )
+    resumed = _recorder(tmp_path, journal=durable)
+    with pytest.raises(StateRecordError, match="differs from.*pending mutation"):
+        resumed.mutate(
+            operation_key="scaffold.other",
+            kind="file",
+            resource_kind="filesystem",
+            resource_id=str(target),
+            intended_after=snapshot_path_state(target),
+            ownership_delta={"action": "none"},
+            observe=lambda: snapshot_path_state(target),
+            apply=lambda: pytest.fail("changed request must not apply"),
+        )
+
+    applied = False
+
+    def unexpected_apply() -> None:
+        nonlocal applied
+        applied = True
+
+    mutation_id = _mutate_dispatcher(resumed, target, unexpected_apply)
+
+    assert applied is False
+    assert resumed.journal.completed_mutation_ids == (mutation_id,)
+
+
+def test_mutation_recorder_identical_request_resumes_from_expected_state(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "bin" / "dispatcher"
+    target.parent.mkdir()
+    first = _recorder(tmp_path)
+
+    with pytest.raises(RuntimeError, match="before effect"):
+        _mutate_dispatcher(
+            first,
+            target,
+            lambda: (_ for _ in ()).throw(RuntimeError("before effect")),
+        )
+    durable = TransactionJournal.load(
+        tmp_path / "state" / "transaction-journal.json",
+        state_root=tmp_path / "state",
+    )
+    assert snapshot_path_state(target) == durable.pending_mutation.expected_before
+
+    resumed = _recorder(tmp_path, journal=durable)
+    applied = False
+
+    def apply() -> None:
+        nonlocal applied
+        applied = True
+        target.write_bytes(b"dispatcher\n")
+        target.chmod(0o755)
+
+    mutation_id = _mutate_dispatcher(resumed, target, apply)
+
+    assert applied is True
+    assert resumed.journal.pending_mutation is None
+    assert resumed.journal.completed_mutation_ids == (mutation_id,)
+
+
+def test_mutation_recorder_refuses_third_state_and_verifies_completed_id(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "bin" / "dispatcher"
+    target.parent.mkdir()
+    recorder = _recorder(tmp_path)
+    mutation_id = _mutate_dispatcher(
+        recorder,
+        target,
+        lambda: (target.write_bytes(b"dispatcher\n"), target.chmod(0o755)),
+    )
+    target.write_bytes(b"user bytes\n")
+
+    with pytest.raises(StateRecordError, match="completed mutation.*intended state"):
+        _mutate_dispatcher(recorder, target, lambda: pytest.fail("must not replay"))
+
+    pending = state_record.JournalMutation(
+        mutation_id=mutation_id,
+        operation_key="scaffold.dispatcher",
+        kind="file",
+        resource_kind="filesystem",
+        resource_id=str(target),
+        expected_before={"kind": "absent"},
+        intended_after={
+            "kind": "file",
+            "mode": 0o755,
+            "size": len(b"dispatcher\n"),
+            "sha256": hashlib.sha256(b"dispatcher\n").hexdigest(),
+        },
+        ownership_delta={
+            "action": "upsert",
+            "entry": {"kind": "file", "path": str(target)},
+        },
+    )
+    third = _journal(pending_mutation=pending)
+    third.save(
+        tmp_path / "state" / "third-journal.json", state_root=tmp_path / "state"
+    )
+    third_recorder = state_record.MutationRecorder(
+        journal=third,
+        journal_path=tmp_path / "state" / "third-journal.json",
+        state_root=tmp_path / "state",
+        manifest=Manifest(
+            tmp_path / "state" / "third-manifest.json",
+            state_root=tmp_path / "state",
+        ),
+    )
+    with pytest.raises(StateRecordError, match="third state"):
+        _mutate_dispatcher(
+            third_recorder, target, lambda: pytest.fail("third state must not apply")
+        )
+
+
+@pytest.mark.parametrize("boundary", ["manifest", "completion_journal"])
+def test_mutation_recorder_recovers_crashes_after_effect_before_completion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, boundary: str
+) -> None:
+    target = tmp_path / "bin" / "dispatcher"
+    target.parent.mkdir()
+    recorder = _recorder(tmp_path)
+    real_manifest_save = Manifest.save
+    real_journal_save = TransactionJournal.save
+
+    if boundary == "manifest":
+        monkeypatch.setattr(
+            Manifest,
+            "save",
+            lambda _manifest: (_ for _ in ()).throw(RuntimeError("manifest crash")),
+        )
+    else:
+        def fail_completion(
+            journal: TransactionJournal, *args: object, **kwargs: object
+        ) -> None:
+            if journal.pending_mutation is None:
+                raise RuntimeError("journal crash")
+            real_journal_save(journal, *args, **kwargs)
+
+        monkeypatch.setattr(TransactionJournal, "save", fail_completion)
+
+    with pytest.raises(RuntimeError, match="crash"):
+        _mutate_dispatcher(
+            recorder,
+            target,
+            lambda: (target.write_bytes(b"dispatcher\n"), target.chmod(0o755)),
+        )
+
+    durable = TransactionJournal.load(
+        tmp_path / "state" / "transaction-journal.json",
+        state_root=tmp_path / "state",
+    )
+    assert durable.pending_mutation is not None
+    if boundary == "completion_journal":
+        assert Manifest(
+            tmp_path / "state" / "install-manifest.json",
+            state_root=tmp_path / "state",
+        ).entries == [{"kind": "file", "path": str(target)}]
+    else:
+        monkeypatch.setattr(Manifest, "save", real_manifest_save)
+    monkeypatch.setattr(TransactionJournal, "save", real_journal_save)
+
+    resumed = _recorder(tmp_path, journal=durable)
+    _mutate_dispatcher(resumed, target, lambda: pytest.fail("adopt, do not replay"))
+
+    assert resumed.journal.pending_mutation is None
+
+
+@pytest.mark.parametrize(
+    ("delta", "initial", "expected"),
+    [
+        ({"action": "none"}, [], []),
+        (
+            {"action": "forget", "kind": "file", "path": "/owned"},
+            [{"kind": "file", "path": "/owned"}],
+            [],
+        ),
+    ],
+)
+def test_mutation_recorder_applies_none_and_forget_ownership_deltas(
+    tmp_path: Path,
+    delta: dict[str, object],
+    initial: list[dict[str, object]],
+    expected: list[dict[str, object]],
+) -> None:
+    state_root = tmp_path / "state"
+    journal = _journal(pending_mutation=None)
+    journal_path = state_root / "transaction-journal.json"
+    journal.save(journal_path, state_root=state_root)
+    manifest = Manifest(state_root / "install-manifest.json", state_root=state_root)
+    manifest.entries = initial
+    manifest.save()
+    recorder = state_record.MutationRecorder(
+        journal=journal,
+        journal_path=journal_path,
+        state_root=state_root,
+        manifest=manifest,
+    )
+    state = {"kind": "git_config_value", "value": ".githooks"}
+
+    recorder.mutate(
+        operation_key="git.hooks-path",
+        kind="git_config_value",
+        resource_kind="git_config",
+        resource_id=state_record.git_config_resource_id(
+            repo=tmp_path, key="core.hooksPath"
+        ),
+        intended_after=state,
+        ownership_delta=delta,
+        observe=lambda: state,
+        apply=lambda: pytest.fail("already intended state must be adopted"),
+    )
+
+    assert Manifest(manifest.path, state_root=state_root).entries == expected
+
+
+def test_recovery_classifies_expected_state_as_pending_without_replay(
     tmp_path: Path,
 ) -> None:
     target = tmp_path / "dispatcher"
@@ -777,29 +2282,24 @@ def test_recovery_performs_untouched_pending_mutation_and_verifies_result(
         "size": 11,
         "sha256": hashlib.sha256(desired).hexdigest(),
     }
-    mutation = JournalMutation(
-        mutation_id="mutation-001",
-        kind="file",
-        path=str(target),
-        expected_before={"kind": "absent"},
+    mutation = _filesystem_mutation(
+        target,
         intended_after=intended,
         ownership_entry={"kind": "file", "path": str(target)},
     )
 
-    def apply(_mutation: JournalMutation) -> None:
-        target.write_bytes(desired)
-        target.chmod(0o644)
-
     manifest = Manifest(tmp_path / "install-manifest.json", state_root=tmp_path)
+    journal = _journal(pending_mutation=mutation)
     recovered = recover_pending_mutation(
-        _journal(pending_mutation=mutation),
+        journal,
         manifest=manifest,
-        apply_mutation=apply,
     )
 
-    assert recovered.pending_mutation is None
-    assert recovered.completed_mutation_ids == ("mutation-001",)
-    assert snapshot_path_state(target) == intended
+    assert recovered is journal
+    assert recovered.pending_mutation is mutation
+    assert recovered.completed_mutation_ids == ()
+    assert snapshot_path_state(target) == {"kind": "absent"}
+    assert not manifest.path.exists()
 
 
 def test_generic_pending_recovery_refuses_certificate_selector(
@@ -815,17 +2315,11 @@ def test_generic_pending_recovery_refuses_certificate_selector(
     )
     manifest = Manifest(tmp_path / "manifest.json", state_root=tmp_path)
     path_observed = False
-    mutation_called = False
 
     def unexpected_snapshot(_path: Path) -> dict[str, object]:
         nonlocal path_observed
         path_observed = True
         pytest.fail("certificate selector path must not be observed generically")
-
-    def unexpected_apply(_mutation: JournalMutation) -> None:
-        nonlocal mutation_called
-        mutation_called = True
-        pytest.fail("certificate selector callback must not run generically")
 
     monkeypatch.setattr(
         sys.modules[recover_pending_mutation.__module__],
@@ -837,42 +2331,29 @@ def test_generic_pending_recovery_refuses_certificate_selector(
         recover_pending_mutation(
             journal,
             manifest=manifest,
-            apply_mutation=unexpected_apply,
         )
 
     assert path_observed is False
-    assert mutation_called is False
 
 
 def test_recovery_adopts_already_completed_pending_mutation(tmp_path: Path) -> None:
     target = tmp_path / "dispatcher"
     target.write_bytes(b"dispatcher\n")
     intended = snapshot_path_state(target)
-    mutation = JournalMutation(
-        mutation_id="mutation-001",
-        kind="file",
-        path=str(target),
-        expected_before={"kind": "absent"},
+    mutation = _filesystem_mutation(
+        target,
         intended_after=intended,
         ownership_entry={"kind": "file", "path": str(target)},
     )
-    called = False
-
-    def unexpected_apply(_mutation: JournalMutation) -> None:
-        nonlocal called
-        called = True
-
     manifest_path_value = tmp_path / "install-manifest.json"
     manifest = Manifest(manifest_path_value, state_root=tmp_path)
     recovered = recover_pending_mutation(
         _journal(pending_mutation=mutation),
         manifest=manifest,
-        apply_mutation=unexpected_apply,
     )
 
-    assert called is False
     assert recovered.pending_mutation is None
-    assert recovered.completed_mutation_ids == ("mutation-001",)
+    assert recovered.completed_mutation_ids == (mutation.mutation_id,)
     assert Manifest(manifest_path_value, state_root=tmp_path).entries == [
         {"kind": "file", "path": str(target)}
     ]
@@ -881,11 +2362,8 @@ def test_recovery_adopts_already_completed_pending_mutation(tmp_path: Path) -> N
 def test_recovery_fails_closed_on_third_path_state(tmp_path: Path) -> None:
     target = tmp_path / "dispatcher"
     target.write_bytes(b"user-owned\n")
-    mutation = JournalMutation(
-        mutation_id="mutation-001",
-        kind="file",
-        path=str(target),
-        expected_before={"kind": "absent"},
+    mutation = _filesystem_mutation(
+        target,
         intended_after={
             "kind": "file",
             "mode": 0o644,
@@ -894,20 +2372,12 @@ def test_recovery_fails_closed_on_third_path_state(tmp_path: Path) -> None:
         },
         ownership_entry={"kind": "file", "path": str(target)},
     )
-    called = False
-
-    def unexpected_apply(_mutation: JournalMutation) -> None:
-        nonlocal called
-        called = True
-
     with pytest.raises(StateRecordError, match="third state"):
         manifest = Manifest(tmp_path / "install-manifest.json", state_root=tmp_path)
         recover_pending_mutation(
             _journal(pending_mutation=mutation),
             manifest=manifest,
-            apply_mutation=unexpected_apply,
         )
-    assert called is False
     assert target.read_bytes() == b"user-owned\n"
 
 
@@ -969,6 +2439,7 @@ from _state_record import (
     JournalMutation,
     Manifest,
     TransactionJournal,
+    mutation_id_for,
     recover_pending_mutation,
     snapshot_path_state,
 )
@@ -977,13 +2448,18 @@ fifo = Path(sys.argv[2])
 manifest_path = Path(sys.argv[3])
 declared = {"kind": "other", "mode": stat.S_IMODE(fifo.lstat().st_mode)}
 state = snapshot_path_state(fifo)
-mutation = JournalMutation(
-    mutation_id="fifo-001",
+mutation_fields = dict(
+    operation_key="test.fifo",
     kind="file",
-    path=str(fifo),
-    expected_before={"kind": "absent"},
+    resource_kind="filesystem",
+    resource_id=str(fifo),
     intended_after=declared,
-    ownership_entry=None,
+    ownership_delta={"action": "none"},
+)
+mutation = JournalMutation(
+    mutation_id=mutation_id_for(transaction_id="1" * 32, **mutation_fields),
+    expected_before={"kind": "absent"},
+    **mutation_fields,
 )
 journal = TransactionJournal(
     transaction_id="1" * 32,
@@ -1000,7 +2476,6 @@ journal = TransactionJournal(
 recovered = recover_pending_mutation(
     journal,
     manifest=Manifest(manifest_path, state_root=manifest_path.parent),
-    apply_mutation=lambda _mutation: None,
 )
 print(json.dumps({
     "state": state,
@@ -1026,7 +2501,15 @@ print(json.dumps({
         "state": expected_state,
         "declared": expected_state,
         "pending": False,
-        "completed": ["fifo-001"],
+    "completed": [state_record.mutation_id_for(
+        transaction_id="1" * 32,
+        operation_key="test.fifo",
+        kind="file",
+        resource_kind="filesystem",
+        resource_id=str(fifo),
+        intended_after=expected_state,
+        ownership_delta={"action": "none"},
+    )],
     }
 
 
