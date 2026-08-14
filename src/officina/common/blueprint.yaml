@@ -5,6 +5,7 @@ content:
 - __init__\.py
 - certification_hashing\.py
 - atomic_files\.py
+- certificate_intents\.py
 - certificate_records\.py
 - blueprint_authorization\.py
 - blueprint_graph\.py
@@ -73,6 +74,14 @@ exports:
       - skill-drift
       - skill-drift._rtx
     source_interface: common.source.certificate-records.interface.python-api
+  common.interface.certificate-intents:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - install
+      - install-assistant-tools
+      - install-assistant-tools._rtx
+    source_interface: common.source.certificate-intents.interface.python-api
   common.interface.certification-hashing:
     access:
       allow_all_modules: false
@@ -224,6 +233,10 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/certificate-records.yaml
+  common.source.certificate-intents:
+    blueprint:
+      base: module-root
+      path: blueprints/certificate-intents.yaml
   common.source.certification-hashing:
     blueprint:
       base: module-root

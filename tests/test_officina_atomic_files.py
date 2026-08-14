@@ -26,6 +26,11 @@ from officina.common.atomic_files import (
 _POSIX_DESCRIPTOR_ONLY = pytest.mark.skipif(
     os.name != "posix", reason="POSIX descriptor implementation contract"
 )
+_QUARANTINE_ID = "1234567890abcdef1234567890abcdef"
+
+
+def _quarantine_path(target: Path, quarantine_id: str = _QUARANTINE_ID) -> Path:
+    return target.parent / f".famulus-quarantine-{quarantine_id}"
 
 
 def _force_atomic_capability_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -292,6 +297,1477 @@ def test_tracked_create_post_link_cleanup_preserves_replacement(
     assert injected
     assert target.read_bytes() == replacement
     assert _temp_entries(tmp_path, target.name) == []
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_track_existing_regular_file_relocates_to_journaled_quarantine(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "public-key.pub"
+    expected = b"exact-public-key"
+    target.write_bytes(expected)
+
+    tracked = atomic_files.track_existing_regular_file(
+        target,
+        expected,
+        quarantine_id=_QUARANTINE_ID,
+        allowed_root=tmp_path,
+    )
+
+    assert tracked.location is atomic_files.TrackedFileLocation.CANONICAL
+    tracked.relocate()
+    tracked.relocate()
+    assert tracked.location is atomic_files.TrackedFileLocation.QUARANTINE
+    assert not target.exists()
+    assert _quarantine_path(target).read_bytes() == expected
+    tracked.release()
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_track_existing_regular_file_resumes_after_death_immediately_after_move(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class ProcessDeath(BaseException):
+        pass
+
+    target = tmp_path / "public-key.pub"
+    expected = b"exact-public-key"
+    target.write_bytes(expected)
+    tracked = atomic_files.track_existing_regular_file(
+        target,
+        expected,
+        quarantine_id=_QUARANTINE_ID,
+        allowed_root=tmp_path,
+    )
+    real_move = atomic_files._secure_rename_noreplace
+
+    def die_after_move(parent_fd: int, source: str, destination: str) -> None:
+        real_move(parent_fd, source, destination)
+        raise ProcessDeath
+
+    monkeypatch.setattr(
+        atomic_files,
+        "_secure_rename_noreplace",
+        die_after_move,
+    )
+    with pytest.raises(ProcessDeath):
+        tracked.relocate()
+
+    assert not target.exists()
+    assert _quarantine_path(target).read_bytes() == expected
+    assert sorted(path.name for path in tmp_path.iterdir()) == [
+        _quarantine_path(target).name
+    ]
+
+    monkeypatch.setattr(atomic_files, "_secure_rename_noreplace", real_move)
+    recovered = atomic_files.track_existing_regular_file(
+        target,
+        expected,
+        quarantine_id=_QUARANTINE_ID,
+        allowed_root=tmp_path,
+    )
+    assert recovered.location is atomic_files.TrackedFileLocation.QUARANTINE
+    recovered.relocate()
+    recovered.dispose()
+
+    assert list(tmp_path.iterdir()) == []
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_relocation_fails_closed_when_canonical_reappears_after_move(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "public-key.pub"
+    quarantine = _quarantine_path(target)
+    expected = b"exact-public-key"
+    replacement = b"replacement-public-key"
+    target.write_bytes(expected)
+    tracked = atomic_files.track_existing_regular_file(
+        target,
+        expected,
+        quarantine_id=_QUARANTINE_ID,
+        allowed_root=tmp_path,
+    )
+    real_move = atomic_files._secure_rename_noreplace
+
+    def replace_after_move(parent_fd: int, source: str, destination: str) -> None:
+        real_move(parent_fd, source, destination)
+        target.write_bytes(replacement)
+
+    monkeypatch.setattr(
+        atomic_files,
+        "_secure_rename_noreplace",
+        replace_after_move,
+    )
+
+    with pytest.raises(AtomicWriteError, match="canonical and quarantine"):
+        tracked.relocate()
+
+    assert target.read_bytes() == replacement
+    assert quarantine.read_bytes() == expected
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_recovered_quarantine_revalidates_before_idempotent_relocation(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "public-key.pub"
+    quarantine = _quarantine_path(target)
+    quarantine.write_bytes(b"exact-public-key")
+    tracked = atomic_files.track_existing_regular_file(
+        target,
+        b"exact-public-key",
+        quarantine_id=_QUARANTINE_ID,
+        allowed_root=tmp_path,
+    )
+    quarantine.write_bytes(b"mutated-public!!")
+
+    with pytest.raises(AtomicWriteError, match="changed before relocation"):
+        tracked.relocate()
+
+    assert quarantine.read_bytes() == b"mutated-public!!"
+    with pytest.raises(AtomicWriteError, match="already closed"):
+        tracked.dispose()
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_track_existing_regular_file_rejects_conflicting_or_third_quarantine(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "public-key.pub"
+    quarantine = _quarantine_path(target)
+    expected = b"exact-public-key"
+
+    target.write_bytes(expected)
+    quarantine.write_bytes(expected)
+    with pytest.raises(AtomicWriteError, match="canonical and quarantine"):
+        atomic_files.track_existing_regular_file(
+            target,
+            expected,
+            quarantine_id=_QUARANTINE_ID,
+            allowed_root=tmp_path,
+        )
+
+    target.unlink()
+    quarantine.write_bytes(b"third-state")
+    with pytest.raises(AtomicWriteError, match="bytes do not match"):
+        atomic_files.track_existing_regular_file(
+            target,
+            expected,
+            quarantine_id=_QUARANTINE_ID,
+            allowed_root=tmp_path,
+        )
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_track_existing_regular_file_reports_explicit_disposed_absence(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(FileNotFoundError, match="canonical or quarantine"):
+        atomic_files.track_existing_regular_file(
+            tmp_path / "public-key.pub",
+            b"exact-public-key",
+            quarantine_id=_QUARANTINE_ID,
+            allowed_root=tmp_path,
+        )
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_track_existing_regular_file_supports_complete_set_prevalidation(
+    tmp_path: Path,
+) -> None:
+    first = tmp_path / "first.pub"
+    second = tmp_path / "second.pub"
+    first.write_bytes(b"first")
+    second.write_bytes(b"mismatch")
+    first_authority = atomic_files.track_existing_regular_file(
+        first,
+        b"first",
+        quarantine_id="1" * 32,
+        allowed_root=tmp_path,
+    )
+
+    with pytest.raises(AtomicWriteError, match="bytes do not match"):
+        atomic_files.track_existing_regular_file(
+            second,
+            b"second",
+            quarantine_id="2" * 32,
+            allowed_root=tmp_path,
+        )
+
+    first_authority.release()
+    assert first.read_bytes() == b"first"
+    assert second.read_bytes() == b"mismatch"
+    assert not _quarantine_path(first, "1" * 32).exists()
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_tracked_existing_file_dispose_requires_quarantine_and_is_terminal(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "public-key.pub"
+    target.write_bytes(b"exact-public-key")
+    tracked = atomic_files.track_existing_regular_file(
+        target,
+        b"exact-public-key",
+        quarantine_id=_QUARANTINE_ID,
+        allowed_root=tmp_path,
+    )
+
+    with pytest.raises(AtomicWriteError, match="must be quarantined"):
+        tracked.dispose()
+
+    assert target.read_bytes() == b"exact-public-key"
+    with pytest.raises(AtomicWriteError, match="already closed"):
+        tracked.relocate()
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_track_existing_regular_file_releases_without_removal(tmp_path: Path) -> None:
+    target = tmp_path / "public-key.pub"
+    expected = b"exact-public-key"
+    target.write_bytes(expected)
+
+    tracked = atomic_files.track_existing_regular_file(
+        target,
+        expected,
+        quarantine_id=_QUARANTINE_ID,
+        allowed_root=tmp_path,
+    )
+    tracked.release()
+    tracked.release()
+
+    assert target.read_bytes() == expected
+    with pytest.raises(AtomicWriteError, match="already closed"):
+        tracked.relocate()
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_track_existing_regular_file_relocates_and_disposes_under_precondition(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "public-key.pub"
+    expected = b"exact-public-key"
+    target.write_bytes(expected)
+
+    tracked = atomic_files.track_existing_regular_file(
+        target,
+        expected,
+        quarantine_id=_QUARANTINE_ID,
+        allowed_root=tmp_path,
+    )
+    assert tracked.identity == atomic_files.ConfinedFileIdentity(
+        platform="posix",
+        volume=target.stat().st_dev,
+        file_id=target.stat().st_ino,
+    )
+    tracked.relocate()
+    tracked.dispose()
+
+    assert not target.exists()
+    with pytest.raises(AtomicWriteError, match="already closed"):
+        tracked.dispose()
+    tracked.release()
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_track_existing_regular_file_rejects_absent_mismatch_symlink_and_special(
+    tmp_path: Path,
+) -> None:
+    missing = tmp_path / "missing.pub"
+    with pytest.raises(FileNotFoundError, match="canonical or quarantine"):
+        atomic_files.track_existing_regular_file(
+            missing,
+            b"expected",
+            quarantine_id=_QUARANTINE_ID,
+            allowed_root=tmp_path,
+        )
+
+    regular = tmp_path / "regular.pub"
+    regular.write_bytes(b"different")
+    with pytest.raises(AtomicWriteError, match="bytes do not match"):
+        atomic_files.track_existing_regular_file(
+            regular,
+            b"expected",
+            quarantine_id=_QUARANTINE_ID,
+            allowed_root=tmp_path,
+        )
+
+    symlink = tmp_path / "symlink.pub"
+    symlink.symlink_to(regular)
+    with pytest.raises(AtomicWriteError, match="symbolic link"):
+        atomic_files.track_existing_regular_file(
+            symlink,
+            b"different",
+            quarantine_id=_QUARANTINE_ID,
+            allowed_root=tmp_path,
+        )
+
+    fifo = tmp_path / "special.pub"
+    os.mkfifo(fifo)
+    with pytest.raises(AtomicWriteError, match="not a regular file"):
+        atomic_files.track_existing_regular_file(
+            fifo,
+            b"expected",
+            quarantine_id=_QUARANTINE_ID,
+            allowed_root=tmp_path,
+        )
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_tracked_existing_file_preserves_final_replacement(tmp_path: Path) -> None:
+    target = tmp_path / "public-key.pub"
+    expected = b"exact-public-key"
+    replacement = b"replacement-public-key"
+    target.write_bytes(expected)
+    tracked = atomic_files.track_existing_regular_file(
+        target,
+        expected,
+        quarantine_id=_QUARANTINE_ID,
+        allowed_root=tmp_path,
+    )
+
+    target.unlink()
+    target.write_bytes(replacement)
+
+    with pytest.raises(AtomicWriteError, match="changed before relocation"):
+        tracked.relocate()
+    assert target.read_bytes() == replacement
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_tracked_existing_file_preserves_canonical_entry_before_quarantine_disposal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "public-key.pub"
+    replacement = b"replacement-public-key"
+    target.write_bytes(b"exact-public-key")
+    tracked = atomic_files.track_existing_regular_file(
+        target,
+        b"exact-public-key",
+        quarantine_id=_QUARANTINE_ID,
+        allowed_root=tmp_path,
+    )
+    tracked.relocate()
+    real_unlink = atomic_files._secure_unlink
+    injected = False
+
+    def replace_at_disposal(parent_fd: int, name: str) -> None:
+        nonlocal injected
+        if not injected:
+            injected = True
+            if target.exists():
+                target.unlink()
+            target.write_bytes(replacement)
+        real_unlink(parent_fd, name)
+
+    monkeypatch.setattr(atomic_files, "_secure_unlink", replace_at_disposal)
+
+    tracked.dispose()
+
+    assert injected
+    assert target.read_bytes() == replacement
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_relocation_race_restores_canonical_replacement_and_fails_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "public-key.pub"
+    replacement = b"replacement-public-key"
+    target.write_bytes(b"exact-public-key")
+    tracked = atomic_files.track_existing_regular_file(
+        target,
+        b"exact-public-key",
+        quarantine_id=_QUARANTINE_ID,
+        allowed_root=tmp_path,
+    )
+    move = getattr(atomic_files, "_secure_rename_noreplace", None)
+    assert move is not None, "no no-overwrite quarantine move exists"
+    injected = False
+
+    def replace_before_move(parent_fd: int, source: str, destination: str) -> None:
+        nonlocal injected
+        if not injected:
+            injected = True
+            target.unlink()
+            target.write_bytes(replacement)
+        move(parent_fd, source, destination)
+
+    monkeypatch.setattr(
+        atomic_files,
+        "_secure_rename_noreplace",
+        replace_before_move,
+    )
+
+    with pytest.raises(AtomicWriteError, match="changed during relocation"):
+        tracked.relocate()
+
+    assert injected
+    assert target.read_bytes() == replacement
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_tracked_existing_file_retains_known_quarantine_when_disposal_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "public-key.pub"
+    expected = b"exact-public-key"
+    target.write_bytes(expected)
+    tracked = atomic_files.track_existing_regular_file(
+        target,
+        expected,
+        quarantine_id=_QUARANTINE_ID,
+        allowed_root=tmp_path,
+    )
+    tracked.relocate()
+
+    monkeypatch.setattr(
+        atomic_files,
+        "_secure_unlink",
+        lambda *_args: (_ for _ in ()).throw(OSError("injected unlink failure")),
+    )
+
+    with pytest.raises(OSError, match="injected unlink failure"):
+        tracked.dispose()
+
+    assert not target.exists()
+    assert _quarantine_path(target).read_bytes() == expected
+    assert sorted(path.name for path in tmp_path.iterdir()) == [
+        _quarantine_path(target).name
+    ]
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_tracked_existing_file_rejects_same_inode_byte_mutation(tmp_path: Path) -> None:
+    target = tmp_path / "public-key.pub"
+    target.write_bytes(b"exact-public-key")
+    identity = target.stat().st_ino
+    tracked = atomic_files.track_existing_regular_file(
+        target,
+        b"exact-public-key",
+        quarantine_id=_QUARANTINE_ID,
+        allowed_root=tmp_path,
+    )
+    target.write_bytes(b"mutated-public!!")
+    assert target.stat().st_ino == identity
+
+    with pytest.raises(AtomicWriteError, match="changed before relocation"):
+        tracked.relocate()
+
+    assert target.read_bytes() == b"mutated-public!!"
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_track_existing_regular_file_bounds_mismatch_read_to_expected_length_plus_one(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "oversized.pub"
+    target.write_bytes(b"x" * (1024 * 1024))
+    real_read = atomic_files.os.read
+    requested: list[int] = []
+
+    def bounded_read(descriptor: int, count: int) -> bytes:
+        requested.append(count)
+        return real_read(descriptor, count)
+
+    monkeypatch.setattr(atomic_files.os, "read", bounded_read)
+
+    with pytest.raises(AtomicWriteError, match="bytes do not match"):
+        atomic_files.track_existing_regular_file(
+            target,
+            b"x",
+            quarantine_id=_QUARANTINE_ID,
+            allowed_root=tmp_path,
+        )
+
+    assert requested
+    assert max(requested) <= 2
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_tracked_existing_file_rejects_disappearance_before_remove(tmp_path: Path) -> None:
+    target = tmp_path / "public-key.pub"
+    target.write_bytes(b"exact-public-key")
+    tracked = atomic_files.track_existing_regular_file(
+        target,
+        b"exact-public-key",
+        quarantine_id=_QUARANTINE_ID,
+        allowed_root=tmp_path,
+    )
+    target.unlink()
+
+    with pytest.raises(AtomicWriteError, match="changed before relocation"):
+        tracked.relocate()
+    assert not target.exists()
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_tracked_existing_file_parent_replacement_cannot_redirect_cleanup(
+    tmp_path: Path,
+) -> None:
+    allowed = tmp_path / "allowed"
+    parent = allowed / "keys"
+    parent.mkdir(parents=True)
+    target = parent / "public-key.pub"
+    target.write_bytes(b"exact-public-key")
+    tracked = atomic_files.track_existing_regular_file(
+        target,
+        b"exact-public-key",
+        quarantine_id=_QUARANTINE_ID,
+        allowed_root=allowed,
+    )
+    displaced = allowed / "displaced"
+    parent.rename(displaced)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    outside_target = outside / target.name
+    outside_target.write_bytes(b"outside")
+    parent.symlink_to(outside, target_is_directory=True)
+
+    tracked.relocate()
+    tracked.dispose()
+
+    assert not (displaced / target.name).exists()
+    assert outside_target.read_bytes() == b"outside"
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_track_existing_regular_file_closes_partial_setup_handles(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "public-key.pub"
+    target.write_bytes(b"exact-public-key")
+    real_close = atomic_files.os.close
+    closed: list[int] = []
+    parent_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+
+    def close(descriptor: int) -> None:
+        closed.append(descriptor)
+        real_close(descriptor)
+
+    monkeypatch.setattr(atomic_files.os, "close", close)
+    monkeypatch.setattr(
+        atomic_files,
+        "_open_parent",
+        lambda _path, _root: (parent_fd, target.name),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_read_descriptor_bytes_bounded",
+        lambda _descriptor, _limit: (_ for _ in ()).throw(
+            OSError("injected read failure")
+        ),
+    )
+
+    with pytest.raises(OSError, match="injected read failure"):
+        atomic_files.track_existing_regular_file(
+            target,
+            b"exact-public-key",
+            quarantine_id=_QUARANTINE_ID,
+            allowed_root=tmp_path,
+        )
+
+    assert len(closed) == 2
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_track_existing_regular_file_detects_final_file_race(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "public-key.pub"
+    target.write_bytes(b"exact-public-key")
+    real_read = atomic_files._read_descriptor_bytes_bounded
+
+    def replace_after_read(descriptor: int, limit: int) -> bytes:
+        data = real_read(descriptor, limit)
+        target.unlink()
+        target.write_bytes(b"replacement")
+        return data
+
+    monkeypatch.setattr(
+        atomic_files,
+        "_read_descriptor_bytes_bounded",
+        replace_after_read,
+    )
+
+    with pytest.raises(AtomicWriteError, match="changed during observation"):
+        atomic_files.track_existing_regular_file(
+            target,
+            b"exact-public-key",
+            quarantine_id=_QUARANTINE_ID,
+            allowed_root=tmp_path,
+        )
+    assert target.read_bytes() == b"replacement"
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_tracked_existing_file_fsync_failure_is_closed_and_reported(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "public-key.pub"
+    target.write_bytes(b"exact-public-key")
+    tracked = atomic_files.track_existing_regular_file(
+        target,
+        b"exact-public-key",
+        quarantine_id=_QUARANTINE_ID,
+        allowed_root=tmp_path,
+    )
+    real_fsync = atomic_files.os.fsync
+
+    def fail_directory_sync(descriptor: int) -> None:
+        if stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            raise OSError("injected directory fsync failure")
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(atomic_files.os, "fsync", fail_directory_sync)
+
+    with pytest.raises(OSError, match="injected directory fsync failure"):
+        tracked.relocate()
+    assert not target.exists()
+    assert _quarantine_path(target).read_bytes() == b"exact-public-key"
+    with pytest.raises(AtomicWriteError, match="already closed"):
+        tracked.relocate()
+
+
+def test_windows_track_existing_regular_file_retains_and_releases_handles(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    identity = atomic_files.ConfinedFileIdentity(
+        platform="windows",
+        volume=7,
+        file_id=b"i" * 16,
+    )
+    closed: list[list[int]] = []
+    closed_single: list[int] = []
+    requested_access: list[int] = []
+    requested_share: list[int] = []
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_open_parent",
+        lambda _path, _root: ([10, 11], ("keys", "public-key.pub")),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_verify_parent_chain", lambda *_: None)
+    def open_validated(*_args: object, **kwargs: object) -> tuple[int, object]:
+        requested_access.append(kwargs["access"])  # type: ignore[arg-type]
+        requested_share.append(kwargs["share"])  # type: ignore[arg-type]
+        if _args[1] == _quarantine_path(Path("public-key.pub")).name:
+            raise FileNotFoundError
+        return 20, object()
+
+    monkeypatch.setattr(atomic_files, "_windows_open_validated", open_validated)
+    bounded_reads: list[int] = []
+
+    def read_bounded(_handle: int, maximum_bytes: int) -> bytes:
+        bounded_reads.append(maximum_bytes)
+        return b"expected"
+
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_read_handle_bounded",
+        read_bounded,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_read_handle",
+        lambda _handle: pytest.fail("unbounded native read was used"),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_lock_handle", lambda _handle: object())
+    monkeypatch.setattr(atomic_files, "_windows_unlock_handle", lambda *_: None)
+    monkeypatch.setattr(atomic_files, "_windows_verify_named_handle", lambda *_: None)
+    monkeypatch.setattr(atomic_files, "_windows_confined_identity", lambda _handle: identity)
+    monkeypatch.setattr(atomic_files, "_windows_close_handle", closed_single.append)
+    monkeypatch.setattr(atomic_files, "_windows_close_chain", lambda handles: closed.append(handles))
+
+    tracked = atomic_files._windows_track_existing_regular_file(
+        tmp_path / "keys" / "public-key.pub",
+        b"expected",
+        quarantine_id=_QUARANTINE_ID,
+        allowed_root=tmp_path,
+    )
+    tracked.release()
+
+    assert tracked.identity == identity
+    assert tracked.location is atomic_files.TrackedFileLocation.CANONICAL
+    assert requested_access == [
+        atomic_files._WIN_READ_ACCESS | 0x00010000 | 0x40000000
+    ] * 3
+    assert requested_share == [atomic_files._WIN_SHARE_ALL & ~0x2] * 3
+    assert bounded_reads == [9]
+    assert closed_single == [20]
+    assert closed == [[10, 11]]
+
+
+def test_windows_track_existing_regular_file_rejects_initial_name_conflict(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    quarantine = _quarantine_path(Path("public-key.pub")).name
+    closed: list[list[int]] = []
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_open_parent",
+        lambda _path, _root: ([10], ("public-key.pub",)),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_verify_parent_chain", lambda *_: None)
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_open_validated",
+        lambda _parent, candidate, **_kwargs: (
+            (20, object()) if candidate == "public-key.pub" else (21, object())
+        ),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_lock_handle",
+        lambda _handle: pytest.fail("conflicting names must be rejected before locking"),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_read_handle_bounded",
+        lambda *_: pytest.fail("conflicting names must be rejected before reading"),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_close_chain",
+        lambda handles: closed.append(handles),
+    )
+
+    with pytest.raises(AtomicWriteError, match="canonical and quarantine"):
+        atomic_files._windows_track_existing_regular_file(
+            tmp_path / "public-key.pub",
+            b"expected",
+            quarantine_id=_QUARANTINE_ID,
+            allowed_root=tmp_path,
+        )
+
+    assert quarantine != "public-key.pub"
+    assert closed == [[20, 21], [10]]
+
+
+def test_windows_track_existing_regular_file_reports_initial_absence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    closed: list[list[int]] = []
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_open_parent",
+        lambda _path, _root: ([10], ("public-key.pub",)),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_verify_parent_chain", lambda *_: None)
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_open_validated",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(FileNotFoundError()),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_close_chain",
+        lambda handles: closed.append(handles),
+    )
+
+    with pytest.raises(FileNotFoundError, match="no canonical or quarantine"):
+        atomic_files._windows_track_existing_regular_file(
+            tmp_path / "public-key.pub",
+            b"expected",
+            quarantine_id=_QUARANTINE_ID,
+            allowed_root=tmp_path,
+        )
+
+    assert closed == [[10]]
+
+
+def test_windows_track_existing_regular_file_rejects_initial_quarantine_bytes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    quarantine = _quarantine_path(Path("public-key.pub")).name
+    closed: list[list[int]] = []
+    unlocks: list[int] = []
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_open_parent",
+        lambda _path, _root: ([10], ("public-key.pub",)),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_verify_parent_chain", lambda *_: None)
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_open_validated",
+        lambda _parent, candidate, **_kwargs: (
+            (20, object())
+            if candidate == quarantine
+            else (_ for _ in ()).throw(FileNotFoundError())
+        ),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_lock_handle", lambda _handle: object())
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_unlock_handle",
+        lambda handle, _lock: unlocks.append(handle),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_confined_identity",
+        lambda _handle: atomic_files.ConfinedFileIdentity(
+            platform="windows",
+            volume=7,
+            file_id=b"i" * 16,
+        ),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_read_handle_bounded",
+        lambda _handle, _limit: b"wrong",
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_close_chain",
+        lambda handles: closed.append(handles),
+    )
+
+    with pytest.raises(AtomicWriteError, match="bytes do not match"):
+        atomic_files._windows_track_existing_regular_file(
+            tmp_path / "public-key.pub",
+            b"expected",
+            quarantine_id=_QUARANTINE_ID,
+            allowed_root=tmp_path,
+        )
+
+    assert unlocks == [20]
+    assert closed == [[10, 20]]
+
+
+@pytest.mark.parametrize("selected", ["canonical", "quarantine"])
+def test_windows_track_existing_regular_file_rechecks_initial_name_exclusion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    selected: str,
+) -> None:
+    canonical = "public-key.pub"
+    quarantine = _quarantine_path(Path(canonical)).name
+    calls = {canonical: 0, quarantine: 0}
+    closed_single: list[int] = []
+    closed: list[list[int]] = []
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_open_parent",
+        lambda _path, _root: ([10], (canonical,)),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_verify_parent_chain", lambda *_: None)
+
+    def open_validated(_parent: int, candidate: str, **_kwargs: object):
+        calls[candidate] += 1
+        is_selected = candidate == (canonical if selected == "canonical" else quarantine)
+        if is_selected:
+            return 20, object()
+        if calls[candidate] == 1:
+            raise FileNotFoundError
+        return 21, object()
+
+    monkeypatch.setattr(atomic_files, "_windows_open_validated", open_validated)
+    monkeypatch.setattr(atomic_files, "_windows_lock_handle", lambda _handle: object())
+    monkeypatch.setattr(atomic_files, "_windows_unlock_handle", lambda *_: None)
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_confined_identity",
+        lambda _handle: atomic_files.ConfinedFileIdentity(
+            platform="windows",
+            volume=7,
+            file_id=b"i" * 16,
+        ),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_read_handle_bounded",
+        lambda _handle, _limit: b"expected",
+    )
+    monkeypatch.setattr(atomic_files, "_windows_verify_named_handle", lambda *_: None)
+    monkeypatch.setattr(atomic_files, "_windows_close_handle", closed_single.append)
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_close_chain",
+        lambda handles: closed.append(handles),
+    )
+
+    with pytest.raises(AtomicWriteError, match="canonical and quarantine"):
+        atomic_files._windows_track_existing_regular_file(
+            tmp_path / canonical,
+            b"expected",
+            quarantine_id=_QUARANTINE_ID,
+            allowed_root=tmp_path,
+        )
+
+    other = quarantine if selected == "canonical" else canonical
+    assert calls[other] == 2
+    assert closed_single == [21]
+    assert closed == [[10, 20]]
+
+
+def test_windows_tracked_existing_file_uses_flush_then_close_and_absence_proof(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    identity = atomic_files.ConfinedFileIdentity(
+        platform="windows",
+        volume=7,
+        file_id=b"i" * 16,
+    )
+    named_verifications = 0
+    deleted: list[int] = []
+    closed: list[list[int]] = []
+    closed_single: list[int] = []
+    flushed: list[int] = []
+    events: list[str] = []
+    location = "canonical"
+    delete_pending = False
+
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_open_parent",
+        lambda _path, _root: ([10], ("public-key.pub",)),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_verify_parent_chain", lambda *_: None)
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_open_validated",
+        lambda _parent, candidate, **_kwargs: (
+            (20, object())
+            if candidate == "public-key.pub" and location == "canonical"
+            else (_ for _ in ()).throw(FileNotFoundError())
+        ),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_confined_identity", lambda _handle: identity)
+    def read_bounded(_handle: int, _limit: int) -> bytes:
+        events.append("read")
+        return b"expected"
+
+    monkeypatch.setattr(atomic_files, "_windows_read_handle_bounded", read_bounded)
+    monkeypatch.setattr(atomic_files, "_windows_lock_handle", lambda _handle: object())
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_unlock_handle",
+        lambda *_: events.append("unlock"),
+    )
+
+    def verify_named(*_args: object) -> None:
+        nonlocal named_verifications
+        named_verifications += 1
+        events.append("verify")
+
+    monkeypatch.setattr(atomic_files, "_windows_verify_named_handle", verify_named)
+    def rename_handle(
+        _handle: int,
+        _parent: int,
+        destination: str,
+        *,
+        replace: bool,
+    ) -> bool:
+        nonlocal location
+        assert destination == _quarantine_path(Path("public-key.pub")).name
+        assert not replace
+        events.append("rename")
+        location = "quarantine"
+        return True
+
+    monkeypatch.setattr(atomic_files, "_windows_rename_handle", rename_handle)
+    def mark_delete(handle: int) -> None:
+        nonlocal delete_pending
+        events.append("mark-delete")
+        delete_pending = True
+        deleted.append(handle)
+
+    def close_handle(handle: int) -> None:
+        nonlocal location
+        events.append("close-file")
+        closed_single.append(handle)
+        if delete_pending:
+            location = "absent"
+
+    def flush_handle(handle: int) -> None:
+        events.append("flush-file")
+        flushed.append(handle)
+
+    monkeypatch.setattr(atomic_files, "_windows_mark_delete", mark_delete)
+    monkeypatch.setattr(atomic_files, "_windows_flush_handle", flush_handle)
+    monkeypatch.setattr(atomic_files, "_windows_close_handle", close_handle)
+    monkeypatch.setattr(atomic_files, "_windows_close_chain", lambda handles: closed.append(handles))
+
+    tracked = atomic_files._windows_track_existing_regular_file(
+        tmp_path / "public-key.pub",
+        b"expected",
+        quarantine_id=_QUARANTINE_ID,
+        allowed_root=tmp_path,
+    )
+    tracked.relocate()
+    rename_index = events.index("rename")
+    flush_index = events.index("flush-file")
+    post_rename_read_index = events.index("read", flush_index + 1)
+    post_rename_verify_index = events.index("verify", post_rename_read_index + 1)
+    assert (
+        rename_index
+        < flush_index
+        < post_rename_read_index
+        < post_rename_verify_index
+    )
+
+    tracked.dispose()
+
+    assert named_verifications == 4
+    assert deleted == [20]
+    assert flushed == [20]
+    assert closed_single == [20]
+    assert closed == [[10]]
+    assert events.index("mark-delete") < events.index("close-file")
+    assert events.index("unlock") < events.index("close-file")
+
+
+def test_windows_dispose_rejects_quarantine_remaining_after_handle_close(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    identity = atomic_files.ConfinedFileIdentity(
+        platform="windows",
+        volume=7,
+        file_id=b"i" * 16,
+    )
+    quarantine = _quarantine_path(Path("public-key.pub")).name
+    retained_closed = False
+    events: list[str] = []
+    closed_single: list[int] = []
+    closed: list[list[int]] = []
+
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_open_parent",
+        lambda _path, _root: ([10], ("public-key.pub",)),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_verify_parent_chain", lambda *_: None)
+
+    def open_validated(_parent: int, candidate: str, **_kwargs: object):
+        if candidate != quarantine:
+            raise FileNotFoundError
+        if retained_closed:
+            events.append("post-close-probe")
+            return 21, object()
+        return 20, object()
+
+    monkeypatch.setattr(atomic_files, "_windows_open_validated", open_validated)
+    monkeypatch.setattr(atomic_files, "_windows_confined_identity", lambda _handle: identity)
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_read_handle_bounded",
+        lambda _handle, _limit: b"expected",
+    )
+    monkeypatch.setattr(atomic_files, "_windows_verify_named_handle", lambda *_: None)
+    monkeypatch.setattr(atomic_files, "_windows_lock_handle", lambda _handle: object())
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_unlock_handle",
+        lambda *_: events.append("unlock"),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_mark_delete",
+        lambda _handle: events.append("mark-delete"),
+    )
+
+    def close_handle(handle: int) -> None:
+        nonlocal retained_closed
+        closed_single.append(handle)
+        if handle == 20:
+            events.append("close-retained")
+            retained_closed = True
+        else:
+            events.append("close-probe")
+
+    monkeypatch.setattr(atomic_files, "_windows_close_handle", close_handle)
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_close_chain",
+        lambda handles: closed.append(handles),
+    )
+
+    tracked = atomic_files._windows_track_existing_regular_file(
+        tmp_path / "public-key.pub",
+        b"expected",
+        quarantine_id=_QUARANTINE_ID,
+        allowed_root=tmp_path,
+    )
+    tracked.relocate()
+    with pytest.raises(AtomicWriteError) as error:
+        tracked.dispose()
+
+    assert str(error.value) == "tracked quarantine remained after disposal"
+    assert events.index("unlock") < events.index("close-retained")
+    assert events.index("close-retained") < events.index("post-close-probe")
+    assert closed_single == [20, 21]
+    assert closed == [[10]]
+    tracked.release()
+
+
+def test_windows_tracked_existing_file_preserves_replacement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    identity = atomic_files.ConfinedFileIdentity(
+        platform="windows",
+        volume=7,
+        file_id=b"i" * 16,
+    )
+    deleted: list[int] = []
+    closed: list[list[int]] = []
+    closed_single: list[int] = []
+    location = "canonical"
+    canonical_replacement = False
+
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_open_parent",
+        lambda _path, _root: ([10], ("public-key.pub",)),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_verify_parent_chain", lambda *_: None)
+    def open_validated(_parent: int, candidate: str, **_kwargs: object):
+        if candidate == "public-key.pub":
+            if location == "canonical":
+                return 20, object()
+            if canonical_replacement:
+                return 21, object()
+        if (
+            candidate == _quarantine_path(Path("public-key.pub")).name
+            and location == "quarantine"
+        ):
+            return 20, object()
+        raise FileNotFoundError
+
+    monkeypatch.setattr(atomic_files, "_windows_open_validated", open_validated)
+    monkeypatch.setattr(atomic_files, "_windows_confined_identity", lambda _handle: identity)
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_read_handle_bounded",
+        lambda _handle, _limit: b"expected",
+    )
+    monkeypatch.setattr(atomic_files, "_windows_lock_handle", lambda _handle: object())
+    monkeypatch.setattr(atomic_files, "_windows_unlock_handle", lambda *_: None)
+
+    monkeypatch.setattr(atomic_files, "_windows_verify_named_handle", lambda *_: None)
+    def rename_handle(*_args: object, **_kwargs: object) -> bool:
+        nonlocal location
+        location = "quarantine"
+        return True
+
+    monkeypatch.setattr(atomic_files, "_windows_rename_handle", rename_handle)
+    monkeypatch.setattr(atomic_files, "_windows_flush_handle", lambda _handle: None)
+    monkeypatch.setattr(atomic_files, "_windows_mark_delete", deleted.append)
+    monkeypatch.setattr(atomic_files, "_windows_close_handle", closed_single.append)
+    monkeypatch.setattr(atomic_files, "_windows_close_chain", lambda handles: closed.append(handles))
+
+    tracked = atomic_files._windows_track_existing_regular_file(
+        tmp_path / "public-key.pub",
+        b"expected",
+        quarantine_id=_QUARANTINE_ID,
+        allowed_root=tmp_path,
+    )
+    tracked.relocate()
+    canonical_replacement = True
+    with pytest.raises(AtomicWriteError, match="canonical and quarantine"):
+        tracked.dispose()
+
+    assert deleted == []
+    assert closed_single == [21, 20]
+    assert closed == [[10]]
+
+
+def test_windows_tracked_existing_file_rejects_expected_byte_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    identity = atomic_files.ConfinedFileIdentity(
+        platform="windows",
+        volume=7,
+        file_id=b"i" * 16,
+    )
+    reads = iter((b"expected", b"mutated!"))
+    limits: list[int] = []
+    deleted: list[int] = []
+    closed: list[list[int]] = []
+    closed_single: list[int] = []
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_open_parent",
+        lambda _path, _root: ([10], ("public-key.pub",)),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_verify_parent_chain", lambda *_: None)
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_open_validated",
+        lambda _parent, candidate, **_kwargs: (
+            (20, object())
+            if candidate == "public-key.pub"
+            else (_ for _ in ()).throw(FileNotFoundError())
+        ),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_confined_identity", lambda _handle: identity)
+
+    def read_bounded(_handle: int, maximum_bytes: int) -> bytes:
+        limits.append(maximum_bytes)
+        return next(reads)
+
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_read_handle_bounded",
+        read_bounded,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_read_handle",
+        lambda _handle: pytest.fail("unbounded native read was used"),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_verify_named_handle", lambda *_: None)
+    monkeypatch.setattr(atomic_files, "_windows_lock_handle", lambda _handle: object())
+    monkeypatch.setattr(atomic_files, "_windows_unlock_handle", lambda *_: None)
+    monkeypatch.setattr(atomic_files, "_windows_mark_delete", deleted.append)
+    monkeypatch.setattr(atomic_files, "_windows_close_handle", closed_single.append)
+    monkeypatch.setattr(atomic_files, "_windows_close_chain", lambda handles: closed.append(handles))
+
+    tracked = atomic_files._windows_track_existing_regular_file(
+        tmp_path / "public-key.pub",
+        b"expected",
+        quarantine_id=_QUARANTINE_ID,
+        allowed_root=tmp_path,
+    )
+    with pytest.raises(AtomicWriteError, match="bytes changed"):
+        tracked.relocate()
+
+    assert limits == [9, 9]
+    assert deleted == []
+    assert closed_single == [20]
+    assert closed == [[10]]
+
+
+def test_windows_tracked_existing_file_resumes_from_known_quarantine(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    identity = atomic_files.ConfinedFileIdentity(
+        platform="windows",
+        volume=7,
+        file_id=b"i" * 16,
+    )
+    quarantine = _quarantine_path(Path("public-key.pub")).name
+    deleted: list[int] = []
+    renamed: list[str] = []
+    flushed: list[int] = []
+    closed: list[list[int]] = []
+    closed_single: list[int] = []
+    quarantine_present = True
+    delete_pending = False
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_open_parent",
+        lambda _path, _root: ([10], ("public-key.pub",)),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_verify_parent_chain", lambda *_: None)
+    def open_validated(_parent: int, candidate: str, **_kwargs: object):
+        if candidate == quarantine and quarantine_present:
+            return 20, object()
+        raise FileNotFoundError
+
+    monkeypatch.setattr(atomic_files, "_windows_open_validated", open_validated)
+    monkeypatch.setattr(atomic_files, "_windows_confined_identity", lambda _handle: identity)
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_read_handle_bounded",
+        lambda _handle, _limit: b"expected",
+    )
+    monkeypatch.setattr(atomic_files, "_windows_verify_named_handle", lambda *_: None)
+    monkeypatch.setattr(atomic_files, "_windows_lock_handle", lambda _handle: object())
+    monkeypatch.setattr(atomic_files, "_windows_unlock_handle", lambda *_: None)
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_rename_handle",
+        lambda _handle, _parent, name, **_kwargs: renamed.append(name) or True,
+    )
+    def mark_delete(handle: int) -> None:
+        nonlocal delete_pending
+        delete_pending = True
+        deleted.append(handle)
+
+    def close_handle(handle: int) -> None:
+        nonlocal quarantine_present
+        closed_single.append(handle)
+        if handle == 20 and delete_pending:
+            quarantine_present = False
+
+    monkeypatch.setattr(atomic_files, "_windows_mark_delete", mark_delete)
+    monkeypatch.setattr(atomic_files, "_windows_flush_handle", flushed.append)
+    monkeypatch.setattr(atomic_files, "_windows_close_handle", close_handle)
+    monkeypatch.setattr(atomic_files, "_windows_close_chain", lambda handles: closed.append(handles))
+
+    tracked = atomic_files._windows_track_existing_regular_file(
+        tmp_path / "public-key.pub",
+        b"expected",
+        quarantine_id=_QUARANTINE_ID,
+        allowed_root=tmp_path,
+    )
+    assert tracked.location is atomic_files.TrackedFileLocation.QUARANTINE
+    tracked.relocate()
+    tracked.dispose()
+    tracked.release()
+
+    assert renamed == []
+    assert deleted == [20]
+    assert flushed == []
+    assert closed_single == [20]
+    assert closed == [[10]]
+
+
+def test_windows_bounded_handle_read_never_requests_past_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requested: list[int] = []
+
+    class Kernel32:
+        def ReadFile(
+            self,
+            _handle: object,
+            buffer: object,
+            size: int,
+            count: object,
+            _overlapped: object,
+        ) -> int:
+            requested.append(size)
+            ctypes.memmove(buffer, b"xy", size)
+            ctypes.cast(count, ctypes.POINTER(ctypes.c_uint32)).contents.value = size
+            return 1
+
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_modules",
+        lambda: (Kernel32(), object(), object()),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_seek", lambda *_args: 0)
+
+    assert atomic_files._windows_read_handle_bounded(20, 2) == b"xy"
+    assert requested == [2]
+
+
+def test_windows_track_existing_regular_file_rejects_junction_and_closes_partial_setup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_open_parent",
+        lambda _path, _root: (_ for _ in ()).throw(
+            AtomicWriteError("destination parent is a reparse point")
+        ),
+    )
+
+    with pytest.raises(AtomicWriteError, match="reparse point"):
+        atomic_files._windows_track_existing_regular_file(
+            tmp_path / "junction" / "public-key.pub",
+            b"expected",
+            quarantine_id=_QUARANTINE_ID,
+            allowed_root=tmp_path,
+        )
+
+    closed: list[list[int]] = []
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_open_parent",
+        lambda _path, _root: ([10], ("public-key.pub",)),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_verify_parent_chain", lambda *_: None)
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_open_validated",
+        lambda _parent, candidate, **_kwargs: (
+            (20, object())
+            if candidate == "public-key.pub"
+            else (_ for _ in ()).throw(FileNotFoundError())
+        ),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_confined_identity",
+        lambda _handle: atomic_files.ConfinedFileIdentity(
+            platform="windows",
+            volume=7,
+            file_id=b"i" * 16,
+        ),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_read_handle_bounded",
+        lambda _handle, _limit: (_ for _ in ()).throw(
+            OSError("injected read failure")
+        ),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_lock_handle", lambda _handle: object())
+    monkeypatch.setattr(atomic_files, "_windows_unlock_handle", lambda *_: None)
+    monkeypatch.setattr(atomic_files, "_windows_close_chain", lambda handles: closed.append(handles))
+
+    with pytest.raises(OSError, match="injected read failure"):
+        atomic_files._windows_track_existing_regular_file(
+            tmp_path / "public-key.pub",
+            b"expected",
+            quarantine_id=_QUARANTINE_ID,
+            allowed_root=tmp_path,
+        )
+    assert closed == [[10, 20]]
+
+
+def test_windows_track_existing_regular_file_closes_canonical_probe_on_quarantine_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    quarantine = _quarantine_path(Path("public-key.pub")).name
+    closed_single: list[int] = []
+    closed_chains: list[list[int]] = []
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_open_parent",
+        lambda _path, _root: ([10], ("public-key.pub",)),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_verify_parent_chain", lambda *_: None)
+
+    def open_validated(_parent: int, candidate: str, **_kwargs: object):
+        if candidate == "public-key.pub":
+            return 20, object()
+        assert candidate == quarantine
+        raise AtomicWriteError("injected quarantine probe failure")
+
+    monkeypatch.setattr(atomic_files, "_windows_open_validated", open_validated)
+    monkeypatch.setattr(atomic_files, "_windows_close_handle", closed_single.append)
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_close_chain",
+        lambda handles: closed_chains.append(handles),
+    )
+
+    with pytest.raises(AtomicWriteError, match="injected quarantine probe failure"):
+        atomic_files._windows_track_existing_regular_file(
+            tmp_path / "public-key.pub",
+            b"expected",
+            quarantine_id=_QUARANTINE_ID,
+            allowed_root=tmp_path,
+        )
+
+    assert closed_single == [20]
+    assert closed_chains == [[10]]
 
 
 @_POSIX_DESCRIPTOR_ONLY

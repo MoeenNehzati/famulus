@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import ctypes
 from dataclasses import dataclass
+import errno
+from enum import Enum
 import os
 import secrets
 import stat
@@ -218,6 +220,79 @@ class TrackedFileCreation:
         self._release()
 
 
+class TrackedFileLocation(str, Enum):
+    """Closed location state for one journal-addressable recovery file."""
+
+    CANONICAL = "canonical"
+    QUARANTINE = "quarantine"
+
+
+class TrackedExistingFile:
+    """Retain platform-scoped authority over one recovery-file transaction."""
+
+    def __init__(
+        self,
+        identity: ConfinedFileIdentity,
+        location: TrackedFileLocation,
+        *,
+        relocate: Callable[[], None],
+        dispose: Callable[[], None],
+        release: Callable[[], None],
+    ) -> None:
+        self.identity = identity
+        self._location = location
+        self._relocate = relocate
+        self._dispose = dispose
+        self._release = release
+        self._closed = False
+
+    @property
+    def location(self) -> TrackedFileLocation:
+        """Return the currently verified canonical or quarantine location."""
+
+        return self._location
+
+    def _close_after_failure(self) -> None:
+        self._closed = True
+        self._release()
+
+    def relocate(self) -> None:
+        """Move the verified canonical entry to its journaled quarantine."""
+
+        if self._closed:
+            raise AtomicWriteError("tracked existing file is already closed")
+        try:
+            self._relocate()
+        except BaseException:
+            self._close_after_failure()
+            raise
+        self._location = TrackedFileLocation.QUARANTINE
+
+    def dispose(self) -> None:
+        """Dispose from quarantine under the documented platform precondition."""
+
+        if self._closed:
+            raise AtomicWriteError("tracked existing file is already closed")
+        if self._location is not TrackedFileLocation.QUARANTINE:
+            try:
+                raise AtomicWriteError("tracked existing file must be quarantined")
+            finally:
+                self._close_after_failure()
+        try:
+            self._dispose()
+        finally:
+            self._closed = True
+            self._release()
+
+    def release(self) -> None:
+        """Preserve the verified entry and release retained native authority."""
+
+        if self._closed:
+            return
+        self._closed = True
+        self._release()
+
+
 def _posix_file_identity(metadata: os.stat_result) -> ConfinedFileIdentity:
     return ConfinedFileIdentity(
         platform="posix",
@@ -293,6 +368,63 @@ def _secure_unlink(parent_fd: int, name: str) -> None:
         os.unlink(name, dir_fd=parent_fd)
     except (NotImplementedError, TypeError) as exc:
         raise AtomicWriteError(_CAPABILITY_ERROR) from exc
+
+
+def _secure_rename_noreplace(
+    parent_fd: int,
+    source: str,
+    destination: str,
+) -> None:
+    """Atomically move one relative entry without replacing another entry."""
+
+    library = ctypes.CDLL(None, use_errno=True)
+    source_bytes = os.fsencode(source)
+    destination_bytes = os.fsencode(destination)
+    variants = (("renameat2", 1), ("renameatx_np", 4))
+    for function_name, flag in variants:
+        function = getattr(library, function_name, None)
+        if function is None:
+            continue
+        function.argtypes = (
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        )
+        function.restype = ctypes.c_int
+        ctypes.set_errno(0)
+        result = function(
+            parent_fd,
+            source_bytes,
+            parent_fd,
+            destination_bytes,
+            flag,
+        )
+        if result == 0:
+            return
+        error = ctypes.get_errno()
+        if error in {errno.EEXIST, errno.ENOTEMPTY}:
+            raise FileExistsError(error, "destination already exists")
+        if error == errno.ENOENT:
+            raise FileNotFoundError(error, "source does not exist")
+        if error in {errno.ENOSYS, errno.EINVAL, errno.ENOTSUP}:
+            continue
+        raise AtomicWriteError("cannot securely quarantine observed file") from None
+    raise AtomicWriteError(_CAPABILITY_ERROR)
+
+
+def _quarantine_name(quarantine_id: str) -> str:
+    """Derive one bounded internal name from a durable 128-bit capability."""
+
+    if not isinstance(quarantine_id, str):
+        raise TypeError("quarantine_id must be a string")
+    if (
+        len(quarantine_id) != 32
+        or any(character not in "0123456789abcdef" for character in quarantine_id)
+    ):
+        raise ValueError("quarantine_id must be 32 lowercase hexadecimal characters")
+    return f".famulus-quarantine-{quarantine_id}"
 
 
 def _open_parent(path: Path, allowed_root: Path) -> tuple[int, str]:
@@ -690,6 +822,222 @@ def _posix_atomic_create_bytes_tracked(
                 raise cleanup_error
 
 
+def _posix_track_existing_regular_file(
+    path: Path,
+    expected_bytes: bytes,
+    *,
+    quarantine_id: str,
+    allowed_root: Path,
+) -> TrackedExistingFile:
+    """Retain authority over one canonical-or-quarantined regular file.
+
+    The quarantine name is derived entirely from the durable capability.  An
+    entry may therefore be rediscovered after process death without scanning or
+    accepting an unrecorded pathname. Conditional unlink by retained inode is
+    unavailable; after relocation, callers must protect the quarantine name as
+    described by :func:`track_existing_regular_file`.
+    """
+
+    parent_fd, name = _open_parent(path, allowed_root)
+    quarantine = _quarantine_name(quarantine_id)
+    descriptor = -1
+    transferred = False
+    failure: BaseException | None = None
+    try:
+        def stat_optional(candidate: str) -> os.stat_result | None:
+            try:
+                return _secure_stat(parent_fd, candidate)
+            except FileNotFoundError:
+                return None
+
+        canonical_metadata = stat_optional(name)
+        quarantine_metadata = stat_optional(quarantine)
+        if canonical_metadata is not None and quarantine_metadata is not None:
+            raise AtomicWriteError(
+                "observed file exists at both canonical and quarantine names"
+            )
+        if canonical_metadata is None and quarantine_metadata is None:
+            raise FileNotFoundError(
+                f"observed file has no canonical or quarantine entry: {name}"
+            )
+        location = (
+            TrackedFileLocation.CANONICAL
+            if canonical_metadata is not None
+            else TrackedFileLocation.QUARANTINE
+        )
+        observed_name = (
+            name
+            if location is TrackedFileLocation.CANONICAL
+            else quarantine
+        )
+        flags = (
+            os.O_RDONLY
+            | os.O_NOFOLLOW
+            | os.O_NONBLOCK
+            | getattr(os, "O_CLOEXEC", 0)
+        )
+        try:
+            descriptor = _secure_open(observed_name, flags, dir_fd=parent_fd)
+        except FileNotFoundError as exc:
+            raise AtomicWriteError(
+                f"observed file changed during observation: {name}"
+            ) from exc
+        except OSError as exc:
+            if exc.errno == getattr(os, "ELOOP", 40):
+                raise AtomicWriteError(
+                    f"observed file is a symbolic link: {observed_name}"
+                ) from exc
+            raise AtomicWriteError(
+                f"cannot securely open observed file: {path}"
+            ) from exc
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise AtomicWriteError(
+                f"observed file is not a regular file: {name}"
+            )
+        identity = _posix_file_identity(metadata)
+        if _read_descriptor_bytes_bounded(
+            descriptor,
+            len(expected_bytes) + 1,
+        ) != expected_bytes:
+            raise AtomicWriteError("observed file bytes do not match expectation")
+        try:
+            linked = _secure_stat(parent_fd, observed_name)
+        except FileNotFoundError as exc:
+            raise AtomicWriteError(
+                f"observed file changed during observation: {name}"
+            ) from exc
+        if (
+            not stat.S_ISREG(linked.st_mode)
+            or _posix_file_identity(linked) != identity
+        ):
+            raise AtomicWriteError(
+                f"observed file changed during observation: {name}"
+            )
+        other_name = (
+            quarantine
+            if location is TrackedFileLocation.CANONICAL
+            else name
+        )
+        if stat_optional(other_name) is not None:
+            raise AtomicWriteError(
+                "observed file exists at both canonical and quarantine names"
+            )
+        at_quarantine = location is TrackedFileLocation.QUARANTINE
+
+        def release() -> None:
+            cleanup_error = _cleanup_read(descriptor, parent_fd)
+            if cleanup_error is not None:
+                raise cleanup_error
+
+        def exact_named_identity(candidate: str) -> bool:
+            try:
+                current = _secure_stat(parent_fd, candidate)
+            except FileNotFoundError:
+                return False
+            return (
+                stat.S_ISREG(current.st_mode)
+                and _posix_file_identity(current) == identity
+            )
+
+        def exact_retained_bytes() -> bool:
+            return (
+                _read_descriptor_bytes_bounded(
+                    descriptor,
+                    len(expected_bytes) + 1,
+                )
+                == expected_bytes
+            )
+
+        def relocate() -> None:
+            nonlocal at_quarantine
+            if at_quarantine:
+                if stat_optional(name) is not None:
+                    raise AtomicWriteError(
+                        "observed file exists at both canonical and quarantine names"
+                    )
+                if (
+                    not exact_named_identity(quarantine)
+                    or not exact_retained_bytes()
+                ):
+                    raise AtomicWriteError(
+                        f"tracked destination changed before relocation: {name}"
+                    )
+                os.fsync(parent_fd)
+                return
+            if not exact_named_identity(name) or not exact_retained_bytes():
+                raise AtomicWriteError(
+                    f"tracked destination changed before relocation: {name}"
+                )
+            if stat_optional(quarantine) is not None:
+                raise AtomicWriteError(
+                    "observed file exists at both canonical and quarantine names"
+                )
+            try:
+                _secure_rename_noreplace(parent_fd, name, quarantine)
+            except (FileExistsError, FileNotFoundError) as exc:
+                raise AtomicWriteError(
+                    f"tracked destination changed before relocation: {name}"
+                ) from exc
+
+            def restore_moved_entry() -> None:
+                try:
+                    _secure_rename_noreplace(parent_fd, quarantine, name)
+                except (FileExistsError, FileNotFoundError):
+                    raise AtomicWriteError(
+                        f"tracked destination changed before cleanup: {name}"
+                    ) from None
+                os.fsync(parent_fd)
+
+            if stat_optional(name) is not None:
+                raise AtomicWriteError(
+                    "observed file exists at both canonical and quarantine names"
+                )
+            try:
+                matches = exact_named_identity(quarantine) and exact_retained_bytes()
+            except BaseException:
+                restore_moved_entry()
+                raise AtomicWriteError(
+                    f"tracked destination changed during relocation: {name}"
+                ) from None
+            if not matches:
+                restore_moved_entry()
+                raise AtomicWriteError(
+                    f"tracked destination changed during relocation: {name}"
+                )
+            os.fsync(parent_fd)
+            at_quarantine = True
+
+        def dispose() -> None:
+            if stat_optional(name) is not None:
+                raise AtomicWriteError(
+                    "observed file exists at both canonical and quarantine names"
+                )
+            if not exact_named_identity(quarantine) or not exact_retained_bytes():
+                raise AtomicWriteError(
+                    f"tracked quarantine changed before disposal: {name}"
+                )
+            _secure_unlink(parent_fd, quarantine)
+            os.fsync(parent_fd)
+
+        transferred = True
+        return TrackedExistingFile(
+            identity,
+            location,
+            relocate=relocate,
+            dispose=dispose,
+            release=release,
+        )
+    except BaseException as exc:
+        failure = exc
+        raise
+    finally:
+        if not transferred:
+            cleanup_error = _cleanup_read(descriptor, parent_fd)
+            if failure is None and cleanup_error is not None:
+                raise cleanup_error
+
+
 def _posix_read_regular_directory_entries(
     root: Path,
 ) -> tuple[ConfinedRegularFile, ...]:
@@ -748,6 +1096,25 @@ def _read_descriptor_bytes(descriptor: int) -> bytes:
         if not chunk:
             return b"".join(chunks)
         chunks.append(chunk)
+
+
+def _read_descriptor_bytes_bounded(descriptor: int, maximum_bytes: int) -> bytes:
+    """Read no more than one caller-supplied exact-match bound."""
+
+    if isinstance(maximum_bytes, bool) or not isinstance(maximum_bytes, int):
+        raise TypeError("maximum_bytes must be an integer")
+    if maximum_bytes < 0:
+        raise ValueError("maximum_bytes must not be negative")
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    chunks: list[bytes] = []
+    remaining = maximum_bytes
+    while remaining:
+        chunk = os.read(descriptor, min(1024 * 1024, remaining))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)
 
 
 def _write_descriptor_bytes(descriptor: int, data: bytes, path: Path) -> None:
@@ -1002,6 +1369,7 @@ _WIN_SHARE_ALL = 0x1 | 0x2 | 0x4
 _WIN_LIST_DIRECTORY = 0x1
 _WIN_DIR_ACCESS = 0x20 | 0x80 | 0x00100000
 _WIN_READ_ACCESS = 0x1 | 0x80 | 0x00020000 | 0x00100000
+_WIN_GENERIC_WRITE = 0x40000000
 _WIN_MUTATE_ACCESS = (
     0x1 | 0x2 | 0x4 | 0x80 | 0x00010000 | 0x00020000 | 0x00040000 | 0x00100000
 )
@@ -1260,6 +1628,7 @@ def _windows_open_validated(
     options: int,
     directory: bool,
     security_descriptor: _WinSecurityDescriptor | None = None,
+    share: int = _WIN_SHARE_ALL,
 ) -> tuple[int, int]:
     handle, information = _windows_open_relative(
         parent_handle,
@@ -1268,6 +1637,7 @@ def _windows_open_validated(
         disposition=disposition,
         options=options,
         security_descriptor=security_descriptor,
+        share=share,
     )
     try:
         _windows_validate_handle(
@@ -1371,6 +1741,36 @@ def _windows_read_handle(handle: int) -> bytes:
         if not count.value:
             return b"".join(chunks)
         chunks.append(buffer.raw[: count.value])
+
+
+def _windows_read_handle_bounded(handle: int, maximum_bytes: int) -> bytes:
+    """Read at most one exact-match bound from a retained native handle."""
+
+    if isinstance(maximum_bytes, bool) or not isinstance(maximum_bytes, int):
+        raise TypeError("maximum_bytes must be an integer")
+    if maximum_bytes < 0:
+        raise ValueError("maximum_bytes must not be negative")
+    kernel32, _advapi32, _ntdll = _windows_modules()
+    _windows_seek(handle, 0, 0)
+    chunks: list[bytes] = []
+    remaining = maximum_bytes
+    while remaining:
+        buffer = ctypes.create_string_buffer(min(1024 * 1024, remaining))
+        count = ctypes.c_uint32()
+        if not kernel32.ReadFile(
+            handle,
+            buffer,
+            len(buffer),
+            ctypes.byref(count),
+            None,
+        ):
+            raise _windows_call_error("cannot read native file handle")
+        size = int(count.value)
+        if size == 0:
+            break
+        chunks.append(buffer.raw[:size])
+        remaining -= size
+    return b"".join(chunks)
 
 
 def _windows_write_handle(handle: int, data: bytes) -> None:
@@ -1961,6 +2361,226 @@ def _windows_atomic_create_bytes_tracked(
                 )
 
 
+def _windows_track_existing_regular_file(
+    path: Path,
+    expected_bytes: bytes,
+    *,
+    quarantine_id: str,
+    allowed_root: Path,
+) -> TrackedExistingFile:
+    """Retain native handle authority over one recovery-file transaction.
+
+    Relocation flushes the writable retained file handle and verifies the live
+    name and bytes. This branch has no directory-fsync step, so it does not
+    claim power-loss durability for the rename metadata.
+    Disposal marks the retained handle for deletion, closes it, and proves the
+    quarantine name absent through the retained parent before releasing that
+    parent authority.
+    """
+
+    parents, parts = _windows_open_parent(path, allowed_root)
+    parent_handle, name = parents[-1], parts[-1]
+    quarantine = _quarantine_name(quarantine_id)
+    handle = -1
+    lock: object | None = None
+    handle_open = False
+    lock_held = False
+    parents_open = True
+    transferred = False
+    try:
+        _windows_verify_parent_chain(parents, parts)
+
+        def open_optional(candidate: str) -> int:
+            try:
+                candidate_handle, _information = _windows_open_validated(
+                    parent_handle,
+                    candidate,
+                    access=_WIN_READ_ACCESS | 0x00010000 | _WIN_GENERIC_WRITE,
+                    disposition=1,
+                    options=_WIN_FILE_OPTIONS,
+                    directory=False,
+                    share=_WIN_SHARE_ALL & ~0x2,
+                )
+            except FileNotFoundError:
+                return -1
+            return candidate_handle
+
+        canonical_handle = open_optional(name)
+        try:
+            quarantine_handle = open_optional(quarantine)
+        except BaseException:
+            if canonical_handle >= 0:
+                _windows_close_handle(canonical_handle)
+            raise
+        if canonical_handle >= 0 and quarantine_handle >= 0:
+            _windows_close_chain([canonical_handle, quarantine_handle])
+            raise AtomicWriteError(
+                "observed file exists at both canonical and quarantine names"
+            )
+        if canonical_handle < 0 and quarantine_handle < 0:
+            raise FileNotFoundError(
+                f"observed file has no canonical or quarantine entry: {name}"
+            )
+        if canonical_handle >= 0:
+            handle = canonical_handle
+            location = TrackedFileLocation.CANONICAL
+            observed_name = name
+        else:
+            handle = quarantine_handle
+            location = TrackedFileLocation.QUARANTINE
+            observed_name = quarantine
+
+        handle_open = True
+        lock = _windows_lock_handle(handle)
+        lock_held = True
+        identity = _windows_confined_identity(handle)
+        if _windows_read_handle_bounded(
+            handle,
+            len(expected_bytes) + 1,
+        ) != expected_bytes:
+            raise AtomicWriteError("observed file bytes do not match expectation")
+        _windows_verify_parent_chain(parents, parts)
+        try:
+            _windows_verify_named_handle(parent_handle, observed_name, handle)
+        except FileNotFoundError as exc:
+            raise AtomicWriteError(
+                f"observed file changed during observation: {name}"
+            ) from exc
+        # The two initial probes are not one atomic snapshot. Recheck the
+        # excluded name after locking and validating the selected handle so a
+        # name created between the probes cannot escape XOR discovery.
+        initial_other = open_optional(
+            quarantine
+            if location is TrackedFileLocation.CANONICAL
+            else name
+        )
+        if initial_other >= 0:
+            try:
+                raise AtomicWriteError(
+                    "observed file exists at both canonical and quarantine names"
+                )
+            finally:
+                _windows_close_handle(initial_other)
+        at_quarantine = location is TrackedFileLocation.QUARANTINE
+
+        def release() -> None:
+            nonlocal handle_open, lock_held, parents_open
+            first_error: BaseException | None = None
+            if lock_held:
+                try:
+                    _windows_unlock_handle(handle, lock)
+                except BaseException as exc:
+                    first_error = exc
+                finally:
+                    lock_held = False
+            if handle_open:
+                try:
+                    _windows_close_handle(handle)
+                except BaseException as exc:
+                    if first_error is None:
+                        first_error = exc
+                finally:
+                    handle_open = False
+            if parents_open:
+                try:
+                    _windows_close_chain(parents)
+                except BaseException as exc:
+                    if first_error is None:
+                        first_error = exc
+                finally:
+                    parents_open = False
+            if first_error is not None:
+                raise first_error
+
+        def require_other_absent(candidate: str) -> None:
+            other = open_optional(candidate)
+            if other < 0:
+                return
+            try:
+                raise AtomicWriteError(
+                    "observed file exists at both canonical and quarantine names"
+                )
+            finally:
+                _windows_close_handle(other)
+
+        def require_exact(candidate: str, *, transition: str) -> None:
+            _windows_verify_parent_chain(parents, parts)
+            if _windows_read_handle_bounded(
+                handle,
+                len(expected_bytes) + 1,
+            ) != expected_bytes:
+                raise AtomicWriteError(
+                    f"tracked destination bytes changed before {transition}"
+                )
+            try:
+                _windows_verify_named_handle(parent_handle, candidate, handle)
+            except FileNotFoundError as exc:
+                raise AtomicWriteError(
+                    f"tracked destination changed before {transition}: {name}"
+                ) from exc
+
+        def relocate() -> None:
+            nonlocal at_quarantine
+            if at_quarantine:
+                require_other_absent(name)
+                require_exact(quarantine, transition="relocation")
+                return
+            require_exact(name, transition="relocation")
+            require_other_absent(quarantine)
+            if not _windows_rename_handle(
+                handle,
+                parent_handle,
+                quarantine,
+                replace=False,
+            ):
+                raise AtomicWriteError(
+                    f"tracked destination changed during relocation: {name}"
+                )
+            # Flush the writable retained file handle. This native branch has
+            # no directory-fsync equivalent, so the subsequent name and byte
+            # checks verify the live rename but do not claim power-loss
+            # durability for directory metadata.
+            _windows_flush_handle(handle)
+            require_other_absent(name)
+            require_exact(quarantine, transition="relocation")
+            at_quarantine = True
+
+        def dispose() -> None:
+            nonlocal handle_open, lock_held
+            require_other_absent(name)
+            require_exact(quarantine, transition="disposal")
+            _windows_mark_delete(handle)
+            if lock_held:
+                _windows_unlock_handle(handle, lock)
+                lock_held = False
+            _windows_close_handle(handle)
+            handle_open = False
+            remaining = open_optional(quarantine)
+            if remaining >= 0:
+                try:
+                    raise AtomicWriteError(
+                        "tracked quarantine remained after disposal"
+                    )
+                finally:
+                    _windows_close_handle(remaining)
+
+        transferred = True
+        return TrackedExistingFile(
+            identity,
+            location,
+            relocate=relocate,
+            dispose=dispose,
+            release=release,
+        )
+    finally:
+        if not transferred:
+            try:
+                if handle >= 0 and lock is not None:
+                    _windows_unlock_handle(handle, lock)
+            finally:
+                _windows_close_chain(parents + ([handle] if handle >= 0 else []))
+
+
 def _windows_lock_handle(handle: int) -> _WinOverlapped:
     # LockFileEx serializes cooperative writers on the complete file range.
     kernel32, _advapi32, _ntdll = _windows_modules()
@@ -2190,6 +2810,49 @@ def atomic_create_bytes_tracked(
         data,
         allowed_root=allowed_root,
         mode=mode,
+    )
+
+
+def track_existing_regular_file(
+    path: Path,
+    expected_bytes: bytes,
+    *,
+    quarantine_id: str,
+    allowed_root: Path,
+) -> TrackedExistingFile:
+    """Retain platform-scoped recovery authority over one expected file.
+
+    Exactly one name must exist with ``expected_bytes``. The returned stateful
+    authority supports resumable canonical-to-quarantine relocation, separate
+    quarantine-only disposal, or release without mutation. Canonical-path
+    replacement before or during relocation remains fail-closed. POSIX callers
+    must hold the install lock over a private state root so no uncooperative
+    same-identity process retains a writable descriptor or reads, guesses, or
+    replaces the quarantine capability name. Portable POSIX APIs cannot
+    conditionally unlink by retained inode, so disposal does not protect against
+    that explicitly excluded class. The native handle branch retains its
+    stronger verified-handle guarantee: relocation flushes the writable file
+    handle and verifies the live name and bytes; disposal closes the
+    delete-marked handle and proves the quarantine name absent. Because that
+    branch does not fsync directory metadata, it makes no power-loss durability
+    claim for those namespace transitions.
+    """
+
+    if not isinstance(expected_bytes, bytes):
+        raise TypeError("expected_bytes must be bytes")
+    _quarantine_name(quarantine_id)
+    if os.name == "nt":
+        return _windows_track_existing_regular_file(
+            path,
+            expected_bytes,
+            quarantine_id=quarantine_id,
+            allowed_root=allowed_root,
+        )
+    return _posix_track_existing_regular_file(
+        path,
+        expected_bytes,
+        quarantine_id=quarantine_id,
+        allowed_root=allowed_root,
     )
 
 

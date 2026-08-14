@@ -2,8 +2,8 @@ content:
 - atomic_files\.py
 dependencies: []
 description: Implements confined regular-file reads and secure replace, create, append,
-  and compare-and-append byte operations on POSIX and Windows, with an explicit non-atomic
-  fallback.
+  compare-and-append, and platform-scoped existing-file recovery authority, with an
+  explicit non-atomic fallback only for ordinary file operations.
 gateway:
   language: Python
   path: atomic_files.py
@@ -46,6 +46,14 @@ interfaces:
           type:
             description: Python bytes value or null.
             kind: string
+        expected-bytes:
+          description: Complete expected bytes required before retaining native cleanup
+            authority for an existing regular file.
+          required: false
+          sensitivity: user-private
+          type:
+            description: Python bytes value used only by track-existing.
+            kind: string
         mode:
           default: 384
           description: Requested file permission bits for mutation operations.
@@ -55,6 +63,14 @@ interfaces:
             kind: integer
             maximum: 4095
             minimum: 0
+        quarantine-id:
+          description: Durable 128-bit capability used to derive the only confined
+            quarantine name accepted by track-existing.
+          required: false
+          sensitivity: user-private
+          type:
+            description: Exactly 32 lowercase hexadecimal characters.
+            kind: string
         operation:
           description: Atomic-files function to call.
           required: true
@@ -72,6 +88,12 @@ interfaces:
               value: append
             - description: Append only when the complete predecessor bytes match.
               value: compare-and-append
+            - description: Open an existing confined regular file, verify its complete
+                bounded bytes and native identity at exactly the canonical name or the
+                quarantine name derived from quarantine-id. Return stateful authority
+                for resumable no-replace relocation, separate quarantine-only disposal,
+                or release. Both-name ambiguity and third state fail closed.
+              value: track-existing
         path:
           description: Destination or source file confined beneath allowed-root.
           direct_io_ref: target-file
@@ -86,7 +108,22 @@ interfaces:
             syntax: literal
       caller_warnings:
       - external-side-effect: Mutation operations create or change a local file; compare-and-append
-          may fail when another writer changes it.
+          may fail when another writer changes it. Track-existing relocation leaves
+          the file at its one journal-derived quarantine after uncertain completion;
+          disposal is allowed only from verified quarantine and release retains it.
+      - external-side-effect: >-
+          On POSIX, track-existing requires a private state root and caller-held
+          install lock that exclude uncooperative same-identity processes retaining
+          writable descriptors or reading, guessing, or replacing the quarantine
+          capability name. Canonical-path replacement before or during relocation
+          remains fail-closed. Portable POSIX APIs cannot conditionally unlink by
+          inode, so disposal makes no exact-deletion claim against the excluded class.
+          Windows retains its verified-handle deletion guarantee: relocation flushes
+          the writable retained file handle and verifies the live name and bytes;
+          disposal closes the delete-marked handle and proves the quarantine name
+          absent through the retained parent. This implementation does not fsync
+          Windows directory metadata and therefore does not claim power-loss
+          durability for those namespace transitions.
       direct_io:
         network: []
         reads:
@@ -136,8 +173,9 @@ interfaces:
           idempotency:
             non_idempotent: Append operations add another frame when repeated.
           on_uncertain_completion:
-            verify_then_decide: Read the confined file and compare its complete bytes
-              before retrying.
+            verify_then_decide: For track-existing, inspect the canonical name and the
+              one quarantine name derived from the durable capability; for other
+              operations, read the confined file and compare its complete bytes.
           partial_effects_on_failure:
             possible: The explicit non-atomic fallback or a late durability failure
               can leave changed file state.
@@ -175,8 +213,8 @@ interfaces:
         cardinality:
           maximum: 1
           minimum: 1
-        description: Read bytes, the create boolean, or successful completion for
-          void mutation operations.
+        description: Read bytes, the create boolean, stateful platform-scoped authority,
+          or successful completion for void mutation operations.
         direct_io_ref: target-file
         empty: Void mutation operations return no value after verification.
         id: result
@@ -186,7 +224,8 @@ interfaces:
         truncation:
           kind: none
         type:
-          description: Python return value whose concrete type depends on operation.
+          description: Python return value whose concrete type depends on operation,
+            including TrackedExistingFile for track-existing.
           kind: string
           sensitivity: user-private
       preconditions:

@@ -1,0 +1,117 @@
+content:
+- certificate_intents\.py
+dependencies: []
+description: Defines the bounded, secret-free certificate mutation intent schema,
+  strict JSON parser, canonical encoding, and algorithm-bound digest used by durable
+  installer journals and retained-worker acknowledgements. Version 1 uses exact
+  32-character lowercase hexadecimal transaction and intent IDs and a bounded dotted
+  Python backend identity. Every public-file record carries its own unique exact
+  32-character lowercase hexadecimal quarantine capability. POSIX callers protect
+  that journaled name with the private state root and caller-held install lock after
+  relocation; it is not an inode-conditional deletion primitive.
+gateway:
+  language: Python
+  path: certificate_intents.py
+id: common.source.certificate-intents
+interfaces:
+  common.source.certificate-intents.interface.python-api:
+    contract:
+      arguments:
+        encoded-intent:
+          description: At most 16384 bytes of UTF-8 JSON for strict duplicate-aware
+            intent parsing.
+          required: false
+          sensitivity: user-private
+          type:
+            description: Python bytes containing one certificate intent object.
+            kind: string
+        intent:
+          description: A schema-version-1 CertificateMutationIntent or its exact closed
+            JSON-compatible mapping, depending on operation.
+          required: false
+          sensitivity: user-private
+          type:
+            description: Secret-free Python intent value or mapping.
+            kind: string
+        operation:
+          description: Certificate-intent schema operation to perform.
+          required: true
+          sensitivity: public
+          type:
+            kind: enum
+            values:
+            - description: Validate and construct an immutable intent from a closed
+                mapping.
+              value: from-dict
+            - description: Return the exact closed JSON-compatible mapping.
+              value: to-dict
+            - description: Return canonical compact UTF-8 JSON bounded to 16384 bytes.
+              value: canonical-bytes
+            - description: Return sha256:<64 lowercase hex> over canonical bytes.
+              value: digest
+            - description: Strictly parse bounded UTF-8 JSON while rejecting duplicate
+                fields.
+              value: parse-bytes
+      caller_warnings: []
+      direct_io:
+        network: []
+        reads: []
+        writes:
+        - access: write
+          content: Validated intent, mapping, canonical bytes, or digest
+          formats:
+          - python-object
+          id: return-value
+          medium: local-system
+          sensitivity: user-private
+      execution:
+        consistency:
+          snapshot: Each result is derived solely from the complete supplied value;
+            equal validated intents produce identical canonical bytes and digests.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: result
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Persist or compare the returned canonical secret-free result.
+        class: success
+        effects: []
+        id: completed
+        outputs:
+        - result
+      - caller_action: Reject the untrusted record and preserve all certificate material.
+        class: refusal
+        effects: []
+        id: invalid
+        outputs: []
+      outputs:
+      - audience: machine
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Immutable intent, exact mapping, bounded canonical bytes, or
+          algorithm-prefixed digest.
+        direct_io_ref: return-value
+        empty: Never empty on success.
+        id: result
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          description: Operation-specific Python value.
+          kind: string
+          sensitivity: user-private
+      preconditions: []
+    description: Validates and canonically encodes secret-free certificate mutation
+      intents for Python callers.
+    version: 1
+node_type: behavioral_source
+schema_version: 6
+uses_interfaces: []
+version: 1
