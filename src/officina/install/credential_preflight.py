@@ -167,13 +167,20 @@ class _AnonymousDuplexChannel:
 
 
 def _anonymous_duplex_pair() -> tuple[_AnonymousDuplexChannel, tuple[int, int]]:
-    parent_read, child_write = os.pipe()
-    child_read, parent_write = os.pipe()
-    os.set_blocking(parent_read, False)
-    os.set_blocking(parent_write, False)
-    os.set_blocking(child_read, False)
-    os.set_blocking(child_write, False)
-    return _AnonymousDuplexChannel(parent_read, parent_write), (child_read, child_write)
+    descriptors: list[int] = []
+    try:
+        parent_read, child_write = os.pipe()
+        descriptors.extend((parent_read, child_write))
+        child_read, parent_write = os.pipe()
+        descriptors.extend((child_read, parent_write))
+        os.set_blocking(parent_read, False)
+        os.set_blocking(parent_write, False)
+        os.set_blocking(child_read, False)
+        os.set_blocking(child_write, False)
+        return _AnonymousDuplexChannel(parent_read, parent_write), (child_read, child_write)
+    except BaseException:
+        _close_descriptors(tuple(descriptors))
+        raise
 
 
 _WORKER_ERROR_MESSAGES = {
@@ -463,7 +470,13 @@ class ManagedCredentialWorker:
                 self._fail()
             self._preflight_complete = parsed.result.ok
             return parsed.result
-        raise CredentialWorkerError(CredentialWorkerCode.ROUNDTRIP_FAILED)
+        self._failed = True
+        self._stop_lifetime_watchdog()
+        if not self._force_cleanup():
+            self._terminal_code = CredentialWorkerCode.CLEANUP_FAILED
+            raise CredentialWorkerError(CredentialWorkerCode.CLEANUP_FAILED) from None
+        self._terminal_code = CredentialWorkerCode.ROUNDTRIP_FAILED
+        raise CredentialWorkerError(CredentialWorkerCode.ROUNDTRIP_FAILED) from None
 
     def verify_certificate(
         self,
@@ -494,6 +507,8 @@ class ManagedCredentialWorker:
         """Request graceful close, then terminate and prove process-tree absence."""
         self._assert_owner()
         if self._closed:
+            if self._terminal_code is CredentialWorkerCode.CLEANUP_FAILED:
+                raise CredentialWorkerError(CredentialWorkerCode.CLEANUP_FAILED)
             return
         self._stop_lifetime_watchdog()
         failure: BaseException | None = None
@@ -653,7 +668,10 @@ class ManagedCredentialWorker:
                 except BaseException:
                     cleanup_ok = False
             if self._child_fds is not None:
-                _close_descriptors(self._child_fds)
+                try:
+                    _close_descriptors(self._child_fds)
+                except BaseException:
+                    cleanup_ok = False
             self._child_fds = None
             process = self._process
             if process is None:
@@ -736,7 +754,7 @@ def _channel_from_inherited(
     return _AnonymousDuplexChannel(read_fd, write_fd)
 
 
-def _close_descriptors(descriptors: tuple[int, int]) -> None:
+def _close_descriptors(descriptors: tuple[int, ...]) -> None:
     for descriptor in descriptors:
         try:
             os.close(descriptor)
@@ -1382,13 +1400,18 @@ def _run_managed_cleanup(
     """Clear one parent-known target and prove the cleanup process tree absent."""
     if time.monotonic() >= deadline or not _valid_target_id(target_id):
         return False
-    parent_channel, child_fds = _anonymous_duplex_pair()
-    mode_flag, child_ids, spawn_kwargs = _subprocess_channel_arguments(child_fds)
-    mode_flag = mode_flag.replace("worker", "cleanup")
+    parent_channel: _AnonymousDuplexChannel | None = None
+    child_fds: tuple[int, ...] = ()
     process: subprocess.Popen[bytes] | None = None
     containment: _ProcessContainment | None = None
     result_ok = False
     try:
+        parent_channel, child_fds_pair = _anonymous_duplex_pair()
+        child_fds = child_fds_pair
+        mode_flag, child_ids, spawn_kwargs = _subprocess_channel_arguments(
+            child_fds_pair
+        )
+        mode_flag = mode_flag.replace("worker", "cleanup")
         process = subprocess.Popen(
             [
                 managed_python,
@@ -1407,39 +1430,50 @@ def _run_managed_cleanup(
             **spawn_kwargs,
         )
         containment = _prepare_subprocess_containment(process)
-        if containment is None:
-            return False
-        _close_descriptors(child_fds)
-        child_fds = (-1, -1)
-        _await_worker_ready(parent_channel, deadline)
-        _send_frame(
-            parent_channel,
-            _encode_worker_message({
-                "protocol_version": _WORKER_PROTOCOL_VERSION,
-                "target_id": target_id,
-            }),
-            deadline,
-        )
-        outcome = _decode_child_message(
-            _recv_frame(parent_channel, deadline), action="cleanup"
-        )
-        result_ok = (
-            not outcome.abnormal
-            and outcome.result is not None
-            and outcome.result.ok
-        )
+        if containment is not None:
+            _close_descriptors(child_fds_pair)
+            child_fds = ()
+            _await_worker_ready(parent_channel, deadline)
+            _send_frame(
+                parent_channel,
+                _encode_worker_message({
+                    "protocol_version": _WORKER_PROTOCOL_VERSION,
+                    "target_id": target_id,
+                }),
+                deadline,
+            )
+            outcome = _decode_child_message(
+                _recv_frame(parent_channel, deadline), action="cleanup"
+            )
+            result_ok = (
+                not outcome.abnormal
+                and outcome.result is not None
+                and outcome.result.ok
+            )
     except BaseException:
         result_ok = False
     finally:
-        parent_channel.close()
-        _close_descriptors(child_fds)
+        if parent_channel is not None:
+            try:
+                parent_channel.close()
+            except BaseException:
+                result_ok = False
+        try:
+            _close_descriptors(child_fds)
+        except BaseException:
+            result_ok = False
         if process is not None:
-            if containment is None:
-                absent = _terminate_subprocess_direct(process)
-            else:
-                absent = _terminate_and_verify_subprocess_tree(
-                    containment, process, deadline=deadline
-                )
+            try:
+                if containment is None:
+                    absent = _terminate_subprocess_direct(
+                        process, deadline=deadline
+                    )
+                else:
+                    absent = _terminate_and_verify_subprocess_tree(
+                        containment, process, deadline=deadline
+                    )
+            except BaseException:
+                absent = False
             result_ok = result_ok and absent
     return result_ok
 

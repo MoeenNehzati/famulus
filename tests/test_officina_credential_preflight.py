@@ -1520,6 +1520,44 @@ def test_managed_worker_parent_owns_target_and_retries_collision(
     ]
 
 
+@pytest.mark.parametrize(
+    ("absence_proven", "expected_code"),
+    [
+        (True, CredentialWorkerCode.ROUNDTRIP_FAILED),
+        (False, CredentialWorkerCode.CLEANUP_FAILED),
+    ],
+)
+def test_managed_worker_collision_exhaustion_is_terminal_and_proves_absence(
+    monkeypatch: pytest.MonkeyPatch,
+    absence_proven: bool,
+    expected_code: CredentialWorkerCode,
+) -> None:
+    """Collision exhaustion cannot leave the retained worker usable or unproven."""
+    worker = _armed_worker_for_failure_tests()
+    cleanup_calls: list[str] = []
+    monkeypatch.setattr(preflight, "_MAX_TARGET_ATTEMPTS", 2)
+    monkeypatch.setattr(preflight, "_new_target_id", lambda: _TARGET_ONE)
+    monkeypatch.setattr(
+        worker,
+        "_request",
+        lambda *_a, **_k: (_ for _ in ()).throw(
+            CredentialWorkerError(CredentialWorkerCode.TARGET_COLLISION)
+        ),
+    )
+    monkeypatch.setattr(
+        worker,
+        "_force_cleanup",
+        lambda: cleanup_calls.append("cleanup") or absence_proven,
+    )
+
+    with pytest.raises(CredentialWorkerError) as caught:
+        worker.preflight()
+
+    assert caught.value.code is expected_code
+    assert cleanup_calls == ["cleanup"]
+    assert worker._failed is True
+
+
 def test_worker_state_collision_is_nonterminal_and_second_target_succeeds(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2021,6 +2059,209 @@ def test_successful_force_cleanup_is_idempotent_for_consumed_containment(
     assert worker._force_cleanup()
 
     assert calls == [containment_handle]
+
+
+@pytest.mark.parametrize("exit_route", ["close", "context_exit"])
+def test_idle_watchdog_cleanup_failure_is_surfaced_by_exit_route(
+    monkeypatch: pytest.MonkeyPatch,
+    exit_route: str,
+) -> None:
+    """An idle-expiry absence failure must not disappear behind `_closed`."""
+    worker = _armed_worker_for_failure_tests()
+    worker._deadline = time.monotonic() + preflight._SHUTDOWN_RESERVE_SECONDS
+    monkeypatch.setattr(worker._watchdog_stop, "wait", lambda _timeout: False)
+    monkeypatch.setattr(worker, "_force_cleanup", lambda: False)
+
+    worker._start_lifetime_watchdog()
+    assert worker._watchdog_thread is not None
+    worker._watchdog_thread.join(timeout=1)
+    assert not worker._watchdog_thread.is_alive()
+    assert worker._closed is True
+
+    with pytest.raises(CredentialWorkerError) as caught:
+        if exit_route == "close":
+            worker.close()
+        else:
+            worker.__exit__(None, None, None)
+
+    assert caught.value.code is CredentialWorkerCode.CLEANUP_FAILED
+
+
+@pytest.mark.parametrize("failure_stage", ["second_pipe", "set_blocking"])
+def test_anonymous_duplex_pair_closes_all_created_descriptors_on_setup_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    failure_stage: str,
+) -> None:
+    """Partial pipe setup must not leak descriptors when a later step fails."""
+    pipe_results = iter([(10, 11), (12, 13)])
+    pipe_calls = 0
+    closed: list[int] = []
+
+    def create_pipe() -> tuple[int, int]:
+        nonlocal pipe_calls
+        pipe_calls += 1
+        if failure_stage == "second_pipe" and pipe_calls == 2:
+            raise OSError("secret pipe detail")
+        return next(pipe_results)
+
+    monkeypatch.setattr(preflight.os, "pipe", create_pipe)
+    monkeypatch.setattr(preflight.os, "close", closed.append)
+    if failure_stage == "set_blocking":
+        monkeypatch.setattr(
+            preflight.os,
+            "set_blocking",
+            lambda *_a: (_ for _ in ()).throw(OSError("secret setup detail")),
+        )
+
+    with pytest.raises(OSError):
+        preflight._anonymous_duplex_pair()
+
+    assert closed == ([10, 11] if failure_stage == "second_pipe" else [10, 11, 12, 13])
+
+
+@pytest.mark.parametrize("contained", [False, True])
+def test_managed_cleanup_forwards_one_deadline_to_all_termination_routes(
+    monkeypatch: pytest.MonkeyPatch,
+    contained: bool,
+) -> None:
+    """Emergency cleanup termination consumes the caller-supplied deadline."""
+
+    class Channel:
+        def close(self) -> None:
+            pass
+
+    channel = Channel()
+    process = object()
+    containment_handle = object() if contained else None
+    deadline = time.monotonic() + 10
+    direct_deadlines: list[float | None] = []
+    tree_deadlines: list[float | None] = []
+    monkeypatch.setattr(preflight, "_anonymous_duplex_pair", lambda: (channel, (10, 11)))
+    monkeypatch.setattr(
+        preflight,
+        "_subprocess_channel_arguments",
+        lambda _fds: ("--managed-worker-fds", (10, 11), {"pass_fds": ()}),
+    )
+    monkeypatch.setattr(preflight.subprocess, "Popen", lambda *_a, **_k: process)
+    monkeypatch.setattr(
+        preflight,
+        "_prepare_subprocess_containment",
+        lambda _process: containment_handle,
+    )
+    monkeypatch.setattr(preflight, "_close_descriptors", lambda _fds: None)
+    monkeypatch.setattr(preflight, "_await_worker_ready", lambda *_a: None)
+    monkeypatch.setattr(preflight, "_send_frame", lambda *_a: None)
+    monkeypatch.setattr(
+        preflight,
+        "_recv_frame",
+        lambda *_a: preflight._encode_child_message(
+            {
+                "schema_version": 1,
+                "ok": True,
+                "code": None,
+                "backend": _NATIVE_BACKEND_IDENTITY,
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        preflight,
+        "_terminate_subprocess_direct",
+        lambda _process, deadline=None: direct_deadlines.append(deadline) or True,
+    )
+    monkeypatch.setattr(
+        preflight,
+        "_terminate_and_verify_subprocess_tree",
+        lambda _containment, _process, deadline=None: (
+            tree_deadlines.append(deadline) or True
+        ),
+    )
+
+    preflight._run_managed_cleanup("/managed/python", _TARGET_ONE, deadline)
+
+    assert direct_deadlines == ([] if contained else [deadline])
+    assert tree_deadlines == ([deadline] if contained else [])
+
+
+@pytest.mark.parametrize(
+    "failure_stage",
+    ["pipe", "channel_setup", "direct_termination", "tree_termination"],
+)
+def test_managed_cleanup_setup_and_termination_exceptions_are_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    failure_stage: str,
+) -> None:
+    """Raw cleanup setup and termination exceptions reduce to closed failure."""
+
+    class Channel:
+        def close(self) -> None:
+            pass
+
+    channel = Channel()
+    process = object()
+    if failure_stage == "pipe":
+        monkeypatch.setattr(
+            preflight,
+            "_anonymous_duplex_pair",
+            lambda: (_ for _ in ()).throw(OSError("secret pipe detail")),
+        )
+    else:
+        monkeypatch.setattr(
+            preflight, "_anonymous_duplex_pair", lambda: (channel, (10, 11))
+        )
+    if failure_stage == "channel_setup":
+        monkeypatch.setattr(
+            preflight,
+            "_subprocess_channel_arguments",
+            lambda _fds: (_ for _ in ()).throw(OSError("secret setup detail")),
+        )
+    else:
+        monkeypatch.setattr(
+            preflight,
+            "_subprocess_channel_arguments",
+            lambda _fds: ("--managed-worker-fds", (10, 11), {"pass_fds": ()}),
+        )
+    monkeypatch.setattr(preflight.subprocess, "Popen", lambda *_a, **_k: process)
+    containment_handle = object() if failure_stage == "tree_termination" else None
+    monkeypatch.setattr(
+        preflight,
+        "_prepare_subprocess_containment",
+        lambda _process: containment_handle,
+    )
+    monkeypatch.setattr(preflight, "_close_descriptors", lambda _fds: None)
+    monkeypatch.setattr(preflight, "_await_worker_ready", lambda *_a: None)
+    monkeypatch.setattr(preflight, "_send_frame", lambda *_a: None)
+    monkeypatch.setattr(
+        preflight,
+        "_recv_frame",
+        lambda *_a: preflight._encode_child_message(
+            {
+                "schema_version": 1,
+                "ok": True,
+                "code": None,
+                "backend": _NATIVE_BACKEND_IDENTITY,
+            }
+        ),
+    )
+    if failure_stage == "direct_termination":
+        monkeypatch.setattr(
+            preflight,
+            "_terminate_subprocess_direct",
+            lambda *_a, **_k: (_ for _ in ()).throw(
+                OSError("secret termination detail")
+            ),
+        )
+    elif failure_stage == "tree_termination":
+        monkeypatch.setattr(
+            preflight,
+            "_terminate_and_verify_subprocess_tree",
+            lambda *_a, **_k: (_ for _ in ()).throw(
+                OSError("secret termination detail")
+            ),
+        )
+
+    assert not preflight._run_managed_cleanup(
+        "/managed/python", _TARGET_ONE, time.monotonic() + 5
+    )
 
 
 def test_channel_deadline_expiry_maps_to_timeout() -> None:
