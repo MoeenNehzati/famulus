@@ -2,12 +2,6 @@
 
 This page covers the day-to-day assistant workflows: planning, wrap-up, inbox triage, calendar lookups, weather context, and list-backed follow-up.
 
-Google-backed workflows are experimental in the first public release. Any
-agent-driven recurring use of `daily-plan`, `email-triage`, or related skills
-is also experimental and must be enabled explicitly. See the
-[security and privacy boundary](../security-and-privacy.md) before connecting
-an account or scheduling a job.
-
 ## Productivity
 
 Use these skills when you want the assistant to fetch or update concrete personal information such as calendars, inbox state, weather, or structured lists.
