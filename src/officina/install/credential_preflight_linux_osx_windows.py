@@ -4,6 +4,7 @@ from __future__ import annotations
 import multiprocessing
 import os
 import signal
+import subprocess
 import sys
 import time
 from dataclasses import dataclass
@@ -36,8 +37,24 @@ def _terminate_direct_process(process: multiprocessing.Process) -> bool:
     return not process.is_alive()
 
 
+def _terminate_direct_subprocess(process: subprocess.Popen[bytes]) -> bool:
+    """Terminate a subprocess before or without complete tree containment."""
+    if process.poll() is not None:
+        return True
+    process.terminate()
+    try:
+        process.wait(timeout=_TERMINATION_GRACE_SECONDS)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        try:
+            process.wait(timeout=_TERMINATION_GRACE_SECONDS)
+        except subprocess.TimeoutExpired:
+            return False
+    return process.poll() is not None
+
+
 def _prepare_parent_containment(
-    process: multiprocessing.Process,
+    process: multiprocessing.Process | subprocess.Popen[bytes],
 ) -> _ProcessContainment | None:
     """Prepare tree containment before the parent authorizes backend access."""
     if process.pid is None:
@@ -63,27 +80,40 @@ def _establish_child_containment() -> bool:
 
 def _terminate_and_verify_tree(
     containment: _ProcessContainment,
-    process: multiprocessing.Process,
+    process: multiprocessing.Process | subprocess.Popen[bytes],
+    deadline: float | None = None,
 ) -> bool:
     """Terminate the complete child tree and prove no live member remains."""
     if sys.platform == "win32":
-        return _windows_terminate_and_verify_job(containment.windows_job, process)
-    return _posix_terminate_and_verify_group(containment.pid, process)
+        if deadline is None:
+            return _windows_terminate_and_verify_job(containment.windows_job, process)
+        return _windows_terminate_and_verify_job(
+            containment.windows_job, process, deadline
+        )
+    if deadline is None:
+        return _posix_terminate_and_verify_group(containment.pid, process)
+    return _posix_terminate_and_verify_group(
+        containment.pid, process, deadline
+    )
 
 
 def _posix_terminate_and_verify_group(
     process_group: int,
-    process: multiprocessing.Process,
+    process: multiprocessing.Process | subprocess.Popen[bytes],
+    deadline: float | None = None,
 ) -> bool:
-    deadline = time.monotonic() + _TERMINATION_GRACE_SECONDS
-    process.join(min(0.05, max(0.0, deadline - time.monotonic())))
+    deadline = min(
+        time.monotonic() + _TERMINATION_GRACE_SECONDS,
+        deadline if deadline is not None else float("inf"),
+    )
+    _wait_process(process, min(0.05, max(0.0, deadline - time.monotonic())))
     if _posix_group_has_live_members(process_group):
         try:
             os.killpg(process_group, signal.SIGTERM)
         except OSError:
             pass
     midpoint = time.monotonic() + max(0.0, deadline - time.monotonic()) / 2
-    process.join(max(0.0, midpoint - time.monotonic()))
+    _wait_process(process, max(0.0, midpoint - time.monotonic()))
     while _posix_group_has_live_members(process_group) and time.monotonic() < midpoint:
         time.sleep(0.01)
     if _posix_group_has_live_members(process_group):
@@ -91,10 +121,33 @@ def _posix_terminate_and_verify_group(
             os.killpg(process_group, signal.SIGKILL)
         except OSError:
             pass
-    process.join(max(0.0, deadline - time.monotonic()))
+    _wait_process(process, max(0.0, deadline - time.monotonic()))
     while _posix_group_has_live_members(process_group) and time.monotonic() < deadline:
         time.sleep(0.01)
-    return not process.is_alive() and not _posix_group_has_live_members(process_group)
+    return not _process_is_alive(process) and not _posix_group_has_live_members(process_group)
+
+
+def _wait_process(
+    process: multiprocessing.Process | subprocess.Popen[bytes],
+    timeout: float,
+) -> None:
+    join = getattr(process, "join", None)
+    if join is not None:
+        join(timeout)
+        return
+    try:
+        process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        pass
+
+
+def _process_is_alive(
+    process: multiprocessing.Process | subprocess.Popen[bytes],
+) -> bool:
+    is_alive = getattr(process, "is_alive", None)
+    if is_alive is not None:
+        return bool(is_alive())
+    return process.poll() is None
 
 
 def _posix_group_has_live_members(process_group: int) -> bool:
@@ -208,7 +261,8 @@ def _windows_create_kill_on_close_job(process_id: int) -> int | None:
 
 def _windows_terminate_and_verify_job(
     job: int | None,
-    process: multiprocessing.Process,
+    process: multiprocessing.Process | subprocess.Popen[bytes],
+    deadline: float | None = None,
 ) -> bool:
     if sys.platform != "win32" or job is None:
         return False
@@ -240,8 +294,11 @@ def _windows_terminate_and_verify_job(
     kernel32.QueryInformationJobObject.restype = wintypes.BOOL
     kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
     kernel32.CloseHandle.restype = wintypes.BOOL
-    deadline = time.monotonic() + _TERMINATION_GRACE_SECONDS
-    process.join(min(0.05, max(0.0, deadline - time.monotonic())))
+    deadline = min(
+        time.monotonic() + _TERMINATION_GRACE_SECONDS,
+        deadline if deadline is not None else float("inf"),
+    )
+    _wait_process(process, min(0.05, max(0.0, deadline - time.monotonic())))
     info = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION()
     returned = wintypes.DWORD()
     queried = bool(
@@ -261,6 +318,6 @@ def _windows_terminate_and_verify_job(
             empty = True
             break
         time.sleep(0.01)
-    process.join(max(0.0, deadline - time.monotonic()))
+    _wait_process(process, max(0.0, deadline - time.monotonic()))
     kernel32.CloseHandle(job)
-    return bool(queried) and terminated and empty and not process.is_alive()
+    return bool(queried) and terminated and empty and not _process_is_alive(process)

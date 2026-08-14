@@ -19,6 +19,10 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from officina.install.credential_preflight import (  # noqa: E402
+    CredentialVerificationResult,
+    CredentialWorkerCode,
+    CredentialWorkerError,
+    ManagedCredentialWorker,
     CredentialPreflightCode,
     CredentialPreflightResult,
     main,
@@ -184,6 +188,8 @@ if sys.platform == "win32":
     Keyring.__name__ = "WinVaultKeyring"
 
 _NATIVE_BACKEND_IDENTITY = f"{Keyring.__module__}.{Keyring.__name__}"
+_TARGET_ONE = "native-preflight-" + "1" * 32
+_TARGET_TWO = "native-preflight-" + "2" * 32
 
 
 @pytest.fixture(autouse=True)
@@ -1010,3 +1016,647 @@ def test_windows_job_termination_is_bounded_and_verifies_empty_job(
 
     assert preflight._windows_terminate_and_verify_job(501, FakeProcess())
     assert calls == ["query", "terminate", "query", "close"]
+
+
+class _RetainedBackend:
+    """In-memory backend used to observe retained worker state without secrets."""
+
+    def __init__(self) -> None:
+        self.values: dict[tuple[str, str], str] = {}
+        self.calls: list[tuple[str, int]] = []
+
+    def store(self, namespace: str, key: str, secret: str) -> None:
+        self.calls.append(("store", id(self)))
+        self.values[(namespace, key)] = secret
+
+    def lookup(self, namespace: str, key: str) -> str | None:
+        self.calls.append(("lookup", id(self)))
+        return self.values.get((namespace, key))
+
+    def clear(self, namespace: str, key: str) -> bool:
+        self.calls.append(("clear", id(self)))
+        return self.values.pop((namespace, key), None) is not None
+
+
+def _worker_request(command: str, **payload: object) -> dict[str, object]:
+    return {
+        "protocol_version": 1,
+        "request_id": "request-1",
+        "command": command,
+        "payload": payload,
+    }
+
+
+def test_worker_state_retains_exact_preflight_backend_for_verification(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Break caught: verification reselects a backend after preflight."""
+    backend = _RetainedBackend()
+    selected: list[_RetainedBackend] = []
+    verified: list[int] = []
+    key_id = "sha256:" + "a" * 64
+
+    def factory() -> _RetainedBackend:
+        selected.append(backend)
+        return backend
+
+    monkeypatch.setattr(
+        preflight.secret_store,
+        "native_backend_identity",
+        lambda candidate: _NATIVE_BACKEND_IDENTITY
+        if candidate is backend
+        else pytest.fail("backend substituted"),
+    )
+    monkeypatch.setattr(
+        preflight.certificate_records,
+        "load_certificate_signing_key",
+        lambda _root, *, secret_backend, allow_non_atomic=False: (
+            verified.append(id(secret_backend))
+            or types.SimpleNamespace(key_id=key_id)
+        ),
+    )
+
+    state = preflight._ManagedCredentialWorkerState(
+        backend_factory=factory,
+        token_factory=lambda: "probe-secret",
+    )
+    assert state.dispatch(
+        _worker_request("preflight", target_id=_TARGET_ONE)
+    )["ok"] is True
+    monkeypatch.setattr(
+        preflight.certificate_records,
+        "certificate_state_paths",
+        lambda *, platform, home: types.SimpleNamespace(public_key_root=tmp_path),
+    )
+    response = state.dispatch(
+        _worker_request("verify_certificate", platform="linux", home=str(tmp_path))
+    )
+
+    assert response == {
+        "protocol_version": 1,
+        "request_id": "request-1",
+        "ok": True,
+        "code": None,
+        "result": {"verified": True, "key_id": key_id},
+    }
+    assert selected == [backend]
+    assert {identity for _operation, identity in backend.calls} == {id(backend)}
+    assert verified == [id(backend)]
+
+
+def test_worker_state_rejects_order_command_and_schema_before_backend_or_filesystem(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Break caught: invalid protocol reaches backend or certificate APIs."""
+    backend = _RetainedBackend()
+    touched: list[str] = []
+    monkeypatch.setattr(
+        preflight.certificate_records,
+        "load_certificate_signing_key",
+        lambda *_a, **_k: touched.append("filesystem"),
+    )
+    invalid = [
+        _worker_request("verify_certificate", platform="linux", home="/unused"),
+        _worker_request("invented"),
+        {**_worker_request("preflight", target_id=_TARGET_ONE), "extra": True},
+        {**_worker_request("preflight", target_id=_TARGET_ONE), "protocol_version": True},
+        _worker_request("preflight", target_id=_TARGET_ONE, extra=True),
+    ]
+    for request in invalid:
+        state = preflight._ManagedCredentialWorkerState(
+            backend_factory=lambda: backend,
+            token_factory=lambda: "probe-secret",
+        )
+        response = state.dispatch(request)
+        assert response["ok"] is False
+        assert response["code"] in {"invalid_state", "invalid_request"}
+        assert state.dispatch(
+            _worker_request("preflight", target_id=_TARGET_ONE)
+        )["code"] == "invalid_state"
+    assert backend.calls == []
+    assert touched == []
+
+
+def test_worker_state_preflight_failure_blocks_verification(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    backend = _RetainedBackend()
+    monkeypatch.setattr(
+        preflight.secret_store,
+        "native_backend_identity",
+        lambda _backend: (_ for _ in ()).throw(
+            preflight.secret_store.SecretStoreUnsupportedBackend("secret detail")
+        ),
+    )
+    state = preflight._ManagedCredentialWorkerState(
+        backend_factory=lambda: backend,
+        token_factory=lambda: "probe-secret",
+    )
+
+    failed = state.dispatch(
+        _worker_request("preflight", target_id=_TARGET_ONE)
+    )
+    blocked = state.dispatch(
+        _worker_request("verify_certificate", platform="linux", home="/unused")
+    )
+
+    assert failed["code"] == "unsupported_backend"
+    assert blocked["code"] == "invalid_state"
+    assert "secret detail" not in repr((failed, blocked))
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        b"not-json",
+        b"\xff",
+        b'{"protocol_version":1,"protocol_version":1}',
+        b'{"protocol_version":1} trailing',
+        pickle.dumps({"command": "preflight"}),
+        b'{"protocol_version":NaN}',
+    ],
+)
+def test_worker_request_decoder_rejects_noncanonical_payloads(message: bytes) -> None:
+    """Break caught: hostile bytes are deserialized or dispatched."""
+    with pytest.raises(CredentialWorkerError) as caught:
+        preflight._decode_worker_request(message)
+    assert caught.value.code is CredentialWorkerCode.INVALID_REQUEST
+
+
+def test_worker_request_decoder_is_size_bounded() -> None:
+    with pytest.raises(CredentialWorkerError) as caught:
+        preflight._decode_worker_request(
+            b"{" + b"x" * preflight._MAX_WORKER_MESSAGE_BYTES
+        )
+    assert caught.value.code is CredentialWorkerCode.INVALID_REQUEST
+
+
+def test_managed_worker_requires_explicit_executable_and_finite_deadlines() -> None:
+    """Break caught: ambient interpreter fallback or unbounded worker lifetime."""
+    with pytest.raises(TypeError, match="managed_python"):
+        ManagedCredentialWorker(None)  # type: ignore[arg-type]
+    for executable in ("python", "bin/python", "/managed/../python", "bad\x00path"):
+        with pytest.raises(ValueError, match="managed_python"):
+            ManagedCredentialWorker(executable)
+    for value in (False, True, 0, -1, float("inf"), float("nan")):
+        with pytest.raises(ValueError):
+            ManagedCredentialWorker("/managed/python", command_timeout_seconds=value)
+        with pytest.raises(ValueError):
+            ManagedCredentialWorker("/managed/python", total_timeout_seconds=value)
+
+
+def test_managed_worker_spawns_shell_free_isolated_module_with_anonymous_channel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Break caught: production launch falls back to ambient Python or stdio IPC."""
+    recorded: dict[str, object] = {}
+
+    class Process:
+        pid = 42
+        returncode = None
+
+    def spawn(argv, **kwargs):
+        recorded["argv"] = argv
+        recorded["kwargs"] = kwargs
+        return Process()
+
+    monkeypatch.setattr(preflight.subprocess, "Popen", spawn)
+    monkeypatch.setattr(preflight, "_prepare_subprocess_containment", lambda _p: object())
+    monkeypatch.setattr(
+        preflight,
+        "_terminate_and_verify_subprocess_tree",
+        lambda _containment, _process: True,
+    )
+    monkeypatch.setattr(preflight, "_await_worker_ready", lambda *_a, **_k: None)
+    worker = ManagedCredentialWorker(
+        "/managed/python",
+        command_timeout_seconds=1,
+        total_timeout_seconds=5,
+    )
+    worker.start()
+
+    inherited = tuple(int(value) for value in recorded["argv"][-2:])
+    assert recorded["argv"][:-2] == [
+        "/managed/python",
+        "-I",
+        "-m",
+        "officina.install.credential_preflight",
+        "--managed-worker-fds",
+    ]
+    assert recorded["kwargs"]["shell"] is False
+    assert recorded["kwargs"]["stdin"] is preflight.subprocess.DEVNULL
+    assert recorded["kwargs"]["stdout"] is preflight.subprocess.DEVNULL
+    assert recorded["kwargs"]["stderr"] is preflight.subprocess.DEVNULL
+    assert recorded["kwargs"]["pass_fds"] == inherited
+    worker._force_cleanup()
+
+
+def test_windows_worker_launch_uses_explicit_inherited_handle_not_posix_pass_fds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Break caught: Windows launch receives a POSIX-only pass_fds contract."""
+    recorded: dict[str, object] = {}
+
+    class Process:
+        pid = 42
+        returncode = None
+
+    def spawn(argv, **kwargs):
+        recorded["argv"] = argv
+        recorded["kwargs"] = kwargs
+        return Process()
+
+    monkeypatch.setattr(preflight.os, "name", "nt")
+    monkeypatch.setattr(preflight.subprocess, "Popen", spawn)
+    monkeypatch.setattr(
+        preflight,
+        "_windows_prepare_pipe_handles",
+        lambda _fds: ((9876, 9877), types.SimpleNamespace(lpAttributeList={"handle_list": [9876, 9877]})),
+    )
+    monkeypatch.setattr(preflight, "_prepare_subprocess_containment", lambda _p: object())
+    monkeypatch.setattr(preflight, "_await_worker_ready", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        preflight,
+        "_terminate_and_verify_subprocess_tree",
+        lambda _containment, _process: True,
+    )
+    worker = ManagedCredentialWorker(
+        "C:/managed/python.exe",
+        command_timeout_seconds=1,
+        total_timeout_seconds=5,
+    )
+    worker.start()
+
+    assert recorded["argv"][-3:] == ["--managed-worker-handles", "9876", "9877"]
+    assert "pass_fds" not in recorded["kwargs"]
+    assert recorded["kwargs"]["close_fds"] is True
+    assert recorded["kwargs"]["startupinfo"].lpAttributeList == {
+        "handle_list": [9876, 9877]
+    }
+    worker._force_cleanup()
+
+
+def test_managed_worker_verification_result_is_closed_and_secret_free() -> None:
+    result = CredentialVerificationResult(
+        verified=True,
+        key_id="sha256:" + "d" * 64,
+    )
+    assert result.as_json() == {"verified": True, "key_id": "sha256:" + "d" * 64}
+
+
+def test_managed_worker_parent_owns_target_and_retries_collision(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Break caught: a stored probe target is unknown to the parent after child death."""
+    worker = ManagedCredentialWorker(
+        "/managed/python",
+        command_timeout_seconds=1,
+        total_timeout_seconds=5,
+    )
+    worker._process = object()  # type: ignore[assignment]
+    worker._channel = object()  # type: ignore[assignment]
+    worker._deadline = time.monotonic() + 5
+    targets = iter([_TARGET_ONE, _TARGET_TWO])
+    seen: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr(preflight, "_new_target_id", lambda: next(targets))
+
+    def request(
+        command: str,
+        payload: dict[str, object],
+        **_kwargs: object,
+    ) -> dict[str, object]:
+        seen.append((command, payload))
+        if payload["target_id"] == _TARGET_ONE:
+            raise CredentialWorkerError(CredentialWorkerCode.TARGET_COLLISION)
+        return {
+            "schema_version": 1,
+            "ok": True,
+            "code": None,
+            "backend": _NATIVE_BACKEND_IDENTITY,
+        }
+
+    monkeypatch.setattr(worker, "_request", request)
+
+    assert worker.preflight().ok
+    assert seen == [
+        ("preflight", {"target_id": _TARGET_ONE}),
+        ("preflight", {"target_id": _TARGET_TWO}),
+    ]
+
+
+def test_worker_state_collision_is_nonterminal_and_second_target_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Break caught: collision consumes worker state and makes retry impossible."""
+    backend = _RetainedBackend()
+    backend.values[(preflight._PROBE_NAMESPACE, _TARGET_ONE)] = "occupied"
+    selected: list[int] = []
+    monkeypatch.setattr(
+        preflight.secret_store,
+        "native_backend_identity",
+        lambda _backend: _NATIVE_BACKEND_IDENTITY,
+    )
+    state = preflight._ManagedCredentialWorkerState(
+        backend_factory=lambda: (selected.append(id(backend)) or backend),
+        token_factory=lambda: "probe-secret",
+    )
+
+    collision = state.dispatch(
+        _worker_request("preflight", target_id=_TARGET_ONE)
+    )
+    succeeded = state.dispatch(
+        _worker_request("preflight", target_id=_TARGET_TWO)
+    )
+
+    assert collision["code"] == "target_collision"
+    assert succeeded["ok"] is True
+    assert backend.values == {
+        (preflight._PROBE_NAMESPACE, _TARGET_ONE): "occupied"
+    }
+    assert selected == [id(backend)]
+
+
+@pytest.mark.parametrize(
+    "target_id",
+    [
+        "native-preflight-short",
+        "native-preflight-" + "A" * 32,
+        "native-preflight-" + "g" * 32,
+        "other-" + "1" * 32,
+        "native-preflight-" + "1" * 32 + ":other:key",
+    ],
+)
+def test_cleanup_target_schema_rejects_namespace_or_key_injection_before_access(
+    monkeypatch: pytest.MonkeyPatch,
+    target_id: str,
+) -> None:
+    touched: list[str] = []
+    monkeypatch.setattr(
+        preflight.secret_store,
+        "KeyringSecretBackend",
+        lambda: touched.append("backend"),
+    )
+
+    assert not preflight._valid_target_id(target_id)
+    assert not preflight._run_managed_cleanup(
+        "/managed/python", target_id, time.monotonic() + 1
+    )
+    assert touched == []
+
+
+def test_managed_worker_abnormal_preflight_runs_exact_target_cleanup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Break caught: worker dies after store and leaves an unenumerable probe secret."""
+    worker = ManagedCredentialWorker(
+        "/managed/python",
+        command_timeout_seconds=1,
+        total_timeout_seconds=5,
+    )
+    worker._process = object()  # type: ignore[assignment]
+    worker._channel = object()  # type: ignore[assignment]
+    worker._deadline = time.monotonic() + 5
+    monkeypatch.setattr(preflight, "_new_target_id", lambda: _TARGET_ONE)
+    monkeypatch.setattr(
+        worker,
+        "_request",
+        lambda *_a, **_k: (_ for _ in ()).throw(
+            CredentialWorkerError(CredentialWorkerCode.WORKER_FAILED)
+        ),
+    )
+    cleanup: list[tuple[str, str, float]] = []
+    monkeypatch.setattr(
+        preflight,
+        "_run_managed_cleanup",
+        lambda executable, target_id, deadline: (
+            cleanup.append((executable, target_id, deadline)) or True
+        ),
+    )
+
+    with pytest.raises(CredentialWorkerError) as caught:
+        worker.preflight()
+
+    assert caught.value.code is CredentialWorkerCode.WORKER_FAILED
+    assert cleanup[0][:2] == ("/managed/python", _TARGET_ONE)
+    assert cleanup[0][2] <= worker._deadline
+
+
+def test_managed_worker_unproven_emergency_cleanup_is_cleanup_failed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    worker = ManagedCredentialWorker(
+        "/managed/python",
+        command_timeout_seconds=1,
+        total_timeout_seconds=5,
+    )
+    worker._process = object()  # type: ignore[assignment]
+    worker._channel = object()  # type: ignore[assignment]
+    worker._deadline = time.monotonic() + 5
+    monkeypatch.setattr(preflight, "_new_target_id", lambda: _TARGET_ONE)
+    monkeypatch.setattr(
+        worker,
+        "_request",
+        lambda *_a, **_k: (_ for _ in ()).throw(
+            CredentialWorkerError(CredentialWorkerCode.WORKER_FAILED)
+        ),
+    )
+    monkeypatch.setattr(preflight, "_run_managed_cleanup", lambda *_a: False)
+
+    with pytest.raises(CredentialWorkerError) as caught:
+        worker.preflight()
+    assert caught.value.code is CredentialWorkerCode.CLEANUP_FAILED
+
+
+def test_managed_worker_preserves_cleanup_subdeadline_after_request_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Break caught: main-worker termination consumes the emergency cleanup budget."""
+    worker = ManagedCredentialWorker(
+        "/managed/python",
+        command_timeout_seconds=1,
+        total_timeout_seconds=5,
+    )
+    worker._process = object()  # type: ignore[assignment]
+    worker._channel = object()  # type: ignore[assignment]
+    worker._deadline = time.monotonic() + 5
+    monkeypatch.setattr(preflight, "_new_target_id", lambda: _TARGET_ONE)
+    monkeypatch.setattr(
+        worker,
+        "_request",
+        lambda *_a, **_k: (_ for _ in ()).throw(
+            CredentialWorkerError(CredentialWorkerCode.TIMEOUT)
+        ),
+    )
+    seen: list[float] = []
+    monkeypatch.setattr(
+        preflight,
+        "_run_managed_cleanup",
+        lambda _executable, _target, deadline: (
+            seen.append(deadline - time.monotonic()) or True
+        ),
+    )
+
+    with pytest.raises(CredentialWorkerError) as caught:
+        worker.preflight()
+
+    assert caught.value.code is CredentialWorkerCode.TIMEOUT
+    assert seen and seen[0] >= preflight._EMERGENCY_CLEANUP_SECONDS * 0.9
+
+
+def test_channel_deadline_expiry_maps_to_timeout() -> None:
+    class TimedOutSocket:
+        def settimeout(self, _timeout: float) -> None:
+            pass
+
+        def recv(self, _length: int) -> bytes:
+            raise TimeoutError
+
+    with pytest.raises(CredentialWorkerError) as caught:
+        preflight._recv_exact(TimedOutSocket(), 1, time.monotonic() + 1)
+    assert caught.value.code is CredentialWorkerCode.TIMEOUT
+
+
+def test_anonymous_channel_rejects_unbounded_read_and_write() -> None:
+    channel, child_fds = preflight._anonymous_duplex_pair()
+    try:
+        with pytest.raises(RuntimeError, match="timeout"):
+            channel.recv(1)
+        with pytest.raises(RuntimeError, match="timeout"):
+            channel.sendall(b"x")
+    finally:
+        channel.close()
+        preflight._close_descriptors(child_fds)
+
+
+def test_frame_reader_accepts_partial_header_and_body() -> None:
+    class PartialChannel:
+        def __init__(self) -> None:
+            self.parts = [b"\x00", b"\x00\x00", b"\x03", b"a", b"bc"]
+
+        def settimeout(self, _timeout: float) -> None:
+            pass
+
+        def recv(self, _length: int) -> bytes:
+            return self.parts.pop(0)
+
+    assert preflight._recv_frame(PartialChannel(), time.monotonic() + 1) == b"abc"
+
+
+@pytest.mark.parametrize("header", [b"\x00\x00\x00\x00", b"\x00\x00\x10\x01"])
+def test_frame_reader_rejects_zero_or_oversized_length_before_body_read(
+    header: bytes,
+) -> None:
+    class HeaderChannel:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def settimeout(self, _timeout: float) -> None:
+            pass
+
+        def recv(self, _length: int) -> bytes:
+            self.calls += 1
+            return header
+
+    channel = HeaderChannel()
+    with pytest.raises(CredentialWorkerError):
+        preflight._recv_frame(channel, time.monotonic() + 1)
+    assert channel.calls == 1
+
+
+def test_frame_reader_eof_is_terminal() -> None:
+    class EofChannel:
+        def settimeout(self, _timeout: float) -> None:
+            pass
+
+        def recv(self, _length: int) -> bytes:
+            return b""
+
+    with pytest.raises(CredentialWorkerError) as caught:
+        preflight._recv_frame(EofChannel(), time.monotonic() + 1)
+    assert caught.value.code is CredentialWorkerCode.WORKER_FAILED
+
+
+def test_frame_writer_backpressure_deadline_maps_to_timeout() -> None:
+    class BackpressuredChannel:
+        def settimeout(self, _timeout: float) -> None:
+            pass
+
+        def sendall(self, _value: bytes) -> None:
+            raise TimeoutError
+
+    with pytest.raises(CredentialWorkerError) as caught:
+        preflight._send_frame(
+            BackpressuredChannel(), b"{}", time.monotonic() + 1
+        )
+    assert caught.value.code is CredentialWorkerCode.TIMEOUT
+
+
+# famulus-skip: category=platform-contract; reason=fixture executable is a POSIX shell shim around the current isolated Python; alternate=Windows inheritable-handle launch and native Job containment branches are unit-tested separately
+@pytest.mark.skipif(os.name == "nt", reason="POSIX controlled managed-Python fixture")
+def test_real_managed_worker_retains_one_process_and_backend_then_is_absent(
+    tmp_path: Path,
+) -> None:
+    """Break caught: transport respawns/reselects or returns before process absence."""
+    source_root = Path(__file__).parents[1] / "src"
+    events = tmp_path / "events.jsonl"
+    managed_python = tmp_path / "managed-python"
+    bootstrap = textwrap.dedent(
+        f"""
+        import json, os, sys, types
+        os.setsid()
+        sys.path.insert(0, {str(source_root)!r})
+        import keyring
+        import keyring.backends.SecretService as native
+        state = {{}}
+        events = {str(events)!r}
+        def event(operation, backend):
+            with open(events, "a", encoding="utf-8") as stream:
+                stream.write(json.dumps({{"operation": operation, "pid": os.getpid(), "backend": id(backend)}}) + "\\n")
+        def lookup(self, service, key):
+            event("lookup", self); return state.get((service, key))
+        def store(self, service, key, secret):
+            event("store", self); state[(service, key)] = secret
+        def clear(self, service, key):
+            event("clear", self); state.pop((service, key), None)
+        native.Keyring.get_password = lookup
+        native.Keyring.set_password = store
+        native.Keyring.delete_password = clear
+        selected = object.__new__(native.Keyring)
+        keyring.set_keyring(selected)
+        from officina.common import certificate_records
+        from officina.install import credential_preflight as worker_module
+        certificate_records.load_certificate_signing_key = lambda root, *, secret_backend, allow_non_atomic=False: (event("verify", secret_backend) or types.SimpleNamespace(key_id="sha256:" + "e" * 64))
+        worker_module._establish_child_containment = lambda: True
+        worker_module._discard_process_output = lambda: True
+        raise SystemExit(worker_module.main(sys.argv[4:]))
+        """
+    ).strip()
+    managed_python.write_text(
+        f"#!{sys.executable!s}\n" + bootstrap + "\n",
+        encoding="utf-8",
+    )
+    managed_python.chmod(0o700)
+
+    worker = ManagedCredentialWorker(
+        str(managed_python),
+        command_timeout_seconds=3,
+        total_timeout_seconds=8,
+    )
+    worker.start()
+    pid = worker._process.pid
+    assert worker.preflight().ok
+    assert worker.verify_certificate(platform="linux", home=tmp_path) == (
+        CredentialVerificationResult(True, "sha256:" + "e" * 64)
+    )
+    assert worker._process.pid == pid
+    worker.close()
+
+    records = [json.loads(line) for line in events.read_text(encoding="utf-8").splitlines()]
+    assert {record["pid"] for record in records} == {pid}
+    native_records = [record for record in records if record["operation"] != "verify"]
+    verify_records = [record for record in records if record["operation"] == "verify"]
+    assert len({record["backend"] for record in native_records}) == 1
+    assert len(verify_records) == 1
+    with pytest.raises(ProcessLookupError):
+        os.kill(pid, 0)
