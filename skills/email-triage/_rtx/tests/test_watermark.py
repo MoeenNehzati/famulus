@@ -127,6 +127,21 @@ def test_clear_failure_allows_fresh_successful_update(tmp_path):
     assert status["result"] == "ok"
 
 
+def test_successful_update_replaces_message_from_earlier_state(tmp_path):
+    """status.json must not end a run describing itself with a message from
+    before the run finished -- e.g. the start-of-run reset text sitting next to
+    result "ok", which reads as a success that never happened."""
+    (tmp_path / "status.json").write_text(
+        json.dumps({"result": "pending", "message": "reset at start of new run"})
+    )
+
+    assert run("update_watermark.py", tmp_path).returncode == 0
+
+    status = json.loads((tmp_path / "status.json").read_text())
+    assert status["result"] == "ok"
+    assert status["message"] == "watermark advanced"
+
+
 def test_watermark_survives_across_two_clean_runs(tmp_path):
     run("update_watermark.py", tmp_path)
     first = (tmp_path / "last_run").read_text()

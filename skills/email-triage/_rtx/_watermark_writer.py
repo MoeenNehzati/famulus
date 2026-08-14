@@ -100,8 +100,14 @@ def main(argv: list[str] | None = None) -> int:
 
     now = datetime.now().astimezone()
 
-    # Preserve existing metrics and other fields, just update result and timestamp
+    # Preserve existing metrics and other fields, just update result and timestamp.
+    # `message` is overwritten, not preserved: whatever is there belongs to an
+    # earlier, now-superseded state -- the start-of-run reset, or a warning from
+    # load_cutoff. Leaving it made status.json self-contradictory (result "ok"
+    # next to "reset at start of new run"), which is misleading in exactly the
+    # file someone opens to find out how the last run went.
     status["result"] = "ok"
+    status["message"] = "watermark advanced"
     status["watermark_advanced_at"] = now.isoformat()
     if run_id is not None:
         status["last_finalized_run_id"] = run_id
