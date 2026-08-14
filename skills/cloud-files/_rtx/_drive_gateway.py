@@ -208,26 +208,100 @@ def load_credentials(config: CloudFilesConfig) -> dict[str, str]:
     return {key: str(payload[key]).strip() for key in required}
 
 
+_TOKEN_ERROR_BODY_LIMIT = 4096
+
+# An access token is good for ~an hour, but _exchange_refresh_token discards
+# the `expires_in` Google returns, so this cache cannot learn the real
+# lifetime and hardcodes a conservative floor instead.
+_TOKEN_TTL_S = 2700.0
+
+# Keyed on (credential identity, required scopes) -> (token, monotonic expiry).
+# Scopes are part of the key because refresh_access_token_from_file validates
+# required_scopes against the descriptor BEFORE each network call; caching on
+# identity alone would skip that check and could hand a token obtained for one
+# service to another. Process-local by design: see _diagnostic_urlopen's note
+# on why this deliberately is not an on-disk cache.
+_token_cache: dict[tuple, tuple[str, float]] = {}
+
+
+def _diagnostic_urlopen(request, *, timeout: float):
+    """Open a token request, keeping Google's error body in the exception.
+
+    google_credentials._open_google_json reads the error body and throws it
+    away, raising a bare "Google endpoint returned HTTP 400". That code is the
+    same for a revoked grant, a rate limit, and a bad client -- three problems
+    with three different fixes -- so a failure here was undiagnosable, and a
+    scheduled run once concluded from it that authentication needed repair
+    when the credential was fine.
+
+    This wraps the module's own opener rather than urllib directly: the
+    default installs _RejectRedirects so a secret-bearing token request never
+    follows a redirect, and replacing it outright would silently drop that.
+    _open_google_json re-raises GoogleCredentialError unchanged, so what we
+    raise here reaches the caller verbatim.
+
+    Google's token-endpoint error body carries `error`/`error_description`
+    only -- no token, no client secret -- so it is safe to surface.
+    """
+    from officina.common.google_credentials import GoogleCredentialError, _default_urlopen
+
+    try:
+        return _default_urlopen(request, timeout=timeout)
+    except urllib.error.HTTPError as exc:
+        try:
+            raw = exc.read(_TOKEN_ERROR_BODY_LIMIT)
+            payload = json.loads(raw)
+            code = payload.get("error")
+            description = payload.get("error_description")
+            detail = ": ".join(str(p) for p in (code, description) if p)
+        except Exception:
+            detail = ""
+        suffix = f" ({detail})" if detail else " (no error detail in response body)"
+        raise GoogleCredentialError(
+            f"Google token endpoint returned HTTP {exc.code}{suffix}"
+        ) from exc
+
+
 def get_access_token(config: CloudFilesConfig, *, platform: str = sys.platform) -> str:
+    from time import monotonic
+
     if config.credential_file is not None:
         from officina.common.google_credentials import (
             SERVICE_SCOPES,
             refresh_access_token_from_file,
         )
 
-        return refresh_access_token_from_file(
+        scopes = SERVICE_SCOPES["drive"]
+        key = ("file", str(config.credential_file), frozenset(scopes))
+        cached = _token_cache.get(key)
+        if cached is not None and cached[1] > monotonic():
+            return cached[0]
+
+        token = refresh_access_token_from_file(
             config.credential_file,
-            required_scopes=SERVICE_SCOPES["drive"],
+            required_scopes=scopes,
+            urlopen=_diagnostic_urlopen,
         )
+        _token_cache[key] = (token, monotonic() + _TOKEN_TTL_S)
+        return token
     if config.credential_id:
         from officina.common.google_credentials import SERVICE_SCOPES, refresh_access_token
 
-        return refresh_access_token(
+        scopes = SERVICE_SCOPES["drive"]
+        key = ("id", config.credential_id, frozenset(scopes))
+        cached = _token_cache.get(key)
+        if cached is not None and cached[1] > monotonic():
+            return cached[0]
+
+        token = refresh_access_token(
             config.credential_id,
-            required_scopes=SERVICE_SCOPES["drive"],
+            required_scopes=scopes,
             home=config.home or Path.home(),
             platform=platform,
+            urlopen=_diagnostic_urlopen,
         )
+        _token_cache[key] = (token, monotonic() + _TOKEN_TTL_S)
+        return token
 
     creds = load_credentials(config)
     data = urllib.parse.urlencode(

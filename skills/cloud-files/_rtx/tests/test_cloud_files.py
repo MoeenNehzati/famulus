@@ -5,8 +5,11 @@ import json
 import sys
 import tempfile
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest import mock
+
+from officina.common.google_credentials import SERVICE_SCOPES
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPT_DIR))
@@ -17,6 +20,11 @@ else:
 
 
 class CloudFilesTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # The access-token cache is module-level, so it would otherwise carry
+        # between tests and let one test's token satisfy another's call.
+        cloud_files._token_cache.clear()
+
     def test_normalize_llm_root_adds_trailing_slash(self) -> None:
         self.assertEqual(cloud_files.normalize_llm_root("assistant"), "assistant/")
 
@@ -297,6 +305,129 @@ class CloudFilesTests(unittest.TestCase):
 
         self.assertEqual(token, "legacy-token")
         urlopen.assert_called_once()
+
+    def test_access_token_is_reused_within_a_process(self) -> None:
+        """drive_request refreshes on every Drive call, so one list write used
+        to mint 4-5 tokens and a full triage run around a thousand."""
+        config = cloud_files.CloudFilesConfig(
+            remote_llm_root="assistant/",
+            timeout_seconds=45,
+            credentials_path=Path("/tmp/creds.json"),
+            credential_id="google:cache-me",
+            home=Path("/tmp/home"),
+        )
+        calls = []
+
+        def fake_refresh_access_token(credential_id, **kwargs):
+            calls.append(credential_id)
+            return "cached-token"
+
+        with mock.patch(
+            "officina.common.google_credentials.refresh_access_token",
+            fake_refresh_access_token,
+        ):
+            first = cloud_files.get_access_token(config, platform="linux")
+            second = cloud_files.get_access_token(config, platform="linux")
+            third = cloud_files.get_access_token(config, platform="linux")
+
+        self.assertEqual([first, second, third], ["cached-token"] * 3)
+        self.assertEqual(len(calls), 1, "token should be minted once, not per call")
+
+    def test_expired_cache_entry_is_refreshed(self) -> None:
+        config = cloud_files.CloudFilesConfig(
+            remote_llm_root="assistant/",
+            timeout_seconds=45,
+            credentials_path=Path("/tmp/creds.json"),
+            credential_id="google:expiry",
+            home=Path("/tmp/home"),
+        )
+        calls = []
+
+        def fake_refresh_access_token(credential_id, **kwargs):
+            calls.append(credential_id)
+            return f"token-{len(calls)}"
+
+        with mock.patch(
+            "officina.common.google_credentials.refresh_access_token",
+            fake_refresh_access_token,
+        ):
+            first = cloud_files.get_access_token(config, platform="linux")
+            # Force the entry stale rather than sleeping out the real TTL.
+            token, _ = cloud_files._token_cache[
+                ("id", "google:expiry", frozenset(SERVICE_SCOPES["drive"]))
+            ]
+            cloud_files._token_cache[
+                ("id", "google:expiry", frozenset(SERVICE_SCOPES["drive"]))
+            ] = (token, 0.0)
+            second = cloud_files.get_access_token(config, platform="linux")
+
+        self.assertEqual([first, second], ["token-1", "token-2"])
+
+    def test_token_error_body_reaches_the_caller(self) -> None:
+        """A bare "HTTP 400" is the same string for a revoked grant, a rate
+        limit, and a bad client. A scheduled run once read one and reported
+        that authentication needed repair, when nothing was wrong with it."""
+        from officina.common.google_credentials import GoogleCredentialError
+
+        error = urllib.error.HTTPError(
+            url="https://oauth2.googleapis.com/token",
+            code=400,
+            msg="Bad Request",
+            hdrs=None,
+            fp=io.BytesIO(
+                json.dumps(
+                    {
+                        "error": "invalid_grant",
+                        "error_description": "Token has been expired or revoked.",
+                    }
+                ).encode("utf-8")
+            ),
+        )
+
+        with mock.patch(
+            "officina.common.google_credentials._default_urlopen", side_effect=error
+        ):
+            with self.assertRaises(GoogleCredentialError) as caught:
+                cloud_files._diagnostic_urlopen(object(), timeout=5)
+
+        message = str(caught.exception)
+        self.assertIn("400", message)
+        self.assertIn("invalid_grant", message)
+        self.assertIn("Token has been expired or revoked.", message)
+
+    def test_token_error_without_a_usable_body_says_so(self) -> None:
+        from officina.common.google_credentials import GoogleCredentialError
+
+        error = urllib.error.HTTPError(
+            url="https://oauth2.googleapis.com/token",
+            code=429,
+            msg="Too Many Requests",
+            hdrs=None,
+            fp=io.BytesIO(b"<html>not json</html>"),
+        )
+
+        with mock.patch(
+            "officina.common.google_credentials._default_urlopen", side_effect=error
+        ):
+            with self.assertRaises(GoogleCredentialError) as caught:
+                cloud_files._diagnostic_urlopen(object(), timeout=5)
+
+        self.assertIn("429", str(caught.exception))
+        self.assertIn("no error detail", str(caught.exception))
+
+    def test_diagnostic_opener_keeps_redirect_rejection(self) -> None:
+        """The default opener installs _RejectRedirects so a secret-bearing
+        token request never follows a redirect. Wrapping it must not drop
+        that, which a bare urllib.request.urlopen would."""
+        sentinel = object()
+        with mock.patch(
+            "officina.common.google_credentials._default_urlopen", return_value=sentinel
+        ) as default_urlopen:
+            result = cloud_files._diagnostic_urlopen(object(), timeout=7)
+
+        self.assertIs(result, sentinel)
+        default_urlopen.assert_called_once()
+        self.assertEqual(default_urlopen.call_args.kwargs["timeout"], 7)
 
 
 if __name__ == "__main__":
