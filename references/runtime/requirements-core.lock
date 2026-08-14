@@ -2,6 +2,7 @@
 # input-sha256: 95d56bbdd51c4485e7148c30629a85b4c369ef43f885a87523c1179254503dfc
 # uv-version: 0.11.29
 # python-version: 3.11.15
+# lock-content-sha256: 2dadb50f950f62334643209b550ae15f88bb72a9eaca09fd414b1b64d9a8985f
 #
 attrs==26.1.0 \
     --hash=sha256:c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309 \

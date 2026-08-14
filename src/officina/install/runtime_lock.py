@@ -26,7 +26,7 @@ BOOTSTRAP_REQUIREMENTS = ("PyYAML==6.0.2", "setuptools==80.9.0")
 
 _HEADER_PATTERN = re.compile(r"^# ([a-z][a-z0-9-]*): (.+)$")
 _EXACT_REQUIREMENT_PATTERN = re.compile(
-    r"^[A-Za-z0-9][A-Za-z0-9_.-]*(?:\[[A-Za-z0-9_,.-]+\])?==[^\s;\\]+(?:\s*;.*)?$"
+    r"^[A-Za-z0-9][A-Za-z0-9_.-]*(?:\[[A-Za-z0-9_,.-]+\])?==[^\s;\\*]+(?:\s*;.*)?$"
 )
 _SHA256_PATTERN = re.compile(r"--hash=sha256:[0-9a-fA-F]{64}(?:\s|$)")
 
@@ -145,6 +145,15 @@ def _lock_headers(lock_text: str) -> dict[str, str]:
     return headers
 
 
+def _lock_body(lock_text: str) -> str:
+    """Return the generated requirement body after the metadata separator."""
+    separator = "\n#\n"
+    separator_index = lock_text.find(separator)
+    if separator_index < 0:
+        raise RuntimeLockError("runtime lock has no metadata separator")
+    return lock_text[separator_index + len(separator):]
+
+
 def validate_runtime_lock(
     *,
     manifest_path: Path,
@@ -166,10 +175,17 @@ def validate_runtime_lock(
     input_sha256 = hashlib.sha256(canonical_input.encode("utf-8")).hexdigest()
     try:
         lock_bytes = lock_path.read_bytes()
-        lock_text = lock_bytes.decode("utf-8", errors="strict")
+        lock_text = lock_bytes.decode("utf-8", errors="strict").replace("\r\n", "\n").replace("\r", "\n")
     except (OSError, UnicodeDecodeError) as exc:
         raise RuntimeLockError(f"could not read runtime lock: {exc}") from exc
     headers = _lock_headers(lock_text)
+    lock_body = _lock_body(lock_text)
+    lock_content_sha256 = hashlib.sha256(lock_body.encode("utf-8")).hexdigest()
+    if headers.get("lock-content-sha256") != lock_content_sha256:
+        raise RuntimeLockError(
+            "runtime lock content digest mismatch: "
+            f"expected {lock_content_sha256!r}, got {headers.get('lock-content-sha256')!r}"
+        )
     expected_headers = {
         "famulus-runtime-lock-schema": "1",
         "input-sha256": input_sha256,
@@ -182,7 +198,7 @@ def validate_runtime_lock(
                 f"runtime lock {name} mismatch: expected {expected!r}, got {headers.get(name)!r}"
             )
 
-    for record in _logical_lock_records(lock_text):
+    for record in _logical_lock_records(lock_body):
         requirement = record.split(" --hash=", 1)[0].strip()
         if not _EXACT_REQUIREMENT_PATTERN.match(requirement):
             raise RuntimeLockError(f"runtime lock requirement is not pinned exactly: {requirement}")
@@ -236,7 +252,6 @@ def generate_runtime_lock(
     lock_tmp = Path(str(lock_path) + ".tmp")
     try:
         input_tmp.write_text(canonical_input, encoding="utf-8")
-        os.replace(input_tmp, input_path)
         lock_tmp.unlink(missing_ok=True)
         compile_result = _run_uv(
             [
@@ -250,7 +265,7 @@ def generate_runtime_lock(
                 "--no-header",
                 "--output-file",
                 str(lock_tmp),
-                str(input_path),
+                str(input_tmp),
             ]
         )
         if compile_result.returncode != 0:
@@ -258,16 +273,37 @@ def generate_runtime_lock(
                 f"uv runtime lock compilation failed (exit {compile_result.returncode}): "
                 f"{compile_result.stderr.strip()}"
             )
-        compiled = lock_tmp.read_text(encoding="utf-8")
+        compiled = lock_tmp.read_text(encoding="utf-8").replace(
+            f"-r {input_tmp}", f"-r {input_path}"
+        )
+        try:
+            relative_input_tmp = input_tmp.resolve().relative_to(Path.cwd().resolve())
+            relative_input = input_path.resolve().relative_to(Path.cwd().resolve())
+        except ValueError:
+            pass
+        else:
+            compiled = compiled.replace(
+                f"-r {relative_input_tmp}", f"-r {relative_input}"
+            )
         input_sha256 = hashlib.sha256(canonical_input.encode("utf-8")).hexdigest()
+        lock_content_sha256 = hashlib.sha256(compiled.encode("utf-8")).hexdigest()
         header = (
             "# famulus-runtime-lock-schema: 1\n"
             f"# input-sha256: {input_sha256}\n"
             f"# uv-version: {expected_uv_version}\n"
             f"# python-version: {python_version}\n"
+            f"# lock-content-sha256: {lock_content_sha256}\n"
             "#\n"
         )
         lock_tmp.write_text(header + compiled, encoding="utf-8")
+        validate_runtime_lock(
+            manifest_path=manifest_path,
+            input_path=input_tmp,
+            lock_path=lock_tmp,
+            expected_uv_version=expected_uv_version,
+            expected_python_version=python_version,
+        )
+        os.replace(input_tmp, input_path)
         os.replace(lock_tmp, lock_path)
     except OSError as exc:
         raise RuntimeLockError(f"could not write generated runtime lock: {exc}") from exc

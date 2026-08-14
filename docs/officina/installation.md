@@ -79,18 +79,28 @@ Runs in every install, regardless of mode or which agents you want. Installs:
   invoke a skill by name without hardcoding an absolute path. This is generated
   as `<bin-dir>/invoke-skill` on Unix-like hosts and
   `<bin-dir>/invoke-skill.bat` on Windows.
-- The versioned first-party Officina wheel and required third-party Python packages from
-  `references/blueprint/runtime_dependencies.json`, generated from executable
-  behavioral-source runtime dependency declarations. Candidate construction
-  installs and verifies the Officina wheel in the managed release before
-  activation. Artifact metadata records the exact wheel SHA-256 and a source
-  identity: the Git commit in a checkout, or a deterministic fingerprint of
+- The versioned first-party Officina wheel and the hash-checked core dependency
+  lock at `references/runtime/requirements-core.lock`. That lock is generated
+  from the pooled executable behavioral-source declarations in
+  `references/blueprint/runtime_dependencies.json`; it is not a second
+  handwritten dependency inventory. Before creating a release, the installer
+  checks that the generated input matches the manifest, that the lock headers
+  identify that input plus pinned `uv 0.11.29` and managed CPython `3.11.15`,
+  that the complete lock body matches its recorded SHA-256 digest, and that
+  each parsed record has a concrete `==` version and a SHA-256 hash. Wildcard
+  versions are rejected. It then installs the lock with `--require-hashes` and
+  installs the locally built Officina wheel with dependency resolution
+  disabled. Candidate construction verifies the wheel before activation.
+  Artifact metadata records the lock and wheel SHA-256 digests, the resolved
+  Python identity, and a source identity: the Git commit
+  in a checkout, or a deterministic fingerprint of
   `pyproject.toml` and `src/officina/**` when a plugin manager has copied the
   package without `.git`. The stable launcher reads `current.json`, injects
   its exact repository `officina.toml`, and enters that release's interpreter;
   it does not embed a checkout path or use ambient `PYTHONPATH`. Linux recurring
   units use that runtime and capture the installed launcher directory ahead of
   other PATH entries.
+
 - `PATH` — adds `<bin-dir>` to your shell rc (or the Windows registry) so
   `dispatcher`, `llm-wakeup`/`lw`, `invoke-skill`, and the agent launchers
   resolve as bare commands.
@@ -151,6 +161,9 @@ is skipped on Windows because tmux is not available there.
 By design, `install.py` stops once scaffold/dev-link/launchers finish. It
 does not:
 
+- Install `marker-pdf` or its OCR/ML dependency closure. That dependency is
+  excluded from the first supported release lock; `--include-optional-deps`
+  exits without installing rather than escaping the reviewed lock.
 - Connect any external account. `connect-google` prepares shared Google OAuth
   client configuration afterward; each service initiates and owns its OAuth
   exchange and credentials.
@@ -166,6 +179,13 @@ to. That happens afterward, conversationally, on request.
 
 ### Connect Google after Phase 1
 
+Google integrations are experimental in the first public release. Their OAuth
+grants are broader than the runtime operations Famulus advertises, and the
+current implementation does not provide one complete disconnect, server-side
+revocation, uninstall, and purge lifecycle. Review
+[`docs/security-and-privacy.md`](../security-and-privacy.md) before connecting
+an account.
+
 Ask the assistant:
 
 ```text
@@ -173,19 +193,20 @@ Connect Famulus to Google.
 ```
 
 The workflow recommends Drive, Calendar, and Gmail and allows any subset.
-`connect-google` prepares the client configuration, then hands each selected
-service back to cloud-files, g-calendar, or email-client for service-owned
-authorization. It supports two client-provisioning paths:
-
-- Private pilot: receive the project owner's Google Desktop OAuth client JSON
-  through a private channel, then give the assistant its local path.
-- Public installation: let `connect-google` guide you through creating a
-  personal Google Cloud project and downloading a Desktop client JSON.
+`connect-google` guides you through creating a Google Cloud project and
+Desktop OAuth client, prepares the downloaded client configuration, then hands
+each selected service back to cloud-files, g-calendar, or email-client for
+service-owned authorization.
 
 Never commit the client JSON to GitHub, paste its contents into an issue, or
 store it in the Famulus checkout. The shared client configuration is copied to
 private local configuration; Drive, Calendar, and Gmail tokens remain local to
 their corresponding service and are not shared between services.
+
+Agent-driven recurring jobs are also experimental. Core installation does not
+create them. `recurring-tasks` creates or enables a job only after an explicit
+request to schedule that workflow; inspect the job definition and schedule
+before enabling it.
 
 ---
 
@@ -202,6 +223,7 @@ install.py [--home DIR] [--bin-dir DIR] [--shell-rc FILE]
            [--codex-home DIR] [--claude-home DIR] [--dry-run]
            [--non-interactive]
            [--dev-mode | --no-dev-mode] [--repo-path DIR]
+           [--include-optional-deps | --no-optional-deps]
            [--agents LIST] [--default-llm {claude,codex}]
 ```
 
@@ -215,6 +237,7 @@ install.py [--home DIR] [--bin-dir DIR] [--shell-rc FILE]
 | `--non-interactive` | Never prompt. Requires `--dev-mode`/`--no-dev-mode` explicitly, and `--repo-path` if dev mode is chosen. Without this flag, missing choices are prompted for interactively |
 | `--dev-mode` / `--no-dev-mode` | Explicit mode choice (mutually exclusive). Omit to be prompted |
 | `--repo-path DIR` | Repo checkout path, required if `--dev-mode` is chosen non-interactively |
+| `--include-optional-deps` | Unsupported in the first release; exits without installing. `--no-optional-deps` is accepted for compatibility and matches the only supported behavior |
 | `--agents LIST` | Comma-separated subset of `assistant,collab,coauthor,tw`. Omit to be prompted; empty in non-interactive mode installs no agents |
 | `--default-llm {claude,codex}` | Default backend for the chosen agents. Omit to be prompted; defaults to `claude` in non-interactive mode |
 

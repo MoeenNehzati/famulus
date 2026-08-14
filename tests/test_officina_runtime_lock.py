@@ -79,12 +79,14 @@ def _write_manifest(path: Path) -> None:
 
 
 def _lock_text(input_text: str, records: str) -> str:
-    digest = hashlib.sha256(input_text.encode("utf-8")).hexdigest()
+    input_digest = hashlib.sha256(input_text.encode("utf-8")).hexdigest()
+    content_digest = hashlib.sha256(records.encode("utf-8")).hexdigest()
     return (
         "# famulus-runtime-lock-schema: 1\n"
-        f"# input-sha256: {digest}\n"
+        f"# input-sha256: {input_digest}\n"
         "# uv-version: 0.11.29\n"
         "# python-version: 3.11.15\n"
+        f"# lock-content-sha256: {content_digest}\n"
         "#\n"
         f"{records}"
     )
@@ -158,9 +160,70 @@ def test_validate_runtime_lock_rejects_stale_generated_input(tmp_path: Path) -> 
 
 
 @pytest.mark.parametrize(
+    "mutated_body",
+    [
+        (
+            "examplepkg==99.99.99 "
+            "--hash=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+            "linux-only==3.0 "
+            "--hash=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
+        ),
+        (
+            "examplepkg==1.9 "
+            "--hash=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+            "linux-only==3.0 "
+            "--hash=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
+            "unexpected==1.0 "
+            "--hash=sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\n"
+        ),
+        (
+            "examplepkg==1.9 "
+            "--hash=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+        ),
+        (
+            "linux-only==3.0 "
+            "--hash=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
+            "examplepkg==1.9 "
+            "--hash=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+        ),
+    ],
+    ids=("changed", "added", "removed", "reordered"),
+)
+def test_validate_runtime_lock_rejects_body_drift(
+    tmp_path: Path, mutated_body: str
+) -> None:
+    manifest = tmp_path / "runtime_dependencies.json"
+    input_path = tmp_path / "requirements-core.in"
+    lock_path = tmp_path / "requirements-core.lock"
+    _write_manifest(manifest)
+    input_text = render_runtime_requirements(manifest)
+    input_path.write_text(input_text, encoding="utf-8")
+    original_body = (
+        "examplepkg==1.9 "
+        "--hash=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+        "linux-only==3.0 "
+        "--hash=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
+    )
+    lock_path.write_text(
+        _lock_text(input_text, original_body).replace(original_body, mutated_body),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeLockError, match="content digest mismatch"):
+        validate_runtime_lock(
+            manifest_path=manifest,
+            input_path=input_path,
+            lock_path=lock_path,
+            expected_uv_version="0.11.29",
+            expected_python_version="3.11.15",
+        )
+
+
+@pytest.mark.parametrize(
     ("record", "message"),
     [
         ("examplepkg>=1 --hash=sha256:" + "a" * 64 + "\n", "not pinned exactly"),
+        ("examplepkg==1.* --hash=sha256:" + "a" * 64 + "\n", "not pinned exactly"),
         ("examplepkg==1.9\n", "has no SHA-256 hash"),
     ],
 )
@@ -193,6 +256,7 @@ def test_generate_runtime_lock_uses_pinned_uv_and_writes_bound_lock(
     lock_path = tmp_path / "requirements-core.lock"
     uv_bin = tmp_path / "uv"
     _write_manifest(manifest)
+    monkeypatch.chdir(tmp_path)
     calls: list[list[str]] = []
 
     def fake_run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -202,7 +266,8 @@ def test_generate_runtime_lock_uses_pinned_uv_and_writes_bound_lock(
         output_path = Path(argv[argv.index("--output-file") + 1])
         output_path.write_text(
             "examplepkg==1.9 \\\n"
-            "    --hash=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+            "    --hash=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+            "    # via -r requirements-core.in.tmp\n",
             encoding="utf-8",
         )
         return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
@@ -230,7 +295,7 @@ def test_generate_runtime_lock_uses_pinned_uv_and_writes_bound_lock(
         "--no-header",
         "--output-file",
         str(lock_path) + ".tmp",
-        str(input_path),
+        str(input_path) + ".tmp",
     ]
     assert lock_path.read_text(encoding="utf-8").startswith(
         "# famulus-runtime-lock-schema: 1\n"
@@ -238,6 +303,8 @@ def test_generate_runtime_lock_uses_pinned_uv_and_writes_bound_lock(
         "# uv-version: 0.11.29\n"
         "# python-version: 3.11.15\n"
     )
+    assert "# via -r requirements-core.in\n" in lock_path.read_text(encoding="utf-8")
+    assert "# via -r requirements-core.in.tmp\n" not in lock_path.read_text(encoding="utf-8")
     validate_runtime_lock(
         manifest_path=manifest,
         input_path=input_path,
@@ -270,3 +337,34 @@ def test_generate_runtime_lock_rejects_wrong_uv_before_compile(
             python_version="3.11.15",
         )
     assert calls == [[str(tmp_path / "uv"), "--version"]]
+
+
+def test_generate_runtime_lock_preserves_canonical_files_when_compile_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest = tmp_path / "runtime_dependencies.json"
+    input_path = tmp_path / "requirements-core.in"
+    lock_path = tmp_path / "requirements-core.lock"
+    _write_manifest(manifest)
+    input_path.write_bytes(b"old input\n")
+    lock_path.write_bytes(b"old lock\n")
+
+    def fake_run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        if argv[1:] == ["--version"]:
+            return subprocess.CompletedProcess(argv, 0, stdout="uv 0.11.29\n", stderr="")
+        return subprocess.CompletedProcess(argv, 2, stdout="", stderr="resolution failed")
+
+    monkeypatch.setattr("officina.install.runtime_lock.subprocess.run", fake_run)
+
+    with pytest.raises(RuntimeLockError, match="compilation failed"):
+        generate_runtime_lock(
+            manifest_path=manifest,
+            input_path=input_path,
+            lock_path=lock_path,
+            uv_bin=tmp_path / "uv",
+            expected_uv_version="0.11.29",
+            python_version="3.11.15",
+        )
+
+    assert input_path.read_bytes() == b"old input\n"
+    assert lock_path.read_bytes() == b"old lock\n"

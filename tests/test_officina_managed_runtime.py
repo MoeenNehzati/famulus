@@ -64,13 +64,16 @@ def _write_test_runtime_lock(tmp_path: Path, manifest_path: Path) -> tuple[Path,
     rendered = render_runtime_requirements(manifest_path)
     input_path.write_text(rendered, encoding="utf-8")
     input_sha256 = hashlib.sha256(rendered.encode("utf-8")).hexdigest()
+    lock_body = f"rich==13.9.4 --hash=sha256:{'a' * 64}\n"
+    lock_content_sha256 = hashlib.sha256(lock_body.encode("utf-8")).hexdigest()
     lock_path.write_text(
         "# famulus-runtime-lock-schema: 1\n"
         f"# input-sha256: {input_sha256}\n"
         f"# uv-version: {PINNED_UV_VERSION}\n"
         f"# python-version: {PINNED_PYTHON_VERSION}\n"
+        f"# lock-content-sha256: {lock_content_sha256}\n"
         "#\n"
-        f"rich==13.9.4 --hash=sha256:{'a' * 64}\n",
+        f"{lock_body}",
         encoding="utf-8",
     )
     return input_path, lock_path
