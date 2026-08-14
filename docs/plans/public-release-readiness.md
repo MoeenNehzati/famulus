@@ -57,6 +57,9 @@ Publish a small, usable first release that:
 
 ## 4. Establish the release mechanism
 
+The agreed mechanism is documented in
+[`Unified Famulus Release Mechanism`](../superpowers/specs/2026-08-14-unified-release-mechanism-design.md).
+
 - [ ] Adopt semantic versioning and one authoritative version used by all
   shipped manifests.
 - [ ] Add a short release checklist or command covering version, changelog,

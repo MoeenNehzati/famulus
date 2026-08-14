@@ -28,7 +28,7 @@ After each triage run, `state/status.json` contains:
     "skipped": 42,
     "deduped": 0
   },
-  "accounts_triaged": ["personal", "nyu"],
+  "accounts_triaged": ["account-a", "account-b"],
   "metrics_timestamp": "2026-07-15T18:00:50.789069-04:00",
   "watermark_advanced_at": "2026-07-15T18:01:11.789069-04:00"
 }
@@ -91,8 +91,8 @@ The triage log shows every email and why it was classified:
 tail -50 triage.log
 
 # Emails from a specific account
-grep '\[personal\]' triage.log | tail -20
-grep '\[nyu\]' triage.log | tail -20
+grep '\[account-a\]' triage.log | tail -20
+grep '\[account-b\]' triage.log | tail -20
 
 # Emails added to todo
 grep 'TODO' triage.log | tail -20
@@ -106,8 +106,10 @@ grep 'SKIP' triage.log | tail -20
 
 ## How It Works
 
-1. **Hourly run** — `email-triage` runs via `recurring-tasks` every hour
-2. **Fetch envelopes** — downloads new emails since the watermark from all configured accounts (personal, nyu)
+1. **Scheduled run** — `email-triage` runs through `recurring-tasks` only
+   after the user explicitly configures a schedule
+2. **Fetch envelopes** — downloads new emails since the watermark from all
+   configured accounts
 3. **Classify** — LLM reads emails and routes to todo/triage/skip
 4. **Log decisions** — every classification is logged with reason
 5. **Record metrics** — counts are written to `state/status.json` with timestamp

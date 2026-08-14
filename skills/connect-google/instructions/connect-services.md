@@ -47,8 +47,8 @@ credential-file path, verifies a live API call before success, and reports a
 stable machine result. An installer may omit a Gmail nickname; in that case
 Gmail remains incomplete while other granted services still bind.
 
-If Google rejects a Testing user during authorization,
-the project owner must add that exact account email under Test users. A
-Workspace administrator policy can still block authorization.
+If Google rejects a Testing user during authorization, the Google Cloud project
+administrator must add that exact account email under Test users. A Workspace
+administrator policy can still block authorization.
 
 @../personal-preferences/google-service-connection.md

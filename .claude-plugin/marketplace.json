@@ -3,7 +3,7 @@
   "owner": {
     "name": "Moeen Nehzati"
   },
-  "description": "Moeen's personal Claude Code plugin marketplace",
+  "description": "Famulus skills for Claude Code",
   "plugins": [
     {
       "name": "famulus",

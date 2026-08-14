@@ -26,10 +26,11 @@ Guide the user through the current Google Auth Platform UI:
    download its JSON file.
 
 Explain that the OAuth client identifies the app but grants no account access
-until each user completes a browser authorization. A test-user allowlist does not distribute
-the JSON; the project owner must send it privately. A Google
-Workspace administrator can still block authorization even for a listed test
-user.
+until the user completes browser authorization. When the OAuth app is in
+Testing, its test-user allowlist controls who may authorize. It does not distribute
+the client JSON. The downloaded JSON remains local to the user who created the
+client. A Google Workspace administrator can still block authorization even
+for a listed test user.
 
 Keep the downloaded JSON private. Never commit it, paste its contents into chat,
 or put it in an issue. Once the user gives the local file path, continue in

@@ -21,6 +21,8 @@ Officina is and routes to everything below.
 
 ## Famulus
 
+- [Security and Privacy](./security-and-privacy.md)
+- [Dependency and Bootstrap Audit](./dependency-and-bootstrap-audit.md)
 - [Launchers](./launchers.md)
 - [Skill Index](./skills.md)
 - [Contributors](./contributors/README.md)

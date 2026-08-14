@@ -49,7 +49,12 @@ The install and packaging paths have CI coverage on Linux, macOS, and Windows th
 
 ## Featured Flows
 
-### Connect Google
+### Experimental: Connect Google
+
+Google integrations are experimental in the first public release. They use
+broad OAuth grants and do not yet provide one complete disconnect, server-side
+revocation, uninstall, and purge lifecycle. Use them only after reviewing the
+[security and privacy boundary](docs/security-and-privacy.md).
 
 After installation, ask:
 
@@ -58,17 +63,19 @@ Connect Famulus to Google.
 ```
 
 Famulus recommends Drive, Calendar, and Gmail, while letting you connect only
-the subset you want. `connect-google` prepares the shared Desktop OAuth client;
-cloud-files, g-calendar, and email-client then perform and own their respective
-authorizations. Private-pilot users can obtain the project owner's client JSON
-through a private channel. Public users can let `connect-google` guide creation
-of a personal Google Cloud project and Desktop client. Never commit that JSON
-to GitHub. Each service keeps its resulting user tokens in its own local
-credential storage.
+the subset you want. `connect-google` guides you through creating a Google
+Cloud project and Desktop OAuth client, then cloud-files, g-calendar, and
+email-client perform and own their respective authorizations. Never commit the
+client JSON to GitHub. Each service keeps its resulting user tokens in its own
+local credential storage.
 
 ### Plan my day
 
 Use `daily-plan` when you want the assistant to pull together your calendar, weather, todos, and triage list into one concrete plan.
+
+Interactive use is user-initiated. Scheduling `daily-plan`, `email-triage`, or
+another agent-driven workflow is experimental and must be enabled explicitly;
+Famulus does not set up recurring jobs during its core installation.
 
 Example prompts:
 
@@ -150,6 +157,9 @@ Usage details and documentation for the launchers are in [docs/launchers.md](doc
 
 ## Learn More
 
+- [docs/security-and-privacy.md](docs/security-and-privacy.md) — permissions, credentials, model data, destructive actions, and removal
+- [docs/dependency-and-bootstrap-audit.md](docs/dependency-and-bootstrap-audit.md) — release dependency, bootstrap, and vendored-asset audit
+- [SECURITY.md](SECURITY.md) — private vulnerability reporting
 - [docs/user/general.md](docs/user/general.md) — planning, wrap-up, inbox, lists, calendar, and weather workflows
 - [docs/user/research.md](docs/user/research.md) — research and writing workflows, including dependency graphs
 - [docs/user/system.md](docs/user/system.md) — storage, automation, and system-facing utilities
@@ -176,4 +186,5 @@ in [docs/testing.md](docs/testing.md).
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). Vendored components retain their own licenses; see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

@@ -15,7 +15,7 @@ This made the "3 emails" question hard to answer without grepping logs.
 
 1. **Metrics now captured in `state/status.json`**
    - After each triage run: total emails scanned, added to todo/triage, skipped, deduped
-   - Records which accounts were triaged (personal, nyu)
+   - Records which configured accounts were triaged
    - Timestamps for when metrics were recorded and watermark advanced
 
 2. **Improved triage workflow**
@@ -45,7 +45,7 @@ tail -50 triage.log | grep "Scanned"
     "skipped": 42,
     "deduped": 0
   },
-  "accounts_triaged": ["personal", "nyu"],
+  "accounts_triaged": ["account-a", "account-b"],
   "metrics_timestamp": "2026-07-16T12:28:50...",
   "watermark_advanced_at": "2026-07-16T12:29:28..."
 }
@@ -60,8 +60,8 @@ tail -50 triage.log | grep "Scanned"
 
 ### Next Steps
 
-The next time email-triage runs (hourly via recurring-tasks), it will:
-1. Process emails from personal and nyu accounts
+The next time email-triage runs, it will:
+1. Process emails from the configured accounts
 2. Collect metrics as it classifies each email (scanned, added-todo, added-triage, skipped, deduped)
 3. Record metrics to `state/status.json` with timestamps
 4. Advance the watermark (preserving metrics)
@@ -81,7 +81,7 @@ cat state/status.json
 tail -50 triage.log
 
 # See emails from a specific account
-grep '[personal]' triage.log | tail -20
+grep '[account-a]' triage.log | tail -20
 
 # Reset watermark if needed (see DEBUGGING.md)
 date -d '7 days ago' --iso-8601=seconds > state/last_run
