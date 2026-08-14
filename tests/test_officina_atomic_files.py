@@ -165,6 +165,706 @@ def test_directory_enumeration_rejects_fifo_without_blocking(
     assert "not a regular file" in str(outcomes[0])
 
 
+@_POSIX_DESCRIPTOR_ONLY
+def test_bounded_directory_names_do_not_open_or_read_unexpected_fifo(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "public-keys"
+    root.mkdir()
+    os.mkfifo(root / "unexpected")
+
+    names = atomic_files.read_bounded_directory_names(
+        root,
+        max_entries=4,
+        max_name_bytes=32,
+    )
+
+    assert names == ("unexpected",)
+
+
+def test_bounded_directory_names_reject_count_and_name_bounds_before_payload_reads(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "public-keys"
+    root.mkdir()
+    (root / "a").write_bytes(b"first private canary")
+    (root / "bb").write_bytes(b"second private canary")
+
+    with pytest.raises(AtomicWriteError, match="entry limit"):
+        atomic_files.read_bounded_directory_names(
+            root,
+            max_entries=1,
+            max_name_bytes=8,
+        )
+    with pytest.raises(AtomicWriteError, match="name limit"):
+        atomic_files.read_bounded_directory_names(
+            root,
+            max_entries=2,
+            max_name_bytes=1,
+        )
+
+
+def test_bounded_directory_names_validate_public_bounds_before_opening(
+    tmp_path: Path,
+) -> None:
+    for max_entries, max_name_bytes in ((0, 1), (1, 0), (True, 1), (1, True)):
+        with pytest.raises(ValueError):
+            atomic_files.read_bounded_directory_names(
+                tmp_path / "missing",
+                max_entries=max_entries,
+                max_name_bytes=max_name_bytes,
+            )
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_retained_bounded_inventory_reads_only_expected_names_and_revalidates_snapshot(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "public-keys"
+    root.mkdir()
+    (root / "expected.pub").write_bytes(b"expected-payload")
+
+    with atomic_files.retain_bounded_directory_inventory(
+        root,
+        max_entries=3,
+        max_name_bytes=32,
+    ) as inventory:
+        assert inventory.names == ("expected.pub",)
+        assert inventory.read_regular_file(
+            "expected.pub",
+            maximum_bytes=9,
+        ).data == b"expected-"
+        with pytest.raises(AtomicWriteError, match="not in retained inventory"):
+            inventory.read_regular_file("unlisted.pub", maximum_bytes=32)
+
+        (root / "unexpected").write_bytes(b"private-canary-must-not-be-read")
+        with pytest.raises(AtomicWriteError, match="directory inventory changed"):
+            inventory.revalidate()
+
+    with pytest.raises(AtomicWriteError, match="closed"):
+        inventory.revalidate()
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_retained_bounded_inventory_rejects_root_replacement_with_same_names(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "public-keys"
+    root.mkdir()
+    (root / "expected.pub").write_bytes(b"expected")
+    displaced = tmp_path / "displaced"
+
+    inventory = atomic_files.retain_bounded_directory_inventory(
+        root,
+        max_entries=2,
+        max_name_bytes=32,
+    )
+    root.rename(displaced)
+    root.mkdir()
+    (root / "expected.pub").write_bytes(b"expected")
+    try:
+        with pytest.raises(AtomicWriteError, match="directory root changed"):
+            inventory.revalidate()
+    finally:
+        inventory.release()
+
+
+@_POSIX_DESCRIPTOR_ONLY
+@pytest.mark.parametrize("interrupted_build", [b"", b"sha256:partial", b"x" * 4096])
+def test_retained_inventory_selector_replace_repairs_private_build_before_publish(
+    tmp_path: Path,
+    interrupted_build: bytes,
+) -> None:
+    root = tmp_path / "public-keys"
+    root.mkdir()
+    selector = root / "active-key-id"
+    prior = b"sha256:" + b"a" * 64 + b"\n"
+    intended = b"sha256:" + b"b" * 64 + b"\n"
+    selector.write_bytes(prior)
+    capability = "1" * 32
+    build = root / f".famulus-build-{capability}"
+    staging = root / f".famulus-staged-{capability}"
+    build.write_bytes(interrupted_build)
+
+    with atomic_files.retain_bounded_directory_inventory(
+        root, max_entries=3, max_name_bytes=64
+    ) as inventory:
+        inventory.replace_regular_file(
+            selector.name,
+            intended,
+            mode=0o600,
+            staging_capability=capability,
+        )
+        assert inventory.names == (selector.name,)
+
+    assert selector.read_bytes() == intended
+    assert not build.exists()
+    assert not staging.exists()
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_retained_inventory_selector_replace_rejects_build_stage_ambiguity(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "public-keys"
+    root.mkdir()
+    selector = root / "active-key-id"
+    prior = b"sha256:" + b"a" * 64 + b"\n"
+    intended = b"sha256:" + b"b" * 64 + b"\n"
+    selector.write_bytes(prior)
+    capability = "4" * 32
+    build = root / f".famulus-build-{capability}"
+    staging = root / f".famulus-staged-{capability}"
+    build.write_bytes(intended)
+    staging.write_bytes(intended)
+
+    with atomic_files.retain_bounded_directory_inventory(
+        root, max_entries=3, max_name_bytes=64
+    ) as inventory:
+        with pytest.raises(AtomicWriteError, match="ambiguous"):
+            inventory.replace_regular_file(
+                selector.name,
+                intended,
+                mode=0o600,
+                staging_capability=capability,
+            )
+
+    assert selector.read_bytes() == prior
+    assert build.read_bytes() == intended
+    assert staging.read_bytes() == intended
+
+
+@_POSIX_DESCRIPTOR_ONLY
+@pytest.mark.parametrize(
+    ("private_entry", "private_state"),
+    [
+        ("staged", "mismatch"),
+        ("staged", "symlink"),
+        ("staged", "special"),
+        ("build", "symlink"),
+        ("build", "special"),
+    ],
+)
+def test_retained_inventory_selector_replace_rejects_unsafe_private_state(
+    tmp_path: Path,
+    private_entry: str,
+    private_state: str,
+) -> None:
+    root = tmp_path / "public-keys"
+    root.mkdir()
+    selector = root / "active-key-id"
+    prior = b"sha256:" + b"a" * 64 + b"\n"
+    intended = b"sha256:" + b"b" * 64 + b"\n"
+    selector.write_bytes(prior)
+    capability = "2" * 32
+    private = root / f".famulus-{private_entry}-{capability}"
+    if private_state == "mismatch":
+        private.write_bytes(b"third")
+    elif private_state == "symlink":
+        private.symlink_to(selector)
+    else:
+        os.mkfifo(private)
+
+    with atomic_files.retain_bounded_directory_inventory(
+        root,
+        max_entries=3,
+        max_name_bytes=64,
+    ) as inventory:
+        with pytest.raises(AtomicWriteError):
+            inventory.replace_regular_file(
+                selector.name,
+                intended,
+                mode=0o600,
+                staging_capability=capability,
+            )
+
+    assert selector.read_bytes() == prior
+    assert os.path.lexists(private)
+
+
+@_POSIX_DESCRIPTOR_ONLY
+@pytest.mark.parametrize("private_state", ["partial-build", "exact-stage"])
+def test_retained_inventory_discards_private_selector_transaction_state(
+    tmp_path: Path,
+    private_state: str,
+) -> None:
+    root = tmp_path / "public-keys"
+    root.mkdir()
+    intended = b"sha256:" + b"b" * 64 + b"\n"
+    capability = "3" * 32
+    build = root / f".famulus-build-{capability}"
+    staging = root / f".famulus-staged-{capability}"
+    if private_state == "partial-build":
+        build.write_bytes(b"partial")
+    else:
+        staging.write_bytes(intended)
+
+    with atomic_files.retain_bounded_directory_inventory(
+        root,
+        max_entries=2,
+        max_name_bytes=64,
+    ) as inventory:
+        inventory.discard_selector_transaction(
+            "active-key-id",
+            intended,
+            staging_capability=capability,
+        )
+        assert inventory.names == ()
+
+    assert not build.exists()
+    assert not staging.exists()
+
+
+def _windows_directory_buffer(names: tuple[str, ...]) -> bytes:
+    records: list[bytearray] = []
+    for index, name in enumerate(names):
+        encoded = name.encode("utf-16-le")
+        size = 12 + len(encoded)
+        padded = size if index == len(names) - 1 else (size + 7) & ~7
+        record = bytearray(padded)
+        record[0:4] = (0 if index == len(names) - 1 else padded).to_bytes(4, "little")
+        record[8:12] = len(encoded).to_bytes(4, "little")
+        record[12 : 12 + len(encoded)] = encoded
+        records.append(record)
+    return b"".join(records)
+
+
+@pytest.mark.parametrize(
+    ("names", "max_entries", "max_name_bytes", "message"),
+    [
+        (("one", "two"), 1, 16, "entry limit"),
+        (("oversized",), 1, 3, "name limit"),
+    ],
+)
+def test_windows_directory_parser_enforces_count_and_name_limits(
+    monkeypatch: pytest.MonkeyPatch,
+    names: tuple[str, ...],
+    max_entries: int,
+    max_name_bytes: int,
+    message: str,
+) -> None:
+    """Exercise the real native parser with a controlled NT directory buffer."""
+
+    payload = _windows_directory_buffer(names)
+
+    class Ntdll:
+        called = False
+
+        def NtQueryDirectoryFile(self, *args: object) -> int:
+            if self.called:
+                return ctypes.c_int32(0x80000006).value
+            self.called = True
+            io_status = ctypes.cast(
+                args[4], ctypes.POINTER(atomic_files._WinIoStatusBlock)
+            ).contents
+            buffer = args[5]
+            ctypes.memmove(buffer, payload, len(payload))
+            io_status.Information = len(payload)
+            return 0
+
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_modules",
+        lambda: (object(), object(), Ntdll()),
+    )
+
+    with pytest.raises(AtomicWriteError, match=message):
+        atomic_files._windows_directory_entry_names(
+            71,
+            max_entries=max_entries,
+            max_name_bytes=max_name_bytes,
+        )
+
+
+def test_windows_bounded_name_enumeration_uses_retained_list_directory_handle(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: dict[str, object] = {}
+
+    def open_root(
+        root: Path,
+        *,
+        create: bool = False,
+        final_access: int | None = None,
+    ) -> int:
+        observed["root"] = root
+        observed["create"] = create
+        observed["access"] = final_access
+        return 71
+
+    def enumerate_names(
+        handle: int,
+        *,
+        max_entries: int | None = None,
+        max_name_bytes: int | None = None,
+    ) -> tuple[str, ...]:
+        observed["enumerate"] = (handle, max_entries, max_name_bytes)
+        return ("active-key-id",)
+
+    closed: list[int] = []
+    monkeypatch.setattr(atomic_files, "_windows_open_root", open_root)
+    monkeypatch.setattr(atomic_files, "_windows_directory_entry_names", enumerate_names)
+    monkeypatch.setattr(atomic_files, "_windows_close_handle", closed.append)
+    monkeypatch.setattr(atomic_files.os, "name", "nt")
+
+    assert atomic_files.read_bounded_directory_names(
+        tmp_path,
+        max_entries=5,
+        max_name_bytes=64,
+    ) == ("active-key-id",)
+    assert observed == {
+        "root": tmp_path,
+        "create": False,
+        "access": atomic_files._WIN_DIR_ACCESS | 0x00020000 | atomic_files._WIN_LIST_DIRECTORY,
+        "enumerate": (71, 5, 64),
+    }
+    assert closed == [71]
+
+
+@pytest.mark.parametrize(
+    ("state", "expected_events"),
+    [
+        ("absent", ["open-build:create", "built", "build-to-stage", "staged", "stage-to-active", "replaced"]),
+        ("build", ["open-build:resume", "build-to-stage", "staged", "stage-to-active", "replaced"]),
+        ("stage", ["open-stage", "staged", "stage-to-active", "replaced"]),
+    ],
+)
+def test_windows_selector_transaction_state_machine_has_build_publish_parity(
+    monkeypatch: pytest.MonkeyPatch,
+    state: str,
+    expected_events: list[str],
+) -> None:
+    events: list[str] = []
+    presence = {
+        ".famulus-build-" + "5" * 32: state == "build",
+        ".famulus-staged-" + "5" * 32: state == "stage",
+    }
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_inventory_private_entry_present",
+        lambda _root, name: presence[name],
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_open_rewritten_selector_build",
+        lambda _root, _name, _data, *, create, after_created: (
+            events.append("open-build:create" if create else "open-build:resume"),
+            after_created() if create else None,
+            (21, object()),
+        )[-1],
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_open_exact_selector_stage",
+        lambda *_args: events.append("open-stage") or (22, object()),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_publish_selector_build",
+        lambda *_args: events.append("build-to-stage"),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_publish_selector_stage",
+        lambda *_args: events.append("stage-to-active"),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_unlock_handle", lambda *_: None)
+    monkeypatch.setattr(atomic_files, "_windows_close_handle", lambda *_: None)
+
+    atomic_files._windows_replace_inventory_regular_file(
+        10,
+        "active-key-id",
+        b"intended",
+        0o600,
+        ".famulus-build-" + "5" * 32,
+        ".famulus-staged-" + "5" * 32,
+        lambda: events.append("built"),
+        lambda: events.append("staged"),
+        lambda: events.append("replaced"),
+    )
+
+    assert events == expected_events
+
+
+def test_windows_selector_transaction_rejects_ambiguous_private_names(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_inventory_private_entry_present",
+        lambda *_args: True,
+    )
+
+    with pytest.raises(AtomicWriteError, match="ambiguous"):
+        atomic_files._windows_replace_inventory_regular_file(
+            10,
+            "active-key-id",
+            b"intended",
+            0o600,
+            ".famulus-build-" + "6" * 32,
+            ".famulus-staged-" + "6" * 32,
+            lambda: None,
+            lambda: None,
+            lambda: None,
+        )
+
+
+def test_windows_selector_transaction_releases_build_handle_when_publish_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    released: list[str] = []
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_inventory_private_entry_present",
+        lambda *_args: False,
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_open_rewritten_selector_build",
+        lambda *_args, **_kwargs: (31, object()),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_publish_selector_build",
+        lambda *_args: (_ for _ in ()).throw(OSError("publish failed")),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_unlock_handle",
+        lambda *_args: released.append("unlock"),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_close_handle",
+        lambda *_args: released.append("close"),
+    )
+
+    with pytest.raises(OSError, match="publish failed"):
+        atomic_files._windows_replace_inventory_regular_file(
+            10,
+            "active-key-id",
+            b"intended",
+            0o600,
+            ".famulus-build-" + "a" * 32,
+            ".famulus-staged-" + "a" * 32,
+            lambda: None,
+            lambda: None,
+            lambda: None,
+        )
+
+    assert released == ["unlock", "close"]
+
+
+@pytest.mark.parametrize("state", ["build", "stage"])
+def test_windows_selector_transaction_discards_known_private_state(
+    monkeypatch: pytest.MonkeyPatch,
+    state: str,
+) -> None:
+    build = ".famulus-build-" + "7" * 32
+    stage = ".famulus-staged-" + "7" * 32
+    presence = {build: state == "build", stage: state == "stage"}
+    discarded: list[tuple[str, bool]] = []
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_inventory_private_entry_present",
+        lambda _root, name: presence[name],
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_discard_selector_private_entry",
+        lambda _root, name, _expected, *, require_exact: discarded.append(
+            (name, require_exact)
+        ),
+    )
+
+    atomic_files._windows_discard_staged_inventory_regular_file(
+        10,
+        "active-key-id",
+        b"intended",
+        build,
+        stage,
+        lambda: discarded.append(("callback", False)),
+    )
+
+    assert discarded == [
+        (build if state == "build" else stage, state == "stage"),
+        ("callback", False),
+    ]
+
+
+@pytest.mark.parametrize(("create", "disposition"), [(True, 2), (False, 1)])
+def test_windows_selector_build_open_rewrites_and_proves_exact_bytes(
+    monkeypatch: pytest.MonkeyPatch,
+    create: bool,
+    disposition: int,
+) -> None:
+    events: list[str] = []
+
+    def open_validated(_root: int, name: str, **kwargs: object) -> tuple[int, int]:
+        assert name == ".famulus-build-" + "8" * 32
+        assert kwargs["disposition"] == disposition
+        events.append("open")
+        return 31, 0
+
+    monkeypatch.setattr(atomic_files, "_windows_security_material", lambda: (1, 2, 3, 4))
+    monkeypatch.setattr(atomic_files, "_windows_open_validated", open_validated)
+    monkeypatch.setattr(atomic_files, "_windows_lock_handle", lambda _h: events.append("lock") or object())
+    monkeypatch.setattr(atomic_files, "_windows_require_restrictive_acl", lambda *_: events.append("acl"))
+    monkeypatch.setattr(atomic_files, "_windows_truncate_handle", lambda _h: events.append("truncate"))
+    monkeypatch.setattr(atomic_files, "_windows_write_handle", lambda _h, _d: events.append("write"))
+    monkeypatch.setattr(atomic_files, "_windows_flush_handle", lambda _h: events.append("flush"))
+    monkeypatch.setattr(atomic_files, "_windows_read_handle_bounded", lambda *_: events.append("read") or b"intended")
+    monkeypatch.setattr(atomic_files, "_windows_verify_named_handle", lambda *_: events.append("verify"))
+
+    handle, _lock = atomic_files._windows_open_rewritten_selector_build(
+        10,
+        ".famulus-build-" + "8" * 32,
+        b"intended",
+        create=create,
+        after_created=lambda: events.append("created"),
+    )
+
+    assert handle == 31
+    expected = ["open"] + (["created"] if create else [])
+    expected += ["lock", "acl", "truncate", "write", "flush", "read", "verify"]
+    assert events == expected
+
+
+def test_windows_selector_build_records_created_name_before_rewrite_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    monkeypatch.setattr(atomic_files, "_windows_security_material", lambda: (1, 2, 3, 4))
+    monkeypatch.setattr(atomic_files, "_windows_open_validated", lambda *_args, **_kwargs: (31, 0))
+    monkeypatch.setattr(atomic_files, "_windows_lock_handle", lambda _h: object())
+    monkeypatch.setattr(atomic_files, "_windows_require_restrictive_acl", lambda *_: None)
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_truncate_handle",
+        lambda _h: (_ for _ in ()).throw(OSError("rewrite failed")),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_unlock_handle", lambda *_: None)
+    monkeypatch.setattr(atomic_files, "_windows_close_handle", lambda *_: None)
+
+    with pytest.raises(OSError, match="rewrite failed"):
+        atomic_files._windows_open_rewritten_selector_build(
+            10,
+            ".famulus-build-" + "b" * 32,
+            b"intended",
+            create=True,
+            after_created=lambda: events.append("created"),
+        )
+
+    assert events == ["created"]
+
+
+def test_windows_selector_publish_functions_preserve_one_way_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[tuple[str, str, bool] | str] = []
+
+    def rename(_handle: int, _root: int, name: str, *, replace: bool) -> bool:
+        events.append(("rename", name, replace))
+        return True
+
+    monkeypatch.setattr(atomic_files, "_windows_rename_handle", rename)
+    monkeypatch.setattr(atomic_files, "_windows_existing_regular", lambda *_: False)
+    monkeypatch.setattr(atomic_files, "_windows_flush_handle", lambda _h: events.append("flush"))
+    monkeypatch.setattr(atomic_files, "_windows_verify_named_handle", lambda *_: events.append("verify"))
+    monkeypatch.setattr(atomic_files, "_windows_read_handle_bounded", lambda *_: events.append("read") or b"intended")
+    monkeypatch.setattr(atomic_files, "_windows_require_restrictive_acl", lambda *_: events.append("acl"))
+
+    atomic_files._windows_publish_selector_build(31, 10, "stage", b"intended")
+    atomic_files._windows_publish_selector_stage(31, 10, "active", b"intended")
+
+    assert events == [
+        ("rename", "stage", False), "flush", "verify", "read", "acl",
+        ("rename", "active", True), "flush", "verify", "read", "acl",
+    ]
+
+
+def test_windows_selector_private_discard_revalidates_named_handle_before_delete(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    present = True
+
+    def open_validated(*_args: object, **_kwargs: object) -> tuple[int, int]:
+        if not present:
+            raise FileNotFoundError
+        return 31, 0
+
+    def mark_delete(_handle: int) -> None:
+        nonlocal present
+        events.append("delete")
+        present = False
+
+    monkeypatch.setattr(atomic_files, "_windows_open_validated", open_validated)
+    monkeypatch.setattr(atomic_files, "_windows_lock_handle", lambda _h: object())
+    monkeypatch.setattr(atomic_files, "_windows_verify_named_handle", lambda *_: events.append("verify"))
+    monkeypatch.setattr(atomic_files, "_windows_mark_delete", mark_delete)
+    monkeypatch.setattr(atomic_files, "_windows_unlock_handle", lambda *_: events.append("unlock"))
+    monkeypatch.setattr(atomic_files, "_windows_close_handle", lambda *_: events.append("close"))
+
+    atomic_files._windows_discard_selector_private_entry(
+        10,
+        ".famulus-build-" + "9" * 32,
+        b"intended",
+        require_exact=False,
+    )
+
+    assert events[:2] == ["verify", "delete"]
+
+
+def test_windows_selector_partial_build_lock_failure_closes_open_handle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    closed: list[int] = []
+    unlocked: list[int] = []
+    mutations: list[str] = []
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_open_validated",
+        lambda *_args, **_kwargs: (31, 0),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_lock_handle",
+        lambda _handle: (_ for _ in ()).throw(OSError("private native detail")),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_unlock_handle",
+        lambda handle, _lock: unlocked.append(handle),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_close_handle", closed.append)
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_verify_named_handle",
+        lambda *_args: mutations.append("verify"),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_mark_delete",
+        lambda _handle: mutations.append("delete"),
+    )
+
+    with pytest.raises(AtomicWriteError) as captured:
+        atomic_files._windows_discard_selector_private_entry(
+            10,
+            ".famulus-build-" + "c" * 32,
+            b"intended",
+            require_exact=False,
+        )
+
+    assert str(captured.value) == "selector private entry lock failed"
+    assert closed == [31]
+    assert 10 not in closed
+    assert unlocked == []
+    assert mutations == []
+
+
 def test_existing_final_symlink_is_rejected(tmp_path: Path) -> None:
     victim = tmp_path / "victim"
     victim.write_text("safe", encoding="utf-8")

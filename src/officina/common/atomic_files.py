@@ -238,12 +238,16 @@ class TrackedExistingFile:
         relocate: Callable[[], None],
         dispose: Callable[[], None],
         release: Callable[[], None],
+        after_relocate: Callable[[], None] | None = None,
+        after_dispose: Callable[[], None] | None = None,
     ) -> None:
         self.identity = identity
         self._location = location
         self._relocate = relocate
         self._dispose = dispose
         self._release = release
+        self._after_relocate = after_relocate or (lambda: None)
+        self._after_dispose = after_dispose or (lambda: None)
         self._closed = False
 
     @property
@@ -263,6 +267,7 @@ class TrackedExistingFile:
             raise AtomicWriteError("tracked existing file is already closed")
         try:
             self._relocate()
+            self._after_relocate()
         except BaseException:
             self._close_after_failure()
             raise
@@ -280,6 +285,7 @@ class TrackedExistingFile:
                 self._close_after_failure()
         try:
             self._dispose()
+            self._after_dispose()
         finally:
             self._closed = True
             self._release()
@@ -291,6 +297,227 @@ class TrackedExistingFile:
             return
         self._closed = True
         self._release()
+
+
+class RetainedBoundedDirectoryInventory:
+    """One closed directory-name set bound to retained native root authority.
+
+    The authority reads only initially observed names, bounds every payload
+    read, and revalidates both the live path identity and the complete current
+    name set. Relative tracked-file and replace operations remain anchored to
+    the retained root rather than reopening an unbound pathname.
+    """
+
+    def __init__(
+        self,
+        names: tuple[str, ...],
+        *,
+        read_regular_file: Callable[[str, int], ConfinedRegularFile],
+        track_existing: Callable[
+            [str, bytes, str, Callable[[], None], Callable[[], None]],
+            TrackedExistingFile,
+        ],
+        replace_regular_file: Callable[
+            [
+                str,
+                bytes,
+                int,
+                str,
+                str,
+                Callable[[], None],
+                Callable[[], None],
+                Callable[[], None],
+            ],
+            None,
+        ],
+        discard_staged_regular_file: Callable[
+            [str, bytes, str, str, Callable[[], None]], None
+        ],
+        revalidate: Callable[[tuple[str, ...]], None],
+        release: Callable[[], None],
+    ) -> None:
+        self._names = names
+        self._read_regular_file = read_regular_file
+        self._track_existing = track_existing
+        self._replace_regular_file = replace_regular_file
+        self._discard_staged_regular_file = discard_staged_regular_file
+        self._revalidate = revalidate
+        self._release = release
+        self._closed = False
+
+    def _require_open(self) -> None:
+        if self._closed:
+            raise AtomicWriteError("retained directory inventory is closed")
+
+    @property
+    def names(self) -> tuple[str, ...]:
+        """Return the exact bounded names currently authorized by the owner."""
+
+        self._require_open()
+        return self._names
+
+    def read_regular_file(
+        self,
+        name: str,
+        *,
+        maximum_bytes: int,
+    ) -> ConfinedRegularFile:
+        """Read at most ``maximum_bytes`` from one initially observed name."""
+
+        self._require_open()
+        if name not in self._names:
+            raise AtomicWriteError("relative name is not in retained inventory")
+        return self._read_regular_file(name, maximum_bytes)
+
+    def track_existing_regular_file(
+        self,
+        canonical_name: str,
+        expected_bytes: bytes,
+        *,
+        quarantine_id: str,
+    ) -> TrackedExistingFile:
+        """Track one expected canonical-or-quarantine file under this root."""
+
+        self._require_open()
+        quarantine = _quarantine_name(quarantine_id)
+        if canonical_name not in self._names and quarantine not in self._names:
+            raise AtomicWriteError("relative name is not in retained inventory")
+
+        def after_relocate() -> None:
+            current = set(self._names)
+            current.discard(canonical_name)
+            current.add(quarantine)
+            self._names = tuple(sorted(current))
+
+        def after_dispose() -> None:
+            current = set(self._names)
+            current.discard(canonical_name)
+            current.discard(quarantine)
+            self._names = tuple(sorted(current))
+
+        return self._track_existing(
+            canonical_name,
+            expected_bytes,
+            quarantine_id,
+            after_relocate,
+            after_dispose,
+        )
+
+    def replace_regular_file(
+        self,
+        name: str,
+        data: bytes,
+        *,
+        mode: int,
+        staging_capability: str,
+    ) -> None:
+        """Build, publish, and replace through restart-addressable names."""
+
+        self._require_open()
+        build_name = build_file_name(staging_capability)
+        staging_name = staged_file_name(staging_capability)
+        if build_name in self._names and staging_name in self._names:
+            raise AtomicWriteError("selector build and stage are ambiguous")
+
+        def after_built() -> None:
+            current = set(self._names)
+            current.add(build_name)
+            self._names = tuple(sorted(current))
+
+        def after_staged() -> None:
+            current = set(self._names)
+            current.discard(build_name)
+            current.add(staging_name)
+            self._names = tuple(sorted(current))
+
+        def after_replaced() -> None:
+            current = set(self._names)
+            current.discard(staging_name)
+            current.add(name)
+            self._names = tuple(sorted(current))
+
+        self._replace_regular_file(
+            name,
+            data,
+            mode,
+            build_name,
+            staging_name,
+            after_built,
+            after_staged,
+            after_replaced,
+        )
+
+    def discard_selector_transaction(
+        self,
+        name: str,
+        expected_bytes: bytes,
+        *,
+        staging_capability: str,
+    ) -> None:
+        """Discard a partial build or exact published selector stage."""
+
+        self._require_open()
+        build_name = build_file_name(staging_capability)
+        staging_name = staged_file_name(staging_capability)
+        if build_name in self._names and staging_name in self._names:
+            raise AtomicWriteError("selector build and stage are ambiguous")
+        if build_name not in self._names and staging_name not in self._names:
+            raise AtomicWriteError("selector transaction is not in retained inventory")
+
+        def after_discarded() -> None:
+            current = set(self._names)
+            current.discard(build_name)
+            current.discard(staging_name)
+            self._names = tuple(sorted(current))
+
+        self._discard_staged_regular_file(
+            name,
+            expected_bytes,
+            build_name,
+            staging_name,
+            after_discarded,
+        )
+
+    def discard_staged_regular_file(
+        self,
+        name: str,
+        expected_bytes: bytes,
+        *,
+        staging_capability: str,
+    ) -> None:
+        """Compatibility alias for selector-transaction disposal."""
+
+        self.discard_selector_transaction(
+            name,
+            expected_bytes,
+            staging_capability=staging_capability,
+        )
+
+    def revalidate(self) -> None:
+        """Revalidate the retained root identity and complete authorized names."""
+
+        self._require_open()
+        self._revalidate(self._names)
+
+    def release(self) -> None:
+        """Release retained native authority without mutating directory entries."""
+
+        if self._closed:
+            return
+        self._closed = True
+        self._release()
+
+    def __enter__(self) -> "RetainedBoundedDirectoryInventory":
+        self._require_open()
+        return self
+
+    def __exit__(
+        self,
+        _exception_type: type[BaseException] | None,
+        _exception: BaseException | None,
+        _traceback: object,
+    ) -> None:
+        self.release()
 
 
 def _posix_file_identity(metadata: os.stat_result) -> ConfinedFileIdentity:
@@ -427,6 +654,31 @@ def _quarantine_name(quarantine_id: str) -> str:
     return f".famulus-quarantine-{quarantine_id}"
 
 
+def staged_file_name(staging_capability: str) -> str:
+    """Derive one deterministic confined name from a durable 128-bit capability."""
+
+    if not isinstance(staging_capability, str):
+        raise TypeError("staging_capability must be a string")
+    if (
+        len(staging_capability) != 32
+        or any(
+            character not in "0123456789abcdef"
+            for character in staging_capability
+        )
+    ):
+        raise ValueError(
+            "staging_capability must be 32 lowercase hexadecimal characters"
+        )
+    return f".famulus-staged-{staging_capability}"
+
+
+def build_file_name(staging_capability: str) -> str:
+    """Derive the deterministic private selector-build name."""
+
+    staged_file_name(staging_capability)
+    return f".famulus-build-{staging_capability}"
+
+
 def _open_parent(path: Path, allowed_root: Path) -> tuple[int, str]:
     _require_secure_operations()
     destination = Path(path).absolute()
@@ -545,6 +797,26 @@ def _open_temp(parent_fd: int, temp_name: str, mode: int) -> int:
             _unlink_if_present(parent_fd, temp_name)
         except BaseException:
             pass
+        raise
+    return descriptor
+
+
+def _open_inventory_build(parent_fd: int, build_name: str, mode: int) -> int:
+    """Create one deterministic private build with read/write authority."""
+
+    descriptor = _secure_open(
+        build_name,
+        os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+        mode,
+        dir_fd=parent_fd,
+    )
+    try:
+        _secure_fchmod(descriptor, mode)
+    except BaseException:
+        try:
+            os.close(descriptor)
+        finally:
+            _unlink_if_present(parent_fd, build_name)
         raise
     return descriptor
 
@@ -822,12 +1094,15 @@ def _posix_atomic_create_bytes_tracked(
                 raise cleanup_error
 
 
-def _posix_track_existing_regular_file(
-    path: Path,
+def _posix_track_existing_regular_file_at(
+    parent_fd: int,
+    name: str,
     expected_bytes: bytes,
     *,
     quarantine_id: str,
-    allowed_root: Path,
+    display_path: Path,
+    after_relocate: Callable[[], None] | None = None,
+    after_dispose: Callable[[], None] | None = None,
 ) -> TrackedExistingFile:
     """Retain authority over one canonical-or-quarantined regular file.
 
@@ -838,7 +1113,6 @@ def _posix_track_existing_regular_file(
     described by :func:`track_existing_regular_file`.
     """
 
-    parent_fd, name = _open_parent(path, allowed_root)
     quarantine = _quarantine_name(quarantine_id)
     descriptor = -1
     transferred = False
@@ -888,7 +1162,7 @@ def _posix_track_existing_regular_file(
                     f"observed file is a symbolic link: {observed_name}"
                 ) from exc
             raise AtomicWriteError(
-                f"cannot securely open observed file: {path}"
+                f"cannot securely open observed file: {display_path}"
             ) from exc
         metadata = os.fstat(descriptor)
         if not stat.S_ISREG(metadata.st_mode):
@@ -1027,6 +1301,8 @@ def _posix_track_existing_regular_file(
             relocate=relocate,
             dispose=dispose,
             release=release,
+            after_relocate=after_relocate,
+            after_dispose=after_dispose,
         )
     except BaseException as exc:
         failure = exc
@@ -1036,6 +1312,23 @@ def _posix_track_existing_regular_file(
             cleanup_error = _cleanup_read(descriptor, parent_fd)
             if failure is None and cleanup_error is not None:
                 raise cleanup_error
+
+
+def _posix_track_existing_regular_file(
+    path: Path,
+    expected_bytes: bytes,
+    *,
+    quarantine_id: str,
+    allowed_root: Path,
+) -> TrackedExistingFile:
+    parent_fd, name = _open_parent(path, allowed_root)
+    return _posix_track_existing_regular_file_at(
+        parent_fd,
+        name,
+        expected_bytes,
+        quarantine_id=quarantine_id,
+        display_path=path,
+    )
 
 
 def _posix_read_regular_directory_entries(
@@ -1086,6 +1379,381 @@ def _posix_read_regular_directory_entries(
         return tuple(entries)
     finally:
         os.close(descriptor)
+
+
+def _validate_directory_name_bounds(
+    max_entries: int,
+    max_name_bytes: int,
+) -> None:
+    if (
+        isinstance(max_entries, bool)
+        or not isinstance(max_entries, int)
+        or not 1 <= max_entries <= 4096
+        or isinstance(max_name_bytes, bool)
+        or not isinstance(max_name_bytes, int)
+        or not 1 <= max_name_bytes <= 4096
+    ):
+        raise ValueError("directory name bounds are invalid")
+
+
+def _bounded_directory_name(
+    name: str,
+    *,
+    max_name_bytes: int,
+) -> str:
+    if name in {"", ".", ".."} or "/" in name or "\\" in name:
+        raise AtomicWriteError("invalid confined directory entry name")
+    try:
+        encoded = os.fsencode(name)
+    except (TypeError, UnicodeError):
+        raise AtomicWriteError("invalid confined directory entry name") from None
+    if len(encoded) > max_name_bytes:
+        raise AtomicWriteError("confined directory name limit exceeded")
+    return name
+
+
+def _posix_bounded_directory_names_at(
+    descriptor: int,
+    *,
+    max_entries: int,
+    max_name_bytes: int,
+) -> tuple[str, ...]:
+    """Enumerate bounded names through one already retained descriptor."""
+
+    names: list[str] = []
+    try:
+        with os.scandir(descriptor) as iterator:
+            for entry in iterator:
+                names.append(
+                    _bounded_directory_name(
+                        entry.name,
+                        max_name_bytes=max_name_bytes,
+                    )
+                )
+                if len(names) > max_entries:
+                    raise AtomicWriteError(
+                        "confined directory entry limit exceeded"
+                    )
+    except (NotImplementedError, TypeError) as exc:
+        raise AtomicWriteError(_CAPABILITY_ERROR) from exc
+    return tuple(sorted(names))
+
+
+def _posix_read_bounded_directory_names(
+    root: Path,
+    *,
+    max_entries: int,
+    max_name_bytes: int,
+) -> tuple[str, ...]:
+    """Enumerate bounded names without opening or reading any child entry."""
+
+    descriptor = _open_absolute_directory(root, create=False)
+    try:
+        return _posix_bounded_directory_names_at(
+            descriptor,
+            max_entries=max_entries,
+            max_name_bytes=max_name_bytes,
+        )
+    finally:
+        os.close(descriptor)
+
+
+def _posix_read_inventory_regular_file(
+    descriptor: int,
+    name: str,
+    maximum_bytes: int,
+) -> ConfinedRegularFile:
+    child = -1
+    try:
+        child = _secure_open(
+            name,
+            os.O_RDONLY
+            | os.O_NOFOLLOW
+            | os.O_NONBLOCK
+            | getattr(os, "O_CLOEXEC", 0),
+            dir_fd=descriptor,
+        )
+        metadata = os.fstat(child)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise AtomicWriteError("confined directory entry is not a regular file")
+        return ConfinedRegularFile(
+            name=name,
+            data=_read_descriptor_bytes_bounded(child, maximum_bytes),
+            identity=_posix_file_identity(metadata),
+        )
+    except FileNotFoundError as exc:
+        raise AtomicWriteError("confined directory entry disappeared") from exc
+    finally:
+        if child >= 0:
+            os.close(child)
+
+
+def _posix_require_exact_inventory_file(
+    descriptor: int,
+    name: str,
+    expected_bytes: bytes,
+) -> ConfinedFileIdentity:
+    child = -1
+    try:
+        child = _secure_open(
+            name,
+            os.O_RDONLY
+            | os.O_NOFOLLOW
+            | os.O_NONBLOCK
+            | getattr(os, "O_CLOEXEC", 0),
+            dir_fd=descriptor,
+        )
+        metadata = os.fstat(child)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise AtomicWriteError("staged entry is not a regular file")
+        identity = _posix_file_identity(metadata)
+        if _read_descriptor_bytes_bounded(child, len(expected_bytes) + 1) != expected_bytes:
+            raise AtomicWriteError("staged file bytes do not match expectation")
+        linked = _secure_stat(descriptor, name)
+        if not stat.S_ISREG(linked.st_mode) or _posix_file_identity(linked) != identity:
+            raise AtomicWriteError("staged file changed during observation")
+        return identity
+    except FileNotFoundError:
+        raise
+    except OSError as exc:
+        if exc.errno == getattr(os, "ELOOP", 40):
+            raise AtomicWriteError("staged entry is a symbolic link") from exc
+        raise
+    finally:
+        if child >= 0:
+            os.close(child)
+
+
+def _posix_replace_inventory_regular_file(
+    descriptor: int,
+    name: str,
+    data: bytes,
+    mode: int,
+    build_name: str,
+    staging_name: str,
+    after_built: Callable[[], None],
+    after_staged: Callable[[], None],
+    after_replaced: Callable[[], None],
+) -> None:
+    build_present = _posix_inventory_entry_present(descriptor, build_name)
+    stage_present = _posix_inventory_entry_present(descriptor, staging_name)
+    if build_present and stage_present:
+        raise AtomicWriteError("selector build and stage are ambiguous")
+    if stage_present:
+        _posix_require_exact_inventory_file(descriptor, staging_name, data)
+    else:
+        child = -1
+        if build_present:
+            try:
+                child = _secure_open(
+                    build_name,
+                    os.O_RDWR
+                    | os.O_NOFOLLOW
+                    | os.O_NONBLOCK
+                    | getattr(os, "O_CLOEXEC", 0),
+                    dir_fd=descriptor,
+                )
+            except OSError as exc:
+                if exc.errno == getattr(os, "ELOOP", 40):
+                    raise AtomicWriteError("selector build is a symbolic link") from exc
+                raise
+        else:
+            child = _open_inventory_build(descriptor, build_name, mode)
+            after_built()
+        try:
+            metadata = os.fstat(child)
+            if not stat.S_ISREG(metadata.st_mode):
+                raise AtomicWriteError("selector build is not a regular file")
+            identity = _posix_file_identity(metadata)
+            _secure_fchmod(child, mode)
+            os.ftruncate(child, 0)
+            os.lseek(child, 0, os.SEEK_SET)
+            _write_descriptor_bytes(child, data, Path(build_name))
+            os.fsync(child)
+            if _read_descriptor_bytes_bounded(child, len(data) + 1) != data:
+                raise AtomicWriteError("selector build reread failed")
+            linked = _secure_stat(descriptor, build_name)
+            if (
+                not stat.S_ISREG(linked.st_mode)
+                or _posix_file_identity(linked) != identity
+            ):
+                raise AtomicWriteError("selector build changed during write")
+        finally:
+            if child >= 0:
+                os.close(child)
+        os.fsync(descriptor)
+        _secure_rename_noreplace(descriptor, build_name, staging_name)
+        os.fsync(descriptor)
+        after_staged()
+        _posix_require_exact_inventory_file(descriptor, staging_name, data)
+    if stage_present:
+        after_staged()
+    _reject_unsafe_final(descriptor, name)
+    _posix_require_exact_inventory_file(descriptor, staging_name, data)
+    _secure_replace(descriptor, staging_name, name)
+    os.fsync(descriptor)
+    after_replaced()
+
+
+def _posix_inventory_entry_present(descriptor: int, name: str) -> bool:
+    try:
+        metadata = _secure_stat(descriptor, name)
+    except FileNotFoundError:
+        return False
+    if stat.S_ISLNK(metadata.st_mode):
+        raise AtomicWriteError("selector private entry is a symbolic link")
+    if not stat.S_ISREG(metadata.st_mode):
+        raise AtomicWriteError("selector private entry is not a regular file")
+    return True
+
+
+def _posix_discard_staged_inventory_regular_file(
+    descriptor: int,
+    _name: str,
+    expected_bytes: bytes,
+    build_name: str,
+    staging_name: str,
+    after_discarded: Callable[[], None],
+) -> None:
+    build_present = _posix_inventory_entry_present(descriptor, build_name)
+    stage_present = _posix_inventory_entry_present(descriptor, staging_name)
+    if build_present and stage_present:
+        raise AtomicWriteError("selector build and stage are ambiguous")
+    private_name = build_name if build_present else staging_name
+    if not build_present and not stage_present:
+        raise AtomicWriteError("selector transaction disappeared")
+    if stage_present:
+        identity = _posix_require_exact_inventory_file(
+            descriptor,
+            staging_name,
+            expected_bytes,
+        )
+    else:
+        current = _secure_stat(descriptor, build_name)
+        identity = _posix_file_identity(current)
+    current = _secure_stat(descriptor, private_name)
+    if not stat.S_ISREG(current.st_mode) or _posix_file_identity(current) != identity:
+        raise AtomicWriteError("selector private file changed before disposal")
+    _secure_unlink(descriptor, private_name)
+    os.fsync(descriptor)
+    after_discarded()
+
+
+def _posix_retain_bounded_directory_inventory(
+    root: Path,
+    *,
+    max_entries: int,
+    max_name_bytes: int,
+) -> RetainedBoundedDirectoryInventory:
+    descriptor = _open_absolute_directory(root, create=False)
+    transferred = False
+    try:
+        root_identity = _posix_file_identity(os.fstat(descriptor))
+        names = _posix_bounded_directory_names_at(
+            descriptor,
+            max_entries=max_entries,
+            max_name_bytes=max_name_bytes,
+        )
+
+        def read_regular_file(name: str, maximum_bytes: int) -> ConfinedRegularFile:
+            _bounded_directory_name(name, max_name_bytes=max_name_bytes)
+            return _posix_read_inventory_regular_file(
+                descriptor,
+                name,
+                maximum_bytes,
+            )
+
+        def track_existing(
+            name: str,
+            expected_bytes: bytes,
+            quarantine_id: str,
+            after_relocate: Callable[[], None],
+            after_dispose: Callable[[], None],
+        ) -> TrackedExistingFile:
+            _bounded_directory_name(name, max_name_bytes=max_name_bytes)
+            owned_descriptor = os.dup(descriptor)
+            return _posix_track_existing_regular_file_at(
+                owned_descriptor,
+                name,
+                expected_bytes,
+                quarantine_id=quarantine_id,
+                display_path=root / name,
+                after_relocate=after_relocate,
+                after_dispose=after_dispose,
+            )
+
+        def replace_regular_file(
+            name: str,
+            data: bytes,
+            mode: int,
+            build_name: str,
+            staging_name: str,
+            after_built: Callable[[], None],
+            after_staged: Callable[[], None],
+            after_replaced: Callable[[], None],
+        ) -> None:
+            _bounded_directory_name(name, max_name_bytes=max_name_bytes)
+            _bounded_directory_name(build_name, max_name_bytes=max_name_bytes)
+            _bounded_directory_name(staging_name, max_name_bytes=max_name_bytes)
+            _posix_replace_inventory_regular_file(
+                descriptor,
+                name,
+                data,
+                mode,
+                build_name,
+                staging_name,
+                after_built,
+                after_staged,
+                after_replaced,
+            )
+
+        def discard_staged_regular_file(
+            name: str,
+            expected_bytes: bytes,
+            build_name: str,
+            staging_name: str,
+            after_discarded: Callable[[], None],
+        ) -> None:
+            _bounded_directory_name(name, max_name_bytes=max_name_bytes)
+            _bounded_directory_name(build_name, max_name_bytes=max_name_bytes)
+            _bounded_directory_name(staging_name, max_name_bytes=max_name_bytes)
+            _posix_discard_staged_inventory_regular_file(
+                descriptor,
+                name,
+                expected_bytes,
+                build_name,
+                staging_name,
+                after_discarded,
+            )
+
+        def revalidate(expected_names: tuple[str, ...]) -> None:
+            current_descriptor = _open_absolute_directory(root, create=False)
+            try:
+                if _posix_file_identity(os.fstat(current_descriptor)) != root_identity:
+                    raise AtomicWriteError("retained directory root changed")
+            finally:
+                os.close(current_descriptor)
+            current_names = _posix_bounded_directory_names_at(
+                descriptor,
+                max_entries=max_entries,
+                max_name_bytes=max_name_bytes,
+            )
+            if current_names != expected_names:
+                raise AtomicWriteError("retained directory inventory changed")
+
+        transferred = True
+        return RetainedBoundedDirectoryInventory(
+            names,
+            read_regular_file=read_regular_file,
+            track_existing=track_existing,
+            replace_regular_file=replace_regular_file,
+            discard_staged_regular_file=discard_staged_regular_file,
+            revalidate=revalidate,
+            release=lambda: os.close(descriptor),
+        )
+    finally:
+        if not transferred:
+            os.close(descriptor)
 
 
 def _read_descriptor_bytes(descriptor: int) -> bytes:
@@ -1406,6 +2074,7 @@ def _windows_modules():
         declare(kernel32, "LockFileEx", [_WinHandle, dword, dword, dword, dword, ctypes.POINTER(_WinOverlapped)], boolean)
         declare(kernel32, "UnlockFileEx", [_WinHandle, dword, dword, dword, ctypes.POINTER(_WinOverlapped)], boolean)
         declare(kernel32, "GetCurrentProcess", [], _WinHandle)
+        declare(kernel32, "DuplicateHandle", [_WinHandle, _WinHandle, _WinHandle, ctypes.POINTER(_WinHandle), dword, boolean, dword], boolean)
         declare(kernel32, "LocalFree", [pointer], pointer)
         declare(advapi32, "OpenProcessToken", [_WinHandle, dword, ctypes.POINTER(_WinHandle)], boolean)
         declare(advapi32, "GetTokenInformation", [_WinHandle, ctypes.c_int32, pointer, dword, ctypes.POINTER(dword)], boolean)
@@ -1472,6 +2141,27 @@ def _windows_close_handle(handle: int) -> None:
     kernel32, _advapi32, _ntdll = _windows_modules()
     if handle >= 0 and not kernel32.CloseHandle(_WinHandle(handle)):
         raise _windows_call_error("cannot close native handle")
+
+
+def _windows_duplicate_handle(handle: int) -> int:
+    """Duplicate one retained native handle in the current process."""
+
+    kernel32, _advapi32, _ntdll = _windows_modules()
+    process = kernel32.GetCurrentProcess()
+    duplicate = _WinHandle()
+    if not kernel32.DuplicateHandle(
+        process,
+        _WinHandle(handle),
+        process,
+        ctypes.byref(duplicate),
+        0,
+        False,
+        0x2,
+    ):
+        raise _windows_call_error("cannot duplicate native directory handle")
+    if not duplicate.value:
+        raise AtomicWriteError(_CAPABILITY_ERROR)
+    return int(duplicate.value)
 
 
 def _windows_validate_handle(
@@ -1795,6 +2485,15 @@ def _windows_write_handle(handle: int, data: bytes) -> None:
         written += int(count.value)
 
 
+def _windows_truncate_handle(handle: int) -> None:
+    """Truncate one retained writable native handle at offset zero."""
+
+    kernel32, _advapi32, _ntdll = _windows_modules()
+    _windows_seek(handle, 0, 0)
+    if not kernel32.SetEndOfFile(_WinHandle(handle)):
+        raise _windows_call_error("cannot truncate native file handle")
+
+
 def _windows_flush_handle(handle: int) -> None:
     kernel32, _advapi32, _ntdll = _windows_modules()
     # FlushFileBuffers is the documented user-mode durability boundary for
@@ -1831,7 +2530,12 @@ def _windows_confined_identity(handle: int) -> ConfinedFileIdentity:
     )
 
 
-def _windows_directory_entry_names(handle: int) -> tuple[str, ...]:
+def _windows_directory_entry_names(
+    handle: int,
+    *,
+    max_entries: int | None = None,
+    max_name_bytes: int | None = None,
+) -> tuple[str, ...]:
     """Enumerate names through a retained native directory handle."""
 
     _kernel32, _advapi32, ntdll = _windows_modules()
@@ -1880,7 +2584,16 @@ def _windows_directory_entry_names(handle: int) -> tuple[str, ...]:
                 raise AtomicWriteError("invalid native directory entry") from exc
             if name not in {".", ".."}:
                 _windows_component_utf16(name)
+                if max_name_bytes is not None:
+                    _bounded_directory_name(
+                        name,
+                        max_name_bytes=max_name_bytes,
+                    )
                 names.append(name)
+                if max_entries is not None and len(names) > max_entries:
+                    raise AtomicWriteError(
+                        "confined directory entry limit exceeded"
+                    )
             if next_offset == 0:
                 break
             if next_offset < 12 or offset + next_offset > used:
@@ -1888,6 +2601,416 @@ def _windows_directory_entry_names(handle: int) -> tuple[str, ...]:
             offset += next_offset
         restart = False
     return tuple(sorted(names))
+
+
+def _windows_read_bounded_directory_names(
+    root: Path,
+    *,
+    max_entries: int,
+    max_name_bytes: int,
+) -> tuple[str, ...]:
+    """Enumerate bounded names through one retained no-reparse root handle."""
+
+    root_handle = _windows_open_root(
+        root,
+        final_access=_WIN_DIR_ACCESS | 0x00020000 | _WIN_LIST_DIRECTORY,
+    )
+    try:
+        return _windows_directory_entry_names(
+            root_handle,
+            max_entries=max_entries,
+            max_name_bytes=max_name_bytes,
+        )
+    finally:
+        _windows_close_handle(root_handle)
+
+
+def _windows_read_inventory_regular_file(
+    root_handle: int,
+    name: str,
+    maximum_bytes: int,
+) -> ConfinedRegularFile:
+    child = -1
+    try:
+        child, _information = _windows_open_validated(
+            root_handle,
+            name,
+            access=_WIN_READ_ACCESS,
+            disposition=1,
+            options=_WIN_FILE_OPTIONS,
+            directory=False,
+        )
+        return ConfinedRegularFile(
+            name=name,
+            data=_windows_read_handle_bounded(child, maximum_bytes),
+            identity=_windows_confined_identity(child),
+        )
+    except FileNotFoundError as exc:
+        raise AtomicWriteError("confined directory entry disappeared") from exc
+    finally:
+        if child >= 0:
+            _windows_close_handle(child)
+
+
+def _windows_inventory_private_entry_present(
+    root_handle: int,
+    name: str,
+) -> bool:
+    handle = -1
+    try:
+        handle, _information = _windows_open_validated(
+            root_handle,
+            name,
+            access=_WIN_READ_ACCESS,
+            disposition=1,
+            options=_WIN_FILE_OPTIONS,
+            directory=False,
+        )
+        return True
+    except FileNotFoundError:
+        return False
+    finally:
+        if handle >= 0:
+            _windows_close_handle(handle)
+
+
+def _windows_open_rewritten_selector_build(
+    root_handle: int,
+    build_name: str,
+    expected_bytes: bytes,
+    *,
+    create: bool,
+    after_created: Callable[[], None],
+) -> tuple[int, object]:
+    """Create or securely rewrite one private selector build entry."""
+
+    security: _WinSecurityDescriptor | None = None
+    if create:
+        _sid_buffer, _sid, _acl, security = _windows_security_material()
+    handle, _information = _windows_open_validated(
+        root_handle,
+        build_name,
+        access=_WIN_MUTATE_ACCESS,
+        disposition=2 if create else 1,
+        options=(0x2 if create else 0) | _WIN_FILE_OPTIONS,
+        directory=False,
+        security_descriptor=security,
+        share=_WIN_SHARE_ALL & ~0x2,
+    )
+    if create:
+        after_created()
+    lock: object | None = None
+    complete = False
+    try:
+        lock = _windows_lock_handle(handle)
+        _windows_require_restrictive_acl(handle, build_name)
+        _windows_truncate_handle(handle)
+        _windows_write_handle(handle, expected_bytes)
+        _windows_flush_handle(handle)
+        if _windows_read_handle_bounded(handle, len(expected_bytes) + 1) != expected_bytes:
+            raise AtomicWriteError("selector build reread failed")
+        _windows_verify_named_handle(root_handle, build_name, handle)
+        complete = True
+        return handle, lock
+    finally:
+        if not complete:
+            try:
+                if lock is not None:
+                    _windows_unlock_handle(handle, lock)
+            finally:
+                _windows_close_handle(handle)
+
+
+def _windows_open_exact_selector_stage(
+    root_handle: int,
+    staging_name: str,
+    expected_bytes: bytes,
+) -> tuple[int, object]:
+    """Open one already published exact selector stage."""
+
+    handle, _information = _windows_open_validated(
+        root_handle,
+        staging_name,
+        access=_WIN_READ_ACCESS | 0x00010000 | _WIN_GENERIC_WRITE,
+        disposition=1,
+        options=_WIN_FILE_OPTIONS,
+        directory=False,
+        share=_WIN_SHARE_ALL & ~0x2,
+    )
+    lock: object | None = None
+    complete = False
+    try:
+        lock = _windows_lock_handle(handle)
+        if _windows_read_handle_bounded(handle, len(expected_bytes) + 1) != expected_bytes:
+            raise AtomicWriteError("staged file bytes do not match expectation")
+        _windows_verify_named_handle(root_handle, staging_name, handle)
+        _windows_require_restrictive_acl(handle, staging_name)
+        complete = True
+        return handle, lock
+    finally:
+        if not complete:
+            try:
+                if lock is not None:
+                    _windows_unlock_handle(handle, lock)
+            finally:
+                _windows_close_handle(handle)
+
+
+def _windows_publish_selector_build(
+    handle: int,
+    root_handle: int,
+    staging_name: str,
+    expected_bytes: bytes,
+) -> None:
+    if not _windows_rename_handle(handle, root_handle, staging_name, replace=False):
+        raise AtomicWriteError("native selector stage publish collided")
+    _windows_flush_handle(handle)
+    _windows_verify_named_handle(root_handle, staging_name, handle)
+    if _windows_read_handle_bounded(handle, len(expected_bytes) + 1) != expected_bytes:
+        raise AtomicWriteError("published selector stage changed")
+    _windows_require_restrictive_acl(handle, staging_name)
+
+
+def _windows_publish_selector_stage(
+    handle: int,
+    root_handle: int,
+    name: str,
+    expected_bytes: bytes,
+) -> None:
+    _windows_existing_regular(root_handle, name)
+    if not _windows_rename_handle(handle, root_handle, name, replace=True):
+        raise AtomicWriteError("native staged selector replace collided")
+    _windows_flush_handle(handle)
+    _windows_verify_named_handle(root_handle, name, handle)
+    if _windows_read_handle_bounded(handle, len(expected_bytes) + 1) != expected_bytes:
+        raise AtomicWriteError("staged selector changed during replacement")
+    _windows_require_restrictive_acl(handle, name)
+
+
+def _windows_replace_inventory_regular_file(
+    root_handle: int,
+    name: str,
+    data: bytes,
+    _mode: int,
+    build_name: str,
+    staging_name: str,
+    after_built: Callable[[], None],
+    after_staged: Callable[[], None],
+    after_replaced: Callable[[], None],
+) -> None:
+    build_present = _windows_inventory_private_entry_present(root_handle, build_name)
+    stage_present = _windows_inventory_private_entry_present(root_handle, staging_name)
+    if build_present and stage_present:
+        raise AtomicWriteError("selector build and stage are ambiguous")
+    if stage_present:
+        handle, lock = _windows_open_exact_selector_stage(
+            root_handle, staging_name, data
+        )
+    else:
+        handle, lock = _windows_open_rewritten_selector_build(
+            root_handle,
+            build_name,
+            data,
+            create=not build_present,
+            after_created=after_built,
+        )
+    try:
+        if stage_present:
+            after_staged()
+        else:
+            _windows_publish_selector_build(handle, root_handle, staging_name, data)
+            after_staged()
+        _windows_publish_selector_stage(handle, root_handle, name, data)
+        after_replaced()
+    finally:
+        try:
+            _windows_unlock_handle(handle, lock)
+        finally:
+            _windows_close_handle(handle)
+
+
+def _windows_discard_selector_private_entry(
+    root_handle: int,
+    private_name: str,
+    expected_bytes: bytes,
+    *,
+    require_exact: bool,
+) -> None:
+    if require_exact:
+        handle, lock = _windows_open_exact_selector_stage(
+            root_handle, private_name, expected_bytes
+        )
+    else:
+        handle = -1
+        try:
+            handle, _information = _windows_open_validated(
+                root_handle,
+                private_name,
+                access=_WIN_MUTATE_ACCESS,
+                disposition=1,
+                options=_WIN_FILE_OPTIONS,
+                directory=False,
+                share=_WIN_SHARE_ALL & ~0x2,
+            )
+            try:
+                lock = _windows_lock_handle(handle)
+            except BaseException:
+                raise AtomicWriteError(
+                    "selector private entry lock failed"
+                ) from None
+        except BaseException:
+            if handle >= 0:
+                try:
+                    _windows_close_handle(handle)
+                except BaseException:
+                    pass
+            raise
+    try:
+        _windows_verify_named_handle(root_handle, private_name, handle)
+        _windows_mark_delete(handle)
+        _windows_unlock_handle(handle, lock)
+        lock = None
+        _windows_close_handle(handle)
+        handle = -1
+        try:
+            verifier, _information = _windows_open_validated(
+                root_handle,
+                private_name,
+                access=_WIN_READ_ACCESS,
+                disposition=1,
+                options=_WIN_FILE_OPTIONS,
+                directory=False,
+            )
+        except FileNotFoundError:
+            return
+        try:
+            raise AtomicWriteError("staged file remained after disposal")
+        finally:
+            _windows_close_handle(verifier)
+    finally:
+        if handle >= 0:
+            try:
+                if lock is not None:
+                    _windows_unlock_handle(handle, lock)
+            finally:
+                _windows_close_handle(handle)
+
+
+def _windows_retain_bounded_directory_inventory(
+    root: Path,
+    *,
+    max_entries: int,
+    max_name_bytes: int,
+) -> RetainedBoundedDirectoryInventory:
+    access = _WIN_DIR_ACCESS | 0x00020000 | _WIN_LIST_DIRECTORY
+    root_handle = _windows_open_root(root, final_access=access)
+    transferred = False
+    try:
+        root_identity = _windows_confined_identity(root_handle)
+        names = _windows_directory_entry_names(
+            root_handle,
+            max_entries=max_entries,
+            max_name_bytes=max_name_bytes,
+        )
+
+        def read_regular_file(name: str, maximum_bytes: int) -> ConfinedRegularFile:
+            _bounded_directory_name(name, max_name_bytes=max_name_bytes)
+            return _windows_read_inventory_regular_file(
+                root_handle,
+                name,
+                maximum_bytes,
+            )
+
+        def track_existing(
+            name: str,
+            expected_bytes: bytes,
+            quarantine_id: str,
+            after_relocate: Callable[[], None],
+            after_dispose: Callable[[], None],
+        ) -> TrackedExistingFile:
+            _bounded_directory_name(name, max_name_bytes=max_name_bytes)
+            duplicate = _windows_duplicate_handle(root_handle)
+            return _windows_track_existing_regular_file_with_parents(
+                [duplicate],
+                (name,),
+                expected_bytes,
+                quarantine_id=quarantine_id,
+                after_relocate=after_relocate,
+                after_dispose=after_dispose,
+            )
+
+        def replace_regular_file(
+            name: str,
+            data: bytes,
+            mode: int,
+            build_name: str,
+            staging_name: str,
+            after_built: Callable[[], None],
+            after_staged: Callable[[], None],
+            after_replaced: Callable[[], None],
+        ) -> None:
+            _bounded_directory_name(name, max_name_bytes=max_name_bytes)
+            _bounded_directory_name(build_name, max_name_bytes=max_name_bytes)
+            _bounded_directory_name(staging_name, max_name_bytes=max_name_bytes)
+            _windows_replace_inventory_regular_file(
+                root_handle,
+                name,
+                data,
+                mode,
+                build_name,
+                staging_name,
+                after_built,
+                after_staged,
+                after_replaced,
+            )
+
+        def discard_staged_regular_file(
+            name: str,
+            expected_bytes: bytes,
+            build_name: str,
+            staging_name: str,
+            after_discarded: Callable[[], None],
+        ) -> None:
+            _bounded_directory_name(name, max_name_bytes=max_name_bytes)
+            _bounded_directory_name(build_name, max_name_bytes=max_name_bytes)
+            _bounded_directory_name(staging_name, max_name_bytes=max_name_bytes)
+            _windows_discard_staged_inventory_regular_file(
+                root_handle,
+                name,
+                expected_bytes,
+                build_name,
+                staging_name,
+                after_discarded,
+            )
+
+        def revalidate(expected_names: tuple[str, ...]) -> None:
+            current_handle = _windows_open_root(root, final_access=access)
+            try:
+                if _windows_confined_identity(current_handle) != root_identity:
+                    raise AtomicWriteError("retained directory root changed")
+            finally:
+                _windows_close_handle(current_handle)
+            current_names = _windows_directory_entry_names(
+                root_handle,
+                max_entries=max_entries,
+                max_name_bytes=max_name_bytes,
+            )
+            if current_names != expected_names:
+                raise AtomicWriteError("retained directory inventory changed")
+
+        transferred = True
+        return RetainedBoundedDirectoryInventory(
+            names,
+            read_regular_file=read_regular_file,
+            track_existing=track_existing,
+            replace_regular_file=replace_regular_file,
+            discard_staged_regular_file=discard_staged_regular_file,
+            revalidate=revalidate,
+            release=lambda: _windows_close_handle(root_handle),
+        )
+    finally:
+        if not transferred:
+            _windows_close_handle(root_handle)
 
 
 def _windows_read_regular_directory_entries(
@@ -2113,6 +3236,29 @@ def _windows_existing_regular(parent_handle: int, name: str) -> bool:
             _windows_close_handle(handle)
 
 
+def _windows_discard_staged_inventory_regular_file(
+    root_handle: int,
+    _name: str,
+    expected_bytes: bytes,
+    build_name: str,
+    staging_name: str,
+    after_discarded: Callable[[], None],
+) -> None:
+    build_present = _windows_inventory_private_entry_present(root_handle, build_name)
+    stage_present = _windows_inventory_private_entry_present(root_handle, staging_name)
+    if build_present and stage_present:
+        raise AtomicWriteError("selector build and stage are ambiguous")
+    if not build_present and not stage_present:
+        raise AtomicWriteError("selector transaction disappeared")
+    _windows_discard_selector_private_entry(
+        root_handle,
+        build_name if build_present else staging_name,
+        expected_bytes,
+        require_exact=stage_present,
+    )
+    after_discarded()
+
+
 def _windows_mark_delete(handle: int) -> None:
     kernel32, _advapi32, _ntdll = _windows_modules()
     disposition = _WinFileDispositionInformation(DeleteFile=1)
@@ -2220,14 +3366,13 @@ def _windows_verify_named_handle(
             _windows_close_handle(verifier)
 
 
-def _windows_atomic_write_bytes(
-    path: Path,
+def _windows_atomic_write_bytes_with_parents(
+    parents: list[int],
+    parts: tuple[str, ...],
     data: bytes,
     *,
-    allowed_root: Path,
     replace: bool,
 ) -> bool:
-    parents, parts = _windows_open_parent(path, allowed_root)
     parent_handle, name = parents[-1], parts[-1]
     temp_handle = -1
     renamed = False
@@ -2264,6 +3409,22 @@ def _windows_atomic_write_bytes(
             _windows_close_chain(
                 parents + ([temp_handle] if temp_handle >= 0 else [])
             )
+
+
+def _windows_atomic_write_bytes(
+    path: Path,
+    data: bytes,
+    *,
+    allowed_root: Path,
+    replace: bool,
+) -> bool:
+    parents, parts = _windows_open_parent(path, allowed_root)
+    return _windows_atomic_write_bytes_with_parents(
+        parents,
+        parts,
+        data,
+        replace=replace,
+    )
 
 
 def _windows_atomic_replace_bytes(
@@ -2361,12 +3522,14 @@ def _windows_atomic_create_bytes_tracked(
                 )
 
 
-def _windows_track_existing_regular_file(
-    path: Path,
+def _windows_track_existing_regular_file_with_parents(
+    parents: list[int],
+    parts: tuple[str, ...],
     expected_bytes: bytes,
     *,
     quarantine_id: str,
-    allowed_root: Path,
+    after_relocate: Callable[[], None] | None = None,
+    after_dispose: Callable[[], None] | None = None,
 ) -> TrackedExistingFile:
     """Retain native handle authority over one recovery-file transaction.
 
@@ -2378,7 +3541,6 @@ def _windows_track_existing_regular_file(
     parent authority.
     """
 
-    parents, parts = _windows_open_parent(path, allowed_root)
     parent_handle, name = parents[-1], parts[-1]
     quarantine = _quarantine_name(quarantine_id)
     handle = -1
@@ -2571,6 +3733,8 @@ def _windows_track_existing_regular_file(
             relocate=relocate,
             dispose=dispose,
             release=release,
+            after_relocate=after_relocate,
+            after_dispose=after_dispose,
         )
     finally:
         if not transferred:
@@ -2579,6 +3743,22 @@ def _windows_track_existing_regular_file(
                     _windows_unlock_handle(handle, lock)
             finally:
                 _windows_close_chain(parents + ([handle] if handle >= 0 else []))
+
+
+def _windows_track_existing_regular_file(
+    path: Path,
+    expected_bytes: bytes,
+    *,
+    quarantine_id: str,
+    allowed_root: Path,
+) -> TrackedExistingFile:
+    parents, parts = _windows_open_parent(path, allowed_root)
+    return _windows_track_existing_regular_file_with_parents(
+        parents,
+        parts,
+        expected_bytes,
+        quarantine_id=quarantine_id,
+    )
 
 
 def _windows_lock_handle(handle: int) -> _WinOverlapped:
@@ -2864,6 +4044,50 @@ def read_regular_directory_entries(
     if os.name == "nt":
         return _windows_read_regular_directory_entries(root)
     return _posix_read_regular_directory_entries(root)
+
+
+def read_bounded_directory_names(
+    root: Path,
+    *,
+    max_entries: int,
+    max_name_bytes: int,
+) -> tuple[str, ...]:
+    """Enumerate only bounded child names through retained native authority."""
+
+    _validate_directory_name_bounds(max_entries, max_name_bytes)
+    if os.name == "nt":
+        return _windows_read_bounded_directory_names(
+            root,
+            max_entries=max_entries,
+            max_name_bytes=max_name_bytes,
+        )
+    return _posix_read_bounded_directory_names(
+        root,
+        max_entries=max_entries,
+        max_name_bytes=max_name_bytes,
+    )
+
+
+def retain_bounded_directory_inventory(
+    root: Path,
+    *,
+    max_entries: int,
+    max_name_bytes: int,
+) -> RetainedBoundedDirectoryInventory:
+    """Retain one bounded, revalidatable native directory inventory."""
+
+    _validate_directory_name_bounds(max_entries, max_name_bytes)
+    if os.name == "nt":
+        return _windows_retain_bounded_directory_inventory(
+            root,
+            max_entries=max_entries,
+            max_name_bytes=max_name_bytes,
+        )
+    return _posix_retain_bounded_directory_inventory(
+        root,
+        max_entries=max_entries,
+        max_name_bytes=max_name_bytes,
+    )
 
 
 def atomic_append_bytes(

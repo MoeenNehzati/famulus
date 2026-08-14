@@ -19,10 +19,17 @@ dependencies:
   reason: Resolves durable per-home certificate state outside replaceable plugin sources.
   source: common.source.famulus-paths
   version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/certificate-intents.yaml
+  reason: Imports the closed secret-free mutation intent used for durable restart recovery.
+  source: common.source.certificate-intents
+  version: 1
 description: Canonicalizes certificate payloads and envelopes, transactionally stages,
   commits, and exactly aborts Ed25519 certification keys in durable Famulus state,
-  migrates matching legacy public state without rotation, signs and verifies certificates,
-  and validates append-only hash-linked certificate logs.
+  prepares secret-free restart intents, applies and recovers their exact create or legacy-copy
+  lifecycle, migrates matching legacy public state without rotation, signs and verifies
+  certificates, and validates append-only hash-linked certificate logs.
 gateway:
   language: Python
   path: certificate_records.py
@@ -67,6 +74,21 @@ interfaces:
             - description: Remove one exact inactive staged pair and prove private-secret
                 absence.
               value: abort-staged-signing-material
+            - description: Inspect durable and legacy state without mutation and return
+                a reusable identity or one secret-free certificate intent.
+              value: prepare-certificate-mutation
+            - description: Apply one exact live acknowledged intent without changing
+                the active selector.
+              value: apply-certificate-mutation
+            - description: Commit or resume one exact live intent through the active
+                selector.
+              value: commit-certificate-mutation
+            - description: Abort one exact live pre-selector intent through retained
+                backend and public-file authority.
+              value: abort-certificate-mutation
+            - description: Recover one persisted intent through a newly audited backend
+                of the exact journaled concrete identity.
+              value: recover-certificate-mutation
             - description: Fail closed or atomically migrate matching repository-local
                 public state into durable Famulus state.
               value: migrate-legacy-state
@@ -98,6 +120,31 @@ interfaces:
       - external-side-effect: Transactional stage, commit, and abort require that backend
           object explicitly and expose no non-atomic fallback; selector replacement always
           uses the secure atomic path.
+      - external-side-effect: Intent preparation is nonmutating. Apply, commit, abort,
+          and recovery require the caller-held per-home install lock; live operations
+          require the exact intent and backend objects retained at preparation.
+      - external-side-effect: The caller-held install lock must exclude every cooperative
+          selector writer across observation and mutation. Each secret, public-file,
+          and selector mutation immediately revalidates the selector, but separate
+          secret-store and filesystem APIs cannot protect against an uncooperative
+          concurrent selector writer outside the held lock.
+      - external-side-effect: Recovery recomputes paths from caller capabilities,
+          retains one bounded native directory authority across classification and
+          every mutation, rejects unexpected names before reading expected entries,
+          bounds selector reads to its exact grammar plus one byte and public reads
+          to the journaled size plus one byte, and accepts a new backend adapter only
+          when its audited concrete identity exactly matches the persisted intent.
+          Immediately before each secret clear, relocation, disposal, or selector
+          replacement, recovery revalidates the live root identity, complete current
+          name set, and exact selector through that same retained authority.
+      - external-side-effect: >-
+          Live commit and restart recovery share one deterministic retained-root
+          selector state machine. The persisted intent ID derives a private build and
+          a published stage. A lone regular build may be partial and is securely
+          truncated and rewritten; only an exact stage advances to the active selector.
+          Build-plus-stage ambiguity, mismatched stage, symbolic link, special entry,
+          malformed or third canonical selector, or any unjournaled name fails closed.
+          Abort disposes a lone partial build or exact stage before inactive-pair cleanup.
       direct_io:
         network: []
         reads:
@@ -162,7 +209,11 @@ interfaces:
         consistency:
           live: Verification and key loading use the active selector and retained
             public files observed during the call; staged transactions bind the exact
-            backend object and tracked public-file identity; canonicalization is deterministic.
+            backend object and tracked public-file identity; live intents bind the exact
+            intent and backend objects, while restart recovery binds a fresh audited adapter
+            by exact concrete identity and keeps one retained bounded-directory authority
+            from classification through final verification or cleanup; canonicalization
+            is deterministic.
         effects:
         - action: update
           confirmation_evidence:
@@ -174,6 +225,7 @@ interfaces:
           - signing-key-created
           - signing-key-rotated
           - signing-key-staged
+          - certificate-intent-lifecycle
           - key-write-failed
           reversibility:
             compensatable: Before selector replacement, abort the exact inactive candidate;
@@ -191,6 +243,7 @@ interfaces:
           - signing-key-created
           - signing-key-rotated
           - signing-key-staged
+          - certificate-intent-lifecycle
           - key-write-failed
           reversibility:
             compensatable: Clear an unused generated private key from the configured
@@ -214,7 +267,13 @@ interfaces:
           on_uncertain_completion:
             verify_then_decide: A selector naming the staged key resumes as committed;
               a prior selector permits exact abort; a malformed or third selector fails
-              closed without deleting either potentially active pair.
+              closed without deleting either potentially active pair. Restart recovery
+              applies the same selector rule after validating every intended public file
+              and the exact private-key identity before any cleanup.
+              A lone intent-derived build is rewritten and published on commit or
+              discarded on pre-selector abort. An exact stage resumes the active rename
+              on commit or is exactly disposed on abort; canonical intended plus a lone
+              build or exact stage completes the same chain before committed verification.
           partial_effects_on_failure:
             possible: A pair remains retained after selector replacement or when selector
               state is ambiguous so recovery never claims rollback.
@@ -262,6 +321,15 @@ interfaces:
         id: signing-key-staged
         outputs:
         - result
+      - caller_action: Durably journal the secret-free intent before apply, or persist
+          the closed abandoned, aborted, staged, or committed recovery disposition.
+        class: success
+        effects:
+        - key-files
+        - secret-material
+        id: certificate-intent-lifecycle
+        outputs:
+        - result
       - caller_action: Reject malformed values, invalid hashes or signatures, broken
           chains, or inconsistent key identifiers.
         class: error
@@ -282,7 +350,8 @@ interfaces:
           maximum: 1
           minimum: 1
         description: Canonical bytes, envelope hash, verification result, signing
-          key, signed envelope, parsed certificate entries, or public key.
+          key, signed envelope, parsed certificate entries, public key, secret-free
+          mutation intent, or closed mutation disposition.
         direct_io_ref: return-value
         empty: Verification can return false; successful log parsing returns at least
           one entry.

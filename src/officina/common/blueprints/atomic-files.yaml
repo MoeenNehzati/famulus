@@ -2,8 +2,9 @@ content:
 - atomic_files\.py
 dependencies: []
 description: Implements confined regular-file reads and secure replace, create, append,
-  compare-and-append, and platform-scoped existing-file recovery authority, with an
-  explicit non-atomic fallback only for ordinary file operations.
+  compare-and-append, bounded name-only directory enumeration, retained bounded-directory
+  inventory authority, and platform-scoped existing-file recovery authority, with
+  an explicit non-atomic fallback only for ordinary file operations.
 gateway:
   language: Python
   path: atomic_files.py
@@ -38,6 +39,18 @@ interfaces:
           type:
             description: Python bytes value; omitted for read.
             kind: string
+        directory-root:
+          description: Retained no-follow directory authority whose child names are
+            enumerated by read-bounded-directory-names.
+          direct_io_ref: directory-names
+          required: false
+          sensitivity: user-private
+          type:
+            access: read
+            kind: dir
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
         expected-previous-bytes:
           description: Complete expected predecessor bytes, or null when absence is
             expected, for compare-and-append.
@@ -63,9 +76,44 @@ interfaces:
             kind: integer
             maximum: 4095
             minimum: 0
+        max-entries:
+          description: Positive caller-selected bound on names returned by name-only
+            directory enumeration.
+          required: false
+          sensitivity: public
+          type:
+            kind: integer
+            maximum: 4096
+            minimum: 1
+        max-name-bytes:
+          description: Positive caller-selected filesystem-encoded byte bound for
+            every returned directory component.
+          required: false
+          sensitivity: public
+          type:
+            kind: integer
+            maximum: 4096
+            minimum: 1
+        maximum-bytes:
+          description: Caller-selected upper bound for a retained-inventory relative
+            regular-file read.
+          required: false
+          sensitivity: public
+          type:
+            kind: integer
+            minimum: 0
         quarantine-id:
           description: Durable 128-bit capability used to derive the only confined
             quarantine name accepted by track-existing.
+          required: false
+          sensitivity: user-private
+          type:
+            description: Exactly 32 lowercase hexadecimal characters.
+            kind: string
+        staging-capability:
+          description: Durable 128-bit capability used to derive the only confined,
+            restart-addressable private build and published-stage names accepted by
+            retained-inventory replacement or selector-transaction disposal.
           required: false
           sensitivity: user-private
           type:
@@ -88,6 +136,17 @@ interfaces:
               value: append
             - description: Append only when the complete predecessor bytes match.
               value: compare-and-append
+            - description: Enumerate only bounded child names through one retained
+                no-follow native directory authority, without opening or reading any
+                child payload.
+              value: read-bounded-directory-names
+            - description: Retain one no-follow or no-reparse root authority and its
+                bounded closed name set; allow bounded reads of expected relative
+                regular files, complete-set and live-root identity revalidation,
+                same-root tracked-file acquisition, restart-addressable deterministic
+                build, stage, and replacement, private transaction disposal, and explicit
+                release or context management.
+              value: retain-bounded-directory-inventory
             - description: Open an existing confined regular file, verify its complete
                 bounded bytes and native identity at exactly the canonical name or the
                 quarantine name derived from quarantine-id. Return stateful authority
@@ -97,7 +156,7 @@ interfaces:
         path:
           description: Destination or source file confined beneath allowed-root.
           direct_io_ref: target-file
-          required: true
+          required: false
           sensitivity: user-private
           type:
             access: read-write
@@ -124,9 +183,40 @@ interfaces:
           absent through the retained parent. This implementation does not fsync
           Windows directory metadata and therefore does not claim power-loss
           durability for those namespace transitions.
+      - external-side-effect: Name-only enumeration fails closed when either caller
+          bound is exceeded and never opens or reads a child entry; callers must reject
+          unexpected names before selecting expected entries for payload reads.
+      - external-side-effect: Retained bounded-directory inventory keeps one securely
+          opened native root identity across classification and mutation. Reads are
+          limited to initially observed names and caller bounds; revalidation compares
+          both the complete current name set and the live path identity. Relative
+          tracking and replacement remain anchored to the retained root. Callers must
+          release the authority, normally with its context manager, after releasing
+          child tracked-file authorities.
+      - external-side-effect: >-
+          Retained-inventory replacement derives deterministic private build and
+          published-stage names from staging-capability. An absent or interrupted
+          regular build is securely created or truncated and rewritten, bounded-reread,
+          file-synced, and directory-synced before a no-replace build-to-stage rename.
+          Only an exact stage advances atomically to the destination. Build-plus-stage,
+          mismatched stage, symbolic link, special entry, or third private name fails
+          closed. Every build creation, build-to-stage publish, stage-to-destination
+          rename, and build-or-stage disposal updates the complete expected names.
+          Windows mirrors the retained-handle state machine and does not rely on live
+          process cleanup for restart recovery.
       direct_io:
         network: []
         reads:
+        - access: read
+          content: bounded child entry names without child payloads
+          formats:
+          - text
+          id: directory-names
+          medium: local-filesystem
+          path: <directory-root> immediate children
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
         - access: read
           content: confined regular-file bytes
           formats:
@@ -147,7 +237,9 @@ interfaces:
       execution:
         consistency:
           live: Reads and mutations operate on the file state observed during the
-            call.
+            call. Name-only enumeration returns one bounded snapshot. Retained inventory
+            keeps the same no-follow or no-reparse root authority across bounded expected-file
+            reads, complete-set and root-identity revalidation, and relative mutations.
         effects:
         - action: update
           confirmation_evidence:
@@ -174,8 +266,12 @@ interfaces:
             non_idempotent: Append operations add another frame when repeated.
           on_uncertain_completion:
             verify_then_decide: For track-existing, inspect the canonical name and the
-              one quarantine name derived from the durable capability; for other
-              operations, read the confined file and compare its complete bytes.
+              one quarantine name derived from the durable capability. For retained-inventory
+              replacement, inspect the canonical destination and deterministic build
+              and stage derived from staging-capability; a lone build is repairable,
+              exact staged bytes resume rename, and build-plus-stage or mismatched
+              stage fails closed. For other operations,
+              read the confined file and compare its complete bytes.
           partial_effects_on_failure:
             possible: The explicit non-atomic fallback or a late durability failure
               can leave changed file state.
@@ -213,8 +309,9 @@ interfaces:
         cardinality:
           maximum: 1
           minimum: 1
-        description: Read bytes, the create boolean, stateful platform-scoped authority,
-          or successful completion for void mutation operations.
+        description: Read bytes, the create boolean, stateful platform-scoped file
+          or retained-directory authority, or successful completion for void mutation
+          operations.
         direct_io_ref: target-file
         empty: Void mutation operations return no value after verification.
         id: result
@@ -225,11 +322,14 @@ interfaces:
           kind: none
         type:
           description: Python return value whose concrete type depends on operation,
-            including TrackedExistingFile for track-existing.
+            including TrackedExistingFile for track-existing and RetainedBoundedDirectoryInventory
+            for retain-bounded-directory-inventory.
           kind: string
           sensitivity: user-private
       preconditions:
-      - caller_action: Pass a regular-file path beneath an existing allowed root.
+      - caller_action: For path-based operations, pass a regular-file path beneath
+          an existing allowed root; directory-inventory operations use directory-root
+          instead.
         check:
           argument_ref: path
           kind: argument
