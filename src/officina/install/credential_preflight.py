@@ -18,6 +18,7 @@ import secrets
 import struct
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from dataclasses import dataclass
@@ -287,10 +288,12 @@ class _ManagedCredentialWorkerState:
     ) -> dict[str, object]:
         platform = payload["platform"]
         home = Path(payload["home"])
+        repo = Path(payload["repo"])
         try:
             paths = certificate_records.certificate_state_paths(
                 platform=platform,
                 home=home,
+                repo_root=repo,
             )
             loaded = certificate_records.load_certificate_signing_key(
                 paths.public_key_root,
@@ -340,7 +343,7 @@ class ManagedCredentialWorker:
         self._total_timeout = _positive_timeout(
             total_timeout_seconds, "total_timeout_seconds"
         )
-        if self._command_timeout >= self._total_timeout:
+        if self._command_timeout + _SHUTDOWN_RESERVE_SECONDS >= self._total_timeout:
             raise ValueError("command timeout must leave total-lifetime cleanup budget")
         self._managed_python = executable
         self._creator_pid = os.getpid()
@@ -353,6 +356,10 @@ class ManagedCredentialWorker:
         self._closed = False
         self._failed = False
         self._preflight_complete = False
+        self._watchdog_stop = threading.Event()
+        self._watchdog_thread: threading.Thread | None = None
+        self._cleanup_lock = threading.Lock()
+        self._terminal_code: CredentialWorkerCode | None = None
 
     def __enter__(self) -> "ManagedCredentialWorker":
         self.start()
@@ -367,19 +374,19 @@ class ManagedCredentialWorker:
         if self._closed or self._failed or self._process is not None:
             raise CredentialWorkerError(CredentialWorkerCode.INVALID_STATE)
         self._deadline = time.monotonic() + self._total_timeout
-        self._channel, child_fds = _anonymous_duplex_pair()
-        self._child_fds = child_fds
-        mode_flag, inherited_ids, spawn_kwargs = _subprocess_channel_arguments(child_fds)
-        argv = [
-            self._managed_python,
-            "-I",
-            "-m",
-            _WORKER_MODULE,
-            mode_flag,
-            str(inherited_ids[0]),
-            str(inherited_ids[1]),
-        ]
         try:
+            self._channel, child_fds = _anonymous_duplex_pair()
+            self._child_fds = child_fds
+            mode_flag, inherited_ids, spawn_kwargs = _subprocess_channel_arguments(child_fds)
+            argv = [
+                self._managed_python,
+                "-I",
+                "-m",
+                _WORKER_MODULE,
+                mode_flag,
+                str(inherited_ids[0]),
+                str(inherited_ids[1]),
+            ]
             self._process = subprocess.Popen(
                 argv,
                 shell=False,
@@ -395,10 +402,16 @@ class ManagedCredentialWorker:
             _close_descriptors(child_fds)
             self._child_fds = None
             _await_worker_ready(self._channel, self._command_deadline())
-        except BaseException:
+            self._start_lifetime_watchdog()
+        except BaseException as exc:
             self._failed = True
-            self._force_cleanup()
-            raise
+            if not self._force_cleanup():
+                raise CredentialWorkerError(CredentialWorkerCode.CLEANUP_FAILED) from None
+            if isinstance(exc, KeyboardInterrupt):
+                raise
+            if isinstance(exc, CredentialWorkerError):
+                raise CredentialWorkerError(exc.code) from None
+            raise CredentialWorkerError(CredentialWorkerCode.WORKER_FAILED) from None
 
     def preflight(self) -> CredentialPreflightResult:
         for _attempt in range(_MAX_TARGET_ATTEMPTS):
@@ -457,12 +470,17 @@ class ManagedCredentialWorker:
         *,
         platform: str,
         home: Path,
+        repo: Path,
     ) -> CredentialVerificationResult:
         if not self._preflight_complete:
             raise CredentialWorkerError(CredentialWorkerCode.INVALID_STATE)
         result = self._request(
             "verify_certificate",
-            {"platform": platform, "home": str(Path(home).absolute())},
+            {
+                "platform": platform,
+                "home": str(Path(home).absolute()),
+                "repo": str(Path(repo).absolute()),
+            },
         )
         if set(result) != {"verified", "key_id"}:
             self._fail()
@@ -477,14 +495,24 @@ class ManagedCredentialWorker:
         self._assert_owner()
         if self._closed:
             return
+        self._stop_lifetime_watchdog()
+        failure: BaseException | None = None
         try:
             if not self._failed and self._process is not None:
                 self._request("close", {})
+        except BaseException as exc:
+            failure = exc
         finally:
             absent = self._force_cleanup()
             self._closed = True
         if not absent:
-            raise CredentialWorkerError(CredentialWorkerCode.WORKER_FAILED)
+            raise CredentialWorkerError(CredentialWorkerCode.CLEANUP_FAILED) from None
+        if failure is not None:
+            if isinstance(failure, KeyboardInterrupt):
+                raise failure
+            if isinstance(failure, CredentialWorkerError):
+                raise CredentialWorkerError(failure.code) from None
+            raise CredentialWorkerError(CredentialWorkerCode.WORKER_FAILED) from None
 
     def _request(
         self,
@@ -494,6 +522,8 @@ class ManagedCredentialWorker:
         allowed_errors: frozenset[CredentialWorkerCode] = frozenset(),
     ) -> dict[str, object]:
         self._assert_owner()
+        if self._terminal_code is not None:
+            raise CredentialWorkerError(self._terminal_code)
         if self._closed or self._failed or self._process is None or self._channel is None:
             raise CredentialWorkerError(CredentialWorkerCode.INVALID_STATE)
         if self._request_pending:
@@ -501,6 +531,7 @@ class ManagedCredentialWorker:
         self._request_pending = True
         request_id = uuid.uuid4().hex
         try:
+            request_deadline = self._command_deadline()
             _send_frame(
                 self._channel,
                 _encode_worker_message({
@@ -509,20 +540,26 @@ class ManagedCredentialWorker:
                     "command": command,
                     "payload": payload,
                 }),
-                self._command_deadline(),
+                request_deadline,
             )
-            response = _recv_worker_response(self._channel, self._command_deadline())
+            response = _recv_worker_response(self._channel, request_deadline)
         except KeyboardInterrupt:
             self._failed = True
-            self._force_cleanup()
+            self._stop_lifetime_watchdog()
+            if not self._force_cleanup():
+                raise CredentialWorkerError(CredentialWorkerCode.CLEANUP_FAILED) from None
             raise
         except CredentialWorkerError as exc:
             self._failed = True
-            self._force_cleanup()
+            self._stop_lifetime_watchdog()
+            if not self._force_cleanup():
+                raise CredentialWorkerError(CredentialWorkerCode.CLEANUP_FAILED) from None
             raise CredentialWorkerError(exc.code) from None
         except BaseException:
             self._failed = True
-            self._force_cleanup()
+            self._stop_lifetime_watchdog()
+            if not self._force_cleanup():
+                raise CredentialWorkerError(CredentialWorkerCode.CLEANUP_FAILED) from None
             raise CredentialWorkerError(CredentialWorkerCode.WORKER_FAILED) from None
         finally:
             self._request_pending = False
@@ -534,10 +571,16 @@ class ManagedCredentialWorker:
                 raise CredentialWorkerError(code)
             if code in allowed_errors and type(response["result"]) is dict:
                 self._failed = True
-                self._force_cleanup()
+                self._stop_lifetime_watchdog()
+                if not self._force_cleanup():
+                    raise CredentialWorkerError(
+                        CredentialWorkerCode.CLEANUP_FAILED
+                    ) from None
                 return response["result"]
             self._failed = True
-            self._force_cleanup()
+            self._stop_lifetime_watchdog()
+            if not self._force_cleanup():
+                raise CredentialWorkerError(CredentialWorkerCode.CLEANUP_FAILED) from None
             raise CredentialWorkerError(code)
         return response["result"]
 
@@ -561,25 +604,81 @@ class ManagedCredentialWorker:
         if os.getpid() != self._creator_pid:
             raise CredentialWorkerError(CredentialWorkerCode.INVALID_STATE)
 
+    def _start_lifetime_watchdog(self) -> None:
+        assert self._deadline is not None
+        operational_end = self._deadline - _SHUTDOWN_RESERVE_SECONDS
+
+        def expire() -> None:
+            if self._watchdog_stop.wait(
+                max(0.0, operational_end - time.monotonic())
+            ):
+                return
+            self._failed = True
+            absent = self._force_cleanup()
+            self._terminal_code = (
+                CredentialWorkerCode.TIMEOUT
+                if absent
+                else CredentialWorkerCode.CLEANUP_FAILED
+            )
+            self._closed = True
+
+        self._watchdog_thread = threading.Thread(
+            target=expire,
+            name="credential-worker-lifetime",
+            daemon=True,
+        )
+        self._watchdog_thread.start()
+
+    def _stop_lifetime_watchdog(self) -> None:
+        self._watchdog_stop.set()
+        watchdog = self._watchdog_thread
+        if watchdog is not None and watchdog is not threading.current_thread():
+            watchdog.join(timeout=_MAIN_TERMINATION_SECONDS)
+
     def _fail(self):
         self._failed = True
-        self._force_cleanup()
+        self._stop_lifetime_watchdog()
+        if not self._force_cleanup():
+            raise CredentialWorkerError(CredentialWorkerCode.CLEANUP_FAILED)
         raise CredentialWorkerError(CredentialWorkerCode.WORKER_FAILED)
 
     def _force_cleanup(self) -> bool:
-        if self._channel is not None:
-            self._channel.close()
-        if self._child_fds is not None:
-            _close_descriptors(self._child_fds)
-        self._channel = None
-        self._child_fds = None
-        process = self._process
-        if process is None:
-            return True
-        containment = self._containment
-        if containment is None:
-            return _terminate_subprocess_direct(process)
-        return _terminate_and_verify_subprocess_tree(containment, process)
+        with self._cleanup_lock:
+            cleanup_ok = True
+            channel = self._channel
+            self._channel = None
+            if channel is not None:
+                try:
+                    channel.close()
+                except BaseException:
+                    cleanup_ok = False
+            if self._child_fds is not None:
+                _close_descriptors(self._child_fds)
+            self._child_fds = None
+            process = self._process
+            if process is None:
+                self._containment = None
+                return cleanup_ok
+            containment = self._containment
+            termination_deadline = min(
+                self._deadline if self._deadline is not None else float("inf"),
+                time.monotonic() + _MAIN_TERMINATION_SECONDS,
+            )
+            try:
+                if containment is None:
+                    absent = _terminate_subprocess_direct(
+                        process, deadline=termination_deadline
+                    )
+                else:
+                    absent = _terminate_and_verify_subprocess_tree(
+                        containment, process, deadline=termination_deadline
+                    )
+            except BaseException:
+                absent = False
+            if absent:
+                self._process = None
+                self._containment = None
+            return cleanup_ok and absent
 
 
 def _positive_timeout(value: float, name: str) -> float:
@@ -1088,10 +1187,11 @@ def _parse_worker_request(
         if payload:
             raise CredentialWorkerError(CredentialWorkerCode.INVALID_REQUEST)
     elif command == "verify_certificate":
-        if set(payload) != {"platform", "home"}:
+        if set(payload) != {"platform", "home", "repo"}:
             raise CredentialWorkerError(CredentialWorkerCode.INVALID_REQUEST)
         platform = payload["platform"]
         home = payload["home"]
+        repo = payload["repo"]
         if (
             type(platform) is not str
             or platform not in NATIVE_BACKENDS
@@ -1100,6 +1200,11 @@ def _parse_worker_request(
             or "\x00" in home
             or len(home.encode("utf-8")) > 2048
             or not Path(home).is_absolute()
+            or type(repo) is not str
+            or not repo
+            or "\x00" in repo
+            or len(repo.encode("utf-8")) > 2048
+            or not Path(repo).is_absolute()
         ):
             raise CredentialWorkerError(CredentialWorkerCode.INVALID_REQUEST)
     else:
@@ -1343,8 +1448,11 @@ def _prepare_subprocess_containment(process: subprocess.Popen[bytes]) -> _Proces
     return _prepare_parent_containment(process)  # type: ignore[arg-type]
 
 
-def _terminate_subprocess_direct(process: subprocess.Popen[bytes]) -> bool:
-    return _terminate_direct_subprocess(process)
+def _terminate_subprocess_direct(
+    process: subprocess.Popen[bytes],
+    deadline: float | None = None,
+) -> bool:
+    return _terminate_direct_subprocess(process, deadline)
 
 
 def _terminate_and_verify_subprocess_tree(

@@ -37,17 +37,26 @@ def _terminate_direct_process(process: multiprocessing.Process) -> bool:
     return not process.is_alive()
 
 
-def _terminate_direct_subprocess(process: subprocess.Popen[bytes]) -> bool:
+def _terminate_direct_subprocess(
+    process: subprocess.Popen[bytes],
+    deadline: float | None = None,
+) -> bool:
     """Terminate a subprocess before or without complete tree containment."""
+    deadline = min(
+        time.monotonic() + _TERMINATION_GRACE_SECONDS,
+        deadline if deadline is not None else float("inf"),
+    )
     if process.poll() is not None:
         return True
     process.terminate()
     try:
-        process.wait(timeout=_TERMINATION_GRACE_SECONDS)
+        process.wait(timeout=max(0.0, deadline - time.monotonic()))
     except subprocess.TimeoutExpired:
+        if time.monotonic() >= deadline:
+            return False
         process.kill()
         try:
-            process.wait(timeout=_TERMINATION_GRACE_SECONDS)
+            process.wait(timeout=max(0.0, deadline - time.monotonic()))
         except subprocess.TimeoutExpired:
             return False
     return process.poll() is not None
@@ -107,7 +116,10 @@ def _posix_terminate_and_verify_group(
         deadline if deadline is not None else float("inf"),
     )
     _wait_process(process, min(0.05, max(0.0, deadline - time.monotonic())))
-    if _posix_group_has_live_members(process_group):
+    group_live = _posix_group_has_live_members(process_group)
+    if not group_live and _process_is_alive(process):
+        return _terminate_direct_subprocess(process, deadline)
+    if group_live:
         try:
             os.killpg(process_group, signal.SIGTERM)
         except OSError:

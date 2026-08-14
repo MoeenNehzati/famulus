@@ -879,7 +879,7 @@ def test_production_spawn_protocol_classification_and_cleanup(
             "FAMULUS_TEST_MODE": mode,
             "FAMULUS_TEST_STATE": str(state_path),
             "FAMULUS_TEST_CALLS": str(tmp_path / "backend-calls.log"),
-            "FAMULUS_TEST_TIMEOUT": "1",
+            "FAMULUS_TEST_TIMEOUT": "5",
         }
     )
 
@@ -889,7 +889,7 @@ def test_production_spawn_protocol_classification_and_cleanup(
         env=environment,
         capture_output=True,
         text=True,
-        timeout=8,
+        timeout=25,
         check=True,
     )
 
@@ -1087,10 +1087,17 @@ def test_worker_state_retains_exact_preflight_backend_for_verification(
     monkeypatch.setattr(
         preflight.certificate_records,
         "certificate_state_paths",
-        lambda *, platform, home: types.SimpleNamespace(public_key_root=tmp_path),
+        lambda *, platform, home, repo_root: types.SimpleNamespace(
+            public_key_root=tmp_path
+        ),
     )
     response = state.dispatch(
-        _worker_request("verify_certificate", platform="linux", home=str(tmp_path))
+        _worker_request(
+            "verify_certificate",
+            platform="linux",
+            home=str(tmp_path),
+            repo=str(tmp_path / "repo"),
+        )
     )
 
     assert response == {
@@ -1105,6 +1112,158 @@ def test_worker_state_retains_exact_preflight_backend_for_verification(
     assert verified == [id(backend)]
 
 
+def test_worker_verification_recomputes_paths_with_bounded_repo_capability(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Break caught: verification omits repo or accepts a caller-chosen public root."""
+    backend = _RetainedBackend()
+    repo = tmp_path / "managed-repo"
+    seen: list[tuple[str, Path, Path]] = []
+    monkeypatch.setattr(
+        preflight.secret_store,
+        "native_backend_identity",
+        lambda _backend: _NATIVE_BACKEND_IDENTITY,
+    )
+    monkeypatch.setattr(
+        preflight.certificate_records,
+        "certificate_state_paths",
+        lambda *, platform, home, repo_root: (
+            seen.append((platform, home, repo_root))
+            or types.SimpleNamespace(public_key_root=tmp_path / "canonical-public")
+        ),
+    )
+    monkeypatch.setattr(
+        preflight.certificate_records,
+        "load_certificate_signing_key",
+        lambda root, *, secret_backend, allow_non_atomic=False: (
+            types.SimpleNamespace(key_id="sha256:" + "f" * 64)
+            if root == tmp_path / "canonical-public" and secret_backend is backend
+            else pytest.fail("noncanonical verification boundary")
+        ),
+    )
+    state = preflight._ManagedCredentialWorkerState(
+        backend_factory=lambda: backend,
+        token_factory=lambda: "probe-secret",
+    )
+    assert state.dispatch(_worker_request("preflight", target_id=_TARGET_ONE))["ok"]
+
+    response = state.dispatch(
+        _worker_request(
+            "verify_certificate",
+            platform="linux",
+            home=str(tmp_path),
+            repo=str(repo),
+        )
+    )
+
+    assert response["ok"] is True
+    assert seen == [("linux", tmp_path, repo)]
+
+
+def test_worker_verification_rejects_missing_or_nonabsolute_repo_before_filesystem(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Break caught: malformed repo capability reaches certificate files."""
+    touched: list[str] = []
+    monkeypatch.setattr(
+        preflight.certificate_records,
+        "certificate_state_paths",
+        lambda **_kwargs: touched.append("filesystem"),
+    )
+    for payload in (
+        {"platform": "linux", "home": str(tmp_path)},
+        {"platform": "linux", "home": str(tmp_path), "repo": "relative/repo"},
+    ):
+        state = preflight._ManagedCredentialWorkerState(
+            backend_factory=lambda: _RetainedBackend(),
+            token_factory=lambda: "probe-secret",
+        )
+        monkeypatch.setattr(
+            preflight.secret_store,
+            "native_backend_identity",
+            lambda _backend: _NATIVE_BACKEND_IDENTITY,
+        )
+        assert state.dispatch(_worker_request("preflight", target_id=_TARGET_ONE))["ok"]
+        response = state.dispatch(_worker_request("verify_certificate", **payload))
+        assert response["code"] == "invalid_request"
+    assert touched == []
+
+
+def test_parent_verification_sends_home_and_repo_capabilities(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Break caught: parent omits repo and child silently loses legacy-state context."""
+    worker = _armed_worker_for_failure_tests()
+    worker._preflight_complete = True
+    seen: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        worker,
+        "_request",
+        lambda command, payload: (
+            seen.append({"command": command, "payload": payload})
+            or {"verified": True, "key_id": "sha256:" + "a" * 64}
+        ),
+    )
+
+    worker.verify_certificate(platform="linux", home=tmp_path, repo=tmp_path / "repo")
+
+    assert seen == [{
+        "command": "verify_certificate",
+        "payload": {
+            "platform": "linux",
+            "home": str(tmp_path.absolute()),
+            "repo": str((tmp_path / "repo").absolute()),
+        },
+    }]
+
+
+def test_repeated_verification_reuses_retained_backend(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Break caught: first verification consumes state or second reselects backend."""
+    backend = _RetainedBackend()
+    seen: list[int] = []
+    monkeypatch.setattr(
+        preflight.secret_store,
+        "native_backend_identity",
+        lambda _backend: _NATIVE_BACKEND_IDENTITY,
+    )
+    monkeypatch.setattr(
+        preflight.certificate_records,
+        "certificate_state_paths",
+        lambda **_kwargs: types.SimpleNamespace(public_key_root=tmp_path),
+    )
+    monkeypatch.setattr(
+        preflight.certificate_records,
+        "load_certificate_signing_key",
+        lambda _root, *, secret_backend, allow_non_atomic=False: (
+            seen.append(id(secret_backend))
+            or types.SimpleNamespace(key_id="sha256:" + "a" * 64)
+        ),
+    )
+    state = preflight._ManagedCredentialWorkerState(
+        backend_factory=lambda: backend,
+        token_factory=lambda: "probe-secret",
+    )
+    assert state.dispatch(_worker_request("preflight", target_id=_TARGET_ONE))["ok"]
+
+    for request_id in ("verify-1", "verify-2"):
+        request = _worker_request(
+            "verify_certificate",
+            platform="linux",
+            home=str(tmp_path),
+            repo=str(tmp_path / "repo"),
+        )
+        request["request_id"] = request_id
+        assert state.dispatch(request)["request_id"] == request_id
+
+    assert seen == [id(backend), id(backend)]
+
+
 def test_worker_state_rejects_order_command_and_schema_before_backend_or_filesystem(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1117,7 +1276,9 @@ def test_worker_state_rejects_order_command_and_schema_before_backend_or_filesys
         lambda *_a, **_k: touched.append("filesystem"),
     )
     invalid = [
-        _worker_request("verify_certificate", platform="linux", home="/unused"),
+        _worker_request(
+            "verify_certificate", platform="linux", home="/unused", repo="/repo"
+        ),
         _worker_request("invented"),
         {**_worker_request("preflight", target_id=_TARGET_ONE), "extra": True},
         {**_worker_request("preflight", target_id=_TARGET_ONE), "protocol_version": True},
@@ -1158,7 +1319,9 @@ def test_worker_state_preflight_failure_blocks_verification(
         _worker_request("preflight", target_id=_TARGET_ONE)
     )
     blocked = state.dispatch(
-        _worker_request("verify_certificate", platform="linux", home="/unused")
+        _worker_request(
+            "verify_certificate", platform="linux", home="/unused", repo="/repo"
+        )
     )
 
     assert failed["code"] == "unsupported_backend"
@@ -1206,6 +1369,16 @@ def test_managed_worker_requires_explicit_executable_and_finite_deadlines() -> N
             ManagedCredentialWorker("/managed/python", total_timeout_seconds=value)
 
 
+def test_total_lifetime_must_leave_full_command_and_cleanup_budgets() -> None:
+    """Break caught: accepted timeouts have no complete operational interval."""
+    with pytest.raises(ValueError, match="cleanup budget"):
+        ManagedCredentialWorker(
+            "/managed/python",
+            command_timeout_seconds=1,
+            total_timeout_seconds=preflight._SHUTDOWN_RESERVE_SECONDS + 1,
+        )
+
+
 def test_managed_worker_spawns_shell_free_isolated_module_with_anonymous_channel(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1226,7 +1399,7 @@ def test_managed_worker_spawns_shell_free_isolated_module_with_anonymous_channel
     monkeypatch.setattr(
         preflight,
         "_terminate_and_verify_subprocess_tree",
-        lambda _containment, _process: True,
+        lambda _containment, _process, deadline=None: True,
     )
     monkeypatch.setattr(preflight, "_await_worker_ready", lambda *_a, **_k: None)
     worker = ManagedCredentialWorker(
@@ -1249,6 +1422,7 @@ def test_managed_worker_spawns_shell_free_isolated_module_with_anonymous_channel
     assert recorded["kwargs"]["stdout"] is preflight.subprocess.DEVNULL
     assert recorded["kwargs"]["stderr"] is preflight.subprocess.DEVNULL
     assert recorded["kwargs"]["pass_fds"] == inherited
+    worker._stop_lifetime_watchdog()
     worker._force_cleanup()
 
 
@@ -1279,7 +1453,7 @@ def test_windows_worker_launch_uses_explicit_inherited_handle_not_posix_pass_fds
     monkeypatch.setattr(
         preflight,
         "_terminate_and_verify_subprocess_tree",
-        lambda _containment, _process: True,
+        lambda _containment, _process, deadline=None: True,
     )
     worker = ManagedCredentialWorker(
         "C:/managed/python.exe",
@@ -1294,6 +1468,7 @@ def test_windows_worker_launch_uses_explicit_inherited_handle_not_posix_pass_fds
     assert recorded["kwargs"]["startupinfo"].lpAttributeList == {
         "handle_list": [9876, 9877]
     }
+    worker._stop_lifetime_watchdog()
     worker._force_cleanup()
 
 
@@ -1504,6 +1679,350 @@ def test_managed_worker_preserves_cleanup_subdeadline_after_request_timeout(
     assert seen and seen[0] >= preflight._EMERGENCY_CLEANUP_SECONDS * 0.9
 
 
+def _armed_worker_for_failure_tests() -> ManagedCredentialWorker:
+    """Return a parent client at the request boundary without spawning a child."""
+    worker = ManagedCredentialWorker(
+        "/managed/python",
+        command_timeout_seconds=1,
+        total_timeout_seconds=5,
+    )
+    worker._process = object()  # type: ignore[assignment]
+    worker._channel = object()  # type: ignore[assignment]
+    worker._containment = object()
+    worker._deadline = time.monotonic() + 5
+    return worker
+
+
+def test_request_id_mismatch_reports_unproven_final_absence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Break caught: correlation failure discards a failed tree-absence proof."""
+    worker = _armed_worker_for_failure_tests()
+    monkeypatch.setattr(preflight.uuid, "uuid4", lambda: types.SimpleNamespace(hex="expected"))
+    monkeypatch.setattr(preflight, "_send_frame", lambda *_a: None)
+    monkeypatch.setattr(
+        preflight,
+        "_recv_worker_response",
+        lambda *_a: {
+            "protocol_version": 1,
+            "request_id": "wrong",
+            "ok": True,
+            "code": None,
+            "result": {},
+        },
+    )
+    monkeypatch.setattr(worker, "_force_cleanup", lambda: False)
+
+    with pytest.raises(CredentialWorkerError) as caught:
+        worker._request("close", {})
+
+    assert caught.value.code is CredentialWorkerCode.CLEANUP_FAILED
+
+
+def test_broken_pipe_reports_unproven_final_absence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Break caught: a broken channel hides failure to prove worker absence."""
+    worker = _armed_worker_for_failure_tests()
+    monkeypatch.setattr(
+        preflight,
+        "_send_frame",
+        lambda *_a: (_ for _ in ()).throw(BrokenPipeError("secret OS detail")),
+    )
+    monkeypatch.setattr(worker, "_force_cleanup", lambda: False)
+
+    with pytest.raises(CredentialWorkerError) as caught:
+        worker._request("close", {})
+
+    assert caught.value.code is CredentialWorkerCode.CLEANUP_FAILED
+    assert "secret OS detail" not in str(caught.value)
+
+
+def test_request_uses_one_deadline_for_send_and_receive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Break caught: send and receive each receive a fresh command timeout."""
+    worker = _armed_worker_for_failure_tests()
+    deadlines: list[float] = []
+    command_deadlines = iter([1234.5, 5678.0])
+    monkeypatch.setattr(worker, "_command_deadline", lambda: next(command_deadlines))
+    monkeypatch.setattr(
+        preflight,
+        "_send_frame",
+        lambda _channel, _message, deadline: deadlines.append(deadline),
+    )
+    monkeypatch.setattr(
+        preflight,
+        "_recv_worker_response",
+        lambda _channel, deadline: (
+            deadlines.append(deadline)
+            or {
+                "protocol_version": 1,
+                "request_id": "fixed",
+                "ok": True,
+                "code": None,
+                "result": {},
+            }
+        ),
+    )
+    monkeypatch.setattr(preflight.uuid, "uuid4", lambda: types.SimpleNamespace(hex="fixed"))
+
+    assert worker._request("close", {}) == {}
+    assert deadlines == [1234.5, 1234.5]
+
+
+def test_keyboard_interrupt_reports_unproven_final_absence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Break caught: KeyboardInterrupt returns while the worker tree may be live."""
+    worker = _armed_worker_for_failure_tests()
+    monkeypatch.setattr(
+        preflight,
+        "_send_frame",
+        lambda *_a: (_ for _ in ()).throw(KeyboardInterrupt()),
+    )
+    monkeypatch.setattr(worker, "_force_cleanup", lambda: False)
+
+    with pytest.raises(CredentialWorkerError) as caught:
+        worker._request("close", {})
+
+    assert caught.value.code is CredentialWorkerCode.CLEANUP_FAILED
+
+
+def test_graceful_close_failure_cannot_mask_unproven_final_absence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Break caught: close propagates the command error after absence proof fails."""
+    worker = _armed_worker_for_failure_tests()
+    monkeypatch.setattr(
+        worker,
+        "_request",
+        lambda *_a, **_k: (_ for _ in ()).throw(
+            CredentialWorkerError(CredentialWorkerCode.TIMEOUT)
+        ),
+    )
+    monkeypatch.setattr(worker, "_force_cleanup", lambda: False)
+
+    with pytest.raises(CredentialWorkerError) as caught:
+        worker.close()
+
+    assert caught.value.code is CredentialWorkerCode.CLEANUP_FAILED
+
+
+def test_closed_child_failure_cannot_discard_unproven_final_absence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Break caught: a closed preflight result returns after failed tree cleanup."""
+    worker = _armed_worker_for_failure_tests()
+    monkeypatch.setattr(preflight, "_send_frame", lambda *_a: None)
+    monkeypatch.setattr(preflight.uuid, "uuid4", lambda: types.SimpleNamespace(hex="fixed"))
+    monkeypatch.setattr(
+        preflight,
+        "_recv_worker_response",
+        lambda *_a: {
+            "protocol_version": 1,
+            "request_id": "fixed",
+            "ok": False,
+            "code": "roundtrip_failed",
+            "result": {
+                "schema_version": 1,
+                "ok": False,
+                "code": "roundtrip_failed",
+                "backend": _NATIVE_BACKEND_IDENTITY,
+            },
+        },
+    )
+    monkeypatch.setattr(worker, "_force_cleanup", lambda: False)
+
+    with pytest.raises(CredentialWorkerError) as caught:
+        worker._request(
+            "preflight",
+            {"target_id": _TARGET_ONE},
+            allowed_errors=frozenset({CredentialWorkerCode.ROUNDTRIP_FAILED}),
+        )
+
+    assert caught.value.code is CredentialWorkerCode.CLEANUP_FAILED
+
+
+def test_context_manager_exit_cannot_mask_unproven_final_absence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Break caught: body exceptions escape after context cleanup fails."""
+    worker = _armed_worker_for_failure_tests()
+    monkeypatch.setattr(worker, "start", lambda: None)
+    monkeypatch.setattr(worker, "_request", lambda *_a, **_k: {})
+    monkeypatch.setattr(worker, "_force_cleanup", lambda: False)
+
+    with pytest.raises(CredentialWorkerError) as caught:
+        with worker:
+            raise RuntimeError("body detail")
+
+    assert caught.value.code is CredentialWorkerCode.CLEANUP_FAILED
+
+
+def test_posix_tree_cleanup_directly_terminates_child_that_never_called_setsid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Break caught: group lookup misses a child hung before child containment."""
+
+    class Process:
+        def __init__(self) -> None:
+            self.alive = True
+            self.terminated = False
+
+        def poll(self):
+            return None if self.alive else -15
+
+        def wait(self, *, timeout):
+            if self.alive:
+                raise subprocess.TimeoutExpired("managed", timeout)
+            return -15
+
+        def terminate(self):
+            self.terminated = True
+            self.alive = False
+
+        def kill(self):
+            self.alive = False
+
+    process = Process()
+    monkeypatch.setattr(containment, "_posix_group_has_live_members", lambda _group: False)
+
+    assert containment._posix_terminate_and_verify_group(
+        424242,
+        process,  # type: ignore[arg-type]
+        time.monotonic() + 0.2,
+    )
+    assert process.terminated
+
+
+def test_startup_pipe_failure_is_closed_and_bounded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Break caught: startup preparation exposes raw OS exception text."""
+    worker = ManagedCredentialWorker(
+        "/managed/python",
+        command_timeout_seconds=1,
+        total_timeout_seconds=5,
+    )
+    monkeypatch.setattr(
+        preflight,
+        "_anonymous_duplex_pair",
+        lambda: (_ for _ in ()).throw(OSError("secret startup detail")),
+    )
+
+    with pytest.raises(CredentialWorkerError) as caught:
+        worker.start()
+
+    assert caught.value.code is CredentialWorkerCode.WORKER_FAILED
+    assert "secret startup detail" not in str(caught.value)
+
+
+@pytest.mark.parametrize("failure_stage", ["popen", "containment"])
+def test_startup_process_failures_are_closed_bounded_and_cleaned(
+    monkeypatch: pytest.MonkeyPatch,
+    failure_stage: str,
+) -> None:
+    """Break caught: raw Popen/containment failures escape without cleanup."""
+
+    class Channel:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    channel = Channel()
+    process = object()
+    terminated: list[object] = []
+    worker = ManagedCredentialWorker(
+        "/managed/python",
+        command_timeout_seconds=1,
+        total_timeout_seconds=5,
+    )
+    monkeypatch.setattr(preflight, "_anonymous_duplex_pair", lambda: (channel, (-1, -1)))
+    monkeypatch.setattr(
+        preflight,
+        "_subprocess_channel_arguments",
+        lambda _fds: ("--managed-worker-fds", (-1, -1), {"pass_fds": ()}),
+    )
+    if failure_stage == "popen":
+        monkeypatch.setattr(
+            preflight.subprocess,
+            "Popen",
+            lambda *_a, **_k: (_ for _ in ()).throw(
+                OSError("secret popen detail")
+            ),
+        )
+    else:
+        monkeypatch.setattr(preflight.subprocess, "Popen", lambda *_a, **_k: process)
+        monkeypatch.setattr(
+            preflight,
+            "_prepare_subprocess_containment",
+            lambda _process: (_ for _ in ()).throw(
+                OSError("secret containment detail")
+            ),
+        )
+        monkeypatch.setattr(
+            preflight,
+            "_terminate_subprocess_direct",
+            lambda cleaned_process, deadline=None: (
+                terminated.append(cleaned_process) or True
+            ),
+        )
+
+    with pytest.raises(CredentialWorkerError) as caught:
+        worker.start()
+
+    assert caught.value.code is CredentialWorkerCode.WORKER_FAILED
+    assert "secret" not in str(caught.value)
+    assert channel.closed
+    assert terminated == ([] if failure_stage == "popen" else [process])
+
+
+def test_cleanup_exception_is_closed_and_reports_unproven_absence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Break caught: cleanup OS text escapes instead of a closed absence failure."""
+    worker = _armed_worker_for_failure_tests()
+    worker._channel = None
+    monkeypatch.setattr(
+        preflight,
+        "_terminate_and_verify_subprocess_tree",
+        lambda *_a, **_k: (_ for _ in ()).throw(
+            OSError("secret cleanup detail")
+        ),
+    )
+
+    with pytest.raises(CredentialWorkerError) as caught:
+        worker._fail()
+
+    assert caught.value.code is CredentialWorkerCode.CLEANUP_FAILED
+    assert "secret cleanup detail" not in str(caught.value)
+
+
+def test_successful_force_cleanup_is_idempotent_for_consumed_containment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Break caught: a closed Windows Job handle is reused by later close cleanup."""
+    worker = _armed_worker_for_failure_tests()
+    worker._channel = None
+    containment_handle = worker._containment
+    calls: list[object] = []
+    monkeypatch.setattr(
+        preflight,
+        "_terminate_and_verify_subprocess_tree",
+        lambda containment_handle, _process, deadline=None: (
+            calls.append(containment_handle) or True
+        ),
+    )
+
+    assert worker._force_cleanup()
+    assert worker._force_cleanup()
+
+    assert calls == [containment_handle]
+
+
 def test_channel_deadline_expiry_maps_to_timeout() -> None:
     class TimedOutSocket:
         def settimeout(self, _timeout: float) -> None:
@@ -1592,6 +2111,168 @@ def test_frame_writer_backpressure_deadline_maps_to_timeout() -> None:
     assert caught.value.code is CredentialWorkerCode.TIMEOUT
 
 
+# famulus-skip: category=platform-contract; reason=fixture executable is a POSIX shell shim around the current isolated Python; alternate=Windows lifetime watchdog and native Job containment branches are unit-tested separately
+@pytest.mark.skipif(os.name == "nt", reason="POSIX controlled managed-Python fixture")
+def test_idle_total_lifetime_expires_and_proves_worker_absence(tmp_path: Path) -> None:
+    """Break caught: idle child waits a day until another parent method is called."""
+    source_root = Path(__file__).parents[1] / "src"
+    managed_python = tmp_path / "idle-managed-python"
+    bootstrap = textwrap.dedent(
+        f"""
+        import sys
+        sys.path.insert(0, {str(source_root)!r})
+        from officina.install import credential_preflight as worker_module
+        worker_module._establish_child_containment = lambda: True
+        worker_module._discard_process_output = lambda: True
+        raise SystemExit(worker_module.main(sys.argv[4:]))
+        """
+    ).strip()
+    managed_python.write_text(
+        f"#!{sys.executable!s}\n" + bootstrap + "\n",
+        encoding="utf-8",
+    )
+    managed_python.chmod(0o700)
+    worker = ManagedCredentialWorker(
+        str(managed_python),
+        command_timeout_seconds=2.0,
+        total_timeout_seconds=4.0,
+    )
+    worker.start()
+    pid = worker._process.pid
+    deadline = time.monotonic() + 3.5
+    try:
+        while time.monotonic() < deadline:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.02)
+        else:
+            pytest.fail("idle managed worker survived its total-lifetime deadline")
+    finally:
+        worker.close()
+
+
+# famulus-skip: category=platform-contract; reason=fixture executable is a POSIX shell shim around the current isolated Python; alternate=Windows native Job descendant cleanup remains a platform CI obligation
+@pytest.mark.skipif(os.name == "nt", reason="POSIX controlled managed-Python fixture")
+def test_managed_worker_crash_terminates_backend_descendant_tree(tmp_path: Path) -> None:
+    """Break caught: worker crash leaves a backend-spawned descendant alive."""
+    source_root = Path(__file__).parents[1] / "src"
+    descendant_pid_path = tmp_path / "descendant.pid"
+    managed_python = tmp_path / "crashing-managed-python"
+    bootstrap = textwrap.dedent(
+        f"""
+        import os, subprocess, sys, time
+        sys.path.insert(0, {str(source_root)!r})
+        import keyring
+        import keyring.backends.SecretService as native
+        state = {{}}
+        def lookup(self, service, key): return state.get((service, key))
+        def store(self, service, key, secret):
+            state[(service, key)] = secret
+            child = subprocess.Popen(
+                [sys.executable, "-c", "import time; time.sleep(60)"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            open({str(descendant_pid_path)!r}, "w", encoding="ascii").write(str(child.pid))
+            os._exit(23)
+        def clear(self, service, key): state.pop((service, key), None); return True
+        native.Keyring.get_password = lookup
+        native.Keyring.set_password = store
+        native.Keyring.delete_password = clear
+        keyring.set_keyring(object.__new__(native.Keyring))
+        from officina.install import credential_preflight as worker_module
+        raise SystemExit(worker_module.main(sys.argv[4:]))
+        """
+    ).strip()
+    managed_python.write_text(
+        f"#!{sys.executable!s}\n" + bootstrap + "\n", encoding="utf-8"
+    )
+    managed_python.chmod(0o700)
+    worker = ManagedCredentialWorker(
+        str(managed_python), command_timeout_seconds=1, total_timeout_seconds=5
+    )
+    worker.start()
+    worker_pid = worker._process.pid
+
+    with pytest.raises(CredentialWorkerError) as caught:
+        worker.preflight()
+    assert caught.value.code is CredentialWorkerCode.WORKER_FAILED
+    descendant_pid = int(descendant_pid_path.read_text(encoding="ascii"))
+    for pid in (worker_pid, descendant_pid):
+        with pytest.raises(ProcessLookupError):
+            os.kill(pid, 0)
+
+
+# famulus-skip: category=platform-contract; reason=fixture executable is a POSIX shell shim around the current isolated Python; alternate=Windows inherited-handle secret sinks are unit-tested but not natively executed here
+@pytest.mark.skipif(os.name == "nt", reason="POSIX controlled managed-Python fixture")
+def test_real_managed_worker_sinks_never_expose_secret_canary(
+    tmp_path: Path,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    """Break caught: retained-worker backend output or errors reach parent sinks."""
+    source_root = Path(__file__).parents[1] / "src"
+    secret = 'RETAINED-CANARY-"\\' + "c" * 48
+    managed_python = tmp_path / "canary-managed-python"
+    bootstrap = textwrap.dedent(
+        f"""
+        import sys
+        sys.path.insert(0, {str(source_root)!r})
+        import keyring
+        import keyring.backends.SecretService as native
+        state = {{}}
+        def lookup(self, service, key): return state.get((service, key))
+        def store(self, service, key, value):
+            state[(service, key)] = value
+            print(value)
+            print(value, file=sys.stderr)
+            raise RuntimeError(value)
+        def clear(self, service, key): state.pop((service, key), None); return True
+        native.Keyring.get_password = lookup
+        native.Keyring.set_password = store
+        native.Keyring.delete_password = clear
+        keyring.set_keyring(object.__new__(native.Keyring))
+        from officina.install import credential_preflight as worker_module
+        original_state = worker_module._ManagedCredentialWorkerState
+        worker_module._ManagedCredentialWorkerState = lambda: original_state(
+            token_factory=lambda: {secret!r}
+        )
+        raise SystemExit(worker_module.main(sys.argv[4:]))
+        """
+    ).strip()
+    managed_python.write_text(
+        f"#!{sys.executable!s}\n" + bootstrap + "\n", encoding="utf-8"
+    )
+    managed_python.chmod(0o700)
+    worker = ManagedCredentialWorker(
+        str(managed_python), command_timeout_seconds=1, total_timeout_seconds=5
+    )
+
+    worker.start()
+    result = worker.preflight()
+    worker.close()
+
+    captured = capfd.readouterr()
+    payload = result.as_json()
+    retained_output = json.dumps(payload, separators=(",", ":"), sort_keys=True)
+    sink_paths = _persist_through_real_repository_sinks(
+        tmp_path,
+        payload=payload,
+        retained_output=retained_output,
+    )
+    combined = (
+        repr(result)
+        + captured.out
+        + captured.err
+        + retained_output
+        + "".join(path.read_text(encoding="utf-8") for path in sink_paths)
+    )
+    for canary in encoded_canaries(secret):
+        assert canary not in combined
+
+
 # famulus-skip: category=platform-contract; reason=fixture executable is a POSIX shell shim around the current isolated Python; alternate=Windows inheritable-handle launch and native Job containment branches are unit-tested separately
 @pytest.mark.skipif(os.name == "nt", reason="POSIX controlled managed-Python fixture")
 def test_real_managed_worker_retains_one_process_and_backend_then_is_absent(
@@ -1646,9 +2327,10 @@ def test_real_managed_worker_retains_one_process_and_backend_then_is_absent(
     worker.start()
     pid = worker._process.pid
     assert worker.preflight().ok
-    assert worker.verify_certificate(platform="linux", home=tmp_path) == (
-        CredentialVerificationResult(True, "sha256:" + "e" * 64)
-    )
+    for _attempt in range(2):
+        assert worker.verify_certificate(
+            platform="linux", home=tmp_path, repo=tmp_path / "repo"
+        ) == CredentialVerificationResult(True, "sha256:" + "e" * 64)
     assert worker._process.pid == pid
     worker.close()
 
@@ -1657,6 +2339,6 @@ def test_real_managed_worker_retains_one_process_and_backend_then_is_absent(
     native_records = [record for record in records if record["operation"] != "verify"]
     verify_records = [record for record in records if record["operation"] == "verify"]
     assert len({record["backend"] for record in native_records}) == 1
-    assert len(verify_records) == 1
+    assert len(verify_records) == 2
     with pytest.raises(ProcessLookupError):
         os.kill(pid, 0)
