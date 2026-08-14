@@ -25,14 +25,37 @@ Faking that behavior here would produce a false acceptance signal.
 from __future__ import annotations
 
 import json
+import hashlib
 import sys
 from pathlib import Path
 
 import pytest
 
 from officina.install.managed_runtime import ManagedRuntimeError, build_candidate_release
+from officina.install.runtime_lock import render_runtime_requirements
 from officina.install.runtime_pointer import activate_release, load_current_pointer
 from test_support.uv_subprocess import fake_uv_subprocess_run
+
+PINNED_UV_VERSION = "0.11.29"
+PINNED_PYTHON_VERSION = "3.11.15"
+
+
+def _lock_paths(tmp_path: Path, manifest: Path) -> tuple[Path, Path]:
+    input_path = tmp_path / "requirements-core.in"
+    lock_path = tmp_path / "requirements-core.lock"
+    rendered = render_runtime_requirements(manifest)
+    input_path.write_text(rendered, encoding="utf-8")
+    digest = hashlib.sha256(rendered.encode("utf-8")).hexdigest()
+    lock_path.write_text(
+        "# famulus-runtime-lock-schema: 1\n"
+        f"# input-sha256: {digest}\n"
+        f"# uv-version: {PINNED_UV_VERSION}\n"
+        f"# python-version: {PINNED_PYTHON_VERSION}\n"
+        "#\n"
+        f"rich==13.9.4 --hash=sha256:{'a' * 64}\n",
+        encoding="utf-8",
+    )
+    return input_path, lock_path
 
 
 def _build(monkeypatch, calls, tmp_path, runtime_root, *, trusted_python_dir=None):
@@ -46,12 +69,16 @@ def _build(monkeypatch, calls, tmp_path, runtime_root, *, trusted_python_dir=Non
             '{"version": 1, "skills": {}}',
             encoding="utf-8",
         )
+    lock_input_path, lock_path = _lock_paths(tmp_path, manifest)
     return build_candidate_release(
         runtime_root=runtime_root,
         manifest_path=manifest,
+        lock_input_path=lock_input_path,
+        lock_path=lock_path,
         platform="linux",
         uv_bin=Path("/fake/uv"),
-        python_version="3.11",
+        uv_version=PINNED_UV_VERSION,
+        python_version=PINNED_PYTHON_VERSION,
     ), trusted_python_dir
 
 
@@ -161,15 +188,19 @@ def test_failed_update_leaves_prior_pointer_and_release_usable(monkeypatch, tmp_
     def fail(**kwargs):
         raise ManagedRuntimeError("simulated dependency install failure")
 
-    monkeypatch.setattr("officina.install.managed_runtime._run_dependency_install", fail)
+    monkeypatch.setattr("officina.install.managed_runtime._run_locked_dependency_install", fail)
 
     with pytest.raises(ManagedRuntimeError):
+        lock_input_path, lock_path = _lock_paths(tmp_path, manifest)
         build_candidate_release(
             runtime_root=runtime_root,
             manifest_path=manifest,
+            lock_input_path=lock_input_path,
+            lock_path=lock_path,
             platform="linux",
             uv_bin=Path("/fake/uv"),
-            python_version="3.11",
+            uv_version=PINNED_UV_VERSION,
+            python_version=PINNED_PYTHON_VERSION,
         )
 
     loaded = load_current_pointer(

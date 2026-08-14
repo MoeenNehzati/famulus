@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import re
 
 import tomllib
 
@@ -32,7 +33,7 @@ def load_install_info(base: Path) -> InstallInfo:
             f"unsupported install-info schema_version: {schema_version!r}"
         )
     try:
-        return InstallInfo(
+        info = InstallInfo(
             schema_version=schema_version,
             uv_version=data["bootstrap"]["uv_version"],
             managed_python=data["managed_python"]["preferred"],
@@ -40,6 +41,15 @@ def load_install_info(base: Path) -> InstallInfo:
         )
     except KeyError as exc:
         raise InstallInfoError(f"install-info file missing required key: {exc}") from exc
+    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", info.managed_python):
+        raise InstallInfoError(
+            "install-info must pin one exact managed Python patch version"
+        )
+    if info.managed_python_supported != f"=={info.managed_python}":
+        raise InstallInfoError(
+            "install-info supported range must equal the exact managed Python patch"
+        )
+    return info
 
 
 __all__ = ["InstallInfo", "InstallInfoError", "load_install_info"]

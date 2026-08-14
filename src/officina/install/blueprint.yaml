@@ -12,12 +12,13 @@ content:
 - install_info\.py
 - runtime_pointer\.py
 - managed_runtime\.py
+- runtime_lock\.py
 - launcher_entry\.py
 - resolvers/launch\.py
 - uv_bootstrap\.py
 description: Parses pinned bootstrap/runtime versions, manages the atomic current.json
   pointer, builds verified managed releases containing the first-party Officina wheel
-  plus schema-v2 declared dependencies, provides the stable path-fixed launcher resolver,
+  plus a generated hash-checked dependency lock, provides the stable path-fixed launcher resolver,
   and bootstraps a machine-local managed uv binary.
 exports:
   install.interface.install-info:

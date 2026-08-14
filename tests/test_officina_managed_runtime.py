@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import tomllib
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -15,10 +16,11 @@ from officina.install.managed_runtime import (
     _source_revision,
     _venv_python_bin,
     _venv_site_packages,
-    build_candidate_release,
+    build_candidate_release as _build_candidate_release,
     declared_python_packages,
     optional_python_packages,
 )
+from officina.install.runtime_lock import render_runtime_requirements
 from test_support.git_repository import GitTestRepository
 from test_support.uv_subprocess import FakeCompletedProcess, fake_uv_subprocess_run
 
@@ -34,6 +36,136 @@ UV_BIN = shutil.which("uv")
 # against str(FAKE_UV_BIN), not a hardcoded POSIX-style literal, to stay
 # correct on a real Windows test host.
 FAKE_UV_BIN = Path("/fake/uv")
+PINNED_UV_VERSION = "0.11.29"
+PINNED_PYTHON_VERSION = "3.11.15"
+
+
+def _pinned_uv_is_available() -> bool:
+    if UV_BIN is None:
+        return False
+    result = subprocess.run(
+        [UV_BIN, "--version"], capture_output=True, text=True, encoding="utf-8", errors="strict"
+    )
+    return result.returncode == 0 and result.stdout.split()[:2] == ["uv", PINNED_UV_VERSION]
+
+
+PINNED_UV_AVAILABLE = _pinned_uv_is_available()
+
+
+def _write_test_runtime_lock(tmp_path: Path, manifest_path: Path) -> tuple[Path, Path]:
+    """Write a structurally valid lock bound to ``manifest_path``.
+
+    Resolution correctness is covered by the checked-in generated lock and
+    generator tests; managed-runtime tests only need a small offline fixture
+    that exercises validation and command wiring.
+    """
+    input_path = tmp_path / "requirements-core.in"
+    lock_path = tmp_path / "requirements-core.lock"
+    rendered = render_runtime_requirements(manifest_path)
+    input_path.write_text(rendered, encoding="utf-8")
+    input_sha256 = hashlib.sha256(rendered.encode("utf-8")).hexdigest()
+    lock_path.write_text(
+        "# famulus-runtime-lock-schema: 1\n"
+        f"# input-sha256: {input_sha256}\n"
+        f"# uv-version: {PINNED_UV_VERSION}\n"
+        f"# python-version: {PINNED_PYTHON_VERSION}\n"
+        "#\n"
+        f"rich==13.9.4 --hash=sha256:{'a' * 64}\n",
+        encoding="utf-8",
+    )
+    return input_path, lock_path
+
+
+def build_candidate_release(**kwargs):
+    """Supply the release-lock contract to legacy scenarios in this module."""
+    if "lock_input_path" not in kwargs:
+        manifest_path = Path(kwargs["manifest_path"])
+        if manifest_path == REAL_MANIFEST:
+            runtime_refs = REPO_ROOT / "references" / "runtime"
+            kwargs["lock_input_path"] = runtime_refs / "requirements-core.in"
+            kwargs["lock_path"] = runtime_refs / "requirements-core.lock"
+        else:
+            kwargs["lock_input_path"], kwargs["lock_path"] = _write_test_runtime_lock(
+                manifest_path.parent, manifest_path
+            )
+    kwargs.setdefault("uv_version", PINNED_UV_VERSION)
+    if kwargs.get("python_version") == "3.11":
+        kwargs["python_version"] = PINNED_PYTHON_VERSION
+    return _build_candidate_release(**kwargs)
+
+
+def test_release_venv_uses_exact_managed_python(monkeypatch, tmp_path):
+    calls: list[list[str]] = []
+    monkeypatch.setattr(
+        "subprocess.run",
+        fake_uv_subprocess_run(calls, trusted_python_dir=tmp_path / "uv-python-store"),
+    )
+    input_path, lock_path = _write_test_runtime_lock(tmp_path, REAL_MANIFEST)
+
+    build_candidate_release(
+        runtime_root=tmp_path / "runtime",
+        manifest_path=REAL_MANIFEST,
+        lock_input_path=input_path,
+        lock_path=lock_path,
+        platform="linux",
+        uv_bin=FAKE_UV_BIN,
+        uv_version=PINNED_UV_VERSION,
+        python_version=PINNED_PYTHON_VERSION,
+    )
+
+    assert calls[0][1:] == [
+        "venv", "--managed-python", "--python", PINNED_PYTHON_VERSION,
+        calls[0][-1],
+    ]
+
+
+def test_release_installs_validated_lock_with_hashes(monkeypatch, tmp_path):
+    calls: list[list[str]] = []
+    monkeypatch.setattr(
+        "subprocess.run",
+        fake_uv_subprocess_run(calls, trusted_python_dir=tmp_path / "uv-python-store"),
+    )
+    input_path, lock_path = _write_test_runtime_lock(tmp_path, REAL_MANIFEST)
+
+    build_candidate_release(
+        runtime_root=tmp_path / "runtime",
+        manifest_path=REAL_MANIFEST,
+        lock_input_path=input_path,
+        lock_path=lock_path,
+        platform="linux",
+        uv_bin=FAKE_UV_BIN,
+        uv_version=PINNED_UV_VERSION,
+        python_version=PINNED_PYTHON_VERSION,
+    )
+
+    lock_install = next(call for call in calls if "--require-hashes" in call)
+    assert lock_install[-3:] == ["--require-hashes", "-r", str(lock_path)]
+
+
+def test_release_rejects_stale_lock_before_creating_release(monkeypatch, tmp_path):
+    calls: list[list[str]] = []
+    monkeypatch.setattr(
+        "subprocess.run",
+        fake_uv_subprocess_run(calls, trusted_python_dir=tmp_path / "uv-python-store"),
+    )
+    input_path, lock_path = _write_test_runtime_lock(tmp_path, REAL_MANIFEST)
+    input_path.write_text("stale\n", encoding="utf-8")
+    runtime_root = tmp_path / "runtime"
+
+    with pytest.raises(ManagedRuntimeError, match="stale"):
+        build_candidate_release(
+            runtime_root=runtime_root,
+            manifest_path=REAL_MANIFEST,
+            lock_input_path=input_path,
+            lock_path=lock_path,
+            platform="linux",
+            uv_bin=FAKE_UV_BIN,
+            uv_version=PINNED_UV_VERSION,
+            python_version=PINNED_PYTHON_VERSION,
+        )
+
+    assert calls == []
+    assert not (runtime_root / "releases").exists()
 
 
 def test_wheel_metadata_preserves_non_python_runtime_assets() -> None:
@@ -229,6 +361,13 @@ def test_venv_python_bin_windows_is_scripts_python_exe():
     assert _venv_python_bin(venv_dir, platform="windows") == venv_dir / "Scripts" / "python.exe"
 
 
+def test_venv_site_packages_uses_major_minor_for_exact_patch():
+    venv_dir = Path("/fake/release/venv")
+    assert _venv_site_packages(
+        venv_dir, platform="linux", python_version=PINNED_PYTHON_VERSION
+    ) == venv_dir / "lib" / "python3.11" / "site-packages"
+
+
 def test_build_candidate_release_on_windows_uses_scripts_python_exe(monkeypatch, tmp_path):
     """Regression test for a real bug: build_candidate_release used to
     hardcode `venv_dir / "bin" / "python"` with no platform branch, so on
@@ -278,11 +417,16 @@ def test_build_candidate_release_creates_venv_then_one_batch_pip_install(monkeyp
 
     assert len(calls) == 3  # uv venv, one batch pip-install call (not per-package), uv python dir
     venv_call, pip_call, python_dir_call = calls
-    assert venv_call == [str(FAKE_UV_BIN), "venv", "--python", "3.11", str(pointer.runtime_source / "venv")]
+    assert venv_call == [
+        str(FAKE_UV_BIN), "venv", "--managed-python", "--python",
+        PINNED_PYTHON_VERSION, str(pointer.runtime_source / "venv"),
+    ]
     assert pip_call[:4] == [str(FAKE_UV_BIN), "pip", "install", "--python"]
     assert pip_call[4] == str(pointer.python_bin)
-    assert "setuptools==80.9.0" in pip_call
-    assert "PyYAML==6.0.2" in pip_call
+    assert pip_call[-3:] == [
+        "--require-hashes", "-r",
+        str(REPO_ROOT / "references" / "runtime" / "requirements-core.lock"),
+    ]
     assert python_dir_call == [str(FAKE_UV_BIN), "python", "dir"]
     assert pointer.python_bin.exists()
 
@@ -304,7 +448,8 @@ def test_build_candidate_release_include_optional_dependencies_false_excludes_ma
 
     pip_call = calls[1]
     assert "marker-pdf" not in pip_call
-    assert "bibtexparser" in pip_call  # a core (non-optional) package is still requested
+    assert "--require-hashes" in pip_call
+    assert "marker-pdf" not in Path(pip_call[-1]).read_text(encoding="utf-8")
 
 
 def test_build_candidate_release_provisions_venv_before_installing_packages(monkeypatch, tmp_path):
@@ -323,7 +468,10 @@ def test_build_candidate_release_provisions_venv_before_installing_packages(monk
         python_version="3.11",
     )
 
-    assert calls[0][:4] == [str(FAKE_UV_BIN), "venv", "--python", "3.11"]
+    assert calls[0][:5] == [
+        str(FAKE_UV_BIN), "venv", "--managed-python", "--python",
+        PINNED_PYTHON_VERSION,
+    ]
     assert calls[1][0] == str(FAKE_UV_BIN)
 
 
@@ -490,9 +638,9 @@ def test_repo_candidate_installs_verified_officina_wheel_before_activation(monke
     install_indices = [i for i, call in enumerate(calls) if call[1:3] == ["pip", "install"]]
     probe_indices = [i for i, call in enumerate(calls) if len(call) > 1 and call[1] == "-I"]
     assert install_indices[0] < build_index < install_indices[1] < min(probe_indices)
-    assert "PyYAML==6.0.2" in calls[install_indices[0]]
-    assert "setuptools==80.9.0" in calls[install_indices[0]]
+    assert "--require-hashes" in calls[install_indices[0]]
     assert any(value.endswith(".whl") for value in calls[install_indices[1]])
+    assert "--no-deps" in calls[install_indices[1]]
     for index in probe_indices:
         assert "PYTHONPATH" not in call_kwargs[index]["env"]
         assert call_kwargs[index]["env"]["PYTHONNOUSERSITE"] == "1"
@@ -500,6 +648,13 @@ def test_repo_candidate_installs_verified_officina_wheel_before_activation(monke
     assert metadata["wheel"] == "famulus_officina-0.1.0-py3-none-any.whl"
     assert len(metadata["wheel_sha256"]) == 64
     assert metadata["source_revision"] == "a" * 40
+    assert metadata["schema_version"] == 2
+    assert len(metadata["runtime_lock"]["sha256"]) == 64
+    assert metadata["runtime_lock"]["uv_version"] == PINNED_UV_VERSION
+    assert metadata["python"]["version"] == PINNED_PYTHON_VERSION
+    assert metadata["python"]["implementation"] == "cpython"
+    assert metadata["python"]["build"] == ["main", "Aug 13 2026 00:00:00"]
+    assert metadata["python"]["compiler"] == "GCC 13.3.0"
     assert pointer.repository_config == (repo_root / "officina.toml").resolve()
 
 
@@ -539,31 +694,12 @@ def test_invalid_repository_config_preserves_prior_pointer(monkeypatch, tmp_path
 
 
 # famulus-skip: category=capability-unavailable; reason=requires a real uv binary on PATH; alternate=mocked tests above cover call shapes and ordering without uv installed
-@pytest.mark.skipif(UV_BIN is None, reason="uv is not installed on this machine")
+@pytest.mark.skipif(not PINNED_UV_AVAILABLE, reason="pinned uv is not on PATH")
 def test_build_candidate_release_end_to_end_with_real_uv(tmp_path):
     """Integration test against the real uv binary (no mocking): proves the
     venv-creation + batch-install + officina-self-install + activation flow
     actually works, not just that mocked call shapes look right."""
-    manifest = tmp_path / "runtime_dependencies.json"
-    manifest.write_text(json.dumps({
-        "version": 1,
-        "skills": {
-            "example": {
-                "interfaces": {
-                    "run": {
-                        "dependencies": [
-                            {
-                                "kind": "python-package",
-                                "name": "rich",
-                                "version": "any",
-                                "platforms": {"linux": True, "macos": True, "windows": True},
-                            },
-                        ]
-                    }
-                }
-            }
-        },
-    }))
+    manifest = REAL_MANIFEST
     runtime_root = tmp_path / "runtime"
 
     pointer = build_candidate_release(
@@ -571,7 +707,7 @@ def test_build_candidate_release_end_to_end_with_real_uv(tmp_path):
         manifest_path=manifest,
         platform="linux",
         uv_bin=Path(UV_BIN),
-        python_version="3.11",
+        python_version=PINNED_PYTHON_VERSION,
     )
 
     assert pointer.python_bin.exists()
@@ -596,18 +732,17 @@ def test_build_candidate_release_end_to_end_with_real_uv(tmp_path):
 
 
 # famulus-skip: category=capability-unavailable; reason=requires a real uv binary on PATH; alternate=mocked artifact/probe tests above cover ordering and rollback
-@pytest.mark.skipif(UV_BIN is None, reason="uv is not installed on this machine")
+@pytest.mark.skipif(not PINNED_UV_AVAILABLE, reason="pinned uv is not on PATH")
 def test_repo_candidate_real_uv_runs_installed_dispatcher_through_stable_launcher(tmp_path):
     repo_root = Path(__file__).resolve().parents[1]
-    manifest = tmp_path / "runtime_dependencies.json"
-    manifest.write_text('{"version": 2, "skills": {}}', encoding="utf-8")
+    manifest = REAL_MANIFEST
 
     pointer = build_candidate_release(
         runtime_root=tmp_path / "runtime",
         manifest_path=manifest,
         platform="linux",
         uv_bin=Path(UV_BIN),
-        python_version="3.11",
+        python_version=PINNED_PYTHON_VERSION,
         repo_root=repo_root,
     )
 

@@ -58,10 +58,14 @@ _EXCLUDED_PATHS = {
 }
 _PLATFORM_METADATA_TOOLING_PATHS = {
     Path("skills/skill-maker/_rtx/_blueprint_syncer.py"),
+    Path("src/officina/install/runtime_lock.py"),
 }
 _HOST_PATTERN = re.compile(r"(?i:(\.claude|claude|\.codex|codex))")
 _PLATFORM_METADATA_LINE_RE = re.compile(
     r"^\s*(?:#\s*)?[\"']?(?:linux|macos|windows)[\"']?\s*:\s*(?:true|false|\{)"
+)
+_PEP508_PLATFORM_MARKER_LINE_RE = re.compile(
+    r";.*\bsys_platform\s*==\s*['\"](?:linux|darwin|win32)['\"]"
 )
 REQUIRES_BLUEPRINT_GRAPH = True
 BLUEPRINT_GRAPH_OPTIONAL = True
@@ -94,6 +98,8 @@ def _is_allowed_platform_metadata_line(rel_path: Path, line: str) -> bool:
         return True
     if rel_path == Path("references/blueprint/runtime_dependencies.json"):
         return _PLATFORM_METADATA_LINE_RE.search(line) is not None
+    if rel_path == Path("references/runtime/requirements-core.lock"):
+        return _PEP508_PLATFORM_MARKER_LINE_RE.search(line) is not None
     if rel_path.parts[:2] == ("references", "blueprint"):
         return True
     if rel_path in _PLATFORM_METADATA_TOOLING_PATHS:

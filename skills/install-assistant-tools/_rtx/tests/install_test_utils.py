@@ -307,14 +307,26 @@ def managed_uv_python_install_dir() -> str | None:
 
 
 def managed_runtime_uv_bin() -> str | None:
-    """Real `uv` binary on this machine's PATH, or None if unavailable.
+    """Pinned release-contract `uv` on PATH, or None if unavailable.
 
-    Callers should skip (not fail) when this is None -- building a real
-    managed-runtime release needs a real uv, same as the mocked-vs-real-uv
-    split used throughout tests/test_officina_managed_runtime.py and
-    tests/test_officina_launcher_entry.py.
+    An older host uv can be installed yet lack the managed Python patch pinned
+    by this release. Callers skip unless PATH resolves the exact bootstrap
+    version; installed-plugin tests exercise bootstrap of that version
+    separately.
     """
-    return shutil.which("uv")
+    uv_bin = shutil.which("uv")
+    if uv_bin is None:
+        return None
+    result = subprocess.run(
+        [uv_bin, "--version"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="strict",
+    )
+    if result.returncode != 0 or result.stdout.split()[:2] != ["uv", "0.11.29"]:
+        return None
+    return uv_bin
 
 
 def build_minimal_managed_runtime_release(
@@ -331,21 +343,26 @@ def build_minimal_managed_runtime_release(
     None.
     """
     from officina.common.famulus_paths import resolve_famulus_paths
+    from officina.install.install_info import load_install_info
     from officina.install.managed_runtime import build_candidate_release
 
     uv_bin = managed_runtime_uv_bin()
     assert uv_bin is not None, "build_minimal_managed_runtime_release requires a real uv binary"
 
     paths = resolve_famulus_paths(platform=sys.platform, home=home)
-    manifest = tmp_root / "managed-runtime-empty-manifest.json"
-    manifest.write_text(json.dumps({"version": 2, "skills": {}}), encoding="utf-8")
+    source_root = repo_root or REPO_ROOT
+    info = load_install_info(source_root)
+    manifest = source_root / "references" / "blueprint" / "runtime_dependencies.json"
     platform_name = {"darwin": "macos", "win32": "windows"}.get(sys.platform, "linux")
     build_candidate_release(
         runtime_root=paths.runtime_root,
         manifest_path=manifest,
+        lock_input_path=source_root / "references" / "runtime" / "requirements-core.in",
+        lock_path=source_root / "references" / "runtime" / "requirements-core.lock",
         platform=platform_name,
         uv_bin=Path(uv_bin),
-        python_version="3.11",
+        uv_version=info.uv_version,
+        python_version=info.managed_python,
         repo_root=repo_root,
     )
 

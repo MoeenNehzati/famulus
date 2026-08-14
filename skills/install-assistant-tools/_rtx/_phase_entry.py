@@ -172,21 +172,16 @@ def _build_managed_runtime_candidate(
     if uv_status:
         return uv_status
 
-    if not include_optional_dependencies:
-        deferred = managed_runtime.optional_python_packages(manifest_path, platform=platform_name)
-        if deferred:
-            log(
-                "Skipping optional heavy dependencies (re-run install later to add "
-                f"them): {', '.join(deferred)}"
-            )
-
     log("Building managed-runtime candidate release...")
     try:
         managed_runtime.build_candidate_release(
             runtime_root=paths.runtime_root,
             manifest_path=manifest_path,
+            lock_input_path=repo_root / "references" / "runtime" / "requirements-core.in",
+            lock_path=repo_root / "references" / "runtime" / "requirements-core.lock",
             platform=platform_name,
             uv_bin=paths.uv_bin,
+            uv_version=info.uv_version,
             python_version=info.managed_python,
             repo_root=repo_root,
             include_optional_dependencies=include_optional_dependencies,
@@ -270,17 +265,13 @@ def run(
 ) -> int:
     home = home or Path.home()
 
-    if include_optional_dependencies is None:
-        if non_interactive:
-            include_optional_dependencies = False
-        else:
-            include_optional_dependencies = _prompt_yes_no(
-                "Some skills need large optional dependencies (e.g. pdf-to-markdown's "
-                "OCR/ML models -- several GB). Install them now? If you skip this, "
-                "you can install them later, if you end up needing that skill, by "
-                "re-running install with --include-optional-deps.",
-                default=False,
-            )
+    if include_optional_dependencies:
+        log(
+            "Optional heavy dependencies are excluded from the first supported "
+            "release; --include-optional-deps is not supported."
+        )
+        return 2
+    include_optional_dependencies = False
 
     if dev_mode is None:
         if non_interactive:
@@ -386,8 +377,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     optional_deps.add_argument(
         "--include-optional-deps", dest="include_optional_dependencies",
         action="store_true", default=None,
-        help="Also install large, single-skill dependencies (e.g. pdf-to-markdown's "
-        "OCR/ML models). Defaults to skipping them.",
+        help="Unsupported in the first release; exits without installing.",
     )
     optional_deps.add_argument(
         "--no-optional-deps", dest="include_optional_dependencies", action="store_false",

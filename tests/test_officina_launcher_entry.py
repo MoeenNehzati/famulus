@@ -21,7 +21,23 @@ SRC_DIR = Path(__file__).resolve().parents[1] / "src"
 REPO_ROOT = SRC_DIR.parent
 RESOLVER_SOURCE = SRC_DIR / "officina" / "install" / "resolvers" / "launch.py"
 REAL_MANIFEST = Path(__file__).resolve().parents[1] / "references" / "blueprint" / "runtime_dependencies.json"
+RUNTIME_LOCK_INPUT = REPO_ROOT / "references" / "runtime" / "requirements-core.in"
+RUNTIME_LOCK = REPO_ROOT / "references" / "runtime" / "requirements-core.lock"
+PINNED_UV_VERSION = "0.11.29"
+PINNED_PYTHON_VERSION = "3.11.15"
 UV_BIN = shutil.which("uv")
+
+
+def _pinned_uv_is_available() -> bool:
+    if UV_BIN is None:
+        return False
+    result = subprocess.run(
+        [UV_BIN, "--version"], capture_output=True, text=True, encoding="utf-8", errors="strict"
+    )
+    return result.returncode == 0 and result.stdout.split()[:2] == ["uv", PINNED_UV_VERSION]
+
+
+PINNED_UV_AVAILABLE = _pinned_uv_is_available()
 
 
 def _resolver_argv(runtime_root: Path, *extra: str) -> list[str]:
@@ -486,7 +502,7 @@ def test_resolver_containment_check_matches_real_runtime_pointer_implementation(
 # ── Real end-to-end smoke tests ──────────────────────────────────────────────
 
 # famulus-skip: category=capability-unavailable; reason=requires a real uv binary on PATH; alternate=mocked tests above cover main()'s pointer-resolution and trusted-roots logic without uv installed
-@pytest.mark.skipif(UV_BIN is None, reason="uv is not installed on this machine")
+@pytest.mark.skipif(not PINNED_UV_AVAILABLE, reason="pinned uv is not on PATH")
 def test_resolver_end_to_end_execs_into_real_uv_managed_interpreter_with_clean_env(tmp_path):
     """Full integration smoke test, run with a CLEAN environment (no
     PYTHONPATH injection): build a real uv-managed release, deploy the
@@ -499,16 +515,18 @@ def test_resolver_end_to_end_execs_into_real_uv_managed_interpreter_with_clean_e
     corrected design, and this test's clean env is the proof.
     """
     runtime_root = tmp_path / "runtime"
-    manifest = tmp_path / "runtime_dependencies.json"
-    manifest.write_text(json.dumps({"version": 1, "skills": {}}))
+    manifest = REAL_MANIFEST
 
     managed_uv = _deploy_managed_uv(runtime_root)
     pointer = build_candidate_release(
         runtime_root=runtime_root,
         manifest_path=manifest,
+        lock_input_path=RUNTIME_LOCK_INPUT,
+        lock_path=RUNTIME_LOCK,
         platform="linux",
         uv_bin=managed_uv,
-        python_version="3.11",
+        uv_version=PINNED_UV_VERSION,
+        python_version=PINNED_PYTHON_VERSION,
     )
 
     trusted_roots = (uv_python_install_dir(managed_uv),)
@@ -534,7 +552,7 @@ def test_resolver_end_to_end_execs_into_real_uv_managed_interpreter_with_clean_e
 
 
 # famulus-skip: category=capability-unavailable; reason=requires a real uv binary on PATH; alternate=mocked tests above cover main()'s pointer-resolution and trusted-roots logic without uv installed
-@pytest.mark.skipif(UV_BIN is None, reason="uv is not installed on this machine")
+@pytest.mark.skipif(not PINNED_UV_AVAILABLE, reason="pinned uv is not on PATH")
 def test_build_candidate_release_auto_deploys_resolver_with_clean_env(tmp_path):
     """Task 7 (Step 3b) closes the Task 6 gap: build_candidate_release itself
     must deploy the resolver and its trust sidecar as part of activation, not
@@ -547,16 +565,18 @@ def test_build_candidate_release_auto_deploys_resolver_with_clean_env(tmp_path):
     below) with a clean environment.
     """
     runtime_root = tmp_path / "runtime"
-    manifest = tmp_path / "runtime_dependencies.json"
-    manifest.write_text(json.dumps({"version": 1, "skills": {}}))
+    manifest = REAL_MANIFEST
 
     managed_uv = _deploy_managed_uv(runtime_root)
     pointer = build_candidate_release(
         runtime_root=runtime_root,
         manifest_path=manifest,
+        lock_input_path=RUNTIME_LOCK_INPUT,
+        lock_path=RUNTIME_LOCK,
         platform="linux",
         uv_bin=managed_uv,
-        python_version="3.11",
+        uv_version=PINNED_UV_VERSION,
+        python_version=PINNED_PYTHON_VERSION,
     )
 
     resolver_path = runtime_root / "bootstrap" / "resolvers" / "v1" / "launch.py"
@@ -581,7 +601,7 @@ def test_build_candidate_release_auto_deploys_resolver_with_clean_env(tmp_path):
 
 
 # famulus-skip: category=capability-unavailable; reason=requires a real uv binary on PATH; alternate=mocked tests above cover main()'s pointer-resolution and trusted-roots logic without uv installed
-@pytest.mark.skipif(UV_BIN is None, reason="uv is not installed on this machine")
+@pytest.mark.skipif(not PINNED_UV_AVAILABLE, reason="pinned uv is not on PATH")
 def test_generated_dispatcher_shim_reaches_the_real_release_interpreter_with_clean_env(tmp_path, monkeypatch):
     """End-to-end through the actual generated dispatcher content, also with
     a clean environment: a real uv-managed release is built and activated
@@ -618,9 +638,12 @@ def test_generated_dispatcher_shim_reaches_the_real_release_interpreter_with_cle
     build_candidate_release(
         runtime_root=runtime_root,
         manifest_path=_manifest_without_heavy_ml_deps(tmp_path),
+        lock_input_path=RUNTIME_LOCK_INPUT,
+        lock_path=RUNTIME_LOCK,
         platform="linux",
         uv_bin=managed_uv,
-        python_version="3.11",
+        uv_version=PINNED_UV_VERSION,
+        python_version=PINNED_PYTHON_VERSION,
     )
     # No manual _deploy_resolver call: build_candidate_release above already
     # deployed the resolver and its trusted-roots.json sidecar as part of

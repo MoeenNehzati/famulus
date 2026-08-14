@@ -1,6 +1,7 @@
 """Fakes for managed-runtime tests that exercise `uv` subprocess calls."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 
@@ -50,6 +51,21 @@ def fake_uv_subprocess_run(calls: list, *, trusted_python_dir: Path, windows: bo
             else:
                 (venv_dir / "bin").mkdir(parents=True, exist_ok=True)
                 (venv_dir / "bin" / "python").write_text("#!/bin/sh\n")
+        elif len(cmd) >= 4 and cmd[1:3] == ["-I", "-c"] and "platform.python_version" in cmd[3]:
+            return FakeCompletedProcess(
+                stdout=json.dumps(
+                    {
+                        "implementation": "cpython",
+                        "version": "3.11.15",
+                        "build": ["main", "Aug 13 2026 00:00:00"],
+                        "compiler": "GCC 13.3.0",
+                        "platform": "Linux-6.0-x86_64",
+                        "cache_tag": "cpython-311",
+                        "executable": cmd[0],
+                    }
+                )
+                + "\n"
+            )
         elif cmd[1:3] == ["python", "dir"]:
             return FakeCompletedProcess(stdout=str(trusted_python_dir) + "\n")
         elif cmd[1] == "build":

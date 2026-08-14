@@ -1,14 +1,16 @@
-"""Build a versioned managed-runtime candidate release from the supported
-runtime_dependencies.json manifest, installing all declared Python
-dependencies in one atomic batch instead of ambient, best-effort per-package
-pip calls.
+"""Build and atomically activate a versioned managed-runtime candidate.
+
+The blueprint-derived dependency manifest is accepted only with its matching
+generated, exact, hash-checked core lock. Candidate construction uses the
+pinned managed Python patch, installs the lock with hash enforcement, and
+installs the locally built Officina wheel without resolving dependencies.
 
 `build_candidate_release` is called from `_phase_entry.py`, ahead of
 `scaffold.run`, so a real managed-runtime release (and the dependency-free
 launcher resolver deployed alongside it -- see `_deploy_resolver`) exists
 before any launcher shim that execs into it is generated. `_install_scaffold.py`
-separately consumes `declared_python_packages` for its own ambient,
-ahead-of-managed-runtime ecosystem ambient package installs.
+separately consumes `declared_python_packages` for host capability reporting
+and legacy ambient-package handling.
 """
 from __future__ import annotations
 
@@ -24,12 +26,12 @@ from pathlib import Path
 
 from officina.common import atomic_files, toml_io
 from officina.common.git_provenance import run_git
+from officina.install import runtime_lock
 from officina.install.runtime_pointer import RuntimePointer, activate_release
 
 _VERSION_OPERATOR_RE = re.compile(r"^(==|>=|<=|!=|~=|>|<)")
 
 _DEFAULT_DEPENDENCY_INSTALL_TIMEOUT_SECONDS = 600
-_CORE_RUNTIME_PACKAGES = ("setuptools==80.9.0", "PyYAML==6.0.2")
 
 
 def _dependency_install_timeout_seconds() -> float:
@@ -183,28 +185,66 @@ def _create_release_venv(*, uv_bin: Path, venv_dir: Path, python_version: str) -
     environment (or system interpreter) at that path; it does not create
     one. This must run before any dependency install against ``venv_dir``.
     """
-    result = _run_uv([str(uv_bin), "venv", "--python", python_version, str(venv_dir)])
+    result = _run_uv(
+        [
+            str(uv_bin),
+            "venv",
+            "--managed-python",
+            "--python",
+            python_version,
+            str(venv_dir),
+        ]
+    )
     if result.returncode != 0:
         raise ManagedRuntimeError(
             f"venv creation failed (exit {result.returncode}): {result.stderr.strip()}"
         )
 
 
-def _run_dependency_install(*, uv_bin: Path, python_bin: Path, packages: tuple[str, ...]) -> None:
-    """Install every declared package in one atomic uv batch call.
+def _run_dependency_install(
+    *, uv_bin: Path, python_bin: Path, packages: tuple[str, ...], no_deps: bool = False
+) -> None:
+    """Install the supplied local artifact(s) in one atomic uv batch call.
 
     Fails fast: any non-zero exit raises ManagedRuntimeError, unlike the
     previous per-package WARN-and-continue loop.
     """
     if not packages:
         return
+    argv = [str(uv_bin), "pip", "install", "--python", str(python_bin)]
+    if no_deps:
+        argv.append("--no-deps")
     result = _run_uv(
-        [str(uv_bin), "pip", "install", "--python", str(python_bin), *packages],
+        [*argv, *packages],
         timeout=_dependency_install_timeout_seconds(),
     )
     if result.returncode != 0:
         raise ManagedRuntimeError(
             f"dependency install failed (exit {result.returncode}): {result.stderr.strip()}"
+        )
+
+
+def _run_locked_dependency_install(
+    *, uv_bin: Path, python_bin: Path, lock_path: Path
+) -> None:
+    """Install the already-validated release lock with hash enforcement."""
+    result = _run_uv(
+        [
+            str(uv_bin),
+            "pip",
+            "install",
+            "--python",
+            str(python_bin),
+            "--require-hashes",
+            "-r",
+            str(lock_path),
+        ],
+        timeout=_dependency_install_timeout_seconds(),
+    )
+    if result.returncode != 0:
+        raise ManagedRuntimeError(
+            f"locked dependency install failed (exit {result.returncode}): "
+            f"{result.stderr.strip()}"
         )
 
 
@@ -360,6 +400,46 @@ def _validate_candidate_runtime(*, python_bin: Path) -> None:
     )
 
 
+def _candidate_python_identity(*, python_bin: Path) -> dict[str, object]:
+    """Read the candidate interpreter identity without ambient Python state."""
+    env = dict(os.environ)
+    env.pop("PYTHONPATH", None)
+    env.pop("PYTHONHOME", None)
+    env["PYTHONNOUSERSITE"] = "1"
+    program = (
+        "import json,platform,sys;"
+        "print(json.dumps({'implementation':sys.implementation.name,"
+        "'version':platform.python_version(),'build':platform.python_build(),"
+        "'compiler':platform.python_compiler(),'platform':platform.platform(),"
+        "'cache_tag':sys.implementation.cache_tag,'executable':sys.executable},sort_keys=True))"
+    )
+    try:
+        result = subprocess.run(
+            [str(python_bin), "-I", "-c", program],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="strict",
+            env=env,
+            timeout=30,
+        )
+        identity = json.loads(result.stdout) if result.returncode == 0 else None
+    except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError) as exc:
+        raise ManagedRuntimeError(f"could not identify candidate Python: {exc}") from exc
+    string_keys = ("implementation", "version", "compiler", "platform", "cache_tag", "executable")
+    build = identity.get("build") if isinstance(identity, dict) else None
+    if (
+        not isinstance(identity, dict)
+        or any(not isinstance(identity.get(key), str) for key in string_keys)
+        or not isinstance(build, list)
+        or len(build) != 2
+        or any(not isinstance(value, str) for value in build)
+    ):
+        detail = result.stderr.strip() if result.returncode != 0 else "invalid identity output"
+        raise ManagedRuntimeError(f"could not identify candidate Python: {detail}")
+    return {key: identity[key] for key in (*string_keys, "build")}
+
+
 def _venv_python_bin(venv_dir: Path, *, platform: str) -> Path:
     """Return the interpreter path a real ``uv venv --python ... venv_dir``
     creates for ``platform``.
@@ -386,7 +466,11 @@ def _venv_site_packages(venv_dir: Path, *, platform: str, python_version: str) -
     """
     if platform == "windows":
         return venv_dir / "Lib" / "site-packages"
-    return venv_dir / "lib" / f"python{python_version}" / "site-packages"
+    version_parts = python_version.split(".")
+    if len(version_parts) < 2 or not all(part.isdigit() for part in version_parts[:2]):
+        raise ManagedRuntimeError(f"invalid managed Python version: {python_version!r}")
+    abi_version = ".".join(version_parts[:2])
+    return venv_dir / "lib" / f"python{abi_version}" / "site-packages"
 
 
 def _install_officina_self(*, repo_root: Path, venv_dir: Path, platform: str, python_version: str) -> None:
@@ -501,14 +585,17 @@ def build_candidate_release(
     *,
     runtime_root: Path,
     manifest_path: Path,
+    lock_input_path: Path,
+    lock_path: Path,
     platform: str,
     uv_bin: Path,
+    uv_version: str,
     python_version: str,
     repo_root: Path | None = None,
-    include_optional_dependencies: bool = True,
+    include_optional_dependencies: bool = False,
 ) -> RuntimePointer:
     """Create a new release directory, provision its managed interpreter,
-    install its declared Python dependencies, install Officina, verify the
+    install its locked Python dependencies, install Officina, verify the
     candidate when a repository is explicit, and activate the release.
 
     ``python_version`` should be the pinned ``managed_python.preferred``
@@ -521,11 +608,9 @@ def build_candidate_release(
     compatibility path retains the target branch's direct package-copy
     behavior for low-level callers.
 
-    ``include_optional_dependencies`` controls whether large, single-skill
-    packages (see ``_OPTIONAL_HEAVY_PACKAGE_NAMES``) are installed. Defaults
-    to ``True`` here so existing/lower-level callers keep today's behavior;
-    ``_phase_entry.py``'s interactive install flow defaults the *user-facing*
-    choice to ``False`` and passes the result through explicitly.
+    The first supported release excludes optional heavy dependencies. A caller
+    that requests them is rejected instead of silently escaping the verified
+    lock.
 
     On any failure (bad manifest, failed venv creation, failed batch
     install, failed Officina build or validation, failed self-install, or
@@ -534,14 +619,26 @@ def build_candidate_release(
     resolver and its trust sidecar are deployed *before* activation for exactly
     this reason: a deployment failure must prevent activation, not follow it.
     """
+    if include_optional_dependencies:
+        raise ManagedRuntimeError(
+            "optional heavy dependencies are excluded from the first supported release"
+        )
+    try:
+        lock_metadata = runtime_lock.validate_runtime_lock(
+            manifest_path=manifest_path,
+            input_path=lock_input_path,
+            lock_path=lock_path,
+            expected_uv_version=uv_version,
+            expected_python_version=python_version,
+        )
+    except runtime_lock.RuntimeLockError as exc:
+        raise ManagedRuntimeError(f"invalid runtime lock: {exc}") from exc
+
     explicit_repo_root = repo_root is not None
     if repo_root is None:
         repo_root = Path(__file__).resolve().parents[3]
     repo_root = Path(repo_root).resolve()
     repository_config = repo_root / toml_io.repository_config_filename()
-    packages = declared_python_packages(
-        manifest_path, platform=platform, include_optional=include_optional_dependencies
-    )
     release_id = _new_release_id()
     release_dir = runtime_root / "releases" / release_id
     release_dir.mkdir(parents=True, exist_ok=True)
@@ -549,6 +646,11 @@ def build_candidate_release(
     python_bin = _venv_python_bin(venv_dir, platform=platform)
 
     _create_release_venv(uv_bin=uv_bin, venv_dir=venv_dir, python_version=python_version)
+    _run_locked_dependency_install(
+        uv_bin=uv_bin,
+        python_bin=python_bin,
+        lock_path=lock_path,
+    )
     if explicit_repo_root:
         try:
             from officina.common.repository_configuration import load_repository_configuration
@@ -556,11 +658,6 @@ def build_candidate_release(
             load_repository_configuration(repository_config)
         except Exception as exc:
             raise ManagedRuntimeError(f"invalid repository configuration: {exc}") from exc
-        _run_dependency_install(
-            uv_bin=uv_bin,
-            python_bin=python_bin,
-            packages=_CORE_RUNTIME_PACKAGES,
-        )
         wheel, wheel_sha256, source_revision = _build_officina_wheel(
             uv_bin=uv_bin,
             python_bin=python_bin,
@@ -571,26 +668,30 @@ def build_candidate_release(
             uv_bin=uv_bin,
             python_bin=python_bin,
             packages=(str(wheel),),
-        )
-        module_packages = tuple(
-            package
-            for package in packages
-            if not re.match(r"(?i)^(?:pyyaml|setuptools)(?:[<>=!~].*)?$", package)
-        )
-        _run_dependency_install(
-            uv_bin=uv_bin,
-            python_bin=python_bin,
-            packages=module_packages,
+            no_deps=True,
         )
         _validate_candidate_runtime(python_bin=python_bin)
+        python_identity = _candidate_python_identity(python_bin=python_bin)
+        if python_identity["version"] != python_version:
+            raise ManagedRuntimeError(
+                "candidate Python version mismatch: "
+                f"expected {python_version}, got {python_identity['version']}"
+            )
         atomic_files.atomic_replace_bytes(
             release_dir / "artifact.json",
             json.dumps(
                 {
-                    "schema_version": 1,
+                    "schema_version": 2,
                     "wheel": wheel.name,
                     "wheel_sha256": wheel_sha256,
                     "source_revision": source_revision,
+                    "runtime_lock": {
+                        "path": str(lock_path),
+                        "sha256": lock_metadata.lock_sha256,
+                        "input_sha256": lock_metadata.input_sha256,
+                        "uv_version": lock_metadata.uv_version,
+                    },
+                    "python": python_identity,
                 },
                 indent=2,
             ).encode("utf-8"),
@@ -598,16 +699,6 @@ def build_candidate_release(
             mode=0o600,
         )
     else:
-        module_packages = tuple(
-            package
-            for package in packages
-            if not re.match(r"(?i)^(?:pyyaml|setuptools)(?:[<>=!~].*)?$", package)
-        )
-        _run_dependency_install(
-            uv_bin=uv_bin,
-            python_bin=python_bin,
-            packages=(*_CORE_RUNTIME_PACKAGES, *module_packages),
-        )
         _install_officina_self(
             repo_root=repo_root,
             venv_dir=venv_dir,

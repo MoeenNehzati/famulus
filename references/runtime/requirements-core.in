@@ -1,0 +1,14 @@
+# Generated from references/blueprint/runtime_dependencies.json.
+# Do not edit by hand.
+
+bibtexparser
+cryptography>=44.0.1
+dateparser
+jsonschema
+jsonschema>=4
+keyring
+PyYAML
+PyYAML==6.0.2
+PyYAML>=6
+rich
+setuptools==80.9.0

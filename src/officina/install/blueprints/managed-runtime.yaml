@@ -1,5 +1,6 @@
 content:
 - managed_runtime\.py
+- runtime_lock\.py
 dependencies:
 - blueprint:
     base: module-root
@@ -14,9 +15,9 @@ dependencies:
   reason: Loads Python package support from __init__.py.
   source: install.source.init
   version: 1
-description: Reads runtime_dependencies.json schema v2 and builds a versioned managed-runtime
-  candidate containing a verified first-party Officina wheel, pinned core packages,
-  and declared module dependencies before atomic activation.
+description: Pools runtime_dependencies.json schema v2 into a generated universal lock,
+  validates exact pins and hashes, and builds a versioned managed-runtime candidate
+  containing that lock and a verified first-party Officina wheel before atomic activation.
 gateway:
   language: Python
   path: managed_runtime.py
@@ -44,6 +45,32 @@ interfaces:
           required: true
           sensitivity: public
           direct_io_ref: manifest-file
+          type:
+            kind: file
+            syntax: literal
+            relative_to: caller-cwd
+            must_exist: true
+            access: read
+            opaque_content: true
+        lock-input-path:
+          description: Path to the canonical generated core requirements input used
+            only for build-candidate-release.
+          required: false
+          sensitivity: public
+          direct_io_ref: lock-input-file
+          type:
+            kind: file
+            syntax: literal
+            relative_to: caller-cwd
+            must_exist: true
+            access: read
+            opaque_content: true
+        lock-path:
+          description: Path to the exact hash-checked core requirements lock used
+            only for build-candidate-release.
+          required: false
+          sensitivity: public
+          direct_io_ref: lock-file
           type:
             kind: file
             syntax: literal
@@ -102,6 +129,20 @@ interfaces:
             must_exist: false
             access: read
             opaque_content: true
+        uv-version:
+          description: Exact uv version recorded in the generated lock, used only
+            for build-candidate-release.
+          required: false
+          sensitivity: public
+          type:
+            kind: string
+        python-version:
+          description: Exact managed Python patch recorded in the generated lock
+            and selected for build-candidate-release.
+          required: false
+          sensitivity: public
+          type:
+            kind: string
       preconditions:
       - id: readable-manifest
         description: manifest-path must be a readable, syntactically valid JSON file
@@ -113,11 +154,23 @@ interfaces:
         unmet_outcome: unsupported-manifest
         caller_action: Supply the real references/blueprint/runtime_dependencies.json
           (schema v2).
+      - id: verified-runtime-lock
+        description: For build-candidate-release, lock-input-path and lock-path must
+          match the manifest and the supplied exact uv and Python versions, and every
+          locked requirement must be exact and SHA-256-hashed.
+        check:
+          kind: argument
+          argument_ref: lock-path
+          predicate: present
+        unmet_outcome: unsupported-manifest
+        caller_action: Regenerate the checked-in runtime lock with the pinned uv,
+          then retry without editing generated files by hand.
       interaction:
         mode: unattended
       caller_warnings:
       - external-side-effect: build-candidate-release creates a release beneath runtime-root,
-          builds and installs a first-party wheel plus dependencies through uv-bin,
+          installs the verified lock with hash enforcement, builds and installs a
+          first-party wheel without dependency resolution through uv-bin,
           validates it in isolation, and atomically activates it; it never builds
           routing state.
       outputs:
@@ -219,6 +272,22 @@ interfaces:
           - json
           sensitivity: public
           path: <manifest-path>
+        - id: lock-input-file
+          medium: local-filesystem
+          access: read
+          content: Canonical generated core requirements input
+          formats:
+          - text
+          sensitivity: public
+          path: <lock-input-path>
+        - id: lock-file
+          medium: local-filesystem
+          access: read
+          content: Exact SHA-256-hashed universal requirements lock
+          formats:
+          - text
+          sensitivity: public
+          path: <lock-path>
         - id: repository-blueprints
           medium: local-filesystem
           access: read
