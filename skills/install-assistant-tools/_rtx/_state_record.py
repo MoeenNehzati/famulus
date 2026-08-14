@@ -38,11 +38,18 @@ from officina.common.atomic_files import (
     ensure_secure_directory,
     read_regular_file_bytes,
 )
+from officina.common.certificate_intents import (
+    CertificateMutationIntent,
+    canonical_certificate_intent_bytes,
+)
 from officina.common.famulus_paths import resolve_famulus_paths
 
 MANIFEST_VERSION = 2
-JOURNAL_VERSION = 1
+JOURNAL_VERSION = 2
 _SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
+_KEY_ID_PATTERN = re.compile(r"sha256:[0-9a-f]{64}")
+_CERTIFICATE_SELECTOR_NAME = "active-key-id"
+_CERTIFICATE_SELECTOR_MODE = 0o600
 
 
 class StateRecordError(RuntimeError):
@@ -122,10 +129,27 @@ def _read_json_object(
     destination, root = _confined_record_path(path, state_root)
     try:
         raw = read_regular_file_bytes(destination, allowed_root=root)
-        value = json.loads(raw.decode("utf-8"))
+        def closed_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+            result: dict[str, object] = {}
+            for key, item in pairs:
+                if key in result:
+                    raise ValueError("duplicate state-record field")
+                result[key] = item
+            return result
+
+        value = json.loads(
+            raw.decode("utf-8"),
+            object_pairs_hook=closed_object,
+        )
     except FileNotFoundError:
         raise
-    except (AtomicWriteError, OSError, UnicodeError, json.JSONDecodeError) as exc:
+    except (
+        AtomicWriteError,
+        OSError,
+        UnicodeError,
+        json.JSONDecodeError,
+        ValueError,
+    ) as exc:
         raise StateRecordError(f"invalid {label} at {path}: {exc}") from exc
     if not isinstance(value, dict):
         raise StateRecordError(f"invalid {label} at {path}: expected JSON object")
@@ -185,6 +209,20 @@ def _require_state(value: object, *, field: str) -> dict[str, object]:
     if kind == "symlink" and not isinstance(value["target"], str):
         raise StateRecordError(f"{field}.target is invalid")
     return dict(value)
+
+
+def _certificate_selector_snapshot(key_id: str | None) -> dict[str, object]:
+    """Return the exact journal snapshot for one canonical selector value."""
+
+    if key_id is None:
+        return {"kind": "absent"}
+    encoded = (key_id + "\n").encode("ascii")
+    return {
+        "kind": "file",
+        "mode": _CERTIFICATE_SELECTOR_MODE,
+        "size": len(encoded),
+        "sha256": hashlib.sha256(encoded).hexdigest(),
+    }
 
 
 @dataclass(frozen=True)
@@ -249,28 +287,76 @@ class TransactionJournal:
     """Durable progress record for one managed installer transaction."""
 
     transaction_id: str
-    phase: Literal["prepared", "committed", "complete"]
+    phase: Literal["preparing", "prepared", "committed", "complete"]
     prior_release_id: str | None
     candidate_release_id: str
     resolver_bundle_id: str
-    staged_key_id: str | None
+    certificate_key_id: str | None
+    certificate_intent: CertificateMutationIntent | None
+    certificate_progress: Literal["none", "planned", "staged", "committed"]
     pending_mutation: JournalMutation | None
     completed_mutation_ids: tuple[str, ...]
 
     def __post_init__(self) -> None:
         _require_string(self.transaction_id, field="transaction_id")
-        if self.phase not in {"prepared", "committed", "complete"}:
-            raise StateRecordError("phase must be prepared, committed, or complete")
+        if self.phase not in {"preparing", "prepared", "committed", "complete"}:
+            raise StateRecordError(
+                "phase must be preparing, prepared, committed, or complete"
+            )
         _require_string(self.prior_release_id, field="prior_release_id", nullable=True)
         _require_string(self.candidate_release_id, field="candidate_release_id")
         _require_string(self.resolver_bundle_id, field="resolver_bundle_id")
-        _require_string(self.staged_key_id, field="staged_key_id", nullable=True)
+        if self.certificate_progress not in {
+            "none",
+            "planned",
+            "staged",
+            "committed",
+        }:
+            raise StateRecordError("certificate_progress is invalid")
+        if self.certificate_key_id is not None and (
+            not isinstance(self.certificate_key_id, str)
+            or _KEY_ID_PATTERN.fullmatch(self.certificate_key_id) is None
+        ):
+            raise StateRecordError("certificate_key_id is invalid")
+        if self.certificate_intent is not None and not isinstance(
+            self.certificate_intent, CertificateMutationIntent
+        ):
+            raise StateRecordError(
+                "certificate_intent must be a CertificateMutationIntent or null"
+            )
+        if self.certificate_progress == "none":
+            if self.certificate_key_id is not None or self.certificate_intent is not None:
+                raise StateRecordError(
+                    "certificate progress none requires key and intent to be null"
+                )
+        elif self.certificate_progress in {"planned", "staged"}:
+            if self.certificate_key_id is None:
+                raise StateRecordError(
+                    f"certificate progress {self.certificate_progress} requires a key"
+                )
+            if self.certificate_intent is None:
+                raise StateRecordError(
+                    f"certificate progress {self.certificate_progress} requires an intent"
+                )
+        elif self.certificate_key_id is None:
+            raise StateRecordError("certificate progress committed requires a key")
+        if self.certificate_intent is not None:
+            if self.transaction_id != self.certificate_intent.transaction_id:
+                raise StateRecordError("journal transaction does not match certificate intent")
+            if self.certificate_key_id != self.certificate_intent.active_key_id:
+                raise StateRecordError("certificate key does not match certificate intent")
         if not isinstance(self.completed_mutation_ids, tuple) or not all(
             isinstance(value, str) and value for value in self.completed_mutation_ids
         ):
             raise StateRecordError("completed_mutation_ids must contain non-empty strings")
         if len(set(self.completed_mutation_ids)) != len(self.completed_mutation_ids):
             raise StateRecordError("completed_mutation_ids must not contain duplicates")
+        if self.phase == "preparing" and self.pending_mutation is not None:
+            raise StateRecordError("preparing journal cannot contain a pending mutation")
+        if self.phase == "complete" and self.certificate_progress != "committed":
+            raise StateRecordError(
+                "complete journal requires committed certificate progress"
+            )
         if self.phase == "complete" and self.pending_mutation is not None:
             raise StateRecordError("complete journal cannot contain a pending mutation")
         if (
@@ -278,6 +364,52 @@ class TransactionJournal:
             and self.pending_mutation.mutation_id in self.completed_mutation_ids
         ):
             raise StateRecordError("pending mutation cannot already be completed")
+        if (
+            self.pending_mutation is not None
+            and self.pending_mutation.kind == "certificate_selector"
+            and self.certificate_progress != "staged"
+        ):
+            raise StateRecordError(
+                "certificate selector mutation requires staged certificate progress"
+            )
+        if (
+            self.pending_mutation is not None
+            and self.pending_mutation.kind == "certificate_selector"
+            and self.certificate_intent is not None
+        ):
+            selector = self.pending_mutation
+            selector_path = Path(selector.path)
+            if (
+                selector_path.name != _CERTIFICATE_SELECTOR_NAME
+                or any(part in {"", ".", ".."} for part in selector_path.parts)
+            ):
+                raise StateRecordError(
+                    "certificate selector path has invalid lexical shape"
+                )
+            if selector.ownership_entry is not None:
+                raise StateRecordError(
+                    "certificate selector ownership must be recorded by certificate recovery"
+                )
+            expected_selector_id = hashlib.sha256(
+                b"famulus-certificate-selector-mutation-v1\x00"
+                + canonical_certificate_intent_bytes(self.certificate_intent)
+            ).hexdigest()[:32]
+            if selector.mutation_id != expected_selector_id:
+                raise StateRecordError(
+                    "certificate selector mutation ID does not match intent"
+                )
+            if selector.expected_before != _certificate_selector_snapshot(
+                self.certificate_intent.prior_key_id
+            ):
+                raise StateRecordError(
+                    "certificate selector expected-before snapshot does not match intent"
+                )
+            if selector.intended_after != _certificate_selector_snapshot(
+                self.certificate_intent.active_key_id
+            ):
+                raise StateRecordError(
+                    "certificate selector intended-after snapshot does not match intent"
+                )
 
     def to_dict(self) -> dict[str, object]:
         return {"version": JOURNAL_VERSION, **asdict(self)}
@@ -300,7 +432,9 @@ class TransactionJournal:
                 "prior_release_id",
                 "candidate_release_id",
                 "resolver_bundle_id",
-                "staged_key_id",
+                "certificate_key_id",
+                "certificate_intent",
+                "certificate_progress",
                 "pending_mutation",
                 "completed_mutation_ids",
             }
@@ -308,6 +442,7 @@ class TransactionJournal:
                 raise StateRecordError("transaction journal fields are incomplete or unknown")
             pending = payload["pending_mutation"]
             completed = payload["completed_mutation_ids"]
+            intent_payload = payload["certificate_intent"]
             if not isinstance(completed, list):
                 raise StateRecordError("completed_mutation_ids must be a JSON array")
             return cls(
@@ -322,9 +457,17 @@ class TransactionJournal:
                 resolver_bundle_id=_require_string(
                     payload["resolver_bundle_id"], field="resolver_bundle_id"
                 ),  # type: ignore[arg-type]
-                staged_key_id=_require_string(
-                    payload["staged_key_id"], field="staged_key_id", nullable=True
+                certificate_key_id=_require_string(
+                    payload["certificate_key_id"],
+                    field="certificate_key_id",
+                    nullable=True,
                 ),
+                certificate_intent=(
+                    None
+                    if intent_payload is None
+                    else CertificateMutationIntent.from_dict(intent_payload)
+                ),
+                certificate_progress=payload["certificate_progress"],  # type: ignore[arg-type]
                 pending_mutation=None
                 if pending is None
                 else JournalMutation.from_dict(pending),
@@ -336,6 +479,10 @@ class TransactionJournal:
             if str(exc).startswith("invalid transaction journal"):
                 raise
             raise StateRecordError(f"invalid transaction journal at {path}: {exc}") from exc
+        except (TypeError, ValueError):
+            raise StateRecordError(
+                f"invalid transaction journal at {path}: certificate intent is invalid"
+            ) from None
 
 
 def snapshot_path_state(path: Path) -> dict[str, object]:
@@ -385,6 +532,10 @@ def recover_pending_mutation(
     mutation = journal.pending_mutation
     if mutation is None:
         return journal
+    if mutation.kind == "certificate_selector":
+        raise StateRecordError(
+            "certificate selector recovery requires a recomputed canonical path"
+        )
     actual = snapshot_path_state(Path(mutation.path))
     if actual == mutation.intended_after:
         pass

@@ -22,6 +22,11 @@ import pytest
 from test_support.git_repository import GitTestRepository
 
 from install_test_utils import REPO_ROOT, can_create_symlink
+from officina.common.certificate_intents import (
+    CertificateMutationIntent,
+    CertificatePublicFileIntent,
+    canonical_certificate_intent_bytes,
+)
 
 SCRIPTS = REPO_ROOT / "skills" / "install-assistant-tools" / "_rtx"
 sys.path.insert(0, str(SCRIPTS))
@@ -137,15 +142,407 @@ def test_manifest_symlink_fails_closed_without_replacing_target(tmp_path: Path) 
 
 def _journal(*, pending_mutation: JournalMutation | None) -> TransactionJournal:
     return TransactionJournal(
-        transaction_id="transaction-001",
+        transaction_id="1" * 32,
         phase="prepared",
         prior_release_id="release-old",
         candidate_release_id="release-new",
         resolver_bundle_id="resolver-001",
-        staged_key_id="key-001",
+        certificate_key_id="sha256:" + "a" * 64,
+        certificate_intent=None,
+        certificate_progress="committed",
         pending_mutation=pending_mutation,
         completed_mutation_ids=(),
     )
+
+
+def _certificate_intent() -> CertificateMutationIntent:
+    key_id = "sha256:" + "a" * 64
+    return CertificateMutationIntent(
+        schema_version=1,
+        transaction_id="1" * 32,
+        intent_id="2" * 32,
+        action="create",
+        backend_identity="keyring.backends.SecretService.Keyring",
+        active_key_id=key_id,
+        prior_key_id=None,
+        public_files=(
+            CertificatePublicFileIntent(
+                key_id=key_id,
+                size=7,
+                sha256=hashlib.sha256(b"public\n").hexdigest(),
+                quarantine_id="3" * 32,
+            ),
+        ),
+        secret_target=(
+            "Famulus:skill-certifier:ed25519-private-key:" + key_id
+        ),
+    )
+
+
+def _certificate_selector_mutation(
+    tmp_path: Path,
+    intent: CertificateMutationIntent,
+    *,
+    path: Path | None = None,
+    expected_before: dict[str, object] | None = None,
+    intended_after: dict[str, object] | None = None,
+    ownership_entry: dict[str, object] | None = None,
+) -> JournalMutation:
+    active_bytes = (intent.active_key_id + "\n").encode("ascii")
+    return JournalMutation(
+        mutation_id=hashlib.sha256(
+            b"famulus-certificate-selector-mutation-v1\x00"
+            + canonical_certificate_intent_bytes(intent)
+        ).hexdigest()[:32],
+        kind="certificate_selector",
+        path=str(path or tmp_path / "certificates" / "active-key-id"),
+        expected_before=(
+            {"kind": "absent"}
+            if expected_before is None
+            else expected_before
+        ),
+        intended_after=(
+            {
+                "kind": "file",
+                "mode": 0o600,
+                "size": len(active_bytes),
+                "sha256": hashlib.sha256(active_bytes).hexdigest(),
+            }
+            if intended_after is None
+            else intended_after
+        ),
+        ownership_entry=ownership_entry,
+    )
+
+
+def _journal_v2(
+    *,
+    phase: str = "prepared",
+    certificate_progress: str = "planned",
+    certificate_key_id: str | None = None,
+    certificate_intent: CertificateMutationIntent | None = None,
+    pending_mutation: JournalMutation | None = None,
+) -> TransactionJournal:
+    intent = _certificate_intent() if certificate_intent is None else certificate_intent
+    key_id = intent.active_key_id if certificate_key_id is None else certificate_key_id
+    return TransactionJournal(
+        transaction_id=intent.transaction_id,
+        phase=phase,
+        prior_release_id="release-old",
+        candidate_release_id="release-new",
+        resolver_bundle_id="resolver-001",
+        certificate_key_id=key_id,
+        certificate_intent=intent,
+        certificate_progress=certificate_progress,
+        pending_mutation=pending_mutation,
+        completed_mutation_ids=(),
+    )
+
+
+def test_transaction_journal_v2_round_trip_preserves_certificate_intent(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "state" / "transaction-journal.json"
+    journal = _journal_v2()
+
+    journal.save(path, state_root=path.parent)
+
+    assert json.loads(path.read_bytes())["version"] == 2
+    assert TransactionJournal.load(path, state_root=path.parent) == journal
+
+
+def test_transaction_journal_rejects_every_v1_record_without_inference(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "transaction-journal.json"
+    payload = {
+        "version": 1,
+        "transaction_id": "transaction-001",
+        "phase": "prepared",
+        "prior_release_id": None,
+        "candidate_release_id": "release-new",
+        "resolver_bundle_id": "resolver-001",
+        "staged_key_id": "sha256:" + "a" * 64,
+        "pending_mutation": None,
+        "completed_mutation_ids": [],
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(
+        StateRecordError,
+        match=r"^invalid transaction journal at .*: unsupported transaction journal version$",
+    ):
+        TransactionJournal.load(path, state_root=tmp_path)
+
+
+@pytest.mark.parametrize(
+    (
+        "phase",
+        "progress",
+        "key_mode",
+        "intent_mode",
+        "pending_kind",
+        "error",
+    ),
+    [
+        ("prepared", "none", "active", "present", None, "none.*null"),
+        ("prepared", "planned", "null", "present", None, "planned.*key"),
+        ("prepared", "planned", "active", "null", None, "planned.*intent"),
+        ("prepared", "planned", "other", "present", None, "key.*intent"),
+        ("prepared", "staged", "active", "null", None, "staged.*intent"),
+        ("prepared", "committed", "null", "null", None, "committed.*key"),
+        ("complete", "staged", "active", "present", None, "complete.*committed"),
+        ("preparing", "none", "null", "null", "file", "preparing.*pending"),
+    ],
+)
+def test_transaction_journal_v2_rejects_certificate_state_invariant_breaks(
+    tmp_path: Path,
+    phase: str,
+    progress: str,
+    key_mode: str,
+    intent_mode: str,
+    pending_kind: str | None,
+    error: str,
+) -> None:
+    intent = _certificate_intent()
+    key_id = {
+        "active": intent.active_key_id,
+        "other": "sha256:" + "b" * 64,
+        "null": None,
+    }[key_mode]
+    pending = None
+    if pending_kind is not None:
+        target = tmp_path / "dispatcher"
+        pending = JournalMutation(
+            mutation_id="4" * 32,
+            kind=pending_kind,
+            path=str(target),
+            expected_before={"kind": "absent"},
+            intended_after={"kind": "file", "mode": 0o600, "size": 0, "sha256": hashlib.sha256(b"").hexdigest()},
+            ownership_entry=None,
+        )
+
+    with pytest.raises(StateRecordError, match=error):
+        TransactionJournal(
+            transaction_id=intent.transaction_id,
+            phase=phase,
+            prior_release_id=None,
+            candidate_release_id="release-new",
+            resolver_bundle_id="resolver-001",
+            certificate_key_id=key_id,
+            certificate_intent=intent if intent_mode == "present" else None,
+            certificate_progress=progress,
+            pending_mutation=pending,
+            completed_mutation_ids=(),
+        )
+
+
+def test_complete_journal_accepts_verified_reuse_without_intent() -> None:
+    key_id = "sha256:" + "c" * 64
+
+    journal = TransactionJournal(
+        transaction_id="1" * 32,
+        phase="complete",
+        prior_release_id=None,
+        candidate_release_id="release-new",
+        resolver_bundle_id="resolver-001",
+        certificate_key_id=key_id,
+        certificate_intent=None,
+        certificate_progress="committed",
+        pending_mutation=None,
+        completed_mutation_ids=(),
+    )
+
+    assert journal.certificate_key_id == key_id
+
+
+def test_certificate_selector_mutation_requires_staged_intent_and_exact_kind(
+    tmp_path: Path,
+) -> None:
+    intent = _certificate_intent()
+    selector = _certificate_selector_mutation(tmp_path, intent)
+
+    journal = _journal_v2(
+        certificate_progress="staged",
+        pending_mutation=selector,
+    )
+
+    assert journal.pending_mutation is selector
+
+
+def test_certificate_selector_journal_rejects_forged_canonical_mutation_id(
+    tmp_path: Path,
+) -> None:
+    intent = _certificate_intent()
+    selector = JournalMutation(
+        mutation_id="4" * 32,
+        kind="certificate_selector",
+        path=str(tmp_path / "active-key-id"),
+        expected_before={"kind": "absent"},
+        intended_after={
+            "kind": "file",
+            "mode": 0o600,
+            "size": len(intent.active_key_id) + 1,
+            "sha256": hashlib.sha256(
+                (intent.active_key_id + "\n").encode("ascii")
+            ).hexdigest(),
+        },
+        ownership_entry=None,
+    )
+
+    with pytest.raises(StateRecordError, match="selector mutation ID"):
+        _journal_v2(
+            certificate_progress="staged",
+            pending_mutation=selector,
+        )
+
+
+@pytest.mark.parametrize(
+    ("mutation", "error"),
+    [
+        ("path_basename", "selector path"),
+        ("ownership", "selector ownership"),
+        ("before_kind", "expected-before"),
+        ("after_mode", "intended-after"),
+        ("after_size", "intended-after"),
+        ("after_digest", "intended-after"),
+    ],
+)
+def test_certificate_selector_journal_binds_every_transition_component(
+    tmp_path: Path,
+    mutation: str,
+    error: str,
+) -> None:
+    """Break caught: a selector ACK authorizes a different path or byte state."""
+
+    intent = _certificate_intent()
+    active_bytes = (intent.active_key_id + "\n").encode("ascii")
+    kwargs: dict[str, object] = {}
+    if mutation == "path_basename":
+        kwargs["path"] = tmp_path / "certificates" / "other-selector"
+    elif mutation == "ownership":
+        path = tmp_path / "certificates" / "active-key-id"
+        kwargs["ownership_entry"] = {"kind": "file", "path": str(path)}
+    elif mutation == "before_kind":
+        kwargs["expected_before"] = {
+            "kind": "file",
+            "mode": 0o600,
+            "size": 1,
+            "sha256": hashlib.sha256(b"x").hexdigest(),
+        }
+    else:
+        intended = {
+            "kind": "file",
+            "mode": 0o600,
+            "size": len(active_bytes),
+            "sha256": hashlib.sha256(active_bytes).hexdigest(),
+        }
+        if mutation == "after_mode":
+            intended["mode"] = 0o644
+        elif mutation == "after_size":
+            intended["size"] = len(active_bytes) + 1
+        else:
+            intended["sha256"] = hashlib.sha256(b"wrong\n").hexdigest()
+        kwargs["intended_after"] = intended
+
+    selector = _certificate_selector_mutation(tmp_path, intent, **kwargs)
+
+    with pytest.raises(StateRecordError, match=error):
+        _journal_v2(
+            certificate_progress="staged",
+            pending_mutation=selector,
+        )
+
+
+def test_certificate_selector_journal_binds_prior_selector_snapshot(
+    tmp_path: Path,
+) -> None:
+    """Break caught: recovery accepts absent-before for an existing prior selector."""
+
+    payload = _certificate_intent().to_dict()
+    prior_key_id = "sha256:" + "c" * 64
+    payload["prior_key_id"] = prior_key_id
+    intent = CertificateMutationIntent.from_dict(payload)
+    selector = _certificate_selector_mutation(tmp_path, intent)
+
+    with pytest.raises(StateRecordError, match="expected-before"):
+        _journal_v2(
+            certificate_progress="staged",
+            certificate_intent=intent,
+            pending_mutation=selector,
+        )
+
+    prior_bytes = (prior_key_id + "\n").encode("ascii")
+    exact = _certificate_selector_mutation(
+        tmp_path,
+        intent,
+        expected_before={
+            "kind": "file",
+            "mode": 0o600,
+            "size": len(prior_bytes),
+            "sha256": hashlib.sha256(prior_bytes).hexdigest(),
+        },
+    )
+    assert _journal_v2(
+        certificate_progress="staged",
+        certificate_intent=intent,
+        pending_mutation=exact,
+    ).pending_mutation is exact
+
+
+@pytest.mark.parametrize("field", ["mode", "size", "sha256"])
+def test_certificate_selector_journal_binds_each_prior_snapshot_field(
+    tmp_path: Path,
+    field: str,
+) -> None:
+    """Break caught: selector recovery omits one prior-file snapshot field."""
+
+    payload = _certificate_intent().to_dict()
+    prior_key_id = "sha256:" + "c" * 64
+    payload["prior_key_id"] = prior_key_id
+    intent = CertificateMutationIntent.from_dict(payload)
+    prior_bytes = (prior_key_id + "\n").encode("ascii")
+    before = {
+        "kind": "file",
+        "mode": 0o600,
+        "size": len(prior_bytes),
+        "sha256": hashlib.sha256(prior_bytes).hexdigest(),
+    }
+    before[field] = {
+        "mode": 0o644,
+        "size": len(prior_bytes) + 1,
+        "sha256": hashlib.sha256(b"wrong\n").hexdigest(),
+    }[field]
+
+    with pytest.raises(StateRecordError, match="expected-before"):
+        _journal_v2(
+            certificate_progress="staged",
+            certificate_intent=intent,
+            pending_mutation=_certificate_selector_mutation(
+                tmp_path,
+                intent,
+                expected_before=before,
+            ),
+        )
+
+
+def test_transaction_journal_independently_binds_intent_transaction() -> None:
+    """Break caught: journal and certificate intent name different transactions."""
+
+    intent = _certificate_intent()
+    with pytest.raises(StateRecordError, match="journal transaction"):
+        TransactionJournal(
+            transaction_id="9" * 32,
+            phase="prepared",
+            prior_release_id=None,
+            candidate_release_id="release-new",
+            resolver_bundle_id="resolver-001",
+            certificate_key_id=intent.active_key_id,
+            certificate_intent=intent,
+            certificate_progress="planned",
+            pending_mutation=None,
+            completed_mutation_ids=(),
+        )
 
 
 def test_transaction_journal_round_trip_preserves_exact_mutation_metadata(
@@ -177,6 +574,28 @@ def test_transaction_journal_round_trip_preserves_exact_mutation_metadata(
 def test_transaction_journal_rejects_malformed_json(tmp_path: Path) -> None:
     path = tmp_path / "transaction-journal.json"
     path.write_text("{not json", encoding="utf-8")
+
+    with pytest.raises(StateRecordError, match="invalid transaction journal"):
+        TransactionJournal.load(path, state_root=tmp_path)
+
+
+def test_transaction_journal_rejects_duplicate_json_fields(tmp_path: Path) -> None:
+    path = tmp_path / "transaction-journal.json"
+    encoded = json.dumps(_journal_v2().to_dict())
+    encoded = encoded.replace('"version": 2', '"version": 2, "version": 2', 1)
+    path.write_text(encoded, encoding="utf-8")
+
+    with pytest.raises(StateRecordError, match="invalid transaction journal"):
+        TransactionJournal.load(path, state_root=tmp_path)
+
+
+def test_transaction_journal_closes_invalid_nested_certificate_intent(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "transaction-journal.json"
+    payload = _journal_v2().to_dict()
+    payload["certificate_intent"]["action"] = "invented"  # type: ignore[index]
+    path.write_text(json.dumps(payload), encoding="utf-8")
 
     with pytest.raises(StateRecordError, match="invalid transaction journal"):
         TransactionJournal.load(path, state_root=tmp_path)
@@ -255,12 +674,14 @@ def test_complete_journal_rejects_pending_mutation(tmp_path: Path) -> None:
 
     with pytest.raises(StateRecordError, match="complete.*pending"):
         TransactionJournal(
-            transaction_id="transaction-001",
+            transaction_id="1" * 32,
             phase="complete",
             prior_release_id=None,
             candidate_release_id="release-new",
             resolver_bundle_id="resolver-001",
-            staged_key_id=None,
+            certificate_key_id="sha256:" + "a" * 64,
+            certificate_intent=None,
+            certificate_progress="committed",
             pending_mutation=mutation,
             completed_mutation_ids=(),
         )
@@ -284,12 +705,14 @@ def test_journal_rejects_pending_id_already_completed(tmp_path: Path) -> None:
 
     with pytest.raises(StateRecordError, match="pending.*completed"):
         TransactionJournal(
-            transaction_id="transaction-001",
+            transaction_id="1" * 32,
             phase="prepared",
             prior_release_id=None,
             candidate_release_id="release-new",
             resolver_bundle_id="resolver-001",
-            staged_key_id=None,
+            certificate_key_id="sha256:" + "a" * 64,
+            certificate_intent=None,
+            certificate_progress="committed",
             pending_mutation=mutation,
             completed_mutation_ids=("mutation-001",),
         )
@@ -318,13 +741,15 @@ def test_transaction_journal_load_rejects_impossible_state_machine_transition(
     )
     path = tmp_path / "transaction-journal.json"
     payload = {
-        "version": 1,
-        "transaction_id": "transaction-001",
+        "version": 2,
+        "transaction_id": "1" * 32,
         "phase": phase,
         "prior_release_id": None,
         "candidate_release_id": "release-new",
         "resolver_bundle_id": "resolver-001",
-        "staged_key_id": None,
+        "certificate_key_id": "sha256:" + "a" * 64,
+        "certificate_intent": None,
+        "certificate_progress": "committed",
         "pending_mutation": {
             "mutation_id": mutation.mutation_id,
             "kind": mutation.kind,
@@ -375,6 +800,48 @@ def test_recovery_performs_untouched_pending_mutation_and_verifies_result(
     assert recovered.pending_mutation is None
     assert recovered.completed_mutation_ids == ("mutation-001",)
     assert snapshot_path_state(target) == intended
+
+
+def test_generic_pending_recovery_refuses_certificate_selector(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Break caught: generic recovery trusts the selector's persisted pathname."""
+
+    intent = _certificate_intent()
+    journal = _journal_v2(
+        certificate_progress="staged",
+        pending_mutation=_certificate_selector_mutation(tmp_path, intent),
+    )
+    manifest = Manifest(tmp_path / "manifest.json", state_root=tmp_path)
+    path_observed = False
+    mutation_called = False
+
+    def unexpected_snapshot(_path: Path) -> dict[str, object]:
+        nonlocal path_observed
+        path_observed = True
+        pytest.fail("certificate selector path must not be observed generically")
+
+    def unexpected_apply(_mutation: JournalMutation) -> None:
+        nonlocal mutation_called
+        mutation_called = True
+        pytest.fail("certificate selector callback must not run generically")
+
+    monkeypatch.setattr(
+        sys.modules[recover_pending_mutation.__module__],
+        "snapshot_path_state",
+        unexpected_snapshot,
+    )
+
+    with pytest.raises(StateRecordError, match="certificate selector.*canonical"):
+        recover_pending_mutation(
+            journal,
+            manifest=manifest,
+            apply_mutation=unexpected_apply,
+        )
+
+    assert path_observed is False
+    assert mutation_called is False
 
 
 def test_recovery_adopts_already_completed_pending_mutation(tmp_path: Path) -> None:
@@ -519,12 +986,14 @@ mutation = JournalMutation(
     ownership_entry=None,
 )
 journal = TransactionJournal(
-    transaction_id="transaction-001",
+    transaction_id="1" * 32,
     phase="prepared",
     prior_release_id=None,
     candidate_release_id="release-new",
     resolver_bundle_id="resolver-001",
-    staged_key_id=None,
+    certificate_key_id="sha256:" + "a" * 64,
+    certificate_intent=None,
+    certificate_progress="committed",
     pending_mutation=mutation,
     completed_mutation_ids=(),
 )

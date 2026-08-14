@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import importlib.util
 import json
 import os
@@ -11,7 +12,7 @@ import sys
 import textwrap
 import time
 import types
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,9 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from officina.install.credential_preflight import (  # noqa: E402
+    CertificateIntentAck,
+    CertificateSelectorAck,
+    certificate_selector_mutation_id,
     CredentialVerificationResult,
     CredentialWorkerCode,
     CredentialWorkerError,
@@ -27,6 +31,16 @@ from officina.install.credential_preflight import (  # noqa: E402
     CredentialPreflightResult,
     main,
     probe_native_store,
+)
+from officina.common.certificate_intents import (  # noqa: E402
+    CertificateMutationIntent,
+    CertificatePublicFileIntent,
+    certificate_intent_digest,
+)
+from officina.common.certificate_records import (  # noqa: E402
+    CertificateMutationResult,
+    CertificatePreparationResult,
+    CertificateRecoveryDisposition,
 )
 from officina.install import credential_preflight as preflight  # noqa: E402
 from officina.install import (  # noqa: E402
@@ -1046,6 +1060,1067 @@ def _worker_request(command: str, **payload: object) -> dict[str, object]:
         "command": command,
         "payload": payload,
     }
+
+
+def _certificate_mutation_intent(
+    *, transaction_id: str = "1" * 32, intent_id: str = "2" * 32
+) -> CertificateMutationIntent:
+    key_id = "sha256:" + "a" * 64
+    return CertificateMutationIntent(
+        schema_version=1,
+        transaction_id=transaction_id,
+        intent_id=intent_id,
+        action="create",
+        backend_identity=_NATIVE_BACKEND_IDENTITY,
+        active_key_id=key_id,
+        prior_key_id=None,
+        public_files=(
+            CertificatePublicFileIntent(
+                key_id=key_id,
+                size=7,
+                sha256="b" * 64,
+                quarantine_id="3" * 32,
+            ),
+        ),
+        secret_target=(
+            "Famulus:skill-certifier:ed25519-private-key:" + key_id
+        ),
+    )
+
+
+def test_certificate_ack_records_bind_exact_canonical_intent_and_selector_step() -> None:
+    intent = _certificate_mutation_intent()
+
+    planned = CertificateIntentAck.for_intent(intent)
+    selector = CertificateSelectorAck.for_intent(
+        intent,
+        mutation_id=certificate_selector_mutation_id(intent),
+    )
+
+    assert planned.as_json() == {
+        "transaction_id": "1" * 32,
+        "intent_id": "2" * 32,
+        "intent_digest": certificate_intent_digest(intent),
+    }
+    assert selector.as_json() == {
+        **planned.as_json(),
+        "mutation_id": certificate_selector_mutation_id(intent),
+    }
+    assert CertificateIntentAck.from_json(planned.as_json()) == planned
+    assert CertificateSelectorAck.from_json(selector.as_json()) == selector
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"transaction_id": "1" * 32, "intent_id": "2" * 32},
+        {
+            "transaction_id": "1" * 32,
+            "intent_id": "2" * 32,
+            "intent_digest": "sha256:" + "a" * 64,
+            "extra": True,
+        },
+        {
+            "transaction_id": "transaction-1",
+            "intent_id": "2" * 32,
+            "intent_digest": "sha256:" + "a" * 64,
+        },
+        {
+            "transaction_id": "1" * 32,
+            "intent_id": "2" * 32,
+            "intent_digest": "a" * 64,
+        },
+    ],
+)
+def test_certificate_intent_ack_rejects_open_or_noncanonical_records(
+    payload: object,
+) -> None:
+    with pytest.raises((TypeError, ValueError)):
+        CertificateIntentAck.from_json(payload)
+
+
+def _certificate_worker_state(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    events: list[tuple[str, int, object]],
+) -> tuple[preflight._ManagedCredentialWorkerState, CertificateMutationIntent, _RetainedBackend]:
+    backend = _RetainedBackend()
+    intent = _certificate_mutation_intent()
+    paths = types.SimpleNamespace(public_key_root=tmp_path / "certificates")
+    monkeypatch.setattr(
+        preflight.secret_store,
+        "native_backend_identity",
+        lambda candidate: _NATIVE_BACKEND_IDENTITY
+        if candidate is backend
+        else pytest.fail("backend substituted"),
+    )
+    monkeypatch.setattr(
+        preflight.certificate_records,
+        "certificate_state_paths",
+        lambda *, platform, home, repo_root: paths,
+    )
+    monkeypatch.setattr(
+        preflight.certificate_records,
+        "prepare_certificate_mutation",
+        lambda selected_paths, *, transaction_id, secret_backend: (
+            events.append(("prepare", id(secret_backend), selected_paths))
+            or CertificatePreparationResult(intent.active_key_id, intent)
+        ),
+    )
+    monkeypatch.setattr(
+        preflight.certificate_records,
+        "apply_certificate_mutation",
+        lambda selected_paths, selected_intent, *, secret_backend: (
+            events.append(("apply", id(secret_backend), selected_intent))
+            or CertificateMutationResult(
+                intent.active_key_id,
+                CertificateRecoveryDisposition.STAGED,
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        preflight.certificate_records,
+        "abort_certificate_mutation",
+        lambda selected_paths, selected_intent, *, secret_backend: (
+            events.append(("abort", id(secret_backend), selected_intent))
+            or CertificateMutationResult(
+                intent.active_key_id,
+                CertificateRecoveryDisposition.ABORTED,
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        preflight.certificate_records,
+        "commit_certificate_mutation",
+        lambda selected_paths, selected_intent, *, secret_backend: (
+            events.append(("commit", id(secret_backend), selected_intent))
+            or CertificateMutationResult(
+                intent.active_key_id,
+                CertificateRecoveryDisposition.COMMITTED,
+            )
+        ),
+    )
+    state = preflight._ManagedCredentialWorkerState(
+        backend_factory=lambda: backend,
+        token_factory=lambda: "probe-secret",
+    )
+    assert state.dispatch(_worker_request("preflight", target_id=_TARGET_ONE))["ok"]
+    return state, intent, backend
+
+
+def test_worker_certificate_handshake_mutates_only_after_exact_step_ack(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    events: list[tuple[str, int, object]] = []
+    state, intent, backend = _certificate_worker_state(
+        monkeypatch, tmp_path, events=events
+    )
+
+    prepared = state.dispatch(
+        _worker_request(
+            "prepare_certificate",
+            platform="linux",
+            home=str(tmp_path),
+            repo=str(tmp_path / "repo"),
+            transaction_id=intent.transaction_id,
+        )
+    )
+
+    assert prepared["result"] == {
+        "key_id": intent.active_key_id,
+        "intent": intent.to_dict(),
+    }
+    assert [event[0] for event in events] == ["prepare"]
+
+    applied = state.dispatch(
+        _worker_request(
+            "apply_certificate_intent",
+            ack=CertificateIntentAck.for_intent(intent).as_json(),
+        )
+    )
+    assert applied["result"] == {
+        "key_id": intent.active_key_id,
+        "disposition": "staged",
+    }
+    assert [event[0] for event in events] == ["prepare", "apply"]
+
+    committed = state.dispatch(
+        _worker_request(
+            "commit_certificate_intent",
+            ack=CertificateSelectorAck.for_intent(
+                intent, mutation_id=certificate_selector_mutation_id(intent)
+            ).as_json(),
+        )
+    )
+    assert committed["result"] == {
+        "key_id": intent.active_key_id,
+        "disposition": "committed",
+    }
+    assert [event[0] for event in events] == ["prepare", "apply", "commit"]
+    assert {event[1] for event in events} == {id(backend)}
+    assert all(
+        event[2] is intent for event in events if event[0] in {"apply", "commit"}
+    )
+
+
+def test_worker_rejects_forged_canonical_selector_mutation_id_before_commit(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    events: list[tuple[str, int, object]] = []
+    state, intent, _backend = _certificate_worker_state(
+        monkeypatch, tmp_path, events=events
+    )
+    assert state.dispatch(
+        _worker_request(
+            "prepare_certificate",
+            platform="linux",
+            home=str(tmp_path),
+            repo=str(tmp_path / "repo"),
+            transaction_id=intent.transaction_id,
+        )
+    )["ok"]
+    assert state.dispatch(
+        _worker_request(
+            "apply_certificate_intent",
+            ack=CertificateIntentAck.for_intent(intent).as_json(),
+        )
+    )["ok"]
+    forged = CertificateSelectorAck(
+        **CertificateIntentAck.for_intent(intent).as_json(),
+        mutation_id="4" * 32,
+    )
+
+    rejected = state.dispatch(
+        _worker_request("commit_certificate_intent", ack=forged.as_json())
+    )
+
+    assert rejected["code"] == "invalid_state"
+    assert [event[0] for event in events] == ["prepare", "apply"]
+
+
+@pytest.mark.parametrize(
+    ("command", "ack", "expected_events"),
+    [
+        ("apply_certificate_intent", None, ["prepare"]),
+        (
+            "apply_certificate_intent",
+            {
+                "transaction_id": "9" * 32,
+                "intent_id": "2" * 32,
+                "intent_digest": "sha256:" + "a" * 64,
+            },
+            ["prepare"],
+        ),
+        (
+            "commit_certificate_intent",
+            {
+                "transaction_id": "1" * 32,
+                "intent_id": "2" * 32,
+                "intent_digest": "sha256:" + "a" * 64,
+                "mutation_id": "4" * 32,
+            },
+            ["prepare"],
+        ),
+    ],
+)
+def test_worker_certificate_missing_forged_or_out_of_order_ack_is_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    command: str,
+    ack: object,
+    expected_events: list[str],
+) -> None:
+    events: list[tuple[str, int, object]] = []
+    state, intent, _backend = _certificate_worker_state(
+        monkeypatch, tmp_path, events=events
+    )
+    assert state.dispatch(
+        _worker_request(
+            "prepare_certificate",
+            platform="linux",
+            home=str(tmp_path),
+            repo=str(tmp_path / "repo"),
+            transaction_id=intent.transaction_id,
+        )
+    )["ok"]
+    payload = {} if ack is None else {"ack": ack}
+
+    rejected = state.dispatch(_worker_request(command, **payload))
+    blocked = state.dispatch(
+        _worker_request(
+            "apply_certificate_intent",
+            ack=CertificateIntentAck.for_intent(intent).as_json(),
+        )
+    )
+
+    assert rejected["code"] in {"invalid_request", "invalid_state"}
+    assert blocked["code"] == "invalid_state"
+    assert [event[0] for event in events] == expected_events
+
+
+@pytest.mark.parametrize("field", ["transaction_id", "intent_id", "intent_digest"])
+def test_worker_certificate_ack_rejects_each_forged_field_independently(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    field: str,
+) -> None:
+    """Break caught: ACK matching omits one canonical intent-binding field."""
+
+    events: list[tuple[str, int, object]] = []
+    state, intent, _backend = _certificate_worker_state(
+        monkeypatch, tmp_path, events=events
+    )
+    assert state.dispatch(
+        _worker_request(
+            "prepare_certificate",
+            platform="linux",
+            home=str(tmp_path),
+            repo=str(tmp_path / "repo"),
+            transaction_id=intent.transaction_id,
+        )
+    )["ok"]
+    ack = CertificateIntentAck.for_intent(intent).as_json()
+    ack[field] = (
+        "sha256:" + "f" * 64 if field == "intent_digest" else "9" * 32
+    )
+
+    rejected = state.dispatch(
+        _worker_request("apply_certificate_intent", ack=ack)
+    )
+
+    assert rejected["code"] == "invalid_state"
+    assert [event[0] for event in events] == ["prepare"]
+
+
+def test_worker_certificate_apply_rejects_selector_ack_subtype(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Break caught: the planned step accepts a selector-step ACK subtype."""
+
+    events: list[tuple[str, int, object]] = []
+    state, intent, _backend = _certificate_worker_state(
+        monkeypatch, tmp_path, events=events
+    )
+    assert state.dispatch(
+        _worker_request(
+            "prepare_certificate",
+            platform="linux",
+            home=str(tmp_path),
+            repo=str(tmp_path / "repo"),
+            transaction_id=intent.transaction_id,
+        )
+    )["ok"]
+    selector_ack = CertificateSelectorAck.for_intent(
+        intent,
+        mutation_id=certificate_selector_mutation_id(intent),
+    )
+
+    rejected = state.dispatch(
+        _worker_request("apply_certificate_intent", ack=selector_ack.as_json())
+    )
+
+    assert rejected["code"] == "invalid_request"
+    assert [event[0] for event in events] == ["prepare"]
+
+
+def test_worker_certificate_commit_rejects_intent_ack_step(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Break caught: selector commit accepts an ACK for the planned step."""
+
+    events: list[tuple[str, int, object]] = []
+    state, intent, _backend = _certificate_worker_state(
+        monkeypatch, tmp_path, events=events
+    )
+    assert state.dispatch(
+        _worker_request(
+            "prepare_certificate",
+            platform="linux",
+            home=str(tmp_path),
+            repo=str(tmp_path / "repo"),
+            transaction_id=intent.transaction_id,
+        )
+    )["ok"]
+    assert state.dispatch(
+        _worker_request(
+            "apply_certificate_intent",
+            ack=CertificateIntentAck.for_intent(intent).as_json(),
+        )
+    )["ok"]
+
+    rejected = state.dispatch(
+        _worker_request(
+            "commit_certificate_intent",
+            ack=CertificateIntentAck.for_intent(intent).as_json(),
+        )
+    )
+
+    assert rejected["code"] == "invalid_request"
+    assert [event[0] for event in events] == ["prepare", "apply"]
+
+
+def test_worker_certificate_abort_accepts_planned_ack_and_is_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    events: list[tuple[str, int, object]] = []
+    state, intent, _backend = _certificate_worker_state(
+        monkeypatch, tmp_path, events=events
+    )
+    assert state.dispatch(
+        _worker_request(
+            "prepare_certificate",
+            platform="linux",
+            home=str(tmp_path),
+            repo=str(tmp_path / "repo"),
+            transaction_id=intent.transaction_id,
+        )
+    )["ok"]
+
+    aborted = state.dispatch(
+        _worker_request(
+            "abort_certificate_intent",
+            ack=CertificateIntentAck.for_intent(intent).as_json(),
+        )
+    )
+    duplicate = state.dispatch(
+        _worker_request(
+            "abort_certificate_intent",
+            ack=CertificateIntentAck.for_intent(intent).as_json(),
+        )
+    )
+
+    assert aborted["result"]["disposition"] == "aborted"
+    assert duplicate["code"] == "invalid_state"
+    assert [event[0] for event in events] == ["prepare", "abort"]
+
+
+def test_worker_close_is_allowed_after_terminal_certificate_outcome(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    events: list[tuple[str, int, object]] = []
+    state, intent, _backend = _certificate_worker_state(
+        monkeypatch, tmp_path, events=events
+    )
+    assert state.dispatch(
+        _worker_request(
+            "prepare_certificate",
+            platform="linux",
+            home=str(tmp_path),
+            repo=str(tmp_path / "repo"),
+            transaction_id=intent.transaction_id,
+        )
+    )["ok"]
+    assert state.dispatch(
+        _worker_request(
+            "abort_certificate_intent",
+            ack=CertificateIntentAck.for_intent(intent).as_json(),
+        )
+    )["ok"]
+
+    closed = state.dispatch(_worker_request("close"))
+
+    assert closed["ok"] is True
+
+
+def test_fresh_worker_recovery_uses_new_exact_identity_backend_and_persisted_intent(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    backend = _RetainedBackend()
+    intent = _certificate_mutation_intent()
+    seen: list[tuple[object, object, str, int]] = []
+    paths = types.SimpleNamespace(public_key_root=tmp_path / "certificates")
+    monkeypatch.setattr(
+        preflight.secret_store,
+        "native_backend_identity",
+        lambda candidate: _NATIVE_BACKEND_IDENTITY
+        if candidate is backend
+        else pytest.fail("backend substituted"),
+    )
+    monkeypatch.setattr(
+        preflight.certificate_records,
+        "certificate_state_paths",
+        lambda **_kwargs: paths,
+    )
+    monkeypatch.setattr(
+        preflight.certificate_records,
+        "recover_certificate_mutation",
+        lambda selected_paths, selected_intent, directive, *, secret_backend: (
+            seen.append(
+                (selected_paths, selected_intent, directive, id(secret_backend))
+            )
+            or CertificateMutationResult(
+                intent.active_key_id,
+                CertificateRecoveryDisposition.ABORTED,
+            )
+        ),
+    )
+    state = preflight._ManagedCredentialWorkerState(
+        backend_factory=lambda: backend,
+        token_factory=lambda: "probe-secret",
+    )
+    assert state.dispatch(_worker_request("preflight", target_id=_TARGET_ONE))["ok"]
+
+    response = state.dispatch(
+        _worker_request(
+            "recover_certificate_intent",
+            platform="linux",
+            home=str(tmp_path),
+            repo=str(tmp_path / "repo"),
+            intent=intent.to_dict(),
+            directive="abort",
+            selector_ack=None,
+        )
+    )
+
+    assert response["result"]["disposition"] == "aborted"
+    assert seen == [(paths, intent, "abort", id(backend))]
+
+
+@pytest.mark.parametrize(
+    ("directive", "wrong_disposition"),
+    [
+        ("abort", CertificateRecoveryDisposition.STAGED),
+        ("commit", CertificateRecoveryDisposition.ABORTED),
+    ],
+)
+def test_fresh_worker_recovery_rejects_step_incompatible_disposition(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    directive: str,
+    wrong_disposition: CertificateRecoveryDisposition,
+) -> None:
+    """Break caught: recovery acknowledges a result from the wrong journal step."""
+
+    events: list[tuple[str, int, object]] = []
+    state, intent, _backend = _certificate_worker_state(
+        monkeypatch, tmp_path, events=events
+    )
+    monkeypatch.setattr(
+        preflight.certificate_records,
+        "recover_certificate_mutation",
+        lambda *_args, **_kwargs: CertificateMutationResult(
+            intent.active_key_id,
+            wrong_disposition,
+        ),
+    )
+    selector_ack = (
+        CertificateSelectorAck.for_intent(
+            intent,
+            mutation_id=certificate_selector_mutation_id(intent),
+        ).as_json()
+        if directive == "commit"
+        else None
+    )
+
+    response = state.dispatch(
+        _worker_request(
+            "recover_certificate_intent",
+            platform="linux",
+            home=str(tmp_path),
+            repo=str(tmp_path / "repo"),
+            intent=intent.to_dict(),
+            directive=directive,
+            selector_ack=selector_ack,
+        )
+    )
+
+    assert response["code"] == "certificate_mutation_failed"
+
+
+def test_worker_protocol_bound_accepts_largest_valid_certificate_intent() -> None:
+    key_ids = tuple(f"sha256:{index:064x}" for index in range(64))
+    intent = CertificateMutationIntent(
+        schema_version=1,
+        transaction_id="1" * 32,
+        intent_id="2" * 32,
+        action="copy_legacy",
+        backend_identity=_NATIVE_BACKEND_IDENTITY,
+        active_key_id=key_ids[0],
+        prior_key_id=None,
+        public_files=tuple(
+            CertificatePublicFileIntent(
+                key_id=key_id,
+                size=65536,
+                sha256=f"{index:064x}",
+                quarantine_id=f"{index + 64:032x}",
+            )
+            for index, key_id in enumerate(key_ids)
+        ),
+        secret_target=(
+            "Famulus:skill-certifier:ed25519-private-key:" + key_ids[0]
+        ),
+    )
+    message = _worker_request(
+        "recover_certificate_intent",
+        platform="linux",
+        home="/home/test",
+        repo="/repo",
+        intent=intent.to_dict(),
+        directive="abort",
+        selector_ack=None,
+    )
+
+    encoded = preflight._encode_worker_message(message)
+
+    assert len(encoded) <= preflight._MAX_WORKER_MESSAGE_BYTES
+    assert preflight._decode_worker_request(encoded) == message
+
+
+def test_managed_worker_parent_certificate_methods_emit_closed_payloads_and_results(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    worker = _armed_worker_for_failure_tests()
+    worker._preflight_complete = True
+    intent = _certificate_mutation_intent()
+    intent_ack = CertificateIntentAck.for_intent(intent)
+    selector_ack = CertificateSelectorAck.for_intent(
+        intent, mutation_id=certificate_selector_mutation_id(intent)
+    )
+    seen: list[tuple[str, dict[str, object]]] = []
+    responses = iter(
+        [
+            {"key_id": intent.active_key_id, "intent": intent.to_dict()},
+            {"key_id": intent.active_key_id, "disposition": "staged"},
+            {"key_id": intent.active_key_id, "disposition": "committed"},
+            {"key_id": intent.active_key_id, "disposition": "aborted"},
+        ]
+    )
+    monkeypatch.setattr(
+        worker,
+        "_request",
+        lambda command, payload: (
+            seen.append((command, payload)) or next(responses)
+        ),
+    )
+
+    prepared = worker.prepare_certificate(
+        platform="linux",
+        home=tmp_path,
+        repo=tmp_path / "repo",
+        transaction_id=intent.transaction_id,
+    )
+    applied = worker.apply_certificate_intent(intent_ack)
+    committed = worker.commit_certificate_intent(selector_ack)
+    recovered = worker.recover_certificate_intent(
+        intent,
+        "abort",
+        platform="linux",
+        home=tmp_path,
+        repo=tmp_path / "repo",
+    )
+
+    assert prepared == CertificatePreparationResult(intent.active_key_id, intent)
+    assert applied.disposition is CertificateRecoveryDisposition.STAGED
+    assert committed.disposition is CertificateRecoveryDisposition.COMMITTED
+    assert recovered.disposition is CertificateRecoveryDisposition.ABORTED
+    assert seen == [
+        (
+            "prepare_certificate",
+            {
+                "platform": "linux",
+                "home": str(tmp_path.absolute()),
+                "repo": str((tmp_path / "repo").absolute()),
+                "transaction_id": intent.transaction_id,
+            },
+        ),
+        ("apply_certificate_intent", {"ack": intent_ack.as_json()}),
+        ("commit_certificate_intent", {"ack": selector_ack.as_json()}),
+        (
+            "recover_certificate_intent",
+            {
+                "platform": "linux",
+                "home": str(tmp_path.absolute()),
+                "repo": str((tmp_path / "repo").absolute()),
+                "intent": intent.to_dict(),
+                "directive": "abort",
+                "selector_ack": None,
+            },
+        ),
+    ]
+
+
+def test_managed_worker_abort_sends_exact_intent_ack(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    worker = _armed_worker_for_failure_tests()
+    worker._preflight_complete = True
+    intent = _certificate_mutation_intent()
+    ack = CertificateIntentAck.for_intent(intent)
+    seen: list[tuple[str, dict[str, object]]] = []
+
+    def request(command: str, payload: dict[str, object]) -> dict[str, object]:
+        seen.append((command, payload))
+        if command == "prepare_certificate":
+            return {"key_id": intent.active_key_id, "intent": intent.to_dict()}
+        return {"key_id": intent.active_key_id, "disposition": "abandoned"}
+
+    monkeypatch.setattr(
+        worker,
+        "_request",
+        request,
+    )
+    worker.prepare_certificate(
+        platform="linux",
+        home=tmp_path,
+        repo=tmp_path / "repo",
+        transaction_id=intent.transaction_id,
+    )
+
+    result = worker.abort_certificate_intent(ack)
+
+    assert result.disposition is CertificateRecoveryDisposition.ABANDONED
+    assert seen[-1] == ("abort_certificate_intent", {"ack": ack.as_json()})
+
+
+@pytest.mark.parametrize(
+    ("command", "wrong_disposition"),
+    [
+        ("apply_certificate_intent", "committed"),
+        ("commit_certificate_intent", "aborted"),
+        ("recover_certificate_intent:abort", "staged"),
+        ("recover_certificate_intent:commit", "aborted"),
+    ],
+)
+def test_managed_worker_parent_rejects_step_incompatible_disposition(
+    monkeypatch: pytest.MonkeyPatch,
+    command: str,
+    wrong_disposition: str,
+) -> None:
+    """Break caught: the parent adopts a response from the wrong journal step."""
+
+    worker = _armed_worker_for_failure_tests()
+    worker._preflight_complete = True
+    intent = _certificate_mutation_intent()
+
+    def request(command_name: str, _payload: dict[str, object]) -> dict[str, object]:
+        if command_name == "prepare_certificate":
+            return {"key_id": intent.active_key_id, "intent": intent.to_dict()}
+        return {
+            "key_id": intent.active_key_id,
+            "disposition": wrong_disposition,
+        }
+
+    monkeypatch.setattr(
+        worker,
+        "_request",
+        request,
+    )
+    monkeypatch.setattr(worker, "_force_cleanup", lambda: True)
+    worker.prepare_certificate(
+        platform="linux",
+        home=Path("/home/test"),
+        repo=Path("/repo"),
+        transaction_id=intent.transaction_id,
+    )
+
+    with pytest.raises(CredentialWorkerError) as caught:
+        if command == "apply_certificate_intent":
+            worker.apply_certificate_intent(CertificateIntentAck.for_intent(intent))
+        elif command == "commit_certificate_intent":
+            worker.commit_certificate_intent(
+                CertificateSelectorAck.for_intent(
+                    intent,
+                    mutation_id=certificate_selector_mutation_id(intent),
+                )
+            )
+        else:
+            directive = command.rsplit(":", 1)[1]
+            selector_ack = (
+                CertificateSelectorAck.for_intent(
+                    intent,
+                    mutation_id=certificate_selector_mutation_id(intent),
+                )
+                if directive == "commit"
+                else None
+            )
+            worker.recover_certificate_intent(
+                intent,
+                directive,
+                selector_ack,
+                platform="linux",
+                home=Path("/home/test"),
+                repo=Path("/repo"),
+            )
+
+    assert caught.value.code is CredentialWorkerCode.WORKER_FAILED
+
+
+@pytest.mark.parametrize(
+    "operation",
+    ["apply", "abort", "commit", "recover_abort", "recover_commit"],
+)
+def test_managed_worker_parent_rejects_wrong_certificate_result_key(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    operation: str,
+) -> None:
+    """Break caught: the parent adopts another key's step-compatible response."""
+
+    worker = _armed_worker_for_failure_tests()
+    worker._preflight_complete = True
+    intent = _certificate_mutation_intent()
+    wrong_key = "sha256:" + "f" * 64
+
+    def request(command: str, _payload: dict[str, object]) -> dict[str, object]:
+        if command == "prepare_certificate":
+            return {"key_id": intent.active_key_id, "intent": intent.to_dict()}
+        return {
+            "key_id": wrong_key,
+            "disposition": {
+                "apply_certificate_intent": "staged",
+                "abort_certificate_intent": "aborted",
+                "commit_certificate_intent": "committed",
+                "recover_certificate_intent": (
+                    "committed" if operation == "recover_commit" else "aborted"
+                ),
+            }[command],
+        }
+
+    monkeypatch.setattr(worker, "_request", request)
+    monkeypatch.setattr(worker, "_force_cleanup", lambda: True)
+    worker.prepare_certificate(
+        platform="linux",
+        home=tmp_path,
+        repo=tmp_path / "repo",
+        transaction_id=intent.transaction_id,
+    )
+    intent_ack = CertificateIntentAck.for_intent(intent)
+    selector_ack = CertificateSelectorAck.for_intent(
+        intent,
+        mutation_id=certificate_selector_mutation_id(intent),
+    )
+
+    with pytest.raises(CredentialWorkerError) as caught:
+        if operation == "apply":
+            worker.apply_certificate_intent(intent_ack)
+        elif operation == "abort":
+            worker.abort_certificate_intent(intent_ack)
+        elif operation == "commit":
+            worker.commit_certificate_intent(selector_ack)
+        else:
+            directive = operation.removeprefix("recover_")
+            worker.recover_certificate_intent(
+                intent,
+                directive,
+                selector_ack if directive == "commit" else None,
+                platform="linux",
+                home=tmp_path,
+                repo=tmp_path / "repo",
+            )
+
+    assert caught.value.code is CredentialWorkerCode.WORKER_FAILED
+
+
+def test_parent_harness_acknowledges_only_durable_planned_and_selector_records(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Break caught: mutation is called before the corresponding journal save."""
+
+    repository_root = Path(__file__).parents[1]
+    state_record = _load_runtime_module(
+        "credential_preflight_task6b3_state_record",
+        repository_root / "skills/install-assistant-tools/_rtx/_state_record.py",
+    )
+    state_root = tmp_path / "install-state"
+    journal_path = state_root / "transaction-journal.json"
+    events: list[tuple[str, int, object]] = []
+    state, intent, backend = _certificate_worker_state(
+        monkeypatch, tmp_path, events=events
+    )
+    prepared = state.dispatch(
+        _worker_request(
+            "prepare_certificate",
+            platform="linux",
+            home=str(tmp_path),
+            repo=str(tmp_path / "repo"),
+            transaction_id=intent.transaction_id,
+        )
+    )
+    assert prepared["ok"]
+    assert [event[0] for event in events] == ["prepare"]
+
+    journal = state_record.TransactionJournal(
+        transaction_id=intent.transaction_id,
+        phase="prepared",
+        prior_release_id=None,
+        candidate_release_id="release-new",
+        resolver_bundle_id="resolver-001",
+        certificate_key_id=intent.active_key_id,
+        certificate_intent=intent,
+        certificate_progress="planned",
+        pending_mutation=None,
+        completed_mutation_ids=(),
+    )
+    journal.save(journal_path, state_root=state_root)
+
+    def apply_after_durable_plan(
+        selected_paths: object,
+        selected_intent: CertificateMutationIntent,
+        *,
+        secret_backend: object,
+    ) -> CertificateMutationResult:
+        durable = state_record.TransactionJournal.load(
+            journal_path, state_root=state_root
+        )
+        assert durable.certificate_progress == "planned"
+        assert durable.certificate_intent == intent
+        assert selected_intent is intent
+        assert secret_backend is backend
+        events.append(("apply", id(secret_backend), selected_intent))
+        return CertificateMutationResult(
+            intent.active_key_id, CertificateRecoveryDisposition.STAGED
+        )
+
+    monkeypatch.setattr(
+        preflight.certificate_records,
+        "apply_certificate_mutation",
+        apply_after_durable_plan,
+    )
+    durable_planned = state_record.TransactionJournal.load(
+        journal_path, state_root=state_root
+    )
+    applied = state.dispatch(
+        _worker_request(
+            "apply_certificate_intent",
+            ack=CertificateIntentAck.for_intent(
+                durable_planned.certificate_intent
+            ).as_json(),
+        )
+    )
+    assert applied["result"]["disposition"] == "staged"
+
+    selector = state_record.JournalMutation(
+        mutation_id=certificate_selector_mutation_id(intent),
+        kind="certificate_selector",
+        path=str(tmp_path / "certificates" / "active-key-id"),
+        expected_before={"kind": "absent"},
+        intended_after={
+            "kind": "file",
+            "mode": 0o600,
+            "size": len(intent.active_key_id) + 1,
+            "sha256": hashlib.sha256(
+                (intent.active_key_id + "\n").encode("ascii")
+            ).hexdigest(),
+        },
+        ownership_entry=None,
+    )
+    durable_staged = replace(
+        durable_planned,
+        certificate_progress="staged",
+        pending_mutation=selector,
+    )
+    durable_staged.save(journal_path, state_root=state_root)
+
+    def commit_after_durable_selector(
+        selected_paths: object,
+        selected_intent: CertificateMutationIntent,
+        *,
+        secret_backend: object,
+    ) -> CertificateMutationResult:
+        durable = state_record.TransactionJournal.load(
+            journal_path, state_root=state_root
+        )
+        assert durable.certificate_progress == "staged"
+        assert durable.pending_mutation is not None
+        assert durable.pending_mutation.kind == "certificate_selector"
+        assert durable.pending_mutation.mutation_id == selector.mutation_id
+        assert selected_intent is intent
+        assert secret_backend is backend
+        events.append(("commit", id(secret_backend), selected_intent))
+        return CertificateMutationResult(
+            intent.active_key_id, CertificateRecoveryDisposition.COMMITTED
+        )
+
+    monkeypatch.setattr(
+        preflight.certificate_records,
+        "commit_certificate_mutation",
+        commit_after_durable_selector,
+    )
+    durable_selector = state_record.TransactionJournal.load(
+        journal_path, state_root=state_root
+    ).pending_mutation
+    assert durable_selector is not None
+    committed = state.dispatch(
+        _worker_request(
+            "commit_certificate_intent",
+            ack=CertificateSelectorAck.for_intent(
+                intent,
+                mutation_id=durable_selector.mutation_id,
+            ).as_json(),
+        )
+    )
+
+    assert committed["result"]["disposition"] == "committed"
+    assert [event[0] for event in events] == ["prepare", "apply", "commit"]
+
+
+def test_certificate_worker_failure_and_real_sinks_exclude_private_canary(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    secret = 'CERTIFICATE-CANARY-"\\' + "d" * 48
+    backend = _RetainedBackend()
+    monkeypatch.setattr(
+        preflight.secret_store,
+        "native_backend_identity",
+        lambda candidate: _NATIVE_BACKEND_IDENTITY
+        if candidate is backend
+        else pytest.fail("backend substituted"),
+    )
+    monkeypatch.setattr(
+        preflight.certificate_records,
+        "certificate_state_paths",
+        lambda **_kwargs: types.SimpleNamespace(
+            public_key_root=tmp_path / "certificates"
+        ),
+    )
+    monkeypatch.setattr(
+        preflight.certificate_records,
+        "prepare_certificate_mutation",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError(secret)),
+    )
+    state = preflight._ManagedCredentialWorkerState(
+        backend_factory=lambda: backend,
+        token_factory=lambda: "probe-secret",
+    )
+    assert state.dispatch(_worker_request("preflight", target_id=_TARGET_ONE))["ok"]
+
+    response = state.dispatch(
+        _worker_request(
+            "prepare_certificate",
+            platform="linux",
+            home=str(tmp_path),
+            repo=str(tmp_path / "repo"),
+            transaction_id="1" * 32,
+        )
+    )
+    retained_output = json.dumps(response, separators=(",", ":"), sort_keys=True)
+    sink_paths = _persist_through_real_repository_sinks(
+        tmp_path,
+        payload=response,
+        retained_output=retained_output,
+    )
+    combined = (
+        repr(response)
+        + retained_output
+        + "".join(path.read_text(encoding="utf-8") for path in sink_paths)
+    )
+
+    assert response["code"] == "certificate_mutation_failed"
+    for canary in encoded_canaries(secret):
+        assert canary not in combined
 
 
 def test_worker_state_retains_exact_preflight_backend_for_verification(
@@ -2475,7 +3550,13 @@ def test_frame_reader_accepts_partial_header_and_body() -> None:
     assert preflight._recv_frame(PartialChannel(), time.monotonic() + 1) == b"abc"
 
 
-@pytest.mark.parametrize("header", [b"\x00\x00\x00\x00", b"\x00\x00\x10\x01"])
+@pytest.mark.parametrize(
+    "header",
+    [
+        b"\x00\x00\x00\x00",
+        (preflight._MAX_WORKER_MESSAGE_BYTES + 1).to_bytes(4, "big"),
+    ],
+)
 def test_frame_reader_rejects_zero_or_oversized_length_before_body_read(
     header: bytes,
 ) -> None:
@@ -2617,6 +3698,352 @@ def test_managed_worker_crash_terminates_backend_descendant_tree(tmp_path: Path)
     for pid in (worker_pid, descendant_pid):
         with pytest.raises(ProcessLookupError):
             os.kill(pid, 0)
+
+
+# famulus-skip: category=platform-contract; reason=fixture executable is a POSIX shell shim around the current isolated Python; alternate=Windows inherited-handle launch, Job cleanup, protocol, and fresh-recovery branches are unit-tested and require native CI execution
+@pytest.mark.skipif(os.name == "nt", reason="POSIX controlled managed-Python fixture")
+def test_real_managed_worker_death_after_apply_recovers_from_durable_intent(
+    tmp_path: Path,
+) -> None:
+    """Break caught: child death leaves effects that a fresh worker cannot recover."""
+
+    source_root = Path(__file__).parents[1] / "src"
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    secret_path = tmp_path / "native-secrets.json"
+    crash_marker = tmp_path / "apply-crashed"
+    managed_python = tmp_path / "recovery-managed-python"
+    bootstrap = textwrap.dedent(
+        f"""
+        import json, os, sys
+        from pathlib import Path
+        os.setsid()
+        sys.path.insert(0, {str(source_root)!r})
+        import keyring
+        import keyring.backends.SecretService as native
+        secret_path = Path({str(secret_path)!r})
+        crash_marker = Path({str(crash_marker)!r})
+        def read_state():
+            return json.loads(secret_path.read_text(encoding="utf-8")) if secret_path.exists() else {{}}
+        def write_state(state):
+            secret_path.write_text(json.dumps(state, sort_keys=True), encoding="utf-8")
+        def target(service, key): return service + "|" + key
+        def lookup(self, service, key): return read_state().get(target(service, key))
+        def store(self, service, key, value):
+            state = read_state(); state[target(service, key)] = value; write_state(state)
+        def clear(self, service, key):
+            state = read_state(); state.pop(target(service, key), None); write_state(state)
+        native.Keyring.get_password = lookup
+        native.Keyring.set_password = store
+        native.Keyring.delete_password = clear
+        keyring.set_keyring(object.__new__(native.Keyring))
+        from officina.common import certificate_records
+        original_apply = certificate_records.apply_certificate_mutation
+        def crash_after_apply(*args, **kwargs):
+            result = original_apply(*args, **kwargs)
+            if not crash_marker.exists():
+                crash_marker.write_text("applied", encoding="ascii")
+                os._exit(77)
+            return result
+        certificate_records.apply_certificate_mutation = crash_after_apply
+        from officina.install import credential_preflight as worker_module
+        worker_module._establish_child_containment = lambda: True
+        worker_module._discard_process_output = lambda: True
+        raise SystemExit(worker_module.main(sys.argv[4:]))
+        """
+    ).strip()
+    managed_python.write_text(
+        f"#!{sys.executable!s}\n" + bootstrap + "\n", encoding="utf-8"
+    )
+    managed_python.chmod(0o700)
+
+    first = ManagedCredentialWorker(
+        str(managed_python), command_timeout_seconds=3, total_timeout_seconds=10
+    )
+    first.start()
+    first_pid = first._process.pid
+    assert first.preflight().ok
+    transaction_id = "1" * 32
+    prepared = first.prepare_certificate(
+        platform="linux",
+        home=tmp_path,
+        repo=repo,
+        transaction_id=transaction_id,
+    )
+    assert prepared.intent is not None
+    intent = prepared.intent
+
+    state_record = _load_runtime_module(
+        "credential_preflight_real_recovery_state_record",
+        Path(__file__).parents[1]
+        / "skills/install-assistant-tools/_rtx/_state_record.py",
+    )
+    state_root = tmp_path / "journal-state"
+    journal_path = state_root / "transaction-journal.json"
+    planned = state_record.TransactionJournal(
+        transaction_id=transaction_id,
+        phase="prepared",
+        prior_release_id=None,
+        candidate_release_id="release-new",
+        resolver_bundle_id="resolver-001",
+        certificate_key_id=intent.active_key_id,
+        certificate_intent=intent,
+        certificate_progress="planned",
+        pending_mutation=None,
+        completed_mutation_ids=(),
+    )
+    planned.save(journal_path, state_root=state_root)
+    durable = state_record.TransactionJournal.load(
+        journal_path, state_root=state_root
+    )
+
+    with pytest.raises(CredentialWorkerError) as caught:
+        first.apply_certificate_intent(
+            CertificateIntentAck.for_intent(durable.certificate_intent)
+        )
+    assert caught.value.code is CredentialWorkerCode.WORKER_FAILED
+    with pytest.raises(ProcessLookupError):
+        os.kill(first_pid, 0)
+    assert crash_marker.exists()
+
+    paths = preflight.certificate_records.certificate_state_paths(
+        platform="linux", home=tmp_path, repo_root=repo
+    )
+    assert (paths.public_key_root / f"{intent.active_key_id.removeprefix('sha256:')}.pub").is_file()
+    secret_names_before = set(json.loads(secret_path.read_text(encoding="utf-8")))
+    assert any(intent.active_key_id in name for name in secret_names_before)
+
+    fresh = ManagedCredentialWorker(
+        str(managed_python), command_timeout_seconds=3, total_timeout_seconds=10
+    )
+    fresh.start()
+    fresh_pid = fresh._process.pid
+    assert fresh.preflight().ok
+    recovered = fresh.recover_certificate_intent(
+        durable.certificate_intent,
+        "abort",
+        platform="linux",
+        home=tmp_path,
+        repo=repo,
+    )
+    assert recovered == CertificateMutationResult(
+        intent.active_key_id,
+        CertificateRecoveryDisposition.ABORTED,
+    )
+    fresh.close()
+
+    assert json.loads(secret_path.read_text(encoding="utf-8")) == {}
+    assert not list(paths.public_key_root.glob("*.pub"))
+    with pytest.raises(ProcessLookupError):
+        os.kill(fresh_pid, 0)
+
+
+# famulus-skip: category=platform-contract; reason=fixture executable is a POSIX shell shim around the current isolated Python; alternate=Windows inherited-handle launch, Job cleanup, protocol, and fresh-recovery branches are unit-tested and require native CI execution
+@pytest.mark.skipif(os.name == "nt", reason="POSIX controlled managed-Python fixture")
+@pytest.mark.parametrize("crash_boundary", ["prepare", "abort", "commit"])
+def test_real_managed_worker_recovers_each_certificate_protocol_boundary(
+    tmp_path: Path,
+    crash_boundary: str,
+) -> None:
+    """Break caught: a lost command response cannot be classified on restart."""
+
+    source_root = Path(__file__).parents[1] / "src"
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    secret_path = tmp_path / "native-secrets.json"
+    crash_marker = tmp_path / f"{crash_boundary}-crashed"
+    managed_python = tmp_path / f"{crash_boundary}-managed-python"
+    bootstrap = textwrap.dedent(
+        f"""
+        import json, os, sys
+        from pathlib import Path
+        os.setsid()
+        sys.path.insert(0, {str(source_root)!r})
+        import keyring
+        import keyring.backends.SecretService as native
+        secret_path = Path({str(secret_path)!r})
+        crash_marker = Path({str(crash_marker)!r})
+        def read_state():
+            return json.loads(secret_path.read_text(encoding="utf-8")) if secret_path.exists() else {{}}
+        def write_state(state):
+            secret_path.write_text(json.dumps(state, sort_keys=True), encoding="utf-8")
+        def target(service, key): return service + "|" + key
+        def lookup(self, service, key): return read_state().get(target(service, key))
+        def store(self, service, key, value):
+            state = read_state(); state[target(service, key)] = value; write_state(state)
+        def clear(self, service, key):
+            state = read_state(); state.pop(target(service, key), None); write_state(state)
+        native.Keyring.get_password = lookup
+        native.Keyring.set_password = store
+        native.Keyring.delete_password = clear
+        keyring.set_keyring(object.__new__(native.Keyring))
+        from officina.common import certificate_records
+        boundary = {crash_boundary!r}
+        function_name = {{
+            "prepare": "prepare_certificate_mutation",
+            "abort": "abort_certificate_mutation",
+            "commit": "commit_certificate_mutation",
+        }}[boundary]
+        original = getattr(certificate_records, function_name)
+        def crash_after_boundary(*args, **kwargs):
+            result = original(*args, **kwargs)
+            if not crash_marker.exists():
+                crash_marker.write_text(boundary, encoding="ascii")
+                os._exit(78)
+            return result
+        setattr(certificate_records, function_name, crash_after_boundary)
+        from officina.install import credential_preflight as worker_module
+        worker_module._establish_child_containment = lambda: True
+        worker_module._discard_process_output = lambda: True
+        raise SystemExit(worker_module.main(sys.argv[4:]))
+        """
+    ).strip()
+    managed_python.write_text(
+        f"#!{sys.executable!s}\n" + bootstrap + "\n", encoding="utf-8"
+    )
+    managed_python.chmod(0o700)
+    transaction_id = "1" * 32
+
+    first = ManagedCredentialWorker(
+        str(managed_python), command_timeout_seconds=3, total_timeout_seconds=10
+    )
+    first.start()
+    first_pid = first._process.pid
+    assert first.preflight().ok
+    if crash_boundary == "prepare":
+        with pytest.raises(CredentialWorkerError) as caught:
+            first.prepare_certificate(
+                platform="linux",
+                home=tmp_path,
+                repo=repo,
+                transaction_id=transaction_id,
+            )
+        assert caught.value.code is CredentialWorkerCode.WORKER_FAILED
+        assert crash_marker.exists()
+        with pytest.raises(ProcessLookupError):
+            os.kill(first_pid, 0)
+
+        fresh = ManagedCredentialWorker(
+            str(managed_python), command_timeout_seconds=3, total_timeout_seconds=10
+        )
+        fresh.start()
+        fresh_pid = fresh._process.pid
+        assert fresh.preflight().ok
+        assert fresh.prepare_certificate(
+            platform="linux",
+            home=tmp_path,
+            repo=repo,
+            transaction_id=transaction_id,
+        ).intent is not None
+        fresh.close()
+        assert json.loads(secret_path.read_text(encoding="utf-8")) == {}
+        with pytest.raises(ProcessLookupError):
+            os.kill(fresh_pid, 0)
+        return
+
+    prepared = first.prepare_certificate(
+        platform="linux",
+        home=tmp_path,
+        repo=repo,
+        transaction_id=transaction_id,
+    )
+    assert prepared.intent is not None
+    intent = prepared.intent
+    state_record = _load_runtime_module(
+        f"credential_preflight_{crash_boundary}_state_record",
+        Path(__file__).parents[1]
+        / "skills/install-assistant-tools/_rtx/_state_record.py",
+    )
+    state_root = tmp_path / "journal-state"
+    journal_path = state_root / "transaction-journal.json"
+    journal = state_record.TransactionJournal(
+        transaction_id=transaction_id,
+        phase="prepared",
+        prior_release_id=None,
+        candidate_release_id="release-new",
+        resolver_bundle_id="resolver-001",
+        certificate_key_id=intent.active_key_id,
+        certificate_intent=intent,
+        certificate_progress="planned",
+        pending_mutation=None,
+        completed_mutation_ids=(),
+    )
+    journal.save(journal_path, state_root=state_root)
+    durable = state_record.TransactionJournal.load(
+        journal_path, state_root=state_root
+    )
+    assert first.apply_certificate_intent(
+        CertificateIntentAck.for_intent(durable.certificate_intent)
+    ).disposition is CertificateRecoveryDisposition.STAGED
+
+    selector_ack = None
+    if crash_boundary == "abort":
+        operation = lambda: first.abort_certificate_intent(
+            CertificateIntentAck.for_intent(intent)
+        )
+        directive = "abort"
+    else:
+        selector_id = certificate_selector_mutation_id(intent)
+        selector = state_record.JournalMutation(
+            mutation_id=selector_id,
+            kind="certificate_selector",
+            path=str(
+                preflight.certificate_records.certificate_state_paths(
+                    platform="linux", home=tmp_path, repo_root=repo
+                ).active_key_id
+            ),
+            expected_before={"kind": "absent"},
+            intended_after={
+                "kind": "file",
+                "mode": 0o600,
+                "size": len(intent.active_key_id) + 1,
+                "sha256": hashlib.sha256(
+                    (intent.active_key_id + "\n").encode("ascii")
+                ).hexdigest(),
+            },
+            ownership_entry=None,
+        )
+        replace(
+            durable,
+            certificate_progress="staged",
+            pending_mutation=selector,
+        ).save(journal_path, state_root=state_root)
+        selector_ack = CertificateSelectorAck.for_intent(
+            intent, mutation_id=selector_id
+        )
+        operation = lambda: first.commit_certificate_intent(selector_ack)
+        directive = "commit"
+
+    with pytest.raises(CredentialWorkerError) as caught:
+        operation()
+    assert caught.value.code is CredentialWorkerCode.WORKER_FAILED
+    assert crash_marker.exists()
+    with pytest.raises(ProcessLookupError):
+        os.kill(first_pid, 0)
+
+    fresh = ManagedCredentialWorker(
+        str(managed_python), command_timeout_seconds=3, total_timeout_seconds=10
+    )
+    fresh.start()
+    fresh_pid = fresh._process.pid
+    assert fresh.preflight().ok
+    recovered = fresh.recover_certificate_intent(
+        intent,
+        directive,
+        selector_ack,
+        platform="linux",
+        home=tmp_path,
+        repo=repo,
+    )
+    expected = (
+        CertificateRecoveryDisposition.ABANDONED
+        if crash_boundary == "abort"
+        else CertificateRecoveryDisposition.COMMITTED
+    )
+    assert recovered.disposition is expected
+    fresh.close()
+    with pytest.raises(ProcessLookupError):
+        os.kill(fresh_pid, 0)
 
 
 # famulus-skip: category=platform-contract; reason=fixture executable is a POSIX shell shim around the current isolated Python; alternate=Windows inherited-handle secret sinks are unit-tested but not natively executed here

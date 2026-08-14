@@ -5,8 +5,16 @@ content:
 - _shell_block\.py
 - _state_record\.py
 dependencies: []
-description: Marks the installer runtime directory as a Python package and exposes
-  no callable interface.
+description: >-
+  Marks the installer runtime directory as a Python package and owns
+  the durable manifest plus schema-v2 transaction journal. Transaction journals
+  reject version 1 rather than inferring certificate authority from staged_key_id;
+  they bind secret-free certificate intents, acknowledged progress, and the exact
+  deterministic certificate-selector mutation ID. Certificate-selector records also
+  bind the lexical active-key-id basename, absent-or-prior exact byte snapshot, intended
+  active exact byte snapshot, and null generic ownership. Persisted paths are not
+  authority: Task 6D must recompute and compare the canonical selector path before
+  certificate-specific recovery, and generic pending-mutation recovery refuses this kind.
 gateway:
   language: Python
   path: __init__.py
@@ -15,6 +23,8 @@ interfaces: {}
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
+- interface: common.interface.certificate-intents
+  version: 1
 - interface: common.interface.famulus-paths
   version: 1
 version: 1

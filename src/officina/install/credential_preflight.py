@@ -8,12 +8,14 @@ so backend exception text and accidental prints cannot become diagnostics.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import multiprocessing
 import ntpath
 import os
 import posixpath
+import re
 import secrets
 import struct
 import subprocess
@@ -27,7 +29,7 @@ from multiprocessing.connection import Connection
 from pathlib import Path
 from typing import Callable
 
-from officina.common import certificate_records, secret_store
+from officina.common import certificate_intents, certificate_records, secret_store
 from officina.install.credential_preflight_linux_osx_windows import (
     _ProcessContainment,
     _establish_child_containment,
@@ -46,7 +48,7 @@ _PROBE_NAMESPACE = "credential-preflight"
 _MAX_TARGET_ATTEMPTS = 8
 _MAX_CHILD_MESSAGE_BYTES = 1024
 _WORKER_PROTOCOL_VERSION = 1
-_MAX_WORKER_MESSAGE_BYTES = 4096
+_MAX_WORKER_MESSAGE_BYTES = 32768
 _WORKER_MODULE = "officina.install.credential_preflight"
 _MAIN_TERMINATION_SECONDS = 0.5
 _EMERGENCY_CLEANUP_SECONDS = 1.0
@@ -78,6 +80,7 @@ class CredentialWorkerCode(str, Enum):
     ROUNDTRIP_FAILED = "roundtrip_failed"
     CLEANUP_FAILED = "cleanup_failed"
     CERTIFICATE_VERIFICATION_FAILED = "certificate_verification_failed"
+    CERTIFICATE_MUTATION_FAILED = "certificate_mutation_failed"
     TIMEOUT = "timeout"
     WORKER_FAILED = "worker_failed"
 
@@ -119,6 +122,135 @@ class CredentialVerificationResult:
     def as_json(self) -> dict[str, object]:
         """Return the exact closed machine representation."""
         return {"verified": self.verified, "key_id": self.key_id}
+
+
+_ACK_IDENTIFIER_PATTERN = re.compile(r"[0-9a-f]{32}")
+_ACK_DIGEST_PATTERN = re.compile(r"sha256:[0-9a-f]{64}")
+
+
+def _require_ack_identifier(value: object, *, field: str) -> str:
+    if not isinstance(value, str) or _ACK_IDENTIFIER_PATTERN.fullmatch(value) is None:
+        raise ValueError(f"{field} is invalid")
+    return value
+
+
+@dataclass(frozen=True)
+class CertificateIntentAck:
+    """Secret-free durable acknowledgement of one exact certificate intent."""
+
+    transaction_id: str
+    intent_id: str
+    intent_digest: str
+
+    def __post_init__(self) -> None:
+        _require_ack_identifier(self.transaction_id, field="transaction_id")
+        _require_ack_identifier(self.intent_id, field="intent_id")
+        if (
+            not isinstance(self.intent_digest, str)
+            or _ACK_DIGEST_PATTERN.fullmatch(self.intent_digest) is None
+        ):
+            raise ValueError("intent_digest is invalid")
+
+    @classmethod
+    def for_intent(
+        cls, intent: certificate_intents.CertificateMutationIntent
+    ) -> "CertificateIntentAck":
+        """Build the canonical ACK fields for one validated intent."""
+
+        if not isinstance(intent, certificate_intents.CertificateMutationIntent):
+            raise TypeError("intent must be a CertificateMutationIntent")
+        return cls(
+            transaction_id=intent.transaction_id,
+            intent_id=intent.intent_id,
+            intent_digest=certificate_intents.certificate_intent_digest(intent),
+        )
+
+    def as_json(self) -> dict[str, object]:
+        """Return the exact closed worker-protocol representation."""
+
+        return {
+            "transaction_id": self.transaction_id,
+            "intent_id": self.intent_id,
+            "intent_digest": self.intent_digest,
+        }
+
+    @classmethod
+    def from_json(cls, payload: object) -> "CertificateIntentAck":
+        """Parse one exact ACK object without accepting extensions."""
+
+        if not isinstance(payload, dict) or set(payload) != {
+            "transaction_id",
+            "intent_id",
+            "intent_digest",
+        }:
+            raise ValueError("certificate intent ACK fields are incomplete or unknown")
+        return cls(
+            transaction_id=payload["transaction_id"],  # type: ignore[arg-type]
+            intent_id=payload["intent_id"],  # type: ignore[arg-type]
+            intent_digest=payload["intent_digest"],  # type: ignore[arg-type]
+        )
+
+
+def certificate_selector_mutation_id(
+    intent: certificate_intents.CertificateMutationIntent,
+) -> str:
+    """Derive the sole journal mutation ID authorized for selector commit."""
+
+    if not isinstance(intent, certificate_intents.CertificateMutationIntent):
+        raise TypeError("intent must be a CertificateMutationIntent")
+    payload = (
+        b"famulus-certificate-selector-mutation-v1\x00"
+        + certificate_intents.canonical_certificate_intent_bytes(intent)
+    )
+    return hashlib.sha256(payload).hexdigest()[:32]
+
+
+@dataclass(frozen=True)
+class CertificateSelectorAck(CertificateIntentAck):
+    """Durable ACK binding selector mutation authority to one intent."""
+
+    mutation_id: str
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        _require_ack_identifier(self.mutation_id, field="mutation_id")
+
+    @classmethod
+    def for_intent(
+        cls,
+        intent: certificate_intents.CertificateMutationIntent,
+        *,
+        mutation_id: str,
+    ) -> "CertificateSelectorAck":
+        """Build the exact selector-step ACK for one persisted mutation ID."""
+
+        base = CertificateIntentAck.for_intent(intent)
+        if mutation_id != certificate_selector_mutation_id(intent):
+            raise ValueError("mutation_id does not match certificate selector step")
+        return cls(**base.as_json(), mutation_id=mutation_id)  # type: ignore[arg-type]
+
+    def as_json(self) -> dict[str, object]:
+        """Return the exact closed selector-ACK representation."""
+
+        return {**super().as_json(), "mutation_id": self.mutation_id}
+
+    @classmethod
+    def from_json(cls, payload: object) -> "CertificateSelectorAck":
+        """Parse one exact selector ACK without accepting another step."""
+
+        if not isinstance(payload, dict) or set(payload) != {
+            "transaction_id",
+            "intent_id",
+            "intent_digest",
+            "mutation_id",
+        }:
+            raise ValueError("certificate selector ACK fields are incomplete or unknown")
+        return cls(
+            transaction_id=payload["transaction_id"],  # type: ignore[arg-type]
+            intent_id=payload["intent_id"],  # type: ignore[arg-type]
+            intent_digest=payload["intent_digest"],  # type: ignore[arg-type]
+            mutation_id=payload["mutation_id"],  # type: ignore[arg-type]
+        )
 
 
 class _AnonymousDuplexChannel:
@@ -193,6 +325,7 @@ _WORKER_ERROR_MESSAGES = {
     CredentialWorkerCode.ROUNDTRIP_FAILED: "credential preflight roundtrip failed",
     CredentialWorkerCode.CLEANUP_FAILED: "credential preflight cleanup failed",
     CredentialWorkerCode.CERTIFICATE_VERIFICATION_FAILED: "certificate verification failed",
+    CredentialWorkerCode.CERTIFICATE_MUTATION_FAILED: "certificate mutation failed",
     CredentialWorkerCode.TIMEOUT: "credential worker deadline expired",
     CredentialWorkerCode.WORKER_FAILED: "credential worker failed",
 }
@@ -219,6 +352,9 @@ class _ManagedCredentialWorkerState:
         self._backend: secret_store.SecretBackend | None = None
         self._backend_name = "unknown"
         self._preflight_complete = False
+        self._certificate_intent: certificate_intents.CertificateMutationIntent | None = None
+        self._certificate_paths: certificate_records.CertificateStatePaths | None = None
+        self._certificate_phase = "idle"
         self._terminal = False
 
     def dispatch(self, request: object) -> dict[str, object]:
@@ -229,6 +365,9 @@ class _ManagedCredentialWorkerState:
         except CredentialWorkerError as exc:
             self._terminal = True
             return _worker_response(request_id, False, exc.code, None)
+        if command == "close":
+            self._terminal = True
+            return _worker_response(request_id, True, None, {})
         if self._terminal:
             return _worker_response(
                 request_id, False, CredentialWorkerCode.INVALID_STATE, None
@@ -247,9 +386,26 @@ class _ManagedCredentialWorkerState:
                     request_id, False, CredentialWorkerCode.INVALID_STATE, None
                 )
             return self._verify(request_id, payload)
-        if command == "close":
-            self._terminal = True
-            return _worker_response(request_id, True, None, {})
+        if command == "prepare_certificate":
+            if not self._preflight_complete or self._backend is None:
+                self._terminal = True
+                return _worker_response(
+                    request_id, False, CredentialWorkerCode.INVALID_STATE, None
+                )
+            return self._prepare_certificate(request_id, payload)
+        if command == "apply_certificate_intent":
+            return self._apply_certificate(request_id, payload)
+        if command == "abort_certificate_intent":
+            return self._abort_certificate(request_id, payload)
+        if command == "commit_certificate_intent":
+            return self._commit_certificate(request_id, payload)
+        if command == "recover_certificate_intent":
+            if not self._preflight_complete or self._backend is None:
+                self._terminal = True
+                return _worker_response(
+                    request_id, False, CredentialWorkerCode.INVALID_STATE, None
+                )
+            return self._recover_certificate(request_id, payload)
         self._terminal = True
         return _worker_response(request_id, False, CredentialWorkerCode.INVALID_REQUEST, None)
 
@@ -317,6 +473,288 @@ class _ManagedCredentialWorkerState:
         result = CredentialVerificationResult(True, loaded.key_id)
         return _worker_response(request_id, True, None, result.as_json())
 
+    def _paths_from_payload(
+        self, payload: dict[str, object]
+    ) -> certificate_records.CertificateStatePaths:
+        return certificate_records.certificate_state_paths(
+            platform=payload["platform"],
+            home=Path(payload["home"]),
+            repo_root=Path(payload["repo"]),
+        )
+
+    def _prepare_certificate(
+        self, request_id: str, payload: dict[str, object]
+    ) -> dict[str, object]:
+        if self._certificate_phase != "idle" or self._backend is None:
+            self._terminal = True
+            return _worker_response(
+                request_id, False, CredentialWorkerCode.INVALID_STATE, None
+            )
+        try:
+            paths = self._paths_from_payload(payload)
+            result = certificate_records.prepare_certificate_mutation(
+                paths,
+                transaction_id=payload["transaction_id"],
+                secret_backend=self._backend,
+            )
+            if not isinstance(result, certificate_records.CertificatePreparationResult):
+                raise ValueError
+            if result.intent is not None:
+                if (
+                    not isinstance(
+                        result.intent, certificate_intents.CertificateMutationIntent
+                    )
+                    or result.intent.transaction_id != payload["transaction_id"]
+                    or result.key_id != result.intent.active_key_id
+                ):
+                    raise ValueError
+                self._certificate_intent = result.intent
+                self._certificate_paths = paths
+                self._certificate_phase = "planned"
+            else:
+                if not _valid_key_id(result.key_id):
+                    raise ValueError
+                self._certificate_phase = "committed"
+            return _worker_response(
+                request_id,
+                True,
+                None,
+                {
+                    "key_id": result.key_id,
+                    "intent": None if result.intent is None else result.intent.to_dict(),
+                },
+            )
+        except BaseException:
+            self._terminal = True
+            return _worker_response(
+                request_id,
+                False,
+                CredentialWorkerCode.CERTIFICATE_MUTATION_FAILED,
+                None,
+            )
+
+    def _matching_intent_ack(self, payload: dict[str, object]) -> bool:
+        intent = self._certificate_intent
+        if intent is None:
+            return False
+        try:
+            ack = CertificateIntentAck.from_json(payload["ack"])
+        except (KeyError, TypeError, ValueError):
+            return False
+        return ack == CertificateIntentAck.for_intent(intent)
+
+    def _matching_selector_ack(self, payload: dict[str, object]) -> bool:
+        intent = self._certificate_intent
+        if intent is None:
+            return False
+        try:
+            ack = CertificateSelectorAck.from_json(payload["ack"])
+        except (KeyError, TypeError, ValueError):
+            return False
+        expected = CertificateIntentAck.for_intent(intent)
+        return (
+            ack.transaction_id == expected.transaction_id
+            and ack.intent_id == expected.intent_id
+            and ack.intent_digest == expected.intent_digest
+            and ack.mutation_id == certificate_selector_mutation_id(intent)
+        )
+
+    def _mutation_response(
+        self,
+        request_id: str,
+        operation: Callable[[], certificate_records.CertificateMutationResult],
+        *,
+        allowed: frozenset[certificate_records.CertificateRecoveryDisposition],
+        next_phase: str,
+    ) -> dict[str, object]:
+        try:
+            result = operation()
+            if (
+                not isinstance(result, certificate_records.CertificateMutationResult)
+                or self._certificate_intent is None
+                or result.key_id != self._certificate_intent.active_key_id
+                or result.disposition not in allowed
+            ):
+                raise ValueError
+        except BaseException:
+            self._terminal = True
+            return _worker_response(
+                request_id,
+                False,
+                CredentialWorkerCode.CERTIFICATE_MUTATION_FAILED,
+                None,
+            )
+        self._certificate_phase = next_phase
+        if next_phase in {"aborted", "committed"}:
+            self._terminal = True
+        return _worker_response(
+            request_id,
+            True,
+            None,
+            {"key_id": result.key_id, "disposition": result.disposition.value},
+        )
+
+    def _apply_certificate(
+        self, request_id: str, payload: dict[str, object]
+    ) -> dict[str, object]:
+        if (
+            self._certificate_phase != "planned"
+            or self._backend is None
+            or self._certificate_paths is None
+            or not self._matching_intent_ack(payload)
+        ):
+            self._terminal = True
+            return _worker_response(
+                request_id, False, CredentialWorkerCode.INVALID_STATE, None
+            )
+        intent = self._certificate_intent
+        assert intent is not None
+        return self._mutation_response(
+            request_id,
+            lambda: certificate_records.apply_certificate_mutation(
+                self._certificate_paths,
+                intent,
+                secret_backend=self._backend,
+            ),
+            allowed=frozenset({certificate_records.CertificateRecoveryDisposition.STAGED}),
+            next_phase="staged",
+        )
+
+    def _abort_certificate(
+        self, request_id: str, payload: dict[str, object]
+    ) -> dict[str, object]:
+        if (
+            self._certificate_phase not in {"planned", "staged"}
+            or self._backend is None
+            or self._certificate_paths is None
+            or not self._matching_intent_ack(payload)
+        ):
+            self._terminal = True
+            return _worker_response(
+                request_id, False, CredentialWorkerCode.INVALID_STATE, None
+            )
+        intent = self._certificate_intent
+        assert intent is not None
+        return self._mutation_response(
+            request_id,
+            lambda: certificate_records.abort_certificate_mutation(
+                self._certificate_paths,
+                intent,
+                secret_backend=self._backend,
+            ),
+            allowed=frozenset(
+                {
+                    certificate_records.CertificateRecoveryDisposition.ABANDONED,
+                    certificate_records.CertificateRecoveryDisposition.ABORTED,
+                    certificate_records.CertificateRecoveryDisposition.COMMITTED,
+                }
+            ),
+            next_phase="aborted",
+        )
+
+    def _commit_certificate(
+        self, request_id: str, payload: dict[str, object]
+    ) -> dict[str, object]:
+        if (
+            self._certificate_phase != "staged"
+            or self._backend is None
+            or self._certificate_paths is None
+            or not self._matching_selector_ack(payload)
+        ):
+            self._terminal = True
+            return _worker_response(
+                request_id, False, CredentialWorkerCode.INVALID_STATE, None
+            )
+        intent = self._certificate_intent
+        assert intent is not None
+        return self._mutation_response(
+            request_id,
+            lambda: certificate_records.commit_certificate_mutation(
+                self._certificate_paths,
+                intent,
+                secret_backend=self._backend,
+            ),
+            allowed=frozenset(
+                {certificate_records.CertificateRecoveryDisposition.COMMITTED}
+            ),
+            next_phase="committed",
+        )
+
+    def _recover_certificate(
+        self, request_id: str, payload: dict[str, object]
+    ) -> dict[str, object]:
+        if self._certificate_phase != "idle" or self._backend is None:
+            self._terminal = True
+            return _worker_response(
+                request_id, False, CredentialWorkerCode.INVALID_STATE, None
+            )
+        try:
+            intent = certificate_intents.CertificateMutationIntent.from_dict(
+                payload["intent"]
+            )
+        except (KeyError, TypeError, ValueError):
+            self._terminal = True
+            return _worker_response(
+                request_id, False, CredentialWorkerCode.INVALID_REQUEST, None
+            )
+        directive = payload["directive"]
+        if directive == "commit":
+            self._certificate_intent = intent
+            if not self._matching_selector_ack({"ack": payload["selector_ack"]}):
+                self._terminal = True
+                return _worker_response(
+                    request_id, False, CredentialWorkerCode.INVALID_STATE, None
+                )
+        elif payload["selector_ack"] is not None:
+            self._terminal = True
+            return _worker_response(
+                request_id, False, CredentialWorkerCode.INVALID_REQUEST, None
+            )
+        self._certificate_intent = intent
+        try:
+            paths = self._paths_from_payload(payload)
+            result = certificate_records.recover_certificate_mutation(
+                paths,
+                intent,
+                directive,
+                secret_backend=self._backend,
+            )
+            if (
+                not isinstance(result, certificate_records.CertificateMutationResult)
+                or result.key_id != intent.active_key_id
+                or result.disposition
+                not in (
+                    frozenset(
+                        {
+                            certificate_records.CertificateRecoveryDisposition.ABANDONED,
+                            certificate_records.CertificateRecoveryDisposition.ABORTED,
+                            certificate_records.CertificateRecoveryDisposition.COMMITTED,
+                        }
+                    )
+                    if directive == "abort"
+                    else frozenset(
+                        {certificate_records.CertificateRecoveryDisposition.COMMITTED}
+                    )
+                )
+            ):
+                raise ValueError
+        except BaseException:
+            self._terminal = True
+            return _worker_response(
+                request_id,
+                False,
+                CredentialWorkerCode.CERTIFICATE_MUTATION_FAILED,
+                None,
+            )
+        self._certificate_phase = result.disposition.value
+        self._terminal = True
+        return _worker_response(
+            request_id,
+            True,
+            None,
+            {"key_id": result.key_id, "disposition": result.disposition.value},
+        )
+
 
 def _retained_backend_identity(backend: secret_store.SecretBackend) -> str:
     if type(backend) is secret_store.KeyringSecretBackend:
@@ -363,6 +801,10 @@ class ManagedCredentialWorker:
         self._closed = False
         self._failed = False
         self._preflight_complete = False
+        self._prepared_certificate_key_id: str | None = None
+        self._prepared_certificate_intent: (
+            certificate_intents.CertificateMutationIntent | None
+        ) = None
         self._watchdog_stop = threading.Event()
         self._watchdog_thread: threading.Thread | None = None
         self._cleanup_lock = threading.Lock()
@@ -502,6 +944,202 @@ class ManagedCredentialWorker:
         if type(verified) is not bool or verified is not True or type(key_id) is not str:
             self._fail()
         return CredentialVerificationResult(verified, key_id)
+
+    def prepare_certificate(
+        self,
+        *,
+        platform: str,
+        home: Path,
+        repo: Path,
+        transaction_id: str,
+    ) -> certificate_records.CertificatePreparationResult:
+        """Prepare one nonmutating certificate intent in the retained worker."""
+
+        if not self._preflight_complete:
+            raise CredentialWorkerError(CredentialWorkerCode.INVALID_STATE)
+        result = self._request(
+            "prepare_certificate",
+            {
+                "platform": platform,
+                "home": str(Path(home).absolute()),
+                "repo": str(Path(repo).absolute()),
+                "transaction_id": transaction_id,
+            },
+        )
+        try:
+            if set(result) != {"key_id", "intent"} or not _valid_key_id(
+                result["key_id"]
+            ):
+                raise ValueError
+            intent_payload = result["intent"]
+            intent = (
+                None
+                if intent_payload is None
+                else certificate_intents.CertificateMutationIntent.from_dict(
+                    intent_payload
+                )
+            )
+            if intent is not None and (
+                intent.active_key_id != result["key_id"]
+                or intent.transaction_id != transaction_id
+            ):
+                raise ValueError
+            prepared = certificate_records.CertificatePreparationResult(
+                result["key_id"],  # type: ignore[arg-type]
+                intent,
+            )
+            self._prepared_certificate_key_id = prepared.key_id
+            self._prepared_certificate_intent = prepared.intent
+            return prepared
+        except (KeyError, TypeError, ValueError):
+            self._fail()
+
+    def apply_certificate_intent(
+        self, ack: CertificateIntentAck
+    ) -> certificate_records.CertificateMutationResult:
+        """Apply only an intent whose exact durable planned record was ACKed."""
+
+        if not isinstance(ack, CertificateIntentAck) or isinstance(
+            ack, CertificateSelectorAck
+        ):
+            raise TypeError("ack must be a CertificateIntentAck")
+        expected_key = self._live_certificate_key()
+        return self._certificate_mutation_request(
+            "apply_certificate_intent",
+            {"ack": ack.as_json()},
+            expected_key=expected_key,
+            allowed=frozenset(
+                {certificate_records.CertificateRecoveryDisposition.STAGED}
+            ),
+        )
+
+    def abort_certificate_intent(
+        self, ack: CertificateIntentAck
+    ) -> certificate_records.CertificateMutationResult:
+        """Abort one exact planned or staged live intent after durable ACK."""
+
+        if not isinstance(ack, CertificateIntentAck) or isinstance(
+            ack, CertificateSelectorAck
+        ):
+            raise TypeError("ack must be a CertificateIntentAck")
+        expected_key = self._live_certificate_key()
+        return self._certificate_mutation_request(
+            "abort_certificate_intent",
+            {"ack": ack.as_json()},
+            expected_key=expected_key,
+            allowed=frozenset(
+                {
+                    certificate_records.CertificateRecoveryDisposition.ABANDONED,
+                    certificate_records.CertificateRecoveryDisposition.ABORTED,
+                    certificate_records.CertificateRecoveryDisposition.COMMITTED,
+                }
+            ),
+        )
+
+    def commit_certificate_intent(
+        self, ack: CertificateSelectorAck
+    ) -> certificate_records.CertificateMutationResult:
+        """Commit only after the exact selector JournalMutation was ACKed."""
+
+        if not isinstance(ack, CertificateSelectorAck):
+            raise TypeError("ack must be a CertificateSelectorAck")
+        expected_key = self._live_certificate_key()
+        return self._certificate_mutation_request(
+            "commit_certificate_intent",
+            {"ack": ack.as_json()},
+            expected_key=expected_key,
+            allowed=frozenset(
+                {certificate_records.CertificateRecoveryDisposition.COMMITTED}
+            ),
+        )
+
+    def recover_certificate_intent(
+        self,
+        intent: certificate_intents.CertificateMutationIntent,
+        directive: str,
+        selector_ack: CertificateSelectorAck | None = None,
+        *,
+        platform: str,
+        home: Path,
+        repo: Path,
+    ) -> certificate_records.CertificateMutationResult:
+        """Recover one persisted intent with fresh retained-backend authority."""
+
+        if not self._preflight_complete:
+            raise CredentialWorkerError(CredentialWorkerCode.INVALID_STATE)
+        if not isinstance(intent, certificate_intents.CertificateMutationIntent):
+            raise TypeError("intent must be a CertificateMutationIntent")
+        if directive not in {"abort", "commit"}:
+            raise ValueError("directive must be abort or commit")
+        if directive == "commit":
+            if not isinstance(selector_ack, CertificateSelectorAck):
+                raise TypeError("commit recovery requires a CertificateSelectorAck")
+        elif selector_ack is not None:
+            raise ValueError("abort recovery does not accept a selector ACK")
+        return self._certificate_mutation_request(
+            "recover_certificate_intent",
+            {
+                "platform": platform,
+                "home": str(Path(home).absolute()),
+                "repo": str(Path(repo).absolute()),
+                "intent": intent.to_dict(),
+                "directive": directive,
+                "selector_ack": (
+                    None if selector_ack is None else selector_ack.as_json()
+                ),
+            },
+            expected_key=intent.active_key_id,
+            allowed=(
+                frozenset(
+                    {
+                        certificate_records.CertificateRecoveryDisposition.ABANDONED,
+                        certificate_records.CertificateRecoveryDisposition.ABORTED,
+                        certificate_records.CertificateRecoveryDisposition.COMMITTED,
+                    }
+                )
+                if directive == "abort"
+                else frozenset(
+                    {certificate_records.CertificateRecoveryDisposition.COMMITTED}
+                )
+            ),
+        )
+
+    def _live_certificate_key(self) -> str:
+        """Return the exact key retained from successful preparation."""
+
+        intent = self._prepared_certificate_intent
+        if (
+            intent is None
+            or self._prepared_certificate_key_id != intent.active_key_id
+        ):
+            raise CredentialWorkerError(CredentialWorkerCode.INVALID_STATE)
+        return intent.active_key_id
+
+    def _certificate_mutation_request(
+        self,
+        command: str,
+        payload: dict[str, object],
+        *,
+        expected_key: str,
+        allowed: frozenset[certificate_records.CertificateRecoveryDisposition],
+    ) -> certificate_records.CertificateMutationResult:
+        result = self._request(command, payload)
+        try:
+            if set(result) != {"key_id", "disposition"} or not _valid_key_id(
+                result["key_id"]
+            ) or result["key_id"] != expected_key:
+                raise ValueError
+            disposition = certificate_records.CertificateRecoveryDisposition(
+                result["disposition"]
+            )
+            if disposition not in allowed:
+                raise ValueError
+            return certificate_records.CertificateMutationResult(
+                result["key_id"],  # type: ignore[arg-type]
+                disposition,
+            )
+        except (KeyError, TypeError, ValueError):
+            self._fail()
 
     def close(self) -> None:
         """Request graceful close, then terminate and prove process-tree absence."""
@@ -1204,26 +1842,55 @@ def _parse_worker_request(
     elif command == "close":
         if payload:
             raise CredentialWorkerError(CredentialWorkerCode.INVALID_REQUEST)
-    elif command == "verify_certificate":
-        if set(payload) != {"platform", "home", "repo"}:
+    elif command in {"verify_certificate", "prepare_certificate"}:
+        expected = {"platform", "home", "repo"}
+        if command == "prepare_certificate":
+            expected.add("transaction_id")
+        if set(payload) != expected:
             raise CredentialWorkerError(CredentialWorkerCode.INVALID_REQUEST)
-        platform = payload["platform"]
-        home = payload["home"]
-        repo = payload["repo"]
-        if (
-            type(platform) is not str
-            or platform not in NATIVE_BACKENDS
-            or type(home) is not str
-            or not home
-            or "\x00" in home
-            or len(home.encode("utf-8")) > 2048
-            or not Path(home).is_absolute()
-            or type(repo) is not str
-            or not repo
-            or "\x00" in repo
-            or len(repo.encode("utf-8")) > 2048
-            or not Path(repo).is_absolute()
+        if not _valid_certificate_capabilities(payload):
+            raise CredentialWorkerError(CredentialWorkerCode.INVALID_REQUEST)
+        if command == "prepare_certificate" and not _valid_ack_identifier(
+            payload["transaction_id"]
         ):
+            raise CredentialWorkerError(CredentialWorkerCode.INVALID_REQUEST)
+    elif command in {"apply_certificate_intent", "abort_certificate_intent"}:
+        if set(payload) != {"ack"}:
+            raise CredentialWorkerError(CredentialWorkerCode.INVALID_REQUEST)
+        try:
+            CertificateIntentAck.from_json(payload["ack"])
+        except (TypeError, ValueError):
+            raise CredentialWorkerError(CredentialWorkerCode.INVALID_REQUEST) from None
+    elif command == "commit_certificate_intent":
+        if set(payload) != {"ack"}:
+            raise CredentialWorkerError(CredentialWorkerCode.INVALID_REQUEST)
+        try:
+            CertificateSelectorAck.from_json(payload["ack"])
+        except (TypeError, ValueError):
+            raise CredentialWorkerError(CredentialWorkerCode.INVALID_REQUEST) from None
+    elif command == "recover_certificate_intent":
+        if set(payload) != {
+            "platform",
+            "home",
+            "repo",
+            "intent",
+            "directive",
+            "selector_ack",
+        } or not _valid_certificate_capabilities(payload):
+            raise CredentialWorkerError(CredentialWorkerCode.INVALID_REQUEST)
+        try:
+            certificate_intents.CertificateMutationIntent.from_dict(payload["intent"])
+        except (TypeError, ValueError):
+            raise CredentialWorkerError(CredentialWorkerCode.INVALID_REQUEST) from None
+        if payload["directive"] not in {"abort", "commit"}:
+            raise CredentialWorkerError(CredentialWorkerCode.INVALID_REQUEST)
+        selector_ack = payload["selector_ack"]
+        if payload["directive"] == "commit":
+            try:
+                CertificateSelectorAck.from_json(selector_ack)
+            except (TypeError, ValueError):
+                raise CredentialWorkerError(CredentialWorkerCode.INVALID_REQUEST) from None
+        elif selector_ack is not None:
             raise CredentialWorkerError(CredentialWorkerCode.INVALID_REQUEST)
     else:
         raise CredentialWorkerError(CredentialWorkerCode.INVALID_REQUEST)
@@ -1236,6 +1903,34 @@ def _valid_target_id(value: object) -> bool:
     suffix = value.removeprefix("native-preflight-")
     return len(suffix) == 32 and all(
         character in "0123456789abcdef" for character in suffix
+    )
+
+
+def _valid_ack_identifier(value: object) -> bool:
+    return isinstance(value, str) and _ACK_IDENTIFIER_PATTERN.fullmatch(value) is not None
+
+
+def _valid_key_id(value: object) -> bool:
+    return isinstance(value, str) and re.fullmatch(r"sha256:[0-9a-f]{64}", value) is not None
+
+
+def _valid_certificate_capabilities(payload: dict[str, object]) -> bool:
+    platform = payload.get("platform")
+    home = payload.get("home")
+    repo = payload.get("repo")
+    return bool(
+        type(platform) is str
+        and platform in NATIVE_BACKENDS
+        and type(home) is str
+        and home
+        and "\x00" not in home
+        and len(home.encode("utf-8")) <= 2048
+        and Path(home).is_absolute()
+        and type(repo) is str
+        and repo
+        and "\x00" not in repo
+        and len(repo.encode("utf-8")) <= 2048
+        and Path(repo).is_absolute()
     )
 
 
