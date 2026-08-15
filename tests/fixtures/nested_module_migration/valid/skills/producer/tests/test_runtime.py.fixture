@@ -1,5 +1,0 @@
-from _rtx.runtime import execute
-
-
-def test_execute() -> None:
-    assert execute() == "fixture"

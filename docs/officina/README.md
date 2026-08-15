@@ -226,13 +226,7 @@ Then, depending on what you need:
 - [Scaffolding](scaffolding/README.md) — the scaffolding layer and why it
   exists
 - [Installation](installation.md) — how an Officina project is installed, and
-  the ownership-aware manifest behind uninstall
+  the manifest-based uninstall process
 
 If you are extending Famulus rather than working on Officina itself, start
 from the [Contributor Guide](../contributors/README.md) instead.
-
-> **Current scope, nonnormative:** Officina currently exists as an internal
-> framework within Famulus. The settled direction is to separate it from the
-> application skills of this repository and make it a standalone framework.
-> The exact packaging and extraction design remain unspecified. See
-> [the extraction plan](../plans/officina-standalone-framework.md).

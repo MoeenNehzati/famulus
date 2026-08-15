@@ -2,11 +2,7 @@
 
 > Generated from live blueprints and `SKILL.md` descriptions. Do not edit by hand.
 
-This page is the complete skill inventory. For walkthroughs and examples, start from the user docs or contributor docs linked from [README.md](../README.md).
-
-![Skill taxonomy](graphs/skill-taxonomy.svg)
-
-The graph gives a visual overview of the live skill set. The sections below are the complete text inventory.
+This page is the complete skill inventory. For walkthroughs and examples, start from the domain guides or contributor docs linked from [README.md](../README.md).
 
 ## Personal Assistance
 

@@ -100,10 +100,6 @@ _COMPOSITE_PYTHON_TARGET = re.compile(
     r"_rtx/[A-Za-z0-9_./-]+\.py:[A-Za-z_][A-Za-z0-9_]*"
 )
 _PYTHON_RUNNER = "officina.runtime.python_machine_interface_runner"
-_LEGACY_COMPOSITE_FUNCTION = (
-    Path("src/officina/common/interface_injection_migration.py"),
-    "_legacy_gateway",
-)
 REQUIRES_BLUEPRINT_GRAPH = True
 BLUEPRINT_GRAPH_OPTIONAL = True
 
@@ -813,9 +809,8 @@ def _validate_composite_python_targets(
     Pseudocode
     ----------
     - set syntax_tree = cached syntax tree for file
-    - set parent_map = syntax-tree parent relationships
     - for node in syntax_tree:
-      - if literal is a forbidden composite target outside the legacy function:
+      - if literal is a forbidden composite target:
         - set findings = findings plus composite-target finding
     - return findings
 
@@ -828,11 +823,6 @@ def _validate_composite_python_targets(
         _source, tree = source_cache.read_parse(path)
     except (OSError, UnicodeError, SyntaxError):
         return []
-    parents = {
-        child: parent
-        for parent in ast.walk(tree)
-        for child in ast.iter_child_nodes(parent)
-    }
     errors: list[str] = []
     for node in ast.walk(tree):
         if (
@@ -841,19 +831,6 @@ def _validate_composite_python_targets(
             or _COMPOSITE_PYTHON_TARGET.search(node.value) is None
         ):
             continue
-        if rel_path == _LEGACY_COMPOSITE_FUNCTION[0]:
-            current = parents.get(node)
-            while current is not None:
-                if (
-                    isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef))
-                    and current.name == _LEGACY_COMPOSITE_FUNCTION[1]
-                ):
-                    break
-                current = parents.get(current)
-            else:
-                current = None
-            if current is not None:
-                continue
         errors.append(
             f"{rel_path}:{node.lineno}: composite Python process target is not "
             "allowed; carry gateway path and process entry separately"

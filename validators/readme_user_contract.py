@@ -15,9 +15,10 @@ REQUIRED_SNIPPETS = (
     "Plan my day",
     "Wrap up today",
     "Build a math dependency graph",
-    "docs/user/general.md",
-    "docs/user/research.md",
-    "docs/user/system.md",
+    "docs/domains/personal-assistance.md",
+    "docs/domains/assistant-interaction.md",
+    "docs/domains/research.md",
+    "docs/domains/assistant-operations.md",
     "docs/skills.md",
     "docs/contributors/README.md",
 )

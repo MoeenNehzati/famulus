@@ -1,8 +1,6 @@
 # Certification and Drift
 
-This document defines the live version-6 certification contract. Version-4 and
-version-5 schemas remain immutable migration and regression inputs under
-`references/blueprint/migrations/`.
+This document defines the live version-6 certification contract.
 
 Certification is repository-bound. The public certifier requires an explicit
 reviewed repository and commit and derives the complete certifiable graph from
@@ -40,12 +38,10 @@ gateway, containment and relationship shape, safe paths, and closed shapes for
 every semantic value that is present. It does not manufacture semantic facts
 or assert that an interface is complete.
 
-The one-time converter preserves every authored fact while registering nested
-modules, moving code ownership, and rewriting exact identities. Facts absent
-from the source remain absent; migration must not invent permissive argv rules,
-generic success outcomes, or other guessed defaults merely to satisfy a
-schema. Missing descriptions, contract sections, invocation details,
-direct-I/O facts, or compatibility claims are certifier findings.
+Structural validation does not invent permissive argv rules, generic success
+outcomes, or other guessed defaults merely to satisfy a schema. Missing
+descriptions, contract sections, invocation details, direct-I/O facts, or
+compatibility claims are certifier findings.
 
 The certifier-owned workflow reviews such a draft against the gateway and node
 content. It may repair the candidate blueprint, but each repair invalidates the

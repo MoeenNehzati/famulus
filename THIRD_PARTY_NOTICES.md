@@ -12,7 +12,6 @@ this repository retain their own upstream licenses.
 - Distributed files:
   - `src/officina/common/visualization/html_renderer/vendor/elk.bundled.js`
   - `src/officina/common/visualization/html_renderer/vendor/elk-worker.min.js`
-  - `docs_tooling/graphs/vendor/elk.bundled.js`
 
 The ELK source remains available from the upstream project under EPL-2.0. The
 exact upstream release for the Famulus copies still needs to be recorded before

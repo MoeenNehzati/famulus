@@ -17,9 +17,9 @@ from test_support.v5_blueprint_fixtures import copy_v5_fixture_tree
 
 V5_SCHEMA_ROOT = (
     Path(__file__).resolve().parents[1]
-    / "references"
-    / "blueprint"
-    / "migrations"
+    / "tests"
+    / "fixtures"
+    / "blueprint_schemas"
     / "v5"
 )
 V5_AUTHORIZATION_FIXTURE = (

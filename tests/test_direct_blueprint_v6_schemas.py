@@ -16,7 +16,7 @@ from officina.common.blueprint_graph import load_repository_blueprint_graph
 
 
 ROOT = Path(__file__).resolve().parents[1]
-V6_ROOT = ROOT / "references" / "blueprint" / "migrations" / "v6"
+V6_ROOT = ROOT / "tests" / "fixtures" / "blueprint_schemas" / "v6"
 FIXTURE_ROOT = ROOT / "tests" / "fixtures" / "blueprint_v6" / "direct-routing"
 
 

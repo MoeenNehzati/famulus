@@ -74,10 +74,11 @@ validator = configured_validator(
 validator.validate(document)
 ```
 
-The blueprint configuration supplies catalog and activation enums for the new
-discoverable-module format. Existing skill blueprints retain the previous
-`category`, `role`, and `kind` fields until a separate repository migration;
-the configured schema intentionally provides no backward-compatible branch.
+The blueprint configuration supplies catalog and activation enums for the
+discoverable-module format. Current skill blueprints use the configured
+`discovery.catalog` vocabulary. The configured schema provides no
+backward-compatible branch for the retired `category`, `role`, and `kind`
+fields.
 
 ## Configured schema loading and references
 

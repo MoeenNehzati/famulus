@@ -7,7 +7,7 @@ Famulus documentation is intentionally split between hand-written narrative and 
 The following stay hand-written:
 
 - [README.md](../../README.md)
-- [`docs/user/*.md`](../user/)
+- [`docs/domains/*.md`](../domains/)
 - [`docs/contributors/*.md`](./)
 - explanatory reference docs under [`references/`](../../references/)
 
@@ -18,7 +18,7 @@ Those files carry the user-facing and contributor-facing explanations, walkthrou
 The generated documentation surfaces are:
 
 - [docs/skills.md](../skills.md) — the complete skill inventory
-- embedded coverage blocks inside the user and contributor docs
+- embedded coverage blocks inside the domain and contributor docs
 
 Those surfaces are derived from live `skills/*/blueprint.yaml` files plus the descriptions in each skill's [`SKILL.md`](../../skills/skill-maker/SKILL.md).
 
@@ -68,7 +68,7 @@ python3 scripts/generate-doc-artifacts.py
 This regenerates:
 
 - [docs/skills.md](../skills.md)
-- embedded coverage blocks in the user docs
+- embedded coverage blocks in the domain docs
 - embedded coverage blocks in [docs/contributors/README.md](README.md)
 
 ## Local Browsing
@@ -84,8 +84,8 @@ python3 -m pip install -r requirements-docs.txt
 The site includes:
 
 - Markdown files directly under `docs/`
+- Markdown files under `docs/domains/`
 - Markdown files under `docs/contributors/`
-- curated graph assets required by those pages
 - the generated interactive repository blueprint graph
 
 Other documentation subdirectories are not published. Links to those files and
@@ -108,7 +108,7 @@ Documentation conformance is enforced by repo validators under [validators/](../
 The key validators are:
 
 - [validators/readme_user_contract.py](../../validators/readme_user_contract.py)
-- [validators/user_docs_cover_blueprints.py](../../validators/user_docs_cover_blueprints.py)
+- [validators/domain_docs_cover_blueprints.py](../../validators/domain_docs_cover_blueprints.py)
 - [validators/contributor_docs_contract.py](../../validators/contributor_docs_contract.py)
 - [validators/generated_skill_docs.py](../../validators/generated_skill_docs.py)
 

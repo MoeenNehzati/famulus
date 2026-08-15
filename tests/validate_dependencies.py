@@ -16,7 +16,7 @@ _mod = importlib.util.module_from_spec(_spec)
 assert _spec.loader is not None
 _spec.loader.exec_module(_mod)
 _REAL_LOAD_GRAPH = _mod.load_repository_blueprint_graph
-_V4_SCHEMA_ROOT = _REPO_ROOT / "references" / "blueprint" / "migrations" / "v4"
+_V4_SCHEMA_ROOT = _REPO_ROOT / "tests" / "fixtures" / "blueprint_schemas" / "v4"
 
 
 @pytest.fixture(autouse=True)

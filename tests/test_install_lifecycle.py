@@ -15,12 +15,6 @@ this keeps the lifecycle acceptance suite fast and network-independent,
 while
 `test_officina_managed_runtime.py::test_build_candidate_release_end_to_end_with_real_uv`
 already proves the real-uv path works end to end.
-
-Uninstall/purge invariants (Task 1, Step 5 of the acceptance plan) are
-skipped: they require ownership-aware manifest-v2
-(`skills/install-assistant-tools/_rtx/_state_record.py::MANIFEST_VERSION`
-is still 1 as of this writing), which is tracked as a separate follow-up.
-Faking that behavior here would produce a false acceptance signal.
 """
 from __future__ import annotations
 
@@ -242,30 +236,3 @@ def test_rollback_reactivates_previous_release(monkeypatch, tmp_path):
     )
     assert loaded_after_rollback.runtime_source == first.runtime_source
     assert loaded_after_rollback.release_id == first.release_id
-
-
-# famulus-skip: category=capability-unavailable; reason=requires manifest-v2 ownership-aware entries, not landed yet; alternate=none -- real coverage lands with the manifest-v2 follow-up
-@pytest.mark.skip(reason="requires manifest-v2 (ownership-aware uninstall), tracked separately")
-def test_default_uninstall_removes_only_this_installations_resources(tmp_path):
-    """Default uninstall must remove only the resources this installation
-    owns (per an ownership-aware manifest), leaving anything not recorded
-    as this installation's own side effect untouched. Not implementable
-    against today's manifest v1
-    (skills/install-assistant-tools/_rtx/_state_record.py::MANIFEST_VERSION
-    == 1): manifest v1 has no ownership/ID concept to distinguish "this
-    installation's releases" from any other. Faking this against v1 would
-    give a false acceptance signal; real coverage lands with manifest-v2.
-    """
-    raise NotImplementedError("requires manifest-v2")
-
-
-# famulus-skip: category=capability-unavailable; reason=requires manifest-v2 ownership-aware entries, not landed yet; alternate=none -- real coverage lands with the manifest-v2 follow-up
-@pytest.mark.skip(reason="requires manifest-v2 (ownership-aware uninstall), tracked separately")
-def test_purge_removes_config_and_state_roots(tmp_path):
-    """Purge (uninstall --purge) must additionally remove the config and
-    state roots (e.g. XDG config/state dirs) that a default uninstall
-    leaves behind. Same manifest-v2 dependency as the uninstall test above:
-    without ownership-aware records, there is no reliable way to scope
-    "this installation's config/state" for a real (non-faked) assertion.
-    """
-    raise NotImplementedError("requires manifest-v2")

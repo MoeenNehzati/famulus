@@ -38,7 +38,7 @@ from test_support.git_repository import GitTestRepository
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_SCHEMA_ROOT = (
-    PROJECT_ROOT / "references" / "blueprint" / "migrations" / "v4"
+    PROJECT_ROOT / "tests" / "fixtures" / "blueprint_schemas" / "v4"
 )
 SOURCE_CERTIFICATION_ROOT = PROJECT_ROOT / "references" / "certification"
 CHECKS = expected_certifier_checks(expected_schema_version=4)
@@ -385,12 +385,6 @@ def materialize_v4_repository(
     )
     schema_root = root / "references" / "blueprint"
     shutil.copytree(SOURCE_SCHEMA_ROOT, schema_root)
-    migration_map = root / "docs/plans/unified-architecture-migration-map.yaml"
-    migration_map.parent.mkdir(parents=True, exist_ok=True)
-    migration_map.write_text(
-        "declarations:\n  version_2:\n    merge_decisions: []\n",
-        encoding="utf-8",
-    )
     certification_root = root / "references" / "certification"
     certification_root.mkdir(parents=True)
     shutil.copy2(

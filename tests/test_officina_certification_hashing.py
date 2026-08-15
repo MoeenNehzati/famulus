@@ -22,7 +22,7 @@ from test_support.v5_blueprint_fixtures import copy_v5_fixture_tree
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-V5_SCHEMA_ROOT = REPO_ROOT / "references" / "blueprint" / "migrations" / "v5"
+V5_SCHEMA_ROOT = REPO_ROOT / "tests" / "fixtures" / "blueprint_schemas" / "v5"
 
 
 def test_hash_owner_does_not_expose_legacy_health_authority() -> None:

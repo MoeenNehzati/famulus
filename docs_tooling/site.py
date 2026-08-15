@@ -2,9 +2,10 @@
 
 The source repository contains working notes and implementation plans that are
 not part of the public documentation website.  This module makes that boundary
-explicit: it stages root-level ``docs/*.md`` files, contributor documentation,
-and graph assets under an ignored build directory.  Links to files outside that
-surface remain useful by becoming links to their GitHub source pages.
+explicit: it stages root-level ``docs/*.md`` files, domain guides, and
+contributor documentation under an ignored build directory.  Links to files
+outside that surface remain useful by becoming links to their GitHub source
+pages.
 
 The assembler deliberately does not render Markdown or serve HTTP.  MkDocs owns
 those standard presentation concerns; this module owns only Famulus-specific
@@ -39,7 +40,7 @@ def sync_published_docs(
     repository_url: str = DEFAULT_REPOSITORY_URL,
     repository_ref: str = DEFAULT_REPOSITORY_REF,
 ) -> Path:
-    """Synchronize published Markdown and graph assets into ``output_dir``.
+    """Synchronize published Markdown into ``output_dir``.
 
     Only paths owned by this synchronization pass are replaced.  In particular,
     ``graphs/blueprint`` is preserved so a MkDocs live-reload pass can refresh
@@ -87,8 +88,7 @@ def sync_published_docs(
             encoding="utf-8",
         )
 
-    graph_assets = _copy_graph_assets(docs_root / "graphs", output / "graphs")
-    _write_graph_index(output / "graphs" / "index.md", graph_assets)
+    _write_graph_index(output / "graphs" / "index.md")
     return output
 
 
@@ -161,6 +161,12 @@ def _published_markdown_paths(docs_root: Path) -> dict[Path, Path]:
         for source in sorted(contributor_root.rglob("*.md")):
             destination = Path("contributors") / source.relative_to(contributor_root)
             published[source.resolve()] = destination
+
+    domain_root = docs_root / "domains"
+    if domain_root.is_dir():
+        for source in sorted(domain_root.rglob("*.md")):
+            destination = Path("domains") / source.relative_to(domain_root)
+            published[source.resolve()] = destination
     return published
 
 
@@ -173,6 +179,9 @@ def _clear_managed_site_sources(output: Path) -> None:
     contributors = output / "contributors"
     if contributors.exists():
         shutil.rmtree(contributors)
+    domains = output / "domains"
+    if domains.exists():
+        shutil.rmtree(domains)
 
     graphs = output / "graphs"
     graphs.mkdir(parents=True, exist_ok=True)
@@ -185,34 +194,14 @@ def _clear_managed_site_sources(output: Path) -> None:
             child.unlink()
 
 
-def _copy_graph_assets(source_root: Path, destination_root: Path) -> list[Path]:
-    """Copy non-Markdown curated graph assets and return their staged paths."""
-
-    copied: list[Path] = []
-    if not source_root.is_dir():
-        return copied
-    for source in sorted(path for path in source_root.rglob("*") if path.is_file()):
-        if source.suffix.lower() == ".md":
-            continue
-        relative = source.relative_to(source_root)
-        destination = destination_root / relative
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, destination)
-        copied.append(relative)
-    return copied
-
-
-def _write_graph_index(destination: Path, assets: list[Path]) -> None:
-    """Write the small navigable page that owns graph links in inferred nav."""
+def _write_graph_index(destination: Path) -> None:
+    """Write the navigable page that owns the interactive graph link."""
 
     lines = [
         "# Graphs",
         "",
         "- [Interactive repository blueprint](blueprint/repository.html)",
     ]
-    for asset in assets:
-        label = asset.stem.replace("-", " ").replace("_", " ").title()
-        lines.append(f"- [{label}]({asset.as_posix()})")
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text("\n".join(lines) + "\n", encoding="utf-8")
 

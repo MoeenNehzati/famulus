@@ -94,7 +94,6 @@ runtime:
 | --- | --- | --- | --- |
 | `src/officina/common/visualization/html_renderer/vendor/elk.bundled.js` | `kieler/elkjs` | EPL-2.0 | Upstream project recorded; exact upstream release is not recorded |
 | `src/officina/common/visualization/html_renderer/vendor/elk-worker.min.js` | `kieler/elkjs` | EPL-2.0 | Upstream project recorded; exact upstream release is not recorded |
-| `docs_tooling/graphs/vendor/elk.bundled.js` | `kieler/elkjs` | EPL-2.0 | Upstream project recorded; exact upstream release is not recorded |
 | `src/officina/common/visualization/html_renderer/vendor/mathjax-3.2.2-tex-svg.js` | `MathJax-src` tag `3.2.2` | Apache-2.0 | Version is recorded in the filename; exact upstream artifact digest was not recorded when vendored |
 
 The ELK files retain embedded EPL-2.0 notices where present. Repository-level

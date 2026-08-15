@@ -27,8 +27,11 @@ Officina is and routes to everything below.
 - [Skill Index](./skills.md)
 - [Contributors](./contributors/README.md)
 
-## User Docs
+## Skill Domains
 
-- [General](./user/general.md)
-- [System](./user/system.md)
-- [Research](./user/research.md)
+- [Personal Assistance](./domains/personal-assistance.md)
+- [Assistant Interaction](./domains/assistant-interaction.md)
+- [Research](./domains/research.md)
+- [Assistant Operations](./domains/assistant-operations.md)
+- [Software Development](./contributors/README.md#software-development)
+- [Assistant Development](./contributors/README.md#assistant-development)

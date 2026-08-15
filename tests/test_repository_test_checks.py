@@ -282,12 +282,6 @@ def test_precommit_defers_installation_chrome_docstring_and_performance_tests() 
     assert runner.CHROME_TESTS <= deselected
     assert runner.DOCSTRING_TESTS <= deselected
     assert runner.PERFORMANCE_TESTS <= deselected
-    assert (
-        "tests/test_nested_module_migration.py::"
-        "TestNestedModuleMigrationContract::"
-        "test_repository_inventory_matches_reviewed_v6_cutover_surface"
-        in deselected
-    )
 
 
 def test_prepush_defers_browser_and_slow_tests_from_parallel_pool() -> None:

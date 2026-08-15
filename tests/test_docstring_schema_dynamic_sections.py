@@ -450,8 +450,8 @@ def test_repo_dependency_tree_sections_are_flattened(
 
     CallsFromRepo
     --------------
-    ._node_certifier._v4_module_renames:
-      why: "Maps legacy subject ids to canonical review targets."
+    ._node_certifier._v4_payload:
+      why: "Builds the canonical certificate payload."
     officina.common:
       repository_paths:
         repository_relative_path:
@@ -459,16 +459,16 @@ def test_repo_dependency_tree_sections_are_flattened(
 
     InstantiationsFromRepo
     ------------------------
-    ._node_certifier.V4LegacyReviewContext:
-      why: "Constructs typed rows for legacy claims."
+    ._node_certifier.V4GateSnapshot:
+      why: "Constructs the mechanical gate snapshot."
     """
     spec = parse_graph_block(doc)
     assert [entry.name for entry in spec.module_calls] == [
-        "._node_certifier._v4_module_renames",
+        "._node_certifier._v4_payload",
         "officina.common.repository_paths.repository_relative_path",
     ]
     assert [entry.name for entry in spec.module_instantiates] == [
-        "._node_certifier.V4LegacyReviewContext"
+        "._node_certifier.V4GateSnapshot"
     ]
 
 

@@ -39,7 +39,7 @@ from officina.runtime.python_machine_interface_runner import (  # noqa: E402
 )
 
 SCHEMA_ROOT = Path(__file__).resolve().parents[1] / "references" / "blueprint"
-V4_SCHEMA_ROOT = SCHEMA_ROOT / "migrations" / "v4"
+V4_SCHEMA_ROOT = Path(__file__).parent / "fixtures" / "blueprint_schemas" / "v4"
 
 
 @pytest.fixture(autouse=True)

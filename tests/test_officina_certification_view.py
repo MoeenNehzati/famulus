@@ -54,8 +54,9 @@ CANONICAL_SCHEMA_ROOT = (
     Path(__file__).resolve().parents[1] / "references" / "blueprint"
 )
 SCHEMA_ROOT = (
-    CANONICAL_SCHEMA_ROOT
-    / "migrations"
+    Path(__file__).parent
+    / "fixtures"
+    / "blueprint_schemas"
     / "v4"
 )
 CERTIFIER = {

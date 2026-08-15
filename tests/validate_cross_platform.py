@@ -381,22 +381,22 @@ def test_live_python_composite_target_is_rejected(tmp_path: Path) -> None:
     assert any("composite Python process target" in error for error in errors)
 
 
-def test_migration_only_composite_parser_is_allowed(tmp_path: Path) -> None:
-    migration = (
+def test_composite_parser_is_rejected_under_common_module(tmp_path: Path) -> None:
+    parser = (
         tmp_path
         / "src"
         / "officina"
         / "common"
-        / "interface_injection_migration.py"
+        / "parser.py"
     )
-    migration.parent.mkdir(parents=True)
-    migration.write_text(
-        "def _legacy_gateway():\n"
+    parser.parent.mkdir(parents=True)
+    parser.write_text(
+        "def parse_gateway():\n"
         "    return '_rtx/_worker.py:Interface'\n",
         encoding="utf-8",
     )
 
-    assert validate(tmp_path) == []
+    assert any("composite Python process target" in error for error in validate(tmp_path))
 
 
 def test_composite_runner_permission_is_rejected_in_live_blueprint(

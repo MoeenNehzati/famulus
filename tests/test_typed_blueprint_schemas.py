@@ -11,7 +11,7 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_ROOT = (
-    REPO_ROOT / "references" / "blueprint" / "migrations" / "v4"
+    REPO_ROOT / "tests" / "fixtures" / "blueprint_schemas" / "v4"
 )
 CERTIFICATION_ROOT = REPO_ROOT / "references" / "certification"
 

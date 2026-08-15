@@ -21,9 +21,9 @@ def load_repository_blueprint_graph(repo_root: Path, **kwargs: object):
     kwargs.setdefault(
         "schema_root",
         Path(__file__).resolve().parents[1]
-        / "references"
-        / "blueprint"
-        / "migrations"
+        / "tests"
+        / "fixtures"
+        / "blueprint_schemas"
         / "v4",
     )
     return _canonical_load_repository_blueprint_graph(repo_root, **kwargs)
@@ -40,9 +40,9 @@ from test_support.v5_blueprint_fixtures import copy_v5_fixture_tree
 
 V5_SCHEMA_ROOT = (
     Path(__file__).resolve().parents[1]
-    / "references"
-    / "blueprint"
-    / "migrations"
+    / "tests"
+    / "fixtures"
+    / "blueprint_schemas"
     / "v5"
 )
 REPO_ROOT = Path(__file__).resolve().parents[1]

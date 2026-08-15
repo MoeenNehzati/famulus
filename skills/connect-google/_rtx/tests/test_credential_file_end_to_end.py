@@ -126,7 +126,7 @@ def integration_env(
     original_refresh = google_credentials.refresh_access_token_from_file
 
     def refresh_with_test_backend(path, **kwargs):
-        kwargs.setdefault("urlopen", urlopen)
+        kwargs["urlopen"] = urlopen
         return original_refresh(path, secret_backend=backend, **kwargs)
 
     monkeypatch.setattr(

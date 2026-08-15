@@ -44,7 +44,7 @@ assert SPEC.loader is not None
 sys.modules[SPEC.name] = certifier
 SPEC.loader.exec_module(certifier)
 
-V5_SCHEMA_ROOT = MODULE_PATH.parents[3] / "references" / "blueprint" / "migrations" / "v5"
+V5_SCHEMA_ROOT = MODULE_PATH.parents[3] / "tests" / "fixtures" / "blueprint_schemas" / "v5"
 V5_AUTHORIZATION_FIXTURE = (
     MODULE_PATH.parents[3]
     / "tests"

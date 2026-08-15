@@ -59,9 +59,6 @@ NATIVE_SCHEDULER_TESTS = {
     "skills/recurring-tasks/_rtx/tests/test_scheduler_live_smoke.py"
 }
 PRECOMMIT_EXCLUDED_TESTS = {
-    "tests/test_nested_module_migration.py::"
-    "TestNestedModuleMigrationContract::"
-    "test_repository_inventory_matches_reviewed_v6_cutover_surface",
     *INSTALLATION_TESTS,
     *CHROME_TESTS,
     *DOCSTRING_TESTS,

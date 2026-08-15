@@ -12,9 +12,10 @@ from officina.common.blueprint_graph import prepare_module_blueprint_loader
 
 SKILL_INDEX_PATH = Path("docs/skills.md")
 
-GENERAL_DOC = Path("docs/user/general.md")
-RESEARCH_DOC = Path("docs/user/research.md")
-SYSTEM_DOC = Path("docs/user/system.md")
+PERSONAL_ASSISTANCE_DOC = Path("docs/domains/personal-assistance.md")
+ASSISTANT_INTERACTION_DOC = Path("docs/domains/assistant-interaction.md")
+RESEARCH_DOC = Path("docs/domains/research.md")
+ASSISTANT_OPERATIONS_DOC = Path("docs/domains/assistant-operations.md")
 CONTRIBUTOR_DOC = Path("docs/contributors/README.md")
 DOC_SYSTEM_DOC = Path("docs/contributors/documentation-system.md")
 
@@ -124,15 +125,32 @@ class CoverageBlock:
 
 
 COVERAGE_BLOCKS = (
-    CoverageBlock(GENERAL_DOC, "personal-assistance", "Personal Assistance"),
-    CoverageBlock(GENERAL_DOC, "assistant-interaction", "Assistant Interaction"),
+    CoverageBlock(
+        PERSONAL_ASSISTANCE_DOC,
+        "personal-assistance",
+        "Personal Assistance",
+    ),
+    CoverageBlock(
+        ASSISTANT_INTERACTION_DOC,
+        "assistant-interaction",
+        "Assistant Interaction",
+    ),
     CoverageBlock(RESEARCH_DOC, "research", "Research"),
-    CoverageBlock(SYSTEM_DOC, "assistant-operations", "Assistant Operations"),
+    CoverageBlock(
+        ASSISTANT_OPERATIONS_DOC,
+        "assistant-operations",
+        "Assistant Operations",
+    ),
     CoverageBlock(CONTRIBUTOR_DOC, "software-development", "Software Development"),
     CoverageBlock(CONTRIBUTOR_DOC, "assistant-development", "Assistant Development"),
 )
 
-USER_DOCS = (GENERAL_DOC, RESEARCH_DOC, SYSTEM_DOC)
+DOMAIN_DOCS = (
+    PERSONAL_ASSISTANCE_DOC,
+    ASSISTANT_INTERACTION_DOC,
+    RESEARCH_DOC,
+    ASSISTANT_OPERATIONS_DOC,
+)
 CONTRIBUTOR_DOCS = (CONTRIBUTOR_DOC, DOC_SYSTEM_DOC)
 
 SUMMARY_OVERRIDES = {

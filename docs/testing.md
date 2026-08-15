@@ -117,9 +117,6 @@ benchmark harness are `validators`, `tests:shared`, and `tests:performance`.
 and pytest's per-file setup, call, and teardown totals. These totals do not
 include collection, controller startup, or unattributed scheduler overhead.
 
-See [testing-performance.md](testing-performance.md) for benchmark commands,
-metric definitions, and the current scaling evidence.
-
 ## Local hook
 
 `.githooks/pre-commit` performs these operations in order:

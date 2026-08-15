@@ -20,7 +20,7 @@ from test_support.v5_blueprint_fixtures import copy_v5_fixture_tree
 
 SYNCER_PATH = REPO_ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py"
 BLUEPRINT_TEMPLATE = REPO_ROOT / "references" / "blueprint" / "template.yaml"
-V5_SCHEMA_ROOT = REPO_ROOT / "references" / "blueprint" / "migrations" / "v5"
+V5_SCHEMA_ROOT = REPO_ROOT / "tests" / "fixtures" / "blueprint_schemas" / "v5"
 V5_AUTHORIZATION_FIXTURE = (
     REPO_ROOT / "tests" / "fixtures" / "blueprint_v5" / "authorization"
 )
@@ -499,6 +499,15 @@ def test_sync_does_not_create_dispatch_routing_state(
     monkeypatch.setattr(syncer, "REPO_ROOT", repo_root)
     monkeypatch.setattr(syncer, "SKILLS_ROOT", repo_root / "skills")
     monkeypatch.setattr(syncer, "RUNTIME_DEPENDENCIES_PATH", manifest)
+    original_load_blueprints = syncer.load_blueprints
+    monkeypatch.setattr(
+        syncer,
+        "load_blueprints",
+        lambda **kwargs: original_load_blueprints(
+            schema_root=V5_SCHEMA_ROOT,
+            **kwargs,
+        ),
+    )
     data_home = tmp_path / "data"
     monkeypatch.setenv("XDG_DATA_HOME", str(data_home))
 

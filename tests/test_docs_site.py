@@ -25,7 +25,7 @@ def test_assemble_site_publishes_only_the_bounded_docs_surface(tmp_path: Path) -
         repo / "docs" / "README.md",
         "# Documentation\n\n"
         "[Architecture](architecture.md)\n"
-        "[User guide](user/general.md)\n"
+        "[Domain guide](domains/personal-assistance.md)\n"
         "[Repository README](../README.md)\n",
     )
     _write(repo / "docs" / "architecture.md", "# Architecture\n")
@@ -36,10 +36,11 @@ def test_assemble_site_publishes_only_the_bounded_docs_surface(tmp_path: Path) -
         "[Skill source](../../skills/demo/SKILL.md)\n",
     )
     _write(repo / "docs" / "contributors" / "nested" / "guide.md", "# Nested\n")
-    _write(repo / "docs" / "user" / "general.md", "# User guide\n")
+    _write(
+        repo / "docs" / "domains" / "personal-assistance.md",
+        "# Personal Assistance\n",
+    )
     _write(repo / "docs" / "plans" / "private.md", "# Plan\n")
-    _write(repo / "docs" / "graphs" / "overview.svg", "<svg/>\n")
-    _write(repo / "docs" / "graphs" / "README.md", "# Graph sources\n")
     _write(repo / "skills" / "demo" / "SKILL.md", "# Demo\n")
 
     def write_graph(
@@ -63,14 +64,12 @@ def test_assemble_site_publishes_only_the_bounded_docs_surface(tmp_path: Path) -
     assert (output / "architecture.md").is_file()
     assert (output / "contributors" / "README.md").is_file()
     assert (output / "contributors" / "nested" / "guide.md").is_file()
-    assert (output / "graphs" / "overview.svg").is_file()
+    assert (output / "domains" / "personal-assistance.md").is_file()
     assert (output / "graphs" / "index.md").is_file()
     assert (output / "graphs" / "blueprint" / "repository.html").is_file()
 
     assert not (output / "README.md").exists()
-    assert not (output / "user").exists()
     assert not (output / "plans").exists()
-    assert not (output / "graphs" / "README.md").exists()
 
 
 def test_assemble_site_preserves_site_links_and_rewrites_unpublished_targets(
@@ -83,12 +82,15 @@ def test_assemble_site_preserves_site_links_and_rewrites_unpublished_targets(
         repo / "docs" / "README.md",
         "# Documentation\n\n"
         "[Architecture](architecture.md#scope)\n"
-        "[User guide](user/general.md)\n"
+        "[Domain guide](domains/personal-assistance.md)\n"
         "[Repository README](../README.md)\n"
         "[External](https://example.com/)\n",
     )
     _write(repo / "docs" / "architecture.md", "# Architecture\n")
-    _write(repo / "docs" / "user" / "general.md", "# User guide\n")
+    _write(
+        repo / "docs" / "domains" / "personal-assistance.md",
+        "# Personal Assistance\n",
+    )
 
     def write_graph(
         repo_root: str | Path,
@@ -105,10 +107,7 @@ def test_assemble_site_preserves_site_links_and_rewrites_unpublished_targets(
 
     homepage = (output / "index.md").read_text(encoding="utf-8")
     assert "[Architecture](architecture.md#scope)" in homepage
-    assert (
-        "[User guide](https://github.com/MoeenNehzati/famulus/blob/master/"
-        "docs/user/general.md)"
-    ) in homepage
+    assert "[Domain guide](domains/personal-assistance.md)" in homepage
     assert (
         "[Repository README](https://github.com/MoeenNehzati/famulus/blob/master/README.md)"
     ) in homepage

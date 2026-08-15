@@ -24,9 +24,10 @@ if [ -f "$REPO_ROOT/scripts/generate-doc-artifacts.py" ]; then
     python3 "$REPO_ROOT/scripts/generate-doc-artifacts.py" >/dev/null
     git add \
         "$REPO_ROOT/docs/skills.md" \
-        "$REPO_ROOT/docs/user/general.md" \
-        "$REPO_ROOT/docs/user/research.md" \
-        "$REPO_ROOT/docs/user/system.md" \
+        "$REPO_ROOT/docs/domains/personal-assistance.md" \
+        "$REPO_ROOT/docs/domains/assistant-interaction.md" \
+        "$REPO_ROOT/docs/domains/research.md" \
+        "$REPO_ROOT/docs/domains/assistant-operations.md" \
         "$REPO_ROOT/docs/contributors/README.md"
 fi
 

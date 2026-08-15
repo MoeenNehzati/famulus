@@ -12,8 +12,8 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
-V5_ROOT = ROOT / "references" / "blueprint" / "migrations" / "v5"
-V4_ROOT = ROOT / "references" / "blueprint" / "migrations" / "v4"
+V5_ROOT = ROOT / "tests" / "fixtures" / "blueprint_schemas" / "v5"
+V4_ROOT = ROOT / "tests" / "fixtures" / "blueprint_schemas" / "v4"
 FIXTURES = ROOT / "tests" / "fixtures" / "blueprint_v5"
 
 SCHEMA_BUNDLE = {

@@ -182,13 +182,11 @@ authorization remain fail-closed on blueprint policy, while missing, expired,
 stale, malformed, unavailable, or unknown certification status is surfaced as
 a warning and does not deny an otherwise authorized invocation.
 
-Migration therefore has two stages. The converter losslessly moves every
-authored fact into the generic module, source, interface, process-binding, and
-direct-I/O vocabulary without inventing behavior. The certifier-owned workflow
-then audits the draft against its gateway and content, repairs missing or
-incorrect descriptive facts, reloads the graph, and repeats until the final
-blueprint is exact or certification fails. No certification status is authored
-in the blueprint; the certificate is the only persisted certification state.
+The certifier-owned workflow audits a structurally valid blueprint against its
+gateway and content, repairs missing or incorrect descriptive facts, reloads
+the graph, and repeats until the final blueprint is exact or certification
+fails. No certification status is authored in the blueprint; the certificate
+is the only persisted certification state.
 
 Blueprints point to facts owned by other blueprints rather than copying those
 facts. This single-owner rule prevents a module export and its implementing

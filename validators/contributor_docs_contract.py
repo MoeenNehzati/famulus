@@ -24,7 +24,7 @@ _DOC_SYSTEM_REQUIRED = (
     "docs_tooling/",
     "python3 scripts/generate-doc-artifacts.py",
     "validators/readme_user_contract.py",
-    "validators/user_docs_cover_blueprints.py",
+    "validators/domain_docs_cover_blueprints.py",
     "validators/contributor_docs_contract.py",
     "validators/generated_skill_docs.py",
 )

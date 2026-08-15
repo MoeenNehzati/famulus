@@ -160,9 +160,10 @@ Usage details and documentation for the launchers are in [docs/launchers.md](doc
 - [docs/security-and-privacy.md](docs/security-and-privacy.md) — permissions, credentials, model data, destructive actions, and removal
 - [docs/dependency-and-bootstrap-audit.md](docs/dependency-and-bootstrap-audit.md) — release dependency, bootstrap, and vendored-asset audit
 - [SECURITY.md](SECURITY.md) — private vulnerability reporting
-- [docs/user/general.md](docs/user/general.md) — planning, wrap-up, inbox, lists, calendar, and weather workflows
-- [docs/user/research.md](docs/user/research.md) — research and writing workflows, including dependency graphs
-- [docs/user/system.md](docs/user/system.md) — storage, automation, and system-facing utilities
+- [docs/domains/personal-assistance.md](docs/domains/personal-assistance.md) — planning, wrap-up, inbox, lists, calendar, and weather workflows
+- [docs/domains/assistant-interaction.md](docs/domains/assistant-interaction.md) — reasoning modes, session continuity, handoffs, and wakeups
+- [docs/domains/research.md](docs/domains/research.md) — research and writing workflows, including dependency graphs
+- [docs/domains/assistant-operations.md](docs/domains/assistant-operations.md) — storage, authentication, automation, installation, and repair utilities
 - [docs/launchers.md](docs/launchers.md) — agent launchers, backend selection, and the `tw` tmux wrapper
 - [docs/skills.md](docs/skills.md) — generated full skill index
 

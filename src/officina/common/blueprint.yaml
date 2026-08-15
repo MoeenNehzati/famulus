@@ -16,9 +16,6 @@ content:
 - famulus_paths/__init__\.py
 - git_provenance\.py
 - google_credentials\.py
-- interface_injection_migration\.py
-- migration_candidate\.py
-- nested_module_migration\.py
 - oauth_json\.py
 - pooled_blueprint\.py
 - process_binding_compiler\.py
@@ -251,10 +248,6 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/google-credentials.yaml
-  common.source.nested-module-migration:
-    blueprint:
-      base: module-root
-      path: blueprints/nested-module-migration.yaml
   common.source.oauth-json:
     blueprint:
       base: module-root

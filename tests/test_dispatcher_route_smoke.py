@@ -382,7 +382,7 @@ def test_route_smoke_discovers_v4_python_process_exports(
     assert _route_smoke_cases(
         tmp_path,
         expected_schema_version=4,
-        schema_root=REPO_ROOT / "references" / "blueprint" / "migrations" / "v4",
+        schema_root=REPO_ROOT / "tests" / "fixtures" / "blueprint_schemas" / "v4",
     ) == expected
 
 
@@ -404,7 +404,7 @@ def test_route_smoke_does_not_fall_back_when_v4_inventory_is_malformed(
         _route_smoke_cases(
             tmp_path,
             expected_schema_version=4,
-            schema_root=REPO_ROOT / "references" / "blueprint" / "migrations" / "v4",
+            schema_root=REPO_ROOT / "tests" / "fixtures" / "blueprint_schemas" / "v4",
         )
 
 

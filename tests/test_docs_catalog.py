@@ -165,7 +165,7 @@ def test_render_document_uses_supplied_catalog(
         visibility="featured",
     )
     catalog = load_catalog(tmp_path)
-    doc_path = tmp_path / "docs" / "user" / "research.md"
+    doc_path = tmp_path / "docs" / "domains" / "research.md"
     doc_path.parent.mkdir(parents=True)
     doc_path.write_text(
         "<!-- BEGIN AUTO-GENERATED DOCS: research -->\n"
@@ -180,7 +180,7 @@ def test_render_document_uses_supplied_catalog(
 
     rendered = render_doc_with_updated_blocks(
         tmp_path,
-        Path("docs/user/research.md"),
+        Path("docs/domains/research.md"),
         catalog=catalog,
     )
 

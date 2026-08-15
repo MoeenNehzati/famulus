@@ -28,6 +28,14 @@ def _copy_schema_root(repo_root: Path) -> None:
     )
 
 
+def _copy_v5_schema_root(repo_root: Path) -> None:
+    shutil.copytree(
+        REPO_ROOT / "tests" / "fixtures" / "blueprint_schemas" / "v5",
+        repo_root / "references" / "blueprint" / "migrations" / "v5",
+        dirs_exist_ok=True,
+    )
+
+
 def _copy_canonical_skill(repo_root: Path) -> Path:
     _copy_schema_root(repo_root)
     target = repo_root / "skills" / "loose-mode"
@@ -80,6 +88,7 @@ def test_preflight_explicitly_selects_v5_for_an_all_v5_staged_tree(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _copy_schema_root(tmp_path)
+    _copy_v5_schema_root(tmp_path)
     fixture = REPO_ROOT / "tests" / "fixtures" / "blueprint_v5" / "authorization"
     copy_v5_fixture_tree(fixture / "modules", tmp_path / "modules")
     copy_v5_fixture_tree(fixture / "skills", tmp_path / "skills")
@@ -113,6 +122,7 @@ def test_full_v5_validate_checks_generated_views_with_v5_syncer_mode(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _copy_schema_root(tmp_path)
+    _copy_v5_schema_root(tmp_path)
     fixture = REPO_ROOT / "tests" / "fixtures" / "blueprint_v5" / "authorization"
     copy_v5_fixture_tree(fixture / "modules", tmp_path / "modules")
     copy_v5_fixture_tree(fixture / "skills", tmp_path / "skills")

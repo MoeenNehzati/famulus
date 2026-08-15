@@ -11,7 +11,7 @@ from docs_tooling.render import generate_all  # noqa: E402
 from validators.contributor_docs_contract import validate as validate_contributor_docs  # noqa: E402
 from validators.generated_skill_docs import validate as validate_skill_docs  # noqa: E402
 from validators.readme_user_contract import validate as validate_readme  # noqa: E402
-from validators import user_docs_cover_blueprints as user_docs_validator  # noqa: E402
+from validators import domain_docs_cover_blueprints as domain_docs_validator  # noqa: E402
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -99,9 +99,10 @@ def _seed_docs(repo_root: Path) -> None:
                 "Wrap up today",
                 "Build a math dependency graph",
                 "",
-                "- [docs/user/general.md](docs/user/general.md)",
-                "- [docs/user/research.md](docs/user/research.md)",
-                "- [docs/user/system.md](docs/user/system.md)",
+                "- [docs/domains/personal-assistance.md](docs/domains/personal-assistance.md)",
+                "- [docs/domains/assistant-interaction.md](docs/domains/assistant-interaction.md)",
+                "- [docs/domains/research.md](docs/domains/research.md)",
+                "- [docs/domains/assistant-operations.md](docs/domains/assistant-operations.md)",
                 "- [docs/skills.md](docs/skills.md)",
                 "- [docs/contributors/README.md](docs/contributors/README.md)",
                 "",
@@ -109,14 +110,21 @@ def _seed_docs(repo_root: Path) -> None:
         ),
     )
     _write(
-        repo_root / "docs/user/general.md",
+        repo_root / "docs/domains/personal-assistance.md",
         "\n".join(
             [
-                "# General",
-                "## Personal Assistance",
+                "# Personal Assistance",
                 "<!-- BEGIN AUTO-GENERATED DOCS: personal-assistance -->",
                 "<!-- END AUTO-GENERATED DOCS: personal-assistance -->",
-                "## Assistant Interaction",
+                "",
+            ]
+        ),
+    )
+    _write(
+        repo_root / "docs/domains/assistant-interaction.md",
+        "\n".join(
+            [
+                "# Assistant Interaction",
                 "<!-- BEGIN AUTO-GENERATED DOCS: assistant-interaction -->",
                 "<!-- END AUTO-GENERATED DOCS: assistant-interaction -->",
                 "",
@@ -124,7 +132,7 @@ def _seed_docs(repo_root: Path) -> None:
         ),
     )
     _write(
-        repo_root / "docs/user/research.md",
+        repo_root / "docs/domains/research.md",
         "\n".join(
             [
                 "# Research",
@@ -135,10 +143,10 @@ def _seed_docs(repo_root: Path) -> None:
         ),
     )
     _write(
-        repo_root / "docs/user/system.md",
+        repo_root / "docs/domains/assistant-operations.md",
         "\n".join(
             [
-                "# System",
+                "# Assistant Operations",
                 "<!-- BEGIN AUTO-GENERATED DOCS: assistant-operations -->",
                 "<!-- END AUTO-GENERATED DOCS: assistant-operations -->",
                 "",
@@ -178,7 +186,7 @@ def _seed_docs(repo_root: Path) -> None:
                 "docs_tooling/",
                 "python3 scripts/generate-doc-artifacts.py",
                 "validators/readme_user_contract.py",
-                "validators/user_docs_cover_blueprints.py",
+                "validators/domain_docs_cover_blueprints.py",
                 "validators/contributor_docs_contract.py",
                 "validators/generated_skill_docs.py",
                 "",
@@ -209,18 +217,18 @@ def _make_repo(tmp_path: Path) -> Path:
 def test_documentation_validators_accept_clean_repo(tmp_path: Path) -> None:
     repo_root = _make_repo(tmp_path)
     assert validate_readme(repo_root) == []
-    assert user_docs_validator.validate(repo_root) == []
+    assert domain_docs_validator.validate(repo_root) == []
     assert validate_contributor_docs(repo_root) == []
     assert validate_skill_docs(repo_root) == []
 
 
-def test_user_docs_validator_constructs_catalog_once(
+def test_domain_docs_validator_constructs_catalog_once(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
     repo_root = _make_repo(tmp_path)
     calls = 0
-    real_load_catalog = user_docs_validator.load_catalog
+    real_load_catalog = domain_docs_validator.load_catalog
 
     def counted_load_catalog(root: Path):
         nonlocal calls
@@ -228,13 +236,13 @@ def test_user_docs_validator_constructs_catalog_once(
         return real_load_catalog(root)
 
     monkeypatch.setattr(
-        user_docs_validator,
+        domain_docs_validator,
         "load_catalog",
         counted_load_catalog,
     )
     monkeypatch.setattr(docs_render, "load_catalog", counted_load_catalog)
 
-    assert user_docs_validator.validate(repo_root) == []
+    assert domain_docs_validator.validate(repo_root) == []
     assert calls == 1
 
 

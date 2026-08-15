@@ -171,9 +171,9 @@ python -m officina.common.visualization.from_blueprint . \
 ```
 
 The default `graphs/` output tree is local generated data and is ignored by
-Git. Graphs intentionally embedded in documentation belong under
-`docs/graphs/`; their structured sources and rendering tools belong under
-`docs_tooling/graphs/`.
+Git. The documentation site generates its interactive repository blueprint
+under `_build/docs-site/source/graphs/blueprint/`; rendered graph artifacts are
+not committed under `docs/`.
 
 Containment is represented by each child's `container` field. Modules,
 behavioral sources, and interfaces therefore render inside their logical owner

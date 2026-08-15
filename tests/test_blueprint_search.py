@@ -10,6 +10,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+import officina.blueprint_search as blueprint_search_module  # noqa: E402
 from officina.blueprint_search import (  # noqa: E402
     BlueprintSearchError,
     iter_blueprints,
@@ -25,6 +26,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 CLI = REPO_ROOT / "scripts" / "search_blueprints.py"
 V5_AUTHORIZATION_FIXTURE = (
     Path(__file__).parent / "fixtures" / "blueprint_v5" / "authorization"
+)
+V5_SCHEMA_ROOT = (
+    Path(__file__).parent / "fixtures" / "blueprint_schemas" / "v5"
 )
 _canonical_iter_blueprints = iter_blueprints
 _canonical_search_blueprints = search_blueprints
@@ -342,7 +346,18 @@ def test_v6_search_exposes_current_skill_drift_registered_descriptions() -> None
 
 def test_v5_search_uses_global_module_ids_and_registered_ancestry(
     tmp_path: Path,
+    monkeypatch,
 ) -> None:
+    canonical_loader = blueprint_search_module.load_repository_blueprint_graph
+    monkeypatch.setattr(
+        blueprint_search_module,
+        "load_repository_blueprint_graph",
+        lambda repo_root, **kwargs: canonical_loader(
+            repo_root,
+            schema_root=V5_SCHEMA_ROOT,
+            **kwargs,
+        ),
+    )
     root = copy_v5_fixture_tree(
         V5_AUTHORIZATION_FIXTURE,
         tmp_path / "repo",

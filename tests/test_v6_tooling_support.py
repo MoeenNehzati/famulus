@@ -15,7 +15,7 @@ from validators.skill_runtime_doc_references import (
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-V6_SCHEMA_ROOT = REPO_ROOT / "references" / "blueprint" / "migrations" / "v6"
+V6_SCHEMA_ROOT = REPO_ROOT / "tests" / "fixtures" / "blueprint_schemas" / "v6"
 
 
 def test_repository_schema_marker_accepts_v6(tmp_path: Path) -> None:
