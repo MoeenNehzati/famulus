@@ -5,27 +5,31 @@ this repository retain their own upstream licenses.
 
 ## Eclipse Layout Kernel for JavaScript
 
-- Upstream: <https://github.com/kieler/elkjs>
+- Upstream release: `elkjs` 0.10.0
+- Source: <https://github.com/kieler/elkjs/tree/0.10.0>
+- Source commit: `8a4fc2e11c1a184daa156cf563961bd860980c5f`
 - License: Eclipse Public License 2.0
-- License text: <https://www.eclipse.org/legal/epl-2.0/>
+- License text: [`LICENSES/EPL-2.0.txt`](LICENSES/EPL-2.0.txt)
 - Copyright: Kiel University and other ELK contributors
 - Distributed files:
   - `src/officina/common/visualization/html_renderer/vendor/elk.bundled.js`
   - `src/officina/common/visualization/html_renderer/vendor/elk-worker.min.js`
 
-The ELK source remains available from the upstream project under EPL-2.0. The
-exact upstream release for the Famulus copies still needs to be recorded before
-the first promoted Famulus release.
+Both distributed files are exact byte matches to their paths in the official
+`elkjs-0.10.0.tgz` npm package. Their SHA-256 values are recorded in
+[`docs/dependency-and-bootstrap-audit.md`](docs/dependency-and-bootstrap-audit.md).
 
 ## MathJax 3.2.2
 
-- Upstream: <https://github.com/mathjax/MathJax-src/tree/3.2.2>
+- Upstream release: `mathjax` 3.2.2
+- Source: <https://github.com/mathjax/MathJax/tree/3.2.2>
+- Source commit: `600692ad9d3552cc25f85510d5797bc942ecc9f7`
 - License: Apache License 2.0
-- License text: <https://github.com/mathjax/MathJax-src/blob/3.2.2/LICENSE>
+- License text: [`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt)
 - Copyright: The MathJax Consortium
 - Distributed file:
   - `src/officina/common/visualization/html_renderer/vendor/mathjax-3.2.2-tex-svg.js`
 
-The complete EPL-2.0 and Apache-2.0 license texts must be added to the release
-payload before the first promoted release. This notice does not replace those
-licenses.
+The distributed file is an exact byte match to `es5/tex-svg.js` in the
+official `mathjax-3.2.2.tgz` npm package. Its SHA-256 value is recorded in
+[`docs/dependency-and-bootstrap-audit.md`](docs/dependency-and-bootstrap-audit.md).

@@ -2,8 +2,9 @@
 
 This is the release-readiness record for executable bootstraps, managed
 runtime dependencies, and vendored executable assets. It was updated after an
-independent audit of commit `d5c88400` on 2026-08-14. It records what the current installer does;
-it is not a lock file or a software-composition analysis of a future release.
+asset-provenance audit of commit `3bc38179` on 2026-08-15. It records what the
+current installer does; it is not a lock file or a software-composition
+analysis of a future release.
 
 ## Shipped installation path
 
@@ -92,24 +93,25 @@ runtime:
 
 | Asset | Upstream | License | Current provenance record |
 | --- | --- | --- | --- |
-| `src/officina/common/visualization/html_renderer/vendor/elk.bundled.js` | `kieler/elkjs` | EPL-2.0 | Upstream project recorded; exact upstream release is not recorded |
-| `src/officina/common/visualization/html_renderer/vendor/elk-worker.min.js` | `kieler/elkjs` | EPL-2.0 | Upstream project recorded; exact upstream release is not recorded |
-| `src/officina/common/visualization/html_renderer/vendor/mathjax-3.2.2-tex-svg.js` | `MathJax-src` tag `3.2.2` | Apache-2.0 | Version is recorded in the filename; exact upstream artifact digest was not recorded when vendored |
+| `src/officina/common/visualization/html_renderer/vendor/elk.bundled.js` | npm `elkjs@0.10.0`; Git `8a4fc2e11c1a184daa156cf563961bd860980c5f` | EPL-2.0 | Exact npm-package match; SHA-256 `48d338d5aeddd9503ccf1d12661c11b5d7d43c6afc5f66c7ddb2ea4170c0f6bf` |
+| `src/officina/common/visualization/html_renderer/vendor/elk-worker.min.js` | npm `elkjs@0.10.0`; Git `8a4fc2e11c1a184daa156cf563961bd860980c5f` | EPL-2.0 | Exact npm-package match; SHA-256 `cda1839e26f82a7ac142692ee813974f8f359987348d21d1f16af8f86ff96e80` |
+| `src/officina/common/visualization/html_renderer/vendor/mathjax-3.2.2-tex-svg.js` | npm `mathjax@3.2.2`; Git `600692ad9d3552cc25f85510d5797bc942ecc9f7` | Apache-2.0 | Exact npm-package match; SHA-256 `d4295dc33744836935c1399feece5159577b34c5c8ffb9f1c6324cd82e03a882` |
 
-The ELK files retain embedded EPL-2.0 notices where present. Repository-level
-attribution is collected in [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md).
-Before the release candidate is frozen, the exact ELK source release and all
-vendored artifact digests must be reconstructed or the files must be replaced
-from a recorded upstream release. Copies of the applicable EPL-2.0 and
-Apache-2.0 license texts must ship with the release.
+The official `elkjs-0.10.0.tgz` package has npm SHA-1
+`abe2aa6cb25e7439b708fab873b2448d26ed33a1` and npm integrity
+`sha512-v/3r+3Bl2NMrWmVoRTMBtHtWvRISTix/s9EfnsfEWApNrsmNjqgqJOispCGg46BPwIFdkag3N/HYSxJczvCm6w==`.
+The official `mathjax-3.2.2.tgz` package has npm SHA-1
+`c754d7b46a679d7f3fa03543d6b8bf124ddf9f6b` and npm integrity
+`sha512-Bt+SSVU8eBG27zChVewOicYs7Xsdt40qm4+UpHyX7k0/O9NliPc+x77k1/FEsPsjKPZGJvtRZM1vO+geW0OhGw==`.
+
+Repository-level attribution is collected in
+[`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md). The complete upstream
+license texts ship as [`LICENSES/EPL-2.0.txt`](../LICENSES/EPL-2.0.txt) and
+[`LICENSES/Apache-2.0.txt`](../LICENSES/Apache-2.0.txt).
 
 ## Release disposition
 
-The inventory, compatibility review, exact managed-Python policy, and generated
-core lock are implemented. One bounded item remains before release-candidate
-freeze: replace or identify the vendored ELK artifacts from an exact upstream
-release, verify all vendored hashes, and ship the applicable full license
-texts.
-
-These are release reproducibility and attribution tasks. They do not require
-redesigning Google authorization, recurring automation, or skill behavior.
+The inventory, compatibility review, exact managed-Python policy, generated
+core lock, vendored-asset provenance, artifact hashes, notices, and full
+license texts are present. No dependency or bootstrap item identified by this
+audit remains open for the release-candidate freeze.
