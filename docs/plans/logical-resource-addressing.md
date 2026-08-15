@@ -1,12 +1,12 @@
-# Logical Resource Addressing and Implicit Dependence Implementation Plan
+# Logical Resource Addressing and Implicit Dependence Design Proposal
 
-> **Deferred pending approved post-adoption rebase — do not execute.** This
-> plan overlaps the unified migration's blueprint, graph, validator, and
-> certification contracts. None of its proposed artifacts is authorized by
-> that migration; resumption requires an approved post-adoption rebase and
-> fresh functional-predecessor dispositions for every proposed artifact.
+Status: deferred; not implementation-ready.
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+The resource model has merit, but this proposal predates the repository's
+current architecture. Before implementation, re-audit its proposed files,
+interfaces, schemas, validators, graph integration, and certification boundary
+against the live repository. The file map and task list below preserve useful
+design detail; they are not verified execution instructions.
 
 **Goal:** Define one canonical logical-resource language for local filesystems, Google Drive accounts, and calendar accounts, then use overlapping write/read patterns to generate evidence-backed `implicit_dependence` edges and mixed dependency reachability.
 
