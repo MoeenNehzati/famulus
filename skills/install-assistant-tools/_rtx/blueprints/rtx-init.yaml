@@ -4,15 +4,22 @@ content:
 - _install_uninstall\.py
 - _shell_block\.py
 - _state_record\.py
-dependencies: []
+dependencies:
+- blueprint:
+    base: repository-root
+    path: src/officina/common/blueprints/atomic-files.yaml
+  reason: Imports deterministic byte and symlink publication for recorded owner mutations.
+  source: common.source.atomic-files
+  version: 1
 description: >-
   Marks the installer runtime directory as a Python package and owns
   the durable manifest plus schema-v3 transaction journal and mandatory mutation
   recorder. Generic mutation IDs bind the transaction, stable operation key, semantic
   kind, logical resource kind and ID, intended closed state, and exact none/upsert/forget
   ownership delta; the observed before-state remains durable but is deliberately outside
-  the deterministic request ID. The recorder durably saves pending before re-observation
-  and apply, verifies the intended state, saves the manifest delta first, and only then
+  the deterministic request ID. The recorder durably saves pending before re-observation,
+  passes that exact JournalMutation to apply so the effect can derive its only build name
+  and revalidate expected_before, verifies the intended state, saves the manifest delta first, and only then
   clears pending and records completion. Its own atomic journal and manifest writes are
   internal bookkeeping exempt from recursive recording. Generic recovery only classifies:
   intended state is adopted, expected state remains pending for an identical recorder
@@ -49,6 +56,23 @@ description: >-
   it binds the lexical active-key-id basename, exact snapshots, and prior Task-6B ID;
   generic recovery refuses it before observation, and Task 6D must recompute its canonical
   path before certificate recovery.
+  Filesystem link, copy, and managed shell-block owners require a recorder keyword for
+  every live call; dry-run alone may pass null. They render exact intended state before
+  mutate, publish through the common deterministic primitives under the caller-held
+  per-home InstallLock and private user-owned parent namespace, and contain no direct
+  manifest record, forget, or save fallback. Durable intended regular-file modes must
+  retain owner-read permission because completion requires a fresh descriptor-bound
+  digest observation after publication; owner-unreadable modes are rejected before any
+  pending record or effect. The POSIX contract excludes uncooperative
+  same-identity writers to final or build names and retained writable source descriptors;
+  compare-then-replace is not an inode-conditional namespace primitive. Link publication
+  revalidates the no-follow source type and identity immediately before publish, while
+  immutable-release authority remains Task 6D and developer-link semantics remain Task
+  6C3. Managed rc replacement accepts each update only as one exact `export KEY=...` line
+  for its matching key, rejects CR, LF, NUL, marker injection, malformed keys, and
+  mismatches, then reparses the rendered block before recording. It preserves normalized
+  ordinary permission bits from an existing regular file while removing special bits,
+  uses private mode for an absent file, and owns only the exact marker block.
 gateway:
   language: Python
   path: __init__.py

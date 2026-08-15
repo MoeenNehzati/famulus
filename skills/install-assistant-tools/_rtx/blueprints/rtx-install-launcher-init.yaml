@@ -4,12 +4,28 @@ content:
 - _install_launcher/_linux_launcher\.py
 - _install_launcher/_osx_launcher\.py
 - _install_launcher/_windows_launcher\.py
-dependencies: []
+dependencies:
+- blueprint:
+    base: repository-root
+    path: src/officina/common/blueprints/atomic-files.yaml
+  reason: Imports deterministic byte publication and observable mode normalization for launcher files.
+  source: common.source.atomic-files
+  version: 1
 description: Marks the platform-launcher implementation directory as a Python package
   and exposes no callable interface. _linux_launcher.py and _windows_launcher.py generate
   shims that reference the fixed <runtime_root>/bootstrap/resolvers/v1/launch.py resolver
   contract (see officina.install.resolvers.launch, a dependency-free stdlib-only script)
-  instead of embedding a release-specific repo checkout or interpreter path.
+  instead of embedding a release-specific repo checkout. Every bundle file carries a
+  caller-selected stable operation key; live bundle and file helpers require and propagate
+  a durable MutationRecorder, pre-render exact bytes and the platform-observable normalized
+  mode, and publish through the common mutation-ID-addressed atomic primitive under the
+  caller-held per-home InstallLock and private user-owned parent namespace. POSIX excludes
+  uncooperative writers to final or build names and retained writable source descriptors;
+  Windows verifies its supported read-only attribute policy without claiming POSIX ACL
+  bits. Dry-run may pass no recorder and
+  creates no parent, build, file, or manifest state. Static sources must remain bounded,
+  regular, and unchanged across their read and live-name identity check; required-source and publication failures
+  propagate instead of returning an installed result after a skip.
 gateway:
   language: Python
   path: _install_launcher/__init__.py

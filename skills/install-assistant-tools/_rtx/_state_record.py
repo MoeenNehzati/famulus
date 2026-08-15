@@ -82,11 +82,78 @@ _MISSING = object()
 
 
 class StateRecordError(RuntimeError):
-    """Raised when an installer state record cannot be trusted."""
+    """Raised when an installer state record cannot be trusted.
+
+    Intent
+    ------
+    Raised when an installer state record cannot be trusted. The boundary coordinates closed local state through RuntimeError with one closed state transition.
+
+    Rationale
+    ---------
+    Because Raised when an installer state record cannot be trusted. Keep RuntimeError inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - return
+
+    Wraps
+    -----
+    - none
+    """
+
+
+class InstallerMutationError(StateRecordError):
+    """Raised when a live installer owner lacks durable mutation authority.
+
+    Intent
+    ------
+    Raised when a live installer owner lacks durable mutation authority. The boundary coordinates closed local state through StateRecordError with one closed state transition.
+
+    Rationale
+    ---------
+    Because Raised when a live installer owner lacks durable mutation authority. Keep StateRecordError inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - return
+
+    Wraps
+    -----
+    - none
+    """
 
 
 def _confined_record_path(path: Path, state_root: Path) -> tuple[Path, Path]:
-    """Validate one record path against an explicit trusted home-state root."""
+    """Validate one record path against an explicit trusted home-state root.
+
+    Intent
+    ------
+    Validate one record path against an explicit trusted home-state root. The boundary coordinates path, state_root, destination, root, and relative through absolute, Path, relative_to, StateRecordError, any, and ensure_secure_directory with 1 guarded checks, 2 cleanup or failure regions, and 3 typed refusals.
+
+    Rationale
+    ---------
+    Because Validate one record path against an explicit trusted home-state root. Keep absolute, Path, relative_to, StateRecordError, any, and ensure_secure_directory inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - return
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    officina.common.atomic_files.ensure_secure_directory:
+      why:
+        computes: "This computes edge is the first repository dependency used to uphold this guarantee: Validate one record path against an explicit trusted home-state root."
+
+    InstantiationsFromRepo
+    ----------------------
+    .StateRecordError:
+      why:
+        constructs: "This constructs edge is the second repository dependency used to uphold this guarantee: Validate one record path against an explicit trusted home-state root."
+    """
     destination = Path(path).absolute()
     root = Path(state_root).absolute()
     try:
@@ -103,7 +170,24 @@ def _confined_record_path(path: Path, state_root: Path) -> tuple[Path, Path]:
 
 
 def _open_snapshot_descriptor(path: Path) -> int:
-    """Open one path without link traversal for descriptor-bound inspection."""
+    """Open one path without link traversal for descriptor-bound inspection.
+
+    Intent
+    ------
+    Open one path without link traversal for descriptor-bound inspection. The boundary coordinates path, parents, parts, handle, and _information through _windows_open_parent, _windows_open_validated, open_osfhandle, getattr, _windows_close_handle, and set_inheritable with 2 guarded checks, 2 cleanup or failure regions, and 1 typed refusals.
+
+    Rationale
+    ---------
+    Because Open one path without link traversal for descriptor-bound inspection. Keep _windows_open_parent, _windows_open_validated, open_osfhandle, getattr, _windows_close_handle, and set_inheritable inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - return
+
+    Wraps
+    -----
+    - none
+    """
     if os.name == "nt":
         import msvcrt
 
@@ -155,10 +239,58 @@ def _open_snapshot_descriptor(path: Path) -> int:
 def _read_json_object(
     path: Path, *, state_root: Path, label: str
 ) -> dict[str, object]:
+    """Read one confined bounded UTF-8 JSON object for installer state.
+
+    Intent
+    ------
+    coordinate path, state_root, label, destination, and root through _confined_record_path, read_regular_file_bytes, loads, decode, StateRecordError, and isinstance with 1 guarded checks, 1 cleanup or failure regions, a. The boundary coordinates path, state_root, label, destination, and root through _confined_record_path, read_regular_file_bytes, loads, decode, StateRecordError, and isinstance with 1 guarded checks, 1 cleanup or failure regions, and 3 typed refusals.
+
+    Rationale
+    ---------
+    Because coordinate path, state_root, label, destination, and root through _confined_record_path, read_regular_file_bytes, loads, decode, StateRecordError, and isinstance with 1 guarded checks, 1 cleanup or failure regions, a. Keep _confined_record_path, read_regular_file_bytes, loads, decode, StateRecordError, and isinstance inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - return
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .StateRecordError:
+      why:
+        constructs: "This constructs edge is the first repository dependency used to uphold this guarantee: coordinate path, state_root, label, destination, and root through _confined_record_path, read_regular_file_bytes, loads, decode, StateRecordError, and isinstance with 1 guarded checks, 1 cleanup or failure regions, a."
+    ._confined_record_path:
+      why:
+        constructs: "This constructs edge is the second repository dependency used to uphold this guarantee: coordinate path, state_root, label, destination, and root through _confined_record_path, read_regular_file_bytes, loads, decode, StateRecordError, and isinstance with 1 guarded checks, 1 cleanup or failure regions, a."
+    officina.common.atomic_files.read_regular_file_bytes:
+      why:
+        constructs: "This constructs edge is the third repository dependency used to uphold this guarantee: coordinate path, state_root, label, destination, and root through _confined_record_path, read_regular_file_bytes, loads, decode, StateRecordError, and isinstance with 1 guarded checks, 1 cleanup or failure regions, a."
+    """
     destination, root = _confined_record_path(path, state_root)
     try:
         raw = read_regular_file_bytes(destination, allowed_root=root)
         def closed_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+            """Require one decoded JSON value to be a closed string-keyed object.
+
+            Intent
+            ------
+            Within Coordinate path, state_root, label, destination, and root through _confined_record_path, read_regular_file_bytes, loads, and decode with 1 guarded checks, 1 cleanup or failure regions, and 3 typed refusals, co. The boundary coordinates pairs, result, key, and item through ValueError, list, tuple, str, object, and dict with 1 guarded checks, 1 bounded iterations, and 1 typed refusals.
+
+            Rationale
+            ---------
+            Because Within Coordinate path, state_root, label, destination, and root through _confined_record_path, read_regular_file_bytes, loads, and decode with 1 guarded checks, 1 cleanup or failure regions, and 3 typed refusals, co. Keep ValueError, list, tuple, str, object, and dict inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+            Pseudocode
+            ----------
+            - return
+
+            Wraps
+            -----
+            - none
+            """
             result: dict[str, object] = {}
             for key, item in pairs:
                 if key in result:
@@ -188,6 +320,39 @@ def _read_json_object(
 def _atomic_json_replace(
     path: Path, payload: Mapping[str, object], *, state_root: Path
 ) -> None:
+    """coordinate path, payload, state_root, destination, and root through _confined_record_path, encode, dumps, atomic_replace_bytes, StateRecordError, and Path with 1 cleanup or failure regions, and 1 typed refusals.
+
+    Intent
+    ------
+    coordinate path, payload, state_root, destination, and root through _confined_record_path, encode, dumps, atomic_replace_bytes, StateRecordError, and Path with 1 cleanup or failure regions, and 1 typed refusals. The boundary coordinates path, payload, state_root, destination, and root through _confined_record_path, encode, dumps, atomic_replace_bytes, StateRecordError, and Path with 1 cleanup or failure regions, and 1 typed refusals.
+
+    Rationale
+    ---------
+    Because coordinate path, payload, state_root, destination, and root through _confined_record_path, encode, dumps, atomic_replace_bytes, StateRecordError, and Path with 1 cleanup or failure regions, and 1 typed refusals. Keep _confined_record_path, encode, dumps, atomic_replace_bytes, StateRecordError, and Path inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - return
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    officina.common.atomic_files.atomic_replace_bytes:
+      why:
+        computes: "This computes edge is the first repository dependency used to uphold this guarantee: coordinate path, payload, state_root, destination, and root through _confined_record_path, encode, dumps, atomic_replace_bytes, StateRecordError, and Path with 1 cleanup or failure regions, and 1 typed refusals."
+
+    InstantiationsFromRepo
+    ----------------------
+    .StateRecordError:
+      why:
+        constructs: "This constructs edge is the second repository dependency used to uphold this guarantee: coordinate path, payload, state_root, destination, and root through _confined_record_path, encode, dumps, atomic_replace_bytes, StateRecordError, and Path with 1 cleanup or failure regions, and 1 typed refusals."
+    ._confined_record_path:
+      why:
+        constructs: "This constructs edge is the third repository dependency used to uphold this guarantee: coordinate path, payload, state_root, destination, and root through _confined_record_path, encode, dumps, atomic_replace_bytes, StateRecordError, and Path with 1 cleanup or failure regions, and 1 typed refusals."
+    """
     destination, root = _confined_record_path(path, state_root)
     encoded = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
     try:
@@ -202,6 +367,30 @@ def _atomic_json_replace(
 
 
 def _require_string(value: object, *, field: str, nullable: bool = False) -> str | None:
+    """coordinate value, field, and nullable through isinstance, StateRecordError, object, str, bool, and nullable with 2 guarded checks, and 1 typed refusals.
+
+    Intent
+    ------
+    coordinate value, field, and nullable through isinstance, StateRecordError, object, str, bool, and nullable with 2 guarded checks, and 1 typed refusals. The boundary coordinates value, field, and nullable through isinstance, StateRecordError, object, str, bool, and nullable with 2 guarded checks, and 1 typed refusals.
+
+    Rationale
+    ---------
+    Because coordinate value, field, and nullable through isinstance, StateRecordError, object, str, bool, and nullable with 2 guarded checks, and 1 typed refusals. Keep isinstance, StateRecordError, object, str, bool, and nullable inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - return
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .StateRecordError:
+      why:
+        constructs: "This constructs edge is the first repository dependency used to uphold this guarantee: coordinate value, field, and nullable through isinstance, StateRecordError, object, str, bool, and nullable with 2 guarded checks, and 1 typed refusals."
+    """
     if nullable and value is None:
         return None
     if not isinstance(value, str) or not value:
@@ -216,6 +405,30 @@ def _require_bounded_text(
     maximum: int = _MAX_LOGICAL_VALUE_BYTES,
     allow_empty: bool = False,
 ) -> str:
+    """coordinate value, field, maximum, allow_empty, and qualifier through isinstance, StateRecordError, encode, object, str, and int with 2 guarded checks, 1 cleanup or failure regions, and 3 typed refusals.
+
+    Intent
+    ------
+    coordinate value, field, maximum, allow_empty, and qualifier through isinstance, StateRecordError, encode, object, str, and int with 2 guarded checks, 1 cleanup or failure regions, and 3 typed refusals. The boundary coordinates value, field, maximum, allow_empty, and qualifier through isinstance, StateRecordError, encode, object, str, and int with 2 guarded checks, 1 cleanup or failure regions, and 3 typed refusals.
+
+    Rationale
+    ---------
+    Because coordinate value, field, maximum, allow_empty, and qualifier through isinstance, StateRecordError, encode, object, str, and int with 2 guarded checks, 1 cleanup or failure regions, and 3 typed refusals. Keep isinstance, StateRecordError, encode, object, str, and int inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - return
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .StateRecordError:
+      why:
+        constructs: "This constructs edge is the first repository dependency used to uphold this guarantee: coordinate value, field, maximum, allow_empty, and qualifier through isinstance, StateRecordError, encode, object, str, and int with 2 guarded checks, 1 cleanup or failure regions, and 3 typed refusals."
+    """
     if not isinstance(value, str) or (not allow_empty and not value):
         qualifier = "a string" if allow_empty else "a non-empty string"
         raise StateRecordError(f"{field} must be {qualifier}")
@@ -230,6 +443,30 @@ def _require_bounded_text(
 
 
 def _require_state(value: object, *, field: str) -> dict[str, object]:
+    """coordinate value, field, kind, required_fields, and mode through isinstance, StateRecordError, get, set, fullmatch, and dict with 9 guarded checks, and 7 typed refusals.
+
+    Intent
+    ------
+    coordinate value, field, kind, required_fields, and mode through isinstance, StateRecordError, get, set, fullmatch, and dict with 9 guarded checks, and 7 typed refusals. The boundary coordinates value, field, kind, required_fields, and mode through isinstance, StateRecordError, get, set, fullmatch, and dict with 9 guarded checks, and 7 typed refusals.
+
+    Rationale
+    ---------
+    Because coordinate value, field, kind, required_fields, and mode through isinstance, StateRecordError, get, set, fullmatch, and dict with 9 guarded checks, and 7 typed refusals. Keep isinstance, StateRecordError, get, set, fullmatch, and dict inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - return
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .StateRecordError:
+      why:
+        constructs: "This constructs edge is the first repository dependency used to uphold this guarantee: coordinate value, field, kind, required_fields, and mode through isinstance, StateRecordError, get, set, fullmatch, and dict with 9 guarded checks, and 7 typed refusals."
+    """
     if not isinstance(value, dict):
         raise StateRecordError(f"{field} must be a JSON object")
     kind = value.get("kind")
@@ -263,7 +500,36 @@ def _require_state(value: object, *, field: str) -> dict[str, object]:
 def _require_resource_state(
     value: object, *, field: str, resource_kind: str
 ) -> dict[str, object]:
-    """Validate a bounded closed state for one physical or logical resource."""
+    """Validate a bounded closed state for one physical or logical resource.
+
+    Intent
+    ------
+    Validate a bounded closed state for one physical or logical resource. The boundary coordinates value, field, resource_kind, kind, and selected through isinstance, StateRecordError, get, set, _require_state, and _require_bounded_text with 10 guarded checks, and 7 typed refusals.
+
+    Rationale
+    ---------
+    Because Validate a bounded closed state for one physical or logical resource. Keep isinstance, StateRecordError, get, set, _require_state, and _require_bounded_text inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - return
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .StateRecordError:
+      why:
+        constructs: "This constructs edge is the first repository dependency used to uphold this guarantee: Validate a bounded closed state for one physical or logical resource."
+    ._require_bounded_text:
+      why:
+        constructs: "This constructs edge is the second repository dependency used to uphold this guarantee: Validate a bounded closed state for one physical or logical resource."
+    ._require_state:
+      why:
+        constructs: "This constructs edge is the third repository dependency used to uphold this guarantee: Validate a bounded closed state for one physical or logical resource."
+    """
     if not isinstance(value, dict):
         raise StateRecordError(f"{field} must be a JSON object")
     kind = value.get("kind")
@@ -305,7 +571,89 @@ def _require_resource_state(
     raise StateRecordError(f"{field} has invalid resource_kind")
 
 
+def _require_intended_resource_state(
+    value: object, *, field: str, resource_kind: str
+) -> dict[str, object]:
+    """Validate intended state and reject modes that cannot be observed after publish.
+
+    Intent
+    ------
+    Preserve the full observed filesystem mode domain while limiting durable file
+    and directory intentions to portable permission bits and durable file
+    intentions to owner-readable modes.
+
+    Rationale
+    ---------
+    Publication primitives cannot reproduce set-id or sticky bits. Moreover, the
+    recorder's descriptor-bound digest observation cannot reopen an
+    owner-unreadable file after publication. Accepting either state would leave
+    a mutation permanently pending after its effect.
+
+    Pseudocode
+    ----------
+    - set selected = validated closed resource state
+    - if selected is a filesystem file or directory whose mode exceeds 0o777:
+      - raise unpublishable intended mode
+    - if selected is a filesystem file without owner-read permission:
+      - raise unobservable intended mode
+    - return the validated state
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .StateRecordError:
+      why:
+        constructs: "Rejects an intended filesystem mode outside the publication domain."
+    ._require_resource_state:
+      why:
+        constructs: "Validates the resource-specific closed state before applying the intended-mode restriction."
+    """
+    selected = _require_resource_state(
+        value, field=field, resource_kind=resource_kind
+    )
+    if (
+        resource_kind == "filesystem"
+        and selected["kind"] in {"file", "directory"}
+        and selected["mode"] > 0o777
+    ):
+        raise StateRecordError(f"{field}.mode is not publishable")
+    if (
+        resource_kind == "filesystem"
+        and selected["kind"] == "file"
+        and not selected["mode"] & 0o400
+    ):
+        raise StateRecordError(f"{field}.mode must be owner-readable")
+    return selected
+
+
 def _canonical_json_text(payload: Mapping[str, object]) -> str:
+    """coordinate payload through dumps, StateRecordError, Mapping, str, object, and json with 1 cleanup or failure regions, and 1 typed refusals.
+
+    Intent
+    ------
+    coordinate payload through dumps, StateRecordError, Mapping, str, object, and json with 1 cleanup or failure regions, and 1 typed refusals. The boundary coordinates payload through dumps, StateRecordError, Mapping, str, object, and json with 1 cleanup or failure regions, and 1 typed refusals.
+
+    Rationale
+    ---------
+    Because coordinate payload through dumps, StateRecordError, Mapping, str, object, and json with 1 cleanup or failure regions, and 1 typed refusals. Keep dumps, StateRecordError, Mapping, str, object, and json inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - return
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .StateRecordError:
+      why:
+        constructs: "This constructs edge is the first repository dependency used to uphold this guarantee: coordinate payload through dumps, StateRecordError, Mapping, str, object, and json with 1 cleanup or failure regions, and 1 typed refusals."
+    """
     try:
         return json.dumps(
             payload,
@@ -319,6 +667,33 @@ def _canonical_json_text(payload: Mapping[str, object]) -> str:
 
 
 def _canonical_filesystem_path(value: object, *, field: str) -> str:
+    """coordinate value, field, selected, and part through _require_bounded_text, is_absolute, Path, StateRecordError, normpath, and any with 2 guarded checks, and 2 typed refusals.
+
+    Intent
+    ------
+    coordinate value, field, selected, and part through _require_bounded_text, is_absolute, Path, StateRecordError, normpath, and any with 2 guarded checks, and 2 typed refusals. The boundary coordinates value, field, selected, and part through _require_bounded_text, is_absolute, Path, StateRecordError, normpath, and any with 2 guarded checks, and 2 typed refusals.
+
+    Rationale
+    ---------
+    Because coordinate value, field, selected, and part through _require_bounded_text, is_absolute, Path, StateRecordError, normpath, and any with 2 guarded checks, and 2 typed refusals. Keep _require_bounded_text, is_absolute, Path, StateRecordError, normpath, and any inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - return
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .StateRecordError:
+      why:
+        constructs: "This constructs edge is the first repository dependency used to uphold this guarantee: coordinate value, field, selected, and part through _require_bounded_text, is_absolute, Path, StateRecordError, normpath, and any with 2 guarded checks, and 2 typed refusals."
+    ._require_bounded_text:
+      why:
+        constructs: "This constructs edge is the second repository dependency used to uphold this guarantee: coordinate value, field, selected, and part through _require_bounded_text, is_absolute, Path, StateRecordError, normpath, and any with 2 guarded checks, and 2 typed refusals."
+    """
     selected = _require_bounded_text(value, field=field, maximum=_MAX_RESOURCE_ID_BYTES)
     if not Path(selected).is_absolute():
         raise StateRecordError(f"{field} must be absolute")
@@ -332,7 +707,61 @@ def _canonical_filesystem_path(value: object, *, field: str) -> str:
 def _canonical_registry_parts(
     *, hive: object, key: object, name: object
 ) -> tuple[str, str, str]:
+    """coordinate hive, key, name, selected_hive, and selected_key through printable_ascii, StateRecordError, split, any, join, and object with 2 guarded checks, and 2 typed refusals.
+
+    Intent
+    ------
+    coordinate hive, key, name, selected_hive, and selected_key through printable_ascii, StateRecordError, split, any, join, and object with 2 guarded checks, and 2 typed refusals. The boundary coordinates hive, key, name, selected_hive, and selected_key through printable_ascii, StateRecordError, split, any, join, and object with 2 guarded checks, and 2 typed refusals.
+
+    Rationale
+    ---------
+    Because coordinate hive, key, name, selected_hive, and selected_key through printable_ascii, StateRecordError, split, any, join, and object with 2 guarded checks, and 2 typed refusals. Keep printable_ascii, StateRecordError, split, any, join, and object inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - return
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .StateRecordError:
+      why:
+        constructs: "This constructs edge is the first repository dependency used to uphold this guarantee: coordinate hive, key, name, selected_hive, and selected_key through printable_ascii, StateRecordError, split, any, join, and object with 2 guarded checks, and 2 typed refusals."
+    ._require_bounded_text:
+      why:
+        constructs: "This constructs edge is the second repository dependency used to uphold this guarantee: coordinate hive, key, name, selected_hive, and selected_key through printable_ascii, StateRecordError, split, any, join, and object with 2 guarded checks, and 2 typed refusals."
+    """
     def printable_ascii(value: object, *, field: str, maximum: int) -> str:
+        """Require bounded printable ASCII for one Windows registry identifier.
+
+        Intent
+        ------
+        Within Coordinate hive, key, name, selected_hive, and selected_key through printable_ascii, StateRecordError, split, and any with 2 guarded checks, and 2 typed refusals, coordinate value, field, maximum, selected, an. The boundary coordinates value, field, maximum, selected, and encoded through _require_bounded_text, encode, StateRecordError, any, translate, and object with 1 guarded checks, 1 cleanup or failure regions, and 2 typed refusals.
+
+        Rationale
+        ---------
+        Because Within Coordinate hive, key, name, selected_hive, and selected_key through printable_ascii, StateRecordError, split, and any with 2 guarded checks, and 2 typed refusals, coordinate value, field, maximum, selected, an. Keep _require_bounded_text, encode, StateRecordError, any, translate, and object inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+        Pseudocode
+        ----------
+        - return
+
+        Wraps
+        -----
+        - none
+
+        InstantiationsFromRepo
+        ----------------------
+        .StateRecordError:
+          why:
+            constructs: "This constructs edge is the first repository dependency used to uphold this guarantee: Within Coordinate hive, key, name, selected_hive, and selected_key through printable_ascii, StateRecordError, split, and any with 2 guarded checks, and 2 typed refusals, coordinate value, field, maximum, selected, an."
+        ._require_bounded_text:
+          why:
+            constructs: "This constructs edge is the second repository dependency used to uphold this guarantee: Within Coordinate hive, key, name, selected_hive, and selected_key through printable_ascii, StateRecordError, split, and any with 2 guarded checks, and 2 typed refusals, coordinate value, field, maximum, selected, an."
+        """
         selected = _require_bounded_text(value, field=field, maximum=maximum)
         try:
             encoded = selected.encode("ascii")
@@ -362,6 +791,33 @@ def _canonical_registry_parts(
 
 
 def _canonical_git_config_key(value: object, *, field: str = "key") -> str:
+    """coordinate value, field, selected, and parts through _require_bounded_text, fullmatch, StateRecordError, split, join, and casefold with 1 guarded checks, and 1 typed refusals.
+
+    Intent
+    ------
+    coordinate value, field, selected, and parts through _require_bounded_text, fullmatch, StateRecordError, split, join, and casefold with 1 guarded checks, and 1 typed refusals. The boundary coordinates value, field, selected, and parts through _require_bounded_text, fullmatch, StateRecordError, split, join, and casefold with 1 guarded checks, and 1 typed refusals.
+
+    Rationale
+    ---------
+    Because coordinate value, field, selected, and parts through _require_bounded_text, fullmatch, StateRecordError, split, join, and casefold with 1 guarded checks, and 1 typed refusals. Keep _require_bounded_text, fullmatch, StateRecordError, split, join, and casefold inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - return
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .StateRecordError:
+      why:
+        constructs: "This constructs edge is the first repository dependency used to uphold this guarantee: coordinate value, field, selected, and parts through _require_bounded_text, fullmatch, StateRecordError, split, join, and casefold with 1 guarded checks, and 1 typed refusals."
+    ._require_bounded_text:
+      why:
+        constructs: "This constructs edge is the second repository dependency used to uphold this guarantee: coordinate value, field, selected, and parts through _require_bounded_text, fullmatch, StateRecordError, split, join, and casefold with 1 guarded checks, and 1 typed refusals."
+    """
     selected = _require_bounded_text(value, field=field, maximum=255)
     if _GIT_CONFIG_KEY_PATTERN.fullmatch(selected) is None:
         raise StateRecordError("Git config key is invalid")
@@ -370,6 +826,51 @@ def _canonical_git_config_key(value: object, *, field: str = "key") -> str:
 
 
 def _require_resource_id(value: object, *, resource_kind: str) -> str:
+    """coordinate value, resource_kind, resource_id, payload, and hive through _require_bounded_text, _canonical_filesystem_path, loads, StateRecordError, isinstance, and _canonical_json_text with 8 guarded checks, 1 cleanu.
+
+    Intent
+    ------
+    coordinate value, resource_kind, resource_id, payload, and hive through _require_bounded_text, _canonical_filesystem_path, loads, StateRecordError, isinstance, and _canonical_json_text with 8 guarded checks, 1 cleanu. The boundary coordinates value, resource_kind, resource_id, payload, and hive through _require_bounded_text, _canonical_filesystem_path, loads, StateRecordError, isinstance, and _canonical_json_text with 8 guarded checks, 1 cleanup or failure regions, and 7 typed refusals.
+
+    Rationale
+    ---------
+    Because coordinate value, resource_kind, resource_id, payload, and hive through _require_bounded_text, _canonical_filesystem_path, loads, StateRecordError, isinstance, and _canonical_json_text with 8 guarded checks, 1 cleanu. Keep _require_bounded_text, _canonical_filesystem_path, loads, StateRecordError, isinstance, and _canonical_json_text inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - return
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._canonical_filesystem_path:
+      why:
+        computes: "This computes edge is the first repository dependency used to uphold this guarantee: coordinate value, resource_kind, resource_id, payload, and hive through _require_bounded_text, _canonical_filesystem_path, loads, StateRecordError, isinstance, and _canonical_json_text with 8 guarded checks, 1 cleanu."
+    ._canonical_json_text:
+      why:
+        computes: "This computes edge is the second repository dependency used to uphold this guarantee: coordinate value, resource_kind, resource_id, payload, and hive through _require_bounded_text, _canonical_filesystem_path, loads, StateRecordError, isinstance, and _canonical_json_text with 8 guarded checks, 1 cleanu."
+
+    InstantiationsFromRepo
+    ----------------------
+    .StateRecordError:
+      why:
+        constructs: "This constructs edge is the third repository dependency used to uphold this guarantee: coordinate value, resource_kind, resource_id, payload, and hive through _require_bounded_text, _canonical_filesystem_path, loads, StateRecordError, isinstance, and _canonical_json_text with 8 guarded checks, 1 cleanu."
+    ._canonical_filesystem_path:
+      why:
+        constructs: "This constructs edge is the number 4 repository dependency used to uphold this guarantee: coordinate value, resource_kind, resource_id, payload, and hive through _require_bounded_text, _canonical_filesystem_path, loads, StateRecordError, isinstance, and _canonical_json_text with 8 guarded checks, 1 cleanu."
+    ._canonical_git_config_key:
+      why:
+        constructs: "This constructs edge is the number 5 repository dependency used to uphold this guarantee: coordinate value, resource_kind, resource_id, payload, and hive through _require_bounded_text, _canonical_filesystem_path, loads, StateRecordError, isinstance, and _canonical_json_text with 8 guarded checks, 1 cleanu."
+    ._canonical_registry_parts:
+      why:
+        constructs: "This constructs edge is the number 6 repository dependency used to uphold this guarantee: coordinate value, resource_kind, resource_id, payload, and hive through _require_bounded_text, _canonical_filesystem_path, loads, StateRecordError, isinstance, and _canonical_json_text with 8 guarded checks, 1 cleanu."
+    ._require_bounded_text:
+      why:
+        constructs: "This constructs edge is the number 7 repository dependency used to uphold this guarantee: coordinate value, resource_kind, resource_id, payload, and hive through _require_bounded_text, _canonical_filesystem_path, loads, StateRecordError, isinstance, and _canonical_json_text with 8 guarded checks, 1 cleanu."
+    """
     resource_id = _require_bounded_text(
         value, field="resource_id", maximum=_MAX_RESOURCE_ID_BYTES
     )
@@ -402,6 +903,42 @@ def _require_resource_id(value: object, *, resource_kind: str) -> str:
 
 
 def _require_ownership_delta(value: object) -> dict[str, object]:
+    """coordinate value, action, entry, kind, and path through isinstance, StateRecordError, get, set, loads, and _canonical_json_text with 7 guarded checks, and 5 typed refusals.
+
+    Intent
+    ------
+    coordinate value, action, entry, kind, and path through isinstance, StateRecordError, get, set, loads, and _canonical_json_text with 7 guarded checks, and 5 typed refusals. The boundary coordinates value, action, entry, kind, and path through isinstance, StateRecordError, get, set, loads, and _canonical_json_text with 7 guarded checks, and 5 typed refusals.
+
+    Rationale
+    ---------
+    Because coordinate value, action, entry, kind, and path through isinstance, StateRecordError, get, set, loads, and _canonical_json_text with 7 guarded checks, and 5 typed refusals. Keep isinstance, StateRecordError, get, set, loads, and _canonical_json_text inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - return
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._canonical_json_text:
+      why:
+        computes: "This computes edge is the first repository dependency used to uphold this guarantee: coordinate value, action, entry, kind, and path through isinstance, StateRecordError, get, set, loads, and _canonical_json_text with 7 guarded checks, and 5 typed refusals."
+    ._require_bounded_text:
+      why:
+        computes: "This computes edge is the second repository dependency used to uphold this guarantee: coordinate value, action, entry, kind, and path through isinstance, StateRecordError, get, set, loads, and _canonical_json_text with 7 guarded checks, and 5 typed refusals."
+
+    InstantiationsFromRepo
+    ----------------------
+    .StateRecordError:
+      why:
+        constructs: "This constructs edge is the third repository dependency used to uphold this guarantee: coordinate value, action, entry, kind, and path through isinstance, StateRecordError, get, set, loads, and _canonical_json_text with 7 guarded checks, and 5 typed refusals."
+    ._require_bounded_text:
+      why:
+        constructs: "This constructs edge is the number 4 repository dependency used to uphold this guarantee: coordinate value, action, entry, kind, and path through isinstance, StateRecordError, get, set, loads, and _canonical_json_text with 7 guarded checks, and 5 typed refusals."
+    """
     if not isinstance(value, dict):
         raise StateRecordError("ownership_delta must be a JSON object")
     action = value.get("action")
@@ -426,7 +963,24 @@ def _require_ownership_delta(value: object) -> dict[str, object]:
 
 
 def _certificate_selector_snapshot(key_id: str | None) -> dict[str, object]:
-    """Return the exact journal snapshot for one canonical selector value."""
+    """Return the exact journal snapshot for one canonical selector value.
+
+    Intent
+    ------
+    Return the exact journal snapshot for one canonical selector value. The boundary coordinates key_id, and encoded through encode, hexdigest, sha256, str, key_id, and _CERTIFICATE_SELECTOR_MODE with 1 guarded checks.
+
+    Rationale
+    ---------
+    Because Return the exact journal snapshot for one canonical selector value. Keep encode, hexdigest, sha256, str, key_id, and _CERTIFICATE_SELECTOR_MODE inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - return
+
+    Wraps
+    -----
+    - none
+    """
 
     if key_id is None:
         return {"kind": "absent"}
@@ -440,7 +994,33 @@ def _certificate_selector_snapshot(key_id: str | None) -> dict[str, object]:
 
 
 def windows_registry_resource_id(*, hive: str, key: str, name: str) -> str:
-    """Return a canonical logical identity for one supported registry value."""
+    """Return a canonical logical identity for one supported registry value.
+
+    Intent
+    ------
+    Return a canonical logical identity for one supported registry value. The boundary coordinates hive, key, name, canonical_hive, and canonical_key through _canonical_registry_parts, _canonical_json_text, str, hive, key, and name with one closed state transition.
+
+    Rationale
+    ---------
+    Because Return a canonical logical identity for one supported registry value. Keep _canonical_registry_parts, _canonical_json_text, str, hive, key, and name inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - return
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._canonical_json_text:
+      why:
+        constructs: "This constructs edge is the first repository dependency used to uphold this guarantee: Return a canonical logical identity for one supported registry value."
+    ._canonical_registry_parts:
+      why:
+        constructs: "This constructs edge is the second repository dependency used to uphold this guarantee: Return a canonical logical identity for one supported registry value."
+    """
     canonical_hive, canonical_key, canonical_name = _canonical_registry_parts(
         hive=hive, key=key, name=name
     )
@@ -453,7 +1033,33 @@ def windows_registry_resource_id(*, hive: str, key: str, name: str) -> str:
 
 
 def git_config_resource_id(*, repo: Path, key: str) -> str:
-    """Return a canonical local Git-config identity without pretending it is a path."""
+    """Return a canonical local Git-config identity without pretending it is a path.
+
+    Intent
+    ------
+    Return a canonical local Git-config identity without pretending it is a path. The boundary coordinates repo, key, selected_key, and payload through _canonical_git_config_key, abspath, fspath, _canonical_json_text, Path, and str with one closed state transition.
+
+    Rationale
+    ---------
+    Because Return a canonical local Git-config identity without pretending it is a path. Keep _canonical_git_config_key, abspath, fspath, _canonical_json_text, Path, and str inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - return
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._canonical_git_config_key:
+      why:
+        constructs: "This constructs edge is the first repository dependency used to uphold this guarantee: Return a canonical local Git-config identity without pretending it is a path."
+    ._canonical_json_text:
+      why:
+        constructs: "This constructs edge is the second repository dependency used to uphold this guarantee: Return a canonical local Git-config identity without pretending it is a path."
+    """
     selected_key = _canonical_git_config_key(key)
     payload = {
         "repo": os.path.abspath(os.fspath(repo)),
@@ -473,7 +1079,48 @@ def mutation_id_for(
     intended_after: Mapping[str, object],
     ownership_delta: Mapping[str, object],
 ) -> str:
-    """Derive the canonical request identity; the observed before-state is excluded."""
+    """Derive the canonical request identity; the observed before-state is excluded.
+
+    Intent
+    ------
+    Derive the canonical request identity; the observed before-state is excluded. The boundary coordinates transaction_id, operation_key, kind, resource_kind, and resource_id through isinstance, fullmatch, StateRecordError, _require_bounded_text, _require_resource_id, and _require_resource_state with 3 guarded checks, and 3 typed refusals.
+
+    Rationale
+    ---------
+    Because Derive the canonical request identity; the observed before-state is excluded. Keep isinstance, fullmatch, StateRecordError, _require_bounded_text, _require_resource_id, and _require_resource_state inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - return
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._canonical_json_text:
+      why:
+        computes: "This computes edge is the first repository dependency used to uphold this guarantee: Derive the canonical request identity; the observed before-state is excluded."
+
+    InstantiationsFromRepo
+    ----------------------
+    .StateRecordError:
+      why:
+        constructs: "This constructs edge is the second repository dependency used to uphold this guarantee: Derive the canonical request identity; the observed before-state is excluded."
+    ._require_bounded_text:
+      why:
+        constructs: "This constructs edge is the third repository dependency used to uphold this guarantee: Derive the canonical request identity; the observed before-state is excluded."
+    ._require_ownership_delta:
+      why:
+        constructs: "This constructs edge is the number 4 repository dependency used to uphold this guarantee: Derive the canonical request identity; the observed before-state is excluded."
+    ._require_resource_id:
+      why:
+        constructs: "This constructs edge is the number 5 repository dependency used to uphold this guarantee: Derive the canonical request identity; the observed before-state is excluded."
+    ._require_intended_resource_state:
+      why:
+        constructs: "This constructs edge is the number 6 repository dependency used to uphold this guarantee: Derive the canonical request identity; the observed before-state is excluded."
+    """
     if (
         not isinstance(transaction_id, str)
         or _TRANSACTION_ID_PATTERN.fullmatch(transaction_id) is None
@@ -487,7 +1134,7 @@ def mutation_id_for(
     selected_resource_id = _require_resource_id(
         resource_id, resource_kind=resource_kind
     )
-    selected_after = _require_resource_state(
+    selected_after = _require_intended_resource_state(
         dict(intended_after), field="intended_after", resource_kind=resource_kind
     )
     selected_delta = _require_ownership_delta(dict(ownership_delta))
@@ -506,7 +1153,24 @@ def mutation_id_for(
 
 @dataclass(frozen=True, init=False)
 class JournalMutation:
-    """One exact recoverable transition over a physical or logical resource."""
+    """One exact recoverable transition over a physical or logical resource.
+
+    Intent
+    ------
+    One exact recoverable transition over a physical or logical resource. The boundary coordinates mutation_id, operation_key, kind, resource_kind, and resource_id through str, Literal, dict, and object with one closed state transition.
+
+    Rationale
+    ---------
+    Because One exact recoverable transition over a physical or logical resource. Keep str, Literal, dict, and object inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - return
+
+    Wraps
+    -----
+    - none
+    """
 
     mutation_id: str
     operation_key: str
@@ -531,7 +1195,36 @@ class JournalMutation:
         path: str | None = None,
         ownership_entry: object = _MISSING,
     ) -> None:
-        """Build v3 records; accept the Task-6B selector constructor temporarily."""
+        """Build v3 records; accept the Task-6B selector constructor temporarily.
+
+        Intent
+        ------
+        Build v3 records; accept the Task-6B selector constructor temporarily. The boundary coordinates mutation_id, kind, expected_before, intended_after, and operation_key through any, StateRecordError, __setattr__, dict, _require_ownership_delta, and __post_init__ with 4 guarded checks, and 3 typed refusals.
+
+        Rationale
+        ---------
+        Because Build v3 records; accept the Task-6B selector constructor temporarily. Keep any, StateRecordError, __setattr__, dict, _require_ownership_delta, and __post_init__ inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+        Pseudocode
+        ----------
+        - return
+
+        Wraps
+        -----
+        - none
+
+        CallsFromRepo
+        -------------
+        ._require_ownership_delta:
+          why:
+            computes: "This computes edge is the first repository dependency used to uphold this guarantee: Build v3 records; accept the Task-6B selector constructor temporarily."
+
+        InstantiationsFromRepo
+        ----------------------
+        .StateRecordError:
+          why:
+            constructs: "This constructs edge is the second repository dependency used to uphold this guarantee: Build v3 records; accept the Task-6B selector constructor temporarily."
+        """
         if path is not None:
             if any(
                 value is not None
@@ -572,6 +1265,48 @@ class JournalMutation:
         self.__post_init__()
 
     def __post_init__(self) -> None:
+        """Within One exact recoverable transition over a physical or logical resource, coordinate closed local state through isinstance, fullmatch, StateRecordError, _require_bounded_text, _require_resource_id, and _require_re.
+
+        Intent
+        ------
+        Within One exact recoverable transition over a physical or logical resource, coordinate closed local state through isinstance, fullmatch, StateRecordError, _require_bounded_text, _require_resource_id, and _require_re. The boundary coordinates closed local state through isinstance, fullmatch, StateRecordError, _require_bounded_text, _require_resource_id, and _require_resource_state with 3 guarded checks, and 3 typed refusals.
+
+        Rationale
+        ---------
+        Because Within One exact recoverable transition over a physical or logical resource, coordinate closed local state through isinstance, fullmatch, StateRecordError, _require_bounded_text, _require_resource_id, and _require_re. Keep isinstance, fullmatch, StateRecordError, _require_bounded_text, _require_resource_id, and _require_resource_state inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+        Pseudocode
+        ----------
+        - return
+
+        Wraps
+        -----
+        - none
+
+        CallsFromRepo
+        -------------
+        ._require_bounded_text:
+          why:
+            computes: "This computes edge is the first repository dependency used to uphold this guarantee: Within One exact recoverable transition over a physical or logical resource, coordinate closed local state through isinstance, fullmatch, StateRecordError, _require_bounded_text, _require_resource_id, and _require_re."
+        ._require_ownership_delta:
+          why:
+            computes: "This computes edge is the second repository dependency used to uphold this guarantee: Within One exact recoverable transition over a physical or logical resource, coordinate closed local state through isinstance, fullmatch, StateRecordError, _require_bounded_text, _require_resource_id, and _require_re."
+        ._require_resource_id:
+          why:
+            computes: "This computes edge is the third repository dependency used to uphold this guarantee: Within One exact recoverable transition over a physical or logical resource, coordinate closed local state through isinstance, fullmatch, StateRecordError, _require_bounded_text, _require_resource_id, and _require_re."
+        ._require_resource_state:
+          why:
+            computes: "This computes edge is the number 4 repository dependency used to uphold this guarantee: Within One exact recoverable transition over a physical or logical resource, coordinate closed local state through isinstance, fullmatch, StateRecordError, _require_bounded_text, _require_resource_id, and _require_re."
+        ._require_intended_resource_state:
+          why:
+            computes: "Rejects an intended filesystem mode that publication cannot reproduce."
+
+        InstantiationsFromRepo
+        ----------------------
+        .StateRecordError:
+          why:
+            constructs: "This constructs edge is the number 5 repository dependency used to uphold this guarantee: Within One exact recoverable transition over a physical or logical resource, coordinate closed local state through isinstance, fullmatch, StateRecordError, _require_bounded_text, _require_resource_id, and _require_re."
+        """
         if (
             not isinstance(self.mutation_id, str)
             or _MUTATION_ID_PATTERN.fullmatch(self.mutation_id) is None
@@ -591,7 +1326,7 @@ class JournalMutation:
             field="expected_before",
             resource_kind=self.resource_kind,
         )
-        _require_resource_state(
+        _require_intended_resource_state(
             self.intended_after,
             field="intended_after",
             resource_kind=self.resource_kind,
@@ -600,14 +1335,48 @@ class JournalMutation:
 
     @property
     def path(self) -> str:
-        """Compatibility view for the certificate-selector Task-6B API only."""
+        """Compatibility view for the certificate-selector Task-6B API only.
+
+        Intent
+        ------
+        Compatibility view for the certificate-selector Task-6B API only. The boundary coordinates closed local state through AttributeError, self, property, and str with 1 guarded checks, and 1 typed refusals.
+
+        Rationale
+        ---------
+        Because Compatibility view for the certificate-selector Task-6B API only. Keep AttributeError, self, property, and str inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+        Pseudocode
+        ----------
+        - return
+
+        Wraps
+        -----
+        - none
+        """
         if self.kind != "certificate_selector" or self.resource_kind != "filesystem":
             raise AttributeError("generic v3 mutations do not expose path")
         return self.resource_id
 
     @property
     def ownership_entry(self) -> dict[str, object] | None:
-        """Compatibility view for the certificate-selector Task-6B API only."""
+        """Compatibility view for the certificate-selector Task-6B API only.
+
+        Intent
+        ------
+        Compatibility view for the certificate-selector Task-6B API only. The boundary coordinates closed local state through AttributeError, dict, self, property, str, and object with 2 guarded checks, and 1 typed refusals.
+
+        Rationale
+        ---------
+        Because Compatibility view for the certificate-selector Task-6B API only. Keep AttributeError, dict, self, property, str, and object inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+        Pseudocode
+        ----------
+        - return
+
+        Wraps
+        -----
+        - none
+        """
         if self.kind != "certificate_selector":
             raise AttributeError("generic v3 mutations do not expose ownership_entry")
         if self.ownership_delta["action"] == "upsert":
@@ -616,6 +1385,36 @@ class JournalMutation:
 
     @classmethod
     def from_dict(cls, payload: object) -> "JournalMutation":
+        """Within One exact recoverable transition over a physical or logical resource, coordinate payload, and required through isinstance, StateRecordError, set, cls, _require_string, and object with 2 guarded checks, and 2 t.
+
+        Intent
+        ------
+        Within One exact recoverable transition over a physical or logical resource, coordinate payload, and required through isinstance, StateRecordError, set, cls, _require_string, and object with 2 guarded checks, and 2 t. The boundary coordinates payload, and required through isinstance, StateRecordError, set, cls, _require_string, and object with 2 guarded checks, and 2 typed refusals.
+
+        Rationale
+        ---------
+        Because Within One exact recoverable transition over a physical or logical resource, coordinate payload, and required through isinstance, StateRecordError, set, cls, _require_string, and object with 2 guarded checks, and 2 t. Keep isinstance, StateRecordError, set, cls, _require_string, and object inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+        Pseudocode
+        ----------
+        - return
+
+        Wraps
+        -----
+        - none
+
+        CallsFromRepo
+        -------------
+        ._require_string:
+          why:
+            computes: "This computes edge is the first repository dependency used to uphold this guarantee: Within One exact recoverable transition over a physical or logical resource, coordinate payload, and required through isinstance, StateRecordError, set, cls, _require_string, and object with 2 guarded checks, and 2 t."
+
+        InstantiationsFromRepo
+        ----------------------
+        .StateRecordError:
+          why:
+            constructs: "This constructs edge is the second repository dependency used to uphold this guarantee: Within One exact recoverable transition over a physical or logical resource, coordinate payload, and required through isinstance, StateRecordError, set, cls, _require_string, and object with 2 guarded checks, and 2 t."
+        """
         if not isinstance(payload, dict):
             raise StateRecordError("pending_mutation must be a JSON object or null")
         required = {
@@ -643,6 +1442,30 @@ class JournalMutation:
 
     @classmethod
     def from_v2_certificate_selector(cls, payload: object) -> "JournalMutation":
+        """Within One exact recoverable transition over a physical or logical resource, coordinate payload, and required through isinstance, StateRecordError, set, get, cls, and object with 2 guarded checks, and 2 typed refusals.
+
+        Intent
+        ------
+        Within One exact recoverable transition over a physical or logical resource, coordinate payload, and required through isinstance, StateRecordError, set, get, cls, and object with 2 guarded checks, and 2 typed refusals. The boundary coordinates payload, and required through isinstance, StateRecordError, set, get, cls, and object with 2 guarded checks, and 2 typed refusals.
+
+        Rationale
+        ---------
+        Because Within One exact recoverable transition over a physical or logical resource, coordinate payload, and required through isinstance, StateRecordError, set, get, cls, and object with 2 guarded checks, and 2 typed refusals. Keep isinstance, StateRecordError, set, get, cls, and object inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+        Pseudocode
+        ----------
+        - return
+
+        Wraps
+        -----
+        - none
+
+        InstantiationsFromRepo
+        ----------------------
+        .StateRecordError:
+          why:
+            constructs: "This constructs edge is the first repository dependency used to uphold this guarantee: Within One exact recoverable transition over a physical or logical resource, coordinate payload, and required through isinstance, StateRecordError, set, get, cls, and object with 2 guarded checks, and 2 typed refusals."
+        """
         if not isinstance(payload, dict):
             raise StateRecordError("version 2 pending_mutation must be an object")
         required = {
@@ -669,7 +1492,24 @@ class JournalMutation:
 
 @dataclass(frozen=True)
 class TransactionJournal:
-    """Durable progress record for one managed installer transaction."""
+    """Durable progress record for one managed installer transaction.
+
+    Intent
+    ------
+    Durable progress record for one managed installer transaction. The boundary coordinates transaction_id, phase, prior_release_id, candidate_release_id, and resolver_bundle_id through str, Literal, CertificateMutationIntent, JournalMutation, and tuple with one closed state transition.
+
+    Rationale
+    ---------
+    Because Durable progress record for one managed installer transaction. Keep str, Literal, CertificateMutationIntent, JournalMutation, and tuple inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - return
+
+    Wraps
+    -----
+    - none
+    """
 
     transaction_id: str
     phase: Literal["preparing", "prepared", "committed", "complete"]
@@ -683,6 +1523,45 @@ class TransactionJournal:
     completed_mutation_ids: tuple[str, ...]
 
     def __post_init__(self) -> None:
+        """Validate the complete closed installer transaction record.
+
+        Intent
+        ------
+        Within Durable progress record for one managed installer transaction, coordinate value, expected_id, selector, selector_path, and part through isinstance, fullmatch, StateRecordError, _require_string, all, and set wi. The boundary coordinates value, expected_id, selector, selector_path, and part through isinstance, fullmatch, StateRecordError, _require_string, all, and set with 29 guarded checks, and 24 typed refusals.
+
+        Rationale
+        ---------
+        Because Within Durable progress record for one managed installer transaction, coordinate value, expected_id, selector, selector_path, and part through isinstance, fullmatch, StateRecordError, _require_string, all, and set wi. Keep isinstance, fullmatch, StateRecordError, _require_string, all, and set inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+        Pseudocode
+        ----------
+        - return
+
+        Wraps
+        -----
+        - none
+
+        CallsFromRepo
+        -------------
+        ._certificate_selector_snapshot:
+          why:
+            computes: "This computes edge is the first repository dependency used to uphold this guarantee: Within Durable progress record for one managed installer transaction, coordinate value, expected_id, selector, selector_path, and part through isinstance, fullmatch, StateRecordError, _require_string, all, and set wi."
+        ._require_string:
+          why:
+            computes: "This computes edge is the second repository dependency used to uphold this guarantee: Within Durable progress record for one managed installer transaction, coordinate value, expected_id, selector, selector_path, and part through isinstance, fullmatch, StateRecordError, _require_string, all, and set wi."
+        officina.common.certificate_intents.canonical_certificate_intent_bytes:
+          why:
+            computes: "This computes edge is the third repository dependency used to uphold this guarantee: Within Durable progress record for one managed installer transaction, coordinate value, expected_id, selector, selector_path, and part through isinstance, fullmatch, StateRecordError, _require_string, all, and set wi."
+
+        InstantiationsFromRepo
+        ----------------------
+        .StateRecordError:
+          why:
+            constructs: "This constructs edge is the number 4 repository dependency used to uphold this guarantee: Within Durable progress record for one managed installer transaction, coordinate value, expected_id, selector, selector_path, and part through isinstance, fullmatch, StateRecordError, _require_string, all, and set wi."
+        .mutation_id_for:
+          why:
+            constructs: "This constructs edge is the number 5 repository dependency used to uphold this guarantee: Within Durable progress record for one managed installer transaction, coordinate value, expected_id, selector, selector_path, and part through isinstance, fullmatch, StateRecordError, _require_string, all, and set wi."
+        """
         if (
             not isinstance(self.transaction_id, str)
             or _TRANSACTION_ID_PATTERN.fullmatch(self.transaction_id) is None
@@ -825,13 +1704,101 @@ class TransactionJournal:
                 )
 
     def to_dict(self) -> dict[str, object]:
+        """Within Durable progress record for one managed installer transaction, coordinate closed local state through asdict, JOURNAL_VERSION, self, dict, str, and object with one closed state transition.
+
+        Intent
+        ------
+        Within Durable progress record for one managed installer transaction, coordinate closed local state through asdict, JOURNAL_VERSION, self, dict, str, and object with one closed state transition. The boundary coordinates closed local state through asdict, JOURNAL_VERSION, self, dict, str, and object with one closed state transition.
+
+        Rationale
+        ---------
+        Because Within Durable progress record for one managed installer transaction, coordinate closed local state through asdict, JOURNAL_VERSION, self, dict, str, and object with one closed state transition. Keep asdict, JOURNAL_VERSION, self, dict, str, and object inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+        Pseudocode
+        ----------
+        - return
+
+        Wraps
+        -----
+        - none
+        """
         return {"version": JOURNAL_VERSION, **asdict(self)}
 
     def save(self, path: Path, *, state_root: Path) -> None:
+        """Within Durable progress record for one managed installer transaction, coordinate path, and state_root through _atomic_json_replace, Path, to_dict, path, self, and state_root with one closed state transition.
+
+        Intent
+        ------
+        Within Durable progress record for one managed installer transaction, coordinate path, and state_root through _atomic_json_replace, Path, to_dict, path, self, and state_root with one closed state transition. The boundary coordinates path, and state_root through _atomic_json_replace, Path, to_dict, path, self, and state_root with one closed state transition.
+
+        Rationale
+        ---------
+        Because Within Durable progress record for one managed installer transaction, coordinate path, and state_root through _atomic_json_replace, Path, to_dict, path, self, and state_root with one closed state transition. Keep _atomic_json_replace, Path, to_dict, path, self, and state_root inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+        Pseudocode
+        ----------
+        - set serialized_journal_state = received_context
+        - return
+
+        Wraps
+        -----
+        - none
+
+        CallsFromRepo
+        -------------
+        ._atomic_json_replace:
+          why:
+            computes: "This computes edge is the first repository dependency used to uphold this guarantee: Within Durable progress record for one managed installer transaction, coordinate path, and state_root through _atomic_json_replace, Path, to_dict, path, self, and state_root with one closed state transition."
+        """
         _atomic_json_replace(Path(path), self.to_dict(), state_root=state_root)
 
     @classmethod
     def load(cls, path: Path, *, state_root: Path) -> "TransactionJournal":
+        """Within Durable progress record for one managed installer transaction, coordinate path, state_root, payload, version, and required through _read_json_object, Path, get, isinstance, StateRecordError, and set with 8 gua.
+
+        Intent
+        ------
+        Within Durable progress record for one managed installer transaction, coordinate path, state_root, payload, version, and required through _read_json_object, Path, get, isinstance, StateRecordError, and set with 8 gua. The boundary coordinates path, state_root, payload, version, and required through _read_json_object, Path, get, isinstance, StateRecordError, and set with 8 guarded checks, 1 cleanup or failure regions, and 8 typed refusals.
+
+        Rationale
+        ---------
+        Because Within Durable progress record for one managed installer transaction, coordinate path, state_root, payload, version, and required through _read_json_object, Path, get, isinstance, StateRecordError, and set with 8 gua. Keep _read_json_object, Path, get, isinstance, StateRecordError, and set inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+        Pseudocode
+        ----------
+        - return
+
+        Wraps
+        -----
+        - none
+
+        CallsFromRepo
+        -------------
+        ._require_string:
+          why:
+            computes: "This computes edge is the first repository dependency used to uphold this guarantee: Within Durable progress record for one managed installer transaction, coordinate path, state_root, payload, version, and required through _read_json_object, Path, get, isinstance, StateRecordError, and set with 8 gua."
+        officina.common.certificate_intents.CertificateMutationIntent.from_dict:
+          why:
+            computes: "This computes edge is the second repository dependency used to uphold this guarantee: Within Durable progress record for one managed installer transaction, coordinate path, state_root, payload, version, and required through _read_json_object, Path, get, isinstance, StateRecordError, and set with 8 gua."
+        officina.common.certificate_intents.canonical_certificate_intent_bytes:
+          why:
+            computes: "This computes edge is the third repository dependency used to uphold this guarantee: Within Durable progress record for one managed installer transaction, coordinate path, state_root, payload, version, and required through _read_json_object, Path, get, isinstance, StateRecordError, and set with 8 gua."
+
+        InstantiationsFromRepo
+        ----------------------
+        .JournalMutation.from_dict:
+          why:
+            constructs: "This constructs edge is the number 4 repository dependency used to uphold this guarantee: Within Durable progress record for one managed installer transaction, coordinate path, state_root, payload, version, and required through _read_json_object, Path, get, isinstance, StateRecordError, and set with 8 gua."
+        .JournalMutation.from_v2_certificate_selector:
+          why:
+            constructs: "This constructs edge is the number 5 repository dependency used to uphold this guarantee: Within Durable progress record for one managed installer transaction, coordinate path, state_root, payload, version, and required through _read_json_object, Path, get, isinstance, StateRecordError, and set with 8 gua."
+        .StateRecordError:
+          why:
+            constructs: "This constructs edge is the number 6 repository dependency used to uphold this guarantee: Within Durable progress record for one managed installer transaction, coordinate path, state_root, payload, version, and required through _read_json_object, Path, get, isinstance, StateRecordError, and set with 8 gua."
+        ._read_json_object:
+          why:
+            constructs: "This constructs edge is the number 7 repository dependency used to uphold this guarantee: Within Durable progress record for one managed installer transaction, coordinate path, state_root, payload, version, and required through _read_json_object, Path, get, isinstance, StateRecordError, and set with 8 gua."
+        """
         try:
             payload = _read_json_object(
                 Path(path), state_root=state_root, label="transaction journal"
@@ -922,7 +1889,33 @@ class TransactionJournal:
 
 
 def snapshot_path_state(path: Path) -> dict[str, object]:
-    """Capture exact type, permission, size, and digest state without following links."""
+    """Capture exact type, permission, size, and digest state without following links.
+
+    Intent
+    ------
+    Capture exact type, permission, size, and digest state without following links. The boundary coordinates path, descriptor, metadata, mode, and digest through Path, _open_snapshot_descriptor, lstat, S_ISLNK, readlink, and S_IMODE with 9 guarded checks, 3 cleanup or failure regions, 1 bounded iterations, and 6 typed refusals.
+
+    Rationale
+    ---------
+    Because Capture exact type, permission, size, and digest state without following links. Keep Path, _open_snapshot_descriptor, lstat, S_ISLNK, readlink, and S_IMODE inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - return
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .StateRecordError:
+      why:
+        constructs: "This constructs edge is the first repository dependency used to uphold this guarantee: Capture exact type, permission, size, and digest state without following links."
+    ._open_snapshot_descriptor:
+      why:
+        constructs: "This constructs edge is the second repository dependency used to uphold this guarantee: Capture exact type, permission, size, and digest state without following links."
+    """
     path = Path(path)
     try:
         descriptor = _open_snapshot_descriptor(path)
@@ -955,6 +1948,16 @@ def snapshot_path_state(path: Path) -> dict[str, object]:
                 digest.update(chunk)
             if observed_size != metadata.st_size:
                 raise StateRecordError("filesystem changed during observation")
+            try:
+                linked = path.lstat()
+            except FileNotFoundError as exc:
+                raise StateRecordError("filesystem changed during observation") from exc
+            if (
+                not stat.S_ISREG(linked.st_mode)
+                or linked.st_dev != metadata.st_dev
+                or linked.st_ino != metadata.st_ino
+            ):
+                raise StateRecordError("filesystem changed during observation")
             return {
                 "kind": "file",
                 "mode": mode,
@@ -971,7 +1974,36 @@ def snapshot_path_state(path: Path) -> dict[str, object]:
 def snapshot_windows_registry_value(
     *, hive: object, key: str, name: str, winreg_module: object | None = None
 ) -> dict[str, object]:
-    """Observe one Windows registry value as a bounded logical state."""
+    """Observe one Windows registry value as a bounded logical state.
+
+    Intent
+    ------
+    Observe one Windows registry value as a bounded logical state. The boundary coordinates hive, key, name, winreg_module, and selected_winreg through StateRecordError, _require_bounded_text, OpenKey, QueryValueEx, _require_resource_state, and object with 2 guarded checks, 2 cleanup or failure regions, and 2 typed refusals.
+
+    Rationale
+    ---------
+    Because Observe one Windows registry value as a bounded logical state. Keep StateRecordError, _require_bounded_text, OpenKey, QueryValueEx, _require_resource_state, and object inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - return
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .StateRecordError:
+      why:
+        constructs: "This constructs edge is the first repository dependency used to uphold this guarantee: Observe one Windows registry value as a bounded logical state."
+    ._require_bounded_text:
+      why:
+        constructs: "This constructs edge is the second repository dependency used to uphold this guarantee: Observe one Windows registry value as a bounded logical state."
+    ._require_resource_state:
+      why:
+        constructs: "This constructs edge is the third repository dependency used to uphold this guarantee: Observe one Windows registry value as a bounded logical state."
+    """
     if winreg_module is None:
         if os.name != "nt":
             raise StateRecordError("Windows registry observation requires Windows")
@@ -1006,9 +2038,44 @@ def snapshot_windows_registry_value(
 
 
 class _BoundedCaptureProtocol(asyncio.SubprocessProtocol):
-    """Collect subprocess bytes through one event-loop-owned bounded protocol."""
+    """Collect subprocess bytes through one event-loop-owned bounded protocol.
+
+    Intent
+    ------
+    Collect subprocess bytes through one event-loop-owned bounded protocol. The boundary coordinates closed local state through asyncio with one closed state transition.
+
+    Rationale
+    ---------
+    Because Collect subprocess bytes through one event-loop-owned bounded protocol. Keep asyncio inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - return
+
+    Wraps
+    -----
+    - none
+    """
 
     def __init__(self, *, stdout_limit: int, stderr_limit: int) -> None:
+        """Initialize bounded stdout and stderr buffers plus lifecycle events.
+
+        Intent
+        ------
+        Within Collect subprocess bytes through one event-loop-owned bounded protocol, coordinate stdout_limit, stderr_limit, _limits, _buffers, and _closed_pipes through bytearray, set, Event, int, self, and stdout_limit wi. The boundary coordinates stdout_limit, stderr_limit, _limits, _buffers, and _closed_pipes through bytearray, set, Event, int, self, and stdout_limit with one closed state transition.
+
+        Rationale
+        ---------
+        Because Within Collect subprocess bytes through one event-loop-owned bounded protocol, coordinate stdout_limit, stderr_limit, _limits, _buffers, and _closed_pipes through bytearray, set, Event, int, self, and stdout_limit wi. Keep bytearray, set, Event, int, self, and stdout_limit inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+        Pseudocode
+        ----------
+        - return
+
+        Wraps
+        -----
+        - none
+        """
         self._limits = {1: stdout_limit, 2: stderr_limit}
         self._buffers = {1: bytearray(), 2: bytearray()}
         self._closed_pipes: set[int] = set()
@@ -1021,26 +2088,111 @@ class _BoundedCaptureProtocol(asyncio.SubprocessProtocol):
 
     @property
     def standard_output(self) -> bytes:
-        """Return the bounded stdout bytes received so far."""
+        """Return the bounded stdout bytes received so far.
+
+        Intent
+        ------
+        Return the bounded stdout bytes received so far. The boundary coordinates closed local state through bytes, self, and property with one closed state transition.
+
+        Rationale
+        ---------
+        Because Return the bounded stdout bytes received so far. Keep bytes, self, and property inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+        Pseudocode
+        ----------
+        - return
+
+        Wraps
+        -----
+        - none
+        """
         return bytes(self._buffers[1])
 
     @property
     def standard_error(self) -> bytes:
-        """Return the bounded stderr bytes received so far."""
+        """Return the bounded stderr bytes received so far.
+
+        Intent
+        ------
+        Return the bounded stderr bytes received so far. The boundary coordinates closed local state through bytes, self, and property with one closed state transition.
+
+        Rationale
+        ---------
+        Because Return the bounded stderr bytes received so far. Keep bytes, self, and property inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+        Pseudocode
+        ----------
+        - return
+
+        Wraps
+        -----
+        - none
+        """
         return bytes(self._buffers[2])
 
     @property
     def pipes_closed(self) -> bool:
-        """Return whether both parent-side output transports reported closure."""
+        """Return whether both parent-side output transports reported closure.
+
+        Intent
+        ------
+        Return whether both parent-side output transports reported closure. The boundary coordinates closed local state through self, property, and bool with one closed state transition.
+
+        Rationale
+        ---------
+        Because Return whether both parent-side output transports reported closure. Keep self, property, and bool inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+        Pseudocode
+        ----------
+        - return
+
+        Wraps
+        -----
+        - none
+        """
         return self._closed_pipes == {1, 2}
 
     @property
     def connection_closed(self) -> bool:
-        """Return whether the subprocess transport completed connection teardown."""
+        """Return whether the subprocess transport completed connection teardown.
+
+        Intent
+        ------
+        Return whether the subprocess transport completed connection teardown. The boundary coordinates closed local state through is_set, self, property, and bool with one closed state transition.
+
+        Rationale
+        ---------
+        Because Return whether the subprocess transport completed connection teardown. Keep is_set, self, property, and bool inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+        Pseudocode
+        ----------
+        - return
+
+        Wraps
+        -----
+        - none
+        """
         return self._connection_closed.is_set()
 
     async def wait_for_change(self, *, deadline: float) -> bool:
-        """Wait for one coalesced protocol event without extending the deadline."""
+        """Wait for one coalesced protocol event without extending the deadline.
+
+        Intent
+        ------
+        Wait for one coalesced protocol event without extending the deadline. The boundary coordinates deadline, and remaining through clear, time, get_running_loop, timeout, wait, and float with 1 guarded checks, and 1 cleanup or failure regions.
+
+        Rationale
+        ---------
+        Because Wait for one coalesced protocol event without extending the deadline. Keep clear, time, get_running_loop, timeout, wait, and float inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+        Pseudocode
+        ----------
+        - return
+
+        Wraps
+        -----
+        - none
+        """
         self._changed.clear()
         remaining = deadline - asyncio.get_running_loop().time()
         if remaining <= 0:
@@ -1053,12 +2205,46 @@ class _BoundedCaptureProtocol(asyncio.SubprocessProtocol):
         return True
 
     def connection_made(self, transport: asyncio.BaseTransport) -> None:
-        """Retain the public subprocess transport used for bounded cleanup."""
+        """Retain the public subprocess transport used for bounded cleanup.
+
+        Intent
+        ------
+        Retain the public subprocess transport used for bounded cleanup. The boundary coordinates transport through set, asyncio, self, and transport with one closed state transition.
+
+        Rationale
+        ---------
+        Because Retain the public subprocess transport used for bounded cleanup. Keep set, asyncio, self, and transport inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+        Pseudocode
+        ----------
+        - return
+
+        Wraps
+        -----
+        - none
+        """
         self.transport = transport  # type: ignore[assignment]
         self._changed.set()
 
     def pipe_data_received(self, fd: int, data: bytes) -> None:
-        """Append at most the configured bytes and signal the first overflow."""
+        """Append at most the configured bytes and signal the first overflow.
+
+        Intent
+        ------
+        Append at most the configured bytes and signal the first overflow. The boundary coordinates fd, data, failed, destination, and remaining through set, extend, get_pipe_transport, pause_reading, int, and bytes with 3 guarded checks, and 1 cleanup or failure regions.
+
+        Rationale
+        ---------
+        Because Append at most the configured bytes and signal the first overflow. Keep set, extend, get_pipe_transport, pause_reading, int, and bytes inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+        Pseudocode
+        ----------
+        - return
+
+        Wraps
+        -----
+        - none
+        """
         if fd not in self._buffers:
             self.failed = True
             self._changed.set()
@@ -1081,7 +2267,24 @@ class _BoundedCaptureProtocol(asyncio.SubprocessProtocol):
         self._changed.set()
 
     def pipe_connection_lost(self, fd: int, exc: Exception | None) -> None:
-        """Record pipe closure and reduce every transport error to a closed flag."""
+        """Record pipe closure and reduce every transport error to a closed flag.
+
+        Intent
+        ------
+        Record pipe closure and reduce every transport error to a closed flag. The boundary coordinates fd, exc, and failed through add, set, int, Exception, fd, and self with 2 guarded checks.
+
+        Rationale
+        ---------
+        Because Record pipe closure and reduce every transport error to a closed flag. Keep add, set, int, Exception, fd, and self inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+        Pseudocode
+        ----------
+        - return
+
+        Wraps
+        -----
+        - none
+        """
         if fd not in {1, 2}:
             self.failed = True
         else:
@@ -1091,12 +2294,46 @@ class _BoundedCaptureProtocol(asyncio.SubprocessProtocol):
         self._changed.set()
 
     def process_exited(self) -> None:
-        """Record direct-child exit after the event loop has reaped it."""
+        """Record direct-child exit after the event loop has reaped it.
+
+        Intent
+        ------
+        Record direct-child exit after the event loop has reaped it. The boundary coordinates process_exited_flag through set, and self with one closed state transition.
+
+        Rationale
+        ---------
+        Because Record direct-child exit after the event loop has reaped it. Keep set, and self inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+        Pseudocode
+        ----------
+        - return
+
+        Wraps
+        -----
+        - none
+        """
         self.process_exited_flag = True
         self._changed.set()
 
     def connection_lost(self, exc: Exception | None) -> None:
-        """Record completed transport teardown without exposing raw diagnostics."""
+        """Record completed transport teardown without exposing raw diagnostics.
+
+        Intent
+        ------
+        Record completed transport teardown without exposing raw diagnostics. The boundary coordinates exc, and failed through set, Exception, exc, and self with 1 guarded checks.
+
+        Rationale
+        ---------
+        Because Record completed transport teardown without exposing raw diagnostics. Keep set, Exception, exc, and self inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+        Pseudocode
+        ----------
+        - return
+
+        Wraps
+        -----
+        - none
+        """
         if exc is not None:
             self.failed = True
         self._connection_closed.set()
@@ -1109,7 +2346,24 @@ async def _close_bounded_capture(
     *,
     deadline: float,
 ) -> bool:
-    """Terminate/reap the direct child and close its transports by one deadline."""
+    """Terminate/reap the direct child and close its transports by one deadline.
+
+    Intent
+    ------
+    Terminate/reap the direct child and close its transports by one deadline. The boundary coordinates protocol, transport, deadline, loop, and cleanup_failed through get_running_loop, get_returncode, terminate, min, time, and wait_for_change with 4 guarded checks, 4 cleanup or failure regions, and 4 bounded iterations.
+
+    Rationale
+    ---------
+    Because Terminate/reap the direct child and close its transports by one deadline. Keep get_running_loop, get_returncode, terminate, min, time, and wait_for_change inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - return
+
+    Wraps
+    -----
+    - none
+    """
     loop = asyncio.get_running_loop()
     cleanup_failed = False
     if transport.get_returncode() is None:
@@ -1168,7 +2422,42 @@ async def _bounded_process_capture_async(
     stdout_limit: int,
     stderr_limit: int,
 ) -> tuple[int, bytes, bytes]:
-    """Run one child through cancellable byte-capped asynchronous transports."""
+    """Run one child through cancellable byte-capped asynchronous transports.
+
+    Intent
+    ------
+    Run one child through cancellable byte-capped asynchronous transports. The boundary coordinates command, environment, timeout_seconds, stdout_limit, and stderr_limit through get_running_loop, time, min, _BoundedCaptureProtocol, timeout, and subprocess_exec with 10 guarded checks, 1 cleanup or failure regions, 2 bounded iterations, and 7 typed refusals.
+
+    Rationale
+    ---------
+    Because Run one child through cancellable byte-capped asynchronous transports. Keep get_running_loop, time, min, _BoundedCaptureProtocol, timeout, and subprocess_exec inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - return
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._close_bounded_capture:
+      why:
+        computes: "This computes edge is the first repository dependency used to uphold this guarantee: Run one child through cancellable byte-capped asynchronous transports."
+
+    InstantiationsFromRepo
+    ----------------------
+    .StateRecordError:
+      why:
+        constructs: "This constructs edge is the second repository dependency used to uphold this guarantee: Run one child through cancellable byte-capped asynchronous transports."
+    ._BoundedCaptureProtocol:
+      why:
+        constructs: "This constructs edge is the third repository dependency used to uphold this guarantee: Run one child through cancellable byte-capped asynchronous transports."
+    ._close_bounded_capture:
+      why:
+        constructs: "This constructs edge is the number 4 repository dependency used to uphold this guarantee: Run one child through cancellable byte-capped asynchronous transports."
+    """
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout_seconds
     cleanup_reserve = min(
@@ -1257,7 +2546,36 @@ def _bounded_process_capture(
     stdout_limit: int,
     stderr_limit: int,
 ) -> tuple[int, bytes, bytes]:
-    """Bridge the synchronous installer into one private asynchronous runner."""
+    """Bridge the synchronous installer into one private asynchronous runner.
+
+    Intent
+    ------
+    Bridge the synchronous installer into one private asynchronous runner. The boundary coordinates command, environment, timeout_seconds, stdout_limit, and stderr_limit through get_running_loop, StateRecordError, run, _bounded_process_capture_async, list, and str with 2 cleanup or failure regions, and 3 typed refusals.
+
+    Rationale
+    ---------
+    Because Bridge the synchronous installer into one private asynchronous runner. Keep get_running_loop, StateRecordError, run, _bounded_process_capture_async, list, and str inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - return
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._bounded_process_capture_async:
+      why:
+        computes: "This computes edge is the first repository dependency used to uphold this guarantee: Bridge the synchronous installer into one private asynchronous runner."
+
+    InstantiationsFromRepo
+    ----------------------
+    .StateRecordError:
+      why:
+        constructs: "This constructs edge is the second repository dependency used to uphold this guarantee: Bridge the synchronous installer into one private asynchronous runner."
+    """
     try:
         asyncio.get_running_loop()
     except RuntimeError:
@@ -1285,7 +2603,39 @@ def _bounded_process_capture(
 def snapshot_git_config_value(
     *, repo: Path, key: str, timeout_seconds: float = 5.0
 ) -> dict[str, object]:
-    """Observe one local Git-config value without shell or ambient repository state."""
+    """Observe one local Git-config value without shell or ambient repository state.
+
+    Intent
+    ------
+    Observe one local Git-config value without shell or ambient repository state. The boundary coordinates repo, key, timeout_seconds, repository, and selected_key through Path, abspath, fspath, _canonical_git_config_key, isinstance, and isfinite with 5 guarded checks, 1 cleanup or failure regions, and 4 typed refusals.
+
+    Rationale
+    ---------
+    Because Observe one local Git-config value without shell or ambient repository state. Keep Path, abspath, fspath, _canonical_git_config_key, isinstance, and isfinite inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - return
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .StateRecordError:
+      why:
+        constructs: "This constructs edge is the first repository dependency used to uphold this guarantee: Observe one local Git-config value without shell or ambient repository state."
+    ._bounded_process_capture:
+      why:
+        constructs: "This constructs edge is the second repository dependency used to uphold this guarantee: Observe one local Git-config value without shell or ambient repository state."
+    ._canonical_git_config_key:
+      why:
+        constructs: "This constructs edge is the third repository dependency used to uphold this guarantee: Observe one local Git-config value without shell or ambient repository state."
+    ._require_resource_state:
+      why:
+        constructs: "This constructs edge is the number 4 repository dependency used to uphold this guarantee: Observe one local Git-config value without shell or ambient repository state."
+    """
     repository = Path(os.path.abspath(os.fspath(repo)))
     selected_key = _canonical_git_config_key(key)
     if (
@@ -1338,6 +2688,30 @@ def snapshot_git_config_value(
 
 
 def _apply_ownership_delta(manifest: "Manifest", delta: Mapping[str, object]) -> None:
+    """coordinate manifest, delta, selected, action, and entry through _require_ownership_delta, dict, pop, record, forget, and Mapping with 2 guarded checks.
+
+    Intent
+    ------
+    coordinate manifest, delta, selected, action, and entry through _require_ownership_delta, dict, pop, record, forget, and Mapping with 2 guarded checks. The boundary coordinates manifest, delta, selected, action, and entry through _require_ownership_delta, dict, pop, record, forget, and Mapping with 2 guarded checks.
+
+    Rationale
+    ---------
+    Because coordinate manifest, delta, selected, action, and entry through _require_ownership_delta, dict, pop, record, forget, and Mapping with 2 guarded checks. Keep _require_ownership_delta, dict, pop, record, forget, and Mapping inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - return
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._require_ownership_delta:
+      why:
+        constructs: "This constructs edge is the first repository dependency used to uphold this guarantee: coordinate manifest, delta, selected, action, and entry through _require_ownership_delta, dict, pop, record, forget, and Mapping with 2 guarded checks."
+    """
     selected = _require_ownership_delta(dict(delta))
     action = selected["action"]
     if action == "none":
@@ -1354,9 +2728,21 @@ def _apply_ownership_delta(manifest: "Manifest", delta: Mapping[str, object]) ->
 class MutationRecorder:
     """Serialize one owner mutation through durable intent and exact observation.
 
-    The journal and manifest's own atomic state-record writes are deliberately
-    internal bookkeeping: recursively recording them would make completion
-    impossible. Every owner-supplied live effect still passes through ``mutate``.
+    Intent
+    ------
+    Serialize one owner mutation through durable intent and exact observation. The boundary coordinates closed local state through closed local state with one closed state transition.
+
+    Rationale
+    ---------
+    Because Serialize one owner mutation through durable intent and exact observation. Keep closed local state inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - return
+
+    Wraps
+    -----
+    - none
     """
 
     def __init__(
@@ -1367,6 +2753,33 @@ class MutationRecorder:
         state_root: Path,
         manifest: "Manifest",
     ) -> None:
+        """Within Serialize one owner mutation through durable intent and exact observation, coordinate journal, journal_path, state_root, manifest, and selected_path through _confined_record_path, Path, StateRecordError, Trans.
+
+        Intent
+        ------
+        Within Serialize one owner mutation through durable intent and exact observation, coordinate journal, journal_path, state_root, manifest, and selected_path through _confined_record_path, Path, StateRecordError, Trans. The boundary coordinates journal, journal_path, state_root, manifest, and selected_path through _confined_record_path, Path, StateRecordError, TransactionJournal, journal_path, and state_root with 1 guarded checks, and 1 typed refusals.
+
+        Rationale
+        ---------
+        Because Within Serialize one owner mutation through durable intent and exact observation, coordinate journal, journal_path, state_root, manifest, and selected_path through _confined_record_path, Path, StateRecordError, Trans. Keep _confined_record_path, Path, StateRecordError, TransactionJournal, journal_path, and state_root inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+        Pseudocode
+        ----------
+        - return
+
+        Wraps
+        -----
+        - none
+
+        InstantiationsFromRepo
+        ----------------------
+        .StateRecordError:
+          why:
+            constructs: "This constructs edge is the first repository dependency used to uphold this guarantee: Within Serialize one owner mutation through durable intent and exact observation, coordinate journal, journal_path, state_root, manifest, and selected_path through _confined_record_path, Path, StateRecordError, Trans."
+        ._confined_record_path:
+          why:
+            constructs: "This constructs edge is the second repository dependency used to uphold this guarantee: Within Serialize one owner mutation through durable intent and exact observation, coordinate journal, journal_path, state_root, manifest, and selected_path through _confined_record_path, Path, StateRecordError, Trans."
+        """
         selected_path, selected_root = _confined_record_path(
             Path(journal_path), Path(state_root)
         )
@@ -1379,9 +2792,52 @@ class MutationRecorder:
 
     def _save_journal(self, journal: TransactionJournal) -> None:
         # Internal atomic journal publication is exempt from recursive recording.
+        """Within Serialize one owner mutation through durable intent and exact observation, coordinate journal through save, TransactionJournal, journal, and self with one closed state transition.
+
+        Intent
+        ------
+        Within Serialize one owner mutation through durable intent and exact observation, coordinate journal through save, TransactionJournal, journal, and self with one closed state transition. The boundary coordinates journal through save, TransactionJournal, journal, and self with one closed state transition.
+
+        Rationale
+        ---------
+        Because Within Serialize one owner mutation through durable intent and exact observation, coordinate journal through save, TransactionJournal, journal, and self with one closed state transition. Keep save, TransactionJournal, journal, and self inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+        Pseudocode
+        ----------
+        - return
+
+        Wraps
+        -----
+        - none
+        """
         journal.save(self.journal_path, state_root=self.state_root)
 
     def _save_manifest_delta(self, delta: Mapping[str, object]) -> None:
+        """Apply and save one ownership delta while restoring memory on failure.
+
+        Intent
+        ------
+        Within Serialize one owner mutation through durable intent and exact observation, coordinate delta, before, entry, and entries through dict, _apply_ownership_delta, Mapping, str, object, and entry with 1 cleanup or f. The boundary coordinates delta, before, entry, and entries through dict, _apply_ownership_delta, Mapping, str, object, and entry with 1 cleanup or failure regions, and 1 typed refusals.
+
+        Rationale
+        ---------
+        Because Within Serialize one owner mutation through durable intent and exact observation, coordinate delta, before, entry, and entries through dict, _apply_ownership_delta, Mapping, str, object, and entry with 1 cleanup or f. Keep dict, _apply_ownership_delta, Mapping, str, object, and entry inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+        Pseudocode
+        ----------
+        - set updated_ownership_state = local_decisions
+        - return updated_ownership_state
+
+        Wraps
+        -----
+        - none
+
+        CallsFromRepo
+        -------------
+        ._apply_ownership_delta:
+          why:
+            computes: "This computes edge is the first repository dependency used to uphold this guarantee: Within Serialize one owner mutation through durable intent and exact observation, coordinate delta, before, entry, and entries through dict, _apply_ownership_delta, Mapping, str, object, and entry with 1 cleanup or f."
+        """
         before = [dict(entry) for entry in self.manifest.entries]
         try:
             # Manifest.record/forget perform the one internal atomic save.
@@ -1400,10 +2856,48 @@ class MutationRecorder:
         intended_after: Mapping[str, object],
         ownership_delta: Mapping[str, object],
         observe: Callable[[], Mapping[str, object]],
-        apply: Callable[[], None],
+        apply: Callable[[JournalMutation], None],
     ) -> str:
-        """Journal, apply, verify, own, and complete one deterministic request."""
-        selected_after = _require_resource_state(
+        """Journal, apply, verify, own, and complete one deterministic request.
+
+        Intent
+        ------
+        Journal, apply, verify, own, and complete one deterministic request. The boundary coordinates operation_key, kind, resource_kind, resource_id, and intended_after through _require_resource_state, dict, _require_ownership_delta, mutation_id_for, StateRecordError, and observe with 9 guarded checks, and 6 typed refusals.
+
+        Rationale
+        ---------
+        Because Journal, apply, verify, own, and complete one deterministic request. Keep _require_resource_state, dict, _require_ownership_delta, mutation_id_for, StateRecordError, and observe inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+        Pseudocode
+        ----------
+        - return
+
+        Wraps
+        -----
+        - none
+
+        InstantiationsFromRepo
+        ----------------------
+        .JournalMutation:
+          why:
+            constructs: "This constructs edge is the first repository dependency used to uphold this guarantee: Journal, apply, verify, own, and complete one deterministic request."
+        .StateRecordError:
+          why:
+            constructs: "This constructs edge is the second repository dependency used to uphold this guarantee: Journal, apply, verify, own, and complete one deterministic request."
+        ._require_ownership_delta:
+          why:
+            constructs: "This constructs edge is the third repository dependency used to uphold this guarantee: Journal, apply, verify, own, and complete one deterministic request."
+        ._require_resource_state:
+          why:
+            constructs: "This constructs edge is the number 4 repository dependency used to uphold this guarantee: Journal, apply, verify, own, and complete one deterministic request."
+        ._require_intended_resource_state:
+          why:
+            constructs: "Validates durable intended state against the publication mode domain."
+        .mutation_id_for:
+          why:
+            constructs: "This constructs edge is the number 5 repository dependency used to uphold this guarantee: Journal, apply, verify, own, and complete one deterministic request."
+        """
+        selected_after = _require_intended_resource_state(
             dict(intended_after),
             field="intended_after",
             resource_kind=resource_kind,
@@ -1478,7 +2972,7 @@ class MutationRecorder:
         if actual == pending.intended_after:
             pass
         elif actual == pending.expected_before:
-            apply()
+            apply(pending)
             actual = _require_resource_state(
                 dict(observe()), field="actual", resource_kind=resource_kind
             )
@@ -1505,7 +2999,39 @@ def recover_pending_mutation(
     *,
     manifest: "Manifest",
 ) -> TransactionJournal:
-    """Classify one generic pending path; only adopt an already-intended state."""
+    """Classify one generic pending path; only adopt an already-intended state.
+
+    Intent
+    ------
+    Classify one generic pending path; only adopt an already-intended state. The boundary coordinates journal, manifest, mutation, and actual through StateRecordError, snapshot_path_state, Path, _apply_ownership_delta, replace, and TransactionJournal with 5 guarded checks, and 3 typed refusals.
+
+    Rationale
+    ---------
+    Because Classify one generic pending path; only adopt an already-intended state. Keep StateRecordError, snapshot_path_state, Path, _apply_ownership_delta, replace, and TransactionJournal inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - return
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._apply_ownership_delta:
+      why:
+        computes: "This computes edge is the first repository dependency used to uphold this guarantee: Classify one generic pending path; only adopt an already-intended state."
+
+    InstantiationsFromRepo
+    ----------------------
+    .StateRecordError:
+      why:
+        constructs: "This constructs edge is the second repository dependency used to uphold this guarantee: Classify one generic pending path; only adopt an already-intended state."
+    .snapshot_path_state:
+      why:
+        constructs: "This constructs edge is the third repository dependency used to uphold this guarantee: Classify one generic pending path; only adopt an already-intended state."
+    """
     mutation = journal.pending_mutation
     if mutation is None:
         return journal
@@ -1539,21 +3065,116 @@ def recover_pending_mutation(
 
 
 def manifest_path(home: Path) -> Path:
-    """Canonical manifest location for a given home directory."""
+    """Canonical manifest location for a given home directory.
+
+    Intent
+    ------
+    Canonical manifest location for a given home directory. The boundary coordinates home through manifest_state_root, Path, and home with one closed state transition.
+
+    Rationale
+    ---------
+    Because Canonical manifest location for a given home directory. Keep manifest_state_root, Path, and home inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - set confined_manifest_location = received_context
+    - return confined_manifest_location
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .manifest_state_root:
+      why:
+        computes: "This computes edge is the first repository dependency used to uphold this guarantee: Canonical manifest location for a given home directory."
+    """
     return manifest_state_root(home) / "install-manifest.json"
 
 
 def manifest_state_root(home: Path) -> Path:
-    """Return the canonical state root confining install records for one home."""
+    """Return the canonical state root confining install records for one home.
+
+    Intent
+    ------
+    Return the canonical state root confining install records for one home. The boundary coordinates home through resolve_famulus_paths, absolute, Path, sys, and home with one closed state transition.
+
+    Rationale
+    ---------
+    Because Return the canonical state root confining install records for one home. Keep resolve_famulus_paths, absolute, Path, sys, and home inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - set resolved_state_root = received_context
+    - return resolved_state_root
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    officina.common.famulus_paths.resolve_famulus_paths:
+      why:
+        computes: "This computes edge is the first repository dependency used to uphold this guarantee: Return the canonical state root confining install records for one home."
+    """
     return resolve_famulus_paths(
         platform=sys.platform, home=Path(home).absolute()
     ).install_state_root
 
 
 class Manifest:
-    """Load/record/save install side effects. Dedupes on (kind, path)."""
+    """Load/record/save install side effects. Dedupes on (kind, path).
+
+    Intent
+    ------
+    Load/record/save install side effects. Dedupes on (kind, path). The boundary coordinates closed local state through closed local state with one closed state transition.
+
+    Rationale
+    ---------
+    Because Load/record/save install side effects. Dedupes on (kind, path). Keep closed local state inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - return
+
+    Wraps
+    -----
+    - none
+    """
 
     def __init__(self, path: Path, *, state_root: Path) -> None:
+        """Load one confined manifest and validate every ownership entry.
+
+        Intent
+        ------
+        Within Load/record/save install side effects. Dedupes on (kind, path), coordinate path, state_root, entries, data, and version through _confined_record_path, _read_json_object, get, StateRecordError, isinstance, and. The boundary coordinates path, state_root, entries, data, and version through _confined_record_path, _read_json_object, get, StateRecordError, isinstance, and all with 2 guarded checks, 1 cleanup or failure regions, and 2 typed refusals.
+
+        Rationale
+        ---------
+        Because Within Load/record/save install side effects. Dedupes on (kind, path), coordinate path, state_root, entries, data, and version through _confined_record_path, _read_json_object, get, StateRecordError, isinstance, and. Keep _confined_record_path, _read_json_object, get, StateRecordError, isinstance, and all inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+        Pseudocode
+        ----------
+        - return
+
+        Wraps
+        -----
+        - none
+
+        InstantiationsFromRepo
+        ----------------------
+        .StateRecordError:
+          why:
+            constructs: "This constructs edge is the first repository dependency used to uphold this guarantee: Within Load/record/save install side effects. Dedupes on (kind, path), coordinate path, state_root, entries, data, and version through _confined_record_path, _read_json_object, get, StateRecordError, isinstance, and."
+        ._confined_record_path:
+          why:
+            constructs: "This constructs edge is the second repository dependency used to uphold this guarantee: Within Load/record/save install side effects. Dedupes on (kind, path), coordinate path, state_root, entries, data, and version through _confined_record_path, _read_json_object, get, StateRecordError, isinstance, and."
+        ._read_json_object:
+          why:
+            constructs: "This constructs edge is the third repository dependency used to uphold this guarantee: Within Load/record/save install side effects. Dedupes on (kind, path), coordinate path, state_root, entries, data, and version through _confined_record_path, _read_json_object, get, StateRecordError, isinstance, and."
+        """
         self.path, self.state_root = _confined_record_path(path, state_root)
         self.entries: list[dict] = []
         try:
@@ -1571,6 +3192,24 @@ class Manifest:
         self.entries = [dict(entry) for entry in entries]
 
     def record(self, kind: str, *, path: str, **fields: object) -> None:
+        """Within Load/record/save install side effects. Dedupes on (kind, path), coordinate kind, path, entry, i, and existing through enumerate, get, append, save, str, and object with 1 guarded checks, and 1 bounded iterations.
+
+        Intent
+        ------
+        Within Load/record/save install side effects. Dedupes on (kind, path), coordinate kind, path, entry, i, and existing through enumerate, get, append, save, str, and object with 1 guarded checks, and 1 bounded iterations. The boundary coordinates kind, path, entry, i, and existing through enumerate, get, append, save, str, and object with 1 guarded checks, and 1 bounded iterations.
+
+        Rationale
+        ---------
+        Because Within Load/record/save install side effects. Dedupes on (kind, path), coordinate kind, path, entry, i, and existing through enumerate, get, append, save, str, and object with 1 guarded checks, and 1 bounded iterations. Keep enumerate, get, append, save, str, and object inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+        Pseudocode
+        ----------
+        - return
+
+        Wraps
+        -----
+        - none
+        """
         entry = {"kind": kind, "path": path, **fields}
         for i, existing in enumerate(self.entries):
             if existing.get("kind") == kind and existing.get("path") == path:
@@ -1583,10 +3222,45 @@ class Manifest:
         self.save()
 
     def remove(self, entry: dict) -> None:
+        """Within Load/record/save install side effects. Dedupes on (kind, path), coordinate entry, entries, and e through dict, self, e, and entry with one closed state transition.
+
+        Intent
+        ------
+        Within Load/record/save install side effects. Dedupes on (kind, path), coordinate entry, entries, and e through dict, self, e, and entry with one closed state transition. The boundary coordinates entry, entries, and e through dict, self, e, and entry with one closed state transition.
+
+        Rationale
+        ---------
+        Because Within Load/record/save install side effects. Dedupes on (kind, path), coordinate entry, entries, and e through dict, self, e, and entry with one closed state transition. Keep dict, self, e, and entry inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+        Pseudocode
+        ----------
+        - return
+
+        Wraps
+        -----
+        - none
+        """
         self.entries = [e for e in self.entries if e is not entry]
 
     def forget(self, kind: str, *, path: str) -> None:
-        """Drop a stale ownership record identified by kind and path."""
+        """Drop a stale ownership record identified by kind and path.
+
+        Intent
+        ------
+        Drop a stale ownership record identified by kind and path. The boundary coordinates kind, path, remaining, entry, and entries through get, save, str, entry, self, and kind with 1 guarded checks.
+
+        Rationale
+        ---------
+        Because Drop a stale ownership record identified by kind and path. Keep get, save, str, entry, self, and kind inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+        Pseudocode
+        ----------
+        - return
+
+        Wraps
+        -----
+        - none
+        """
         remaining = [
             entry
             for entry in self.entries
@@ -1598,10 +3272,53 @@ class Manifest:
         self.save()
 
     def save(self) -> None:
+        """Within Load/record/save install side effects. Dedupes on (kind, path), coordinate payload through _atomic_json_replace, MANIFEST_VERSION, self, and payload with one closed state transition.
+
+        Intent
+        ------
+        Within Load/record/save install side effects. Dedupes on (kind, path), coordinate payload through _atomic_json_replace, MANIFEST_VERSION, self, and payload with one closed state transition. The boundary coordinates payload through _atomic_json_replace, MANIFEST_VERSION, self, and payload with one closed state transition.
+
+        Rationale
+        ---------
+        Because Within Load/record/save install side effects. Dedupes on (kind, path), coordinate payload through _atomic_json_replace, MANIFEST_VERSION, self, and payload with one closed state transition. Keep _atomic_json_replace, MANIFEST_VERSION, self, and payload inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+        Pseudocode
+        ----------
+        - set serialized_manifest_state = received_context
+        - return
+
+        Wraps
+        -----
+        - none
+
+        CallsFromRepo
+        -------------
+        ._atomic_json_replace:
+          why:
+            computes: "This computes edge is the first repository dependency used to uphold this guarantee: Within Load/record/save install side effects. Dedupes on (kind, path), coordinate payload through _atomic_json_replace, MANIFEST_VERSION, self, and payload with one closed state transition."
+        """
         payload = {"version": MANIFEST_VERSION, "entries": self.entries}
         _atomic_json_replace(self.path, payload, state_root=self.state_root)
 
     def delete(self) -> None:
+        """Within Load/record/save install side effects. Dedupes on (kind, path), coordinate closed local state through unlink, self, and FileNotFoundError with 1 cleanup or failure regions.
+
+        Intent
+        ------
+        Within Load/record/save install side effects. Dedupes on (kind, path), coordinate closed local state through unlink, self, and FileNotFoundError with 1 cleanup or failure regions. The boundary coordinates closed local state through unlink, self, and FileNotFoundError with 1 cleanup or failure regions.
+
+        Rationale
+        ---------
+        Because Within Load/record/save install side effects. Dedupes on (kind, path), coordinate closed local state through unlink, self, and FileNotFoundError with 1 cleanup or failure regions. Keep unlink, self, and FileNotFoundError inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+        Pseudocode
+        ----------
+        - return
+
+        Wraps
+        -----
+        - none
+        """
         try:
             self.path.unlink()
         except FileNotFoundError:

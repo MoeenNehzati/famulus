@@ -3,8 +3,9 @@ content:
 dependencies: []
 description: Implements confined regular-file reads and secure replace, create, append,
   compare-and-append, bounded name-only directory enumeration, retained bounded-directory
-  inventory authority, and platform-scoped existing-file recovery authority, with
-  an explicit non-atomic fallback only for ordinary file operations.
+  inventory authority, platform-scoped existing-file recovery authority, and deterministic
+  mutation-ID-addressed file, symlink, empty-directory, and exact-symlink-deletion
+  publication, with an explicit non-atomic fallback only for ordinary file operations.
 gateway:
   language: Python
   path: atomic_files.py
@@ -21,9 +22,17 @@ interfaces:
           sensitivity: public
           type:
             kind: boolean
+        build-id:
+          description: Durable mutation ID used to derive the only accepted deterministic
+            sibling build name for restartable publication.
+          required: false
+          sensitivity: user-private
+          type:
+            description: Exactly 32 lowercase hexadecimal characters.
+            kind: string
         allowed-root:
           description: Directory boundary that must contain path.
-          direct_io_ref: target-file
+          direct_io_ref: allowed-root-namespace
           required: true
           sensitivity: user-private
           type:
@@ -59,6 +68,16 @@ interfaces:
           type:
             description: Python bytes value or null.
             kind: string
+        expected-before:
+          description: Complete closed target state that deterministic publication
+            validates while holding caller-supplied namespace isolation; it is not
+            a conditional compare-and-swap token for POSIX rename or unlink. Observed
+            file and directory modes may include all bits through 0o7777.
+          required: false
+          sensitivity: user-private
+          type:
+            description: Python mapping in the caller's closed filesystem-state schema.
+            kind: string
         expected-bytes:
           description: Complete expected bytes required before retaining native cleanup
             authority for an existing regular file.
@@ -69,12 +88,15 @@ interfaces:
             kind: string
         mode:
           default: 384
-          description: Requested file permission bits for mutation operations.
+          description: Publishable POSIX permission bits through 0o777; callers must
+            remove set-id and sticky bits before recording durable intent. On Windows the helper
+            normalizes these to the closed observable read-only policy for files
+            or directories and verifies that normalized attribute state.
           required: false
           sensitivity: public
           type:
             kind: integer
-            maximum: 4095
+            maximum: 511
             minimum: 0
         max-entries:
           description: Positive caller-selected bound on names returned by name-only
@@ -95,8 +117,8 @@ interfaces:
             maximum: 4096
             minimum: 1
         maximum-bytes:
-          description: Caller-selected upper bound for a retained-inventory relative
-            regular-file read.
+          description: Caller-selected upper bound for a direct bounded read or a
+            retained-inventory relative regular-file read.
           required: false
           sensitivity: public
           type:
@@ -153,8 +175,21 @@ interfaces:
                 for resumable no-replace relocation, separate quarantine-only disposal,
                 or release. Both-name ambiguity and third state fail closed.
               value: track-existing
+            - description: Rewrite one deterministic regular build, revalidate the
+                exact retained target state, then atomically publish supplied bytes.
+              value: publish-bytes
+            - description: Validate or create one deterministic exact lexical symlink
+                build, revalidate the target, then atomically replace its name.
+              value: publish-symlink
+            - description: Validate or create one deterministic empty directory build
+                and publish it only to an exactly absent leaf without creating ancestors.
+              value: publish-empty-directory
+            - description: Revalidate and remove only one exact confined lexical symlink.
+              value: unlink-exact-symlink
         path:
-          description: Destination or source file confined beneath allowed-root.
+          description: Destination or source leaf confined beneath allowed-root;
+            the operation selects byte-file, symlink, directory, or exact symlink
+            semantics before any deterministic build effect.
           direct_io_ref: target-file
           required: false
           sensitivity: user-private
@@ -204,9 +239,46 @@ interfaces:
           rename, and build-or-stage disposal updates the complete expected names.
           Windows mirrors the retained-handle state machine and does not rely on live
           process cleanup for restart recovery.
+      - external-side-effect: >-
+          Deterministic publication derives exactly one sibling build name from build-id.
+          A regular build is accepted only with link count one before truncation and
+          is revalidated by identity, content, mode, and link count through publication.
+          Existing POSIX builds are no-follow classified by their retained parent before
+          any permission change; owner read/write bits are restored only on that validated
+          single-link identity, the writable reopen is revalidated, and its descriptor is
+          retained through rewrite, final-mode restoration, exact verification, and rename.
+          This remains restartable when the requested final mode is 0444 or 0000, including
+          after death immediately following temporary permission repair. Existing native
+          builds are first opened without write-data rights and validated by identity, live
+          name, bounded bytes, attributes, and ACL; READONLY is cleared only afterward, and
+          the inspection handle must report link count one again immediately before
+          READONLY is cleared. Both the inspection and write-data handles must report link count one before
+          permission or byte mutation. The write-data reopen must identify the same writable object before rewrite. The
+          requested closed mode is restored and verified before publication. Regular partial builds are securely truncated and rewritten; wrong-type builds,
+          mismatched symlink builds, nonempty or wrong-mode directory builds, changed
+          targets, unsafe ancestors, and unsupported Windows symlink capability fail
+          closed before an ineligible target can create or change a build. POSIX callers
+          must hold the per-home InstallLock and use a private user-owned parent namespace;
+          the contract excludes uncooperative writers to the final or deterministic build
+          name, same-identity writers, and retained writable source descriptors. POSIX
+          rename and unlink are not conditional by inode. Windows symlink publication and
+          exact unlink retain no-reparse handles, validate the lexical target and live name,
+          and either prove completion or raise a typed capability failure. File bytes and
+          directory entries are synchronized where the native platform supports it. A crash
+          leaves an inspectable target/build state and the same durable request can resume.
       direct_io:
         network: []
         reads:
+        - access: read
+          content: retained no-follow namespace authority and ancestor metadata
+          formats:
+          - directory-entry
+          id: allowed-root-namespace
+          medium: local-filesystem
+          path: <allowed-root>
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
         - access: read
           content: bounded child entry names without child payloads
           formats:
@@ -234,6 +306,22 @@ interfaces:
           medium: local-filesystem
           path: <path> beneath <allowed-root>
           sensitivity: user-private
+        - access: read-write
+          content: one exact lexical symbolic-link target
+          formats:
+          - text
+          id: target-symlink
+          medium: local-filesystem
+          path: <path> beneath <allowed-root>
+          sensitivity: user-private
+        - access: read-write
+          content: one empty directory entry with platform-observable mode
+          formats:
+          - directory-entry
+          id: target-directory
+          medium: local-filesystem
+          path: <path> beneath <allowed-root>
+          sensitivity: user-private
       execution:
         consistency:
           live: Reads and mutations operate on the file state observed during the
@@ -246,7 +334,7 @@ interfaces:
             direct_io_ref: target-file
             kind: direct-io
           direct_io_ref: target-file
-          id: file-state
+          id: byte-file-state
           may_occur_in_outcomes:
           - completed
           reversibility:
@@ -254,14 +342,58 @@ interfaces:
           value_source:
             argument_ref: data
             kind: argument
+        - action: update
+          confirmation_evidence:
+            direct_io_ref: target-symlink
+            kind: direct-io
+          direct_io_ref: target-symlink
+          id: symlink-state
+          may_occur_in_outcomes:
+          - completed
+          reversibility:
+            irreversible: The helper does not retain the previous lexical target.
+          value_source:
+            argument_ref: data
+            kind: argument
+        - action: update
+          confirmation_evidence:
+            direct_io_ref: target-directory
+            kind: direct-io
+          direct_io_ref: target-directory
+          id: directory-state
+          may_occur_in_outcomes:
+          - completed
+          reversibility:
+            irreversible: The helper does not retain a replaced namespace entry.
+          value_source:
+            argument_ref: mode
+            kind: argument
+        - action: delete
+          confirmation_evidence:
+            direct_io_ref: target-symlink
+            kind: direct-io
+          direct_io_ref: target-symlink
+          id: symlink-deletion
+          may_occur_in_outcomes:
+          - completed
+          reversibility:
+            irreversible: The helper does not retain the removed lexical target.
+          value_source:
+            argument_ref: expected-before
+            kind: argument
         lifecycle: finite
         mutation_safety:
           atomicity:
-            per_effect_only: Secure operations are atomic per file; the explicit fallback
-              is confined but non-atomic.
+            per_effect_only: Secure operations are atomic per namespace publication;
+              deterministic publication never uses the explicit fallback. The fallback
+              for ordinary file operations is confined but non-atomic.
           concurrent_invocations:
-            safe: Native create and replace and append and compare-and-append use
-              platform synchronization and final-state checks.
+            unsafe: Concurrent use is outside this low-level interface's standalone
+              guarantee. Deterministic POSIX publication and exact unlink require the
+              caller-held per-home InstallLock and private user-owned parent namespace
+              described in caller warnings; uncooperative same-identity or name writers
+              are outside the contract. Ordinary native file operations still use their
+              documented platform synchronization and final-state checks.
           idempotency:
             non_idempotent: Append operations add another frame when repeated.
           on_uncertain_completion:
@@ -270,7 +402,9 @@ interfaces:
               replacement, inspect the canonical destination and deterministic build
               and stage derived from staging-capability; a lone build is repairable,
               exact staged bytes resume rename, and build-plus-stage or mismatched
-              stage fails closed. For other operations,
+              stage fails closed. For deterministic publication, inspect the canonical
+              destination and the sole build derived from build-id; resume only from
+              expected-before or adopt the exact intended state. For other operations,
               read the confined file and compare its complete bytes.
           partial_effects_on_failure:
             possible: The explicit non-atomic fallback or a late durability failure
@@ -281,6 +415,10 @@ interfaces:
         verification:
         - direct_io_ref: target-file
           method: direct-io-state
+        - direct_io_ref: target-symlink
+          method: direct-io-state
+        - direct_io_ref: target-directory
+          method: direct-io-state
       helpers: []
       interaction:
         mode: unattended
@@ -289,7 +427,10 @@ interfaces:
           mutation.
         class: success
         effects:
-        - file-state
+        - byte-file-state
+        - symlink-state
+        - directory-state
+        - symlink-deletion
         id: completed
         outputs:
         - result
@@ -327,15 +468,17 @@ interfaces:
           kind: string
           sensitivity: user-private
       preconditions:
-      - caller_action: For path-based operations, pass a regular-file path beneath
-          an existing allowed root; directory-inventory operations use directory-root
-          instead.
+      - caller_action: For path-based operations, pass a canonical leaf beneath an
+          existing allowed root; byte operations accept absent, regular, or the
+          documented legacy-link case, symlink publication accepts absent or symlink,
+          directory publication accepts absent or directory, and exact unlink accepts
+          only a symlink. Directory-inventory operations use directory-root instead.
         check:
           argument_ref: path
           kind: argument
           predicate: present
-        description: path must resolve beneath allowed-root without an unsafe symlink
-          or non-regular final entry.
+        description: path must resolve beneath allowed-root without an unsafe ancestor,
+          and its leaf kind must be eligible for the selected operation before build work.
         id: confined-path
         unmet_outcome: rejected
     description: Provides atomic file operations to Python callers.

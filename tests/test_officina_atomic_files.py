@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import hashlib
 import os
 import stat
 import subprocess
@@ -27,10 +28,1242 @@ _POSIX_DESCRIPTOR_ONLY = pytest.mark.skipif(
     os.name != "posix", reason="POSIX descriptor implementation contract"
 )
 _QUARANTINE_ID = "1234567890abcdef1234567890abcdef"
+_PUBLICATION_ID = "abcdef0123456789abcdef0123456789"
 
 
 def _quarantine_path(target: Path, quarantine_id: str = _QUARANTINE_ID) -> Path:
     return target.parent / f".famulus-quarantine-{quarantine_id}"
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_atomic_publish_bytes_resumes_partial_deterministic_build(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "launcher"
+    target.write_bytes(b"old\n")
+    target.chmod(0o600)
+    build = tmp_path / f".famulus-build-{_PUBLICATION_ID}"
+    build.write_bytes(b"partial")
+
+    atomic_files.atomic_publish_bytes(
+        target,
+        b"new\n",
+        allowed_root=tmp_path,
+        mode=0o755,
+        build_id=_PUBLICATION_ID,
+        expected_before={
+            "kind": "file",
+            "mode": 0o600,
+            "size": 4,
+            "sha256": "01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee",
+        },
+    )
+
+    assert target.read_bytes() == b"new\n"
+    assert stat.S_IMODE(target.stat().st_mode) == 0o755
+    assert not build.exists()
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_atomic_publish_symlink_replaces_exact_prior_link_without_unlink_gap(
+    tmp_path: Path,
+) -> None:
+    old_source = tmp_path / "old-source"
+    new_source = tmp_path / "new-source"
+    old_source.write_text("old", encoding="utf-8")
+    new_source.write_text("new", encoding="utf-8")
+    target = tmp_path / "command"
+    target.symlink_to(old_source)
+
+    atomic_files.atomic_publish_symlink(
+        target,
+        str(new_source),
+        allowed_root=tmp_path,
+        build_id=_PUBLICATION_ID,
+        expected_before={"kind": "symlink", "target": str(old_source)},
+    )
+
+    assert os.readlink(target) == str(new_source)
+    assert not (tmp_path / f".famulus-build-{_PUBLICATION_ID}").exists()
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_atomic_publish_empty_directory_resumes_exact_build(tmp_path: Path) -> None:
+    target = tmp_path / "worker"
+    build = tmp_path / f".famulus-build-{_PUBLICATION_ID}"
+    build.mkdir(mode=0o700)
+
+    atomic_files.atomic_publish_empty_directory(
+        target,
+        allowed_root=tmp_path,
+        mode=0o700,
+        build_id=_PUBLICATION_ID,
+        expected_before={"kind": "absent"},
+    )
+
+    assert target.is_dir()
+    assert stat.S_IMODE(target.stat().st_mode) == 0o700
+    assert not build.exists()
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_atomic_unlink_exact_symlink_removes_only_expected_target(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "repo-command"
+    source.write_text("command", encoding="utf-8")
+    target = tmp_path / "legacy-command"
+    target.symlink_to(source)
+
+    atomic_files.atomic_unlink_exact_symlink(
+        target,
+        str(source),
+        allowed_root=tmp_path,
+        expected_before={"kind": "symlink", "target": str(source)},
+    )
+
+    assert not target.is_symlink()
+    assert not target.exists()
+
+
+@_POSIX_DESCRIPTOR_ONLY
+@pytest.mark.parametrize(
+    "boundary",
+    ["build-create", "partial-write", "file-fsync", "pre-replace", "post-replace", "parent-sync"],
+)
+def test_atomic_publish_bytes_child_death_is_restartable(
+    tmp_path: Path,
+    boundary: str,
+) -> None:
+    target = tmp_path / "launcher"
+    target.write_bytes(b"old\n")
+    target.chmod(0o600)
+    script = r'''
+import os
+import sys
+from pathlib import Path
+
+sys.path.insert(0, sys.argv[1])
+import officina.common.atomic_files as atomic_files
+
+target = Path(sys.argv[2])
+boundary = sys.argv[3]
+build_id = sys.argv[4]
+
+def die():
+    os._exit(73)
+
+if boundary == "build-create":
+    original = atomic_files._open_inventory_build
+    def wrapped(*args, **kwargs):
+        descriptor = original(*args, **kwargs)
+        die()
+    atomic_files._open_inventory_build = wrapped
+elif boundary == "partial-write":
+    def wrapped(descriptor, data, _path):
+        os.write(descriptor, data[:2])
+        die()
+    atomic_files._write_descriptor_bytes = wrapped
+elif boundary in {"file-fsync", "parent-sync"}:
+    original = atomic_files.os.fsync
+    calls = 0
+    def wrapped(descriptor):
+        global calls
+        original(descriptor)
+        calls += 1
+        if (boundary == "file-fsync" and calls == 1) or (
+            boundary == "parent-sync" and calls == 3
+        ):
+            die()
+    atomic_files.os.fsync = wrapped
+elif boundary in {"pre-replace", "post-replace"}:
+    original = atomic_files._secure_replace
+    def wrapped(*args, **kwargs):
+        if boundary == "pre-replace":
+            die()
+        original(*args, **kwargs)
+        die()
+    atomic_files._secure_replace = wrapped
+
+atomic_files.atomic_publish_bytes(
+    target,
+    b"new\n",
+    allowed_root=target.parent,
+    mode=0o755,
+    build_id=build_id,
+    expected_before={
+        "kind": "file",
+        "mode": 0o600,
+        "size": 4,
+        "sha256": "01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee",
+    },
+)
+'''
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            script,
+            str(Path(__file__).resolve().parents[1] / "src"),
+            str(target),
+            boundary,
+            _PUBLICATION_ID,
+        ],
+        check=False,
+    )
+
+    assert completed.returncode == 73
+    observed = target.read_bytes()
+    assert observed in {b"old\n", b"new\n"}
+    if observed == b"old\n":
+        atomic_files.atomic_publish_bytes(
+            target,
+            b"new\n",
+            allowed_root=tmp_path,
+            mode=0o755,
+            build_id=_PUBLICATION_ID,
+            expected_before={
+                "kind": "file",
+                "mode": 0o600,
+                "size": 4,
+                "sha256": hashlib.sha256(b"old\n").hexdigest(),
+            },
+        )
+    assert target.read_bytes() == b"new\n"
+    assert stat.S_IMODE(target.stat().st_mode) == 0o755
+
+
+@_POSIX_DESCRIPTOR_ONLY
+@pytest.mark.parametrize("final_mode", [0o444, 0o000])
+@pytest.mark.parametrize("boundary", ["partial-write", "pre-replace"])
+def test_atomic_publish_bytes_recovers_immutable_build_after_child_death(
+    tmp_path: Path,
+    final_mode: int,
+    boundary: str,
+) -> None:
+    """A journal-addressed build remains resumable after its final mode is set."""
+    target = tmp_path / "launcher"
+    target.write_bytes(b"old\n")
+    target.chmod(0o600)
+    build = tmp_path / f".famulus-build-{_PUBLICATION_ID}"
+    script = r'''
+import os
+import sys
+from pathlib import Path
+
+sys.path.insert(0, sys.argv[1])
+import officina.common.atomic_files as atomic_files
+
+target = Path(sys.argv[2])
+boundary = sys.argv[3]
+build_id = sys.argv[4]
+final_mode = int(sys.argv[5], 8)
+
+def die():
+    os._exit(73)
+
+if boundary == "partial-write":
+    def wrapped(descriptor, data, _path):
+        os.write(descriptor, data[:2])
+        os.fchmod(descriptor, final_mode)
+        os.fsync(descriptor)
+        die()
+    atomic_files._write_descriptor_bytes = wrapped
+else:
+    original = atomic_files._secure_replace
+    def wrapped(*args, **kwargs):
+        die()
+    atomic_files._secure_replace = wrapped
+
+atomic_files.atomic_publish_bytes(
+    target,
+    b"new\n",
+    allowed_root=target.parent,
+    mode=final_mode,
+    build_id=build_id,
+    expected_before={
+        "kind": "file",
+        "mode": 0o600,
+        "size": 4,
+        "sha256": "01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee",
+    },
+)
+'''
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            script,
+            str(Path(__file__).resolve().parents[1] / "src"),
+            str(target),
+            boundary,
+            _PUBLICATION_ID,
+            f"{final_mode:o}",
+        ],
+        check=False,
+    )
+
+    assert completed.returncode == 73
+    assert target.read_bytes() == b"old\n"
+    assert stat.S_IMODE(build.stat().st_mode) == final_mode
+
+    atomic_files.atomic_publish_bytes(
+        target,
+        b"new\n",
+        allowed_root=tmp_path,
+        mode=final_mode,
+        build_id=_PUBLICATION_ID,
+        expected_before={
+            "kind": "file",
+            "mode": 0o600,
+            "size": 4,
+            "sha256": hashlib.sha256(b"old\n").hexdigest(),
+        },
+    )
+
+    published_mode = stat.S_IMODE(target.stat().st_mode)
+    target.chmod(0o600)
+    assert target.read_bytes() == b"new\n"
+    assert published_mode == final_mode
+    assert not build.exists()
+
+
+@_POSIX_DESCRIPTOR_ONLY
+@pytest.mark.parametrize("final_mode", [0o444, 0o000])
+def test_atomic_publish_bytes_recovers_after_death_during_permission_repair(
+    tmp_path: Path,
+    final_mode: int,
+) -> None:
+    target = tmp_path / "launcher"
+    target.write_bytes(b"old\n")
+    target.chmod(0o600)
+    build = tmp_path / f".famulus-build-{_PUBLICATION_ID}"
+    build.write_bytes(b"new\n")
+    build.chmod(final_mode)
+    script = r'''
+import os
+import sys
+from pathlib import Path
+
+sys.path.insert(0, sys.argv[1])
+import officina.common.atomic_files as atomic_files
+
+target = Path(sys.argv[2])
+build_id = sys.argv[3]
+final_mode = int(sys.argv[4], 8)
+original = atomic_files.os.chmod
+
+def wrapped(*args, **kwargs):
+    original(*args, **kwargs)
+    os._exit(77)
+
+atomic_files.os.chmod = wrapped
+atomic_files.atomic_publish_bytes(
+    target,
+    b"new\n",
+    allowed_root=target.parent,
+    mode=final_mode,
+    build_id=build_id,
+    expected_before={
+        "kind": "file",
+        "mode": 0o600,
+        "size": 4,
+        "sha256": "01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee",
+    },
+)
+'''
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            script,
+            str(Path(__file__).resolve().parents[1] / "src"),
+            str(target),
+            _PUBLICATION_ID,
+            f"{final_mode:o}",
+        ],
+        check=False,
+    )
+
+    assert completed.returncode == 77
+    assert stat.S_IMODE(build.stat().st_mode) == final_mode | 0o600
+
+    atomic_files.atomic_publish_bytes(
+        target,
+        b"new\n",
+        allowed_root=tmp_path,
+        mode=final_mode,
+        build_id=_PUBLICATION_ID,
+        expected_before={
+            "kind": "file",
+            "mode": 0o600,
+            "size": 4,
+            "sha256": hashlib.sha256(b"old\n").hexdigest(),
+        },
+    )
+
+    published_mode = stat.S_IMODE(target.stat().st_mode)
+    target.chmod(0o600)
+    assert target.read_bytes() == b"new\n"
+    assert published_mode == final_mode
+    assert not build.exists()
+
+
+@_POSIX_DESCRIPTOR_ONLY
+@pytest.mark.parametrize("boundary", ["pre-replace", "post-replace"])
+def test_atomic_publish_symlink_child_death_preserves_old_or_new_target(
+    tmp_path: Path,
+    boundary: str,
+) -> None:
+    old_source = tmp_path / "old"
+    new_source = tmp_path / "new"
+    old_source.write_text("old", encoding="utf-8")
+    new_source.write_text("new", encoding="utf-8")
+    target = tmp_path / "command"
+    target.symlink_to(old_source)
+    script = r'''
+import os
+import sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+import officina.common.atomic_files as atomic_files
+target = Path(sys.argv[2])
+old_source, new_source, boundary, build_id = sys.argv[3:]
+original = atomic_files._secure_replace
+def wrapped(*args, **kwargs):
+    if boundary == "pre-replace":
+        os._exit(74)
+    original(*args, **kwargs)
+    os._exit(74)
+atomic_files._secure_replace = wrapped
+atomic_files.atomic_publish_symlink(
+    target,
+    new_source,
+    allowed_root=target.parent,
+    build_id=build_id,
+    expected_before={"kind": "symlink", "target": old_source},
+)
+'''
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            script,
+            str(Path(__file__).resolve().parents[1] / "src"),
+            str(target),
+            str(old_source),
+            str(new_source),
+            boundary,
+            _PUBLICATION_ID,
+        ],
+        check=False,
+    )
+
+    assert completed.returncode == 74
+    observed = os.readlink(target)
+    assert observed in {str(old_source), str(new_source)}
+    if observed == str(old_source):
+        atomic_files.atomic_publish_symlink(
+            target,
+            str(new_source),
+            allowed_root=tmp_path,
+            build_id=_PUBLICATION_ID,
+            expected_before={"kind": "symlink", "target": str(old_source)},
+        )
+    assert os.readlink(target) == str(new_source)
+
+
+@_POSIX_DESCRIPTOR_ONLY
+@pytest.mark.parametrize("boundary", ["build-create", "pre-rename", "post-rename"])
+def test_atomic_publish_directory_child_death_is_absent_or_exact(
+    tmp_path: Path,
+    boundary: str,
+) -> None:
+    target = tmp_path / "worker"
+    script = r'''
+import os
+import sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+import officina.common.atomic_files as atomic_files
+target = Path(sys.argv[2])
+boundary, build_id = sys.argv[3:]
+if boundary == "build-create":
+    original = atomic_files.os.mkdir
+    def wrapped(*args, **kwargs):
+        original(*args, **kwargs)
+        os._exit(75)
+    atomic_files.os.mkdir = wrapped
+else:
+    original = atomic_files._secure_rename_noreplace
+    def wrapped(*args, **kwargs):
+        if boundary == "pre-rename":
+            os._exit(75)
+        original(*args, **kwargs)
+        os._exit(75)
+    atomic_files._secure_rename_noreplace = wrapped
+atomic_files.atomic_publish_empty_directory(
+    target,
+    allowed_root=target.parent,
+    mode=0o700,
+    build_id=build_id,
+    expected_before={"kind": "absent"},
+)
+'''
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            script,
+            str(Path(__file__).resolve().parents[1] / "src"),
+            str(target),
+            boundary,
+            _PUBLICATION_ID,
+        ],
+        check=False,
+    )
+
+    assert completed.returncode == 75
+    if not target.exists():
+        atomic_files.atomic_publish_empty_directory(
+            target,
+            allowed_root=tmp_path,
+            mode=0o700,
+            build_id=_PUBLICATION_ID,
+            expected_before={"kind": "absent"},
+        )
+    assert target.is_dir()
+    assert not any(target.iterdir())
+    assert stat.S_IMODE(target.stat().st_mode) == 0o700
+
+
+@_POSIX_DESCRIPTOR_ONLY
+@pytest.mark.parametrize("build_kind", ["symlink", "directory"])
+def test_atomic_publish_bytes_rejects_nonregular_deterministic_build(
+    tmp_path: Path,
+    build_kind: str,
+) -> None:
+    target = tmp_path / "launcher"
+    target.write_bytes(b"old\n")
+    target.chmod(0o600)
+    build = tmp_path / f".famulus-build-{_PUBLICATION_ID}"
+    if build_kind == "symlink":
+        build.symlink_to(target)
+    else:
+        build.mkdir()
+
+    with pytest.raises(AtomicWriteError, match="build"):
+        atomic_files.atomic_publish_bytes(
+            target,
+            b"new\n",
+            allowed_root=tmp_path,
+            mode=0o755,
+            build_id=_PUBLICATION_ID,
+            expected_before={
+                "kind": "file",
+                "mode": 0o600,
+                "size": 4,
+                "sha256": hashlib.sha256(b"old\n").hexdigest(),
+            },
+        )
+
+    assert target.read_bytes() == b"old\n"
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_atomic_publish_bytes_rejects_hardlinked_build_before_mutating_victim(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "launcher"
+    target.write_bytes(b"old\n")
+    target.chmod(0o600)
+    victim = tmp_path / "outside-victim"
+    victim.write_bytes(b"do not change\n")
+    victim.chmod(0o444)
+    build = tmp_path / f".famulus-build-{_PUBLICATION_ID}"
+    os.link(victim, build)
+
+    with pytest.raises(AtomicWriteError, match="hard link"):
+        atomic_files.atomic_publish_bytes(
+            target,
+            b"new\n",
+            allowed_root=tmp_path,
+            mode=0o755,
+            build_id=_PUBLICATION_ID,
+            expected_before={
+                "kind": "file",
+                "mode": 0o600,
+                "size": 4,
+                "sha256": hashlib.sha256(b"old\n").hexdigest(),
+            },
+        )
+
+    assert stat.S_IMODE(victim.stat().st_mode) == 0o444
+    assert victim.read_bytes() == b"do not change\n"
+    assert build.read_bytes() == b"do not change\n"
+    assert target.read_bytes() == b"old\n"
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_atomic_publish_directory_normalizes_build_mode_independent_of_umask(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "worker"
+    previous = os.umask(0o077)
+    try:
+        atomic_files.atomic_publish_empty_directory(
+            target,
+            allowed_root=tmp_path,
+            mode=0o755,
+            build_id=_PUBLICATION_ID,
+            expected_before={"kind": "absent"},
+        )
+    finally:
+        os.umask(previous)
+
+    assert stat.S_IMODE(target.stat().st_mode) == 0o755
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_atomic_publish_directory_existing_exact_directory_is_zero_effect(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "worker"
+    target.mkdir(mode=0o700)
+    before = target.stat()
+    build = tmp_path / f".famulus-build-{_PUBLICATION_ID}"
+
+    atomic_files.atomic_publish_empty_directory(
+        target,
+        allowed_root=tmp_path,
+        mode=0o700,
+        build_id=_PUBLICATION_ID,
+        expected_before={"kind": "directory", "mode": 0o700},
+    )
+
+    after = target.stat()
+    assert (after.st_dev, after.st_ino, stat.S_IMODE(after.st_mode)) == (
+        before.st_dev,
+        before.st_ino,
+        0o700,
+    )
+    assert not build.exists()
+
+
+@_POSIX_DESCRIPTOR_ONLY
+@pytest.mark.parametrize(
+    ("operation", "expected_before"),
+    [
+        ("bytes", {"kind": "directory", "mode": 0o700}),
+        ("bytes", {"kind": "other", "mode": 0o600}),
+        ("symlink", {"kind": "file", "mode": 0o600, "size": 0, "sha256": hashlib.sha256(b"").hexdigest()}),
+        ("symlink", {"kind": "directory", "mode": 0o700}),
+        ("directory", {"kind": "file", "mode": 0o600, "size": 0, "sha256": hashlib.sha256(b"").hexdigest()}),
+        ("directory", {"kind": "other", "mode": 0o600}),
+        ("unlink", {"kind": "absent"}),
+        ("unlink", {"kind": "file", "mode": 0o600, "size": 0, "sha256": hashlib.sha256(b"").hexdigest()}),
+    ],
+)
+def test_publication_rejects_ineligible_expected_kind_before_build_effect(
+    tmp_path: Path,
+    operation: str,
+    expected_before: dict[str, object],
+) -> None:
+    target = tmp_path / "target"
+    build = tmp_path / f".famulus-build-{_PUBLICATION_ID}"
+
+    with pytest.raises((AtomicWriteError, ValueError), match="expected_before"):
+        if operation == "bytes":
+            atomic_files.atomic_publish_bytes(
+                target,
+                b"new",
+                allowed_root=tmp_path,
+                mode=0o600,
+                build_id=_PUBLICATION_ID,
+                expected_before=expected_before,
+            )
+        elif operation == "symlink":
+            atomic_files.atomic_publish_symlink(
+                target,
+                "source",
+                allowed_root=tmp_path,
+                build_id=_PUBLICATION_ID,
+                expected_before=expected_before,
+            )
+        elif operation == "directory":
+            atomic_files.atomic_publish_empty_directory(
+                target,
+                allowed_root=tmp_path,
+                mode=0o700,
+                build_id=_PUBLICATION_ID,
+                expected_before=expected_before,
+            )
+        else:
+            atomic_files.atomic_unlink_exact_symlink(
+                target,
+                "source",
+                allowed_root=tmp_path,
+                expected_before=expected_before,
+            )
+
+    assert not build.exists()
+    assert not target.exists()
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_atomic_publish_bytes_refuses_changed_target_before_replace(tmp_path: Path) -> None:
+    target = tmp_path / "launcher"
+    target.write_bytes(b"third\n")
+    target.chmod(0o600)
+
+    with pytest.raises(AtomicWriteError, match="expected state"):
+        atomic_files.atomic_publish_bytes(
+            target,
+            b"new\n",
+            allowed_root=tmp_path,
+            mode=0o755,
+            build_id=_PUBLICATION_ID,
+            expected_before={
+                "kind": "file",
+                "mode": 0o600,
+                "size": 4,
+                "sha256": hashlib.sha256(b"old\n").hexdigest(),
+            },
+        )
+
+    assert target.read_bytes() == b"third\n"
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_atomic_publish_symlink_rejects_wrong_deterministic_build(tmp_path: Path) -> None:
+    old_source = tmp_path / "old"
+    new_source = tmp_path / "new"
+    wrong_source = tmp_path / "wrong"
+    target = tmp_path / "command"
+    target.symlink_to(old_source)
+    build = tmp_path / f".famulus-build-{_PUBLICATION_ID}"
+    build.symlink_to(wrong_source)
+
+    with pytest.raises(AtomicWriteError, match="wrong target"):
+        atomic_files.atomic_publish_symlink(
+            target,
+            str(new_source),
+            allowed_root=tmp_path,
+            build_id=_PUBLICATION_ID,
+            expected_before={"kind": "symlink", "target": str(old_source)},
+        )
+
+    assert os.readlink(target) == str(old_source)
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_atomic_publish_directory_rejects_nonempty_build_and_missing_parent(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "worker"
+    build = tmp_path / f".famulus-build-{_PUBLICATION_ID}"
+    build.mkdir(mode=0o700)
+    (build / "payload").write_text("unexpected", encoding="utf-8")
+
+    with pytest.raises(AtomicWriteError, match="not empty"):
+        atomic_files.atomic_publish_empty_directory(
+            target,
+            allowed_root=tmp_path,
+            mode=0o700,
+            build_id=_PUBLICATION_ID,
+            expected_before={"kind": "absent"},
+        )
+    with pytest.raises(AtomicWriteError):
+        atomic_files.atomic_publish_empty_directory(
+            tmp_path / "missing-parent" / "worker",
+            allowed_root=tmp_path,
+            mode=0o700,
+            build_id="0" * 32,
+            expected_before={"kind": "absent"},
+        )
+
+    assert not (tmp_path / "missing-parent").exists()
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_atomic_unlink_exact_symlink_refuses_changed_lexical_target(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "legacy"
+    target.symlink_to(tmp_path / "user-target")
+
+    with pytest.raises(AtomicWriteError, match="expected target"):
+        atomic_files.atomic_unlink_exact_symlink(
+            target,
+            str(tmp_path / "owned-target"),
+            allowed_root=tmp_path,
+            expected_before={
+                "kind": "symlink",
+                "target": str(tmp_path / "owned-target"),
+            },
+        )
+
+    assert target.is_symlink()
+
+
+@_POSIX_DESCRIPTOR_ONLY
+def test_read_regular_file_bytes_bounded_enforces_cap_before_return(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    source.write_bytes(b"12345")
+
+    assert atomic_files.read_regular_file_bytes_bounded(
+        source, allowed_root=tmp_path, maximum_bytes=5
+    ) == b"12345"
+    with pytest.raises(AtomicWriteError, match="byte bound"):
+        atomic_files.read_regular_file_bytes_bounded(
+            source, allowed_root=tmp_path, maximum_bytes=4
+        )
+
+
+def test_windows_atomic_publish_bytes_revalidates_before_native_rename(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    expected = {"kind": "absent"}
+    monkeypatch.setattr(atomic_files, "_windows_open_parent", lambda *_args: ([10], ("target",)))
+    monkeypatch.setattr(atomic_files, "_windows_verify_parent_chain", lambda *_args: events.append("parent"))
+    monkeypatch.setattr(atomic_files, "_windows_inventory_private_entry_present", lambda *_args: False)
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_open_rewritten_selector_build",
+        lambda *_args, **_kwargs: (20, "lock"),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_set_supported_mode", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(atomic_files, "_windows_verify_supported_mode", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_publication_file_state",
+        lambda *_args, **_kwargs: (events.append("observe") or expected),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_verify_named_handle", lambda *_args: events.append("named"))
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_rename_handle",
+        lambda *_args, **_kwargs: (events.append("rename") or True),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_flush_handle", lambda *_args: events.append("flush"))
+    monkeypatch.setattr(atomic_files, "_windows_read_handle_bounded", lambda *_args: b"data")
+    monkeypatch.setattr(atomic_files, "_windows_unlock_handle", lambda *_args: events.append("unlock"))
+    monkeypatch.setattr(atomic_files, "_windows_close_handle", lambda *_args: events.append("close"))
+    monkeypatch.setattr(atomic_files, "_windows_close_chain", lambda *_args: events.append("close-chain"))
+
+    atomic_files._windows_atomic_publish_bytes(
+        tmp_path / "target",
+        b"data",
+        allowed_root=tmp_path,
+        mode=0o644,
+        build_id=_PUBLICATION_ID,
+        expected_before=expected,
+    )
+
+    assert events.index("observe") < events.index("rename")
+    assert events[-3:] == ["unlock", "close", "close-chain"]
+
+
+def test_windows_selector_build_requests_write_attributes_access(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requested_access: list[int] = []
+    lock = object()
+
+    def open_validated(*_args: object, **kwargs: object) -> tuple[int, int]:
+        requested_access.append(int(kwargs["access"]))
+        return 20, 1
+
+    monkeypatch.setattr(atomic_files, "_windows_open_validated", open_validated)
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_security_material",
+        lambda: (None, None, None, None),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_lock_handle", lambda _handle: lock)
+    monkeypatch.setattr(atomic_files, "_windows_require_restrictive_acl", lambda *_args: None)
+    monkeypatch.setattr(atomic_files, "_windows_truncate_handle", lambda _handle: None)
+    monkeypatch.setattr(atomic_files, "_windows_write_handle", lambda *_args: None)
+    monkeypatch.setattr(atomic_files, "_windows_flush_handle", lambda _handle: None)
+    monkeypatch.setattr(atomic_files, "_windows_read_handle_bounded", lambda *_args: b"data")
+    monkeypatch.setattr(atomic_files, "_windows_verify_named_handle", lambda *_args: None)
+
+    handle, retained_lock = atomic_files._windows_open_rewritten_selector_build(
+        10,
+        ".famulus-build-" + _PUBLICATION_ID,
+        b"data",
+        create=True,
+        after_created=lambda: None,
+    )
+
+    assert (handle, retained_lock) == (20, lock)
+    assert len(requested_access) == 1
+    assert requested_access[0] & 0x100
+
+
+def test_windows_atomic_publish_bytes_refuses_third_state_before_rename(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    renamed = False
+    monkeypatch.setattr(atomic_files, "_windows_open_parent", lambda *_args: ([10], ("target",)))
+    monkeypatch.setattr(atomic_files, "_windows_verify_parent_chain", lambda *_args: None)
+    monkeypatch.setattr(atomic_files, "_windows_inventory_private_entry_present", lambda *_args: False)
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_open_rewritten_selector_build",
+        lambda *_args, **_kwargs: (20, "lock"),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_set_supported_mode", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_publication_file_state",
+        lambda *_args, **_kwargs: {"kind": "file", "mode": 0o644, "size": 5, "sha256": "0" * 64},
+    )
+    monkeypatch.setattr(atomic_files, "_windows_unlock_handle", lambda *_args: None)
+    monkeypatch.setattr(atomic_files, "_windows_close_handle", lambda *_args: None)
+    monkeypatch.setattr(atomic_files, "_windows_close_chain", lambda *_args: None)
+
+    def rename(*_args, **_kwargs):
+        nonlocal renamed
+        renamed = True
+        return True
+
+    monkeypatch.setattr(atomic_files, "_windows_rename_handle", rename)
+
+    with pytest.raises(AtomicWriteError, match="expected state"):
+        atomic_files._windows_atomic_publish_bytes(
+            tmp_path / "target",
+            b"data",
+            allowed_root=tmp_path,
+            mode=0o644,
+            build_id=_PUBLICATION_ID,
+            expected_before={"kind": "absent"},
+        )
+
+    assert renamed is False
+
+
+def test_windows_atomic_publish_directory_uses_no_replace_after_absence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    opens = 0
+    monkeypatch.setattr(atomic_files, "_windows_open_parent", lambda *_args: ([10], ("target",)))
+    monkeypatch.setattr(atomic_files, "_windows_verify_parent_chain", lambda *_args: events.append("parent"))
+
+    def open_validated(*_args, **kwargs):
+        nonlocal opens
+        opens += 1
+        if opens in {1, 2}:
+            assert kwargs["access"] & 0x100
+        if opens in {1, 3}:
+            raise FileNotFoundError
+        assert kwargs["directory"] is True
+        return 20, 1
+
+    monkeypatch.setattr(atomic_files, "_windows_open_validated", open_validated)
+    monkeypatch.setattr(atomic_files, "_windows_security_material", lambda: (None, None, None, None))
+    monkeypatch.setattr(atomic_files, "_windows_directory_entry_names", lambda *_args, **_kwargs: ())
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_set_supported_mode",
+        lambda handle, mode, **kwargs: events.append(
+            f"mode:{handle}:{mode}:{kwargs['directory']}"
+        ),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_verify_supported_mode",
+        lambda handle, mode, **kwargs: events.append(
+            f"verify-mode:{handle}:{mode}:{kwargs['directory']}"
+        ),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_verify_named_directory_handle",
+        lambda *_args: events.append("named-directory"),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_rename_handle",
+        lambda *_args, **kwargs: (
+            events.append(f"rename:{kwargs['replace']}") or True
+        ),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_flush_handle", lambda *_args: events.append("flush"))
+    monkeypatch.setattr(atomic_files, "_windows_close_handle", lambda *_args: events.append("close"))
+    monkeypatch.setattr(atomic_files, "_windows_close_chain", lambda *_args: events.append("close-chain"))
+
+    atomic_files._windows_atomic_publish_empty_directory(
+        tmp_path / "target",
+        allowed_root=tmp_path,
+        mode=0o700,
+        build_id=_PUBLICATION_ID,
+        expected_before={"kind": "absent"},
+    )
+
+    assert "named-directory" in events
+    assert events.index("mode:20:448:True") < events.index("rename:False")
+    assert "verify-mode:20:448:True" in events
+    assert "rename:False" in events
+    assert events[-2:] == ["close", "close-chain"]
+
+
+def test_windows_mode_policy_is_closed_and_precomputable() -> None:
+    assert atomic_files._normalized_publication_mode(
+        0o755, directory=False, windows=True
+    ) == 0o666
+    assert atomic_files._normalized_publication_mode(
+        0o444, directory=False, windows=True
+    ) == 0o444
+    assert atomic_files._normalized_publication_mode(
+        0o700, directory=True, windows=True
+    ) == 0o777
+    assert atomic_files._normalized_publication_mode(
+        0o555, directory=True, windows=True
+    ) == 0o555
+    assert atomic_files._normalized_publication_mode(
+        0o751, directory=False, windows=False
+    ) == 0o751
+
+
+def test_windows_atomic_publish_bytes_enforces_supported_mode_before_rename(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    events: list[str] = []
+    monkeypatch.setattr(atomic_files, "_windows_open_parent", lambda *_args: ([10], ("target",)))
+    monkeypatch.setattr(atomic_files, "_windows_verify_parent_chain", lambda *_args: None)
+    monkeypatch.setattr(atomic_files, "_windows_inventory_private_entry_present", lambda *_args: False)
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_open_rewritten_selector_build",
+        lambda *_args, **_kwargs: (20, "lock"),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_set_supported_mode",
+        lambda handle, mode, **kwargs: events.append(
+            f"mode:{handle}:{mode}:{kwargs['directory']}"
+        ),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_publication_file_state",
+        lambda *_args, **_kwargs: {"kind": "absent"},
+    )
+    monkeypatch.setattr(atomic_files, "_windows_verify_named_handle", lambda *_args: None)
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_rename_handle",
+        lambda *_args, **_kwargs: (events.append("rename") or True),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_flush_handle", lambda *_args: None)
+    monkeypatch.setattr(atomic_files, "_windows_read_handle_bounded", lambda *_args: b"data")
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_verify_supported_mode",
+        lambda handle, mode, **kwargs: events.append(
+            f"verify-mode:{handle}:{mode}:{kwargs['directory']}"
+        ),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_unlock_handle", lambda *_args: None)
+    monkeypatch.setattr(atomic_files, "_windows_close_handle", lambda *_args: None)
+    monkeypatch.setattr(atomic_files, "_windows_close_chain", lambda *_args: None)
+
+    atomic_files._windows_atomic_publish_bytes(
+        tmp_path / "target",
+        b"data",
+        allowed_root=tmp_path,
+        mode=0o666,
+        build_id=_PUBLICATION_ID,
+        expected_before={"kind": "absent"},
+    )
+
+    assert events.index("mode:20:438:False") < events.index("rename")
+    assert events[-1] == "verify-mode:20:438:False"
+
+
+def test_windows_atomic_publish_bytes_replaces_exact_retained_legacy_symlink(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    events: list[str] = []
+    monkeypatch.setattr(atomic_files, "_windows_open_parent", lambda *_args: ([10], ("target",)))
+    monkeypatch.setattr(atomic_files, "_windows_verify_parent_chain", lambda *_args: events.append("parent"))
+    monkeypatch.setattr(atomic_files, "_windows_inventory_private_entry_present", lambda *_args: False)
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_open_rewritten_selector_build",
+        lambda *_args, **_kwargs: (20, "lock"),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_set_supported_mode", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_publication_file_state",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("legacy symlink must not use the regular-file observer")
+        ),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_open_reparse_point",
+        lambda *_args, **_kwargs: (events.append("open-symlink") or 30),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_read_symlink_target",
+        lambda _handle: (events.append("read-target") or "legacy-target"),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_verify_named_reparse_handle",
+        lambda *_args: events.append("named-symlink"),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_verify_named_handle", lambda *_args: events.append("named-build"))
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_rename_handle",
+        lambda *_args, **_kwargs: (events.append("rename") or True),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_flush_handle", lambda *_args: None)
+    monkeypatch.setattr(atomic_files, "_windows_read_handle_bounded", lambda *_args: b"data")
+    monkeypatch.setattr(atomic_files, "_windows_verify_supported_mode", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(atomic_files, "_windows_unlock_handle", lambda *_args: events.append("unlock"))
+    monkeypatch.setattr(atomic_files, "_windows_close_handle", lambda handle: events.append(f"close:{handle}"))
+    monkeypatch.setattr(atomic_files, "_windows_close_chain", lambda *_args: events.append("close-chain"))
+
+    atomic_files._windows_atomic_publish_bytes(
+        tmp_path / "target",
+        b"data",
+        allowed_root=tmp_path,
+        mode=0o644,
+        build_id=_PUBLICATION_ID,
+        expected_before={"kind": "symlink", "target": "legacy-target"},
+    )
+
+    assert events.count("open-symlink") == 1
+    assert events.count("read-target") == 2
+    assert events.count("named-symlink") == 2
+    rename_index = events.index("rename")
+    assert events[rename_index - 2 : rename_index + 1] == [
+        "read-target",
+        "named-symlink",
+        "rename",
+    ]
+    assert events[-4:] == ["unlock", "close:20", "close:30", "close-chain"]
+
+
+def test_windows_atomic_publish_symlink_retains_and_revalidates_exact_build(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    events: list[str] = []
+    monkeypatch.setattr(atomic_files, "_windows_open_parent", lambda *_args: ([10], ("target",)))
+    monkeypatch.setattr(atomic_files, "_windows_verify_parent_chain", lambda *_args: events.append("parent"))
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_open_or_create_symlink_build",
+        lambda *_args, **_kwargs: (events.append("build") or 20),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_read_symlink_target",
+        lambda _handle: (events.append("read-target") or "source"),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_publication_state",
+        lambda *_args, **_kwargs: (events.append("observe") or {"kind": "absent"}),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_verify_named_reparse_handle",
+        lambda *_args: events.append("named"),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_rename_handle",
+        lambda *_args, **_kwargs: (events.append("rename") or True),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_flush_handle", lambda *_args: events.append("flush"))
+    monkeypatch.setattr(atomic_files, "_windows_close_handle", lambda *_args: events.append("close"))
+    monkeypatch.setattr(atomic_files, "_windows_close_chain", lambda *_args: events.append("close-chain"))
+
+    atomic_files._windows_atomic_publish_symlink(
+        tmp_path / "target",
+        "source",
+        allowed_root=tmp_path,
+        build_id=_PUBLICATION_ID,
+        expected_before={"kind": "absent"},
+    )
+
+    assert events.index("observe") < events.index("named") < events.index("rename")
+    assert events[-2:] == ["close", "close-chain"]
+
+
+def test_windows_exact_symlink_unlink_marks_retained_handle_then_proves_absence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    events: list[str] = []
+    probes = iter([20, FileNotFoundError()])
+    monkeypatch.setattr(atomic_files, "_windows_open_parent", lambda *_args: ([10], ("target",)))
+    monkeypatch.setattr(atomic_files, "_windows_verify_parent_chain", lambda *_args: events.append("parent"))
+
+    def open_reparse(*_args, **_kwargs):
+        selected = next(probes)
+        if isinstance(selected, BaseException):
+            raise selected
+        return selected
+
+    monkeypatch.setattr(atomic_files, "_windows_open_reparse_point", open_reparse)
+    monkeypatch.setattr(atomic_files, "_windows_read_symlink_target", lambda _handle: "source")
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_verify_named_reparse_handle",
+        lambda *_args: events.append("named"),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_mark_delete", lambda *_args: events.append("delete"))
+    monkeypatch.setattr(atomic_files, "_windows_close_handle", lambda *_args: events.append("close"))
+    monkeypatch.setattr(atomic_files, "_windows_close_chain", lambda *_args: events.append("close-chain"))
+
+    atomic_files._windows_atomic_unlink_exact_symlink(
+        tmp_path / "target",
+        "source",
+        allowed_root=tmp_path,
+        expected_before={"kind": "symlink", "target": "source"},
+    )
+
+    assert events.index("named") < events.index("delete") < events.index("close")
+    assert events[-1] == "close-chain"
+
+
+def test_windows_symlink_capability_failure_is_typed_and_closes_authority(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    closed: list[str] = []
+    monkeypatch.setattr(atomic_files, "_windows_open_parent", lambda *_args: ([10], ("target",)))
+    monkeypatch.setattr(atomic_files, "_windows_verify_parent_chain", lambda *_args: None)
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_open_or_create_symlink_build",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AtomicWriteError(atomic_files._CAPABILITY_ERROR)
+        ),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_close_chain", lambda *_args: closed.append("parents"))
+
+    with pytest.raises(AtomicWriteError, match="unavailable"):
+        atomic_files._windows_atomic_publish_symlink(
+            tmp_path / "target",
+            "source",
+            allowed_root=tmp_path,
+            build_id=_PUBLICATION_ID,
+            expected_before={"kind": "absent"},
+        )
+
+    assert closed == ["parents"]
 
 
 def _force_atomic_capability_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -693,7 +1926,7 @@ def test_windows_selector_transaction_discards_known_private_state(
     ]
 
 
-@pytest.mark.parametrize(("create", "disposition"), [(True, 2), (False, 1)])
+@pytest.mark.parametrize(("create", "disposition"), [(True, 2)])
 def test_windows_selector_build_open_rewrites_and_proves_exact_bytes(
     monkeypatch: pytest.MonkeyPatch,
     create: bool,
@@ -729,6 +1962,332 @@ def test_windows_selector_build_open_rewrites_and_proves_exact_bytes(
     expected = ["open"] + (["created"] if create else [])
     expected += ["lock", "acl", "truncate", "write", "flush", "read", "verify"]
     assert events == expected
+
+
+def test_windows_existing_selector_build_repairs_readonly_after_validation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    accesses: list[int] = []
+    reads = iter([b"partial", b"partial", b"intended"])
+    attributes = iter([(0x1, 0), (0, 0)])
+
+    def open_validated(*_args: object, **kwargs: object) -> tuple[int, int]:
+        accesses.append(int(kwargs["access"]))
+        handle = 31 if len(accesses) == 1 else 32
+        events.append(f"open:{handle}")
+        return handle, 0
+
+    monkeypatch.setattr(atomic_files, "_windows_open_validated", open_validated)
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_confined_identity",
+        lambda handle: events.append(f"identity:{handle}") or "same-identity",
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_attribute_tag",
+        lambda handle: events.append(f"attributes:{handle}") or next(attributes),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_link_count",
+        lambda handle: events.append(f"links:{handle}") or 1,
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_read_handle_bounded",
+        lambda handle, _maximum: events.append(f"read:{handle}") or next(reads),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_verify_named_handle",
+        lambda _root, _name, handle: events.append(f"named:{handle}"),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_require_restrictive_acl",
+        lambda handle, _name: events.append(f"acl:{handle}"),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_set_supported_mode",
+        lambda handle, mode, **_kwargs: events.append(f"mode:{handle}:{mode:o}"),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_close_handle",
+        lambda handle: events.append(f"close:{handle}"),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_lock_handle",
+        lambda handle: events.append(f"lock:{handle}") or object(),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_truncate_handle",
+        lambda handle: events.append(f"truncate:{handle}"),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_write_handle",
+        lambda handle, _data: events.append(f"write:{handle}"),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_flush_handle",
+        lambda handle: events.append(f"flush:{handle}"),
+    )
+
+    handle, _lock = atomic_files._windows_open_rewritten_selector_build(
+        10,
+        ".famulus-build-" + "8" * 32,
+        b"intended",
+        create=False,
+        after_created=lambda: events.append("created"),
+    )
+
+    assert handle == 32
+    assert accesses[0] & 0x100
+    assert accesses[0] & (0x2 | 0x4) == 0
+    assert accesses[1] & 0x2
+    assert events.index("attributes:31") < events.index("mode:31:666")
+    assert events.index("links:31") < events.index("mode:31:666")
+    assert events.index("acl:31") < events.index("mode:31:666")
+    assert events.index("read:31") < events.index("mode:31:666")
+    assert events.index("named:31") < events.index("mode:31:666")
+    assert events.index("mode:31:666") < events.index("close:31")
+    assert events.index("close:31") < events.index("open:32")
+    assert events.index("identity:32") < events.index("truncate:32")
+    assert events.index("attributes:32") < events.index("truncate:32")
+    assert events.index("links:32") < events.index("truncate:32")
+    assert events.index("read:32") < events.index("truncate:32")
+    assert events.index("named:32") < events.index("truncate:32")
+
+
+def test_windows_existing_selector_build_rejects_hardlink_before_readonly_clear(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    opens = iter([31, 32])
+    reads = iter([b"partial", b"partial", b"intended"])
+    attributes = iter([(0x1, 0), (0, 0)])
+
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_open_validated",
+        lambda *_args, **_kwargs: (next(opens), 0),
+    )
+    monkeypatch.setattr(
+        atomic_files, "_windows_confined_identity", lambda _handle: "same-identity"
+    )
+    monkeypatch.setattr(
+        atomic_files, "_windows_attribute_tag", lambda _handle: next(attributes)
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_link_count",
+        lambda handle: events.append(f"links:{handle}") or 2,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_read_handle_bounded",
+        lambda _handle, _maximum: next(reads),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_verify_named_handle", lambda *_args: None)
+    monkeypatch.setattr(atomic_files, "_windows_require_restrictive_acl", lambda *_args: None)
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_set_supported_mode",
+        lambda *_args, **_kwargs: events.append("mode"),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_close_handle",
+        lambda handle: events.append(f"close:{handle}"),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_lock_handle", lambda _handle: object())
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_truncate_handle",
+        lambda _handle: events.append("truncate"),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_write_handle", lambda *_args: None)
+    monkeypatch.setattr(atomic_files, "_windows_flush_handle", lambda *_args: None)
+
+    with pytest.raises(AtomicWriteError, match="hard-linked"):
+        atomic_files._windows_open_rewritten_selector_build(
+            10,
+            ".famulus-build-" + "8" * 32,
+            b"intended",
+            create=False,
+            after_created=lambda: None,
+        )
+
+    assert "mode" not in events
+    assert "truncate" not in events
+    assert "close:31" in events
+
+
+def test_windows_existing_selector_build_rechecks_hardlink_immediately_before_readonly_clear(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    links = iter([1, 2])
+
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_open_validated",
+        lambda *_args, **_kwargs: (31, 0),
+    )
+    monkeypatch.setattr(
+        atomic_files, "_windows_confined_identity", lambda _handle: "same-identity"
+    )
+    monkeypatch.setattr(
+        atomic_files, "_windows_attribute_tag", lambda _handle: (0x1, 0)
+    )
+    monkeypatch.setattr(atomic_files, "_windows_link_count", lambda _handle: next(links))
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_read_handle_bounded",
+        lambda _handle, _maximum: b"partial",
+    )
+    monkeypatch.setattr(atomic_files, "_windows_verify_named_handle", lambda *_args: None)
+    monkeypatch.setattr(atomic_files, "_windows_require_restrictive_acl", lambda *_args: None)
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_set_supported_mode",
+        lambda *_args, **_kwargs: events.append("mode"),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_close_handle", lambda *_args: None)
+    monkeypatch.setattr(atomic_files, "_windows_lock_handle", lambda _handle: object())
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_truncate_handle",
+        lambda _handle: events.append("truncate"),
+    )
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_write_handle",
+        lambda *_args: events.append("write"),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_unlock_handle", lambda *_args: None)
+
+    with pytest.raises(AtomicWriteError, match="hard-linked"):
+        atomic_files._windows_open_rewritten_selector_build(
+            10,
+            ".famulus-build-" + "8" * 32,
+            b"intended",
+            create=False,
+            after_created=lambda: None,
+        )
+
+    assert "mode" not in events
+    assert "truncate" not in events
+    assert "write" not in events
+
+
+def test_windows_existing_selector_build_rechecks_hardlink_before_truncate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    opens = iter([31, 32])
+    links = iter([1, 1, 2])
+    reads = iter([b"partial", b"partial"])
+
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_open_validated",
+        lambda *_args, **_kwargs: (next(opens), 0),
+    )
+    monkeypatch.setattr(
+        atomic_files, "_windows_confined_identity", lambda _handle: "same-identity"
+    )
+    monkeypatch.setattr(atomic_files, "_windows_attribute_tag", lambda _handle: (0, 0))
+    monkeypatch.setattr(atomic_files, "_windows_link_count", lambda _handle: next(links))
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_read_handle_bounded",
+        lambda _handle, _maximum: next(reads),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_verify_named_handle", lambda *_args: None)
+    monkeypatch.setattr(atomic_files, "_windows_require_restrictive_acl", lambda *_args: None)
+    monkeypatch.setattr(atomic_files, "_windows_close_handle", lambda *_args: None)
+    monkeypatch.setattr(atomic_files, "_windows_lock_handle", lambda _handle: object())
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_truncate_handle",
+        lambda _handle: events.append("truncate"),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_unlock_handle", lambda *_args: None)
+
+    with pytest.raises(AtomicWriteError, match="hard-linked"):
+        atomic_files._windows_open_rewritten_selector_build(
+            10,
+            ".famulus-build-" + "8" * 32,
+            b"intended",
+            create=False,
+            after_created=lambda: None,
+        )
+
+    assert "truncate" not in events
+
+
+def test_windows_existing_selector_build_reopen_identity_change_is_typed_and_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    identities = iter(["first", "replacement"])
+
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_open_validated",
+        lambda *_args, **_kwargs: (31, 0)
+        if "open:inspection" not in events
+        else (32, 0),
+    )
+
+    def identity(_handle: int) -> str:
+        value = next(identities)
+        events.append(f"identity:{value}")
+        if value == "first":
+            events.append("open:inspection")
+        return value
+
+    monkeypatch.setattr(atomic_files, "_windows_confined_identity", identity)
+    monkeypatch.setattr(atomic_files, "_windows_attribute_tag", lambda _handle: (0x1, 0))
+    monkeypatch.setattr(atomic_files, "_windows_link_count", lambda _handle: 1)
+    monkeypatch.setattr(atomic_files, "_windows_read_handle_bounded", lambda *_args: b"partial")
+    monkeypatch.setattr(atomic_files, "_windows_verify_named_handle", lambda *_args: None)
+    monkeypatch.setattr(atomic_files, "_windows_require_restrictive_acl", lambda *_args: None)
+    monkeypatch.setattr(atomic_files, "_windows_set_supported_mode", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_close_handle",
+        lambda handle: events.append(f"close:{handle}"),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_lock_handle", lambda _handle: object())
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_truncate_handle",
+        lambda _handle: events.append("truncate"),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_unlock_handle", lambda *_args: None)
+
+    with pytest.raises(AtomicWriteError, match="changed before rewrite"):
+        atomic_files._windows_open_rewritten_selector_build(
+            10,
+            ".famulus-build-" + "8" * 32,
+            b"intended",
+            create=False,
+            after_created=lambda: None,
+        )
+
+    assert "truncate" not in events
+    assert "close:31" in events
+    assert "close:32" in events
 
 
 def test_windows_selector_build_records_created_name_before_rewrite_failure(
@@ -3408,6 +4967,161 @@ def test_windows_native_secure_create_replace_append_and_acl(tmp_path: Path) -> 
     atomic_replace_bytes(target, b"replacement\n", allowed_root=tmp_path, mode=0o600)
     assert target.read_bytes() == b"replacement\n"
     assert _windows_native_acl_is_restrictive(target, tmp_path)
+
+
+# famulus-skip: category=platform-contract; reason=requires native Win32 file-attribute mutation; alternate=the access-mask and normalization contracts run on every host
+@pytest.mark.skipif(sys.platform != "win32", reason="native Windows contract")
+def test_windows_native_publication_applies_supported_file_and_directory_modes(
+    tmp_path: Path,
+) -> None:
+    published_file = tmp_path / "launcher"
+    published_directory = tmp_path / "runtime"
+
+    atomic_files.atomic_publish_bytes(
+        published_file,
+        b"launcher\n",
+        allowed_root=tmp_path,
+        mode=0o444,
+        build_id="1" * 32,
+        expected_before={"kind": "absent"},
+    )
+    atomic_files.atomic_publish_empty_directory(
+        published_directory,
+        allowed_root=tmp_path,
+        mode=0o555,
+        build_id="2" * 32,
+        expected_before={"kind": "absent"},
+    )
+
+    file_parents, file_parts = atomic_files._windows_open_parent(
+        published_file, tmp_path
+    )
+    try:
+        assert atomic_files._windows_publication_state(
+            file_parents, file_parts, expected_file_size=len(b"launcher\n")
+        )["mode"] == 0o444
+    finally:
+        atomic_files._windows_close_chain(file_parents)
+    directory_parents, directory_parts = atomic_files._windows_open_parent(
+        published_directory, tmp_path
+    )
+    try:
+        assert atomic_files._windows_publication_state(
+            directory_parents, directory_parts
+        )["mode"] == 0o555
+    finally:
+        atomic_files._windows_close_chain(directory_parents)
+
+
+# famulus-skip: category=platform-contract; reason=requires native process death while a READONLY deterministic build is retained; alternate=host-neutral access-mask, state-order, identity, and cleanup contracts run on every host
+@pytest.mark.skipif(sys.platform != "win32", reason="native Windows contract")
+@pytest.mark.parametrize("requested_mode", [0o444, 0o000])
+def test_windows_native_byte_publication_recovers_readonly_build_after_child_death(
+    tmp_path: Path,
+    requested_mode: int,
+) -> None:
+    target = tmp_path / "launcher"
+    target.write_bytes(b"old\n")
+    build = tmp_path / f".famulus-build-{_PUBLICATION_ID}"
+    script = r'''
+import os
+import sys
+from pathlib import Path
+
+sys.path.insert(0, sys.argv[1])
+import officina.common.atomic_files as atomic_files
+
+target = Path(sys.argv[2])
+build_id = sys.argv[3]
+requested_mode = int(sys.argv[4], 8)
+
+def die(*_args, **_kwargs):
+    os._exit(76)
+
+atomic_files._windows_rename_handle = die
+atomic_files.atomic_publish_bytes(
+    target,
+    b"new\n",
+    allowed_root=target.parent,
+    mode=requested_mode,
+    build_id=build_id,
+    expected_before={
+        "kind": "file",
+        "mode": 0o666,
+        "size": 4,
+        "sha256": "01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee",
+    },
+)
+'''
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            script,
+            str(Path(__file__).resolve().parents[1] / "src"),
+            str(target),
+            _PUBLICATION_ID,
+            f"{requested_mode:o}",
+        ],
+        check=False,
+    )
+
+    assert completed.returncode == 76
+    assert target.read_bytes() == b"old\n"
+    assert build.exists()
+
+    atomic_files.atomic_publish_bytes(
+        target,
+        b"new\n",
+        allowed_root=tmp_path,
+        mode=requested_mode,
+        build_id=_PUBLICATION_ID,
+        expected_before={
+            "kind": "file",
+            "mode": 0o666,
+            "size": 4,
+            "sha256": hashlib.sha256(b"old\n").hexdigest(),
+        },
+    )
+
+    parents, parts = atomic_files._windows_open_parent(target, tmp_path)
+    try:
+        state = atomic_files._windows_publication_state(
+            parents, parts, expected_file_size=len(b"new\n")
+        )
+    finally:
+        atomic_files._windows_close_chain(parents)
+    assert target.read_bytes() == b"new\n"
+    assert state["mode"] == 0o444
+    assert not build.exists()
+
+
+# famulus-skip: category=platform-contract; reason=requires native Win32 reparse-point replacement; alternate=the retained-handle ABI and lifecycle contract runs on every host
+@pytest.mark.skipif(sys.platform != "win32", reason="native Windows contract")
+def test_windows_native_byte_publication_replaces_exact_legacy_symlink(
+    tmp_path: Path,
+) -> None:
+    legacy_source = tmp_path / "legacy-source"
+    legacy_source.write_bytes(b"old\n")
+    target = tmp_path / "launcher"
+    try:
+        target.symlink_to("legacy-source")
+    except OSError as exc:
+        # famulus-skip: category=platform-contract; reason=native symlink creation may be unavailable; alternate=the retained-handle ABI and lifecycle contract runs on every host
+        pytest.skip(f"Windows symlink creation unavailable: {exc}")
+
+    atomic_files.atomic_publish_bytes(
+        target,
+        b"new\n",
+        allowed_root=tmp_path,
+        mode=0o666,
+        build_id="3" * 32,
+        expected_before={"kind": "symlink", "target": "legacy-source"},
+    )
+
+    assert not target.is_symlink()
+    assert target.read_bytes() == b"new\n"
+    assert legacy_source.read_bytes() == b"old\n"
 
 
 # famulus-skip: category=platform-contract; reason=requires native Win32 delete-on-close cleanup; alternate=the one-byte disposition ABI and failure-reporting tests run on every host

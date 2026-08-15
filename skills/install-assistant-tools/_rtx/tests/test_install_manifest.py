@@ -32,6 +32,7 @@ from officina.common.certificate_intents import (
     CertificatePublicFileIntent,
     canonical_certificate_intent_bytes,
 )
+from officina.common.atomic_files import atomic_publish_bytes
 
 SCRIPTS = REPO_ROOT / "skills" / "install-assistant-tools" / "_rtx"
 sys.path.insert(0, str(SCRIPTS))
@@ -904,6 +905,106 @@ def test_journal_v3_round_trip_closes_logical_resource_schema(
         "ownership_delta",
     }
     assert TransactionJournal.load(path, state_root=path.parent) == journal
+
+
+def test_journal_filesystem_expected_mode_keeps_special_bits_representable(
+    tmp_path: Path,
+) -> None:
+    fields = _logical_mutation_fields(tmp_path)
+    mutation = state_record.JournalMutation(
+        mutation_id=state_record.mutation_id_for(
+            transaction_id="1" * 32, **fields
+        ),
+        expected_before={
+            "kind": "file",
+            "mode": 0o4755,
+            "size": 0,
+            "sha256": hashlib.sha256(b"").hexdigest(),
+        },
+        **fields,
+    )
+
+    assert mutation.expected_before["mode"] == 0o4755
+    assert mutation.intended_after["mode"] == 0o755
+
+
+def test_journal_load_rejects_unpublishable_intended_filesystem_mode(
+    tmp_path: Path,
+) -> None:
+    fields = _logical_mutation_fields(tmp_path)
+    mutation = state_record.JournalMutation(
+        mutation_id=state_record.mutation_id_for(
+            transaction_id="1" * 32, **fields
+        ),
+        expected_before={"kind": "absent"},
+        **fields,
+    )
+    payload = _journal(pending_mutation=mutation).to_dict()
+    payload["pending_mutation"]["intended_after"]["mode"] = 0o4755
+    path = tmp_path / "state" / "transaction-journal.json"
+    path.parent.mkdir()
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(StateRecordError, match="intended_after.mode"):
+        TransactionJournal.load(path, state_root=path.parent)
+
+
+@pytest.mark.parametrize("boundary", ["factory", "record", "recorder"])
+def test_unpublishable_intended_filesystem_mode_is_rejected_at_every_boundary(
+    tmp_path: Path,
+    boundary: str,
+) -> None:
+    fields = _logical_mutation_fields(tmp_path)
+    fields["intended_after"] = {
+        **fields["intended_after"],
+        "mode": 0o4755,
+    }
+
+    with pytest.raises(StateRecordError, match="intended_after.mode"):
+        if boundary == "factory":
+            state_record.mutation_id_for(transaction_id="1" * 32, **fields)
+        elif boundary == "record":
+            state_record.JournalMutation(
+                mutation_id="a" * 32,
+                expected_before={"kind": "absent"},
+                **fields,
+            )
+        else:
+            recorder = _recorder(tmp_path)
+            recorder.mutate(
+                **fields,
+                observe=lambda: {"kind": "absent"},
+                apply=lambda _pending: None,
+            )
+
+
+@pytest.mark.parametrize("boundary", ["factory", "record", "recorder"])
+def test_owner_unreadable_intended_file_is_rejected_at_every_boundary(
+    tmp_path: Path,
+    boundary: str,
+) -> None:
+    fields = _logical_mutation_fields(tmp_path)
+    fields["intended_after"] = {
+        **fields["intended_after"],
+        "mode": 0o000,
+    }
+
+    with pytest.raises(StateRecordError, match="owner-readable"):
+        if boundary == "factory":
+            state_record.mutation_id_for(transaction_id="1" * 32, **fields)
+        elif boundary == "record":
+            state_record.JournalMutation(
+                mutation_id="a" * 32,
+                expected_before={"kind": "absent"},
+                **fields,
+            )
+        else:
+            recorder = _recorder(tmp_path)
+            recorder.mutate(
+                **fields,
+                observe=lambda: {"kind": "absent"},
+                apply=lambda _pending: None,
+            )
 
 
 @pytest.mark.parametrize(
@@ -1883,7 +1984,7 @@ def test_recorder_rejects_oversized_filesystem_state_before_pending_or_apply(
     recorder = _recorder(tmp_path)
     applied = False
 
-    def apply() -> None:
+    def apply(_pending: state_record.JournalMutation) -> None:
         nonlocal applied
         applied = True
 
@@ -1910,6 +2011,52 @@ def test_recorder_rejects_oversized_filesystem_state_before_pending_or_apply(
     )
     assert durable.pending_mutation is None
     assert applied is False
+
+
+def test_recorder_rejects_owner_unreadable_publication_before_pending_or_apply(
+    tmp_path: Path,
+) -> None:
+    recorder = _recorder(tmp_path)
+    target = tmp_path / "published"
+    data = b"intended"
+    applied = False
+
+    def apply(pending: state_record.JournalMutation) -> None:
+        nonlocal applied
+        applied = True
+        atomic_publish_bytes(
+            target,
+            data,
+            allowed_root=tmp_path,
+            mode=0o000,
+            build_id="8" * 32,
+            expected_before=pending.expected_before,
+        )
+
+    with pytest.raises(StateRecordError, match="owner-readable"):
+        recorder.mutate(
+            operation_key="file.publish",
+            kind="file_replace",
+            resource_kind="filesystem",
+            resource_id=str(target),
+            intended_after={
+                "kind": "file",
+                "mode": 0o000,
+                "size": len(data),
+                "sha256": hashlib.sha256(data).hexdigest(),
+            },
+            ownership_delta={"action": "none"},
+            observe=lambda: snapshot_path_state(target),
+            apply=apply,
+        )
+
+    durable = TransactionJournal.load(
+        tmp_path / "state" / "transaction-journal.json",
+        state_root=tmp_path / "state",
+    )
+    assert durable.pending_mutation is None
+    assert applied is False
+    assert not target.exists()
 
 
 def test_windows_registry_observer_wraps_operating_system_errors() -> None:
@@ -1994,10 +2141,11 @@ def test_mutation_recorder_orders_pending_effect_manifest_then_completion(
     monkeypatch.setattr(TransactionJournal, "save", journal_save)
     monkeypatch.setattr(Manifest, "save", manifest_save)
 
-    def apply() -> None:
+    def apply(pending: state_record.JournalMutation) -> None:
         assert TransactionJournal.load(
             journal_path, state_root=journal_path.parent
         ).pending_mutation is not None
+        assert pending == recorder.journal.pending_mutation
         events.append("effect")
         target.write_bytes(b"dispatcher\n")
         target.chmod(0o755)
@@ -2012,6 +2160,44 @@ def test_mutation_recorder_orders_pending_effect_manifest_then_completion(
     ]
 
 
+def test_mutation_recorder_observes_again_before_passing_pending_to_apply(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "target"
+    recorder = _recorder(tmp_path)
+    events: list[str] = []
+
+    def observe() -> dict[str, object]:
+        events.append("observe")
+        return snapshot_path_state(target)
+
+    def apply(pending: state_record.JournalMutation) -> None:
+        assert events == ["observe", "observe"]
+        assert pending == recorder.journal.pending_mutation
+        events.append("apply")
+        target.write_text("intended", encoding="utf-8")
+        target.chmod(0o600)
+
+    data = b"intended"
+    recorder.mutate(
+        operation_key="test.callback-order",
+        kind="file_replace",
+        resource_kind="filesystem",
+        resource_id=str(target),
+        intended_after={
+            "kind": "file",
+            "mode": 0o600,
+            "size": len(data),
+            "sha256": hashlib.sha256(data).hexdigest(),
+        },
+        ownership_delta={"action": "none"},
+        observe=observe,
+        apply=apply,
+    )
+
+    assert events == ["observe", "observe", "apply", "observe"]
+
+
 @pytest.mark.parametrize("boundary", ["before_effect", "during_effect", "after_effect"])
 def test_mutation_recorder_leaves_durable_pending_across_effect_crashes(
     tmp_path: Path, boundary: str
@@ -2020,7 +2206,7 @@ def test_mutation_recorder_leaves_durable_pending_across_effect_crashes(
     target.parent.mkdir()
     recorder = _recorder(tmp_path)
 
-    def apply() -> None:
+    def apply(_pending: state_record.JournalMutation) -> None:
         if boundary == "before_effect":
             raise RuntimeError("crash")
         target.write_bytes(b"partial" if boundary == "during_effect" else b"dispatcher\n")
@@ -2046,7 +2232,7 @@ def test_mutation_recorder_recovers_same_request_and_rejects_changed_request(
     target.parent.mkdir()
     first = _recorder(tmp_path)
 
-    def crash_after_effect() -> None:
+    def crash_after_effect(_pending: state_record.JournalMutation) -> None:
         target.write_bytes(b"dispatcher\n")
         target.chmod(0o755)
         raise RuntimeError("crash")
@@ -2067,12 +2253,12 @@ def test_mutation_recorder_recovers_same_request_and_rejects_changed_request(
             intended_after=snapshot_path_state(target),
             ownership_delta={"action": "none"},
             observe=lambda: snapshot_path_state(target),
-            apply=lambda: pytest.fail("changed request must not apply"),
+            apply=lambda _pending: pytest.fail("changed request must not apply"),
         )
 
     applied = False
 
-    def unexpected_apply() -> None:
+    def unexpected_apply(_pending: state_record.JournalMutation) -> None:
         nonlocal applied
         applied = True
 
@@ -2093,7 +2279,7 @@ def test_mutation_recorder_identical_request_resumes_from_expected_state(
         _mutate_dispatcher(
             first,
             target,
-            lambda: (_ for _ in ()).throw(RuntimeError("before effect")),
+            lambda _pending: (_ for _ in ()).throw(RuntimeError("before effect")),
         )
     durable = TransactionJournal.load(
         tmp_path / "state" / "transaction-journal.json",
@@ -2104,7 +2290,7 @@ def test_mutation_recorder_identical_request_resumes_from_expected_state(
     resumed = _recorder(tmp_path, journal=durable)
     applied = False
 
-    def apply() -> None:
+    def apply(_pending: state_record.JournalMutation) -> None:
         nonlocal applied
         applied = True
         target.write_bytes(b"dispatcher\n")
@@ -2126,12 +2312,14 @@ def test_mutation_recorder_refuses_third_state_and_verifies_completed_id(
     mutation_id = _mutate_dispatcher(
         recorder,
         target,
-        lambda: (target.write_bytes(b"dispatcher\n"), target.chmod(0o755)),
+        lambda _pending: (target.write_bytes(b"dispatcher\n"), target.chmod(0o755)),
     )
     target.write_bytes(b"user bytes\n")
 
     with pytest.raises(StateRecordError, match="completed mutation.*intended state"):
-        _mutate_dispatcher(recorder, target, lambda: pytest.fail("must not replay"))
+        _mutate_dispatcher(
+            recorder, target, lambda _pending: pytest.fail("must not replay")
+        )
 
     pending = state_record.JournalMutation(
         mutation_id=mutation_id,
@@ -2166,7 +2354,9 @@ def test_mutation_recorder_refuses_third_state_and_verifies_completed_id(
     )
     with pytest.raises(StateRecordError, match="third state"):
         _mutate_dispatcher(
-            third_recorder, target, lambda: pytest.fail("third state must not apply")
+            third_recorder,
+            target,
+            lambda _pending: pytest.fail("third state must not apply"),
         )
 
 
@@ -2200,7 +2390,10 @@ def test_mutation_recorder_recovers_crashes_after_effect_before_completion(
         _mutate_dispatcher(
             recorder,
             target,
-            lambda: (target.write_bytes(b"dispatcher\n"), target.chmod(0o755)),
+            lambda _pending: (
+                target.write_bytes(b"dispatcher\n"),
+                target.chmod(0o755),
+            ),
         )
 
     durable = TransactionJournal.load(
@@ -2218,7 +2411,9 @@ def test_mutation_recorder_recovers_crashes_after_effect_before_completion(
     monkeypatch.setattr(TransactionJournal, "save", real_journal_save)
 
     resumed = _recorder(tmp_path, journal=durable)
-    _mutate_dispatcher(resumed, target, lambda: pytest.fail("adopt, do not replay"))
+    _mutate_dispatcher(
+        resumed, target, lambda _pending: pytest.fail("adopt, do not replay")
+    )
 
     assert resumed.journal.pending_mutation is None
 
@@ -2265,7 +2460,7 @@ def test_mutation_recorder_applies_none_and_forget_ownership_deltas(
         intended_after=state,
         ownership_delta=delta,
         observe=lambda: state,
-        apply=lambda: pytest.fail("already intended state must be adopted"),
+        apply=lambda _pending: pytest.fail("already intended state must be adopted"),
     )
 
     assert Manifest(manifest.path, state_root=state_root).entries == expected
@@ -2382,7 +2577,7 @@ def test_recovery_fails_closed_on_third_path_state(tmp_path: Path) -> None:
 
 
 @requires_symlink
-def test_snapshot_regular_file_uses_one_no_follow_descriptor(
+def test_snapshot_regular_file_rejects_stale_descriptor_after_name_replacement(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     target = tmp_path / "dispatcher"
@@ -2407,15 +2602,12 @@ def test_snapshot_regular_file_uses_one_no_follow_descriptor(
 
     monkeypatch.setattr(os, "open", open_then_swap)
 
-    state = snapshot_path_state(target)
+    with pytest.raises(StateRecordError, match="changed during observation"):
+        snapshot_path_state(target)
 
     assert swapped is True
-    assert state == {
-        "kind": "file",
-        "mode": 0o644,
-        "size": len(original),
-        "sha256": hashlib.sha256(original).hexdigest(),
-    }
+    assert displaced.read_bytes() == original
+    assert outside.read_bytes() == b"outside bytes are longer\n"
 
 
 # famulus-skip: category=platform-contract; reason=POSIX FIFO creation is unavailable on some hosts; alternate=regular-file descriptor coherence and third-state recovery tests cover the shared snapshot contract

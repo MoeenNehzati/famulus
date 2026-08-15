@@ -5,9 +5,9 @@ import sys
 from pathlib import Path
 
 if __package__ and __package__.count('.') >= 1:
-    from .._state_record import Manifest
+    from .._state_record import MutationRecorder
 else:
-    from _state_record import Manifest
+    from _state_record import MutationRecorder
 
 from officina.common.famulus_paths import resolve_famulus_paths
 
@@ -33,7 +33,31 @@ _RESOLVER_RELATIVE_PATH = ("bootstrap", "resolvers", "v1", "launch.py")
 
 
 def _resolver_path(*, home: Path | None = None) -> Path:
-    """Return the fixed resolver path beneath this host's runtime_root."""
+    """Return the fixed resolver path beneath this host's runtime_root.
+
+    Intent
+    ------
+    Return the fixed resolver path beneath this host's runtime_root. The boundary coordinates home, and runtime_root through home, resolve_famulus_paths, joinpath, Path, sys, and runtime_root with one closed state transition.
+
+    Rationale
+    ---------
+    Because Return the fixed resolver path beneath this host's runtime_root. Keep home, resolve_famulus_paths, joinpath, Path, sys, and runtime_root inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - set runtime_root_selection = received_context
+    - return runtime_root_selection
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    officina.common.famulus_paths.resolve_famulus_paths:
+      why:
+        computes: "This computes edge is the first repository dependency used to uphold this guarantee: Return the fixed resolver path beneath this host's runtime_root."
+    """
     home = home or Path.home()
     runtime_root = resolve_famulus_paths(platform=sys.platform, home=home).runtime_root
     return runtime_root.joinpath(*_RESOLVER_RELATIVE_PATH)
@@ -47,9 +71,28 @@ def _unix_module_content(
 ) -> str:
     """Render one POSIX shim that delegates a module to the active release.
 
-    The generated program intentionally knows only the stable resolver path and
-    the target module. The resolver owns release selection and interpreter
-    handoff, so reinstalling a release never makes this user-bin shim stale.
+    Intent
+    ------
+    Render one POSIX shim that delegates a module to the active release. The boundary coordinates module, description, home, and resolver through repr, _resolver_path, str, Path, home, and description with one closed state transition.
+
+    Rationale
+    ---------
+    Because Render one POSIX shim that delegates a module to the active release. Keep repr, _resolver_path, str, Path, home, and description inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - set rendered_shim_source = local_decisions
+    - return rendered_shim_source
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._resolver_path:
+      why:
+        computes: "This computes edge is the first repository dependency used to uphold this guarantee: Render one POSIX shim that delegates a module to the active release."
     """
     resolver = repr(str(_resolver_path(home=home)))
     return (
@@ -65,7 +108,30 @@ def _unix_module_content(
 
 
 def _unix_dispatcher_content(repo_root: Path, *, home: Path | None = None) -> str:
-    """Preserve the established dispatcher renderer API for external tests."""
+    """Preserve the established dispatcher renderer API for external tests.
+
+    Intent
+    ------
+    Preserve the established dispatcher renderer API for external tests. The boundary coordinates repo_root, and home through _unix_module_content, Path, home, and str with one closed state transition.
+
+    Rationale
+    ---------
+    Because Preserve the established dispatcher renderer API for external tests. Keep _unix_module_content, Path, home, and str inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - return
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._unix_module_content:
+      why:
+        constructs: "This constructs edge is the first repository dependency used to uphold this guarantee: Preserve the established dispatcher renderer API for external tests."
+    """
     return _unix_module_content(
         "officina.dispatcher.cli",
         "Run officina.dispatcher.cli via the stable managed-runtime resolver.",
@@ -74,6 +140,24 @@ def _unix_dispatcher_content(repo_root: Path, *, home: Path | None = None) -> st
 
 
 def _unix_invoke_skill_content() -> str:
+    """coordinate closed local state through str with one closed state transition.
+
+    Intent
+    ------
+    coordinate closed local state through str with one closed state transition. The boundary coordinates closed local state through str with one closed state transition.
+
+    Rationale
+    ---------
+    Because coordinate closed local state through str with one closed state transition. Keep str inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - return
+
+    Wraps
+    -----
+    - none
+    """
     return (
         "#!/usr/bin/env python3\n"
         "# Generated by install-assistant-tools - do not edit manually.\n"
@@ -111,7 +195,24 @@ def _unix_invoke_skill_content() -> str:
 
 
 class LinuxLauncherInstaller(LauncherInstallerBase):
-    """Install launcher bundles on Linux-like hosts."""
+    """Install launcher bundles on Linux-like hosts.
+
+    Intent
+    ------
+    Install launcher bundles on Linux-like hosts. The boundary coordinates static_launcher_mode through LauncherInstallerBase with one closed state transition.
+
+    Rationale
+    ---------
+    Because Install launcher bundles on Linux-like hosts. Keep LauncherInstallerBase inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+    Pseudocode
+    ----------
+    - return
+
+    Wraps
+    -----
+    - none
+    """
 
     static_launcher_mode = "link"
 
@@ -120,15 +221,46 @@ class LinuxLauncherInstaller(LauncherInstallerBase):
         repo_root: Path,
         bin_dir: Path,
         dry_run: bool,
-        manifest: Manifest | None = None,
         *,
+        recorder: MutationRecorder | None,
         home: Path | None = None,
     ) -> LauncherInstallResult:
+        """Within Install launcher bundles on Linux-like hosts, coordinate repo_root, bin_dir, dry_run, recorder, and home through LauncherBundleSpec, LauncherFileSpec, _unix_dispatcher_content, install_bundle, Path, and bool w.
+
+        Intent
+        ------
+        Within Install launcher bundles on Linux-like hosts, coordinate repo_root, bin_dir, dry_run, recorder, and home through LauncherBundleSpec, LauncherFileSpec, _unix_dispatcher_content, install_bundle, Path, and bool w. The boundary coordinates repo_root, bin_dir, dry_run, recorder, and home through LauncherBundleSpec, LauncherFileSpec, _unix_dispatcher_content, install_bundle, Path, and bool with one closed state transition.
+
+        Rationale
+        ---------
+        Because Within Install launcher bundles on Linux-like hosts, coordinate repo_root, bin_dir, dry_run, recorder, and home through LauncherBundleSpec, LauncherFileSpec, _unix_dispatcher_content, install_bundle, Path, and bool w. Keep LauncherBundleSpec, LauncherFileSpec, _unix_dispatcher_content, install_bundle, Path, and bool inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+        Pseudocode
+        ----------
+        - return
+
+        Wraps
+        -----
+        - none
+
+        InstantiationsFromRepo
+        ----------------------
+        ._base_launcher.LauncherBundleSpec:
+          why:
+            constructs: "This constructs edge is the first repository dependency used to uphold this guarantee: Within Install launcher bundles on Linux-like hosts, coordinate repo_root, bin_dir, dry_run, recorder, and home through LauncherBundleSpec, LauncherFileSpec, _unix_dispatcher_content, install_bundle, Path, and bool w."
+        ._base_launcher.LauncherFileSpec:
+          why:
+            constructs: "This constructs edge is the second repository dependency used to uphold this guarantee: Within Install launcher bundles on Linux-like hosts, coordinate repo_root, bin_dir, dry_run, recorder, and home through LauncherBundleSpec, LauncherFileSpec, _unix_dispatcher_content, install_bundle, Path, and bool w."
+        ._unix_dispatcher_content:
+          why:
+            constructs: "This constructs edge is the third repository dependency used to uphold this guarantee: Within Install launcher bundles on Linux-like hosts, coordinate repo_root, bin_dir, dry_run, recorder, and home through LauncherBundleSpec, LauncherFileSpec, _unix_dispatcher_content, install_bundle, Path, and bool w."
+        """
         bundle = LauncherBundleSpec(
             name="dispatcher",
             workflows=DISPATCHER_WORKFLOWS,
             files=[
                 LauncherFileSpec(
+                    operation_key="scaffold.launcher.dispatcher",
                     destination=bin_dir / "dispatcher",
                     mode="generate",
                     content=_unix_dispatcher_content(repo_root, home=home),
@@ -136,19 +268,51 @@ class LinuxLauncherInstaller(LauncherInstallerBase):
                 )
             ],
         )
-        return self.install_bundle(bundle, dry_run=dry_run, manifest=manifest)
+        return self.install_bundle(bundle, dry_run=dry_run, recorder=recorder)
 
     def install_invoke_skill_launcher(
         self,
         bin_dir: Path,
         dry_run: bool,
-        manifest: Manifest | None = None,
+        *,
+        recorder: MutationRecorder | None,
     ) -> LauncherInstallResult:
+        """Within Install launcher bundles on Linux-like hosts, coordinate bin_dir, dry_run, recorder, and bundle through LauncherBundleSpec, LauncherFileSpec, _unix_invoke_skill_content, install_bundle, Path, and bool with one.
+
+        Intent
+        ------
+        Within Install launcher bundles on Linux-like hosts, coordinate bin_dir, dry_run, recorder, and bundle through LauncherBundleSpec, LauncherFileSpec, _unix_invoke_skill_content, install_bundle, Path, and bool with one. The boundary coordinates bin_dir, dry_run, recorder, and bundle through LauncherBundleSpec, LauncherFileSpec, _unix_invoke_skill_content, install_bundle, Path, and bool with one closed state transition.
+
+        Rationale
+        ---------
+        Because Within Install launcher bundles on Linux-like hosts, coordinate bin_dir, dry_run, recorder, and bundle through LauncherBundleSpec, LauncherFileSpec, _unix_invoke_skill_content, install_bundle, Path, and bool with one. Keep LauncherBundleSpec, LauncherFileSpec, _unix_invoke_skill_content, install_bundle, Path, and bool inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+        Pseudocode
+        ----------
+        - return
+
+        Wraps
+        -----
+        - none
+
+        InstantiationsFromRepo
+        ----------------------
+        ._base_launcher.LauncherBundleSpec:
+          why:
+            constructs: "This constructs edge is the first repository dependency used to uphold this guarantee: Within Install launcher bundles on Linux-like hosts, coordinate bin_dir, dry_run, recorder, and bundle through LauncherBundleSpec, LauncherFileSpec, _unix_invoke_skill_content, install_bundle, Path, and bool with one."
+        ._base_launcher.LauncherFileSpec:
+          why:
+            constructs: "This constructs edge is the second repository dependency used to uphold this guarantee: Within Install launcher bundles on Linux-like hosts, coordinate bin_dir, dry_run, recorder, and bundle through LauncherBundleSpec, LauncherFileSpec, _unix_invoke_skill_content, install_bundle, Path, and bool with one."
+        ._unix_invoke_skill_content:
+          why:
+            constructs: "This constructs edge is the third repository dependency used to uphold this guarantee: Within Install launcher bundles on Linux-like hosts, coordinate bin_dir, dry_run, recorder, and bundle through LauncherBundleSpec, LauncherFileSpec, _unix_invoke_skill_content, install_bundle, Path, and bool with one."
+        """
         bundle = LauncherBundleSpec(
             name="invoke-skill",
             workflows=INVOKE_SKILL_WORKFLOWS,
             files=[
                 LauncherFileSpec(
+                    operation_key="scaffold.launcher.invoke-skill",
                     destination=bin_dir / "invoke-skill",
                     mode="generate",
                     content=_unix_invoke_skill_content(),
@@ -156,17 +320,46 @@ class LinuxLauncherInstaller(LauncherInstallerBase):
                 )
             ],
         )
-        return self.install_bundle(bundle, dry_run=dry_run, manifest=manifest)
+        return self.install_bundle(bundle, dry_run=dry_run, recorder=recorder)
 
     def install_wakeup_launcher(
         self,
         bin_dir: Path,
         dry_run: bool,
-        manifest: Manifest | None = None,
         *,
+        recorder: MutationRecorder | None,
         home: Path | None = None,
     ) -> LauncherInstallResult:
-        """Install both public wakeup names as resolver-backed POSIX shims."""
+        """Install both public wakeup names as resolver-backed POSIX shims.
+
+        Intent
+        ------
+        Install both public wakeup names as resolver-backed POSIX shims. The boundary coordinates bin_dir, dry_run, recorder, home, and content through _unix_module_content, LauncherBundleSpec, LauncherFileSpec, install_bundle, Path, and bool with one closed state transition.
+
+        Rationale
+        ---------
+        Because Install both public wakeup names as resolver-backed POSIX shims. Keep _unix_module_content, LauncherBundleSpec, LauncherFileSpec, install_bundle, Path, and bool inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+        Pseudocode
+        ----------
+        - return
+
+        Wraps
+        -----
+        - none
+
+        InstantiationsFromRepo
+        ----------------------
+        ._base_launcher.LauncherBundleSpec:
+          why:
+            constructs: "This constructs edge is the first repository dependency used to uphold this guarantee: Install both public wakeup names as resolver-backed POSIX shims."
+        ._base_launcher.LauncherFileSpec:
+          why:
+            constructs: "This constructs edge is the second repository dependency used to uphold this guarantee: Install both public wakeup names as resolver-backed POSIX shims."
+        ._unix_module_content:
+          why:
+            constructs: "This constructs edge is the third repository dependency used to uphold this guarantee: Install both public wakeup names as resolver-backed POSIX shims."
+        """
         content = _unix_module_content(
             "officina.wakeup.cli",
             "Run officina.wakeup.cli via the stable managed-runtime resolver.",
@@ -177,6 +370,11 @@ class LinuxLauncherInstaller(LauncherInstallerBase):
             workflows=WAKEUP_WORKFLOWS,
             files=[
                 LauncherFileSpec(
+                    operation_key=(
+                        "scaffold.launcher.llm-wakeup"
+                        if command == "llm-wakeup"
+                        else "scaffold.launcher.lw"
+                    ),
                     destination=bin_dir / command,
                     mode="generate",
                     content=content,
@@ -185,7 +383,7 @@ class LinuxLauncherInstaller(LauncherInstallerBase):
                 for command in WAKEUP_COMMANDS
             ],
         )
-        return self.install_bundle(bundle, dry_run=dry_run, manifest=manifest)
+        return self.install_bundle(bundle, dry_run=dry_run, recorder=recorder)
 
     def install_agent_launcher_files(
         self,
@@ -194,8 +392,35 @@ class LinuxLauncherInstaller(LauncherInstallerBase):
         bin_dir: Path,
         agent: str,
         dry_run: bool,
-        manifest: Manifest | None,
+        recorder: MutationRecorder | None,
     ) -> None:
+        """Within Install launcher bundles on Linux-like hosts, coordinate source_bin_dir, bin_dir, agent, dry_run, and recorder through LauncherBundleSpec, LauncherFileSpec, _agent_launcher_files, install_bundle, Path, and str.
+
+        Intent
+        ------
+        Within Install launcher bundles on Linux-like hosts, coordinate source_bin_dir, bin_dir, agent, dry_run, and recorder through LauncherBundleSpec, LauncherFileSpec, _agent_launcher_files, install_bundle, Path, and str. The boundary coordinates source_bin_dir, bin_dir, agent, dry_run, and recorder through LauncherBundleSpec, LauncherFileSpec, _agent_launcher_files, install_bundle, Path, and str with 1 guarded checks.
+
+        Rationale
+        ---------
+        Because Within Install launcher bundles on Linux-like hosts, coordinate source_bin_dir, bin_dir, agent, dry_run, and recorder through LauncherBundleSpec, LauncherFileSpec, _agent_launcher_files, install_bundle, Path, and str. Keep LauncherBundleSpec, LauncherFileSpec, _agent_launcher_files, install_bundle, Path, and str inside this boundary so authority or partial state cannot escape before final verification or typed failure.
+
+        Pseudocode
+        ----------
+        - return
+
+        Wraps
+        -----
+        - none
+
+        InstantiationsFromRepo
+        ----------------------
+        ._base_launcher.LauncherBundleSpec:
+          why:
+            constructs: "This constructs edge is the first repository dependency used to uphold this guarantee: Within Install launcher bundles on Linux-like hosts, coordinate source_bin_dir, bin_dir, agent, dry_run, and recorder through LauncherBundleSpec, LauncherFileSpec, _agent_launcher_files, install_bundle, Path, and str."
+        ._base_launcher.LauncherFileSpec:
+          why:
+            constructs: "This constructs edge is the second repository dependency used to uphold this guarantee: Within Install launcher bundles on Linux-like hosts, coordinate source_bin_dir, bin_dir, agent, dry_run, and recorder through LauncherBundleSpec, LauncherFileSpec, _agent_launcher_files, install_bundle, Path, and str."
+        """
         if agent == "tw":
             bundle = LauncherBundleSpec(
                 name="tw",
@@ -203,11 +428,13 @@ class LinuxLauncherInstaller(LauncherInstallerBase):
                 workflows=("tmux workspace launcher",),
                 files=[
                     LauncherFileSpec(
+                        operation_key="launchers.agent.tmux-workspace",
                         source=source_bin_dir / "tmux-workspace",
                         destination=bin_dir / "tmux-workspace",
                         mode=self.static_launcher_mode,
                     ),
                     LauncherFileSpec(
+                        operation_key="launchers.agent.tw",
                         source=source_bin_dir / "tmux-workspace",
                         destination=bin_dir / "tw",
                         mode=self.static_launcher_mode,
@@ -221,4 +448,4 @@ class LinuxLauncherInstaller(LauncherInstallerBase):
                 workflows=("agent launcher",),
                 files=self._agent_launcher_files(source_bin_dir, bin_dir, agent),
             )
-        self.install_bundle(bundle, dry_run=dry_run, manifest=manifest)
+        self.install_bundle(bundle, dry_run=dry_run, recorder=recorder)

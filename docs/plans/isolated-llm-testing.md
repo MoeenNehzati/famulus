@@ -98,15 +98,14 @@ automated guest contamination checks are not implemented. See
 The public-package trial showed that VM isolation is no longer the immediate
 blocker. Complete Workstream 1 in this order:
 
-1. [Complete Famulus installer](../superpowers/plans/2026-08-11-complete-famulus-installer.md):
+1. [Complete Famulus installer and VM acceptance](complete-famulus-installer.md):
    fix fresh-install ordering, native credential-store preflight, stable
    certificate state, transaction recovery, uninstall/purge, and automated
-   minimum/maximal install profiles.
-2. [Complete Famulus VM acceptance](../superpowers/plans/2026-08-11-complete-famulus-vm-acceptance.md):
-   add immutable candidate/docs transfer, secret stdin, supervised Secret
-   Service, scenario execution, sanitized extraction, committed-candidate
-   acceptance, and finally published-package acceptance.
-3. Authenticate and seal the reusable Famulus-free LM baseline only after the
+   minimum/maximal install profiles; then add immutable candidate/docs transfer,
+   secret stdin, supervised Secret Service, scenario execution, sanitized
+   extraction, committed-candidate acceptance, and published-package
+   acceptance through that same canonical plan.
+2. Authenticate and seal the reusable Famulus-free LM baseline only after the
    package-install gate is reproducible. Continue with the general scenario
    protocol and test matrix after that baseline exists.
 
