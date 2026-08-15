@@ -653,20 +653,21 @@ def derive_certifier_identity(
     states: Mapping[str, NodeHashState],
     source_commit: str,
 ) -> dict[str, object]:
-    """Derive the certifier identity from the current v4 graph and Git snapshot."""
+    """Derive the certifier identity from the current graph and Git snapshot."""
 
     node = graph.nodes.get(CERTIFIER_NODE_ID)
     if node is None or node.node_type != "module":
-        raise CertificationHashError("canonical certifier module is absent from the v4 graph")
-    interface_id = (
-        V6_CERTIFIER_INTERFACE_ID
-        if graph.schema_version == 6
-        else CERTIFIER_INTERFACE_ID
-    )
+        raise CertificationHashError("canonical certifier module is absent from the graph")
+    if graph.schema_version == 6:
+        interface_id = V6_CERTIFIER_INTERFACE_ID
+        interface_owner_id = f"{CERTIFIER_NODE_ID}._rtx"
+    else:
+        interface_id = CERTIFIER_INTERFACE_ID
+        interface_owner_id = CERTIFIER_NODE_ID
     export = graph.exports.get(interface_id)
     if (
         export is None
-        or export.module_node_id != CERTIFIER_NODE_ID
+        or export.module_node_id != interface_owner_id
         or export.version != CERTIFIER_INTERFACE_VERSION
     ):
         raise CertificationHashError(

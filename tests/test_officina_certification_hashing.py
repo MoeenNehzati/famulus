@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import ast
-from dataclasses import fields
+from dataclasses import fields, replace
 from pathlib import Path
 
 import pytest
@@ -141,6 +141,39 @@ def test_v4_basis_and_certifier_identity_are_derived_from_one_state(
             "findings": [],
         },
     )
+
+
+def test_v6_certifier_identity_accepts_runtime_interface_owner(
+    tmp_path: Path,
+) -> None:
+    graph, states, commit = create_v4_repository(tmp_path)
+    facade_node = graph.nodes["skill-certifier"]
+    v4_export = graph.exports["skill-certifier.interface.certify"]
+    runtime_node_id = "skill-certifier._rtx"
+    graph = replace(
+        graph,
+        schema_version=6,
+        nodes={
+            **graph.nodes,
+            runtime_node_id: replace(facade_node, node_id=runtime_node_id),
+        },
+        exports={
+            "skill-certifier._rtx.interface.certify": replace(
+                v4_export,
+                interface_id="skill-certifier._rtx.interface.certify",
+                module_node_id=runtime_node_id,
+            )
+        },
+    )
+
+    identity = derive_certifier_identity(graph, states, commit)
+
+    assert identity == {
+        "interface": "skill-certifier._rtx.interface.certify",
+        "version": 1,
+        "node_hash": states["skill-certifier"].node_hash,
+        "source_commit": commit,
+    }
 
 
 def test_v6_check_registry_marks_pre_v6_certificates_stale() -> None:
