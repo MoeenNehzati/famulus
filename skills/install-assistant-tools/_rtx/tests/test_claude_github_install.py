@@ -126,6 +126,9 @@ class ClaudeGithubInstallTests(unittest.TestCase):
             details = run_command(["claude", "plugins", "details", f"{plugin_name}@{marketplace_name}"], env=plugin_env)
             details_text = details.stdout
             self.assertIn(f"Skills ({len(expected)})", details_text)
+            # Counts the agents in the *published* marketplace snapshot, not
+            # the working tree, so it lags local additions until they are
+            # pushed. Bump this when a new agent lands upstream.
             self.assertIn("Agents (3)", details_text)
             for skill_name in expected:
                 self.assertIn(skill_name, details_text)

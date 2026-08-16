@@ -59,26 +59,36 @@ else:
 
 _MODEL_INSTRUCTIONS_RE = re.compile(r'^model_instructions_file\s*=\s*".*"$', re.MULTILINE)
 
-ALL_AGENTS = ["assistant", "collab", "coauthor", "tw"]
+ALL_AGENTS = ["assistant", "collab", "coauthor", "background_run", "tw"]
 
 # tw is a bin-dir alias for tmux-workspace; it has no separate worker dir,
 # profile, or ASSISTANT_DEFAULT relevance (tmux-workspace isn't an LLM backend).
-WORKER_AGENTS = ["assistant", "collab", "coauthor"]
+#
+# background_run is the agent the scheduler uses, and it is a separate agent
+# precisely so its configuration is separate: an unattended run needs its own
+# model and reasoning budget, its own hooks, and its own instructions, none of
+# which should be borrowed from whatever the interactive assistant happens to
+# be tuned for. Sharing `assistant` meant scheduled jobs silently inherited a
+# cheap, low-effort interactive profile.
+WORKER_AGENTS = ["assistant", "collab", "coauthor", "background_run"]
 
 
 def launcher_closure(selected_agents: Sequence[str], *, install_invoke_skill: bool) -> tuple[str, ...]:
     """Expand a user's --agents selection to the set that must be installed.
 
-    `assistant` is a hard prerequisite for the invoke-skill implementation
-    (feedback item 18): when install_invoke_skill is set, it's guaranteed to
-    be present and moved to the front, regardless of whether the caller
-    explicitly selected it.
+    `background_run` is a hard prerequisite for the invoke-skill
+    implementation (feedback item 18, originally `assistant`): when
+    install_invoke_skill is set, it's guaranteed to be present and moved to
+    the front, regardless of whether the caller explicitly selected it.
+    invoke-skill execs it by name, so installing the scheduler's launcher
+    without its agent would leave every scheduled job failing with
+    "Command not found".
     """
     agents = list(dict.fromkeys(selected_agents))  # de-dupe, preserve order
     if install_invoke_skill:
-        if "assistant" in agents:
-            agents.remove("assistant")
-        agents.insert(0, "assistant")
+        if "background_run" in agents:
+            agents.remove("background_run")
+        agents.insert(0, "background_run")
     return tuple(agents)
 
 
@@ -176,6 +186,59 @@ def write_profile_config_with_absolute_agent_path(
         manifest.record("file", path=str(dst))
 
 
+_REPO_ROOT_TOKEN = "{{FAMULUS_REPO_ROOT}}"
+
+
+def write_claude_setting_with_absolute_paths(
+    src: Path,
+    dst: Path,
+    repo_root: Path,
+    dry_run: bool,
+    manifest: Manifest | None = None,
+) -> None:
+    """Install one Claude settings file, resolving repo-root references.
+
+    A settings file that points at something in the repo -- a hook command, for
+    instance -- cannot say so with an environment variable. Claude reads the
+    file wherever it happens to run, and in a plugin install nothing guarantees
+    $AI is set or that the Claude home is linked to the repo at all, so an
+    unresolved reference silently does nothing. Substituting the real path at
+    install time is what makes the file portable, and it is the same reason
+    model_instructions_file is rewritten in the profile TOML.
+
+    Files with no token are symlinked as before, so editing them in the repo
+    keeps taking effect immediately. A file that needs substitution becomes a
+    real copy instead: the tradeoff is that changing it requires reinstalling.
+    """
+    if not src.exists():
+        log(f"  SKIP (missing source): {src}")
+        return
+
+    content = src.read_text(encoding="utf-8")
+    if _REPO_ROOT_TOKEN not in content:
+        make_link(src, dst, dry_run, manifest)
+        return
+
+    if dst.is_symlink():
+        if dry_run:
+            log(f"  Would replace legacy symlink with file: {dst}")
+        else:
+            dst.unlink()
+    elif dst.exists():
+        log(f"  SKIP (exists, keeping machine-local state): {dst}")
+        return
+
+    if dry_run:
+        log(f"  Would write (absolute repo paths): {dst}")
+        return
+
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    dst.write_text(content.replace(_REPO_ROOT_TOKEN, str(repo_root)), encoding="utf-8")
+    log(f"  Wrote (absolute repo paths): {dst}")
+    if manifest is not None:
+        manifest.record("file", path=str(dst))
+
+
 def install_profile_for_agent(repo_root: Path, profiles_dir: Path, codex_home: Path, claude_home: Path, agent: str, dry_run: bool, manifest: Manifest | None) -> None:
     if agent not in WORKER_AGENTS:
         return
@@ -195,7 +258,9 @@ def install_profile_for_agent(repo_root: Path, profiles_dir: Path, codex_home: P
 
     settings = profiles_dir / f"{agent}_claude_setting.json"
     if settings.exists():
-        make_link(settings, claude_home / settings.name, dry_run, manifest)
+        write_claude_setting_with_absolute_paths(
+            settings, claude_home / settings.name, repo_root, dry_run, manifest
+        )
 
 
 def remove_legacy_coder_links(source_bin_dir: Path, profiles_dir: Path, bin_dir: Path, codex_home: Path, claude_home: Path, dry_run: bool) -> None:

@@ -118,40 +118,35 @@ def test_linux_dispatcher_and_invoke_skill_are_extensionless(tmp_path):
     assert sys.executable not in invoke_text
 
 
-def test_invoke_skill_carries_the_unattended_contract_to_both_backends(tmp_path):
-    """invoke-skill exists for the scheduler, so every run through it is
-    unattended -- and an unattended run that stops to ask a question strands
-    itself and every run after it. The contract that forbids that lives in
-    references/background_run.md; this pins that both backends actually carry
-    it, and that neither loses its skill invocation in the process.
+def test_invoke_skill_runs_the_background_run_agent_not_assistant(tmp_path):
+    """Every scheduled job goes through invoke-skill, so which agent it names
+    decides how all unattended work is configured.
+
+    background_run exists to keep that configuration separate: its own
+    instructions (the rules for having no user to ask), its own model and
+    reasoning budget, and its own hooks. Pointing this back at `assistant`
+    silently hands the scheduler whatever the interactive assistant is tuned
+    for -- which is how daily-plan ended up running on a low-effort profile
+    and inventing infrastructure faults instead of doing its job.
     """
     installer = platform_launcher_installer("linux")
     bin_dir = tmp_path / "bin"
     installer.install_invoke_skill_launcher(bin_dir, dry_run=False)
     invoke_text = (bin_dir / "invoke-skill").read_text(encoding="utf-8")
 
-    assert "background_run.md" in invoke_text
+    assert "'background_run'" in invoke_text
+    assert "'assistant'" not in invoke_text
 
-    # Claude has a real flag for this; codex has none, so the contract rides
-    # in the prompt -- and must come AFTER the $skill token, which codex
-    # resolves as the skill invocation and which therefore has to lead.
-    assert "'--append-system-prompt', contract" in invoke_text
-    assert "f'${skill}\\n\\n{contract}'" in invoke_text
-    assert "command += ['-p', f'/{skill}']" in invoke_text
+    # Both backends, and each still invokes the skill itself.
+    assert "command += " not in invoke_text  # no conditional prompt assembly
+    assert "'-p', f'/{skill}'" in invoke_text
+    assert "f'${skill}'" in invoke_text
 
-    # A missing contract must be loud. Silently dropping it would leave the
-    # scheduler running exactly as it did before the fix, with nothing to
-    # show that the protection was gone.
-    assert "warning: no unattended contract" in invoke_text
-
-    # The repo probe matches the file, not its directory, since several trees
-    # under the repo carry a references/ of their own.
-    assert "'references' / 'background_run.md').is_file()" in invoke_text
-
-    # Never agents/: that directory is a registry, and anything in it ships as
-    # a real dispatchable agent listed in the plugin's component inventory.
-    # The contract is a prompt fragment, not an agent.
-    assert "'agents'" not in invoke_text
+    # The contract must arrive through the agent definition, not be pasted in
+    # here. Two hand-built copies drift, and the codex one had to be appended
+    # to the prompt to avoid displacing the skill token.
+    assert "append-system-prompt" not in invoke_text
+    assert "background_run.md" not in invoke_text
 
 
 # famulus-skip: category=platform-contract; reason=the Linux wakeup bundle executes POSIX launchers; alternate=test_windows_dispatcher_and_invoke_skill_are_batch_launchers covers native Windows launchers

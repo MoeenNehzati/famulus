@@ -1,0 +1,13 @@
+# Codex profile for scheduled, unattended runs.
+#
+# Separate from `assistant` on purpose. The scheduler's jobs have to make
+# judgement calls with nobody to correct them -- pick a default deadline,
+# decide whether an error is worth latching, avoid inventing a diagnosis --
+# so they get their own reasoning budget rather than inheriting whatever the
+# interactive assistant profile happens to be tuned for.
+#
+# model_instructions_file is rewritten to an absolute path at install time.
+model_instructions_file = "agents/background_run.md"
+model = "gpt-5.6-sol"
+model_reasoning_effort = "high"
+model_verbosity = "low"

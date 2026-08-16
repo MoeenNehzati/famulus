@@ -21,8 +21,9 @@ def _make_repo(tmp_path: Path) -> Path:
     skill_dir = repo_root / "skills" / "install-assistant-tools"
     source_bin = skill_dir / "_rtx/assets/bin"
     source_bin.mkdir(parents=True)
-    for name in ["assistant", "collab", "coauthor", "tmux-workspace", "_agent_launch.py",
-                 "assistant.bat", "collab.bat", "coauthor.bat"]:
+    for name in ["assistant", "collab", "coauthor", "background_run", "tmux-workspace",
+                 "_agent_launch.py", "assistant.bat", "collab.bat", "coauthor.bat",
+                 "background_run.bat"]:
         (source_bin / name).write_text("#!/bin/sh\necho stub\n")
         (source_bin / name).chmod(0o755)
     profiles_dir = repo_root / "profiles"
@@ -31,9 +32,16 @@ def _make_repo(tmp_path: Path) -> Path:
         'model_instructions_file = "agents/assistant.md"\nmodel = "gpt-5.4-mini"\n'
     )
     (profiles_dir / "assistant_claude_setting.json").write_text("{}")
+    (profiles_dir / "background_run.config.toml").write_text(
+        'model_instructions_file = "agents/background_run.md"\nmodel = "gpt-5.6-sol"\n'
+    )
+    (profiles_dir / "background_run_claude_setting.json").write_text("{}")
     (repo_root / "agents").mkdir()
     (repo_root / "agents" / "assistant.md").write_text(
         "---\nname: assistant\ndescription: test\n---\n\nYou are a test agent.\n"
+    )
+    (repo_root / "agents" / "background_run.md").write_text(
+        "---\nname: background_run\ndescription: test\n---\n\nYou run unattended.\n"
     )
     return repo_root
 
@@ -352,19 +360,24 @@ def test_tw_agent_links_both_tmux_workspace_and_tw_alias(tmp_path):
     assert (bin_dir / "tmux-workspace").resolve() == (bin_dir / "tw").resolve()
 
 
-def test_launcher_closure_always_includes_assistant():
-    assert launchers.launcher_closure((), install_invoke_skill=True) == ("assistant",)
+def test_launcher_closure_always_includes_background_run():
+    """invoke-skill execs `background_run` by name, so installing the
+    scheduler's launcher without that agent leaves every scheduled job dying
+    with "Command not found"."""
+    assert launchers.launcher_closure((), install_invoke_skill=True) == ("background_run",)
 
 
-def test_launcher_closure_puts_assistant_first_no_duplicate():
-    assert launchers.launcher_closure(("collab", "assistant"), install_invoke_skill=True) == ("assistant", "collab")
+def test_launcher_closure_puts_background_run_first_no_duplicate():
+    assert launchers.launcher_closure(
+        ("collab", "background_run"), install_invoke_skill=True
+    ) == ("background_run", "collab")
 
 
 def test_launcher_closure_no_op_when_install_invoke_skill_false():
     assert launchers.launcher_closure(("collab",), install_invoke_skill=False) == ("collab",)
 
 
-def test_install_with_no_agents_still_creates_assistant_launcher(tmp_path):
+def test_install_with_no_agents_still_creates_background_run_launcher(tmp_path):
     repo_root = _make_repo(tmp_path)
     bin_dir = tmp_path / "bin"
 
@@ -381,10 +394,12 @@ def test_install_with_no_agents_still_creates_assistant_launcher(tmp_path):
         install_invoke_skill=True,
     )
 
+    # invoke-skill execs background_run, so that agent -- not assistant -- is
+    # the one whose absence would break every scheduled job.
     if sys.platform == "win32":
-        assert (bin_dir / "assistant.bat").exists()
+        assert (bin_dir / "background_run.bat").exists()
     else:
-        assert (bin_dir / "assistant").exists()
+        assert (bin_dir / "background_run").exists()
 
 
 def test_tw_agent_is_skipped_on_windows(tmp_path, monkeypatch):

@@ -151,7 +151,7 @@ class ClaudeInstallTests(unittest.TestCase):
             details = run_command(["claude", "plugins", "details", f"{plugin_name}@{marketplace_name}"], env=plugin_env)
             details_text = details.stdout
             self.assertIn(f"Skills ({len(expected)})", details_text)
-            self.assertIn("Agents (3)", details_text)
+            self.assertIn("Agents (4)", details_text)
             for skill_name in expected:
                 self.assertIn(skill_name, details_text)
             for agent_name in ("assistant", "collab", "coauthor"):
