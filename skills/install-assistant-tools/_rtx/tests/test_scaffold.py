@@ -125,7 +125,7 @@ def test_run_writes_windows_dispatcher_wakeup_and_invoke_skill_launchers(tmp_pat
     assert str(repo_root) not in dispatcher_text
     assert sys.executable not in dispatcher_text
     assert "py -3" not in dispatcher_text
-    assert "assistant --local --claude" in invoke_skill.read_text(encoding="utf-8")
+    assert "background_run --local --claude" in invoke_skill.read_text(encoding="utf-8")
     assert "OK: dispatcher" in output
     assert "OK: llm-wakeup" in output
     assert "OK: invoke-skill" in output

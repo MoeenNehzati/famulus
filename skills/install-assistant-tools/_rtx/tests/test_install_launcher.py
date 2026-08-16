@@ -253,8 +253,19 @@ def test_windows_dispatcher_and_invoke_skill_are_batch_launchers(tmp_path):
     bin_dir = tmp_path / "bin"
     home = tmp_path / "home"
 
-    dispatcher = installer.install_dispatcher_launcher(repo_root, bin_dir, dry_run=False, home=home)
-    invoke_skill = installer.install_invoke_skill_launcher(bin_dir, dry_run=False)
+    # Pin the interpreter the generator finds, as the sibling wakeup test
+    # does. Left unmocked, this resolves a real interpreter from PATH, and the
+    # `sys.executable not in content` assertion below then depends on whether
+    # this host's `python` and the interpreter running pytest happen to be the
+    # same file -- on a machine where they differ only by a `3` suffix it
+    # passes or fails according to which worker picks the test up.
+    with mock.patch.object(
+        windows_launcher.shutil,
+        "which",
+        side_effect=lambda name: r"C:\Python312\python.exe" if name == "python" else None,
+    ):
+        dispatcher = installer.install_dispatcher_launcher(repo_root, bin_dir, dry_run=False, home=home)
+        invoke_skill = installer.install_invoke_skill_launcher(bin_dir, dry_run=False)
 
     content = (bin_dir / "dispatcher.bat").read_text(encoding="utf-8")
     invoke_content = (bin_dir / "invoke-skill.bat").read_text(encoding="utf-8")
@@ -268,8 +279,11 @@ def test_windows_dispatcher_and_invoke_skill_are_batch_launchers(tmp_path):
     assert sys.executable not in content
     assert not (bin_dir / "dispatcher").exists()
     assert invoke_skill.status == "installed"
-    assert "assistant --local --claude" in invoke_content
-    assert "assistant --local --codex exec" in invoke_content
+    # Windows has to reach the same agent the POSIX launcher does; a scheduled
+    # run that fell back to `assistant` here would quietly lose the unattended
+    # instructions and the reasoning budget that go with background_run.
+    assert "background_run --local --claude" in invoke_content
+    assert "background_run --local --codex exec" in invoke_content
     assert not (bin_dir / "invoke-skill").exists()
 
 

@@ -11,29 +11,40 @@ import subprocess
 from pathlib import Path
 
 
-def _repo_root() -> Path:
+def _repo_root() -> Path | None:
     # This file lives at <repo>/skills/install-assistant-tools/bin/_agent_launch.py
-    return Path(__file__).resolve().parents[5]
+    #
+    # Only true when the launcher is reached through its symlink. Installs that
+    # copy it instead -- Windows always, plugin mode where symlinks are
+    # unavailable -- leave it sitting in a bin directory with no repo above it,
+    # and walking up five levels then runs off the top of the filesystem.
+    # Returns None there rather than raising: a caller that was told where the
+    # files are (see _resource_dir) does not need this at all, and one that
+    # wasn't should fail describing what is missing, not with IndexError.
+    try:
+        return Path(__file__).resolve().parents[5]
+    except IndexError:
+        return None
 
 
-def _resource_dir(env_var: str, default_name: str, ai_root: Path) -> Path:
-    """Resolve a directory of launch inputs, preferring an explicit caller.
+def _repo_dir(name: str, root: Path | None) -> Path:
+    """Resolve one directory of launch inputs beneath the repository root.
 
-    A caller that already knows where these files are -- the scheduler does,
-    since it computes them from its own location -- passes the path in the
-    environment rather than leaving each launcher to rediscover it. That is
-    what keeps this working across install models: a dev checkout, a plugin
-    cache, and a relocated repo differ in where the files sit but not in the
-    caller's ability to say so. Baking the answer in at install time freezes
-    it, and probing the filesystem guesses.
-
-    Falls back to the repo layout for interactive launches, where no caller
-    set anything.
+    agents/, profiles/, and llmhooks/ ship together in one tree, so the only
+    thing worth passing between processes is that tree. A caller that already
+    knows it -- the scheduler does, since it resolves it from its own location
+    -- exports $FAMULUS_REPO_ROOT, which is what keeps this working across
+    install models: a dev checkout, a plugin cache, and a relocated repo differ
+    in where the tree sits but not in the caller's ability to name it. Baking
+    the answer in at install time freezes it; probing the filesystem guesses.
     """
-    configured = os.environ.get(env_var)
-    if configured:
-        return Path(configured)
-    return ai_root / default_name
+    if root is None:
+        raise SystemExit(
+            f"cannot locate {name}/: this launcher was installed as a copy, so it "
+            "cannot find the repository from its own path. Set $FAMULUS_REPO_ROOT "
+            f"(or $AI) to the directory containing {name}/."
+        )
+    return root / name
 
 
 def _worker_dir(agent: str) -> Path:
@@ -52,30 +63,35 @@ def _worker_dir(agent: str) -> Path:
     if ai_root:
         return Path(ai_root) / "workers" / agent
 
-    repo_src = _repo_root() / "src"
-    if str(repo_src) not in sys.path:
-        sys.path.insert(0, str(repo_src))
+    # A copied launcher cannot see the repo from its own path, so there may be
+    # no src/ to add; famulus_paths is importable on its own in that case.
+    repo_root = _repo_root() or (
+        Path(p) if (p := os.environ.get("FAMULUS_REPO_ROOT")) else None
+    )
+    if repo_root is not None:
+        repo_src = repo_root / "src"
+        if str(repo_src) not in sys.path:
+            sys.path.insert(0, str(repo_src))
     from officina.common.famulus_paths import resolve_famulus_paths
 
     return resolve_famulus_paths(platform=sys.platform, home=Path.home()).worker_root / agent
 
 
-def _agent_md_path(repo_root: Path, agent: str) -> Path:
+def _agent_md_path(repo_root: Path | None, agent: str) -> Path:
     """Resolve the instructions file for `agent`."""
-    return _resource_dir("FAMULUS_AGENTS_DIR", "agents", repo_root) / f"{agent}.md"
+    return _repo_dir("agents", repo_root) / f"{agent}.md"
 
 
-def _claude_settings_path(repo_root: Path, agent: str, claude_home: Path) -> Path:
+def _claude_settings_path(repo_root: Path | None, agent: str, claude_home: Path) -> Path:
     """Resolve the Claude settings file for `agent`.
 
-    Prefers the shipped profile when a caller names the profiles directory,
-    so a scheduled run uses the settings that travel with the package rather
-    than whatever a particular machine's Claude home happens to hold. Falls
-    back to the installed copy in the Claude home.
+    Prefers the shipped profile, so a run uses the settings that travel with
+    the package rather than whatever a particular machine's Claude home holds.
+    Falls back to the installed copy, which is what a machine-local override
+    looks like.
     """
-    configured = os.environ.get("FAMULUS_PROFILES_DIR")
-    if configured:
-        shipped = Path(configured) / f"{agent}_claude_setting.json"
+    if repo_root is not None:
+        shipped = repo_root / "profiles" / f"{agent}_claude_setting.json"
         if shipped.is_file():
             return shipped
     return claude_home / f"{agent}_claude_setting.json"
@@ -144,9 +160,21 @@ Claude settings: $CLAUDE_HOME/{agent}_claude_setting.json""")
         else:
             break   # first non-flag arg: stop consuming
 
-    # $AI (set by dev_link.py) overrides; otherwise resolve from this
-    # script's own symlinked location, which works regardless of mode.
-    ai_root = os.environ.get("AI") or str(_repo_root())
+    # A caller that knows where the tree is wins: the scheduler exports
+    # $FAMULUS_REPO_ROOT, which is the only resolution that survives a copied
+    # launcher. $AI is dev_link.py's convenience. Falling back to this script's
+    # own location works only when it was reached through its symlink, so it
+    # can legitimately come back empty.
+    # $FAMULUS_REPO_ROOT first: it is set deliberately, for this launch, by a
+    # caller that knows. $AI is a long-lived shell convenience that can easily
+    # be stale or point at a different checkout, so it must not silently
+    # override a caller that was explicit.
+    ai_root = (
+        os.environ.get("FAMULUS_REPO_ROOT")
+        or os.environ.get("AI")
+        or _repo_root()
+    )
+    ai_root = Path(ai_root) if ai_root else None
 
     if not use_local:
         os.chdir(_worker_dir(agent))
@@ -154,12 +182,12 @@ Claude settings: $CLAUDE_HOME/{agent}_claude_setting.json""")
     claude_home = os.environ.get("CLAUDE_HOME", str(Path.home() / ".claude"))
 
     if backend == "claude":
-        description, prompt = _parse_agent_md(Path(ai_root), agent)
+        description, prompt = _parse_agent_md(ai_root, agent)
         agents_json = json.dumps({agent: {"description": description, "prompt": prompt}})
         cmd = [
             "claude", "--agent", agent,
             "--agents", agents_json,
-            "--settings", str(_claude_settings_path(Path(ai_root), agent, Path(claude_home))),
+            "--settings", str(_claude_settings_path(ai_root, agent, Path(claude_home))),
             *args,
         ]
     elif backend == "codex":
@@ -170,7 +198,7 @@ Claude settings: $CLAUDE_HOME/{agent}_claude_setting.json""")
         # invalidation -- when the repo moves, every launch dies seconds in.
         # `-c` overrides the profile's own value, and the claude branch above
         # already resolves its agent definition this same way.
-        agent_md = _agent_md_path(Path(ai_root), agent)
+        agent_md = _agent_md_path(ai_root, agent)
         cmd = [
             "codex",
             "-c", f"model_instructions_file={agent_md}",
