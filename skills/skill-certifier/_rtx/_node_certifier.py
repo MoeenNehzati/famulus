@@ -33,6 +33,7 @@ from officina.common.certification_hashing import (
     route_smoke_trace_signature,
 )
 from officina.common.certificate_records import (
+    CertificateSigningKey,
     certificate_public_key_root,
     canonical_certificate_envelope_bytes,
     certificate_entry_hash,
@@ -59,11 +60,11 @@ from officina.common.certification_view import (
     evaluate_certificate_currentness,
 )
 from officina.common.git_provenance import (
+    CommitReadiness,
     GitMaterializationError,
     GitSnapshot,
-    blueprint_v4_mechanical_commit,
+    blueprint_v4_mechanical_commit as blueprint_mechanical_commit,
     capture_git_snapshot,
-    check_commit_readiness,
     materialize_git_commit,
     run_git,
     snapshot_head_matches,
@@ -97,6 +98,7 @@ RouteSmokeAuditResult = tuple[
     ],
     ...,
 ]
+_REGULAR_GIT_FILE_MODES = {"100644", "100755"}
 
 
 class CertificationError(RuntimeError):
@@ -121,8 +123,8 @@ class CertificationError(RuntimeError):
 
 
 @dataclass(frozen=True)
-class V4CertificationResult:
-    """V4CertificationResult records the certificates written by the private issuer.
+class CertificationResult:
+    """CertificationResult records the certificates written by the private issuer.
 
     Intent
     ------
@@ -147,8 +149,8 @@ class V4CertificationResult:
 
 
 @dataclass(frozen=True)
-class V4GateSnapshot:
-    """V4GateSnapshot freezes the evidence used by v4 gate checks.
+class GateEvidence:
+    """GateEvidence freezes the evidence used by certification gate checks.
 
     Intent
     ------
@@ -178,12 +180,12 @@ class V4GateSnapshot:
 
 
 @dataclass(frozen=True)
-class V4CompletenessFinding:
-    """V4CompletenessFinding names one missing certification disclosure.
+class CompletenessFinding:
+    """CompletenessFinding names one missing certification disclosure.
 
     Intent
     ------
-    Record the node, blueprint path, subject, field, and message for a v4 completeness gap.
+    Record the node, blueprint path, subject, field, and message for a completeness gap.
 
     Rationale
     ---------
@@ -205,7 +207,7 @@ class V4CompletenessFinding:
     message: str
 
 
-V4_REQUIRED_CONTRACT_SECTIONS = (
+REQUIRED_CONTRACT_SECTIONS = (
     "arguments",
     "preconditions",
     "interaction",
@@ -218,10 +220,10 @@ V4_REQUIRED_CONTRACT_SECTIONS = (
 )
 
 
-def v4_certification_completeness_findings(
+def certification_completeness_findings(
     graph: RepositoryBlueprintGraph,
-) -> tuple[V4CompletenessFinding, ...]:
-    """v4_certification_completeness_findings lists missing v4 signing disclosures.
+) -> tuple[CompletenessFinding, ...]:
+    """List missing signing disclosures in a repository graph.
 
     Intent
     ------
@@ -244,17 +246,17 @@ def v4_certification_completeness_findings(
 
     InstantiationsFromRepo
     ----------------------
-    .V4CompletenessFinding:
+    .CompletenessFinding:
       why:
         constructs: "Each finding is a carried certification-completeness product identifying subject, blueprint path, field, and remediation message."
     """
 
-    findings: list[V4CompletenessFinding] = []
+    findings: list[CompletenessFinding] = []
     for node_id, node in sorted(graph.nodes.items()):
         description = node.declaration.get("description")
         if not isinstance(description, str) or not description.strip():
             findings.append(
-                V4CompletenessFinding(
+                CompletenessFinding(
                     node_id,
                     node.blueprint_path,
                     "description",
@@ -275,7 +277,7 @@ def v4_certification_completeness_findings(
                 or not interface_description.strip()
             ):
                 findings.append(
-                    V4CompletenessFinding(
+                    CompletenessFinding(
                         interface_id,
                         node.blueprint_path,
                         "description",
@@ -283,10 +285,10 @@ def v4_certification_completeness_findings(
                     )
                 )
             contract = interface.get("contract")
-            for section in V4_REQUIRED_CONTRACT_SECTIONS:
+            for section in REQUIRED_CONTRACT_SECTIONS:
                 if not isinstance(contract, Mapping) or section not in contract:
                     findings.append(
-                        V4CompletenessFinding(
+                        CompletenessFinding(
                             interface_id,
                             node.blueprint_path,
                             f"contract.{section}",
@@ -304,7 +306,7 @@ def v4_certification_completeness_findings(
                     not isinstance(verification, list) or not verification
                 ):
                     findings.append(
-                        V4CompletenessFinding(
+                        CompletenessFinding(
                             interface_id,
                             node.blueprint_path,
                             "contract.execution.verification",
@@ -324,7 +326,7 @@ def v4_certification_completeness_findings(
                             and entry["endpoint"].strip()
                         ):
                             findings.append(
-                                V4CompletenessFinding(
+                                CompletenessFinding(
                                     interface_id,
                                     node.blueprint_path,
                                     f"contract.direct_io.network[{index}].endpoint",
@@ -334,10 +336,10 @@ def v4_certification_completeness_findings(
     return tuple(findings)
 
 
-def v4_protected_projection(
+def protected_review_projection(
     graph: RepositoryBlueprintGraph,
 ) -> dict[str, object]:
-    """v4_protected_projection extracts the v4 fields protected during semantic review.
+    """Extract graph fields protected during semantic review.
 
     Intent
     ------
@@ -535,8 +537,8 @@ class _EphemeralSecretBackend:
         return self._values.pop((namespace, key), None) is not None
 
 
-def _v4_hash_bytes(value: bytes) -> str:
-    """_v4_hash_bytes returns the canonical SHA-256 label for byte evidence.
+def _hash_bytes(value: bytes) -> str:
+    """_hash_bytes returns the canonical SHA-256 label for byte evidence.
 
     Intent
     ------
@@ -585,7 +587,7 @@ def _expected_file_hashes(
 
     InstantiationsFromRepo
     ----------------------
-    ._v4_hash_bytes:
+    ._hash_bytes:
       why:
         serializes: "The helper digest becomes the expected hash label for tracked file evidence."
     """
@@ -601,8 +603,547 @@ def _expected_file_hashes(
         except (FileNotFoundError, ValueError):
             continue
         if stat.S_ISREG(metadata.st_mode):
-            expected[relative] = _v4_hash_bytes(path.read_bytes())
+            expected[relative] = _hash_bytes(path.read_bytes())
     return expected
+
+
+class CommitReadinessInspector:
+    """Compare tracked worktree inputs with one captured commit.
+
+    Intent
+    ------
+    Own the configuration and coordinated observations for one batched commit-readiness decision.
+
+    Rationale
+    ---------
+    Tree, index, blob, and worktree evidence must use one snapshot while keeping Git process count independent of input count.
+
+    Pseudocode
+    ----------
+    - set readiness_inspector = snapshot paths expected_hashes atomic_policy
+    - return readiness_inspector
+
+    Wraps
+    -----
+    - none
+    """
+
+    def __init__(
+        self,
+        snapshot: GitSnapshot | None,
+        input_paths: Sequence[Path],
+        expected_hashes: Mapping[str, str],
+        *,
+        allow_non_atomic: bool = False,
+    ) -> None:
+        """Initialize one immutable readiness-observation configuration.
+
+        Intent
+        ------
+        Store the snapshot, input paths, expected hashes, and atomic-read policy used by inspection.
+
+        Rationale
+        ---------
+        Keeping these values together prevents one readiness decision from mixing repository observations.
+
+        Pseudocode
+        ----------
+        - set inspector_state = snapshot input_paths expected_hashes atomic_policy
+
+        Wraps
+        -----
+        - none
+        """
+        self._snapshot = snapshot
+        self._input_paths = tuple(input_paths)
+        self._expected_hashes = dict(expected_hashes)
+        self._allow_non_atomic = allow_non_atomic
+
+    @staticmethod
+    def _literal_pathspec(relative_path: str) -> str:
+        """Encode one repository path as a literal Git pathspec.
+
+        Intent
+        ------
+        Prevent Git pathspec metacharacters in tracked filenames from changing query scope.
+
+        Rationale
+        ---------
+        Batch queries must preserve exact-path semantics for unusual but valid repository names.
+
+        Pseudocode
+        ----------
+        - return literal_pathspec_for_relative_path
+
+        Wraps
+        -----
+        - none
+        """
+        return f":(literal){relative_path}"
+
+    def _normalize_paths(self, reasons: set[str]) -> tuple[str, ...]:
+        """Normalize input paths and record containment failures.
+
+        Intent
+        ------
+        Produce a sorted unique repository-relative path set while retaining the canonical outside-repository reason.
+
+        Rationale
+        ---------
+        Stable ordering and canonical containment are prerequisites for deterministic readiness evidence.
+
+        Pseudocode
+        ----------
+        - set relative_paths = normalized_contained_inputs
+        - set reasons = reasons plus containment_failures
+        - return relative_paths
+
+        Wraps
+        -----
+        - none
+
+        CallsFromRepo
+        -------------
+        officina.common.repository_paths.repository_relative_path:
+          why:
+            transforms: "Normalizes each candidate path before the inspector stores it in the query set."
+        """
+        if self._snapshot is None:
+            return ()
+        relative_paths: set[str] = set()
+        for path in self._input_paths:
+            try:
+                relative_paths.add(
+                    repository_relative_path(path, self._snapshot.repo_root).as_posix()
+                )
+            except RepositoryPathError:
+                reasons.add("input-outside-repository")
+        return tuple(sorted(relative_paths))
+
+    def _commit_entries(
+        self,
+        relative_paths: Sequence[str],
+    ) -> dict[str, tuple[str, str]]:
+        """Load commit modes and object IDs in one tree query.
+
+        Intent
+        ------
+        Map every valid exact input path to its commit mode and blob object ID.
+
+        Rationale
+        ---------
+        One bounded tree query replaces one subprocess per path without changing missing-entry behavior.
+
+        Pseudocode
+        ----------
+        - set tree_result = batched_commit_tree_query
+        - set commit_entries = parsed_exact_blob_entries
+        - return commit_entries
+
+        Wraps
+        -----
+        - none
+
+        InstantiationsFromRepo
+        ----------------------
+        officina.common.git_provenance.run_git:
+          why:
+            constructs: "Produces the batched tree bytes parsed into returned commit entries."
+        """
+        assert self._snapshot is not None
+        if not relative_paths:
+            return {}
+        result = run_git(
+            self._snapshot.repo_root,
+            "ls-tree",
+            "-z",
+            self._snapshot.commit,
+            "--",
+            *(self._literal_pathspec(path) for path in relative_paths),
+            check=False,
+        )
+        if result.returncode != 0:
+            return {}
+        entries: dict[str, tuple[str, str]] = {}
+        for record in result.stdout.rstrip(b"\0").split(b"\0"):
+            metadata, separator, raw_path = record.partition(b"\t")
+            fields = metadata.split()
+            if not separator or len(fields) != 3 or fields[1] != b"blob":
+                continue
+            try:
+                relative_path = os.fsdecode(raw_path)
+                mode = fields[0].decode("ascii")
+                object_id = fields[2].decode("ascii")
+            except UnicodeError:
+                continue
+            if relative_path in relative_paths:
+                entries[relative_path] = (mode, object_id)
+        return entries
+
+    def _index_entries(
+        self,
+        relative_paths: Sequence[str],
+    ) -> dict[str, tuple[tuple[str, str, str], ...]]:
+        """Load index modes, object IDs, and stages in one query.
+
+        Intent
+        ------
+        Group every valid index entry by exact repository-relative input path.
+
+        Rationale
+        ---------
+        Batched index inspection retains conflict-stage evidence while avoiding per-path process startup.
+
+        Pseudocode
+        ----------
+        - set index_result = batched_index_query
+        - set grouped_entries = parsed_index_records_by_path
+        - return grouped_entries_without_malformed_paths
+
+        Wraps
+        -----
+        - none
+
+        InstantiationsFromRepo
+        ----------------------
+        officina.common.git_provenance.run_git:
+          why:
+            constructs: "Produces the batched index bytes parsed into returned grouped entries."
+        """
+        assert self._snapshot is not None
+        if not relative_paths:
+            return {}
+        result = run_git(
+            self._snapshot.repo_root,
+            "ls-files",
+            "--stage",
+            "-z",
+            "--",
+            *(self._literal_pathspec(path) for path in relative_paths),
+            check=False,
+        )
+        if result.returncode != 0:
+            return {}
+        grouped: dict[str, list[tuple[str, str, str]]] = {}
+        invalid: set[str] = set()
+        for record in result.stdout.rstrip(b"\0").split(b"\0"):
+            metadata, separator, raw_path = record.partition(b"\t")
+            try:
+                relative_path = os.fsdecode(raw_path)
+            except UnicodeError:
+                continue
+            fields = metadata.split()
+            if not separator or len(fields) != 3:
+                invalid.add(relative_path)
+                continue
+            try:
+                entry = tuple(field.decode("ascii") for field in fields)
+            except UnicodeError:
+                invalid.add(relative_path)
+                continue
+            grouped.setdefault(relative_path, []).append(entry)
+        return {
+            path: tuple(entries)
+            for path, entries in grouped.items()
+            if path not in invalid
+        }
+
+    def _commit_blobs(self, object_ids: Sequence[str]) -> dict[str, bytes]:
+        """Read unique commit blobs through one size-delimited batch.
+
+        Intent
+        ------
+        Return exact blob bytes keyed by object ID for every requested commit object that Git can read.
+
+        Rationale
+        ---------
+        Size-delimited parsing preserves arbitrary binary content while bounding Git process count.
+
+        Pseudocode
+        ----------
+        - set batch_result = commit_blob_batch_query
+        - set blobs = size_delimited_payloads_by_object_id
+        - return blobs
+
+        Wraps
+        -----
+        - none
+
+        InstantiationsFromRepo
+        ----------------------
+        officina.common.git_provenance.run_git:
+          why:
+            constructs: "Produces size-delimited batch output parsed into returned blob bytes."
+        """
+        assert self._snapshot is not None
+        ordered_ids = tuple(sorted(set(object_ids)))
+        if not ordered_ids:
+            return {}
+        result = run_git(
+            self._snapshot.repo_root,
+            "cat-file",
+            "--batch",
+            check=False,
+            input_bytes=b"".join(
+                object_id.encode("ascii") + b"\n" for object_id in ordered_ids
+            ),
+        )
+        if result.returncode != 0:
+            return {}
+        blobs: dict[str, bytes] = {}
+        output = result.stdout
+        offset = 0
+        for requested_id in ordered_ids:
+            header_end = output.find(b"\n", offset)
+            if header_end < 0:
+                break
+            header = output[offset:header_end].split()
+            offset = header_end + 1
+            if len(header) != 3 or header[1] != b"blob":
+                continue
+            try:
+                returned_id = header[0].decode("ascii")
+                size = int(header[2])
+            except (UnicodeError, ValueError):
+                break
+            payload_end = offset + size
+            if payload_end >= len(output) or output[payload_end : payload_end + 1] != b"\n":
+                break
+            payload = output[offset:payload_end]
+            offset = payload_end + 1
+            if returned_id == requested_id:
+                blobs[requested_id] = payload
+        return blobs
+
+    @staticmethod
+    def _descriptor_safe_open_supported() -> bool:
+        """Return whether no-follow directory-relative reads are available.
+
+        Intent
+        ------
+        Detect the operating-system primitives required for confined POSIX worktree reads.
+
+        Rationale
+        ---------
+        Readiness must fail closed rather than silently use a path-following fallback.
+
+        Pseudocode
+        ----------
+        - return platform_supports_no_follow_directory_reads
+
+        Wraps
+        -----
+        - none
+        """
+        return (
+            os.name == "posix"
+            and hasattr(os, "O_NOFOLLOW")
+            and os.open in os.supports_dir_fd
+        )
+
+    def _read_worktree_file(
+        self,
+        relative_path: str,
+    ) -> tuple[bytes | None, str | None, str | None]:
+        """Read one worktree file without following path substitutions.
+
+        Intent
+        ------
+        Return confined file bytes, the authoritative worktree mode when available, and any fail-closed reason.
+
+        Rationale
+        ---------
+        Git metadata batching must not weaken the existing descriptor-safe worktree boundary.
+
+        Pseudocode
+        ----------
+        - set worktree_handle = confined_regular_file_handle
+        - set worktree_bytes = bytes_read_from_handle
+        - return worktree_bytes worktree_mode failure_reason
+
+        Wraps
+        -----
+        - none
+
+        InstantiationsFromRepo
+        ----------------------
+        officina.common.atomic_files.read_regular_file_bytes:
+          why:
+            constructs: "Produces confined native-platform bytes returned when descriptor-relative POSIX reads do not apply."
+        """
+        assert self._snapshot is not None
+        if os.name == "nt":
+            try:
+                data = read_regular_file_bytes(
+                    self._snapshot.repo_root / relative_path,
+                    allowed_root=self._snapshot.repo_root,
+                    allow_non_atomic=self._allow_non_atomic,
+                )
+            except (AtomicWriteError, FileNotFoundError, OSError):
+                return None, None, "unsafe-worktree-input"
+            return data, None, None
+        if not self._descriptor_safe_open_supported():
+            return None, None, "descriptor-safe-open-unavailable"
+
+        directory_fd = -1
+        final_fd = -1
+        file_flags = (
+            os.O_RDONLY
+            | os.O_NOFOLLOW
+            | os.O_NONBLOCK
+            | getattr(os, "O_CLOEXEC", 0)
+        )
+        directory_flags = file_flags | getattr(os, "O_DIRECTORY", 0)
+        try:
+            directory_fd = os.open(self._snapshot.repo_root, directory_flags)
+            if not stat.S_ISDIR(os.fstat(directory_fd).st_mode):
+                return None, None, "unsafe-worktree-input"
+            parts = Path(relative_path).parts
+            for component in parts[:-1]:
+                next_fd = os.open(component, directory_flags, dir_fd=directory_fd)
+                if not stat.S_ISDIR(os.fstat(next_fd).st_mode):
+                    os.close(next_fd)
+                    return None, None, "unsafe-worktree-input"
+                os.close(directory_fd)
+                directory_fd = next_fd
+            final_fd = os.open(parts[-1], file_flags, dir_fd=directory_fd)
+            metadata = os.fstat(final_fd)
+            if not stat.S_ISREG(metadata.st_mode):
+                return None, None, "unsafe-worktree-input"
+            chunks: list[bytes] = []
+            while chunk := os.read(final_fd, 1024 * 1024):
+                chunks.append(chunk)
+            mode = "100755" if metadata.st_mode & stat.S_IXUSR else "100644"
+            return b"".join(chunks), mode, None
+        except OSError:
+            return None, None, "unsafe-worktree-input"
+        finally:
+            if final_fd >= 0:
+                os.close(final_fd)
+            if directory_fd >= 0:
+                os.close(directory_fd)
+
+    def inspect(self) -> CommitReadiness:
+        """Return deterministic readiness evidence for the owned input set.
+
+        Intent
+        ------
+        Compare commit, index, worktree, mode, and expected-hash evidence for every normalized input.
+
+        Rationale
+        ---------
+        Certification needs the canonical per-path decisions with bounded Git process growth.
+
+        Pseudocode
+        ----------
+        - set git_evidence = batched_tree_index_and_blob_observations
+        - set reasons = deterministic_per_path_comparison_findings
+        - return readiness_from_reasons_and_snapshot
+
+        Wraps
+        -----
+        - none
+
+        CallsFromRepo
+        -------------
+        ._hash_bytes:
+          why:
+            computes: "Compares worktree bytes with the expected canonical digest without carrying the helper result forward."
+
+        InstantiationsFromRepo
+        ----------------------
+        officina.common.git_provenance.CommitReadiness:
+          why:
+            constructs: "Carries the final source evidence and ordered findings to the repository freeze guard."
+        """
+
+        if self._snapshot is None:
+            return CommitReadiness(False, None, ("not-a-git-repository",))
+        reasons: set[str] = set()
+        relative_paths = self._normalize_paths(reasons)
+        try:
+            commit_entries = self._commit_entries(relative_paths)
+            index_entries = self._index_entries(relative_paths)
+        except OSError:
+            reasons.update(f"git-unavailable:{path}" for path in relative_paths)
+            return CommitReadiness(False, None, tuple(sorted(reasons)))
+        blob_query_unavailable = False
+        try:
+            commit_blobs = self._commit_blobs(
+                tuple(object_id for _mode, object_id in commit_entries.values())
+            )
+        except OSError:
+            commit_blobs = {}
+            blob_query_unavailable = True
+
+        for relative_path in relative_paths:
+            commit_entry = commit_entries.get(relative_path)
+            if commit_entry is None:
+                reasons.add(f"not-tracked-at-commit:{relative_path}")
+                continue
+            commit_mode, commit_object_id = commit_entry
+            if commit_mode not in _REGULAR_GIT_FILE_MODES:
+                reasons.add(f"unsupported-commit-mode:{relative_path}")
+                continue
+            entries = index_entries.get(relative_path)
+            if not entries:
+                reasons.add(f"missing-index-entry:{relative_path}")
+                continue
+            if any(stage != "0" for _mode, _object_id, stage in entries):
+                reasons.add(f"nonzero-index-stage:{relative_path}")
+                continue
+            if len(entries) != 1:
+                reasons.add(f"invalid-index-entry:{relative_path}")
+                continue
+            index_mode, index_object_id, _stage = entries[0]
+            if index_mode not in _REGULAR_GIT_FILE_MODES:
+                reasons.add(f"unsupported-index-mode:{relative_path}")
+                continue
+            if index_mode != commit_mode:
+                reasons.add(f"index-mode-differs-from-commit:{relative_path}")
+                continue
+            if index_object_id != commit_object_id:
+                reasons.add(f"index-differs-from-commit:{relative_path}")
+                continue
+            commit_bytes = commit_blobs.get(commit_object_id)
+            if commit_bytes is None:
+                reason = (
+                    "git-unavailable"
+                    if blob_query_unavailable
+                    else "unreadable-commit-blob"
+                )
+                reasons.add(f"{reason}:{relative_path}")
+                continue
+            worktree_bytes, worktree_mode, worktree_reason = self._read_worktree_file(
+                relative_path
+            )
+            if worktree_reason is not None:
+                reasons.add(f"{worktree_reason}:{relative_path}")
+                continue
+            if worktree_bytes is None:
+                reasons.add(f"unsafe-worktree-input:{relative_path}")
+                continue
+            if worktree_mode is not None and worktree_mode != commit_mode:
+                reasons.add(f"worktree-mode-differs-from-commit:{relative_path}")
+                continue
+            if worktree_bytes != commit_bytes:
+                reasons.add(f"worktree-differs-from-commit:{relative_path}")
+                continue
+            expected_hash = self._expected_hashes.get(relative_path)
+            if expected_hash is not None and _hash_bytes(worktree_bytes) != expected_hash:
+                reasons.add(f"expected-hash-mismatch:{relative_path}")
+
+        ordered_reasons = tuple(sorted(reasons))
+        source = {
+            "vcs": "git",
+            "commit": self._snapshot.commit,
+            "input_paths": list(relative_paths),
+        }
+        return CommitReadiness(
+            stamp_worthy=not ordered_reasons,
+            source=source if not ordered_reasons else None,
+            reasons=ordered_reasons,
+        )
 
 
 def _python_route_smoke_trace_specs(
@@ -648,7 +1189,7 @@ def _python_route_smoke_trace_specs(
         constructs: "The returned trace spec carries this process target into dependency tracing."
     officina.runtime.python_machine_interface.logical_python_package_name:
       why:
-        transforms: "The v5 module id becomes logical package evidence stored on each constructed process target."
+        transforms: "The module id becomes logical package evidence stored on each constructed process target."
     """
 
     selected: set[str] = set()
@@ -740,165 +1281,229 @@ def _python_route_smoke_trace_specs(
     )
 
 
-def audit_route_smoke_dependencies(
-    graph: RepositoryBlueprintGraph,
-    states: Mapping[str, NodeHashState],
-    *,
-    repo_root: Path,
-    certification_basis_paths: Sequence[Path],
-    certification_node_ids: Sequence[str],
-    schema_root: Path | None = None,
-) -> RouteSmokeAuditResult:
-    """audit_route_smoke_dependencies maps traced Python imports to certification dependencies.
+class RouteSmokeAuditor:
+    """Own route tracing and the two-observation stability gate.
 
     Intent
     ------
-    Trace selected Python process targets, map loaded files back to blueprint dependencies, and return stable signatures for each node/interface pair.
+    Coordinate static target preparation, independent runtime traces, dependency mapping, and stability comparison.
 
     Rationale
     ---------
-    The certifier must prove runtime imports seen during smoke execution are covered by the same node-hash graph that is about to be signed.
+    Route evidence shares configuration and cached specifications but must retain two separate runtime observations.
 
     Pseudocode
     ----------
-    - set trace_specs = selected_route_smoke_targets
-    - set traces = traced_python_process_dependencies
-    - set mapped = mapped_blueprint_dependencies
-    - return route_smoke_audit_rows
+    - set route_auditor = graph states basis targets schema
+    - return route_auditor
 
     Wraps
     -----
     - none
-
-    InstantiationsFromRepo
-    ----------------------
-    ._python_route_smoke_trace_specs:
-      why:
-        constructs: "Selected route-smoke specifications are carried into batch tracing and final audit rows."
-    officina.common.certification_hashing.CertificationHashError:
-      why:
-        raises: "Trace and mapping failures leave the audit as a typed certification-hash rejection."
-    officina.common.certification_hashing.map_route_smoke_dependencies:
-      why:
-        transforms: "Loaded Python paths become dependency mappings consumed by the signature step."
-    officina.common.certification_hashing.route_smoke_trace_signature:
-      why:
-        serializes: "Mapped dependencies become the tuple signature returned in each route-smoke audit row."
-    officina.runtime.python_machine_interface.trace_python_route_smoke_dependencies_batch:
-      why:
-        constructs: "Observed import traces are carried forward for dependency mapping."
     """
 
-    root = Path(repo_root).resolve()
-    trace_specs = _python_route_smoke_trace_specs(
-        graph,
-        certification_node_ids,
-    )
-    specifications = tuple(
-        (graph.nodes[node_id].module_root, python_target)
-        for node_id, _interface_id, python_target in trace_specs
-    )
-    try:
-        trace_options = {}
-        if graph.schema_version == 5:
-            trace_options = {
-                "expected_schema_version": 5,
-                "schema_root": (
-                    Path(schema_root)
-                    if schema_root is not None
-                    else root / "references" / "blueprint" / "v5"
-                ),
-            }
-        traces = trace_python_route_smoke_dependencies_batch(
-            root,
-            specifications,
-            **trace_options,
-        )
-    except (PythonRouteSmokeTraceError, ValueError) as exc:
-        raise CertificationHashError(str(exc)) from exc
-    results: list[
-        tuple[
-            str,
-            str,
-            tuple[tuple[str, str, str | None], ...],
-        ]
-    ] = []
-    for node_id, _interface_id, python_target in trace_specs:
-        key = (graph.nodes[node_id].module_root.resolve(), python_target)
-        mappings = map_route_smoke_dependencies(
-            graph,
-            states,
-            source_node_id=node_id,
-            loaded_paths=traces[key],
-            certification_basis_paths=certification_basis_paths,
-            repo_root=root,
-        )
-        results.append(
-            (
-                node_id,
-                python_target,
-                route_smoke_trace_signature(mappings),
+    def __init__(
+        self,
+        graph: RepositoryBlueprintGraph,
+        states: Mapping[str, NodeHashState],
+        *,
+        repo_root: Path,
+        certification_basis_paths: Sequence[Path],
+        certification_node_ids: Sequence[str],
+        schema_root: Path | None = None,
+    ) -> None:
+        """Initialize route-smoke configuration without executing a trace.
+
+        Intent
+        ------
+        Store graph evidence, repository paths, target scope, and schema selection for later observations.
+
+        Rationale
+        ---------
+        Construction remains effect-free so trace failures occur inside the certification error boundary.
+
+        Pseudocode
+        ----------
+        - set auditor_state = graph states repository basis targets schema
+
+        Wraps
+        -----
+        - none
+        """
+        self._graph = graph
+        self._states = states
+        self._repo_root = repo_root
+        self._certification_basis_paths = tuple(certification_basis_paths)
+        self._certification_node_ids = tuple(certification_node_ids)
+        self._schema_root = schema_root
+        self._trace_specs: tuple[tuple[str, str, PythonProcessTarget], ...] | None = None
+
+    def prepare_trace_specs(
+        self,
+    ) -> tuple[tuple[str, str, PythonProcessTarget], ...]:
+        """Build validated static process targets once for both observations.
+
+        Intent
+        ------
+        Cache the deterministic process-target specifications shared by both independent traces.
+
+        Rationale
+        ---------
+        Graph walking need not repeat because trace independence concerns runtime loading, not static target construction.
+
+        Pseudocode
+        ----------
+        - if trace_specs_are_absent:
+          - set trace_specs = validated_process_targets
+        - return trace_specs
+
+        Wraps
+        -----
+        - none
+
+        InstantiationsFromRepo
+        ----------------------
+        ._python_route_smoke_trace_specs:
+          why:
+            constructs: "Produces the validated target tuple cached and returned for both runtime observations."
+        """
+
+        if self._trace_specs is None:
+            self._trace_specs = _python_route_smoke_trace_specs(
+                self._graph,
+                self._certification_node_ids,
             )
+        return self._trace_specs
+
+    def trace_dependencies(self) -> RouteSmokeAuditResult:
+        """Run one independent route-smoke dependency observation.
+
+        Intent
+        ------
+        Execute every prepared process target and map loaded files to canonical certification dependencies.
+
+        Rationale
+        ---------
+        Each call must observe runtime imports anew while emitting stable comparable signatures.
+
+        Pseudocode
+        ----------
+        - set traces = independently_loaded_process_dependencies
+        - set mappings = canonical_dependencies_for_each_trace
+        - return signatures_from_mappings
+
+        Wraps
+        -----
+        - none
+
+        InstantiationsFromRepo
+        ----------------------
+        officina.runtime.python_machine_interface.trace_python_route_smoke_dependencies_batch:
+          why:
+            constructs: "Produces the independently observed loaded paths carried into dependency mapping."
+        officina.common.certification_hashing.map_route_smoke_dependencies:
+          why:
+            transforms: "Produces canonical dependency mappings carried into each returned signature."
+        officina.common.certification_hashing.route_smoke_trace_signature:
+          why:
+            serializes: "Produces the deterministic dependency signature carried in the audit result."
+        officina.common.certification_hashing.CertificationHashError:
+          why:
+            raises: "Carries route tracing failures to the session stability boundary."
+        """
+
+        root = Path(self._repo_root).resolve()
+        trace_specs = self.prepare_trace_specs()
+        specifications = tuple(
+            (self._graph.nodes[node_id].module_root, python_target)
+            for node_id, _interface_id, python_target in trace_specs
         )
-    return tuple(results)
+        try:
+            trace_options = {}
+            if self._graph.schema_version == 5:
+                trace_options = {
+                    "expected_schema_version": 5,
+                    "schema_root": (
+                        Path(self._schema_root)
+                        if self._schema_root is not None
+                        else root / "references" / "blueprint" / "v5"
+                    ),
+                }
+            traces = trace_python_route_smoke_dependencies_batch(
+                root,
+                specifications,
+                **trace_options,
+            )
+        except (PythonRouteSmokeTraceError, ValueError) as exc:
+            raise CertificationHashError(str(exc)) from exc
+        results: list[
+            tuple[
+                str,
+                PythonProcessTarget,
+                tuple[tuple[str, str, str | None], ...],
+            ]
+        ] = []
+        for node_id, _interface_id, python_target in trace_specs:
+            key = (self._graph.nodes[node_id].module_root.resolve(), python_target)
+            mappings = map_route_smoke_dependencies(
+                self._graph,
+                self._states,
+                source_node_id=node_id,
+                loaded_paths=traces[key],
+                certification_basis_paths=self._certification_basis_paths,
+                repo_root=root,
+            )
+            results.append(
+                (
+                    node_id,
+                    python_target,
+                    route_smoke_trace_signature(mappings),
+                )
+            )
+        return tuple(results)
+
+    def require_stable_dependencies(self) -> RouteSmokeAuditResult:
+        """Require two independently traced dependency observations to agree.
+
+        Intent
+        ------
+        Execute route tracing twice, convert policy failures, and reject any signature mismatch.
+
+        Rationale
+        ---------
+        Stable runtime dependency evidence is required before certificate logs may be opened.
+
+        Pseudocode
+        ----------
+        - set initial = first_independent_trace
+        - set repeated = second_independent_trace
+        - raise %.CertificationError(trace_failure_or_mismatch)
+        - return initial
+
+        Wraps
+        -----
+        - none
+
+        InstantiationsFromRepo
+        ----------------------
+        .CertificationError:
+          why:
+            raises: "Converts hash-policy failures and trace mismatches into a certification denial."
+        """
+
+        try:
+            initial = self.trace_dependencies()
+            repeated = self.trace_dependencies()
+        except CertificationHashError as exc:
+            raise CertificationError(str(exc)) from exc
+        if repeated != initial:
+            raise CertificationError(
+                "route-smoke dependency audit changed during certification"
+            )
+        return initial
 
 
-def _v4_route_smoke_audit(
-    graph: RepositoryBlueprintGraph,
-    states: Mapping[str, NodeHashState],
-    *,
-    repo_root: Path,
-    certification_basis_paths: Sequence[Path],
-    certification_node_ids: Sequence[str],
-    schema_root: Path | None = None,
-) -> RouteSmokeAuditResult:
-    """_v4_route_smoke_audit runs route-smoke dependency auditing when configured.
-
-    Intent
-    ------
-    Invoke the route-smoke mapper for selected certification nodes and convert hash-policy failures into certification failures.
-
-    Rationale
-    ---------
-    Route-smoke evidence is optional by schema version, but when required it must fail before certificate payloads are signed.
-
-    Pseudocode
-    ----------
-        - set audit_rows = traced_route_smoke_dependencies
-        - return audit_rows
-
-    Wraps
-    -----
-    - none
-
-    InstantiationsFromRepo
-    ----------------------
-    .CertificationError:
-      why:
-        raises: "Route-smoke tracing failures are converted into certification denials before gate evidence is recorded."
-    .audit_route_smoke_dependencies:
-      why:
-        constructs: "Route-smoke audit rows become optional gate evidence for the private writer."
-    """
-    try:
-        schema_options = (
-            {"schema_root": schema_root}
-            if graph.schema_version == 5
-            else {}
-        )
-        return audit_route_smoke_dependencies(
-            graph,
-            states,
-            repo_root=repo_root,
-            certification_basis_paths=certification_basis_paths,
-            certification_node_ids=certification_node_ids,
-            **schema_options,
-        )
-    except CertificationHashError as exc:
-        raise CertificationError(str(exc)) from exc
-
-
-def _v4_payload(
+def _build_certificate_payload(
     repo_root: Path,
     graph: RepositoryBlueprintGraph,
     states: Mapping[str, object],
@@ -912,7 +1517,7 @@ def _v4_payload(
     certified_at: str,
     expected_schema_version: int = 4,
 ) -> dict[str, object]:
-    """_v4_payload builds the dictionary signed as a node certificate.
+    """_build_certificate_payload builds the dictionary signed as a node certificate.
 
     Intent
     ------
@@ -978,14 +1583,14 @@ def _v4_payload(
     }
 
 
-def _v4_gate_snapshot(
+def _build_gate_evidence(
     node_id: str,
     state: object,
     *,
     source_commit: str,
     certifier_identity: Mapping[str, object],
-) -> V4GateSnapshot:
-    """_v4_gate_snapshot builds the evidence view consumed by v4 gates.
+) -> GateEvidence:
+    """Build the evidence view consumed by certification gates.
 
     Intent
     ------
@@ -1010,7 +1615,7 @@ def _v4_gate_snapshot(
     .CertificationError:
       why:
         raises: "Missing node state or basis evidence rejects the snapshot before deterministic gates can read it."
-    .V4GateSnapshot:
+    .GateEvidence:
       why:
         constructs: "The snapshot object packages one node evidence bundle for deterministic comparisons."
     """
@@ -1018,7 +1623,7 @@ def _v4_gate_snapshot(
     basis_hash = getattr(state, "certification_basis_hash", None)
     if not isinstance(node_hash, str) or not isinstance(basis_hash, str):
         raise CertificationError(f"{node_id}: canonical gate snapshot is unavailable")
-    return V4GateSnapshot(
+    return GateEvidence(
         node_id=node_id,
         node_hash=node_hash,
         source_commit=source_commit,
@@ -1033,12 +1638,12 @@ def _v4_gate_snapshot(
     )
 
 
-def _passed_v4_check(
+def _passed_check(
     gate_name: str,
     *,
     expected_schema_version: int = 4,
 ) -> dict[str, object]:
-    """_passed_v4_check creates a passed check record from the certifier registry.
+    """_passed_check creates a passed check record from the certifier registry.
 
     Intent
     ------
@@ -1087,14 +1692,14 @@ def _passed_v4_check(
     }
 
 
-def _v4_deterministic_check(
-    snapshot: V4GateSnapshot,
+def _run_deterministic_check(
+    snapshot: GateEvidence,
     *,
     graph: RepositoryBlueprintGraph,
     states: Mapping[str, NodeHashState],
     expected_schema_version: int = 4,
 ) -> dict[str, object]:
-    """_v4_deterministic_check validates one node against deterministic v4 evidence.
+    """Validate one node against deterministic certification evidence.
 
     Intent
     ------
@@ -1117,7 +1722,7 @@ def _v4_deterministic_check(
 
     CallsFromRepo
     -------------
-    .v4_certification_completeness_findings:
+    .certification_completeness_findings:
       why:
         orchestrates: "The completeness scan confirms schema disclosures before deterministic evidence is accepted."
 
@@ -1126,10 +1731,10 @@ def _v4_deterministic_check(
     .CertificationError:
       why:
         raises: "Hash, manifest, dependency, basis, or identity mismatches reject the deterministic gate."
-    ._passed_v4_check:
+    ._passed_check:
       why:
         constructs: "The passed-check row records the successful gate name and registry version."
-    ._v4_gate_snapshot:
+    ._build_gate_evidence:
       why:
         constructs: "The reconstructed snapshot provides the observed evidence compared against the reviewed snapshot."
     """
@@ -1138,7 +1743,7 @@ def _v4_deterministic_check(
     state = states.get(snapshot.node_id)
     if node is None or not isinstance(state, NodeHashState):
         raise CertificationError(f"{snapshot.node_id}: deterministic state is unavailable")
-    reconstructed = _v4_gate_snapshot(
+    reconstructed = _build_gate_evidence(
         snapshot.node_id,
         state,
         source_commit=snapshot.source_commit,
@@ -1148,26 +1753,26 @@ def _v4_deterministic_check(
         raise CertificationError(f"{snapshot.node_id}: deterministic snapshot changed")
     if any(
         finding.subject_id in {node.node_id, *node.declaration.get("interfaces", {})}
-        for finding in v4_certification_completeness_findings(graph)
+        for finding in certification_completeness_findings(graph)
     ):
         raise CertificationError(f"{snapshot.node_id}: deterministic completeness failed")
-    return _passed_v4_check(
+    return _passed_check(
         "deterministic",
         expected_schema_version=expected_schema_version,
     )
 
 
-def _v4_semantic_attestation(
-    snapshot: V4GateSnapshot,
+def _semantic_attestation_check(
+    snapshot: GateEvidence,
     *,
     reviewed_commit: str,
     expected_schema_version: int = 4,
 ) -> dict[str, object]:
-    """_v4_semantic_attestation creates the semantic-review check row when migration review is required.
+    """_semantic_attestation_check creates the semantic-review check row when migration review is required.
 
     Intent
     ------
-    Run semantic-attestation replay for v4 migration certificates and return the corresponding passed gate record.
+    Run semantic-attestation replay for migration certificates and return the corresponding passed gate record.
 
     Rationale
     ---------
@@ -1188,24 +1793,24 @@ def _v4_semantic_attestation(
     .CertificationError:
       why:
         raises: "Failed semantic replay rejects migration-review certification before a passed check is emitted."
-    ._passed_v4_check:
+    ._passed_check:
       why:
         constructs: "The passed-check row records the successful gate name and registry version."
     """
 
     if not reviewed_commit or snapshot.source_commit != reviewed_commit:
         raise CertificationError(f"{snapshot.node_id}: semantic review does not match HEAD")
-    return _passed_v4_check(
+    return _passed_check(
         "semantic-review",
         expected_schema_version=expected_schema_version,
     )
 
 
-def _v4_blueprint_paths(
+def _blueprint_paths(
     graph: RepositoryBlueprintGraph,
     repo_root: Path,
 ) -> set[Path]:
-    """_v4_blueprint_paths collects blueprint paths contained in a graph.
+    """_blueprint_paths collects blueprint paths contained in a graph.
 
     Intent
     ------
@@ -1244,14 +1849,14 @@ def _v4_blueprint_paths(
         raise CertificationError("v4 blueprint path escapes its repository") from exc
 
 
-def _materialize_v4_local_inputs(
+def _materialize_local_inputs(
     source_root: Path,
     target_root: Path,
     states: Mapping[str, NodeHashState],
     *,
     allow_non_atomic: bool,
 ) -> None:
-    """_materialize_v4_local_inputs copies untracked v4 inputs into a reconstructed commit tree.
+    """Copy untracked inputs into a reconstructed commit tree.
 
     Intent
     ------
@@ -1331,7 +1936,7 @@ def _materialize_v4_local_inputs(
             ) from exc
 
 
-def _validate_v4_semantic_attestation(
+def _validate_semantic_attestation(
     repo_root: Path,
     reviewed_graph: RepositoryBlueprintGraph,
     reviewed_states: Mapping[str, NodeHashState],
@@ -1340,7 +1945,7 @@ def _validate_v4_semantic_attestation(
     reviewed_commit: str,
     allow_non_atomic: bool,
 ) -> None:
-    """_validate_v4_semantic_attestation replays the mechanical baseline behind a reviewed v4 commit.
+    """Replay the mechanical baseline behind a reviewed migration commit.
 
     Intent
     ------
@@ -1365,13 +1970,13 @@ def _validate_v4_semantic_attestation(
 
     CallsFromRepo
     -------------
-    ._materialize_v4_local_inputs:
+    ._materialize_local_inputs:
       why:
         writes: "Restores declared local inputs into the temporary mechanical tree before graph loading."
-    ._v4_blueprint_paths:
+    ._blueprint_paths:
       why:
         computes: "Builds the allowed blueprint-path set used to reject unrelated reviewed-file changes."
-    .v4_protected_projection:
+    .protected_review_projection:
       why:
         validates: "Compares protected graph projections after path-level review checks pass."
     officina.common.git_provenance.materialize_git_commit:
@@ -1400,7 +2005,7 @@ def _validate_v4_semantic_attestation(
                 mechanical_root,
                 allow_non_atomic=allow_non_atomic,
             )
-            _materialize_v4_local_inputs(
+            _materialize_local_inputs(
                 repo_root,
                 mechanical_root,
                 reviewed_states,
@@ -1447,16 +2052,16 @@ def _validate_v4_semantic_attestation(
             for raw_path in changed.stdout.rstrip(b"\0").split(b"\0")
             if raw_path
         }
-        allowed_paths = _v4_blueprint_paths(
+        allowed_paths = _blueprint_paths(
             mechanical_graph, mechanical_root
-        ) | _v4_blueprint_paths(reviewed_graph, repo_root)
+        ) | _blueprint_paths(reviewed_graph, repo_root)
         unexpected = sorted(changed_paths - allowed_paths)
         if unexpected:
             raise CertificationError(
                 "semantic review may change only blueprint files: "
                 + ", ".join(path.as_posix() for path in unexpected)
             )
-        if v4_protected_projection(mechanical_graph) != v4_protected_projection(
+        if protected_review_projection(mechanical_graph) != protected_review_projection(
             reviewed_graph
         ):
             raise CertificationError("semantic review changed the protected projection")
@@ -1536,7 +2141,1295 @@ def _verify_executing_candidate_certifier(
         raise CertificationError("executing certifier bytes do not match the candidate manifest")
 
 
-def _certify_v4_repository(
+@dataclass(frozen=True)
+class RepositoryEvidence:
+    """Store one coherent repository evidence derivation.
+
+    Intent
+    ------
+    Group graph, node states, certification basis, and certifier identity from one observation.
+
+    Rationale
+    ---------
+    Initial and final evidence must compare as complete values without mixing fields across observations.
+
+    Pseudocode
+    ----------
+    - set repository_evidence = graph states basis identity
+    - return repository_evidence
+
+    Wraps
+    -----
+    - none
+    """
+
+    graph: RepositoryBlueprintGraph
+    states: Mapping[str, NodeHashState]
+    basis_hash: str
+    basis_paths: tuple[Path, ...]
+    certifier_identity: Mapping[str, object]
+
+
+class RepositoryEvidenceLoader:
+    """Derive complete evidence under one repository policy.
+
+    Intent
+    ------
+    Own stable derivation configuration while producing uncached graph, hash, basis, and identity observations.
+
+    Rationale
+    ---------
+    A stateful configuration owner prevents argument drift while retaining independent initial and final loads.
+
+    Pseudocode
+    ----------
+    - set evidence_loader = repository schema policy snapshot options
+    - return evidence_loader
+
+    Wraps
+    -----
+    - none
+    """
+
+    def __init__(
+        self,
+        *,
+        repo_root: Path,
+        schema_root: Path,
+        policy_path: Path,
+        snapshot: GitSnapshot,
+        expected_schema_version: int,
+        allow_non_atomic: bool,
+        require_candidate_execution: bool,
+    ) -> None:
+        """Initialize stable repository evidence derivation configuration.
+
+        Intent
+        ------
+        Store repository, schema, policy, snapshot, atomicity, and candidate-execution settings.
+
+        Rationale
+        ---------
+        Both evidence observations must use identical policy inputs without sharing derived results.
+
+        Pseudocode
+        ----------
+        - set loader_state = repository schema policy snapshot options
+
+        Wraps
+        -----
+        - none
+        """
+        self._repo_root = repo_root
+        self._schema_root = schema_root
+        self._policy_path = policy_path
+        self._snapshot = snapshot
+        self._expected_schema_version = expected_schema_version
+        self._allow_non_atomic = allow_non_atomic
+        self._require_candidate_execution = require_candidate_execution
+
+    def load(self) -> RepositoryEvidence:
+        """Load and validate one complete repository evidence observation.
+
+        Intent
+        ------
+        Derive a closed graph, completeness decision, certification basis, node states, and certifier identity together.
+
+        Rationale
+        ---------
+        Signing and final comparison require every evidence component to come from the same uncached observation.
+
+        Pseudocode
+        ----------
+        - set graph = validated_repository_graph
+        - set basis = certification_basis_paths_and_hash
+        - set states = canonical_node_hash_states
+        - set identity = certifier_identity_from_states
+        - return %.RepositoryEvidence(graph states basis identity)
+
+        Wraps
+        -----
+        - none
+
+        CallsFromRepo
+        -------------
+        ._verify_executing_candidate_certifier:
+          why:
+            validates: "Checks candidate execution ownership after the complete state is derived."
+
+        InstantiationsFromRepo
+        ----------------------
+        officina.common.blueprint_graph.load_repository_blueprint_graph:
+          why:
+            constructs: "Produces the closed graph carried throughout the returned evidence."
+        .certification_completeness_findings:
+          why:
+            constructs: "Produces completeness findings inspected before hash evidence is accepted."
+        officina.common.certification_hashing.resolve_certification_basis_paths:
+          why:
+            transforms: "Produces basis paths carried into hashing and returned evidence."
+        officina.common.certification_hashing.compute_certification_basis_hash:
+          why:
+            serializes: "Produces the basis digest carried into node-state derivation and returned evidence."
+        officina.common.certification_hashing.compute_node_hash_states:
+          why:
+            constructs: "Produces canonical states carried into identity derivation and returned evidence."
+        officina.common.certification_hashing.derive_certifier_identity:
+          why:
+            constructs: "Produces certifier identity carried in the returned evidence."
+        .CertificationError:
+          why:
+            raises: "Carries graph, completeness, hash, and identity rejections to the certification boundary."
+        .RepositoryEvidence:
+          why:
+            constructs: "Carries the coherent derivation returned to the session."
+        """
+
+        try:
+            graph = load_repository_blueprint_graph(
+                self._repo_root,
+                schema_root=self._schema_root,
+                expected_schema_version=self._expected_schema_version,
+            )
+            if not graph.nodes or any(
+                node.declaration.get("schema_version")
+                != self._expected_schema_version
+                for node in graph.nodes.values()
+            ):
+                raise CertificationError(
+                    "private certificate writer accepts only a closed "
+                    f"all-v{self._expected_schema_version} repository"
+                )
+            completeness = certification_completeness_findings(graph)
+            if completeness:
+                first = completeness[0]
+                raise CertificationError(
+                    f"v{self._expected_schema_version} certification completeness failed: "
+                    f"{first.subject_id}:{first.field} "
+                    f"({len(completeness)} finding(s))"
+                )
+            basis_paths = resolve_certification_basis_paths(
+                self._repo_root,
+                expected_schema_version=self._expected_schema_version,
+                allow_non_atomic=self._allow_non_atomic,
+            )
+            basis_hash = compute_certification_basis_hash(
+                self._repo_root,
+                expected_schema_version=self._expected_schema_version,
+                allow_non_atomic=self._allow_non_atomic,
+            )
+            states = compute_node_hash_states(
+                graph,
+                repo_root=self._repo_root,
+                policy_path=self._policy_path,
+                certification_basis_hash=basis_hash,
+                certification_basis_paths=basis_paths,
+                allow_non_atomic=self._allow_non_atomic,
+            )
+            certifier_identity = derive_certifier_identity(
+                graph,
+                states,
+                self._snapshot.commit,
+            )
+            if self._require_candidate_execution:
+                _verify_executing_candidate_certifier(
+                    self._repo_root,
+                    graph,
+                    states,
+                )
+        except CertificationHashError as exc:
+            raise CertificationError(str(exc)) from exc
+        return RepositoryEvidence(
+            graph=graph,
+            states=states,
+            basis_hash=basis_hash,
+            basis_paths=basis_paths,
+            certifier_identity=certifier_identity,
+        )
+
+
+class RepositoryFreezeGuard:
+    """Own repository observations that keep certificate appends race-safe.
+
+    Intent
+    ------
+    Coordinate status, commit readiness, local claims, tracked bytes and modes, and generated-output allowances.
+
+    Rationale
+    ---------
+    These observations share lifecycle state and must remain ordered around every append.
+
+    Pseudocode
+    ----------
+    - set freeze_guard = repository snapshot atomic_policy
+    - return freeze_guard
+
+    Wraps
+    -----
+    - none
+    """
+
+    def __init__(
+        self,
+        *,
+        repo_root: Path,
+        snapshot: GitSnapshot,
+        allow_non_atomic: bool,
+    ) -> None:
+        """Initialize repository freeze state before its first observation.
+
+        Intent
+        ------
+        Store repository identity and initialize empty claim and allowance collections.
+
+        Rationale
+        ---------
+        One lifecycle owner must retain initial status records for every later append gate.
+
+        Pseudocode
+        ----------
+        - set guard_state = repository snapshot empty_claims empty_allowances
+
+        Wraps
+        -----
+        - none
+        """
+        self._repo_root = repo_root
+        self._snapshot = snapshot
+        self._allow_non_atomic = allow_non_atomic
+        self._initial_untracked_records: set[bytes] = set()
+        self._tracked_paths: tuple[Path, ...] = ()
+        self._local_claims: dict[str, str] = {}
+        self._tracked_claims: dict[Path, tuple[str, bool]] = {}
+        self._public_key_relative: Path | None = None
+        self._pooled_review_relatives: set[Path] = set()
+
+    def _porcelain_status_records(self, phase: str) -> tuple[bytes, ...]:
+        """Return byte-preserving repository status records for one phase.
+
+        Intent
+        ------
+        Query tracked and untracked status without decoding filenames before policy checks.
+
+        Rationale
+        ---------
+        Raw records preserve unusual path evidence and support exact preexisting-file comparison.
+
+        Pseudocode
+        ----------
+        - set status_result = porcelain_status_query
+        - raise %.CertificationError(status_unavailable)
+        - return nonempty_status_records
+
+        Wraps
+        -----
+        - none
+
+        InstantiationsFromRepo
+        ----------------------
+        officina.common.git_provenance.run_git:
+          why:
+            constructs: "Produces raw status bytes parsed into the returned record tuple."
+        .CertificationError:
+          why:
+            raises: "Carries unavailable status evidence to the certification boundary."
+        """
+        status = run_git(
+            self._repo_root,
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=all",
+            check=False,
+        )
+        if status.returncode != 0:
+            raise CertificationError(f"repository status is unavailable {phase}")
+        return tuple(
+            record
+            for record in status.stdout.rstrip(b"\0").split(b"\0")
+            if record
+        )
+
+    def capture_initial_state(self) -> None:
+        """Record preexisting untracked files and reject tracked dirtiness.
+
+        Intent
+        ------
+        Establish the exact untracked baseline tolerated during later certificate writes.
+
+        Rationale
+        ---------
+        Generated outputs may be added, but unrelated preexisting files must neither appear nor disappear.
+
+        Pseudocode
+        ----------
+        - set initial_records = validated_untracked_status_records
+        - raise %.CertificationError(tracked_or_undecodable_status)
+        - set guard_initial_state = initial_records
+
+        Wraps
+        -----
+        - none
+
+        InstantiationsFromRepo
+        ----------------------
+        .CertificationError:
+          why:
+            raises: "Carries invalid initial repository state to the certification boundary."
+        """
+
+        records: set[bytes] = set()
+        for record in self._porcelain_status_records("before certification"):
+            if not record.startswith(b"?? "):
+                raise CertificationError(
+                    "tracked repository state changed before certification"
+                )
+            try:
+                os.fsdecode(record[3:])
+            except UnicodeError as exc:
+                raise CertificationError(
+                    "untracked repository state changed before certification"
+                ) from exc
+            records.add(record)
+        self._initial_untracked_records = records
+
+    def configure_inputs(
+        self,
+        tracked_paths: Sequence[Path],
+        local_claims: Mapping[str, str],
+    ) -> None:
+        """Bind the complete tracked and local input set for later phases.
+
+        Intent
+        ------
+        Store normalized tracked paths and declared local digests after graph derivation.
+
+        Rationale
+        ---------
+        Later readiness and append gates must inspect the identical graph-derived input set.
+
+        Pseudocode
+        ----------
+        - set guard_inputs = tracked_paths local_claims
+
+        Wraps
+        -----
+        - none
+        """
+
+        self._tracked_paths = tuple(tracked_paths)
+        self._local_claims = dict(local_claims)
+
+    def require_ready_commit(
+        self,
+        current_snapshot: GitSnapshot,
+        phase: str,
+    ) -> None:
+        """Require tracked inputs to match the reviewed commit and hashes.
+
+        Intent
+        ------
+        Run one batched readiness observation and reject any canonical mismatch reason.
+
+        Rationale
+        ---------
+        Certificate evidence must bind to the exact reviewed commit at both batch boundaries.
+
+        Pseudocode
+        ----------
+        - set expected_hashes = hashes_for_current_tracked_inputs
+        - set readiness = batched_commit_readiness
+        - raise %.CertificationError(readiness_reasons)
+
+        Wraps
+        -----
+        - none
+
+        CallsFromRepo
+        -------------
+        ._expected_file_hashes:
+          why:
+            computes: "Builds expected digest claims consumed by the readiness observation."
+        .CommitReadinessInspector:
+          why:
+            orchestrates: "Performs the bounded readiness observation whose decision is enforced locally."
+
+        InstantiationsFromRepo
+        ----------------------
+        .CertificationError:
+          why:
+            raises: "Carries tracked-input mismatch reasons to the certification boundary."
+        """
+
+        readiness = CommitReadinessInspector(
+            current_snapshot,
+            self._tracked_paths,
+            _expected_file_hashes(current_snapshot, self._tracked_paths),
+            allow_non_atomic=self._allow_non_atomic,
+        ).inspect()
+        if not readiness.stamp_worthy:
+            raise CertificationError(
+                f"tracked certification input changed {phase}: "
+                + ",".join(readiness.reasons)
+            )
+
+    def require_local_inputs(self, phase: str) -> None:
+        """Require every non-Git input to match its declared digest.
+
+        Intent
+        ------
+        Read each local input through the confined file boundary and compare its canonical hash.
+
+        Rationale
+        ---------
+        Untracked inputs lack Git provenance and therefore require direct repeated byte verification.
+
+        Pseudocode
+        ----------
+        - set observed_hashes = hashes_of_confined_local_inputs
+        - raise %.CertificationError(local_claim_mismatch)
+
+        Wraps
+        -----
+        - none
+
+        CallsFromRepo
+        -------------
+        ._hash_bytes:
+          why:
+            computes: "Compares each local payload with its declared digest."
+        officina.common.atomic_files.read_regular_file_bytes:
+          why:
+            serializes: "Reads confined local bytes immediately consumed by hashing."
+
+        InstantiationsFromRepo
+        ----------------------
+        .CertificationError:
+          why:
+            raises: "Carries local-input mismatch decisions to the certification boundary."
+        """
+
+        if any(
+            _hash_bytes(
+                read_regular_file_bytes(
+                    self._repo_root / path,
+                    allowed_root=self._repo_root,
+                    allow_non_atomic=self._allow_non_atomic,
+                )
+            )
+            != digest
+            for path, digest in self._local_claims.items()
+        ):
+            raise CertificationError(f"local input changed {phase}")
+
+    def capture_tracked_inputs(self) -> None:
+        """Freeze current tracked bytes and executable modes for append gates.
+
+        Intent
+        ------
+        Record a canonical byte digest and executable-bit claim for every tracked input.
+
+        Rationale
+        ---------
+        Direct claims allow fast repeated checks immediately before and after each append.
+
+        Pseudocode
+        ----------
+        - set tracked_claims = confined_hash_and_mode_for_each_input
+        - raise %.CertificationError(unavailable_tracked_input)
+        - set guard_tracked_claims = tracked_claims
+
+        Wraps
+        -----
+        - none
+
+        InstantiationsFromRepo
+        ----------------------
+        officina.common.atomic_files.read_regular_file_bytes:
+          why:
+            constructs: "Produces confined bytes carried into each stored tracked claim."
+        ._hash_bytes:
+          why:
+            serializes: "Produces the canonical digest carried in each stored tracked claim."
+        .CertificationError:
+          why:
+            raises: "Carries unavailable tracked-input failures to the certification boundary."
+        """
+
+        claims: dict[Path, tuple[str, bool]] = {}
+        for path in self._tracked_paths:
+            try:
+                metadata = path.lstat()
+                payload = read_regular_file_bytes(
+                    path,
+                    allowed_root=self._repo_root,
+                    allow_non_atomic=self._allow_non_atomic,
+                )
+            except (AtomicWriteError, OSError) as exc:
+                raise CertificationError(
+                    f"tracked certification input is unavailable: {path}"
+                ) from exc
+            claims[path] = (
+                _hash_bytes(payload),
+                bool(metadata.st_mode & stat.S_IXUSR),
+            )
+        self._tracked_claims = claims
+
+    def configure_generated_outputs(
+        self,
+        *,
+        public_key_root: Path,
+        pooled_review_relatives: set[Path],
+    ) -> None:
+        """Declare generated paths tolerated by later status checks.
+
+        Intent
+        ------
+        Normalize the public-key root and store the complete pooled-review output set.
+
+        Rationale
+        ---------
+        Append-phase status checks must distinguish authorized outputs from unrelated untracked files.
+
+        Pseudocode
+        ----------
+        - set public_key_relative = repository_relative_public_key_root
+        - set pooled_review_allowances = declared_review_paths
+        - raise %.CertificationError(public_key_root_outside_repository)
+
+        Wraps
+        -----
+        - none
+
+        InstantiationsFromRepo
+        ----------------------
+        officina.common.repository_paths.repository_relative_path:
+          why:
+            transforms: "Produces the normalized public-key path carried into later status checks."
+        .CertificationError:
+          why:
+            raises: "Carries an invalid public-key output boundary to certification."
+        """
+
+        try:
+            self._public_key_relative = repository_relative_path(
+                Path(os.path.abspath(public_key_root)),
+                self._repo_root,
+            )
+        except BlueprintGraphError as exc:
+            raise CertificationError(
+                "certificate public-key root is outside repository"
+            ) from exc
+        self._pooled_review_relatives = set(pooled_review_relatives)
+
+    def _is_pooled_review_temp(self, relative: Path) -> bool:
+        """Return whether a path is an authorized pooled-review temporary file.
+
+        Intent
+        ------
+        Recognize atomic-write temporary names only beneath a declared final review path.
+
+        Rationale
+        ---------
+        Status checks may tolerate known atomic-write intermediates without accepting arbitrary temporary files.
+
+        Pseudocode
+        ----------
+        - return path_matches_declared_pooled_review_temp
+
+        Wraps
+        -----
+        - none
+        """
+        name = relative.name
+        if not name.startswith("..pooled-blueprint-review.yaml.tmp-"):
+            return False
+        final = relative.parent / ".pooled-blueprint-review.yaml"
+        return final in self._pooled_review_relatives
+
+    def require_frozen_inputs(self, phase: str) -> None:
+        """Reject repository, index, byte, or mode drift around each append.
+
+        Intent
+        ------
+        Recheck status allowances, index identity, and every stored tracked byte and mode claim.
+
+        Rationale
+        ---------
+        No certificate may be appended across a repository mutation even between broader batch-boundary checks.
+
+        Pseudocode
+        ----------
+        - set status = phase_status_records
+        - set index = reviewed_commit_index_comparison
+        - set observed_claims = current_tracked_hashes_and_modes
+        - raise %.CertificationError(repository_or_input_drift)
+
+        Wraps
+        -----
+        - none
+
+        CallsFromRepo
+        -------------
+        ._hash_bytes:
+          why:
+            computes: "Compares current tracked bytes with stored digest claims."
+
+        InstantiationsFromRepo
+        ----------------------
+        officina.common.git_provenance.run_git:
+          why:
+            constructs: "Produces index-comparison evidence enforced during the phase."
+        officina.common.atomic_files.read_regular_file_bytes:
+          why:
+            constructs: "Produces confined tracked bytes compared with stored claims."
+        .CertificationError:
+          why:
+            raises: "Carries status, index, byte, and mode drift to the certification boundary."
+        """
+
+        if self._public_key_relative is None:
+            raise CertificationError("certificate public-key root is outside repository")
+        current_preexisting_records: set[bytes] = set()
+        for record in self._porcelain_status_records(phase):
+            if not record:
+                continue
+            if not record.startswith(b"?? "):
+                raise CertificationError(f"tracked repository state changed {phase}")
+            try:
+                relative = Path(os.fsdecode(record[3:]))
+            except UnicodeError as exc:
+                raise CertificationError(
+                    f"untracked repository state changed {phase}"
+                ) from exc
+            if record in self._initial_untracked_records:
+                current_preexisting_records.add(record)
+                continue
+            if relative.is_relative_to(self._public_key_relative) or (
+                ".certificates" in relative.parts and relative.suffix == ".jsonl"
+            ) or relative.as_posix() in self._local_claims or (
+                relative in self._pooled_review_relatives
+            ) or self._is_pooled_review_temp(relative):
+                continue
+            raise CertificationError(
+                f"untracked repository state changed {phase}: {relative}"
+            )
+        if current_preexisting_records != self._initial_untracked_records:
+            raise CertificationError(f"untracked repository state changed {phase}")
+        index = run_git(
+            self._repo_root,
+            "diff-index",
+            "--cached",
+            "--quiet",
+            self._snapshot.commit,
+            "--",
+            check=False,
+        )
+        if index.returncode != 0:
+            raise CertificationError(f"tracked certification index changed {phase}")
+        for path, (expected_digest, expected_executable) in self._tracked_claims.items():
+            try:
+                metadata = path.lstat()
+                payload = read_regular_file_bytes(
+                    path,
+                    allowed_root=self._repo_root,
+                    allow_non_atomic=self._allow_non_atomic,
+                )
+            except (AtomicWriteError, OSError) as exc:
+                raise CertificationError(
+                    f"tracked certification input changed {phase}: {path}"
+                ) from exc
+            if (
+                _hash_bytes(payload) != expected_digest
+                or bool(metadata.st_mode & stat.S_IXUSR) != expected_executable
+            ):
+                raise CertificationError(
+                    f"tracked certification input changed {phase}: {path}"
+                )
+
+
+@dataclass(frozen=True)
+class IssuedCertificateBatch:
+    """Store node order and normalized gate records from one append batch.
+
+    Intent
+    ------
+    Carry written node IDs and their exact gate records into final currentness verification.
+
+    Rationale
+    ---------
+    The session must consume append results without reaching into mutable issuer state.
+
+    Pseudocode
+    ----------
+    - set issued_batch = node_ids checks_by_node
+    - return issued_batch
+
+    Wraps
+    -----
+    - none
+    """
+
+    node_ids: tuple[str, ...]
+    checks_by_node: Mapping[str, tuple[dict[str, object], ...]]
+
+
+class CertificateBatchIssuer:
+    """Issue and verify an ordered append-only certificate batch.
+
+    Intent
+    ------
+    Own signing material, gate records, callbacks, predecessor linkage, atomic appends, and log verification.
+
+    Rationale
+    ---------
+    These effects share per-batch state and strict ordering while repository safety remains delegated to the freeze guard.
+
+    Pseudocode
+    ----------
+    - set batch_issuer = graph states order key callbacks freeze_guard
+    - return batch_issuer
+
+    Wraps
+    -----
+    - none
+    """
+
+    def __init__(
+        self,
+        *,
+        repo_root: Path,
+        graph: RepositoryBlueprintGraph,
+        states: Mapping[str, NodeHashState],
+        node_order: Sequence[str],
+        snapshot: GitSnapshot,
+        public_key_root: Path,
+        signing_key: CertificateSigningKey,
+        certifier_identity: Mapping[str, object],
+        reviewed_commit: str,
+        certified_at: str,
+        expected_schema_version: int,
+        allow_non_atomic: bool,
+        freeze_guard: RepositoryFreezeGuard,
+        before_append: object | None,
+        after_append: object | None,
+    ) -> None:
+        """Initialize one certificate batch without opening any output log.
+
+        Intent
+        ------
+        Store signing, graph, ordering, callback, and repository-safety collaborators for later issuance.
+
+        Rationale
+        ---------
+        Effect-free construction keeps all append behavior explicit inside issuance methods.
+
+        Pseudocode
+        ----------
+        - set issuer_state = repository graph states order snapshot key checks callbacks guard
+
+        Wraps
+        -----
+        - none
+        """
+        self._repo_root = repo_root
+        self._graph = graph
+        self._states = states
+        self._node_order = tuple(node_order)
+        self._snapshot = snapshot
+        self._public_key_root = public_key_root
+        self._signing_key = signing_key
+        self._certifier_identity = certifier_identity
+        self._reviewed_commit = reviewed_commit
+        self._certified_at = certified_at
+        self._expected_schema_version = expected_schema_version
+        self._allow_non_atomic = allow_non_atomic
+        self._freeze_guard = freeze_guard
+        self._before_append = before_append
+        self._after_append = after_append
+        self._checks_by_node: dict[str, tuple[dict[str, object], ...]] = {}
+
+    def _require_output_root(self, node_id: str, log_path: Path) -> None:
+        """Require a confined regular directory for one certificate log.
+
+        Intent
+        ------
+        Create the node certificate directory when absent and reject symlinked or escaping roots.
+
+        Rationale
+        ---------
+        Append-only writes must remain beneath the owning module through a stable directory boundary.
+
+        Pseudocode
+        ----------
+        - set output_root = certificate_log_parent
+        - set metadata = output_root_metadata
+        - raise %.CertificationError(unsafe_output_root)
+
+        Wraps
+        -----
+        - none
+
+        InstantiationsFromRepo
+        ----------------------
+        .CertificationError:
+          why:
+            raises: "Carries unsafe certificate output boundaries to the certification session."
+        """
+        certificate_root = log_path.parent
+        if not certificate_root.exists():
+            certificate_root.mkdir(mode=0o700)
+        try:
+            metadata = certificate_root.lstat()
+            certificate_root.resolve().relative_to(
+                self._graph.nodes[node_id].module_root.resolve()
+            )
+        except (OSError, ValueError) as exc:
+            raise CertificationError(
+                f"unsafe certificate output root: {certificate_root}"
+            ) from exc
+        if certificate_root.is_symlink() or not stat.S_ISDIR(metadata.st_mode):
+            raise CertificationError(
+                f"unsafe certificate output root: {certificate_root}"
+            )
+
+    def _read_predecessor(self, node_id: str, log_path: Path) -> tuple[bytes | None, str | None]:
+        """Read one existing log and derive its predecessor entry hash.
+
+        Intent
+        ------
+        Return the exact prior log bytes and final entry hash required for compare-and-append linkage.
+
+        Rationale
+        ---------
+        New envelopes must bind to both the observed byte tail and its canonical predecessor identity.
+
+        Pseudocode
+        ----------
+        - set old_bytes = confined_existing_log_bytes
+        - set previous_hash = hash_of_final_verified_entry
+        - return old_bytes previous_hash
+
+        Wraps
+        -----
+        - none
+
+        InstantiationsFromRepo
+        ----------------------
+        officina.common.atomic_files.read_regular_file_bytes:
+          why:
+            constructs: "Produces exact predecessor bytes carried into compare-and-append."
+        officina.common.certificate_records.parse_certificate_log:
+          why:
+            constructs: "Produces verified predecessor entries used to select the final record."
+        officina.common.certificate_records.certificate_entry_hash:
+          why:
+            serializes: "Produces the predecessor hash carried into the new payload."
+        """
+        if not log_path.exists():
+            return None, None
+        old_bytes = read_regular_file_bytes(
+            log_path,
+            allowed_root=self._graph.nodes[node_id].module_root,
+            allow_non_atomic=self._allow_non_atomic,
+        )
+        previous_entries = parse_certificate_log(
+            old_bytes,
+            self._public_key_root,
+            require_active_final=False,
+            allow_non_atomic=self._allow_non_atomic,
+        )
+        return old_bytes, certificate_entry_hash(previous_entries[-1])
+
+    def _gate_records(self, node_id: str) -> tuple[dict[str, object], ...]:
+        """Build and validate normalized gate records for one node.
+
+        Intent
+        ------
+        Run deterministic, route-smoke, and semantic-attestation record construction against one evidence snapshot.
+
+        Rationale
+        ---------
+        Payload checks must match the schema-selected immutable registry before any append callback executes.
+
+        Pseudocode
+        ----------
+        - set evidence = node_gate_evidence
+        - set records = normalized_gate_records
+        - raise %.CertificationError(gate_registry_mismatch)
+        - return records
+
+        Wraps
+        -----
+        - none
+
+        CallsFromRepo
+        -------------
+        ._run_deterministic_check:
+          why:
+            validates: "Runs deterministic evidence checks while normalized records are built locally."
+        ._passed_check:
+          why:
+            computes: "Builds the route-smoke pass record consumed immediately by normalization."
+        ._semantic_attestation_check:
+          why:
+            computes: "Builds the schema-selected semantic record consumed immediately by normalization."
+        officina.common.certification_hashing.expected_certifier_checks:
+          why:
+            validates: "Compares normalized records with the immutable selected registry."
+
+        InstantiationsFromRepo
+        ----------------------
+        ._build_gate_evidence:
+          why:
+            constructs: "Produces the node evidence carried through every gate record."
+        officina.common.certification_hashing.normalize_node_checks:
+          why:
+            transforms: "Produces the canonical check tuple returned for payload construction."
+        .CertificationError:
+          why:
+            raises: "Carries gate-registry drift to the certification session."
+        """
+        evidence = _build_gate_evidence(
+            node_id,
+            self._states[node_id],
+            source_commit=self._snapshot.commit,
+            certifier_identity=self._certifier_identity,
+        )
+        records = normalize_node_checks(
+            (
+                _run_deterministic_check(
+                    evidence,
+                    graph=self._graph,
+                    states=self._states,
+                    expected_schema_version=self._expected_schema_version,
+                ),
+                _passed_check(
+                    "route-smoke",
+                    expected_schema_version=self._expected_schema_version,
+                ),
+                _semantic_attestation_check(
+                    evidence,
+                    reviewed_commit=self._reviewed_commit,
+                    expected_schema_version=self._expected_schema_version,
+                ),
+            )
+        )
+        if records != expected_certifier_checks(self._expected_schema_version):
+            raise CertificationError(f"{node_id}: certifier gate registry changed")
+        return records
+
+    def _require_unchanged_log(
+        self,
+        node_id: str,
+        log_path: Path,
+        old_bytes: bytes | None,
+    ) -> None:
+        """Require a certificate log to retain its observed predecessor bytes.
+
+        Intent
+        ------
+        Compare the current log presence and bytes with the predecessor observation made before callbacks.
+
+        Rationale
+        ---------
+        A callback or concurrent writer must not replace the log between predecessor parsing and append.
+
+        Pseudocode
+        ----------
+        - set current_bytes = confined_log_bytes_when_present
+        - raise %.CertificationError(log_changed)
+
+        Wraps
+        -----
+        - none
+
+        CallsFromRepo
+        -------------
+        officina.common.atomic_files.read_regular_file_bytes:
+          why:
+            computes: "Reads current log bytes for immediate predecessor comparison."
+
+        InstantiationsFromRepo
+        ----------------------
+        .CertificationError:
+          why:
+            raises: "Carries predecessor-log races to the certification session."
+        """
+        if log_path.exists():
+            if old_bytes is None or read_regular_file_bytes(
+                log_path,
+                allowed_root=self._graph.nodes[node_id].module_root,
+                allow_non_atomic=self._allow_non_atomic,
+            ) != old_bytes:
+                raise CertificationError("certificate log changed during certification")
+        elif old_bytes is not None:
+            raise CertificationError("certificate log changed during certification")
+
+    def _append_frame(
+        self,
+        node_id: str,
+        log_path: Path,
+        old_bytes: bytes | None,
+        previous_hash: str | None,
+        checks: tuple[dict[str, object], ...],
+    ) -> tuple[bytes, os.stat_result]:
+        """Build, sign, append, and stat one certificate frame.
+
+        Intent
+        ------
+        Serialize the node payload, sign its envelope, atomically append exact bytes, and capture resulting inode metadata.
+
+        Rationale
+        ---------
+        Payload evidence and append expectations must remain one uninterrupted per-node operation.
+
+        Pseudocode
+        ----------
+        - set payload = certificate_payload_from_current_evidence
+        - set frame = signed_canonical_envelope_bytes
+        - set appended_metadata = frame_appended_when_predecessor_matches
+        - return frame appended_metadata
+
+        Wraps
+        -----
+        - none
+
+        CallsFromRepo
+        -------------
+        officina.common.certificate_records.canonical_certificate_envelope_bytes:
+          why:
+            serializes: "Serializes the signed envelope immediately before framing."
+        officina.common.atomic_files.atomic_compare_and_append_bytes:
+          why:
+            writes: "Appends the frame only while predecessor bytes remain unchanged."
+
+        InstantiationsFromRepo
+        ----------------------
+        ._build_certificate_payload:
+          why:
+            constructs: "Produces the payload carried into signing."
+        officina.common.certificate_records.sign_certificate_payload:
+          why:
+            constructs: "Produces the signed envelope carried into canonical serialization."
+        .CertificationError:
+          why:
+            raises: "Carries append races and invalid output metadata to the session."
+        """
+        payload = _build_certificate_payload(
+            self._repo_root,
+            self._graph,
+            self._states,
+            node_id,
+            source_commit=self._snapshot.commit,
+            key_id=self._signing_key.key_id,
+            previous_entry_hash=previous_hash,
+            certifier_identity=self._certifier_identity,
+            checks=checks,
+            certified_at=self._certified_at,
+            expected_schema_version=self._expected_schema_version,
+        )
+        envelope = sign_certificate_payload(payload, self._signing_key)
+        frame = canonical_certificate_envelope_bytes(envelope) + b"\n"
+        try:
+            atomic_compare_and_append_bytes(
+                log_path,
+                frame,
+                expected_previous_bytes=old_bytes,
+                allowed_root=self._graph.nodes[node_id].module_root,
+                mode=0o600,
+                allow_non_atomic=self._allow_non_atomic,
+            )
+        except AtomicWriteError as exc:
+            raise CertificationError("certificate log changed during certification") from exc
+        try:
+            appended_metadata = log_path.lstat()
+        except OSError as exc:
+            raise CertificationError(
+                "post-write certificate log is unavailable"
+            ) from exc
+        if not stat.S_ISREG(appended_metadata.st_mode):
+            raise CertificationError("post-write certificate log is not a regular file")
+        return frame, appended_metadata
+
+    def _require_appended_frame(
+        self,
+        node_id: str,
+        log_path: Path,
+        old_bytes: bytes | None,
+        frame: bytes,
+        appended_metadata: os.stat_result,
+    ) -> None:
+        """Require the appended log inode and bytes to remain exact.
+
+        Intent
+        ------
+        Compare final regular-file identity and full log content with the append result.
+
+        Rationale
+        ---------
+        Successful atomic append is insufficient if a callback or concurrent process replaces the resulting log.
+
+        Pseudocode
+        ----------
+        - set final_metadata = certificate_log_metadata
+        - set final_bytes = confined_certificate_log_bytes
+        - raise %.CertificationError(post_write_log_changed)
+
+        Wraps
+        -----
+        - none
+
+        CallsFromRepo
+        -------------
+        officina.common.atomic_files.read_regular_file_bytes:
+          why:
+            computes: "Reads final log bytes for immediate comparison with the expected frame."
+
+        InstantiationsFromRepo
+        ----------------------
+        .CertificationError:
+          why:
+            raises: "Carries post-write inode or byte changes to the session."
+        """
+        try:
+            final_metadata = log_path.lstat()
+        except OSError as exc:
+            raise CertificationError("post-write certificate log changed") from exc
+        if (
+            not stat.S_ISREG(final_metadata.st_mode)
+            or (final_metadata.st_dev, final_metadata.st_ino)
+            != (appended_metadata.st_dev, appended_metadata.st_ino)
+        ):
+            raise CertificationError("post-write certificate log changed")
+        expected_log_bytes = (old_bytes or b"") + frame
+        if read_regular_file_bytes(
+            log_path,
+            allowed_root=self._graph.nodes[node_id].module_root,
+            allow_non_atomic=self._allow_non_atomic,
+        ) != expected_log_bytes:
+            raise CertificationError("post-write certificate log changed")
+
+    def issue_one(self, node_id: str) -> None:
+        """Issue one node certificate with all before and after append gates.
+
+        Intent
+        ------
+        Coordinate predecessor reading, gate records, callbacks, repository freezes, append, and post-write verification.
+
+        Rationale
+        ---------
+        Per-node effects must retain their exact order so every race opportunity remains fail-closed.
+
+        Pseudocode
+        ----------
+        - set log_state = validated_output_root_and_predecessor
+        - set checks = normalized_node_gate_records
+        - set append_result = signed_frame_after_pre_append_gates
+        - set verified_result = append_result_after_post_append_gates
+        - return verified_result
+
+        Wraps
+        -----
+        - none
+
+        CallsFromRepo
+        -------------
+        officina.common.git_provenance.snapshot_head_matches:
+          why:
+            validates: "Rejects HEAD drift immediately before the append."
+        officina.common.certification_hashing.expected_certifier_checks:
+          why:
+            validates: "Rejects registry drift immediately after the append."
+
+        InstantiationsFromRepo
+        ----------------------
+        officina.common.certification_view.certificate_log_path:
+          why:
+            constructs: "Produces the node log path carried through the complete issuance operation."
+        officina.common.git_provenance.capture_git_snapshot:
+          why:
+            constructs: "Produces the post-append snapshot used to reject HEAD drift."
+        .CertificationError:
+          why:
+            raises: "Carries HEAD and check-registry drift to the certification session."
+        """
+
+        log_path = certificate_log_path(self._graph.nodes[node_id])
+        self._require_output_root(node_id, log_path)
+        old_bytes, previous_hash = self._read_predecessor(node_id, log_path)
+        checks = self._gate_records(node_id)
+        self._checks_by_node[node_id] = checks
+        if callable(self._before_append):
+            self._before_append(node_id)
+        if not snapshot_head_matches(self._snapshot):
+            raise CertificationError("HEAD changed during certification")
+        self._freeze_guard.require_frozen_inputs("before certificate append")
+        self._freeze_guard.require_local_inputs("during certification")
+        self._require_unchanged_log(node_id, log_path, old_bytes)
+        frame, appended_metadata = self._append_frame(
+            node_id,
+            log_path,
+            old_bytes,
+            previous_hash,
+            checks,
+        )
+        if callable(self._after_append):
+            self._after_append(node_id)
+        final_snapshot = capture_git_snapshot(self._repo_root)
+        if (
+            final_snapshot is None
+            or final_snapshot.repo_root != self._repo_root
+            or final_snapshot.commit != self._snapshot.commit
+        ):
+            raise CertificationError("HEAD changed after certificate append")
+        if checks != expected_certifier_checks(self._expected_schema_version):
+            raise CertificationError("certifier checks changed after certificate append")
+        self._freeze_guard.require_frozen_inputs("after certificate append")
+        self._freeze_guard.require_local_inputs("after certificate append")
+        self._require_appended_frame(
+            node_id,
+            log_path,
+            old_bytes,
+            frame,
+            appended_metadata,
+        )
+
+    def issue_all(self) -> IssuedCertificateBatch:
+        """Issue every ordered node and return immutable batch evidence.
+
+        Intent
+        ------
+        Execute per-node issuance in dependency order and collect written IDs and check records.
+
+        Rationale
+        ---------
+        Batch ordering belongs to the issuer while final repository currentness belongs to the session.
+
+        Pseudocode
+        ----------
+        - set written = nodes_issued_in_certification_order
+        - return %.IssuedCertificateBatch(written checks)
+
+        Wraps
+        -----
+        - none
+
+        InstantiationsFromRepo
+        ----------------------
+        .IssuedCertificateBatch:
+          why:
+            constructs: "Carries written order and normalized checks into final currentness verification."
+        """
+
+        written: list[str] = []
+        for node_id in self._node_order:
+            self.issue_one(node_id)
+            written.append(node_id)
+        return IssuedCertificateBatch(tuple(written), dict(self._checks_by_node))
+
+
+def _certify_repository(
     repo_root: Path,
     *,
     target_node_ids: Sequence[str],
@@ -1551,8 +3444,8 @@ def _certify_v4_repository(
     require_migration_review: bool = False,
     expected_schema_version: int = 6,
     schema_root: Path | None = None,
-) -> V4CertificationResult:
-    """_certify_v4_repository issues signed certificates for selected v4 or v5 nodes.
+) -> CertificationResult:
+    """Issue signed certificates for selected repository nodes.
 
     Intent
     ------
@@ -1576,138 +3469,72 @@ def _certify_v4_repository(
 
     CallsFromRepo
     -------------
-    ._expected_file_hashes:
+    ._validate_semantic_attestation:
       why:
-        computes: "Builds digest expectations for tracked inputs during readiness checks."
-    ._v4_hash_bytes:
+        validates: "Replays the mechanical baseline before migration certificates are allowed."
+    .CertificateBatchIssuer:
       why:
-        computes: "Hashes tracked and local input bytes for freeze checks."
-    ._validate_v4_semantic_attestation:
-      why:
-        validates: "Replays the mechanical baseline before semantic-review certificates are allowed."
-    ._verify_executing_candidate_certifier:
-      why:
-        validates: "Confirms candidate self-certification is running the owned certifier source."
-    officina.common.atomic_files.atomic_compare_and_append_bytes:
-      why:
-        writes: "Appends each signed envelope only if the current log tail matches the expected entry hash."
+        orchestrates: "Runs the ordered append batch after repository inputs have been frozen."
     officina.common.atomic_files.atomic_replace_bytes:
       why:
-        writes: "Publishes generated pooled-review artifacts and public-key bytes within bounded roots."
+        writes: "Publishes each generated pooled review within its module boundary."
     officina.common.atomic_files.read_regular_file_bytes:
       why:
-        computes: "Reads frozen tracked and local inputs for digest comparison."
+        computes: "Checks generated pooled-review bytes immediately after publication."
     officina.common.certificate_records.certificate_public_key_root:
       why:
-        computes: "Locates the public-key directory used when the writer provisions signing material."
-    officina.common.certification_hashing.expected_certifier_checks:
-      why:
-        validates: "Checks that the gate list matches the schema-versioned registry."
-    officina.common.git_provenance.snapshot_head_matches:
-      why:
-        validates: "Confirms later Git snapshots still match the reviewed commit before and after writes."
+        computes: "Selects whether repository-owned signing material provisioning applies."
     officina.common.pooled_blueprint.pooled_review_path:
       why:
-        computes: "Selects per-module pooled-review artifact paths that must be tolerated during freeze checks."
+        computes: "Selects generated review paths used by freeze allowances and publication."
     officina.common.pooled_blueprint.render_pooled_review:
       why:
-        serializes: "Renders pooled blueprint review bytes before the bounded artifact write."
+        serializes: "Renders the final certificate-backed review before its bounded write."
     officina.common.repository_paths.repository_relative_path:
       why:
-        transforms: "Normalizes certification input and artifact paths against the repository root."
+        transforms: "Normalizes graph input and generated-review paths for repository checks."
 
     InstantiationsFromRepo
     ----------------------
-    ._passed_v4_check:
-      why:
-        constructs: "Creates normalized pass records only after each gate succeeds."
-    ._v4_deterministic_check:
-      why:
-        constructs: "Recomputes deterministic node evidence before signing each payload."
-    ._v4_semantic_attestation:
-      why:
-        constructs: "Builds the optional semantic-attestation check record for v4 migration certificates."
     .CertificationError:
       why:
-        raises: "Repository, graph, key, freeze, gate, signing, or append failures leave as typed certifier rejections."
-    .V4CertificationResult:
+        raises: "Carries repository, evidence, gate, signing, and final-verification denials."
+    .CertificationResult:
       why:
-        constructs: "The returned result carries the written node ids and reviewed commit to public callers."
-    ._v4_gate_snapshot:
+        constructs: "Carries the written node order and reviewed commit to the public boundary."
+    .RepositoryEvidenceLoader:
       why:
-        constructs: "Gate snapshots carry node-hash evidence into deterministic and payload construction."
-    ._v4_payload:
+        constructs: "Produces independent initial and final evidence observations for comparison."
+    .RepositoryFreezeGuard:
       why:
-        constructs: "Payload mappings are carried into envelope serialization and signing."
-    ._v4_route_smoke_audit:
+        constructs: "Carries repository claims and allowances through every append phase."
+    .RouteSmokeAuditor:
       why:
-        constructs: "The route-smoke audit result is compared for stability and recorded as passed gate evidence."
-    ._v4_hash_bytes:
-      why:
-        serializes: "Input byte digests are carried into frozen-input comparisons and certificate evidence."
-    .v4_certification_completeness_findings:
-      why:
-        constructs: "Completeness findings are carried into the pre-signing rejection branch."
-    officina.common.blueprint_graph.load_repository_blueprint_graph:
-      why:
-        constructs: "The loaded graph drives target expansion, hash derivation, and certificate-log placement."
-    officina.common.certificate_records.canonical_certificate_envelope_bytes:
-      why:
-        serializes: "Canonical envelope bytes are carried into signing, entry hashing, and log append."
-    officina.common.certificate_records.certificate_entry_hash:
-      why:
-        serializes: "Entry hashes are carried into log-tail verification and the next append expectation."
+        constructs: "Carries route configuration through two independent dependency traces."
     officina.common.certificate_records.load_or_create_certificate_signing_key:
       why:
-        constructs: "Signing keys are carried into payload signing and public-key provisioning."
-    officina.common.certificate_records.parse_certificate_log:
-      why:
-        constructs: "Existing log entries are carried into previous-entry hash and currentness checks."
+        constructs: "Produces externally rooted signing material carried into batch issuance."
     officina.common.certificate_records.provision_certificate_signing_material:
       why:
-        constructs: "Provisioned key metadata selects the signer identity and public verification material for each envelope."
-    officina.common.certificate_records.sign_certificate_payload:
-      why:
-        serializes: "Payload signatures are carried into canonical envelope construction."
+        constructs: "Produces repository-owned signing material carried into batch issuance."
     officina.common.certification_hashing.certification_target_postorder:
       why:
-        transforms: "Expanded target ids become the dependency-respecting certification order."
-    officina.common.certification_hashing.compute_certification_basis_hash:
-      why:
-        serializes: "The basis digest binds node hashes and signed payloads to the same reviewed support files."
-    officina.common.certification_hashing.compute_node_hash_states:
-      why:
-        constructs: "Node hash states carry manifests, dependency hashes, and basis hashes through every gate."
-    officina.common.certification_hashing.derive_certifier_identity:
-      why:
-        constructs: "The derived identity ties gate evidence and signed payloads to the issuing certifier implementation."
-    officina.common.certification_hashing.normalize_node_checks:
-      why:
-        transforms: "Raw check rows become normalized payload check lists per node."
-    officina.common.certification_hashing.resolve_certification_basis_paths:
-      why:
-        transforms: "Resolved basis paths feed basis hashing, freeze checks, and route-smoke mapping."
+        transforms: "Produces dependency-ordered node IDs carried into batch issuance."
     officina.common.certification_view.CertificateCurrentnessView:
       why:
-        constructs: "Currentness records are carried into stale-certificate rejection decisions."
-    officina.common.certification_view.certificate_log_path:
-      why:
-        constructs: "Per-node log paths are carried into log parsing and append writes."
+        constructs: "Carries final current certificates into pooled-review rendering."
     officina.common.certification_view.evaluate_certificate_currentness:
       why:
-        constructs: "Currentness evaluation results decide whether a node can be skipped or must be rewritten."
+        constructs: "Produces the final report used to verify written nodes and reviews."
     officina.common.git_provenance.blueprint_v4_mechanical_commit:
       why:
-        constructs: "The baseline commit identifies the tree that semantic review is allowed to refine."
+        constructs: "Produces the optional migration baseline used by semantic replay."
     officina.common.git_provenance.capture_git_snapshot:
       why:
-        constructs: "Git snapshots are carried into HEAD matching, readiness checks, and status freezes."
-    officina.common.git_provenance.check_commit_readiness:
-      why:
-        constructs: "Readiness results are carried into tracked-input rejection decisions."
+        constructs: "Produces initial and final snapshots used to reject HEAD drift."
     officina.common.git_provenance.run_git:
       why:
-        constructs: "Git command results are carried into status, index, and branch-gate decisions."
+        constructs: "Produces candidate atomicity evidence before migration review."
     """
 
     root = Path(repo_root).resolve()
@@ -1735,70 +3562,17 @@ def _certify_v4_repository(
     if snapshot.commit != reviewed_commit:
         raise CertificationError("v4 certification HEAD does not match the reviewed commit")
 
-    def porcelain_status_records(phase: str) -> tuple[bytes, ...]:
-        """porcelain_status_records returns raw porcelain status records for a freeze phase.
-
-Intent
-------
-Run `git status --porcelain=v1 -z --untracked-files=all`, reject an unavailable status command, and return nonempty raw records for the caller's phase-specific checks.
-
-Rationale
----------
-The enclosing writer needs byte-preserving status records so it can distinguish preexisting untracked files from new certificate artifacts without losing undecodable path evidence.
-
-Pseudocode
-----------
-- set status = Git status command result
-- raise %.CertificationError(status_unavailable)
-- return records_from(status)
-
-Wraps
------
-- none
-
-InstantiationsFromRepo
-----------------------
-.CertificationError:
-  why:
-    raises: "Unavailable Git status leaves as a typed freeze-phase rejection."
-officina.common.git_provenance.run_git:
-  why:
-    constructs: "The status command result is parsed into the returned raw record tuple."
-        """
-        status = run_git(
-            root,
-            "status",
-            "--porcelain=v1",
-            "-z",
-            "--untracked-files=all",
-            check=False,
-        )
-        if status.returncode != 0:
-            raise CertificationError(f"repository status is unavailable {phase}")
-        return tuple(
-            record
-            for record in status.stdout.rstrip(b"\0").split(b"\0")
-            if record
-        )
-
-    initial_untracked_records: set[bytes] = set()
-    for record in porcelain_status_records("before certification"):
-        if not record.startswith(b"?? "):
-            raise CertificationError(
-                "tracked repository state changed before certification"
-            )
-        try:
-            os.fsdecode(record[3:])
-        except UnicodeError as exc:
-            raise CertificationError(
-                "untracked repository state changed before certification"
-            ) from exc
-        initial_untracked_records.add(record)
+    freeze_guard = RepositoryFreezeGuard(
+        repo_root=root,
+        snapshot=snapshot,
+        allow_non_atomic=allow_non_atomic,
+    )
+    freeze_guard.capture_initial_state()
 
     mechanical_commit: str | None = None
     if require_migration_review:
         try:
-            mechanical_commit = blueprint_v4_mechanical_commit(root)
+            mechanical_commit = blueprint_mechanical_commit(root)
         except GitMaterializationError as exc:
             raise CertificationError(
                 f"candidate mechanical baseline is unavailable: {exc}"
@@ -1814,116 +3588,23 @@ officina.common.git_provenance.run_git:
     )
     policy_path = root / CANONICAL_NODE_HASH_POLICY
 
-    def derive() -> tuple[
-        RepositoryBlueprintGraph,
-        dict[str, NodeHashState],
-        str,
-        tuple[Path, ...],
-        dict[str, object],
-    ]:
-        """derive loads graph evidence for the private certificate writer.
-
-        Intent
-        ------
-        Load the schema-versioned graph, reject incomplete v4 material, resolve basis paths, compute hashes, and derive certifier identity together.
-
-        Rationale
-        ---------
-        The writer signs evidence that must come from one coherent graph/basis/identity bundle, so this closure computes those values in one place.
-
-        Pseudocode
-        ----------
-        - set graph = loaded_repository_blueprint_graph
-        - set basis = resolved_certification_basis
-        - set states = computed_node_hash_states
-        - return graph states basis identity
-
-        Wraps
-        -----
-        - none
-
-        CallsFromRepo
-        -------------
-        ._verify_executing_candidate_certifier:
-          why:
-            validates: "When candidate execution is required, confirms the running certifier belongs to the derived graph state."
-
-        InstantiationsFromRepo
-        ----------------------
-        .CertificationError:
-          why:
-            raises: "Graph, completeness, basis, hash, or identity derivation failures leave as typed certifier rejections."
-        .v4_certification_completeness_findings:
-          why:
-            constructs: "Completeness findings are inspected before hash evidence is accepted."
-        officina.common.blueprint_graph.load_repository_blueprint_graph:
-          why:
-            constructs: "The loaded graph is returned with all derived certification evidence."
-        officina.common.certification_hashing.compute_certification_basis_hash:
-          why:
-            serializes: "The basis hash is returned and fed into node-state computation."
-        officina.common.certification_hashing.compute_node_hash_states:
-          why:
-            constructs: "Node hash states are returned for gate checks and payload construction."
-        officina.common.certification_hashing.derive_certifier_identity:
-          why:
-            constructs: "Certifier identity is returned for snapshots and payloads."
-        officina.common.certification_hashing.resolve_certification_basis_paths:
-          why:
-            transforms: "Resolved basis paths are returned for hashing and later freeze checks."
-        """
-        try:
-            graph = load_repository_blueprint_graph(
-                root,
-                schema_root=selected_schema_root,
-                expected_schema_version=expected_schema_version,
-            )
-            if not graph.nodes or any(
-                node.declaration.get("schema_version") != expected_schema_version
-                for node in graph.nodes.values()
-            ):
-                raise CertificationError(
-                    "private certificate writer accepts only a closed "
-                    f"all-v{expected_schema_version} repository"
-                )
-            completeness = v4_certification_completeness_findings(graph)
-            if completeness:
-                first = completeness[0]
-                raise CertificationError(
-                    f"v{expected_schema_version} certification completeness failed: "
-                    f"{first.subject_id}:{first.field} "
-                    f"({len(completeness)} finding(s))"
-                )
-            basis_paths = resolve_certification_basis_paths(
-                root,
-                expected_schema_version=expected_schema_version,
-                allow_non_atomic=allow_non_atomic,
-            )
-            basis_hash = compute_certification_basis_hash(
-                root,
-                expected_schema_version=expected_schema_version,
-                allow_non_atomic=allow_non_atomic,
-            )
-            states = compute_node_hash_states(
-                graph,
-                repo_root=root,
-                policy_path=policy_path,
-                certification_basis_hash=basis_hash,
-                certification_basis_paths=basis_paths,
-                allow_non_atomic=allow_non_atomic,
-            )
-            certifier_identity = derive_certifier_identity(
-                graph, states, snapshot.commit
-            )
-            if require_candidate_execution:
-                _verify_executing_candidate_certifier(root, graph, states)
-        except CertificationHashError as exc:
-            raise CertificationError(str(exc)) from exc
-        return graph, states, basis_hash, basis_paths, certifier_identity
-
-    graph, states, basis_hash, basis_paths, certifier_identity = derive()
+    evidence_loader = RepositoryEvidenceLoader(
+        repo_root=root,
+        schema_root=selected_schema_root,
+        policy_path=policy_path,
+        snapshot=snapshot,
+        expected_schema_version=expected_schema_version,
+        allow_non_atomic=allow_non_atomic,
+        require_candidate_execution=require_candidate_execution,
+    )
+    evidence = evidence_loader.load()
+    graph = evidence.graph
+    states = evidence.states
+    basis_hash = evidence.basis_hash
+    basis_paths = evidence.basis_paths
+    certifier_identity = evidence.certifier_identity
     if mechanical_commit is not None:
-        _validate_v4_semantic_attestation(
+        _validate_semantic_attestation(
             root,
             graph,
             states,
@@ -1944,7 +3625,7 @@ officina.common.git_provenance.run_git:
         )
     except CertificationHashError as exc:
         raise CertificationError(str(exc)) from exc
-    initial_route_smoke_audit = _v4_route_smoke_audit(
+    route_auditor = RouteSmokeAuditor(
         graph,
         states,
         repo_root=root,
@@ -1952,19 +3633,7 @@ officina.common.git_provenance.run_git:
         certification_node_ids=order,
         schema_root=selected_schema_root,
     )
-    repeated_route_smoke_audit = _v4_route_smoke_audit(
-        graph,
-        states,
-        repo_root=root,
-        certification_basis_paths=basis_paths,
-        certification_node_ids=order,
-        schema_root=selected_schema_root,
-    )
-    if repeated_route_smoke_audit != initial_route_smoke_audit:
-        raise CertificationError(
-            "route-smoke dependency audit changed during certification"
-        )
-    normalized_checks: dict[str, tuple[dict[str, object], ...]] = {}
+    route_auditor.require_stable_dependencies()
 
     tracked_paths: set[Path] = {
         root / repository_relative_path(path, root)
@@ -1991,255 +3660,14 @@ officina.common.git_provenance.run_git:
         if node.node_type == "module"
     }
 
-    def require_commit_readiness(current_snapshot: object, phase: str) -> None:
-        """require_commit_readiness enforces that tracked inputs match the reviewed commit.
-
-        Intent
-        ------
-        Compare readiness findings with expected input hashes before allowing certificate writes.
-
-        Rationale
-        ---------
-        Signing must stop if tracked files changed after review, because otherwise the certificate would attest to bytes different from the reviewed basis.
-
-        Pseudocode
-        ----------
-                - set findings = commit_readiness_findings
-                - if findings_are_not_clean:
-                  - raise %.CertificationError(tracked_input_mismatch)
-                - return readiness_passed
-
-        Wraps
-        -----
-        - none
-
-        CallsFromRepo
-        -------------
-        ._expected_file_hashes:
-          why:
-            computes: "expected_file_hashes computes comparison material used by this certifier branch."
-
-        InstantiationsFromRepo
-        ----------------------
-        .CertificationError:
-          why:
-            raises: "Dirty tracked inputs reject signing before certificate logs are opened."
-        officina.common.git_provenance.check_commit_readiness:
-          why:
-            constructs: "officina.common.git_provenance.check_commit_readiness supplies a carried value for this certification step."
-        """
-        readiness = check_commit_readiness(
-            current_snapshot,
-            ordered_tracked_paths,
-            _expected_file_hashes(current_snapshot, ordered_tracked_paths),
-            allow_non_atomic=allow_non_atomic,
-        )
-        if not readiness.stamp_worthy:
-            raise CertificationError(
-                f"tracked certification input changed {phase}: "
-                + ",".join(readiness.reasons)
-            )
-
-    def require_local_claims(phase: str) -> None:
-        """require_local_claims validates declared local input evidence.
-
-        Intent
-        ------
-        Check untracked manifest entries against local file bytes and reject missing or mismatched claims.
-
-        Rationale
-        ---------
-        Local inputs are outside Git history, so the certificate writer must compare their declared digests immediately before signing.
-
-        Pseudocode
-        ----------
-                - set local_claims = untracked_manifest_entries
-                - if local_claims_mismatch:
-                  - raise %.CertificationError(local_input_mismatch)
-                - return local_claims_valid
-
-        Wraps
-        -----
-        - none
-
-        CallsFromRepo
-        -------------
-        ._v4_hash_bytes:
-          why:
-            computes: "v4_hash_bytes computes comparison material used by this certifier branch."
-        officina.common.atomic_files.read_regular_file_bytes:
-          why:
-            orchestrates: "The bounded file read obtains local input bytes for direct digest comparison."
-
-        InstantiationsFromRepo
-        ----------------------
-        .CertificationError:
-          why:
-            raises: "Missing or mismatched local evidence rejects signing for untracked input claims."
-        """
-        if any(
-            _v4_hash_bytes(
-                read_regular_file_bytes(
-                    root / path,
-                    allowed_root=root,
-                    allow_non_atomic=allow_non_atomic,
-                )
-            )
-            != digest
-            for path, digest in local_claims.items()
-        ):
-            raise CertificationError(f"local input changed {phase}")
-
-    require_commit_readiness(snapshot, "before certification")
-    require_local_claims("before certification")
-    tracked_claims: dict[Path, tuple[str, bool]] = {}
-    for path in ordered_tracked_paths:
-        try:
-            metadata = path.lstat()
-            payload = read_regular_file_bytes(
-                path,
-                allowed_root=root,
-                allow_non_atomic=allow_non_atomic,
-            )
-        except (AtomicWriteError, OSError) as exc:
-            raise CertificationError(f"tracked certification input is unavailable: {path}") from exc
-        tracked_claims[path] = (
-            _v4_hash_bytes(payload),
-            bool(metadata.st_mode & stat.S_IXUSR),
-        )
-    try:
-        public_key_relative = repository_relative_path(
-            Path(os.path.abspath(public_key_root)),
-            root,
-        )
-    except BlueprintGraphError as exc:
-        raise CertificationError("certificate public-key root is outside repository") from exc
-
-    def is_pooled_review_temp(relative: Path) -> bool:
-        """is_pooled_review_temp identifies generated pooled-review artifacts.
-
-        Intent
-        ------
-        Return whether a path is one of the temporary review files tolerated during freeze checks.
-
-        Rationale
-        ---------
-        The writer may create pooled review artifacts while still rejecting unrelated dirtiness in the reviewed repository.
-
-        Pseudocode
-        ----------
-        - set tolerated = path_matches_pooled_review_area
-        - return tolerated
-
-        Wraps
-        -----
-        - none
-        """
-        name = relative.name
-        if not name.startswith("..pooled-blueprint-review.yaml.tmp-"):
-            return False
-        final = relative.parent / ".pooled-blueprint-review.yaml"
-        return final in pooled_review_relatives
-
-    def require_frozen_tracked_inputs(phase: str) -> None:
-        """require_frozen_tracked_inputs rejects tracked-input drift during signing.
-
-        Intent
-        ------
-        Read expected tracked inputs and compare their current bytes to the frozen reviewed snapshot.
-
-        Rationale
-        ---------
-        Certificate logs should never be appended after a tracked input mutates, even if the mutation occurs between earlier readiness checks and signing.
-
-        Pseudocode
-        ----------
-                - set frozen_hashes = expected_tracked_input_hashes
-                - if tracked_bytes_changed:
-                  - raise %.CertificationError(frozen_input_drift)
-                - return tracked_inputs_frozen
-
-        Wraps
-        -----
-        - none
-
-        CallsFromRepo
-        -------------
-        ._v4_hash_bytes:
-          why:
-            computes: "v4_hash_bytes computes comparison material used by this certifier branch."
-
-        InstantiationsFromRepo
-        ----------------------
-        .CertificationError:
-          why:
-            raises: "Tracked-byte drift rejects signing at the final frozen-input gate."
-        officina.common.atomic_files.read_regular_file_bytes:
-          why:
-            serializes: "The bounded byte read feeds the frozen-input hash check immediately before signing."
-        officina.common.git_provenance.run_git:
-          why:
-            constructs: "officina.common.git_provenance.run_git supplies a carried value for this certification step."
-        """
-        current_preexisting_records: set[bytes] = set()
-        for record in porcelain_status_records(phase):
-            if not record:
-                continue
-            if not record.startswith(b"?? "):
-                raise CertificationError(f"tracked repository state changed {phase}")
-            try:
-                relative = Path(os.fsdecode(record[3:]))
-            except UnicodeError as exc:
-                raise CertificationError(f"untracked repository state changed {phase}") from exc
-            if record in initial_untracked_records:
-                current_preexisting_records.add(record)
-                continue
-            if relative.is_relative_to(public_key_relative) or (
-                ".certificates" in relative.parts
-                and relative.suffix == ".jsonl"
-            ) or (
-                relative.as_posix() in local_claims
-            ) or (
-                relative in pooled_review_relatives
-            ) or (
-                is_pooled_review_temp(relative)
-            ):
-                continue
-            raise CertificationError(
-                f"untracked repository state changed {phase}: {relative}"
-            )
-        if current_preexisting_records != initial_untracked_records:
-            raise CertificationError(f"untracked repository state changed {phase}")
-        index = run_git(
-            root,
-            "diff-index",
-            "--cached",
-            "--quiet",
-            snapshot.commit,
-            "--",
-            check=False,
-        )
-        if index.returncode != 0:
-            raise CertificationError(f"tracked certification index changed {phase}")
-        for path, (expected_digest, expected_executable) in tracked_claims.items():
-            try:
-                metadata = path.lstat()
-                payload = read_regular_file_bytes(
-                    path,
-                    allowed_root=root,
-                    allow_non_atomic=allow_non_atomic,
-                )
-            except (AtomicWriteError, OSError) as exc:
-                raise CertificationError(
-                    f"tracked certification input changed {phase}: {path}"
-                ) from exc
-            if (
-                _v4_hash_bytes(payload) != expected_digest
-                or bool(metadata.st_mode & stat.S_IXUSR) != expected_executable
-            ):
-                raise CertificationError(
-                    f"tracked certification input changed {phase}: {path}"
-                )
+    freeze_guard.configure_inputs(ordered_tracked_paths, local_claims)
+    freeze_guard.require_ready_commit(snapshot, "before certification")
+    freeze_guard.require_local_inputs("before certification")
+    freeze_guard.capture_tracked_inputs()
+    freeze_guard.configure_generated_outputs(
+        public_key_root=public_key_root,
+        pooled_review_relatives=pooled_review_relatives,
+    )
 
     if Path(public_key_root).resolve() == certificate_public_key_root(root):
         key = provision_certificate_signing_material(
@@ -2253,149 +3681,25 @@ officina.common.git_provenance.run_git:
             secret_backend=secret_backend,
             allow_non_atomic=allow_non_atomic,
         )
-    written: list[str] = []
-    for node_id in order:
-        log_path = certificate_log_path(graph.nodes[node_id])
-        certificate_root = log_path.parent
-        if not certificate_root.exists():
-            certificate_root.mkdir(mode=0o700)
-        try:
-            metadata = certificate_root.lstat()
-            certificate_root.resolve().relative_to(graph.nodes[node_id].module_root.resolve())
-        except (OSError, ValueError) as exc:
-            raise CertificationError(f"unsafe certificate output root: {certificate_root}") from exc
-        if certificate_root.is_symlink() or not stat.S_ISDIR(metadata.st_mode):
-            raise CertificationError(f"unsafe certificate output root: {certificate_root}")
-        old_bytes: bytes | None = None
-        previous_hash = None
-        if log_path.exists():
-            old_bytes = read_regular_file_bytes(
-                log_path,
-                allowed_root=graph.nodes[node_id].module_root,
-                allow_non_atomic=allow_non_atomic,
-            )
-            previous_entries = parse_certificate_log(
-                old_bytes,
-                public_key_root,
-                require_active_final=False,
-                allow_non_atomic=allow_non_atomic,
-            )
-            previous_hash = certificate_entry_hash(previous_entries[-1])
-        gate_snapshot = _v4_gate_snapshot(
-            node_id,
-            states[node_id],
-            source_commit=snapshot.commit,
-            certifier_identity=certifier_identity,
-        )
-        gate_records = (
-            _v4_deterministic_check(
-                gate_snapshot,
-                graph=graph,
-                states=states,
-                expected_schema_version=expected_schema_version,
-            ),
-            _passed_v4_check(
-                "route-smoke",
-                expected_schema_version=expected_schema_version,
-            ),
-            _v4_semantic_attestation(
-                gate_snapshot,
-                reviewed_commit=reviewed_commit,
-                expected_schema_version=expected_schema_version,
-            ),
-        )
-        normalized_checks[node_id] = normalize_node_checks(gate_records)
-        if normalized_checks[node_id] != expected_certifier_checks(
-            expected_schema_version
-        ):
-            raise CertificationError(f"{node_id}: certifier gate registry changed")
-        if callable(before_append):
-            before_append(node_id)
-        if not snapshot_head_matches(snapshot):
-            raise CertificationError("HEAD changed during certification")
-        require_frozen_tracked_inputs("before certificate append")
-        require_local_claims("during certification")
-        if log_path.exists():
-            if (
-                old_bytes is None
-                or read_regular_file_bytes(
-                    log_path,
-                    allowed_root=graph.nodes[node_id].module_root,
-                    allow_non_atomic=allow_non_atomic,
-                )
-                != old_bytes
-            ):
-                raise CertificationError("certificate log changed during certification")
-        elif old_bytes is not None:
-            raise CertificationError("certificate log changed during certification")
-        payload = _v4_payload(
-            root,
-            graph,
-            states,
-            node_id,
-            source_commit=snapshot.commit,
-            key_id=key.key_id,
-            previous_entry_hash=previous_hash,
-            certifier_identity=certifier_identity,
-            checks=normalized_checks[node_id],
-            certified_at=certified_at,
-            expected_schema_version=expected_schema_version,
-        )
-        envelope = sign_certificate_payload(payload, key)
-        frame = canonical_certificate_envelope_bytes(envelope) + b"\n"
-        try:
-            atomic_compare_and_append_bytes(
-                log_path,
-                frame,
-                expected_previous_bytes=old_bytes,
-                allowed_root=graph.nodes[node_id].module_root,
-                mode=0o600,
-                allow_non_atomic=allow_non_atomic,
-            )
-        except AtomicWriteError as exc:
-            raise CertificationError("certificate log changed during certification") from exc
-        try:
-            appended_metadata = log_path.lstat()
-        except OSError as exc:
-            raise CertificationError("post-write certificate log is unavailable") from exc
-        if not stat.S_ISREG(appended_metadata.st_mode):
-            raise CertificationError("post-write certificate log is not a regular file")
-        if callable(after_append):
-            after_append(node_id)
-        final_snapshot = capture_git_snapshot(root)
-        if (
-            final_snapshot is None
-            or final_snapshot.repo_root != root
-            or final_snapshot.commit != snapshot.commit
-        ):
-            raise CertificationError("HEAD changed after certificate append")
-        if normalized_checks[node_id] != expected_certifier_checks(
-            expected_schema_version
-        ):
-            raise CertificationError("certifier checks changed after certificate append")
-        require_frozen_tracked_inputs("after certificate append")
-        require_local_claims("after certificate append")
-        try:
-            final_metadata = log_path.lstat()
-        except OSError as exc:
-            raise CertificationError("post-write certificate log changed") from exc
-        if (
-            not stat.S_ISREG(final_metadata.st_mode)
-            or (final_metadata.st_dev, final_metadata.st_ino)
-            != (appended_metadata.st_dev, appended_metadata.st_ino)
-        ):
-            raise CertificationError("post-write certificate log changed")
-        expected_log_bytes = (old_bytes or b"") + frame
-        if (
-            read_regular_file_bytes(
-                log_path,
-                    allowed_root=graph.nodes[node_id].module_root,
-                allow_non_atomic=allow_non_atomic,
-            )
-            != expected_log_bytes
-        ):
-            raise CertificationError("post-write certificate log changed")
-        written.append(node_id)
+    issued_batch = CertificateBatchIssuer(
+        repo_root=root,
+        graph=graph,
+        states=states,
+        node_order=order,
+        snapshot=snapshot,
+        public_key_root=public_key_root,
+        signing_key=key,
+        certifier_identity=certifier_identity,
+        reviewed_commit=reviewed_commit,
+        certified_at=certified_at,
+        expected_schema_version=expected_schema_version,
+        allow_non_atomic=allow_non_atomic,
+        freeze_guard=freeze_guard,
+        before_append=before_append,
+        after_append=after_append,
+    ).issue_all()
+    written = list(issued_batch.node_ids)
+    normalized_checks = dict(issued_batch.checks_by_node)
 
     final_snapshot = capture_git_snapshot(root)
     if (
@@ -2404,25 +3708,17 @@ officina.common.git_provenance.run_git:
         or final_snapshot.commit != snapshot.commit
     ):
         raise CertificationError("HEAD changed after certification")
-    require_commit_readiness(final_snapshot, "after certification")
-    require_local_claims("after certification")
-    (
-        final_graph,
-        final_states,
-        final_basis_hash,
-        final_basis_paths,
-        final_certifier_identity,
-    ) = derive()
-    if (
-        final_graph != graph
-        or final_states != states
-        or final_basis_hash != basis_hash
-        or final_basis_paths != basis_paths
-        or final_certifier_identity != certifier_identity
-    ):
+    freeze_guard.require_ready_commit(final_snapshot, "after certification")
+    freeze_guard.require_local_inputs("after certification")
+    final_evidence = evidence_loader.load()
+    if final_evidence != evidence:
         raise CertificationError(
             "graph, dependency, basis, or local input changed during certification"
         )
+    final_graph = final_evidence.graph
+    final_states = final_evidence.states
+    final_basis_paths = final_evidence.basis_paths
+    final_certifier_identity = final_evidence.certifier_identity
     final_report = evaluate_certificate_currentness(
         final_graph,
         final_states,
@@ -2480,7 +3776,7 @@ officina.common.git_provenance.run_git:
             raise CertificationError(
                 f"{module_id}: pooled review write failed: {exc}"
             ) from exc
-    return V4CertificationResult(tuple(written), snapshot.commit)
+    return CertificationResult(tuple(written), snapshot.commit)
 
 
 @dataclass(frozen=True)
@@ -2717,10 +4013,10 @@ def run_local_command(
     )
 
 
-def run_v4_mechanical_checks(
+def run_mechanical_checks(
     repo_root: Path = REPO_ROOT,
 ) -> CommandResult:
-    """run_v4_mechanical_checks runs the local validators required before certification.
+    """run_mechanical_checks runs the local validators required before certification.
 
     Intent
     ------
@@ -2856,7 +4152,7 @@ def certify(
 
     Intent
     ------
-    Require reviewed repository inputs, load the v6 graph, resolve requested modules, run mechanical checks, invoke the writer, and shape outcomes.
+    Require reviewed repository inputs, load the current graph, resolve requested modules, run mechanical checks, invoke the writer, and shape outcomes.
 
     Rationale
     ---------
@@ -2888,25 +4184,25 @@ def certify(
     ----------------------
     .CertificationError:
       why:
-        raises: "Missing reviewed inputs, non-v6 graphs, private-writer failure, or incomplete issuance leave as typed API rejections."
+        raises: "Missing reviewed inputs, incompatible graphs, private-writer failure, or incomplete issuance leave as typed API rejections."
     .CertificationOutcome:
       why:
         constructs: "Module-level outcomes are returned to CLI rendering or JSON output."
     .NodeCertificationOutcome:
       why:
         constructs: "Node-level certificate paths are carried inside returned module outcomes."
-    ._certify_v4_repository:
+    ._certify_repository:
       why:
         constructs: "The private writer result determines which requested nodes were actually issued."
     .resolve_reviewed_repository_targets:
       why:
         transforms: "User target requests become concrete module nodes for expansion and reporting."
-    .run_v4_mechanical_checks:
+    .run_mechanical_checks:
       why:
         constructs: "Validator command evidence is returned alongside certification outcomes."
     officina.common.blueprint_graph.load_repository_blueprint_graph:
       why:
-        constructs: "The reviewed v6 graph drives target resolution and outcome path lookup."
+        constructs: "The reviewed current-schema graph drives target resolution and outcome path lookup."
     """
 
     if reviewed_repository is None or reviewed_commit is None:
@@ -2943,8 +4239,8 @@ def certify(
         target_nodes_by_module[target.node_id] = node_ids
         requested_node_ids.update(node_ids)
 
-    evidence = [run_v4_mechanical_checks(repository)]
-    result = _certify_v4_repository(
+    evidence = [run_mechanical_checks(repository)]
+    result = _certify_repository(
         repository,
         target_node_ids=tuple(sorted(requested_node_ids)),
         public_key_root=certificate_public_key_root(repository),
