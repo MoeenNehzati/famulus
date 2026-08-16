@@ -337,6 +337,21 @@ def test_functional_phase_uses_native_discovery_without_explicit_roots(
     assert command[command.index("--dist") + 1] == "loadgroup"
     assert not any(argument in {"tests", "hooks/tests", "skills"} for argument in command)
     assert _deselected_tests(command) == runner.PERFORMANCE_TESTS
+    assert command[command.index("not github_install") - 1] == "-m"
+
+
+def test_github_install_tests_are_reserved_for_their_own_task(tmp_path: Path) -> None:
+    command = runner._pytest_phase_command(
+        "full",
+        "tests:github",
+        verbose=False,
+        jobs=1,
+        cache_dir=tmp_path / "cache",
+        timing_path=None,
+    )
+
+    assert command[command.index("github_install") - 1] == "-m"
+    assert runner.GITHUB_INSTALL_TEST_ROOT in command
 
 
 def test_combined_command_enables_validators_in_the_same_xdist_session(

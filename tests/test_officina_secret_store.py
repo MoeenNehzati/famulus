@@ -203,6 +203,11 @@ def test_keyring_errors_are_normalized(monkeypatch: pytest.MonkeyPatch) -> None:
         secret_store.store("email-client", "personal:imap", "s3cret")
 
 
+# famulus-skip: category=live-smoke-opt-in; reason=this roundtrip mutates the host keyring and the SecretService daemon corrupts concurrent sessions; alternate=fake keyring backend tests cover the shared contract in every pooled run
+@pytest.mark.skipif(
+    os.environ.get("FAMULUS_REQUIRE_NATIVE_KEYRING") != "1",
+    reason="native keyring roundtrip is opt-in; set FAMULUS_REQUIRE_NATIVE_KEYRING=1",
+)
 def test_default_backend_native_roundtrip_when_available() -> None:
     namespace = "officina-test"
     key = f"native:{uuid.uuid4()}"

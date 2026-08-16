@@ -39,6 +39,7 @@ on:
           - 'native:scheduler'
           - validators
           - 'tests:shared'
+          - 'tests:github'
           - 'tests:install'
           - 'tests:browser'
           - 'tests:docstrings'
@@ -91,6 +92,10 @@ jobs:
             jobs: 4
             artifact: windows-tests-performance
     runs-on: ${{ matrix.os }}
+    # The latency budgets are calibrated against these hosted runners, so the
+    # gates assert only where that calibration holds.
+    env:
+      FAMULUS_RUN_PERFORMANCE_GATES: '1'
 
     steps:
       - uses: actions/checkout@v4
@@ -151,6 +156,12 @@ jobs:
           (matrix.task == 'combined' || matrix.task == 'tests:shared')
         run: python3 repo_checks.py --suite full --task tests:portability --jobs 1 --timing-output .repo-checks/portability.json
 
+      - name: Run published GitHub install smoke
+        if: >-
+          always() &&
+          matrix.os == 'ubuntu-latest' && matrix.task == 'combined'
+        run: python3 repo_checks.py --suite full --task tests:github --jobs 1 --timing-output .repo-checks/github.json
+
       - name: Run native keyring smoke
         if: >-
           always() &&
@@ -179,6 +190,10 @@ jobs:
     name: probe (${{ inputs.os }}, ${{ inputs.task }})
     timeout-minutes: 60
     runs-on: ${{ inputs.os }}
+    # The latency budgets are calibrated against these hosted runners, so the
+    # gates assert only where that calibration holds.
+    env:
+      FAMULUS_RUN_PERFORMANCE_GATES: '1'
 
     steps:
       - uses: actions/checkout@v4
