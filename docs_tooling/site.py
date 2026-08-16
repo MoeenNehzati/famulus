@@ -1,11 +1,10 @@
-"""Assemble the bounded Famulus documentation surface for MkDocs.
+"""Assemble the public Famulus documentation surface for MkDocs.
 
 The source repository contains working notes and implementation plans that are
 not part of the public documentation website.  This module makes that boundary
-explicit: it stages root-level ``docs/*.md`` files, domain guides, and
-contributor documentation under an ignored build directory.  Links to files
-outside that surface remain useful by becoming links to their GitHub source
-pages.
+explicit: it stages the complete ``docs`` tree except ``docs/plans`` under an
+ignored build directory.  Links to files outside that surface remain useful by
+becoming links to their GitHub source pages.
 
 The assembler deliberately does not render Markdown or serve HTTP.  MkDocs owns
 those standard presentation concerns; this module owns only Famulus-specific
@@ -40,12 +39,12 @@ def sync_published_docs(
     repository_url: str = DEFAULT_REPOSITORY_URL,
     repository_ref: str = DEFAULT_REPOSITORY_REF,
 ) -> Path:
-    """Synchronize published Markdown into ``output_dir``.
+    """Synchronize public documentation files into ``output_dir``.
 
     Only paths owned by this synchronization pass are replaced.  In particular,
     ``graphs/blueprint`` is preserved so a MkDocs live-reload pass can refresh
-    edited Markdown without regenerating the comparatively large interactive
-    repository graph.
+    edited documentation without regenerating the comparatively large
+    interactive repository graph.
 
     Args:
         repo_root: Famulus repository whose ``docs`` tree is authoritative.
@@ -68,25 +67,28 @@ def sync_published_docs(
     if not docs_root.is_dir():
         raise FileNotFoundError(f"documentation directory does not exist: {docs_root}")
 
-    published = _published_markdown_paths(docs_root)
+    published = _published_paths(docs_root)
     _clear_managed_site_sources(output)
 
     for source, destination_relative in published.items():
         destination = output / destination_relative
         destination.parent.mkdir(parents=True, exist_ok=True)
-        markdown = source.read_text(encoding="utf-8")
-        destination.write_text(
-            _rewrite_links(
-                markdown,
-                source=source,
-                destination=destination_relative,
-                repo_root=root,
-                published=published,
-                repository_url=repository_url.rstrip("/"),
-                repository_ref=repository_ref,
-            ),
-            encoding="utf-8",
-        )
+        if source.suffix.lower() == ".md":
+            markdown = source.read_text(encoding="utf-8")
+            destination.write_text(
+                _rewrite_links(
+                    markdown,
+                    source=source,
+                    destination=destination_relative,
+                    repo_root=root,
+                    published=published,
+                    repository_url=repository_url.rstrip("/"),
+                    repository_ref=repository_ref,
+                ),
+                encoding="utf-8",
+            )
+        else:
+            shutil.copy2(source, destination)
 
     _write_graph_index(output / "graphs" / "index.md")
     return output
@@ -144,29 +146,24 @@ def _validate_output_path(root: Path, docs_root: Path, output: Path) -> None:
         raise ValueError(f"refusing to stage documentation over source path: {output}")
 
 
-def _published_markdown_paths(docs_root: Path) -> dict[Path, Path]:
-    """Return the exact source-to-staged mapping for public Markdown pages."""
+def _published_paths(docs_root: Path) -> dict[Path, Path]:
+    """Return the source-to-staged mapping for public documentation files."""
 
     published: dict[Path, Path] = {}
     destinations: set[Path] = set()
-    for source in sorted(docs_root.glob("*.md")):
-        destination = Path("index.md") if source.name == "README.md" else Path(source.name)
+    for source in sorted(docs_root.rglob("*")):
+        relative = source.relative_to(docs_root)
+        if not source.is_file() or source.is_symlink():
+            continue
+        if relative.parts[0] == "plans":
+            continue
+        destination = (
+            Path("index.md") if relative == Path("README.md") else relative
+        )
         if destination in destinations:
             raise ValueError(f"duplicate documentation destination: {destination}")
         published[source.resolve()] = destination
         destinations.add(destination)
-
-    contributor_root = docs_root / "contributors"
-    if contributor_root.is_dir():
-        for source in sorted(contributor_root.rglob("*.md")):
-            destination = Path("contributors") / source.relative_to(contributor_root)
-            published[source.resolve()] = destination
-
-    domain_root = docs_root / "domains"
-    if domain_root.is_dir():
-        for source in sorted(domain_root.rglob("*.md")):
-            destination = Path("domains") / source.relative_to(domain_root)
-            published[source.resolve()] = destination
     return published
 
 
@@ -174,24 +171,25 @@ def _clear_managed_site_sources(output: Path) -> None:
     """Remove stale staged docs while retaining a previously built blueprint."""
 
     output.mkdir(parents=True, exist_ok=True)
-    for markdown in output.glob("*.md"):
-        markdown.unlink()
-    contributors = output / "contributors"
-    if contributors.exists():
-        shutil.rmtree(contributors)
-    domains = output / "domains"
-    if domains.exists():
-        shutil.rmtree(domains)
-
-    graphs = output / "graphs"
-    graphs.mkdir(parents=True, exist_ok=True)
-    for child in graphs.iterdir():
-        if child.name == "blueprint":
+    for child in output.iterdir():
+        if child.name == "graphs" and child.is_dir() and not child.is_symlink():
+            for graph_child in child.iterdir():
+                if graph_child.name == "blueprint":
+                    continue
+                _remove_path(graph_child)
             continue
-        if child.is_dir():
-            shutil.rmtree(child)
-        else:
-            child.unlink()
+        _remove_path(child)
+
+    (output / "graphs").mkdir(parents=True, exist_ok=True)
+
+
+def _remove_path(path: Path) -> None:
+    """Remove one staged file or directory without following symlinks."""
+
+    if path.is_symlink() or not path.is_dir():
+        path.unlink()
+    else:
+        shutil.rmtree(path)
 
 
 def _write_graph_index(destination: Path) -> None:

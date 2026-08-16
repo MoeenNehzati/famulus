@@ -83,13 +83,13 @@ python3 -m pip install -r requirements-docs.txt
 
 The site includes:
 
-- Markdown files directly under `docs/`
-- Markdown files under `docs/domains/`
-- Markdown files under `docs/contributors/`
+- every regular file under `docs/`, recursively, except `docs/plans/`
+- standalone assets such as generated HTML demos under `docs/demo/`
 - the generated interactive repository blueprint graph
 
-Other documentation subdirectories are not published. Links to those files and
-to repository source code open the corresponding GitHub page.
+`docs/plans/` is the explicit private documentation subtree. Links to files
+there, and to repository source code outside `docs/`, open the corresponding
+GitHub page.
 
 To build without starting the local server:
 

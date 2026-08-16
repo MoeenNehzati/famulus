@@ -17,7 +17,7 @@ def _write(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
-def test_assemble_site_publishes_only_the_bounded_docs_surface(tmp_path: Path) -> None:
+def test_assemble_site_publishes_docs_tree_except_plans(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     output = repo / "_build" / "docs-site" / "source"
     _write(repo / "README.md", "# Repository\n")
@@ -26,6 +26,9 @@ def test_assemble_site_publishes_only_the_bounded_docs_surface(tmp_path: Path) -
         "# Documentation\n\n"
         "[Architecture](architecture.md)\n"
         "[Domain guide](domains/personal-assistance.md)\n"
+        "[Officina](officina/architecture.md)\n"
+        "[Dependency graph](demo/dependency-graph.html)\n"
+        "[Private plan](plans/private.md)\n"
         "[Repository README](../README.md)\n",
     )
     _write(repo / "docs" / "architecture.md", "# Architecture\n")
@@ -40,7 +43,13 @@ def test_assemble_site_publishes_only_the_bounded_docs_surface(tmp_path: Path) -
         repo / "docs" / "domains" / "personal-assistance.md",
         "# Personal Assistance\n",
     )
+    _write(repo / "docs" / "officina" / "architecture.md", "# Officina\n")
+    _write(
+        repo / "docs" / "demo" / "dependency-graph.html",
+        "<!doctype html><title>Dependency graph</title>\n",
+    )
     _write(repo / "docs" / "plans" / "private.md", "# Plan\n")
+    _write(repo / "docs" / "plans" / "assets" / "private.json", "{}\n")
     _write(repo / "skills" / "demo" / "SKILL.md", "# Demo\n")
 
     def write_graph(
@@ -65,11 +74,23 @@ def test_assemble_site_publishes_only_the_bounded_docs_surface(tmp_path: Path) -
     assert (output / "contributors" / "README.md").is_file()
     assert (output / "contributors" / "nested" / "guide.md").is_file()
     assert (output / "domains" / "personal-assistance.md").is_file()
+    assert (output / "officina" / "architecture.md").is_file()
+    assert (output / "demo" / "dependency-graph.html").read_text(
+        encoding="utf-8"
+    ) == "<!doctype html><title>Dependency graph</title>\n"
     assert (output / "graphs" / "index.md").is_file()
     assert (output / "graphs" / "blueprint" / "repository.html").is_file()
 
     assert not (output / "README.md").exists()
     assert not (output / "plans").exists()
+
+    homepage = (output / "index.md").read_text(encoding="utf-8")
+    assert "[Officina](officina/architecture.md)" in homepage
+    assert "[Dependency graph](demo/dependency-graph.html)" in homepage
+    assert (
+        "[Private plan](https://github.com/MoeenNehzati/famulus/blob/master/"
+        "docs/plans/private.md)"
+    ) in homepage
 
 
 def test_assemble_site_preserves_site_links_and_rewrites_unpublished_targets(
