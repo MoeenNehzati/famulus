@@ -47,10 +47,30 @@ WATERMARK = default_state_dir() / "last_run"
 STATUS_FILE = default_state_dir() / "status.json"
 
 
-def record_warning(message: str) -> None:
-    """Surface a problem to the recurring-tasks healthcheck via status.json."""
+def _update_status(**fields) -> None:
+    """Merge `fields` into status.json, preserving everything else in it.
+
+    status.json is not just a result code: update_watermark records
+    `last_finalized_run_id` there, and _finalize_run reads it to recognise a
+    replayed run and refuse to advance the watermark twice (see the ordering
+    note in _watermark_writer). Writing the file wholesale silently deleted
+    that key -- along with the run's metrics -- so a warning raised mid-run
+    disarmed the replay guard as a side effect. Read, merge, write.
+    """
     STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    STATUS_FILE.write_text(json.dumps({"result": "warning", "message": message}, indent=2))
+    try:
+        status = json.loads(STATUS_FILE.read_text())
+        if not isinstance(status, dict):
+            status = {}
+    except (json.JSONDecodeError, OSError):
+        status = {}
+    status.update(fields)
+    STATUS_FILE.write_text(json.dumps(status, indent=2))
+
+
+def record_warning(message: str) -> None:
+    """Record a non-fatal problem for whoever reads this run's state."""
+    _update_status(result="warning", message=message)
 
 
 def _parse_cutoff_value(raw: str) -> datetime:
@@ -108,9 +128,7 @@ def clear_stale_error():
             # a full success while its watermark never moved, which is exactly
             # how a stuck triage stayed invisible for days. Only
             # update_watermark.py writes "ok", and only after it advances.
-            STATUS_FILE.write_text(
-                json.dumps({"result": "pending", "message": "reset at start of new run"}, indent=2)
-            )
+            _update_status(result="pending", message="reset at start of new run")
 
 
 def filter_envelopes(envelopes, cutoff_dt):

@@ -79,6 +79,18 @@ def main(argv: list[str] | None = None) -> int:
     status["accounts_triaged"] = [a.strip() for a in args.accounts.split(",") if a.strip()]
     status["metrics_timestamp"] = datetime.now().astimezone().isoformat()
 
+    # Recording metrics is not finishing. A carried-over "ok" belongs to the
+    # previous run, and rewriting the file here gives it a fresh mtime --
+    # which is exactly what read_inner_status uses to decide whether a status
+    # belongs to the current run. A run that wrote metrics and then stalled
+    # before advancing the watermark would re-stamp that stale "ok" as its own
+    # and pass require_inner_status having done nothing. Demote it; only
+    # update_watermark writes "ok", and only after the watermark moves. An
+    # "error" latched by this run is left alone, since update_watermark has to
+    # see it to refuse.
+    if status.get("result") == "ok":
+        status["result"] = "pending"
+
     STATUS_FILE.write_text(json.dumps(status, indent=2))
 
     print(

@@ -97,6 +97,71 @@ def _claude_settings_path(repo_root: Path | None, agent: str, claude_home: Path)
     return claude_home / f"{agent}_claude_setting.json"
 
 
+# Codex silently accepts an unknown --profile: it prints no warning and falls
+# back to the global config. No [profiles.*] section has ever existed in this
+# setup's config.toml, so every per-agent profiles/<agent>.config.toml has been
+# inert and every codex agent has run on the global model and effort.
+#
+# Only background_run is switched over here. It is the scheduler's agent, its
+# profile was written against the current model list, and unattended runs are
+# the ones that actually need a guaranteed reasoning budget. The other agents'
+# profiles ask for models that may no longer exist -- activating them is a
+# deliberate migration, not a side effect of fixing the scheduler.
+_CODEX_PROFILE_OVERRIDE_AGENTS = frozenset({"background_run"})
+
+
+def _flatten_toml(table: dict, prefix: str = "") -> list[tuple[str, object]]:
+    """Yield (dotted_key, scalar) pairs, since codex -c takes dotted keys."""
+    pairs: list[tuple[str, object]] = []
+    for key, value in table.items():
+        dotted = f"{prefix}{key}"
+        if isinstance(value, dict):
+            pairs.extend(_flatten_toml(value, prefix=f"{dotted}."))
+        else:
+            pairs.append((dotted, value))
+    return pairs
+
+
+def _codex_profile_overrides(repo_root: Path | None, agent: str) -> list[str]:
+    """Render the agent's profile as explicit `-c key=value` overrides.
+
+    This is what makes the profile actually apply, given --profile does not.
+    model_instructions_file is skipped: the caller passes it separately as an
+    absolute path, and the value in the file is relative.
+    """
+    if agent not in _CODEX_PROFILE_OVERRIDE_AGENTS or repo_root is None:
+        return []
+    try:
+        import tomllib
+
+        # Read through toml_io rather than opening the path directly: the repo
+        # keeps every TOML filename inside that boundary, and this file is
+        # covered by the same rule.
+        repo_src = repo_root / "src"
+        if str(repo_src) not in sys.path:
+            sys.path.insert(0, str(repo_src))
+        from officina.common import toml_io
+
+        with toml_io.open(repo_root / "profiles", f"{agent}.config.toml") as handle:
+            data = tomllib.loads(handle.read())
+    except (OSError, ValueError, ImportError):
+        # No profile, unreadable, or officina unavailable. Returning no
+        # overrides falls back to the host's global codex config, which is
+        # what happened before this existed -- degraded, not broken.
+        return []
+
+    argv: list[str] = []
+    for key, value in _flatten_toml(data):
+        if key == "model_instructions_file":
+            continue
+        if isinstance(value, bool):
+            rendered = "true" if value else "false"
+        else:
+            rendered = str(value)
+        argv += ["-c", f"{key}={rendered}"]
+    return argv
+
+
 def _parse_agent_md(repo_root: Path, agent: str) -> tuple[str, str]:
     """Return (description, prompt) parsed from agents/<agent>.md.
 
@@ -202,6 +267,7 @@ Claude settings: $CLAUDE_HOME/{agent}_claude_setting.json""")
         cmd = [
             "codex",
             "-c", f"model_instructions_file={agent_md}",
+            *_codex_profile_overrides(ai_root, agent),
             "--profile", agent,
             *args,
         ]

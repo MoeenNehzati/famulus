@@ -9,7 +9,9 @@ EMAIL_TRIAGE_STATE_DIR for tests/CI.
 Safety: if _rtx/_failure_sentinel.py was called earlier in this run, a
 status.json with result="error" will be present. In that case this script
 refuses to advance the watermark (exit 1) so no emails are silently skipped
-on the next run. On success it resets status.json to result="ok".
+on the next run. On success it sets status.json to result="ok" with a
+matching message -- and it is the only writer that may set "ok", since that
+word is what the scheduler's require_inner_status contract reads.
 
 Optional --run-id (used by _finalize_run.py, not required for standalone
 use): when given, status.json is committed FIRST — result, the new

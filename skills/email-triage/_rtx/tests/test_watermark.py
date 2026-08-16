@@ -17,6 +17,7 @@ SCRIPT_NAMES = {
     "mark_failure.py": "_failure_sentinel.py",
     "clear_failure.py": "_failure_clearer.py",
     "get_cutoff.py": "_watermark_floor.py",
+    "write_metrics.py": "_write_metrics.py",
 }
 
 if str(REPO_SRC) not in sys.path:
@@ -140,6 +141,61 @@ def test_successful_update_replaces_message_from_earlier_state(tmp_path):
     status = json.loads((tmp_path / "status.json").read_text())
     assert status["result"] == "ok"
     assert status["message"] == "watermark advanced"
+
+
+def _metrics_args():
+    return [
+        "--run-id", "r1", "--total-scanned", "3", "--added-todo", "0",
+        "--added-triage", "0", "--skipped", "3", "--deduped", "0",
+        "--accounts", "personal",
+    ]
+
+
+def test_writing_metrics_does_not_re_stamp_the_previous_runs_ok(tmp_path):
+    """read_inner_status decides whether a status belongs to the current run
+    by the file's mtime. Rewriting status.json to add metrics refreshes that
+    mtime, so carrying the previous run's "ok" through would let a run that
+    recorded metrics and then stalled -- never advancing the watermark --
+    present that stale "ok" as its own and satisfy require_inner_status."""
+    (tmp_path / "status.json").write_text(
+        json.dumps({"result": "ok", "message": "watermark advanced"})
+    )
+
+    result = run("write_metrics.py", tmp_path, *[a for a in _metrics_args() if a not in ("--run-id", "r1")])
+
+    assert result.returncode == 0, result.stderr
+    status = json.loads((tmp_path / "status.json").read_text())
+    assert status["result"] == "pending"
+    assert status["metrics"]["total_scanned"] == 3
+
+
+def test_writing_metrics_preserves_a_latched_error(tmp_path):
+    """update_watermark has to see the error to refuse advancing."""
+    (tmp_path / "status.json").write_text(
+        json.dumps({"result": "error", "message": "upload failed"})
+    )
+
+    run("write_metrics.py", tmp_path, *[a for a in _metrics_args() if a not in ("--run-id", "r1")])
+
+    status = json.loads((tmp_path / "status.json").read_text())
+    assert status["result"] == "error"
+    assert status["message"] == "upload failed"
+
+
+def test_a_warning_does_not_delete_the_replay_guard(tmp_path):
+    """get_cutoff records a warning when no watermark exists. It used to
+    rewrite status.json wholesale, dropping last_finalized_run_id -- the key
+    _finalize_run reads to refuse advancing the watermark twice on a replay."""
+    (tmp_path / "status.json").write_text(
+        json.dumps({"result": "ok", "last_finalized_run_id": "abc123"})
+    )
+
+    result = run("get_cutoff.py", tmp_path)
+
+    assert result.returncode == 0
+    status = json.loads((tmp_path / "status.json").read_text())
+    assert status["result"] == "warning"
+    assert status["last_finalized_run_id"] == "abc123"
 
 
 def test_watermark_survives_across_two_clean_runs(tmp_path):

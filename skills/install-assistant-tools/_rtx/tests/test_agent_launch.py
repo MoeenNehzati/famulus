@@ -112,3 +112,52 @@ def test_codex_instructions_override_survives_a_repo_that_moved(monkeypatch, tmp
     _agent_launch.launch(agent="collab", default_backend="codex", args=["--local"])
 
     assert f"model_instructions_file={moved / 'agents' / 'collab.md'}" in captured[0]
+
+
+def test_codex_profile_settings_are_passed_explicitly(tmp_path):
+    """`--profile` is not enough, and its failure is silent.
+
+    Codex accepts an unknown profile without warning and falls back to the
+    global config, and no [profiles.*] section has ever been written here, so
+    profiles/<agent>.config.toml never took effect. A scheduled run therefore
+    inherited whatever the machine's global model and effort happened to be --
+    the opposite of the isolation a per-agent profile is supposed to give.
+    """
+    repo_root = tmp_path / "repo"
+    (repo_root / "profiles").mkdir(parents=True)
+    (repo_root / "profiles" / "background_run.config.toml").write_text(
+        'model_instructions_file = "agents/background_run.md"\n'
+        'model = "some-capable-model"\n'
+        'model_reasoning_effort = "high"\n',
+        encoding="utf-8",
+    )
+
+    argv = _agent_launch._codex_profile_overrides(repo_root, "background_run")
+
+    assert argv.count("-c") == 2
+    assert "model=some-capable-model" in argv
+    assert "model_reasoning_effort=high" in argv
+    # Passed separately as an absolute path; the relative value in the file
+    # would resolve against $CODEX_HOME and point at nothing.
+    assert not any(a.startswith("model_instructions_file=") for a in argv)
+
+
+def test_other_agents_profiles_are_left_inert(tmp_path):
+    """Switching the interactive agents over is a separate migration: their
+    profiles name models that may no longer exist, so activating them as a
+    side effect of fixing the scheduler could break them."""
+    repo_root = tmp_path / "repo"
+    (repo_root / "profiles").mkdir(parents=True)
+    (repo_root / "profiles" / "collab.config.toml").write_text(
+        'model = "some-older-model"\n', encoding="utf-8"
+    )
+
+    assert _agent_launch._codex_profile_overrides(repo_root, "collab") == []
+
+
+def test_missing_profile_file_is_not_fatal(tmp_path):
+    repo_root = tmp_path / "repo"
+    (repo_root / "profiles").mkdir(parents=True)
+
+    assert _agent_launch._codex_profile_overrides(repo_root, "background_run") == []
+    assert _agent_launch._codex_profile_overrides(None, "background_run") == []

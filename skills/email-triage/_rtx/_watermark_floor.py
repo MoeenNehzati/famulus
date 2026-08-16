@@ -43,14 +43,28 @@ STATUS_FILE = default_state_dir() / "status.json"
 
 
 def record_warning(message: str) -> None:
-    """Surface a problem to the recurring-tasks healthcheck via status.json.
+    """Record a non-fatal problem for whoever reads this run's state.
 
-    healthcheck.sh (in the recurring-tasks skill) reads SKILLS_ROOT/<job>/state/status.json
-    for each enabled job and notifies the user if result != "ok". This is the
-    same channel that already pops up desktop notifications for job failures.
+    Not a notification channel. The health check reads the recurring-tasks run
+    record (logs/<job>/latest.json) and renders the reason captured from the
+    run's own output; nothing reads this file's `message`. What status.json
+    does decide is `result`, which the success contract compares against
+    `require_inner_status`.
+
+    Merges rather than overwrites: update_watermark records
+    `last_finalized_run_id` here and _finalize_run reads it to refuse a
+    double advance on replay, so a wholesale write would delete the replay
+    guard as a side effect of raising a warning.
     """
     STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    STATUS_FILE.write_text(json.dumps({"result": "warning", "message": message}, indent=2))
+    try:
+        status = json.loads(STATUS_FILE.read_text())
+        if not isinstance(status, dict):
+            status = {}
+    except (json.JSONDecodeError, OSError):
+        status = {}
+    status.update(result="warning", message=message)
+    STATUS_FILE.write_text(json.dumps(status, indent=2))
 
 
 class Interface(PythonArgvMachineInterface):
