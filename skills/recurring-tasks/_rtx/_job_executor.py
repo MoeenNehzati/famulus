@@ -173,15 +173,30 @@ def run_job(*, jobs_file: Path, job_name: str, log_dir: Path = LOG_DIR) -> int:
     # offset captured below refers to the file actually being written.
     _rotate_if_oversized(log_file)
     env = {**os.environ, **env_overrides}
-    # invoke-skill reads agents/background_run.md -- the rules that apply when
-    # a run is unattended -- and needs the repo to find it. A systemd user
-    # service inherits almost no environment (PATH and the D-Bus address, in
-    # practice), so $AI is normally absent here even though an interactive
-    # shell has it. Setting it from this file's own location keeps the lookup
-    # from depending on the launcher happening to be a symlink.
+    # Tell the launch chain where this job's inputs are, rather than leaving
+    # each layer to rediscover them.
+    #
+    # A scheduled run reaches an agent CLI through invoke-skill and the agent
+    # launcher, and each of those needs the agent definition, the profile, and
+    # the hooks that belong to *this* job. Only this process reliably knows
+    # where they are: it resolves them from its own location, which is correct
+    # in a dev checkout, a plugin cache, or a relocated repo alike. The
+    # alternatives are worse -- baking absolute paths in at install time
+    # freezes them, and probing the filesystem guesses.
+    #
+    # It has to be done here because a systemd user service inherits almost no
+    # environment (PATH and the D-Bus address, in practice), so none of these
+    # are set even though an interactive shell has them. setdefault so an
+    # explicit caller still wins.
+    #
     # parents[2] because SKILL_DIR is the _rtx directory: _rtx ->
     # recurring-tasks -> skills -> repo root.
-    env.setdefault("AI", str(SKILL_DIR.parents[2]))
+    repo_root = SKILL_DIR.parents[2]
+    env.setdefault("AI", str(repo_root))
+    env.setdefault("FAMULUS_REPO_ROOT", str(repo_root))
+    env.setdefault("FAMULUS_AGENTS_DIR", str(repo_root / "agents"))
+    env.setdefault("FAMULUS_PROFILES_DIR", str(repo_root / "profiles"))
+    env.setdefault("FAMULUS_HOOKS_DIR", str(repo_root / "llmhooks"))
     resolved_argv = resolve_executable(argv, env)
 
     started_dt = datetime.datetime.now(datetime.timezone.utc)

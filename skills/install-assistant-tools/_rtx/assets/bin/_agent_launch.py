@@ -16,6 +16,26 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[5]
 
 
+def _resource_dir(env_var: str, default_name: str, ai_root: Path) -> Path:
+    """Resolve a directory of launch inputs, preferring an explicit caller.
+
+    A caller that already knows where these files are -- the scheduler does,
+    since it computes them from its own location -- passes the path in the
+    environment rather than leaving each launcher to rediscover it. That is
+    what keeps this working across install models: a dev checkout, a plugin
+    cache, and a relocated repo differ in where the files sit but not in the
+    caller's ability to say so. Baking the answer in at install time freezes
+    it, and probing the filesystem guesses.
+
+    Falls back to the repo layout for interactive launches, where no caller
+    set anything.
+    """
+    configured = os.environ.get(env_var)
+    if configured:
+        return Path(configured)
+    return ai_root / default_name
+
+
 def _worker_dir(agent: str) -> Path:
     """Resolve the working directory to cd into before launching `agent`.
 
@@ -40,13 +60,34 @@ def _worker_dir(agent: str) -> Path:
     return resolve_famulus_paths(platform=sys.platform, home=Path.home()).worker_root / agent
 
 
+def _agent_md_path(repo_root: Path, agent: str) -> Path:
+    """Resolve the instructions file for `agent`."""
+    return _resource_dir("FAMULUS_AGENTS_DIR", "agents", repo_root) / f"{agent}.md"
+
+
+def _claude_settings_path(repo_root: Path, agent: str, claude_home: Path) -> Path:
+    """Resolve the Claude settings file for `agent`.
+
+    Prefers the shipped profile when a caller names the profiles directory,
+    so a scheduled run uses the settings that travel with the package rather
+    than whatever a particular machine's Claude home happens to hold. Falls
+    back to the installed copy in the Claude home.
+    """
+    configured = os.environ.get("FAMULUS_PROFILES_DIR")
+    if configured:
+        shipped = Path(configured) / f"{agent}_claude_setting.json"
+        if shipped.is_file():
+            return shipped
+    return claude_home / f"{agent}_claude_setting.json"
+
+
 def _parse_agent_md(repo_root: Path, agent: str) -> tuple[str, str]:
     """Return (description, prompt) parsed from agents/<agent>.md.
 
     Frontmatter is a small fixed set of `key: value` lines between `---`
     markers (see agents/*.md) — a full YAML parser isn't needed for this.
     """
-    agent_md = repo_root / "agents" / f"{agent}.md"
+    agent_md = _agent_md_path(repo_root, agent)
     text = agent_md.read_text(encoding="utf-8")
     parts = text.split("---", 2)
     if len(parts) < 3:
@@ -118,7 +159,7 @@ Claude settings: $CLAUDE_HOME/{agent}_claude_setting.json""")
         cmd = [
             "claude", "--agent", agent,
             "--agents", agents_json,
-            "--settings", str(Path(claude_home) / f"{agent}_claude_setting.json"),
+            "--settings", str(_claude_settings_path(Path(ai_root), agent, Path(claude_home))),
             *args,
         ]
     elif backend == "codex":
@@ -129,7 +170,7 @@ Claude settings: $CLAUDE_HOME/{agent}_claude_setting.json""")
         # invalidation -- when the repo moves, every launch dies seconds in.
         # `-c` overrides the profile's own value, and the claude branch above
         # already resolves its agent definition this same way.
-        agent_md = Path(ai_root) / "agents" / f"{agent}.md"
+        agent_md = _agent_md_path(Path(ai_root), agent)
         cmd = [
             "codex",
             "-c", f"model_instructions_file={agent_md}",

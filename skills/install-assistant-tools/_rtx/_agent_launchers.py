@@ -186,59 +186,6 @@ def write_profile_config_with_absolute_agent_path(
         manifest.record("file", path=str(dst))
 
 
-_REPO_ROOT_TOKEN = "{{FAMULUS_REPO_ROOT}}"
-
-
-def write_claude_setting_with_absolute_paths(
-    src: Path,
-    dst: Path,
-    repo_root: Path,
-    dry_run: bool,
-    manifest: Manifest | None = None,
-) -> None:
-    """Install one Claude settings file, resolving repo-root references.
-
-    A settings file that points at something in the repo -- a hook command, for
-    instance -- cannot say so with an environment variable. Claude reads the
-    file wherever it happens to run, and in a plugin install nothing guarantees
-    $AI is set or that the Claude home is linked to the repo at all, so an
-    unresolved reference silently does nothing. Substituting the real path at
-    install time is what makes the file portable, and it is the same reason
-    model_instructions_file is rewritten in the profile TOML.
-
-    Files with no token are symlinked as before, so editing them in the repo
-    keeps taking effect immediately. A file that needs substitution becomes a
-    real copy instead: the tradeoff is that changing it requires reinstalling.
-    """
-    if not src.exists():
-        log(f"  SKIP (missing source): {src}")
-        return
-
-    content = src.read_text(encoding="utf-8")
-    if _REPO_ROOT_TOKEN not in content:
-        make_link(src, dst, dry_run, manifest)
-        return
-
-    if dst.is_symlink():
-        if dry_run:
-            log(f"  Would replace legacy symlink with file: {dst}")
-        else:
-            dst.unlink()
-    elif dst.exists():
-        log(f"  SKIP (exists, keeping machine-local state): {dst}")
-        return
-
-    if dry_run:
-        log(f"  Would write (absolute repo paths): {dst}")
-        return
-
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    dst.write_text(content.replace(_REPO_ROOT_TOKEN, str(repo_root)), encoding="utf-8")
-    log(f"  Wrote (absolute repo paths): {dst}")
-    if manifest is not None:
-        manifest.record("file", path=str(dst))
-
-
 def install_profile_for_agent(repo_root: Path, profiles_dir: Path, codex_home: Path, claude_home: Path, agent: str, dry_run: bool, manifest: Manifest | None) -> None:
     if agent not in WORKER_AGENTS:
         return
@@ -258,9 +205,7 @@ def install_profile_for_agent(repo_root: Path, profiles_dir: Path, codex_home: P
 
     settings = profiles_dir / f"{agent}_claude_setting.json"
     if settings.exists():
-        write_claude_setting_with_absolute_paths(
-            settings, claude_home / settings.name, repo_root, dry_run, manifest
-        )
+        make_link(settings, claude_home / settings.name, dry_run, manifest)
 
 
 def remove_legacy_coder_links(source_bin_dir: Path, profiles_dir: Path, bin_dir: Path, codex_home: Path, claude_home: Path, dry_run: bool) -> None:
