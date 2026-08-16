@@ -118,6 +118,38 @@ def test_linux_dispatcher_and_invoke_skill_are_extensionless(tmp_path):
     assert sys.executable not in invoke_text
 
 
+def test_invoke_skill_carries_the_unattended_contract_to_both_backends(tmp_path):
+    """invoke-skill exists for the scheduler, so every run through it is
+    unattended -- and an unattended run that stops to ask a question strands
+    itself and every run after it. The contract that forbids that lives in
+    agents/background_run.md; this pins that both backends actually carry it,
+    and that neither loses its skill invocation in the process.
+    """
+    installer = platform_launcher_installer("linux")
+    bin_dir = tmp_path / "bin"
+    installer.install_invoke_skill_launcher(bin_dir, dry_run=False)
+    invoke_text = (bin_dir / "invoke-skill").read_text(encoding="utf-8")
+
+    assert "background_run.md" in invoke_text
+
+    # Claude has a real flag for this; codex has none, so the contract rides
+    # in the prompt -- and must come AFTER the $skill token, which codex
+    # resolves as the skill invocation and which therefore has to lead.
+    assert "'--append-system-prompt', contract" in invoke_text
+    assert "f'${skill}\\n\\n{contract}'" in invoke_text
+    assert "command += ['-p', f'/{skill}']" in invoke_text
+
+    # A missing contract must be loud. Silently dropping it would leave the
+    # scheduler running exactly as it did before the fix, with nothing to
+    # show that the protection was gone.
+    assert "warning: no unattended contract" in invoke_text
+
+    # The repo probe matches the file, not an `agents/` directory: the
+    # launcher resolves under skills/install-assistant-tools, which has an
+    # unrelated agents/ of its own that would otherwise win.
+    assert "'agents' / 'background_run.md').is_file()" in invoke_text
+
+
 # famulus-skip: category=platform-contract; reason=the Linux wakeup bundle executes POSIX launchers; alternate=test_windows_dispatcher_and_invoke_skill_are_batch_launchers covers native Windows launchers
 @pytest.mark.skipif(os.name == "nt", reason="POSIX launcher execution")
 def test_linux_wakeup_bundle_runs_both_names_through_managed_resolver(tmp_path, monkeypatch):

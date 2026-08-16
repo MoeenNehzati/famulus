@@ -173,6 +173,15 @@ def run_job(*, jobs_file: Path, job_name: str, log_dir: Path = LOG_DIR) -> int:
     # offset captured below refers to the file actually being written.
     _rotate_if_oversized(log_file)
     env = {**os.environ, **env_overrides}
+    # invoke-skill reads agents/background_run.md -- the rules that apply when
+    # a run is unattended -- and needs the repo to find it. A systemd user
+    # service inherits almost no environment (PATH and the D-Bus address, in
+    # practice), so $AI is normally absent here even though an interactive
+    # shell has it. Setting it from this file's own location keeps the lookup
+    # from depending on the launcher happening to be a symlink.
+    # parents[2] because SKILL_DIR is the _rtx directory: _rtx ->
+    # recurring-tasks -> skills -> repo root.
+    env.setdefault("AI", str(SKILL_DIR.parents[2]))
     resolved_argv = resolve_executable(argv, env)
 
     started_dt = datetime.datetime.now(datetime.timezone.utc)
