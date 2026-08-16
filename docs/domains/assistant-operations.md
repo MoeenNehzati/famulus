@@ -25,7 +25,6 @@ per-user scheduler, or local repair tooling.
 
 - `cloud-files` — Bounded read/write of plain files under a configured Google Drive root
 - `connect-google` — The user needs to set up or restore Google authentication for Famulus
-- `fix-bisync` — Diagnose and repair rclone bisync failures
 - `install-assistant-tools` — Install or update launchers, wiring, hooks, and environment on a machine
 - `recurring-tasks` — Manage recurring AI jobs through the host's native per-user scheduler
 <!-- END AUTO-GENERATED DOCS: assistant-operations -->
