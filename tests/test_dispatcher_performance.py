@@ -20,7 +20,7 @@ from officina.dispatcher.direct_authorization import resolve_direct_invocation
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 LIVE_CONFIG = REPO_ROOT / "officina.toml"
-LIVE_TARGET = "daily-plan._rtx.interface.plan-storage"
+LIVE_TARGET = "daily-plan._rtx.interface.render-plan"
 CALLER = "pilot"
 TARGET = "pilot._rtx.interface.run"
 
