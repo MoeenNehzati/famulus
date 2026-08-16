@@ -406,6 +406,9 @@
     .legend-column:last-child {
       margin-bottom: 0;
     }
+    .legend-disclosure > .legend-column {
+      margin-top: 7px;
+    }
     .legend-row {
       display: flex;
       align-items: center;

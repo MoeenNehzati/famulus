@@ -87,6 +87,18 @@
       return title;
     }
 
+    function createLegendDisclosure(section, title) {
+      const disclosure = document.createElement("details");
+      disclosure.className = "legend-disclosure";
+      disclosure.dataset.legendSection = section;
+      disclosure.open = true;
+      const summary = document.createElement("summary");
+      summary.className = "legend-group-title";
+      summary.textContent = title;
+      disclosure.appendChild(summary);
+      return disclosure;
+    }
+
     function createEdgeLegendIcon(edgeType, style) {
       const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
       svg.setAttribute("viewBox", "0 0 32 20");
@@ -194,7 +206,6 @@
       setNodeSelection(next, next.has(selectedNodeId) ? selectedNodeId : Array.from(next).at(-1), "explicit");
     }
 
-    if (presentCategories.size > 0) nodeLegendColumn.appendChild(createLegendGroupTitle("Nodes"));
     let activeNodeParent = null;
     Object.entries(typeStyles)
       .filter(([type]) => presentCategories.has(type))
@@ -252,7 +263,11 @@
       if (parentId) row.classList.add("legend-child-row");
       nodeLegendColumn.appendChild(row);
     });
-    if (presentCategories.size > 0) legend.appendChild(nodeLegendColumn);
+    if (presentCategories.size > 0) {
+      const nodeLegendDisclosure = createLegendDisclosure("nodes", "Nodes");
+      nodeLegendDisclosure.appendChild(nodeLegendColumn);
+      legend.appendChild(nodeLegendDisclosure);
+    }
 
     const presentKinds = Array.from(new Set(docData.entities.flatMap(entity =>
       kindComponents(entity.kind || entity.category || entity.type || "unknown")
@@ -260,7 +275,6 @@
     if (presentKinds.length) {
       const colorLegendColumn = document.createElement("div");
       colorLegendColumn.className = "legend-column legend-color-column";
-      colorLegendColumn.appendChild(createLegendGroupTitle("Colors"));
       presentKinds.forEach(kind => {
         const style = {color: colorByKind.get(kind) || "#566573", shape: "rect"};
         const row = document.createElement("div");
@@ -283,7 +297,9 @@
         });
         colorLegendColumn.appendChild(row);
       });
-      legend.appendChild(colorLegendColumn);
+      const colorLegendDisclosure = createLegendDisclosure("colors", "Colors");
+      colorLegendDisclosure.appendChild(colorLegendColumn);
+      legend.appendChild(colorLegendDisclosure);
     }
     syncNodeLegendRows();
 

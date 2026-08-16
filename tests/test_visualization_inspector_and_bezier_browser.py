@@ -82,6 +82,108 @@ def _payload(edge_type: str = "link") -> dict:
     }
 
 
+def test_node_and_color_legend_headings_toggle_independently() -> None:
+    _run_browser_case(
+        "collapsible-node-color-legends",
+        _payload(),
+        """
+        const nodes = document.querySelector('details[data-legend-section="nodes"]');
+        const colors = document.querySelector('details[data-legend-section="colors"]');
+        if (!nodes || !colors) throw new Error("node or color disclosure is missing");
+        if (!nodes.open || !colors.open) throw new Error("legend disclosures did not start open");
+
+        const nodesSummary = nodes.querySelector("summary");
+        const colorsSummary = colors.querySelector("summary");
+        const nodeRow = nodes.querySelector('.legend-row[data-legend-kind="node"][data-type="node"]');
+        const colorRow = colors.querySelector('.legend-row[data-legend-kind="node"][data-legend-facet="kind"][data-type="node"]');
+        if (!nodesSummary || nodesSummary.textContent.trim() !== "Nodes" || !nodeRow) {
+          throw new Error("Nodes disclosure content is incomplete");
+        }
+        if (!colorsSummary || colorsSummary.textContent.trim() !== "Colors" || !colorRow) {
+          throw new Error("Colors disclosure content is incomplete");
+        }
+
+        nodesSummary.click();
+        if (nodes.open || !colors.open) throw new Error("Nodes did not collapse independently");
+        nodesSummary.click();
+        if (!nodes.open || !colors.open) throw new Error("Nodes did not reopen independently");
+        nodeRow.click();
+        await delay(20);
+        if (selectedNodeIds.size !== 2) throw new Error("node legend selection broke after reopening");
+
+        setNodeSelection([], null, "explicit");
+        colorsSummary.click();
+        if (colors.open || !nodes.open) throw new Error("Colors did not collapse independently");
+        colorsSummary.click();
+        if (!colors.open || !nodes.open) throw new Error("Colors did not reopen independently");
+        colorRow.click();
+        await delay(20);
+        if (selectedNodeIds.size !== 2) throw new Error("color legend selection broke after reopening");
+        """,
+    )
+
+
+def test_edge_occlusion_masks_follow_nonrectangular_node_shapes() -> None:
+    shapes = ["ellipse", "circle", "diamond", "hexagon", "parallelogram"]
+    payload = {
+        "schema_version": 2,
+        "graph_id": "shape-aware-edge-occlusion",
+        "categories": [
+            {"id": shape, "label": shape.title(), "shape": shape}
+            for shape in shapes
+        ],
+        "edge_categories": [{"id": "link", "label": "Link"}],
+        "entities": [
+            {
+                "id": shape,
+                "type": shape,
+                "category": shape,
+                "short_title": shape.title(),
+                "position": index,
+                "connects_to": [],
+            }
+            for index, shape in enumerate(shapes)
+        ],
+    }
+    _run_browser_case(
+        "shape-aware-edge-occlusion",
+        payload,
+        """
+        const positions = Array.from(lastNodePositions.values());
+        const left = Math.min(...positions.map(position => position.x)) - 20;
+        const top = Math.min(...positions.map(position => position.y)) - 20;
+        const right = Math.max(...positions.map(position => position.x + position.width)) + 20;
+        const bottom = Math.max(...positions.map(position => position.y + position.height)) + 20;
+        const probe = createSvgElement("path");
+        probe.setAttribute("class", "edge-path");
+        probe.setAttribute("d", `M ${left} ${top} H ${right} V ${bottom} H ${left} Z`);
+        probe.dataset.sourceNodeId = "outside-source";
+        probe.dataset.targetNodeId = "outside-target";
+        edgeLayer.appendChild(probe);
+        refreshEdgeOcclusionMasks();
+
+        const maskReference = probe.getAttribute("mask") || "";
+        const maskId = maskReference.startsWith("url(#") ? maskReference.slice(5, -1) : "";
+        const mask = maskId ? document.getElementById(maskId) : null;
+        if (!mask) throw new Error("probe edge did not receive an occlusion mask");
+        for (const nodeId of ["ellipse", "circle", "diamond", "hexagon", "parallelogram"]) {
+          const visibleShape = nodeElement(nodeId)?.querySelector(".node-shape");
+          const blocker = mask.querySelector(`[data-edge-occlusion-node-id="${nodeId}"]`);
+          if (!visibleShape || !blocker) throw new Error(`${nodeId} blocker is missing`);
+          if (blocker.tagName !== visibleShape.tagName) {
+            throw new Error(`${nodeId} uses ${blocker.tagName} occlusion for a ${visibleShape.tagName} node`);
+          }
+          for (const attribute of ["x", "y", "width", "height", "rx", "ry", "cx", "cy", "r", "points"]) {
+            if (visibleShape.hasAttribute(attribute)
+                && blocker.getAttribute(attribute) !== visibleShape.getAttribute(attribute)) {
+              throw new Error(`${nodeId} blocker changed its ${attribute} geometry`);
+            }
+          }
+        }
+        """,
+    )
+
+
 def test_selected_node_buttons_switch_primary_inspector_without_losing_selection() -> None:
     _run_browser_case(
         "selection-inspector-navigation",

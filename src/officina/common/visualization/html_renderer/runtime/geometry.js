@@ -415,6 +415,32 @@
       mask.appendChild(blocker);
     }
 
+    function appendNodeEdgeMaskBlocker(mask, occluder) {
+      const shape = occluder.nodeEl?.querySelector(".node-shape");
+      if (!shape) {
+        appendEdgeMaskBlocker(
+          mask,
+          occluder.position,
+          0,
+          2,
+          occluder.isContainer ? "#141414" : "black"
+        );
+        return;
+      }
+      const blocker = shape.cloneNode(false);
+      const fill = occluder.isContainer ? "#141414" : "black";
+      blocker.removeAttribute("class");
+      blocker.removeAttribute("style");
+      blocker.setAttribute("fill", fill);
+      blocker.setAttribute("stroke", fill);
+      blocker.removeAttribute("stroke-dasharray");
+      blocker.setAttribute("pointer-events", "none");
+      blocker.dataset.edgeOcclusionNodeId = occluder.id;
+      const transform = occluder.nodeEl.getAttribute("transform");
+      if (transform) blocker.setAttribute("transform", transform);
+      mask.appendChild(blocker);
+    }
+
     function boundsIntersect(left, right, padding = 0) {
       if (!left || !right) return false;
       return left.x <= right.x + right.width + padding
@@ -434,6 +460,7 @@
           const nodeEl = nodeElement(nodeId);
           return {
             id: nodeId,
+            nodeEl,
             position: getEffectivePos(nodeId),
             isContainer: isContainerNode(nodeId),
             textBounds: nodeEl
@@ -477,13 +504,7 @@
           const isEndpoint = occluder.id === sourceId || occluder.id === targetId;
           if (!isEndpoint) {
             if (boundsIntersect(pathBounds, occluder.position, 8)) {
-              appendEdgeMaskBlocker(
-                mask,
-                occluder.position,
-                0,
-                2,
-                occluder.isContainer ? "#141414" : "black"
-              );
+              appendNodeEdgeMaskBlocker(mask, occluder);
             }
           }
           occluder.textBounds.forEach(textBounds => {
