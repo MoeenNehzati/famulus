@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -36,10 +37,48 @@ REQUIRES_BLUEPRINT_GRAPH = True
 BLUEPRINT_GRAPH_OPTIONAL = True
 
 
+def git_ignored_paths(repo_root: Path) -> frozenset[Path]:
+    """Return the repository-relative paths git is configured to ignore.
+
+    Validators walk the working tree, which holds more than the repository:
+    runtime logs, caches, and state the skills write about themselves. That
+    content is not authored and not reviewable, so reporting on it produces
+    failures nobody can fix by editing the repository. Two real examples, both
+    of which failed a check: a triage log whose text came from incoming email,
+    and a category cache written during a run.
+
+    Git already draws this line, so ask it rather than maintaining a list of
+    special cases. Files that are untracked but *not* ignored stay in scope --
+    a new source file must pass before it is added.
+
+    Returns an empty set when git cannot answer, so a missing git or a
+    non-repository directory scans everything rather than silently nothing.
+    """
+    try:
+        result = subprocess.run(
+            [
+                "git", "-C", str(repo_root), "ls-files",
+                "--others", "--ignored", "--exclude-standard", "-z",
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return frozenset()
+    if result.returncode != 0:
+        return frozenset()
+    return frozenset(Path(entry) for entry in result.stdout.split("\0") if entry)
+
+
 def _iter_skill_files(repo_root: Path):
     skills_root = repo_root / "skills"
     if not skills_root.is_dir():
         return
+    ignored = git_ignored_paths(repo_root)
     for path in skills_root.rglob("*"):
         if not path.is_file():
             continue
@@ -48,9 +87,13 @@ def _iter_skill_files(repo_root: Path):
             continue
         if rel_path.parts[1] in _SKIP_SKILLS:
             continue
+        if rel_path in ignored:
+            continue
         # Interpreter byte-cache, at any depth. Any import of a skill module
         # leaves one behind, so without this the check reports on whether
         # something happened to run rather than on what is being committed.
+        # Kept alongside the git check because __pycache__ is not always
+        # ignored in every checkout.
         if "__pycache__" in rel_path.parts:
             continue
         yield path, rel_path

@@ -24,6 +24,7 @@ Frozen version-4 blueprint fixtures retain the line-level checks below.
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -213,6 +214,58 @@ def _canonical_blueprint_paths(repo_root: Path) -> frozenset[Path]:
     return _validated_blueprint_paths(graph)
 
 
+def _git_ignored_paths(repo_root: Path) -> frozenset[Path]:
+    """Return the repository-relative paths git is configured to ignore.
+
+    Intent
+    ------
+    Separate authored repository content from files that merely sit in the tree.
+
+    Rationale
+    ---------
+    The scan walks the working tree, which also holds what git deliberately
+    does not track: runtime logs, caches, and state the skills write about
+    themselves. That content is not authored and not reviewable, so validating
+    it reports failures nobody can fix by editing the repository. A triage log
+    failed this check because an email it had processed mentioned an operating
+    system, which made arbitrary incoming mail able to break the repository's
+    own checks. Files that are untracked but not ignored stay in scope: a new
+    source file must pass before it is added.
+
+    Deliberately duplicated from validators/skill_runtime_files.py rather than
+    imported. This validator is copied into a bare temporary directory and run
+    on its own by tests/validate_platform_neutral.py, where no sibling
+    validator exists to import; a shared helper makes it fail to load there.
+
+    Pseudocode
+    ----------
+    - ask git for ignored, untracked files
+    - on any git failure, return an empty set so the scan is unchanged
+
+    Wraps
+    -----
+    - git ls-files
+    """
+    try:
+        result = subprocess.run(
+            [
+                "git", "-C", str(repo_root), "ls-files",
+                "--others", "--ignored", "--exclude-standard", "-z",
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return frozenset()
+    if result.returncode != 0:
+        return frozenset()
+    return frozenset(Path(entry) for entry in result.stdout.split("\0") if entry)
+
+
 def _iter_files(repo_root: Path, *, excluded_blueprints: frozenset[Path]):
     """Yield each scanned file together with its prepared relative path.
 
@@ -235,6 +288,7 @@ def _iter_files(repo_root: Path, *, excluded_blueprints: frozenset[Path]):
     -----
     - none
     """
+    ignored = _git_ignored_paths(repo_root)
     for root_name in _CHECK_ROOTS:
         root = repo_root / root_name
         if root.is_file():
@@ -247,6 +301,8 @@ def _iter_files(repo_root: Path, *, excluded_blueprints: frozenset[Path]):
             if not child.is_file():
                 continue
             rel_path = child.relative_to(repo_root)
+            if rel_path in ignored:
+                continue
             if any(part in _EXCLUDED_PARTS for part in rel_path.parts):
                 continue
             if any(rel_path == ep or ep in rel_path.parents for ep in _EXCLUDED_PATHS):

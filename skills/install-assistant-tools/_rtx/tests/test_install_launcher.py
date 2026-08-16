@@ -122,8 +122,8 @@ def test_invoke_skill_carries_the_unattended_contract_to_both_backends(tmp_path)
     """invoke-skill exists for the scheduler, so every run through it is
     unattended -- and an unattended run that stops to ask a question strands
     itself and every run after it. The contract that forbids that lives in
-    agents/background_run.md; this pins that both backends actually carry it,
-    and that neither loses its skill invocation in the process.
+    references/background_run.md; this pins that both backends actually carry
+    it, and that neither loses its skill invocation in the process.
     """
     installer = platform_launcher_installer("linux")
     bin_dir = tmp_path / "bin"
@@ -144,10 +144,14 @@ def test_invoke_skill_carries_the_unattended_contract_to_both_backends(tmp_path)
     # show that the protection was gone.
     assert "warning: no unattended contract" in invoke_text
 
-    # The repo probe matches the file, not an `agents/` directory: the
-    # launcher resolves under skills/install-assistant-tools, which has an
-    # unrelated agents/ of its own that would otherwise win.
-    assert "'agents' / 'background_run.md').is_file()" in invoke_text
+    # The repo probe matches the file, not its directory, since several trees
+    # under the repo carry a references/ of their own.
+    assert "'references' / 'background_run.md').is_file()" in invoke_text
+
+    # Never agents/: that directory is a registry, and anything in it ships as
+    # a real dispatchable agent listed in the plugin's component inventory.
+    # The contract is a prompt fragment, not an agent.
+    assert "'agents'" not in invoke_text
 
 
 # famulus-skip: category=platform-contract; reason=the Linux wakeup bundle executes POSIX launchers; alternate=test_windows_dispatcher_and_invoke_skill_are_batch_launchers covers native Windows launchers
