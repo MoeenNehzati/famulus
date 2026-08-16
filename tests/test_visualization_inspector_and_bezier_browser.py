@@ -11,23 +11,36 @@ pytestmark = pytest.mark.xdist_group("browser")
 from officina.common.visualization.elk_html_renderer import build_html_with_elk
 
 
-def _run_browser_case(name: str, payload: dict, script: str) -> None:
+def _run_browser_case(
+    name: str,
+    payload: dict,
+    script: str,
+    *,
+    virtual_time_budget: int = 4000,
+    wait_for_load: bool = True,
+) -> None:
     chrome = shutil.which("google-chrome")
     if chrome is None:
         # famulus-skip: category=capability-unavailable; reason=Google Chrome is not installed; alternate=renderer contract tests cover generated controls and graph payloads
         pytest.skip("google-chrome unavailable")
-    html = build_html_with_elk(payload).replace(
-        "</body>",
-        f"""<script>
-        const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-        window.addEventListener("load", () => setTimeout(async () => {{
+    runner_body = f"""async () => {{
           try {{
+            document.body.dataset.testStatus = "RUNNING";
             {script}
             document.body.dataset.testStatus = "PASS";
           }} catch (error) {{
             document.body.dataset.testStatus = "FAIL:" + (error.message || String(error));
           }}
-        }}, 150));
+        }}"""
+    if wait_for_load:
+        runner = f'window.addEventListener("load", () => setTimeout({runner_body}, 150));'
+    else:
+        runner = f"({runner_body})();"
+    html = build_html_with_elk(payload).replace(
+        "</body>",
+        f"""<script>
+        const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+        {runner}
         </script></body>""",
     )
     path = Path(f"/tmp/officina-{name}-browser.html")
@@ -42,7 +55,7 @@ def _run_browser_case(name: str, payload: dict, script: str) -> None:
                 "--disable-dev-shm-usage",
                 "--disable-crash-reporter",
                 f"--user-data-dir={profile}",
-                "--virtual-time-budget=4000",
+                f"--virtual-time-budget={virtual_time_budget}",
                 "--dump-dom",
                 path.as_uri(),
             ],
@@ -50,7 +63,14 @@ def _run_browser_case(name: str, payload: dict, script: str) -> None:
             capture_output=True,
             text=True,
         )
-    assert 'data-test-status="PASS"' in result.stdout, result.stdout[-1200:]
+    marker = 'data-test-status="'
+    marker_start = result.stdout.find(marker)
+    status = (
+        result.stdout[marker_start + len(marker) :].split('"', 1)[0]
+        if marker_start >= 0
+        else "MISSING"
+    )
+    assert status == "PASS", status
 
 
 def _payload(edge_type: str = "link") -> dict:
@@ -80,6 +100,46 @@ def _payload(edge_type: str = "link") -> dict:
             },
         ],
     }
+
+
+def test_mathjax_typesets_dynamic_tooltip_and_inspector_content() -> None:
+    payload = _payload()
+    payload["renderer_dependencies"] = [
+        {
+            "id": "mathjax",
+            "version": "3",
+            "configuration": {"macros": {"RR": "\\mathbb{R}"}},
+        }
+    ]
+    payload["entities"][0]["description"] = "Maps $x^2$ into $\\RR$."
+
+    _run_browser_case(
+        "dynamic-mathjax-content",
+        payload,
+        """
+        if (!window.MathJax?.typesetPromise) throw new Error("MathJax did not start");
+
+        let alpha = null;
+        for (let attempt = 0; attempt < 50 && !alpha; attempt += 1) {
+          alpha = nodeElement("alpha");
+          if (!alpha) await delay(20);
+        }
+        if (!alpha) throw new Error("graph node did not render");
+        alpha.dispatchEvent(new MouseEvent("mouseenter", {bubbles: true, clientX: 200, clientY: 200}));
+        await delay(150);
+        if (document.getElementById("tooltip").querySelectorAll("mjx-container").length !== 2) {
+          throw new Error("tooltip math was not typeset");
+        }
+
+        alpha.dispatchEvent(new MouseEvent("click", {bubbles: true}));
+        await delay(350);
+        if (document.getElementById("details").querySelectorAll("mjx-container").length !== 2) {
+          throw new Error("inspector math was not typeset");
+        }
+        """,
+        virtual_time_budget=12000,
+        wait_for_load=False,
+    )
 
 
 def test_node_and_color_legend_headings_toggle_independently() -> None:

@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""Lightweight wrapper entrypoint for rendering dependency graphs.
-
-The LLM-facing instruction interface owns semantic extraction. This module loads
-its canonical JSON with an extractor-free ``BaseVisualizer`` and contributes
-only math-specific categories and MathJax configuration before generic rendering.
-"""
+"""Prepare skill-owned macro inputs and call the shared HTML renderer."""
 
 from __future__ import annotations
 
@@ -14,60 +9,7 @@ from pathlib import Path
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
-from officina.common.visualization.base_visualizer import BaseVisualizer
-from officina.common.visualization.elk_html_renderer import ElkHtmlRenderer
-
-TYPE_STYLES = {
-    "standing-assumption": {"shape": "hexagon", "color": "#c0392b"},
-    "local-assumption": {"shape": "diamond", "color": "#d35400"},
-    "definition": {"shape": "roundrect", "color": "#2471a3"},
-    "notation": {"shape": "parallelogram", "color": "#148f77"},
-    "lemma": {"shape": "ellipse", "color": "#1e8449"},
-    "proposition": {"shape": "rect", "color": "#7d6608"},
-    "theorem": {"shape": "rect", "color": "#6c3483"},
-    "corollary": {"shape": "ellipse", "color": "#b7950b"},
-    "remark": {"shape": "rect", "color": "#616a6b"},
-}
-
-
-def prepare_math_payload(doc: dict) -> dict:
-    """Add math-domain categories without taking over generic rendering behavior."""
-    prepared = dict(doc)
-    entities = [dict(entity) for entity in prepared.get("entities", [])]
-    prepared["entities"] = entities
-    has_category_catalog = bool(prepared.get("categories"))
-
-    entity_types = list(dict.fromkeys(str(entity.get("type", "unknown")) for entity in entities))
-    if not has_category_catalog:
-        prepared["categories"] = [
-            {
-                "id": entity_type,
-                "label": entity_type.replace("-", " ").title(),
-                **TYPE_STYLES.get(entity_type, {}),
-            }
-            for entity_type in entity_types
-        ]
-    if not has_category_catalog:
-        for entity in entities:
-            entity.setdefault("category", str(entity.get("type", "unknown")))
-
-    relation_types = list(
-        dict.fromkeys(
-            str(edge.get("type", "dependency"))
-            for entity in entities
-            for edge in entity.get("connects_to", [])
-        )
-    )
-    if relation_types and not prepared.get("edge_categories"):
-        prepared["edge_categories"] = [
-            {
-                "id": relation_type,
-                "label": relation_type.replace("-", " ").title(),
-                "description": "A direct mathematical dependency classified by the LLM extractor.",
-            }
-            for relation_type in relation_types
-        ]
-    return prepared
+from officina.common.visualization.base_renderer_cli import main as render_html
 
 try:
     from ._tex_macro_reader import default_output_path, extract_macros, write_macros
@@ -106,7 +48,12 @@ def prepare_macro_file(args: argparse.Namespace, source_path: Path, doc: dict) -
     if args.macro_file:
         return Path(args.macro_file).resolve()
 
-    entrypoint_text = args.tex_entry or doc.get("document", {}).get("source_entrypoint")
+    document = doc.get("document", {})
+    entrypoint_text = (
+        args.tex_entry
+        or document.get("source_entrypoint")
+        or document.get("source_file")
+    )
     if not entrypoint_text:
         return None
 
@@ -124,34 +71,6 @@ def prepare_macro_file(args: argparse.Namespace, source_path: Path, doc: dict) -
         macros = extract_macros(entrypoint)
         write_macros(macros, macro_path)
     return macro_path
-
-
-def merge_mathjax_macros(doc: dict, macro_file: Path | None) -> int:
-    """Merge extracted MathJax macros into ``doc``.
-
-    Macros already present in the graph JSON take precedence because they may be
-    hand-normalized for MathJax compatibility.
-    """
-    if macro_file is None:
-        return 0
-    if not macro_file.exists():
-        raise SystemExit(f"Macro file not found: {macro_file}")
-
-    file_macros = json.loads(macro_file.read_text(encoding="utf-8"))
-    if not isinstance(file_macros, dict):
-        raise SystemExit(f"Macro file must contain a JSON object: {macro_file}")
-
-    dependencies = doc.setdefault("renderer_dependencies", [])
-    mathjax = next((item for item in dependencies if item.get("id") == "mathjax"), None)
-    if mathjax is None:
-        mathjax = {"id": "mathjax", "version": "3", "configuration": {}}
-        dependencies.append(mathjax)
-    configuration = mathjax.setdefault("configuration", {})
-    json_macros = configuration.get("macros", {})
-    if json_macros and not isinstance(json_macros, dict):
-        raise SystemExit("MathJax renderer dependency macros must be an object.")
-    configuration.update({"input": "tex", "output": "svg", "macros": {**file_macros, **json_macros}})
-    return len(file_macros)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -187,58 +106,18 @@ def main(argv: list[str] | None = None) -> None:
     if not source_path.exists():
         raise SystemExit(f"Source JSON not found: {source_path}")
 
-    visualizer = BaseVisualizer(extractor=None, renderer=ElkHtmlRenderer())
-    source = visualizer.resolve_source(source_path)
-    doc = visualizer.build_payload(source)
-    doc = visualizer.prepare_payload(
-        prepare_math_payload(doc), source_value=str(source_path)
-    )
-
+    doc = json.loads(source_path.read_text(encoding="utf-8"))
+    if not isinstance(doc, dict):
+        raise SystemExit("Canonical dependency-graph JSON must be an object.")
     macro_path = prepare_macro_file(args, source_path, doc)
-    macro_count = merge_mathjax_macros(doc, macro_path)
-    reduction_note = ""
-    removed_edges: list[dict] = []
-    if args.reduce_transitive_edges:
-        doc, removed_edges = visualizer.renderer.reduce_graph_json_transitive_edges(doc)
-        reduction_note = (
-            "Graph-theoretic transitive reduction enabled: "
-            f"removed {len(removed_edges)} redundant edges from the rendered view."
-        )
-
+    render_argv = [str(source_path), "--profile", "math-dependency"]
     if args.html_out:
-        html_path = Path(args.html_out).resolve()
-    else:
-        build_dir = source_path.parent / "_build"
-        build_dir.mkdir(exist_ok=True)
-        html_path = build_dir / source_path.with_suffix(".html").name
-
-    result = visualizer.render_payload(
-        source,
-        doc,
-        output_dir=html_path.parent,
-        output_name=html_path.stem,
-        render_html=True,
-        reduction_note=reduction_note,
-        apply_transitive_reduction=False,
-    )
-    if result.html_path is None:
-        raise SystemExit("HTML rendering did not produce an artifact.")
-    html_path = result.html_path
-
-    print(
-        json.dumps(
-            {
-                "json": str(source_path),
-                "html": str(html_path),
-                "entities": len(doc.get("entities", [])),
-                "reduced": args.reduce_transitive_edges,
-                "removed_edges": len(removed_edges),
-                "macro_file": str(macro_path) if macro_path else None,
-                "macros_from_file": macro_count,
-            },
-            indent=2,
-        )
-    )
+        render_argv.extend(["--html-out", args.html_out])
+    if macro_path is not None:
+        render_argv.extend(["--macro-file", str(macro_path)])
+    if args.reduce_transitive_edges:
+        render_argv.append("--reduce-transitive-edges")
+    render_html(render_argv)
 
 
 class Interface(PythonArgvMachineInterface):

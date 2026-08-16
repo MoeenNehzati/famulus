@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import html
 import json
+import re
 from collections.abc import Mapping
 from functools import lru_cache
 from pathlib import Path
@@ -16,9 +17,10 @@ _VENDOR_DIRECTORY = Path(__file__).parent / "vendor"
 @lru_cache(maxsize=1)
 def _mathjax_runtime() -> str:
     """Load the pinned offline MathJax runtime and make it script-safe."""
-    return (_VENDOR_DIRECTORY / "mathjax-3.2.2-tex-svg.js").read_text(
+    runtime = (_VENDOR_DIRECTORY / "mathjax-3.2.2-tex-svg.js").read_text(
         encoding="utf-8"
-    ).replace("</", "<\\/")
+    )
+    return re.sub(r"</script", lambda _match: r"<\/script", runtime, flags=re.IGNORECASE)
 
 
 def _script_json(value: object) -> str:

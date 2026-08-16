@@ -26,7 +26,9 @@ else:
 
 def script_env() -> dict[str, str]:
     env = os.environ.copy()
-    env["PYTHONPATH"] = str(REPO_SRC)
+    env["PYTHONPATH"] = os.pathsep.join(
+        part for part in (env.get("PYTHONPATH"), str(REPO_SRC)) if part
+    )
     return env
 
 
@@ -100,6 +102,38 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
             self.assertIn('"QTC": "\\\\vQ^{\\\\Pi_{\\\\TC_X}}"', html)
             self.assertIn('"OuterMacro": [', html)
             self.assertIn('"ev": "\\\\operatorname{eval}"', html)
+
+    def test_renderer_uses_document_source_file_for_default_macros(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp) / "macro-paper"
+            shutil.copytree(FIXTURE_DIR, work)
+            graph = work / "graph.json"
+            graph_payload = json.loads(graph.read_text(encoding="utf-8"))
+            graph_payload["document"].pop("source_entrypoint")
+            graph_payload["document"]["source_file"] = str(work / "main.tex")
+            graph.write_text(json.dumps(graph_payload), encoding="utf-8")
+            html_out = work / "_build" / "graph.html"
+            macro_file = work / "_build" / "main-mathjax-macros.json"
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT_DIR / "_graph_builder.py"),
+                    str(graph),
+                    "--html-out",
+                    str(html_out),
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+                env=script_env(),
+            )
+            payload = json.loads(result.stdout)
+
+            self.assertEqual(Path(payload["macro_file"]).resolve(), macro_file.resolve())
+            self.assertGreater(payload["macros_from_file"], 0)
+            html = html_out.read_text(encoding="utf-8")
+            self.assertIn('"QTC": "\\\\vQ^{\\\\Pi_{\\\\TC_X}}"', html)
 
 
 if __name__ == "__main__":

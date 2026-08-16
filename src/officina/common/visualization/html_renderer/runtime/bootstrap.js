@@ -200,11 +200,11 @@
     const leftPanelResize = document.getElementById("left-panel-resize");
     const rightPanelResize = document.getElementById("right-panel-resize");
     const svgEl = document.getElementById("graph-svg");
-    const DEFAULT_NODE_WIDTH = 224;
-    const DEFAULT_NODE_HEIGHT = 76;
+    const DEFAULT_NODE_WIDTH = 291;
+    const DEFAULT_NODE_HEIGHT = 99;
     const DEFAULT_CONTAINER_WIDTH = 252;
     const DEFAULT_CONTAINER_HEIGHT = 128;
-    const MAX_CONTENT_NODE_WIDTH = 320;
+    const MAX_CONTENT_NODE_WIDTH = 416;
     const measuredNodeDimensions = new Map();
     let nodeMeasurementHost = null;
 

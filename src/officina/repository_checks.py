@@ -43,6 +43,7 @@ CHROME_TESTS = {
     "tests/test_visualization_browser.py",
     "tests/test_visualization_containment_edges_browser.py",
     "tests/test_visualization_inspector_and_bezier_browser.py",
+    "tests/test_visualization_node_readability_browser.py",
     "tests/test_visualization_projection_arrangements_browser.py",
     "tests/test_visualization_projection_browser.py",
 }

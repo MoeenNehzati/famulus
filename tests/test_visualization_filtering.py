@@ -2,11 +2,37 @@
 
 from __future__ import annotations
 
+from html.parser import HTMLParser
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+
 import pytest
 
 from officina.common.visualization.base_renderer import BaseRenderer
 from officina.common.visualization.elk_html_renderer import build_html_with_elk
 from officina.common.visualization.graph import Graph
+
+
+class _ScriptCollector(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.scripts: list[str] = []
+        self._parts: list[str] | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "script":
+            self._parts = []
+
+    def handle_data(self, data: str) -> None:
+        if self._parts is not None:
+            self._parts.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "script" and self._parts is not None:
+            self.scripts.append("".join(self._parts))
+            self._parts = None
 
 
 def _payload() -> dict[str, object]:
@@ -125,6 +151,27 @@ def test_mathjax_dependency_is_bundled_offline() -> None:
 
     assert "cdn.jsdelivr.net/npm/mathjax" not in rendered
     assert "MathJax" in rendered
+
+
+def test_bundled_mathjax_is_emitted_as_valid_javascript() -> None:
+    node = shutil.which("node")
+    if node is None:
+        # famulus-skip: category=capability-unavailable; reason=Node.js is not installed; alternate=offline bundle assertions verify the emitted dependency payload
+        pytest.skip("node unavailable")
+    payload = _payload()
+    payload["renderer_dependencies"] = [{"id": "mathjax", "version": "3"}]
+    collector = _ScriptCollector()
+    collector.feed(build_html_with_elk(payload))
+    runtime = max(collector.scripts, key=len)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        runtime_path = Path(tmp) / "mathjax-runtime.js"
+        runtime_path.write_text(runtime, encoding="utf-8")
+        result = subprocess.run(
+            [node, "--check", str(runtime_path)], capture_output=True, text=True
+        )
+
+    assert result.returncode == 0, "\n".join(result.stderr.splitlines()[-4:])
 
 
 def test_runtime_exposes_safe_filter_projection_contract() -> None:

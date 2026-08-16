@@ -11,18 +11,64 @@ from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 from .elk_html_renderer import ElkHtmlRenderer, build_html_with_elk
 
-try:
-    from ._tex_macro_reader import default_output_path, extract_macros, write_macros
-except ImportError:  # pragma: no cover - only relevant when imported unusually
-    try:
-        from _tex_macro_reader import default_output_path, extract_macros, write_macros
-    except ImportError:
-        default_output_path = None
-        extract_macros = None
-        write_macros = None
-
-
 _DEFAULT_RENDERER = ElkHtmlRenderer()
+
+MATH_DEPENDENCY_TYPE_STYLES = {
+    "standing-assumption": {"shape": "hexagon", "color": "#c0392b"},
+    "local-assumption": {"shape": "diamond", "color": "#d35400"},
+    "definition": {"shape": "roundrect", "color": "#2471a3"},
+    "notation": {"shape": "parallelogram", "color": "#148f77"},
+    "lemma": {"shape": "ellipse", "color": "#1e8449"},
+    "proposition": {"shape": "rect", "color": "#7d6608"},
+    "theorem": {"shape": "rect", "color": "#6c3483"},
+    "corollary": {"shape": "ellipse", "color": "#b7950b"},
+    "remark": {"shape": "rect", "color": "#616a6b"},
+}
+
+
+def prepare_render_payload(doc: dict, *, profile: str | None = None) -> dict:
+    """Apply an optional presentation profile before generic validation."""
+    prepared = dict(doc)
+    entities = [dict(entity) for entity in prepared.get("entities", [])]
+    prepared["entities"] = entities
+    if profile != "math-dependency":
+        return prepared
+
+    has_category_catalog = bool(prepared.get("categories"))
+    entity_types = list(
+        dict.fromkeys(str(entity.get("type", "unknown")) for entity in entities)
+    )
+    if not has_category_catalog:
+        prepared["categories"] = [
+            {
+                "id": entity_type,
+                "label": entity_type.replace("-", " ").title(),
+                **MATH_DEPENDENCY_TYPE_STYLES.get(entity_type, {}),
+            }
+            for entity_type in entity_types
+        ]
+        for entity in entities:
+            entity.setdefault("category", str(entity.get("type", "unknown")))
+
+    relation_types = list(
+        dict.fromkeys(
+            str(edge.get("type", "dependency"))
+            for entity in entities
+            for edge in entity.get("connects_to", [])
+        )
+    )
+    if relation_types and not prepared.get("edge_categories"):
+        prepared["edge_categories"] = [
+            {
+                "id": relation_type,
+                "label": relation_type.replace("-", " ").title(),
+                "description": (
+                    "A direct mathematical dependency classified by the LLM extractor."
+                ),
+            }
+            for relation_type in relation_types
+        ]
+    return prepared
 
 
 def validate_document(doc: dict) -> None:
@@ -52,48 +98,6 @@ def merge_mathjax_macros(doc: dict, macro_file: Path | None) -> int:
     return len(file_macros)
 
 
-def resolve_entrypoint(entrypoint_text: str, source_path: Path) -> Path:
-    """Resolve an entrypoint from CLI/JSON relative to useful roots."""
-    entrypoint = Path(entrypoint_text)
-    if entrypoint.is_absolute():
-        return entrypoint
-
-    candidates = [
-        Path.cwd() / entrypoint,
-        source_path.parent / entrypoint,
-        source_path.parent.parent / entrypoint,
-    ]
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate.resolve()
-    return candidates[0].resolve()
-
-
-def prepare_macro_file(args: argparse.Namespace, source_path: Path, doc: dict) -> Path | None:
-    """Find or create the macro file to merge for this render."""
-    if args.macro_file:
-        return Path(args.macro_file).resolve()
-
-    entrypoint_text = args.tex_entry or doc.get("document", {}).get("source_entrypoint")
-    if not entrypoint_text:
-        return None
-
-    entrypoint = resolve_entrypoint(entrypoint_text, source_path)
-    if not entrypoint.exists():
-        if args.tex_entry:
-            raise SystemExit(f"TeX entrypoint not found: {entrypoint}")
-        return None
-
-    if default_output_path is None or extract_macros is None or write_macros is None:
-        raise SystemExit("Macro extraction helper is unavailable.")
-
-    macro_path = default_output_path(entrypoint)
-    if args.refresh_macros or args.tex_entry or not macro_path.exists():
-        macros = extract_macros(entrypoint)
-        write_macros(macros, macro_path)
-    return macro_path
-
-
 def reduce_transitive_edges(doc: dict) -> tuple[dict, list[dict]]:
     """Apply graph-theoretic transitive reduction to the rendered view only."""
     return _DEFAULT_RENDERER.reduce_graph_json_transitive_edges(doc)
@@ -107,19 +111,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("source", help="Path to the canonical dependency-graph JSON file")
     parser.add_argument("--html-out", dest="html_out", help="Path to write the standalone HTML viewer")
     parser.add_argument(
-        "--tex-entry",
-        dest="tex_entry",
-        help="TeX entrypoint used to extract MathJax macros. Defaults to document.source_entrypoint when present.",
-    )
-    parser.add_argument(
         "--macro-file",
         dest="macro_file",
-        help="MathJax macro JSON file to merge before rendering. Defaults to _build/<entry>-mathjax-macros.json.",
+        help="Optional MathJax macro JSON file to merge before rendering.",
     )
     parser.add_argument(
-        "--refresh-macros",
-        action="store_true",
-        help="Regenerate the default macro file from the TeX entrypoint before rendering.",
+        "--profile",
+        choices=("math-dependency",),
+        help="Optional domain presentation profile applied before rendering.",
     )
     parser.add_argument(
         "--reduce-transitive-edges",
@@ -132,9 +131,12 @@ def main(argv: list[str] | None = None) -> int:
     if not source_path.exists():
         raise SystemExit(f"Source JSON not found: {source_path}")
 
-    doc = json.loads(source_path.read_text(encoding="utf-8"))
+    doc = prepare_render_payload(
+        json.loads(source_path.read_text(encoding="utf-8")),
+        profile=args.profile,
+    )
     validate_document(doc)
-    macro_path = prepare_macro_file(args, source_path, doc)
+    macro_path = Path(args.macro_file).resolve() if args.macro_file else None
     macro_count = merge_mathjax_macros(doc, macro_path)
     reduction_note = ""
     removed_edges: list[dict] = []

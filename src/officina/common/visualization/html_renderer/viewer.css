@@ -717,8 +717,10 @@
     .node-label {
       display: block;
       text-align: center;
-      font-size: 16px;
-      font-weight: 700;
+      font-family: "DejaVu Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+      font-size: 21px;
+      font-weight: 900;
+      letter-spacing: -0.025em;
       overflow-wrap: anywhere;
       color: #fff;
       text-shadow:
@@ -731,7 +733,9 @@
     }
     .node-subtitle {
       text-align: center;
-      font-size: 13px;
+      font-family: "DejaVu Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+      font-size: 14px;
+      font-weight: 750;
       overflow-wrap: anywhere;
       color: rgba(255,255,255,0.92);
       text-shadow:
