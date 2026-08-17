@@ -27,6 +27,12 @@ dependencies:
   version: 1
 - blueprint:
     base: module-root
+    path: blueprints/rtx-unit-writer.yaml
+  reason: Imports the scheduler reconciliation implementation from _rtx/_unit_writer.py.
+  source: recurring-tasks._rtx.source.rtx-unit-writer
+  version: 1
+- blueprint:
+    base: module-root
     path: blueprints/rtx-run-record.yaml
   reason: Reads the run record a triggered job's executor writes, to report the job's
     actual outcome instead of only the scheduler's trigger-acceptance result.
