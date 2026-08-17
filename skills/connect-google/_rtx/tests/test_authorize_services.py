@@ -31,7 +31,7 @@ SPEC.loader.exec_module(authorize_services_module)
 
 authorize_services = authorize_services_module.authorize_services
 
-from officina.common.google_credentials import (
+from officina.credentials.google import (
     GoogleCredentialError,
     install_client,
     load_credential_file,
@@ -281,7 +281,7 @@ def test_authorize_services_rejects_unknown_service(tmp_path: Path) -> None:
 def test_unavailable_secret_store_fails_before_listener_with_stable_code(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from officina.common import secret_store
+    import officina.credentials.secret_store as secret_store
 
     class UnavailableBackend(FakeSecretBackend):
         def lookup(self, namespace: str, key: str) -> str | None:
@@ -316,7 +316,7 @@ def test_unavailable_secret_store_fails_before_listener_with_stable_code(
 def test_invalid_utf8_client_fails_before_listener_with_client_invalid(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from officina.common.google_credentials import canonical_client_path
+    from officina.credentials.google import canonical_client_path
 
     path = canonical_client_path(home=tmp_path, platform=PLATFORM)
     path.parent.mkdir(parents=True)
@@ -400,7 +400,7 @@ def test_authorize_services_result_payload_shape(
 def test_custom_client_secret_reference_survives_authorize_and_refresh(
     tmp_path: Path, secret_backend: FakeSecretBackend, background_thread
 ) -> None:
-    from officina.common import google_credentials as gc
+    import officina.credentials.google as gc
 
     path = gc.canonical_client_path(home=tmp_path, platform=PLATFORM)
     path.parent.mkdir(parents=True)
@@ -801,7 +801,7 @@ def test_blank_verified_identity_is_rejected_without_publication(
         )
 
     assert (failure.value.phase, failure.value.code) == ("userinfo", "userinfo_failed")
-    from officina.common import google_credentials as gc
+    import officina.credentials.google as gc
 
     assert not gc._credentials_registry_path(home=home, platform=PLATFORM).exists()
 

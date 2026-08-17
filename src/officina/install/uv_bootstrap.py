@@ -47,7 +47,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-from officina.common import atomic_files
+import officina.common.atomic_files as atomic_files
 
 _RELEASE_BASE_URL = "https://github.com/astral-sh/uv/releases/download"
 

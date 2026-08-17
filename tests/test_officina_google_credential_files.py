@@ -8,14 +8,14 @@ from typing import Callable
 import pytest
 import yaml
 
-from officina.common.google_credentials import (
+from officina.credentials.google import (
     GoogleCredentialError,
     SERVICE_SCOPES,
     create_credential_file,
     load_credential_file,
     refresh_access_token_from_file,
 )
-from officina.common.secret_store import SecretNotFoundError
+from officina.credentials.secret_store import SecretNotFoundError
 
 
 class FakeSecretBackend:
@@ -90,7 +90,7 @@ def common_blueprint() -> dict[str, object]:
     return yaml.safe_load(
         (
             REPO_ROOT
-            / "src/officina/common/blueprints/google-credentials.yaml"
+            / "src/officina/credentials/blueprints/google.yaml"
         ).read_text(encoding="utf-8")
     )
 
@@ -300,7 +300,7 @@ def test_common_blueprint_declares_descriptor_operations_and_io(
 ) -> None:
     """Omitting the contract would leave working code outside graph ownership."""
     interface = common_blueprint["interfaces"][
-        "common.source.google-credentials.interface.python-api"
+        "credentials.source.google.interface.python-api"
     ]["contract"]
     operations = {
         item["value"]

@@ -6,15 +6,15 @@ from pathlib import Path
 
 import pytest
 
-from officina.common.blueprint_graph import (
+from officina.blueprints.graph import (
     BlueprintEdge,
     BlueprintNode,
     RepositoryBlueprintGraph,
 )
-from officina.common.visualization.from_blueprint.extractor import (
+from officina.visualization.from_blueprint.extractor import (
     build_payload_from_repository_graph,
 )
-from officina.common.visualization.graph import Graph
+from officina.visualization.graph import Graph
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]

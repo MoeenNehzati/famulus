@@ -14,7 +14,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Callable
 
-from officina.common import secret_store
+import officina.credentials.secret_store as secret_store
 
 SECRET_NAMESPACE = "email-client"
 AUTH_APP_PASSWORD = "app-password"
@@ -129,9 +129,9 @@ def get_gmail_access_token(
     When the account record carries a ``credential_id`` (bound via
     accounts.py's ``use-google-credential`` subcommand), delegates to the
     shared connect-google credential in
-    ``officina.common.google_credentials``, which re-validates Gmail scope on
+    ``officina.credentials.google``, which re-validates Gmail scope on
     every call before any network request. This is NOT the same function as
-    ``officina.common.google_credentials.exchange_authorization_code`` — that
+    ``officina.credentials.google.exchange_authorization_code`` — that
     module has its own, unrelated OAuth helpers; this module's own
     ``exchange_authorization_code`` (below) is untouched.
 
@@ -144,7 +144,7 @@ def get_gmail_access_token(
         credential_file = account["credential_file"]
         if not isinstance(credential_file, str) or not credential_file.strip():
             raise OAuthError("configured credential_file must be a nonempty path string")
-        from officina.common.google_credentials import (
+        from officina.credentials.google import (
             GoogleCredentialError,
             SERVICE_SCOPES,
             refresh_access_token_from_file,
@@ -167,7 +167,7 @@ def get_gmail_access_token(
         # function being invoked with exactly (nickname, account).
         return refresh_google_access_token(nickname, account)
 
-    from officina.common.google_credentials import GoogleCredentialError, SERVICE_SCOPES, refresh_access_token
+    from officina.credentials.google import GoogleCredentialError, SERVICE_SCOPES, refresh_access_token
 
     resolved_home = home if home is not None else Path.home()
     try:

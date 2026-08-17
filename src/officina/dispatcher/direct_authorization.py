@@ -16,7 +16,7 @@ from pathlib import Path, PurePosixPath
 
 import yaml
 
-from officina.common.blueprint_authorization import (
+from officina.blueprints.authorization import (
     AuthorizationRelation,
     AuthorizationResult,
     CertificateRequirement,
@@ -24,13 +24,13 @@ from officina.common.blueprint_authorization import (
     EffectiveAuthorizationFilter,
     ResolvedCallerReference,
 )
-from officina.common.process_binding_compiler import (
+from officina.blueprints.process_binding import (
     ProcessBindingError,
     compile_gateway_invocation,
     compile_route_smoke_invocation,
     parse_caller_invocation,
 )
-from officina.common.repository_configuration import RepositoryConfiguration
+from officina.configuration.repository import RepositoryConfiguration
 from officina.dispatcher.direct_models import (
     DirectBlueprintNode,
     DirectInterfaceExport,

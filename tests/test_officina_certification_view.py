@@ -9,9 +9,9 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-import officina.common.certification_view as certification_view_module
-from officina.common.certification_hashing import NodeHashState, compute_node_hash_states
-from officina.common.certificate_records import (
+import officina.certification.view as certification_view_module
+from officina.certification.hashing import NodeHashState, compute_node_hash_states
+from officina.certification.records import (
     canonical_certificate_envelope_bytes,
     certificate_public_key_root,
     certificate_entry_hash,
@@ -20,16 +20,16 @@ from officina.common.certificate_records import (
     rotate_certificate_signing_key,
     sign_certificate_payload,
 )
-from officina.common.blueprint_graph import (
+from officina.blueprints.graph import (
     BlueprintNode,
     RepositoryBlueprintGraph,
     load_repository_blueprint_graph,
 )
-from officina.common.blueprint_authorization import (
+from officina.blueprints.authorization import (
     AuthorizationResult,
     CertificateRequirement,
 )
-from officina.common.certification_view import (
+from officina.certification.view import (
     CertificateNodeCurrentness,
     CertificateCurrentnessReport,
     CertificateCurrentnessView,

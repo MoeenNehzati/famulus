@@ -10,7 +10,7 @@ import sys
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ENTRYPOINT = REPO_ROOT / "repo_checks.py"
-IMPLEMENTATION = REPO_ROOT / "src" / "officina" / "repository_checks.py"
+IMPLEMENTATION = REPO_ROOT / "src" / "officina" / "repository" / "checks" / "runner.py"
 
 
 def _load_checks():

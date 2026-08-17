@@ -8,7 +8,7 @@ import pytest
 import yaml
 
 import officina.dispatcher as dispatcher_package
-from officina.common.repository_configuration import RepositoryConfiguration
+from officina.configuration.repository import RepositoryConfiguration
 from officina.dispatcher.direct_authorization import resolve_direct_invocation
 from officina.dispatcher.direct_runtime import (
     _dispatch_host,

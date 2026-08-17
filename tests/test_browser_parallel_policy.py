@@ -3,7 +3,7 @@ import runpy
 
 import pytest
 
-from officina import repository_checks
+import officina.repository.checks.runner as repository_checks
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]

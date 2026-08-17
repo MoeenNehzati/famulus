@@ -1,0 +1,30 @@
+authority:
+  owns_filesystem: []
+children: {}
+content:
+- __init__\.py
+- provenance\.py
+description: Environment-isolated Git snapshots, provenance, materialization, and
+  commit-readiness checks.
+exports:
+  git.interface.provenance:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - skill-certifier
+      - skill-certifier._rtx
+      - skill-drift
+    source_interface: git.source.provenance.interface.python-api
+gateway:
+  language: Python
+  path: __init__.py
+id: git
+namespace_exports: {}
+node_type: module
+schema_version: 6
+sources:
+  git.source.provenance:
+    blueprint:
+      base: module-root
+      path: blueprints/provenance.yaml
+version: 1

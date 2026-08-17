@@ -7,7 +7,7 @@ import re
 
 import tomllib
 
-from officina.common import toml_io
+import officina.common.toml_io as toml_io
 
 
 class InstallInfoError(Exception):

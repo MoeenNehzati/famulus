@@ -14,7 +14,7 @@ from email.utils import COMMASPACE
 from pathlib import Path
 from typing import Callable, Sequence
 
-from officina.common import secret_store
+import officina.credentials.secret_store as secret_store
 from officina.runtime.python_machine_interface import PythonMachineInterface
 
 try:

@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from officina.common.blueprint_graph import (
+from officina.blueprints.graph import (
     HelperEdge,
     InterfaceExport,
     RepositoryBlueprintGraph,
@@ -27,9 +27,9 @@ def load_repository_blueprint_graph(repo_root: Path, **kwargs: object):
         / "v4",
     )
     return _canonical_load_repository_blueprint_graph(repo_root, **kwargs)
-from officina.common.blueprint_template import load_schema, schema_validator
-from officina.common.certification_view import CertificationDecision, RejectingCertificationView
-from officina.common.interface_projection import (
+from officina.blueprints.template import load_schema, schema_validator
+from officina.certification.view import CertificationDecision, RejectingCertificationView
+from officina.blueprints.projection import (
     InterfaceProjectionError,
     _validate_helper_target,
     project_consumer_interfaces,

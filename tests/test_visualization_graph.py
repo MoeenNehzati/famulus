@@ -7,10 +7,10 @@ import json
 
 import pytest
 
-from officina.common.visualization import render_module_artifacts
-from officina.common.visualization.base_renderer import BaseRenderer
-from officina.common.visualization.base_visualizer import BaseVisualizer, GraphSourceKind
-from officina.common.visualization.graph import Graph
+from officina.visualization.from_docstring.visualizer import render_module_artifacts
+from officina.visualization.base_renderer import BaseRenderer
+from officina.visualization.base_visualizer import BaseVisualizer, GraphSourceKind
+from officina.visualization.graph import Graph
 
 
 def _presentation_node_payload() -> dict[str, object]:

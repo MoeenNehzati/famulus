@@ -4,7 +4,7 @@ from pathlib import Path
 
 import yaml
 
-from officina.common.blueprint_template import (
+from officina.blueprints.template import (
     write_repository_managed_skill_blueprints,
 )
 from validators.skill.blueprints import repository_schema_version

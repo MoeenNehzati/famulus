@@ -18,7 +18,7 @@ imports:
     standard_id: node-standards.python-node
     standard_version: 1.0.0
     revision: 17
-    digest: sha256:a785c48e9dbff43ff8ee17810ea4d5aac7d2d9990c034e214b315212927dbd7a
+    digest: sha256:0b36acac599617bc125f624efae56b90d74a40a677b6c2affc2b9e24980ec261
     artifact:
       kind: artifact
       ref: artifact.python-node-standard

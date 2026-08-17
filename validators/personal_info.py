@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from officina.common.git_provenance import run_git
+from officina.git.provenance import run_git
 
 _TOKENS = ("seyed", "moeen", "nehzati")
 _PATTERN = re.compile("|".join(_TOKENS), re.IGNORECASE)

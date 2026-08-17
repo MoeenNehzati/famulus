@@ -3,27 +3,11 @@ authority:
 children: {}
 content:
 - __init__\.py
-- certification_hashing\.py
 - atomic_files\.py
-- certificate_records\.py
-- blueprint_authorization\.py
-- blueprint_graph\.py
-- blueprint_inventory\.py
-- blueprint_template\.py
-- certification_view\.py
 - codex_toml\.py
 - dates\.py
 - famulus_paths/__init__\.py
-- git_provenance\.py
-- google_credentials\.py
-- oauth_json\.py
-- pooled_blueprint\.py
-- process_binding_compiler\.py
 - repository_paths\.py
-- repository_configuration\.py
-- secret_store\.py
-- standard_extractor\.py
-- standard_query\.py
 - toml_io\.py
 description: Shared, narrowly exported Python helpers for secure file updates, project
   date keys, OAuth JSON, credential storage, and controlled TOML access.
@@ -39,54 +23,8 @@ exports:
       - skill-certifier._rtx
       - skill-maker
       - skill-maker._rtx
+      - credentials
     source_interface: common.source.atomic-files.interface.python-api
-  common.interface.blueprint-graph:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - skill-certifier
-      - skill-certifier._rtx
-      - skill-drift
-      - skill-drift._rtx
-      - skill-maker
-      - skill-maker._rtx
-    source_interface: common.source.blueprint-graph.interface.python-api
-  common.interface.blueprint-template:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - regenerate-blueprints
-      - regenerate-blueprints._rtx
-    source_interface: common.source.blueprint-template.interface.python-api
-  common.interface.certificate-records:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - install-assistant-tools
-      - install-assistant-tools._rtx
-      - skill-certifier
-      - skill-certifier._rtx
-      - skill-drift
-      - skill-drift._rtx
-    source_interface: common.source.certificate-records.interface.python-api
-  common.interface.certification-hashing:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - skill-certifier
-      - skill-certifier._rtx
-      - skill-drift
-      - skill-drift._rtx
-    source_interface: common.source.certification-hashing.interface.python-api
-  common.interface.certification-view:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - skill-certifier
-      - skill-certifier._rtx
-      - skill-drift
-      - skill-drift._rtx
-    source_interface: common.source.certification-view.interface.python-api
   common.interface.codex-toml:
     access:
       allow_all_modules: false
@@ -111,47 +49,8 @@ exports:
       - install-assistant-tools._rtx
       - recurring-tasks
       - recurring-tasks._rtx
+      - credentials
     source_interface: common.source.famulus-paths.interface.python-api
-  common.interface.git-provenance:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - skill-certifier
-      - skill-certifier._rtx
-      - skill-drift
-    source_interface: common.source.git-provenance.interface.python-api
-  common.interface.google-credentials:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - cloud-files
-      - cloud-files._rtx
-      - connect-google
-      - connect-google._rtx
-      - email-client
-      - email-client._rtx
-      - g-calendar
-      - g-calendar._rtx
-    source_interface: common.source.google-credentials.interface.python-api
-  common.interface.oauth-json:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - cloud-files
-      - cloud-files._rtx
-      - connect-google
-      - connect-google._rtx
-      - g-calendar
-      - g-calendar._rtx
-    source_interface: common.source.oauth-json.interface.python-api
-  common.interface.pooled-blueprint:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - skill-certifier
-      - skill-certifier._rtx
-      - skill-drift
-    source_interface: common.source.pooled-blueprint.interface.python-api
   common.interface.repository-paths:
     access:
       allow_all_modules: false
@@ -160,37 +59,13 @@ exports:
       - skill-certifier._rtx
       - skill-maker
     source_interface: common.source.repository-paths.interface.python-api
-  common.interface.repository-configuration:
-    access:
-      allow_all_modules: true
-      allowed_callers: []
-    source_interface: common.source.repository-configuration.interface.python-api
-  common.interface.secret-store:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - email-client
-      - email-client._rtx
-    source_interface: common.source.secret-store.interface.python-api
-  common.interface.standard-extractor:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - common
-    source_interface: common.source.standard-extractor.interface.python-api
-  common.interface.query-standard:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - refactor-node
-      - skill-maker
-    source_interface: common.source.standard-query.interface.query-standard
   common.interface.toml-io:
     access:
       allow_all_modules: false
       allowed_callers:
       - install-assistant-tools
       - install-assistant-tools._rtx
+      - configuration
     source_interface: common.source.toml-io.interface.python-api
 gateway:
   language: Python
@@ -204,30 +79,6 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/atomic-files.yaml
-  common.source.blueprint-graph:
-    blueprint:
-      base: module-root
-      path: blueprints/blueprint-graph.yaml
-  common.source.blueprint-inventory:
-    blueprint:
-      base: module-root
-      path: blueprints/blueprint-inventory.yaml
-  common.source.blueprint-template:
-    blueprint:
-      base: module-root
-      path: blueprints/blueprint-template.yaml
-  common.source.certificate-records:
-    blueprint:
-      base: module-root
-      path: blueprints/certificate-records.yaml
-  common.source.certification-hashing:
-    blueprint:
-      base: module-root
-      path: blueprints/certification-hashing.yaml
-  common.source.certification-view:
-    blueprint:
-      base: module-root
-      path: blueprints/certification-view.yaml
   common.source.codex-toml:
     blueprint:
       base: module-root
@@ -240,46 +91,10 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/famulus-paths.yaml
-  common.source.git-provenance:
-    blueprint:
-      base: module-root
-      path: blueprints/git-provenance.yaml
-  common.source.google-credentials:
-    blueprint:
-      base: module-root
-      path: blueprints/google-credentials.yaml
-  common.source.oauth-json:
-    blueprint:
-      base: module-root
-      path: blueprints/oauth-json.yaml
-  common.source.pooled-blueprint:
-    blueprint:
-      base: module-root
-      path: blueprints/pooled-blueprint.yaml
-  common.source.process-binding-compiler:
-    blueprint:
-      base: module-root
-      path: blueprints/process-binding-compiler.yaml
   common.source.repository-paths:
     blueprint:
       base: module-root
       path: blueprints/repository-paths.yaml
-  common.source.repository-configuration:
-    blueprint:
-      base: module-root
-      path: blueprints/repository-configuration.yaml
-  common.source.secret-store:
-    blueprint:
-      base: module-root
-      path: blueprints/secret-store.yaml
-  common.source.standard-extractor:
-    blueprint:
-      base: module-root
-      path: blueprints/standard-extractor.yaml
-  common.source.standard-query:
-    blueprint:
-      base: module-root
-      path: blueprints/standard-query.yaml
   common.source.toml-io:
     blueprint:
       base: module-root

@@ -1,4 +1,4 @@
-# Human-readable format contract consumed by `officina.common.docstring`.
+# Human-readable format contract consumed by `officina.docstring`.
 # Canonical policy filename for docstring controls.
 #
 # Purpose
@@ -133,7 +133,7 @@ callable:
   dependency_reference_sections: []
 
   # Dependency section names and local portability roots are loaded from
-  # `src/officina/common/docstring/config.yaml`. The standard names below are
+  # `src/officina/docstring/config.yaml`. The standard names below are
   # canonical defaults; config produces the effective runtime policy.
   #
   # Canonical dependency sections use YAML-like trees with `why:` leaves.

@@ -12,7 +12,7 @@ REPO_SRC = Path(__file__).resolve().parents[4] / "src"
 if str(REPO_SRC) not in sys.path:
     sys.path.insert(0, str(REPO_SRC))
 
-from officina.common.process_binding_compiler import select_authored_argv_pattern
+from officina.blueprints.process_binding import select_authored_argv_pattern
 
 
 RUNTIME_ROOT = Path(__file__).resolve().parents[1]

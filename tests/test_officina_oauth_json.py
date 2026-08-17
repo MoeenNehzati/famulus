@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from officina.common.oauth_json import OAuthJsonError, write_oauth_json
+from officina.credentials.oauth import OAuthJsonError, write_oauth_json
 
 
 def test_write_oauth_json_creates_parent_and_private_file(tmp_path: Path) -> None:

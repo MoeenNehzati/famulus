@@ -9,7 +9,7 @@ from pathlib import Path
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
-from officina.common.visualization.base_renderer_cli import main as render_html
+from officina.visualization.base_renderer_cli import main as render_html
 
 try:
     from ._tex_macro_reader import default_output_path, extract_macros, write_macros

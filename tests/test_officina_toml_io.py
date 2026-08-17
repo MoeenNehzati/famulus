@@ -8,7 +8,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from officina.common import toml_io  # noqa: E402
+import officina.common.toml_io as toml_io  # noqa: E402
 
 
 def test_open_writes_utf8_and_validates_toml_on_close(tmp_path: Path) -> None:

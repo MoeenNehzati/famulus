@@ -9,7 +9,7 @@ import urllib.error
 from pathlib import Path
 from unittest import mock
 
-from officina.common.google_credentials import SERVICE_SCOPES
+from officina.credentials.google import SERVICE_SCOPES
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPT_DIR))
@@ -255,14 +255,14 @@ class CloudFilesTests(unittest.TestCase):
             return "fake-access-token"
 
         with mock.patch(
-            "officina.common.google_credentials.refresh_access_token",
+            "officina.credentials.google.refresh_access_token",
             fake_refresh_access_token,
         ):
             token = cloud_files.get_access_token(config, platform="linux")
 
         self.assertEqual(token, "fake-access-token")
         self.assertEqual(calls[0][0], "google:sub1")
-        from officina.common.google_credentials import SERVICE_SCOPES
+        from officina.credentials.google import SERVICE_SCOPES
 
         self.assertEqual(calls[0][1]["required_scopes"], SERVICE_SCOPES["drive"])
         self.assertEqual(calls[0][1]["home"], Path("/tmp/home"))
@@ -323,7 +323,7 @@ class CloudFilesTests(unittest.TestCase):
             return "cached-token"
 
         with mock.patch(
-            "officina.common.google_credentials.refresh_access_token",
+            "officina.credentials.google.refresh_access_token",
             fake_refresh_access_token,
         ):
             first = cloud_files.get_access_token(config, platform="linux")
@@ -348,7 +348,7 @@ class CloudFilesTests(unittest.TestCase):
             return f"token-{len(calls)}"
 
         with mock.patch(
-            "officina.common.google_credentials.refresh_access_token",
+            "officina.credentials.google.refresh_access_token",
             fake_refresh_access_token,
         ):
             first = cloud_files.get_access_token(config, platform="linux")
@@ -367,7 +367,7 @@ class CloudFilesTests(unittest.TestCase):
         """A bare "HTTP 400" is the same string for a revoked grant, a rate
         limit, and a bad client. A scheduled run once read one and reported
         that authentication needed repair, when nothing was wrong with it."""
-        from officina.common.google_credentials import GoogleCredentialError
+        from officina.credentials.google import GoogleCredentialError
 
         error = urllib.error.HTTPError(
             url="https://oauth2.googleapis.com/token",
@@ -385,7 +385,7 @@ class CloudFilesTests(unittest.TestCase):
         )
 
         with mock.patch(
-            "officina.common.google_credentials._default_urlopen", side_effect=error
+            "officina.credentials.google._default_urlopen", side_effect=error
         ):
             with self.assertRaises(GoogleCredentialError) as caught:
                 cloud_files._diagnostic_urlopen(object(), timeout=5)
@@ -396,7 +396,7 @@ class CloudFilesTests(unittest.TestCase):
         self.assertIn("Token has been expired or revoked.", message)
 
     def test_token_error_without_a_usable_body_says_so(self) -> None:
-        from officina.common.google_credentials import GoogleCredentialError
+        from officina.credentials.google import GoogleCredentialError
 
         error = urllib.error.HTTPError(
             url="https://oauth2.googleapis.com/token",
@@ -407,7 +407,7 @@ class CloudFilesTests(unittest.TestCase):
         )
 
         with mock.patch(
-            "officina.common.google_credentials._default_urlopen", side_effect=error
+            "officina.credentials.google._default_urlopen", side_effect=error
         ):
             with self.assertRaises(GoogleCredentialError) as caught:
                 cloud_files._diagnostic_urlopen(object(), timeout=5)
@@ -421,7 +421,7 @@ class CloudFilesTests(unittest.TestCase):
         that, which a bare urllib.request.urlopen would."""
         sentinel = object()
         with mock.patch(
-            "officina.common.google_credentials._default_urlopen", return_value=sentinel
+            "officina.credentials.google._default_urlopen", return_value=sentinel
         ) as default_urlopen:
             result = cloud_files._diagnostic_urlopen(object(), timeout=7)
 

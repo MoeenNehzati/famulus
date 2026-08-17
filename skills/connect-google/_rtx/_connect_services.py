@@ -112,7 +112,7 @@ def bind_credential_file(
     dispatch: Callable,
 ) -> dict:
     """Bind selected granted services and aggregate their declared JSON results."""
-    from officina.common.google_credentials import normalize_services
+    from officina.credentials.google import normalize_services
 
     requested = normalize_services(tuple(requested_services))
     granted_set = set(granted_services)
@@ -302,7 +302,7 @@ class BindCredentialFileInterface(_CoordinatorInterface):
 
     def run(self, args: argparse.Namespace) -> int:
         try:
-            from officina.common.google_credentials import load_credential_file
+            from officina.credentials.google import load_credential_file
 
             ref = load_credential_file(args.credential_file)
             requested = _comma_separated(args.services)

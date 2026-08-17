@@ -24,8 +24,9 @@ import subprocess
 import time
 from pathlib import Path
 
-from officina.common import atomic_files, toml_io
-from officina.common.git_provenance import run_git
+import officina.common.atomic_files as atomic_files
+import officina.common.toml_io as toml_io
+from officina.git.provenance import run_git
 from officina.install import runtime_lock
 from officina.install.runtime_pointer import RuntimePointer, activate_release
 
@@ -653,7 +654,7 @@ def build_candidate_release(
     )
     if explicit_repo_root:
         try:
-            from officina.common.repository_configuration import load_repository_configuration
+            from officina.configuration.repository import load_repository_configuration
 
             load_repository_configuration(repository_config)
         except Exception as exc:

@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from officina.common.blueprint_graph import BlueprintNode, InterfaceExport
-from officina.common.process_binding_compiler import (
+from officina.blueprints.graph import BlueprintNode, InterfaceExport
+from officina.blueprints.process_binding import (
     ProcessBindingError,
     compile_gateway_invocation,
     compile_route_smoke_invocation,

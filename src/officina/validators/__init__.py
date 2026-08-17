@@ -1,15 +1,13 @@
-"""Validation helpers for repository code quality checks."""
+"""Validation helpers for repository code-quality checks.
 
-from .docstring_validator import (
-    BehavioralDocstringChecker,
-    SyntaxDocstringChecker,
-    DocstringValidationIssue,
-    validate_module_docstrings,
-)
+This package owns docstring validation and exact staged-repository snapshots. Callers import concrete owning modules.
 
-__all__ = [
-    "DocstringValidationIssue",
-    "SyntaxDocstringChecker",
-    "BehavioralDocstringChecker",
-    "validate_module_docstrings",
-]
+Includes
+--------
+``__init__.py``
+    Documents this package and its owned files.
+``docstring_validator.py``
+    Validates structured docstrings and package file inventories.
+``snapshot.py``
+    Runs validators against an exact staged-tree snapshot.
+"""

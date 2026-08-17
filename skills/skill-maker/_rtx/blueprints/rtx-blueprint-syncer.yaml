@@ -230,6 +230,6 @@ schema_version: 6
 uses_interfaces:
 - interface: common.interface.atomic-files
   version: 1
-- interface: common.interface.blueprint-graph
+- interface: blueprints.interface.graph
   version: 1
 version: 1

@@ -7,21 +7,21 @@ import subprocess
 import pytest
 import yaml
 
-import officina.common.certification_hashing as certification_hashing
-import officina.common.git_provenance as git_provenance
+import officina.certification.hashing as certification_hashing
+import officina.git.provenance as git_provenance
 import officina.runtime.python_machine_interface as python_interface
-from officina.common.certification_hashing import (
+from officina.certification.hashing import (
     CertificationHashError,
     NodeHashState,
     compute_node_hash_states,
     map_route_smoke_dependencies,
     route_smoke_trace_signature,
 )
-from officina.common.blueprint_graph import (
+from officina.blueprints.graph import (
     BlueprintGraphError,
     load_repository_blueprint_graph,
 )
-from officina.common.git_provenance import git_file_provenance
+from officina.git.provenance import git_file_provenance
 from test_support.git_repository import GitTestRepository
 from test_support.v5_blueprint_fixtures import copy_v5_fixture_tree
 

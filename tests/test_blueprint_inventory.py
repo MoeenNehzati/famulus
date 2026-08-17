@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from officina.common import blueprint_inventory
-from officina.common.blueprint_inventory import (
+import officina.blueprints.inventory as blueprint_inventory
+from officina.blueprints.inventory import (
     BlueprintInventoryError,
     collect_blueprints,
     iter_blueprints,
@@ -750,8 +750,8 @@ def test_v5_inventory_rejects_partial_repository_skill_predicate(
         collect_blueprints(tmp_path, expected_schema_version=5)
 
 
-def test_common_package_exports_v5_inventory_interface() -> None:
-    from officina.common import (  # noqa: PLC0415
+def test_inventory_uses_its_relocated_module() -> None:
+    from officina.blueprints.inventory import (  # noqa: PLC0415
         BlueprintDocument,
         BlueprintInventoryResult,
         collect_blueprints as public_collect_blueprints,

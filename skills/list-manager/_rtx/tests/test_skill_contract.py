@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from officina.common.blueprint_graph import (
+from officina.blueprints.graph import (
     load_repository_blueprint_graph,
     repository_schema_version,
     resolve_export,

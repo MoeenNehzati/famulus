@@ -1,0 +1,171 @@
+content:
+- hashing\.py
+dependencies:
+- blueprint:
+    base: repository-root
+    path: src/officina/common/blueprints/atomic-files.yaml
+  reason: Imports descriptor-safe file reads from atomic_files.py.
+  source: common.source.atomic-files
+  version: 1
+- blueprint:
+    base: repository-root
+    path: src/officina/blueprints/blueprints/graph.yaml
+  reason: Imports v4 repository graph and node types from graph.py.
+  source: blueprints.source.graph
+  version: 1
+- blueprint:
+    base: repository-root
+    path: src/officina/git/blueprints/provenance.yaml
+  reason: Imports Git snapshots and file provenance from provenance.py.
+  source: git.source.provenance
+  version: 1
+- blueprint:
+    base: repository-root
+    path: src/officina/common/blueprints/repository-paths.yaml
+  reason: Imports canonical repository-relative path conversion from repository_paths.py.
+  source: common.source.repository-paths
+  version: 1
+description: Resolves the canonical certification basis and node inputs, computes
+  deterministic v4 node hashes and dependency-first target order, maps already observed
+  route-smoke paths to declared authority, and derives certifier identity and expected
+  checks.
+gateway:
+  language: Python
+  path: hashing.py
+id: certification.source.hashing
+interfaces:
+  certification.source.hashing.interface.python-api:
+    contract:
+      arguments:
+        inputs:
+          description: Operation-specific graph, node state, policy path, source commit,
+            or route-smoke data.
+          required: false
+          sensitivity: user-private
+          type:
+            description: Operation-specific Python values supplied by the caller.
+            kind: string
+        operation:
+          description: Canonical v4 hashing operation to perform.
+          required: true
+          sensitivity: public
+          type:
+            kind: enum
+            values:
+            - description: Map loaded route-smoke files to declared node, dependency,
+                or certification-basis authority.
+              value: map-route-smoke
+            - description: Resolve the repository-owned certification-basis manifest.
+              value: resolve-certification-basis
+            - description: Hash the resolved certification-basis inputs.
+              value: hash-certification-basis
+            - description: Return the exact versioned checks owned by the certifier.
+              value: expected-checks
+            - description: Derive certifier identity from the v4 graph, node state,
+                and source commit.
+              value: derive-certifier-identity
+            - description: Compute canonical v4 node hash states from the graph and
+                node-input policy.
+              value: hash-nodes
+            - description: Order exact targets after their canonical certification
+                dependencies.
+              value: order-certification-targets
+        repository-root:
+          description: Exact repository root for policy, Git provenance, and certification-basis
+            operations.
+          direct_io_ref: repository-inputs
+          required: false
+          sensitivity: user-private
+          type:
+            access: read
+            kind: dir
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+      caller_warnings: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: node-owned files, blueprints, schemas, hash policy, and certification-basis
+            inputs
+          formats:
+          - yaml
+          - json
+          - text
+          - binary
+          id: repository-inputs
+          medium: repository-filesystem
+          path: <repository-root>/**
+          path_match: glob
+          sensitivity: user-private
+        - access: read
+          content: tracked paths, ignored-path matching, source commit, and file provenance
+          formats:
+          - git
+          id: git-state
+          medium: local-system
+          sensitivity: derived-private
+          system: git
+        writes:
+        - access: write
+          content: Python return value
+          formats:
+          - python-object
+          id: return-value
+          medium: local-system
+          sensitivity: user-private
+      execution:
+        consistency:
+          snapshot: Each operation derives its result from the graph, files, and Git
+            state observed during that call.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: result
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Consume the canonical result without creating a parallel hash
+          or certification authority.
+        class: success
+        effects: []
+        id: completed
+        outputs:
+        - result
+      - caller_action: Correct graph, policy, path, Git, hash, or route-smoke inputs
+          before retrying.
+        class: error
+        effects: []
+        id: invalid-input
+        outputs: []
+      outputs:
+      - audience: machine
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Canonical hash, resolved path tuple, node-state mapping, route-smoke
+          mapping, check tuple, or certifier identity.
+        direct_io_ref: return-value
+        empty: Collection-valued operations can return an empty collection when no
+          matching input exists.
+        id: result
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          description: Operation-specific immutable Python value or mapping.
+          kind: string
+          sensitivity: user-private
+      preconditions: []
+    description: Computes canonical v4 certification state and dependency-first target
+      order, and maps already observed route-smoke paths for Python callers.
+    version: 1
+node_type: behavioral_source
+schema_version: 6
+uses_interfaces: []
+version: 1

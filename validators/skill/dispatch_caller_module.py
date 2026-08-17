@@ -5,7 +5,7 @@ import ast
 import sys
 from pathlib import Path
 
-from officina.common.blueprint_graph import RepositoryBlueprintGraph
+from officina.blueprints.graph import RepositoryBlueprintGraph
 from officina.common.python_source_cache import PythonSourceCache
 from officina.runtime.python_machine_interface import (
     analyze_dispatch_call_declarations,

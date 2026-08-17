@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Sequence
 
-from officina.common.configured_schema import ConfiguredSchemaError, load_configuration
+from officina.configuration.configured_schema import ConfiguredSchemaError, load_configuration
 
 FOLDER_MIME_TYPE = "application/vnd.google-apps.folder"
 CONFIG_DIR_NAME = ".config/cloud-files"
@@ -243,7 +243,7 @@ def _diagnostic_urlopen(request, *, timeout: float):
     Google's token-endpoint error body carries `error`/`error_description`
     only -- no token, no client secret -- so it is safe to surface.
     """
-    from officina.common.google_credentials import GoogleCredentialError, _default_urlopen
+    from officina.credentials.google import GoogleCredentialError, _default_urlopen
 
     try:
         return _default_urlopen(request, timeout=timeout)
@@ -266,7 +266,7 @@ def get_access_token(config: CloudFilesConfig, *, platform: str = sys.platform) 
     from time import monotonic
 
     if config.credential_file is not None:
-        from officina.common.google_credentials import (
+        from officina.credentials.google import (
             SERVICE_SCOPES,
             refresh_access_token_from_file,
         )
@@ -285,7 +285,7 @@ def get_access_token(config: CloudFilesConfig, *, platform: str = sys.platform) 
         _token_cache[key] = (token, monotonic() + _TOKEN_TTL_S)
         return token
     if config.credential_id:
-        from officina.common.google_credentials import SERVICE_SCOPES, refresh_access_token
+        from officina.credentials.google import SERVICE_SCOPES, refresh_access_token
 
         scopes = SERVICE_SCOPES["drive"]
         key = ("id", config.credential_id, frozenset(scopes))

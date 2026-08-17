@@ -8,7 +8,7 @@ import shutil
 
 import yaml
 
-from officina.common.standard_query import Interface, query
+from officina.standards.query import Interface, query
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -128,25 +128,25 @@ def test_common_module_exports_the_process_interface_to_its_consumers() -> None:
     """A missing facade would make the working query unreachable via dispatcher."""
 
     common = yaml.safe_load(
-        (REPO_ROOT / "src/officina/common/blueprint.yaml").read_text(encoding="utf-8")
+        (REPO_ROOT / "src/officina/standards/blueprint.yaml").read_text(encoding="utf-8")
     )
     source = yaml.safe_load(
         (
             REPO_ROOT
-            / "src/officina/common/blueprints/standard-query.yaml"
+            / "src/officina/standards/blueprints/query.yaml"
         ).read_text(encoding="utf-8")
     )
 
-    exported = common["exports"]["common.interface.query-standard"]
+    exported = common["exports"]["standards.interface.query-standard"]
     assert exported["source_interface"] == (
-        "common.source.standard-query.interface.query-standard"
+        "standards.source.query.interface.query-standard"
     )
     assert set(exported["access"]["allowed_callers"]) == {
         "refactor-node",
         "skill-maker",
     }
     binding = source["interfaces"][
-        "common.source.standard-query.interface.query-standard"
+        "standards.source.query.interface.query-standard"
     ]["process_binding"]
     assert binding["entry"] == "Interface"
     assert binding["patterns"][0]["min_positionals"] == 1

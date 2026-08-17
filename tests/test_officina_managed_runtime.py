@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from officina.common import atomic_files
+import officina.common.atomic_files as atomic_files
 from officina.install.managed_runtime import (
     ManagedRuntimeError,
     _source_revision,

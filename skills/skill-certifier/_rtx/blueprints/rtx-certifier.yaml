@@ -356,19 +356,19 @@ runtime_dependencies:
   version: any
 schema_version: 6
 uses_interfaces:
-- interface: common.interface.certification-hashing
+- interface: certification.interface.hashing
   version: 1
 - interface: common.interface.atomic-files
   version: 1
-- interface: common.interface.certificate-records
+- interface: certification.interface.records
   version: 1
-- interface: common.interface.blueprint-graph
+- interface: blueprints.interface.graph
   version: 1
-- interface: common.interface.certification-view
+- interface: certification.interface.view
   version: 1
-- interface: common.interface.pooled-blueprint
+- interface: blueprints.interface.pooled
   version: 1
-- interface: common.interface.git-provenance
+- interface: git.interface.provenance
   version: 1
 - interface: common.interface.repository-paths
   version: 1

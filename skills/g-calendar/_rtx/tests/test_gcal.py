@@ -306,14 +306,14 @@ def test_get_access_token_uses_shared_credential_when_present(tmp_path):
         return "fake-access-token"
 
     with mock.patch(
-        "officina.common.google_credentials.refresh_access_token",
+        "officina.credentials.google.refresh_access_token",
         fake_refresh_access_token,
     ):
         token = gcal.get_access_token(home=tmp_path, platform="linux")
 
     assert token == "fake-access-token"
     assert calls[0][0] == "google:sub1"
-    from officina.common.google_credentials import SERVICE_SCOPES
+    from officina.credentials.google import SERVICE_SCOPES
 
     assert calls[0][1]["required_scopes"] == SERVICE_SCOPES["calendar"]
     assert calls[0][1]["home"] == tmp_path

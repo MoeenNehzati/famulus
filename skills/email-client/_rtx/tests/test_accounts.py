@@ -296,7 +296,7 @@ CREDENTIAL_PLATFORM = sys.platform
 
 
 def _store_credential(home: Path, *, granted_gmail_scope: bool) -> str:
-    from officina.common.google_credentials import SERVICE_SCOPES, store_google_credential
+    from officina.credentials.google import SERVICE_SCOPES, store_google_credential
 
     scopes = {"openid", "email"}
     if granted_gmail_scope:

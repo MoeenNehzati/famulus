@@ -32,7 +32,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from officina.common import atomic_files
+import officina.common.atomic_files as atomic_files
 
 
 @dataclass(frozen=True)

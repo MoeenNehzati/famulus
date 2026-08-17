@@ -6,8 +6,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from officina.common.docstring.docstring_parser import check_graph_docstring, parse_graph_block  # noqa: E402
-from officina.common.docstring.docstring_schema import load_docstring_schema  # noqa: E402
+from officina.docstring.parser import check_graph_docstring, parse_graph_block  # noqa: E402
+from officina.docstring.policy import load_docstring_schema  # noqa: E402
 from officina.validators.docstring_validator import validate_module_docstrings  # noqa: E402
 
 
@@ -101,7 +101,7 @@ def _install_custom_format(tmp_path: Path, monkeypatch) -> None:
     schema_path = tmp_path / "docstring.standard.yaml"
     schema_path.write_text(_CUSTOM_DOCSTRING_STANDARD, encoding="utf-8")
     monkeypatch.setattr(
-        "officina.common.docstring.docstring_schema.resolve_docstring_schema_path",
+        "officina.docstring.policy.resolve_docstring_schema_path",
         lambda _path=None: schema_path,
     )
 
@@ -110,11 +110,11 @@ def _install_custom_config(tmp_path: Path, monkeypatch, text: str) -> None:
     config_path = tmp_path / "config.yaml"
     config_path.write_text(text, encoding="utf-8")
     monkeypatch.setattr(
-        "officina.common.docstring.docstring_schema.resolve_docstring_config_path",
+        "officina.docstring.policy.resolve_docstring_config_path",
         lambda _path=None: config_path,
     )
     monkeypatch.setattr(
-        "officina.common.docstring.docstring_policy.resolve_docstring_config_path",
+        "officina.docstring.policy.resolve_docstring_config_path",
         lambda _path=None: config_path,
     )
 
@@ -353,7 +353,7 @@ def test_module_dependency_implicit_can_be_disabled_in_schema(
     schema_path = tmp_path / "docstring.standard.yaml"
     schema_path.write_text(strict_format, encoding="utf-8")
     monkeypatch.setattr(
-        "officina.common.docstring.docstring_schema.resolve_docstring_schema_path",
+        "officina.docstring.policy.resolve_docstring_schema_path",
         lambda _path=None: schema_path,
     )
 
@@ -665,7 +665,7 @@ def test_colon_dependency_section_header_is_reported(
     ----------
     - Load the graph.
     CallsFromRepo:
-      officina.common.blueprint_graph.load_repository_blueprint_graph:
+      officina.blueprints.graph.load_repository_blueprint_graph:
         why: "Loads blueprint graph data."
 
     Wraps
@@ -817,7 +817,7 @@ def test_dependency_why_action_rejects_legacy_unknown_multi_and_short_misc(
         encoding="utf-8",
     )
     monkeypatch.setattr(
-        "officina.common.docstring.docstring_schema.resolve_docstring_schema_path",
+        "officina.docstring.policy.resolve_docstring_schema_path",
         lambda _path=None: schema_path,
     )
 
@@ -888,11 +888,11 @@ def test_pseudocode_dataflow_quality_reports_placeholders_and_unused_outputs(
         encoding="utf-8",
     )
     monkeypatch.setattr(
-        "officina.common.docstring.docstring_schema.resolve_docstring_schema_path",
+        "officina.docstring.policy.resolve_docstring_schema_path",
         lambda _path=None: schema_path,
     )
     monkeypatch.setattr(
-        "officina.common.docstring.docstring_policy.resolve_docstring_config_path",
+        "officina.docstring.policy.resolve_docstring_config_path",
         lambda _path=None: config_path,
     )
 
@@ -919,7 +919,7 @@ def test_pseudocode_dataflow_quality_reports_placeholders_and_unused_outputs(
 
     CallsFromRepo
     --------------
-    officina.common.blueprint_graph.load_repository_blueprint_graph:
+    officina.blueprints.graph.load_repository_blueprint_graph:
       why:
         reads: "Loads graph declarations from the repository blueprint."
     .sha256:
@@ -950,7 +950,7 @@ def test_repeated_template_detection_reports_normalized_module_boilerplate(
         encoding="utf-8",
     )
     monkeypatch.setattr(
-        "officina.common.docstring.docstring_schema.resolve_docstring_schema_path",
+        "officina.docstring.policy.resolve_docstring_schema_path",
         lambda _path=None: schema_path,
     )
     _install_custom_config(
@@ -1080,7 +1080,7 @@ profiles:
         '''    Pseudocode\n    ----------\n    - graph = @load_repository_blueprint_graph(root)\n'''
         '''    - return ok\n\n'''
         '''    CallsFromRepo\n    --------------\n'''
-        '''    officina.common.blueprint_graph.load_repository_blueprint_graph:\n'''
+        '''    officina.blueprints.graph.load_repository_blueprint_graph:\n'''
         '''      why:\n        reads: "Loads repository blueprint declarations."\n'''
         '''    """\n'''
         '''    return None\n''',
@@ -1303,7 +1303,7 @@ def test_strict_pseudocode_parses_typed_compact_steps(
 
     CallsFromRepo
     --------------
-    officina.common.blueprint_graph.load_repository_blueprint_graph:
+    officina.blueprints.graph.load_repository_blueprint_graph:
       why: "Loads logical graph declarations."
     .resolve_node_authority:
       why: "Resolves local authority."
@@ -1367,7 +1367,7 @@ def test_strict_pseudocode_rejects_old_scoped_refs_and_prose(
 
     CallsFromRepo
     --------------
-    officina.common.blueprint_graph.load_repository_blueprint_graph:
+    officina.blueprints.graph.load_repository_blueprint_graph:
       why: "Loads logical graph declarations."
     """
     issues = check_graph_docstring(doc)

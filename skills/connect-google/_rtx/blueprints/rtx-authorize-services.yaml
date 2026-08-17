@@ -227,7 +227,7 @@ interfaces:
           - json
           id: read-1
           medium: local-filesystem
-          path: platform Famulus config root (see common.interface.google-credentials)
+          path: platform Famulus config root (see credentials.interface.google)
             / connect-google/client.json
           reason: Read the installed client_id and exact client_secret_ref after the
             secret reference resolves; endpoint values and plaintext secrets are
@@ -241,7 +241,7 @@ interfaces:
           - json
           id: write-1
           medium: local-filesystem
-          path: platform Famulus config root (see common.interface.google-credentials)
+          path: platform Famulus config root (see credentials.interface.google)
             / connect-google/credentials/<timestamp>-<random>.json
           reason: Create one immutable descriptor recording identity, client, token
             endpoint, granted services/scopes, and opaque secret references. Tokens
@@ -255,7 +255,7 @@ interfaces:
           id: write-2
           medium: local-system
           path: host secret store
-          reason: Store the new refresh token via common.interface.google-credentials,
+          reason: Store the new refresh token via credentials.interface.google,
             keyed by the unique credential descriptor filename stem.
           sensitivity: secret
           system: host-credential-store
@@ -325,6 +325,6 @@ platform_support:
 runtime_dependencies: []
 schema_version: 6
 uses_interfaces:
-- interface: common.interface.google-credentials
+- interface: credentials.interface.google
   version: 1
 version: 1

@@ -13,6 +13,10 @@ FIXTURE_SCHEMA_ROOT = REPO_ROOT / "tests" / "fixtures" / "blueprint_schemas"
 V5_SCHEMA_ROOT = FIXTURE_SCHEMA_ROOT / "v5"
 SCHEMA_ROOT = FIXTURE_SCHEMA_ROOT / "v4"
 V4_TYPED_SCHEMAS = ("module.schema.json", "behavioral-source.schema.json")
+RELOCATED_FROZEN_VALIDATORS = {
+    "src/officina/common/blueprint_graph.py": "src/officina/blueprints/graph.py",
+    "src/officina/common/pooled_blueprint.py": "src/officina/blueprints/pooled.py",
+}
 REQUIRED_RULES = {
     "access-control",
     "behavioral-source-edge",
@@ -163,7 +167,10 @@ def test_validation_rule_catalog_points_to_existing_enforcement_and_tests() -> N
 
     for rule_id, rule in catalog.items():
         entry_validator.validate(rule)
-        assert (REPO_ROOT / rule["validator"]).is_file(), rule_id
+        validator = RELOCATED_FROZEN_VALIDATORS.get(
+            rule["validator"], rule["validator"]
+        )
+        assert (REPO_ROOT / validator).is_file(), rule_id
         assert all((REPO_ROOT / path).is_file() for path in rule["tests"]), rule_id
         assert rule["enforcement"]["state"] in {"schema", "current"}, rule_id
         assert rule["enforcement"]["task"] == "current", rule_id

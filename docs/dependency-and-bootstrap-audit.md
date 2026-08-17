@@ -93,9 +93,9 @@ runtime:
 
 | Asset | Upstream | License | Current provenance record |
 | --- | --- | --- | --- |
-| `src/officina/common/visualization/html_renderer/vendor/elk.bundled.js` | npm `elkjs@0.10.0`; Git `8a4fc2e11c1a184daa156cf563961bd860980c5f` | EPL-2.0 | Exact npm-package match; SHA-256 `48d338d5aeddd9503ccf1d12661c11b5d7d43c6afc5f66c7ddb2ea4170c0f6bf` |
-| `src/officina/common/visualization/html_renderer/vendor/elk-worker.min.js` | npm `elkjs@0.10.0`; Git `8a4fc2e11c1a184daa156cf563961bd860980c5f` | EPL-2.0 | Exact npm-package match; SHA-256 `cda1839e26f82a7ac142692ee813974f8f359987348d21d1f16af8f86ff96e80` |
-| `src/officina/common/visualization/html_renderer/vendor/mathjax-3.2.2-tex-svg.js` | npm `mathjax@3.2.2`; Git `600692ad9d3552cc25f85510d5797bc942ecc9f7` | Apache-2.0 | Exact npm-package match; SHA-256 `d4295dc33744836935c1399feece5159577b34c5c8ffb9f1c6324cd82e03a882` |
+| `src/officina/visualization/html_renderer/vendor/elk.bundled.js` | npm `elkjs@0.10.0`; Git `8a4fc2e11c1a184daa156cf563961bd860980c5f` | EPL-2.0 | Exact npm-package match; SHA-256 `48d338d5aeddd9503ccf1d12661c11b5d7d43c6afc5f66c7ddb2ea4170c0f6bf` |
+| `src/officina/visualization/html_renderer/vendor/elk-worker.min.js` | npm `elkjs@0.10.0`; Git `8a4fc2e11c1a184daa156cf563961bd860980c5f` | EPL-2.0 | Exact npm-package match; SHA-256 `cda1839e26f82a7ac142692ee813974f8f359987348d21d1f16af8f86ff96e80` |
+| `src/officina/visualization/html_renderer/vendor/mathjax-3.2.2-tex-svg.js` | npm `mathjax@3.2.2`; Git `600692ad9d3552cc25f85510d5797bc942ecc9f7` | Apache-2.0 | Exact npm-package match; SHA-256 `d4295dc33744836935c1399feece5159577b34c5c8ffb9f1c6324cd82e03a882` |
 
 The official `elkjs-0.10.0.tgz` package has npm SHA-1
 `abe2aa6cb25e7439b708fab873b2448d26ed33a1` and npm integrity

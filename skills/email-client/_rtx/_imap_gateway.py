@@ -7,7 +7,7 @@ host-specific command.
 
 Accounts are resolved by nickname through accounts.py's registry
 (~/.config/email-client/accounts.json), not hardcoded here. Credentials come
-from the host credential store via officina.common.secret_store.
+from the host credential store via officina.credentials.secret_store.
 
 Subcommands:
   list    -a <nickname> [--folder FOLDER] [--after YYYY-MM-DD] [FILTER...] [--limit N]
@@ -45,7 +45,7 @@ from datetime import datetime, timezone
 from email.header import decode_header
 from pathlib import Path
 
-from officina.common import secret_store
+import officina.credentials.secret_store as secret_store
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 SCRIPT_DIR = Path(__file__).resolve().parent

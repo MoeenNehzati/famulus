@@ -18,7 +18,7 @@ if str(SRC_ROOT) not in sys.path:
 
 
 def _extract_standard(*args, **kwargs):
-    from officina.common.standard_extractor import extract_standard
+    from officina.standards.extractor import extract_standard
 
     return extract_standard(*args, **kwargs)
 
@@ -31,9 +31,9 @@ def test_importing_standard_extractor_does_not_load_unrelated_common_stacks() ->
             sys.executable,
             "-c",
             (
-                "import sys; import officina.common.standard_extractor; "
-                "print('officina.common.docstring' in sys.modules, "
-                "'officina.common.visualization' in sys.modules)"
+                "import sys; import officina.standards.extractor; "
+                "print('officina.docstring' in sys.modules, "
+                "'officina.visualization' in sys.modules)"
             ),
         ],
         check=True,

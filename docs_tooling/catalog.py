@@ -7,8 +7,8 @@ import re
 
 import yaml
 
-from officina.common.configured_schema import load_configuration
-from officina.common.blueprint_graph import prepare_module_blueprint_loader
+from officina.configuration.configured_schema import load_configuration
+from officina.blueprints.graph import prepare_module_blueprint_loader
 
 SKILL_INDEX_PATH = Path("docs/skills.md")
 
@@ -280,7 +280,7 @@ def load_catalog_vocabulary(repo_root: Path) -> CatalogVocabulary:
 
     CallsFromRepo
     -------------
-    .officina.common.configured_schema.load_configuration:
+    .officina.configuration.configured_schema.load_configuration:
       why:
         computes: "Supplies dependency position 1, load configuration, while transforming repo root into the load catalog vocabulary value."
 
@@ -416,7 +416,7 @@ def load_catalog(repo_root: Path) -> list[SkillInfo]:
 
     InstantiationsFromRepo
     ----------------------
-    .officina.common.blueprint_graph.prepare_module_blueprint_loader:
+    .officina.blueprints.graph.prepare_module_blueprint_loader:
       why:
         constructs: "Supplies dependency position 1, prepare module blueprint loader, while transforming repo root into the load catalog value."
     ._configured_value:

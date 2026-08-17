@@ -5,10 +5,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-import officina.common.pooled_blueprint as pooled_blueprint
-from officina.common.blueprint_template import load_schema, schema_validator
-from officina.common.certification_view import CertificateRecordView
-from officina.common.pooled_blueprint import (
+import officina.blueprints.pooled as pooled_blueprint
+from officina.blueprints.template import load_schema, schema_validator
+from officina.certification.view import CertificateRecordView
+from officina.blueprints.pooled import (
     PooledReviewValidationError,
     render_pooled_review,
 )

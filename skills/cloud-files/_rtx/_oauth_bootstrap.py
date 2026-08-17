@@ -31,7 +31,7 @@ import urllib.request
 import webbrowser
 from pathlib import Path
 
-from officina.common.oauth_json import write_oauth_json
+from officina.credentials.oauth import write_oauth_json
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 SCOPE = "https://www.googleapis.com/auth/drive"

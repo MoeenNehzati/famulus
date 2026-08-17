@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from officina.common.blueprint_template import write_regenerated_skill_blueprint
+from officina.blueprints.template import write_regenerated_skill_blueprint
 from officina.runtime.python_machine_interface import PythonMachineInterface
 
 

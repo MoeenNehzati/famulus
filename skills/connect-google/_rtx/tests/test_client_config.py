@@ -356,7 +356,7 @@ def test_plaintext_canonical_with_token_field_is_invalid_not_migration(
 def test_authorization_preflight_resolves_canonical_path_on_each_platform(
     tmp_path: Path, secret_backend: FakeSecretBackend, platform: str
 ) -> None:
-    from officina.common.google_credentials import canonical_client_path
+    from officina.credentials.google import canonical_client_path
 
     path = canonical_client_path(home=tmp_path, platform=platform)
     path.parent.mkdir(parents=True)

@@ -51,7 +51,7 @@ def test_gateway_routes_to_both_language_sources() -> None:
     ]["execution"]["state_effect"] == "mutating"
     assert gateway["uses_interfaces"] == [
         {
-            "interface": "common.interface.query-standard",
+            "interface": "standards.interface.query-standard",
             "version": 1,
         },
         {
@@ -73,11 +73,11 @@ def test_gateway_routes_to_both_language_sources() -> None:
 
 def test_router_uses_the_common_explicit_standard_query() -> None:
     common_root = _load_yaml(
-        SKILL_ROOT.parents[1] / "src" / "officina" / "common" / "blueprint.yaml"
+        SKILL_ROOT.parents[1] / "src" / "officina" / "standards" / "blueprint.yaml"
     )
-    exported = common_root["exports"]["common.interface.query-standard"]
+    exported = common_root["exports"]["standards.interface.query-standard"]
     assert exported["source_interface"] == (
-        "common.source.standard-query.interface.query-standard"
+        "standards.source.query.interface.query-standard"
     )
     assert "refactor-node" in exported["access"]["allowed_callers"]
 
@@ -160,7 +160,7 @@ def test_router_declares_exact_standard_leaf_mapping_and_closure_rules() -> None
     skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
     normalized = " ".join(skill.split())
 
-    assert "common.interface.query-standard" in normalized
+    assert "standards.interface.query-standard" in normalized
     for standard in (
         "python-module.standard.yaml",
         "python-behavioral-source.standard.yaml",
@@ -185,7 +185,7 @@ def test_router_discovers_implementation_children_before_explicit_query() -> Non
 
     assert "implementation child" in preflight
     assert "before querying policy" in preflight.lower()
-    assert "common.interface.query-standard" in preflight
+    assert "standards.interface.query-standard" in preflight
     assert "inferred target" in preflight
 
 

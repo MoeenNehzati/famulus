@@ -81,7 +81,7 @@ def integration_env(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ):
-    from officina.common import google_credentials
+    import officina.credentials.google as google_credentials
 
     backend = FakeSecretBackend()
     backend.store(

@@ -177,12 +177,12 @@ def warn_if_managed_release_missing(*, home: Path) -> None:
 
 
 def _import_certificate_records():
-    """Import point for ``officina.common.certificate_records``, isolated so
+    """Import point for ``officina.certification.records``, isolated so
     ``install_certificate_signing_material`` can be tested against a missing
     ``cryptography`` dependency without actually uninstalling it (see that
     function's ``ModuleNotFoundError`` handling below).
     """
-    from officina.common.certificate_records import (
+    from officina.certification.records import (
         certificate_public_key_root,
         provision_certificate_signing_material,
     )

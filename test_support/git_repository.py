@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import subprocess
 
-from officina.common.git_provenance import run_git
+from officina.git.provenance import run_git
 
 
 @dataclass(frozen=True)

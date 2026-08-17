@@ -7,7 +7,7 @@ authority:
     - email-client._rtx.interface.accounts-setup-oauth
     - g-calendar._rtx.interface.setup-oauth
     match: exact
-    path: platform Famulus config root (see common.interface.google-credentials) /
+    path: platform Famulus config root (see credentials.interface.google) /
       connect-google/client.json
     reason: This interface is the only writer of the shared OAuth client; service
       setup interfaces may read it for authorization.

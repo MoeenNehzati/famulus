@@ -3,7 +3,7 @@
 
 Lives at ~/.config/email-client/accounts.json — deliberately OUTSIDE the
 skills git repo (which may go public). Passwords are never stored here; they
-stay in the host credential store via officina.common.secret_store.
+stay in the host credential store via officina.credentials.secret_store.
 
 Subcommands:
   list                                        -> JSON {nickname: {email, display_name}}
@@ -26,7 +26,7 @@ import urllib.request
 from pathlib import Path
 from typing import Callable
 
-from officina.common import secret_store
+import officina.credentials.secret_store as secret_store
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 try:
@@ -218,14 +218,14 @@ def accounts_use_google_credential(*, nickname: str, credential_id: str, home: P
     Validates the credential grants Gmail scope *before* writing anything,
     then stores only the opaque ``credential_id`` on the TARGET ACCOUNT's own
     record in accounts.json — never the client secret or refresh token,
-    which stay in officina.common.google_credentials' registry/secret store.
+    which stay in officina.credentials.google' registry/secret store.
 
     Mutates the loaded record in place and writes the whole registry back via
     save(), the same merge-not-replace convention cmd_update already uses, so
     every other field on the account (email, imap/smtp settings, auth mode,
     legacy oauth block, etc.) survives untouched.
     """
-    from officina.common.google_credentials import SERVICE_SCOPES, GoogleCredentialError, load_credential
+    from officina.credentials.google import SERVICE_SCOPES, GoogleCredentialError, load_credential
 
     data = load()
     if nickname not in data:
@@ -254,7 +254,7 @@ def _existing_binding_subject(
     record: dict[str, object], *, home: Path, platform: str
 ) -> tuple[bool, str | None]:
     """Return whether prior Gmail OAuth state exists and its stable subject if provable."""
-    from officina.common.google_credentials import (
+    from officina.credentials.google import (
         GoogleCredentialError,
         load_credential,
         load_credential_file,
@@ -294,7 +294,7 @@ def accounts_use_google_credential_file(
     urlopen: Callable = urllib.request.urlopen,
 ) -> dict[str, object]:
     """Validate, live-probe, then bind one named Gmail account to a file."""
-    from officina.common.google_credentials import (
+    from officina.credentials.google import (
         GoogleCredentialError,
         SERVICE_SCOPES,
         load_credential_file,

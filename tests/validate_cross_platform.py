@@ -16,7 +16,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 from validators.cross_platform import validate  # noqa: E402
 from validators import cross_platform as module_under_test  # noqa: E402
-from officina.common import python_source_cache as cache_module  # noqa: E402
+import officina.common.python_source_cache as cache_module  # noqa: E402
 from officina.common.python_source_cache import PythonSourceCache  # noqa: E402
 
 
@@ -255,7 +255,7 @@ def test_direct_run_git_in_ordinary_test_requires_annotation(tmp_path: Path) -> 
     test = tmp_path / "skills" / "demo" / "tests" / "test_git.py"
     test.parent.mkdir(parents=True)
     test.write_text(
-        "from officina.common.git_provenance import run_git\n"
+        "from officina.git.provenance import run_git\n"
         "run_git(repo, 'status')\n",
         encoding="utf-8",
     )
@@ -278,7 +278,7 @@ def test_direct_run_git_in_child_runtime_test_requires_annotation(
     )
     test.parent.mkdir(parents=True)
     test.write_text(
-        "from officina.common.git_provenance import run_git\n"
+        "from officina.git.provenance import run_git\n"
         "run_git(repo, 'status')\n",
         encoding="utf-8",
     )

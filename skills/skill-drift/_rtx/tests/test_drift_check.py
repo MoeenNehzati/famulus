@@ -12,7 +12,7 @@ MODULE_PATH = Path(__file__).resolve().parents[1] / "_check_drift_state.py"
 SRC_ROOT = MODULE_PATH.parents[3] / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
-from officina.common.certificate_records import certificate_public_key_root
+from officina.certification.records import certificate_public_key_root
 from test_support.v4_certification_fixtures import create_certified_fixture
 from .. import _check_drift_state as checker
 

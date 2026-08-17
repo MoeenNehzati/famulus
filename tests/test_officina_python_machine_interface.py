@@ -15,8 +15,8 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from officina.common.certification_view import CertificationDecision  # noqa: E402
-from officina.common.blueprint_graph import (  # noqa: E402
+from officina.certification.view import CertificationDecision  # noqa: E402
+from officina.blueprints.graph import (  # noqa: E402
     descriptor_safe_open_supported,
     load_repository_blueprint_graph,
 )
@@ -889,7 +889,12 @@ def test_route_smoke_trace_prefers_candidate_local_officina_source(
     shutil.copytree(
         live_source / "officina",
         candidate_source / "officina",
-        ignore=shutil.ignore_patterns("blueprint.yaml", "blueprints"),
+        ignore=lambda directory, names: {
+            name
+            for name in names
+            if name == "blueprint.yaml"
+            or (name == "blueprints" and Path(directory).name != "officina")
+        },
     )
 
     paths = python_interface.trace_python_route_smoke_dependencies(
@@ -1141,7 +1146,7 @@ def test_logical_descriptor_and_snapshot_sources_have_identical_identities(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from officina.common.blueprint_graph import (
+    from officina.blueprints.graph import (
         encode_runtime_python_package_snapshot,
     )
 
@@ -1194,7 +1199,7 @@ def test_logical_bound_transport_rejects_bare_sibling_import_after_live_swap(
     monkeypatch: pytest.MonkeyPatch,
     transport: str,
 ) -> None:
-    from officina.common.blueprint_graph import (
+    from officina.blueprints.graph import (
         encode_runtime_python_package_snapshot,
     )
 

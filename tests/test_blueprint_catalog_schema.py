@@ -10,15 +10,15 @@ from pathlib import Path
 import pytest
 import yaml
 
-from officina.common.blueprint_graph import (
+from officina.blueprints.graph import (
     BlueprintGraphError,
     load_module_blueprint,
     load_repository_blueprint_graph,
 )
-from officina.common.blueprint_template import load_schema
-from officina.common.configured_schema import ConfiguredSchemaError
+from officina.blueprints.template import load_schema
+from officina.configuration.configured_schema import ConfiguredSchemaError
 
-from officina.common.configured_schema import configured_validator, load_configuration
+from officina.configuration.configured_schema import configured_validator, load_configuration
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]

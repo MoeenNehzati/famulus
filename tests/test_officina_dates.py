@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from officina.common import dates  # noqa: E402
+import officina.common.dates as dates  # noqa: E402
 from officina.common.dates import format_date_key, normalize_date_key, parse_date_key  # noqa: E402
 
 

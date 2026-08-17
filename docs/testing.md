@@ -34,7 +34,7 @@ require `pytest-xdist`.
 ## Collection
 
 `repo_checks.py` is the only repository-check entry point.
-`src/officina/repository_checks.py` owns suite policy, repository views, pytest
+`src/officina/repository/checks/runner.py` owns suite policy, repository views, pytest
 arguments, and validator integration. `pytest.ini` owns ordinary discovery:
 
 - roots: `tests/`, `hooks/tests/`, `skills/`, `src/officina/wakeup/tests/`, and
@@ -169,7 +169,7 @@ explicit platform contract and preserve alternate coverage.
 Place repository tests under `tests/` or `hooks/tests/`, wakeup tests under
 `src/officina/wakeup/tests/`, and skill runtime tests under
 `skills/<skill>/_rtx/tests/`. Update `pytest.ini` only when a discovery boundary
-changes. Update `src/officina/repository_checks.py` only when suite policy
+changes. Update `src/officina/repository/checks/runner.py` only when suite policy
 changes, and update this guide whenever either contract changes.
 
 Prefer normal pytest fixtures at the narrowest correct scope for immutable or

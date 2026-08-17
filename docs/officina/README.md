@@ -144,17 +144,25 @@ from a dependency.
   another node's exported interface: bounded blueprint resolution,
   authorization, CLI, and per-platform process handling
 - `runtime/` — execution of Python machine interfaces in their own process
-- `common/` — the shared machinery: blueprint graph, inventory, template and
-  authorization; certificate records, hashing and views; configured-schema
-  loading; git provenance; interface projection; process-binding compilation;
-  atomic file writes; repository paths; the secret store; test discovery; and
-  the docstring pipeline
+- `blueprints/` — blueprint discovery, graph loading, authorization, templates,
+  process bindings, projections, and search
+- `certification/` — certificate hashing, records, and currentness views
+- `configuration/` — configured-schema and repository-configuration loading
+- `controller/` — shared controller data and protocol models
+- `credentials/` — Google credentials, OAuth JSON, and secret storage
+- `docstring/` — docstring parsing, policy, schema, and validation
+- `git/` — repository provenance and pinned Git snapshots
+- `repository/` — repository-check discovery, selection, and execution
+- `standards/` — pinned-standard extraction and deterministic queries
+- `visualization/` — graph extraction, projection, rendering, and browser assets
+- `common/` — small cross-cutting primitives such as atomic file operations,
+  repository paths, TOML handling, dates, and Python-source caching
+- `refactor/` — generic manifest-driven source relocation mechanics
 - `install/` — installing an Officina project onto a machine: managed runtime,
   launcher entries, resolvers, runtime pointer, uv bootstrap, and the
   ownership-aware install manifest that makes uninstall exact
 - `validators/` — validators shipped by the framework itself
 - `wakeup/` — host-session lifecycle across supported hosts
-- `blueprint_search.py` — querying the architectural graph
 
 ### Machine-readable contracts — [`references/`](../../references/)
 
@@ -218,6 +226,8 @@ Then, depending on what you need:
 - [Blueprint Search](blueprint_search.md) — querying the graph
 - [Blueprint Discovery Metadata](blueprint-discovery-metadata.md) — how
   discoverable modules declare when they apply
+- [Source Relocation](source-relocation.md) — safely moving a source and its
+  blueprint metadata while updating repository references
 - [Configured Schemas](configured-schema.md) — the configuration and
   JSON Schema loading boundary
 - [Docstring Contract](docstring.md) — the docstring policy, grammar, and

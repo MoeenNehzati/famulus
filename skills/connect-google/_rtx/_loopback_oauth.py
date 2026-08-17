@@ -7,7 +7,7 @@ exactly the services and scopes Google actually granted (a partial grant is
 not rolled back). The client secret, refresh token, and PKCE code_verifier
 never appear on stdout, in the authorization URL, or in any stored file: the
 OAuth secrets are fetched from or written to the host secret store by
-``officina.common.google_credentials.exchange_authorization_code`` and the
+``officina.credentials.google.exchange_authorization_code`` and the
 verifier lives only in this process's memory for the duration of one run.
 
 The implementation uses one numeric IPv4 loopback path on every supported
@@ -34,7 +34,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Literal, TextIO
 
-from officina.common.google_credentials import GoogleCredentialError
+from officina.credentials.google import GoogleCredentialError
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 if __package__:
@@ -110,7 +110,7 @@ def _generate_pkce() -> tuple[str, str]:
 def _build_auth_url(
     *, client_id: str, redirect_uri: str, scope: frozenset[str], state: str, code_challenge: str
 ) -> str:
-    from officina.common.google_credentials import GOOGLE_AUTHORIZATION_URL
+    from officina.credentials.google import GOOGLE_AUTHORIZATION_URL
 
     params = {
         "client_id": client_id,
@@ -304,7 +304,7 @@ def authorize_services(
     secret_backend=None,
     diagnostic_stream: TextIO | None = None,
 ) -> AuthorizationResult:
-    from officina.common.google_credentials import (
+    from officina.credentials.google import (
         GOOGLE_USERINFO_URL,
         GOOGLE_TOKEN_URL,
         SERVICE_SCOPES,
@@ -316,7 +316,7 @@ def authorize_services(
         scope_union_for_services,
     )
 
-    from officina.common import secret_store
+    import officina.credentials.secret_store as secret_store
 
     diagnostics = diagnostic_stream if diagnostic_stream is not None else sys.stderr
     listener = None

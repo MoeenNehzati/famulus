@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-import officina.common.certificate_records as certificate_records
+import officina.certification.records as certificate_records
 import officina.common.atomic_files as atomic_files
-from officina.common.certificate_records import (
+from officina.certification.records import (
     CertificateLogError,
     canonical_certificate_envelope_bytes,
     canonical_certificate_payload_bytes,

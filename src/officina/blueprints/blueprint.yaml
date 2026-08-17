@@ -1,0 +1,71 @@
+authority:
+  owns_filesystem: []
+children: {}
+content:
+- __init__\.py
+- authorization\.py
+- graph\.py
+- inventory\.py
+- pooled\.py
+- process_binding\.py
+- projection\.py
+- search\.py
+- template\.py
+description: Blueprint discovery, graph validation, authorization, rendering, projection,
+  process binding, and structured search.
+exports:
+  blueprints.interface.graph:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - skill-certifier
+      - skill-certifier._rtx
+      - skill-drift
+      - skill-drift._rtx
+      - skill-maker
+      - skill-maker._rtx
+    source_interface: blueprints.source.graph.interface.python-api
+  blueprints.interface.template:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - regenerate-blueprints
+      - regenerate-blueprints._rtx
+    source_interface: blueprints.source.template.interface.python-api
+  blueprints.interface.pooled:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - skill-certifier
+      - skill-certifier._rtx
+      - skill-drift
+    source_interface: blueprints.source.pooled.interface.python-api
+gateway:
+  language: Python
+  path: __init__.py
+id: blueprints
+namespace_exports: {}
+node_type: module
+schema_version: 6
+sources:
+  blueprints.source.graph:
+    blueprint:
+      base: module-root
+      path: blueprints/graph.yaml
+  blueprints.source.inventory:
+    blueprint:
+      base: module-root
+      path: blueprints/inventory.yaml
+  blueprints.source.template:
+    blueprint:
+      base: module-root
+      path: blueprints/template.yaml
+  blueprints.source.pooled:
+    blueprint:
+      base: module-root
+      path: blueprints/pooled.yaml
+  blueprints.source.process-binding:
+    blueprint:
+      base: module-root
+      path: blueprints/process-binding.yaml
+version: 1

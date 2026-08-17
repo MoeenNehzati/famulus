@@ -31,14 +31,14 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[3]
 from officina.runtime.python_machine_interface import PythonMachineInterface
 from officina.runtime.python_machine_interface_runner import run_python_machine_interface
-from officina.common.blueprint_graph import (
+from officina.blueprints.graph import (
     InterfaceExport,
     RepositoryBlueprintGraph,
     load_repository_blueprint_graph,
 )
 from officina.common.atomic_files import atomic_replace_bytes
-from officina.common.certification_view import CertificationView
-from officina.common.interface_projection import project_consumer_interfaces
+from officina.certification.view import CertificationView
+from officina.blueprints.projection import project_consumer_interfaces
 
 SKILLS_ROOT = REPO_ROOT / "skills"
 CONTRACT_START = "<!-- BEGIN BLUEPRINT CONTRACT -->"

@@ -11,12 +11,12 @@ from pathlib import Path
 import pytest
 import yaml
 
-from officina.common.blueprint_graph import (
+from officina.blueprints.graph import (
     RepositoryBlueprintGraph,
     load_repository_blueprint_graph,
 )
-from officina.common.blueprint_inventory import BlueprintInventoryError
-from officina.common.process_binding_compiler import gateway_language_name
+from officina.blueprints.inventory import BlueprintInventoryError
+from officina.blueprints.process_binding import gateway_language_name
 import officina.runtime.python_machine_interface as python_interface
 
 

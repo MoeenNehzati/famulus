@@ -1,69 +1,37 @@
-"""Shared first-party packages and certification infrastructure.
+"""Cross-cutting Officina primitives.
 
-Import concrete helpers from their owning submodules. Legacy root-level exports
-remain available lazily so importing one common submodule does not execute
-unrelated docstring or visualization stacks.
+This package contains small shared utilities that do not constitute an independent subsystem. Callers import concrete owning modules.
+
+Includes
+--------
+``__init__.py``
+    Documents this package and its owned files.
+``atomic_files.py``
+    Performs confined regular-file reads and atomic create/replace writes.
+``blueprint.yaml``
+    Declares this package's registered Officina module boundary.
+``blueprints/atomic-files.yaml``
+    Declares the atomic files behavioral source contract.
+``blueprints/codex-toml.yaml``
+    Declares the codex toml behavioral source contract.
+``blueprints/dates.yaml``
+    Declares the dates behavioral source contract.
+``blueprints/famulus-paths.yaml``
+    Declares the famulus paths behavioral source contract.
+``blueprints/repository-paths.yaml``
+    Declares the repository paths behavioral source contract.
+``blueprints/toml-io.yaml``
+    Declares the toml io behavioral source contract.
+``codex_toml.py``
+    Reads and updates Codex configuration without discarding unrelated TOML content.
+``dates.py``
+    Normalizes repository date values and date-oriented filenames.
+``famulus_paths/``
+    Resolves installed Famulus and repository paths across supported hosts.
+``python_source_cache.py``
+    Caches parsed Python source while preserving path and content identity.
+``repository_paths.py``
+    Resolves and normalizes paths within a repository boundary.
+``toml_io.py``
+    Provides the shared TOML parsing and serialization primitives.
 """
-
-from __future__ import annotations
-
-from importlib import import_module
-from typing import Any
-
-
-_LAZY_EXPORTS = {
-    "AuthorizationRequest": (".blueprint_authorization", "AuthorizationRequest"),
-    "AuthorizationResult": (".blueprint_authorization", "AuthorizationResult"),
-    "resolve_interface_authorization": (
-        ".blueprint_authorization",
-        "resolve_interface_authorization",
-    ),
-    "BlueprintDocument": (".blueprint_inventory", "BlueprintDocument"),
-    "BlueprintInventoryError": (".blueprint_inventory", "BlueprintInventoryError"),
-    "BlueprintInventoryIssue": (".blueprint_inventory", "BlueprintInventoryIssue"),
-    "BlueprintInventoryResult": (".blueprint_inventory", "BlueprintInventoryResult"),
-    "collect_blueprints": (".blueprint_inventory", "collect_blueprints"),
-    "iter_blueprints": (".blueprint_inventory", "iter_blueprints"),
-    "ParserIssue": (".docstring", "ParserIssue"),
-    "PipelineSpec": (".docstring", "PipelineSpec"),
-    "FunctionSpec": (".docstring", "FunctionSpec"),
-    "CallableDocstringSchema": (".docstring", "CallableDocstringSchema"),
-    "OwnershipConfig": (".docstring", "OwnershipConfig"),
-    "ModuleOwnershipConfig": (".docstring", "ModuleOwnershipConfig"),
-    "DocstringSchema": (".docstring", "DocstringSchema"),
-    "PipelineDocstringSchema": (".docstring", "PipelineDocstringSchema"),
-    "ModuleDocstringSchema": (".docstring", "ModuleDocstringSchema"),
-    "check": (".docstring", "check"),
-    "check_graph_docstring": (".docstring", "check_graph_docstring"),
-    "check_pipeline_docstring": (".docstring", "check_pipeline_docstring"),
-    "parse_function_graphs": (".docstring", "parse_function_graphs"),
-    "parse_graph_block": (".docstring", "parse_graph_block"),
-    "parse_ownership_reference": (".docstring", "parse_ownership_reference"),
-    "parse_ownable_registry": (".docstring", "parse_ownable_registry"),
-    "parse_pipeline": (".docstring", "parse_pipeline"),
-    "resolve_docstring_schema_path": (".docstring", "resolve_docstring_schema_path"),
-    "load_docstring_schema": (".docstring", "load_docstring_schema"),
-    "validate_edge_expression": (".docstring", "validate_edge_expression"),
-    "validate_pipeline_docstring": (".docstring", "validate_pipeline_docstring"),
-    "build_docstring_graph": (".visualization", "build_docstring_graph"),
-}
-
-__all__ = sorted(_LAZY_EXPORTS)
-
-
-def __getattr__(name: str) -> Any:
-    """Load a compatibility export only when a caller requests it."""
-
-    try:
-        module_name, attribute_name = _LAZY_EXPORTS[name]
-    except KeyError as exc:
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from exc
-    value = getattr(import_module(module_name, __name__), attribute_name)
-    globals()[name] = value
-    return value
-
-
-def __dir__() -> list[str]:
-    """Expose lazy compatibility names to interactive discovery."""
-
-    return sorted({*globals(), *__all__})

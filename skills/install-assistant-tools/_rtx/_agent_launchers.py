@@ -36,7 +36,7 @@ if not __package__ and str(REPO_SRC) not in sys.path:
 if not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from officina.common import toml_io
+import officina.common.toml_io as toml_io
 from officina.common.famulus_paths import resolve_famulus_paths
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 

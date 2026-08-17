@@ -40,11 +40,11 @@ _SRC_ROOT = _REPO_ROOT / "src"
 if str(_SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(_SRC_ROOT))
 
-from officina.common.blueprint_graph import (  # noqa: E402
+from officina.blueprints.graph import (  # noqa: E402
     BlueprintGraphError,
     load_repository_blueprint_graph,
 )
-from officina.common.blueprint_inventory import BlueprintInventoryError  # noqa: E402
+from officina.blueprints.inventory import BlueprintInventoryError  # noqa: E402
 
 
 REQUIRES_BLUEPRINT_GRAPH = True
@@ -284,7 +284,7 @@ def validate(repo_root: Path) -> list[str]:
       why:
         constructs: "Builds collision findings after standalone graph preparation."
 
-    officina.common.blueprint_graph.load_repository_blueprint_graph:
+    officina.blueprints.graph.load_repository_blueprint_graph:
       why:
         constructs: "Builds the graph required by direct compatibility callers."
     """

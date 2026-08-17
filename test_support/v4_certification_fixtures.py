@@ -13,7 +13,7 @@ import shutil
 
 import yaml
 
-from officina.common.certification_hashing import (
+from officina.certification.hashing import (
     CANONICAL_NODE_HASH_POLICY,
     CERTIFIER_INTERFACE_ID,
     compute_certification_basis_hash,
@@ -22,14 +22,14 @@ from officina.common.certification_hashing import (
     expected_certifier_checks,
     resolve_certification_basis_paths,
 )
-from officina.common.certificate_records import (
+from officina.certification.records import (
     canonical_certificate_envelope_bytes,
     load_or_create_certificate_signing_key,
     sign_certificate_payload,
 )
-from officina.common.blueprint_graph import load_repository_blueprint_graph
-from officina.common.certification_view import certificate_log_path
-from officina.common.git_provenance import (
+from officina.blueprints.graph import load_repository_blueprint_graph
+from officina.certification.view import certificate_log_path
+from officina.git.provenance import (
     pin_blueprint_v4_mechanical_commit,
     pin_blueprint_v4_source_overlay_commit,
 )
@@ -371,10 +371,10 @@ def materialize_v4_repository(
     ._write_module:
       why:
         computes: "Materializes each fixture skill module."
-    officina.common.git_provenance.pin_blueprint_v4_mechanical_commit:
+    officina.git.provenance.pin_blueprint_v4_mechanical_commit:
       why:
         computes: "Pins mechanical provenance to the fixture commit."
-    officina.common.git_provenance.pin_blueprint_v4_source_overlay_commit:
+    officina.git.provenance.pin_blueprint_v4_source_overlay_commit:
       why:
         computes: "Pins source-overlay provenance to the fixture commit."
     """
@@ -481,19 +481,19 @@ def create_v4_repository(
     .materialize_v4_repository:
       why:
         constructs: "Creates and pins the committed fixture repository."
-    officina.common.blueprint_graph.load_repository_blueprint_graph:
+    officina.blueprints.graph.load_repository_blueprint_graph:
       why:
         constructs: "Loads the fixture's canonical blueprint graph."
-    officina.common.certification_hashing.compute_node_hash_states:
+    officina.certification.hashing.compute_node_hash_states:
       why:
         constructs: "Computes node states for certificate payloads."
-    officina.common.certification_hashing.resolve_certification_basis_paths:
+    officina.certification.hashing.resolve_certification_basis_paths:
       why:
         constructs: "Resolves files included in the certification basis."
 
     CallsFromRepo
     -------------
-    officina.common.certification_hashing.compute_certification_basis_hash:
+    officina.certification.hashing.compute_certification_basis_hash:
       why:
         computes: "Hashes the fixture certification basis."
     """
@@ -614,7 +614,7 @@ def payload(
 
     InstantiationsFromRepo
     ----------------------
-    officina.common.certification_hashing.derive_certifier_identity:
+    officina.certification.hashing.derive_certifier_identity:
       why:
         constructs: "Derives the certifier identity carried in the payload."
     """
@@ -665,12 +665,12 @@ def write_log(graph: object, node_id: str, entries: list[dict]) -> None:
 
     CallsFromRepo
     -------------
-    officina.common.certificate_records.canonical_certificate_envelope_bytes:
+    officina.certification.records.canonical_certificate_envelope_bytes:
       why:
         computes: "Serializes each signed log entry canonically."
     InstantiationsFromRepo
     ----------------------
-    officina.common.certification_view.certificate_log_path:
+    officina.certification.view.certificate_log_path:
       why:
         constructs: "Resolves the node's canonical certificate log path."
     """
@@ -722,7 +722,7 @@ def create_certified_fixture(
     .write_log:
       why:
         computes: "Writes each node's signed certificate log."
-    officina.common.certificate_records.sign_certificate_payload:
+    officina.certification.records.sign_certificate_payload:
       why:
         computes: "Signs each deterministic certificate payload."
 
@@ -734,7 +734,7 @@ def create_certified_fixture(
     .MemorySecretBackend:
       why:
         constructs: "Provides isolated secret storage for the fixture key."
-    officina.common.certificate_records.load_or_create_certificate_signing_key:
+    officina.certification.records.load_or_create_certificate_signing_key:
       why:
         constructs: "Creates the fixture signing identity and key material."
     """

@@ -16,7 +16,7 @@ from types import ModuleType
 from typing import Iterator, Sequence
 
 from officina.common.atomic_files import read_regular_file_bytes
-from officina.common.blueprint_graph import (
+from officina.blueprints.graph import (
     BlueprintGraphError,
     decode_runtime_python_package_snapshot,
     snapshot_runtime_python_package,

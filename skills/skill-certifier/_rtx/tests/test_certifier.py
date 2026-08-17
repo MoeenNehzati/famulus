@@ -18,14 +18,14 @@ MODULE_PATH = Path(__file__).resolve().parents[1] / "_node_certifier.py"
 SRC_ROOT = MODULE_PATH.parents[3] / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
-from officina.common.certificate_records import (
+from officina.certification.records import (
     certificate_public_key_root,
     certificate_entry_hash,
     load_or_create_certificate_signing_key,
     parse_certificate_log,
     rotate_certificate_signing_key,
 )
-from officina.common.git_provenance import check_commit_readiness
+from officina.git.provenance import check_commit_readiness
 from officina.runtime.python_machine_interface import (
     logical_python_package_name,
 )

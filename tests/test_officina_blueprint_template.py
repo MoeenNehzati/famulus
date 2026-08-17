@@ -11,11 +11,11 @@ from test_support.git_repository import GitTestRepository
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-import officina.common.blueprint_template as blueprint_template  # noqa: E402
-from officina.common.blueprint_graph import (  # noqa: E402
+import officina.blueprints.template as blueprint_template  # noqa: E402
+from officina.blueprints.graph import (  # noqa: E402
     load_repository_blueprint_graph,
 )
-from officina.common.blueprint_template import (  # noqa: E402
+from officina.blueprints.template import (  # noqa: E402
     load_schema as _load_schema,
     refresh_blueprint_documentation,
     render_blueprint_template,

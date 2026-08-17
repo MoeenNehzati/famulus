@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-import officina.common.certificate_records as certificate_records
+import officina.certification.records as certificate_records
 from .. import _install_scaffold as scaffold
 from .._install_launcher import _windows_launcher as windows_launcher
 from .._install_launcher._base_launcher import LauncherInstallerBase

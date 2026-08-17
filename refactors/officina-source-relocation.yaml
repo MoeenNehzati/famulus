@@ -1,0 +1,596 @@
+schema_version: 1
+
+moves:
+- from: src/officina/common/standard_extractor.py
+  to: src/officina/standards/extractor.py
+- from: src/officina/common/standard_query.py
+  to: src/officina/standards/query.py
+- from: src/officina/common/blueprints/standard-extractor.yaml
+  to: src/officina/standards/blueprints/extractor.yaml
+- from: src/officina/common/blueprints/standard-query.yaml
+  to: src/officina/standards/blueprints/query.yaml
+- from: src/officina/common/visualization
+  to: src/officina/visualization
+- from: src/officina/common/discover_tests.py
+  to: src/officina/repository/checks/discovery.py
+- from: src/officina/repository_checks.py
+  to: src/officina/repository/checks/runner.py
+- from: src/officina/repo_checks/remote.py
+  to: src/officina/repository/checks/remote.py
+- from: src/officina/repo_checks/remote_macos_windows.py
+  to: src/officina/repository/checks/remote_macos_windows.py
+- from: src/officina/repo_checks/__init__.py
+  to: src/officina/repository/checks/__init__.py
+- from: src/officina/_validator_snapshot.py
+  to: src/officina/validators/snapshot.py
+
+renames:
+  python_modules:
+  - from: officina.common.standard_extractor
+    to: officina.standards.extractor
+  - from: officina.common.standard_query
+    to: officina.standards.query
+  - from: officina.common.visualization
+    to: officina.visualization
+  - from: officina.common.discover_tests
+    to: officina.repository.checks.discovery
+  - from: officina.repository_checks
+    to: officina.repository.checks.runner
+  - from: officina.repo_checks.remote_macos_windows
+    to: officina.repository.checks.remote_macos_windows
+  - from: officina.repo_checks.remote
+    to: officina.repository.checks.remote
+  - from: officina._validator_snapshot
+    to: officina.validators.snapshot
+  source_ids:
+  - from: common.source.standard-extractor
+    to: standards.source.extractor
+  - from: common.source.standard-query
+    to: standards.source.query
+  interface_ids:
+  - from: common.source.standard-extractor.interface.python-api
+    to: standards.source.extractor.interface.python-api
+  - from: common.source.standard-query.interface.query-standard
+    to: standards.source.query.interface.query-standard
+  - from: common.interface.standard-extractor
+    to: standards.interface.extractor
+  - from: common.interface.query-standard
+    to: standards.interface.query-standard
+
+blueprint_documents:
+- path: src/officina/standards/blueprint.yaml
+  document:
+    authority: {owns_filesystem: []}
+    children: {}
+    content:
+    - __init__\.py
+    description: Pinned-standard closure validation and deterministic standard queries.
+    exports: {}
+    gateway: {language: Python, path: __init__.py}
+    id: standards
+    namespace_exports: {}
+    node_type: module
+    schema_version: 6
+    sources: {}
+    version: 1
+- path: src/officina/configuration/blueprint.yaml
+  document:
+    authority: {owns_filesystem: []}
+    children: {}
+    content:
+    - __init__\.py
+    - configured_schema\.py
+    - repository\.py
+    - schema\.json
+    description: Configuration-aware schemas and explicit repository configuration loading.
+    exports:
+      configuration.interface.repository:
+        access: {allow_all_modules: true, allowed_callers: []}
+        source_interface: configuration.source.repository.interface.python-api
+    gateway: {language: Python, path: __init__.py}
+    id: configuration
+    namespace_exports: {}
+    node_type: module
+    schema_version: 6
+    sources:
+      configuration.source.repository:
+        blueprint: {base: module-root, path: blueprints/repository.yaml}
+    version: 1
+
+ownership_transfers:
+- from_blueprint: src/officina/common/blueprint.yaml
+  to_blueprint: src/officina/standards/blueprint.yaml
+  source: {from: common.source.standard-extractor, to: standards.source.extractor}
+  export: {from: common.interface.standard-extractor, to: standards.interface.extractor}
+  content: {from: 'standard_extractor\.py', to: 'extractor\.py'}
+- from_blueprint: src/officina/common/blueprint.yaml
+  to_blueprint: src/officina/standards/blueprint.yaml
+  source: {from: common.source.standard-query, to: standards.source.query}
+  export: {from: common.interface.query-standard, to: standards.interface.query-standard}
+  content: {from: 'standard_query\.py', to: 'query\.py'}
+
+caller_additions:
+- blueprint: src/officina/common/blueprint.yaml
+  interface: common.interface.toml-io
+  caller: configuration
+
+exact_rewrites:
+- path: skills/refactor-node/SKILL.md
+  from: |-
+    Uses Interfaces:
+    - `refactor-node.source.gateway -> standards.interface.query-standard@1`
+    - `refactor-node.source.gateway -> refactor-node.source.instruction-refactoring.interface.refactor-instructions@1`
+    - `refactor-node.source.gateway -> refactor-node.source.python-refactoring.interface.refactor-python@1`
+  to: |-
+    Uses Interfaces:
+    - `refactor-node.source.gateway -> refactor-node.source.instruction-refactoring.interface.refactor-instructions@1`
+    - `refactor-node.source.gateway -> refactor-node.source.python-refactoring.interface.refactor-python@1`
+    - `refactor-node.source.gateway -> standards.interface.query-standard@1`
+- path: skills/skill-maker/SKILL.md
+  from: |-
+    Uses Interfaces:
+    - `skill-maker.source.gateway -> standards.interface.query-standard@1`
+    - `skill-maker.source.gateway -> skill-maker._rtx.interface.sync-blueprints@1`
+  to: |-
+    Uses Interfaces:
+    - `skill-maker.source.gateway -> skill-maker._rtx.interface.sync-blueprints@1`
+    - `skill-maker.source.gateway -> standards.interface.query-standard@1`
+- path: src/officina/standards/blueprints/extractor.yaml
+  from: 'standard_extractor\.py'
+  to: 'extractor\.py'
+- path: src/officina/standards/blueprints/extractor.yaml
+  from: 'path: standard_extractor.py'
+  to: 'path: extractor.py'
+- path: src/officina/standards/blueprints/query.yaml
+  from: 'standard_query\.py'
+  to: 'query\.py'
+- path: src/officina/standards/blueprints/query.yaml
+  from: 'path: standard_query.py'
+  to: 'path: query.py'
+- path: src/officina/visualization/base_visualizer.py
+  from: from ..repository_paths import resolve_logical_module_path, resolve_python_source_path
+  to: from officina.common.repository_paths import resolve_logical_module_path, resolve_python_source_path
+- path: src/officina/visualization/elk_html_renderer.py
+  from: from .html_renderer import render_document
+  to: from .html_renderer.assets import render_document
+- path: src/officina/repository/checks/runner.py
+  from: REPO_ROOT = Path(__file__).resolve().parents[2]
+  to: REPO_ROOT = Path(__file__).resolve().parents[4]
+- path: src/officina/repository/checks/runner.py
+  from: from officina import _validator_snapshot
+  to: import officina.validators.snapshot as _validator_snapshot
+- path: src/officina/repository/checks/runner.py
+  from: from officina.repo_checks import remote
+  to: import officina.repository.checks.remote as remote
+- path: src/officina/validators/snapshot.py
+  from: REPO_ROOT = Path(__file__).resolve().parents[2]
+  to: REPO_ROOT = Path(__file__).resolve().parents[3]
+- path: tests/test_visualization_graph.py
+  from: from officina.visualization import render_module_artifacts
+  to: from officina.visualization.from_docstring.visualizer import render_module_artifacts
+- path: tests/test_visualization_renderer_cli.py
+  from: from officina.visualization import base_renderer_cli
+  to: import officina.visualization.base_renderer_cli as base_renderer_cli
+- path: tests/test_repo_checks_selection.py
+  from: from officina import repository_checks as runner
+  to: import officina.repository.checks.runner as runner
+- path: tests/test_browser_parallel_policy.py
+  from: from officina import repository_checks
+  to: import officina.repository.checks.runner as repository_checks
+- path: tests/test_repo_checks_remote.py
+  from: from officina.repo_checks import remote
+  to: import officina.repository.checks.remote as remote
+- path: tests/test_standard_query.py
+  from: src/officina/common/blueprint.yaml
+  to: src/officina/standards/blueprint.yaml
+- path: skills/refactor-node/tests/test_refactor_node_routing.py
+  from: '/ "common" / "blueprint.yaml"'
+  to: '/ "standards" / "blueprint.yaml"'
+- path: tests/test_docstrings_validator.py
+  from: '_RUNNER_PATH = _REPO_ROOT / "src" / "officina" / "_validator_snapshot.py"'
+  to: '_RUNNER_PATH = _REPO_ROOT / "src" / "officina" / "validators" / "snapshot.py"'
+- path: tests/test_repository_validator_checks.py
+  from: '_RUNNER_PATH = _REPO_ROOT / "src" / "officina" / "_validator_snapshot.py"'
+  to: '_RUNNER_PATH = _REPO_ROOT / "src" / "officina" / "validators" / "snapshot.py"'
+- path: tests/test_repository_validator_checks.py
+  from: '_CHECKS_IMPL_PATH = _REPO_ROOT / "src" / "officina" / "repository_checks.py"'
+  to: '_CHECKS_IMPL_PATH = _REPO_ROOT / "src" / "officina" / "repository" / "checks" / "runner.py"'
+- path: tests/test_repository_validator_checks.py
+  from: |2-
+        officina = repo / "src" / "officina"
+        common = officina / "common"
+        common.mkdir(parents=True)
+        shutil.copy2(_RUNNER_PATH, officina / "_validator_snapshot.py")
+        shutil.copy2(_CHECKS_IMPL_PATH, officina / "repository_checks.py")
+        shutil.copy2(_REPO_ROOT / "src" / "officina" / "__init__.py", officina / "__init__.py")
+        shutil.copy2(_REPO_ROOT / "src" / "officina" / "common" / "__init__.py", common / "__init__.py")
+        shutil.copy2(
+            _REPO_ROOT / "src" / "officina" / "common" / "discover_tests.py",
+            common / "discover_tests.py",
+        )
+  to: |2-
+        officina = repo / "src" / "officina"
+        common = officina / "common"
+        checks = officina / "repository" / "checks"
+        validator_package = officina / "validators"
+        common.mkdir(parents=True)
+        checks.mkdir(parents=True)
+        validator_package.mkdir(parents=True)
+        shutil.copy2(_RUNNER_PATH, validator_package / "snapshot.py")
+        shutil.copy2(_CHECKS_IMPL_PATH, checks / "runner.py")
+        shutil.copy2(_REPO_ROOT / "src" / "officina" / "__init__.py", officina / "__init__.py")
+        shutil.copy2(_REPO_ROOT / "src" / "officina" / "common" / "__init__.py", common / "__init__.py")
+        shutil.copy2(_REPO_ROOT / "src" / "officina" / "repository" / "__init__.py", checks.parent / "__init__.py")
+        shutil.copy2(_REPO_ROOT / "src" / "officina" / "repository" / "checks" / "__init__.py", checks / "__init__.py")
+        shutil.copy2(_REPO_ROOT / "src" / "officina" / "validators" / "__init__.py", validator_package / "__init__.py")
+        shutil.copy2(
+            _REPO_ROOT / "src" / "officina" / "repository" / "checks" / "discovery.py",
+            checks / "discovery.py",
+        )
+- path: tests/test_repo_checks_entrypoint.py
+  from: 'IMPLEMENTATION = REPO_ROOT / "src" / "officina" / "repository_checks.py"'
+  to: 'IMPLEMENTATION = REPO_ROOT / "src" / "officina" / "repository" / "checks" / "runner.py"'
+- path: tests/test_repository_test_checks.py
+  from: |-
+    MODULE_PATH = (
+        REPO_ROOT
+        / "src"
+        / "officina"
+        / "repository_checks.py"
+    )
+  to: |-
+    MODULE_PATH = (
+        REPO_ROOT
+        / "src"
+        / "officina"
+        / "repository"
+        / "checks"
+        / "runner.py"
+    )
+- path: src/officina/validators/docstring_validator.py
+  from: from ..common.discover_tests import is_test_module as _is_repo_test_module
+  to: from ..repository.checks.discovery import is_test_module as _is_repo_test_module
+- path: tests/test_officina_toml_io.py
+  from: from officina.common import toml_io
+  to: import officina.common.toml_io as toml_io
+- path: tests/validate_platform_neutral.py
+  from: |2-
+            / "common"
+            / "blueprint_graph.py"
+  to: |2-
+            / "blueprints"
+            / "graph.py"
+- path: tests/validate_platform_neutral.py
+  from: 'target = tmp_path / "src" / "officina" / "common" / "blueprint_graph.py"'
+  to: 'target = tmp_path / "src" / "officina" / "blueprints" / "graph.py"'
+- path: tests/test_officina_python_machine_interface.py
+  from: 'ignore=shutil.ignore_patterns("blueprint.yaml", "blueprints"),'
+  to: |-
+    ignore=lambda directory, names: {
+                name
+                for name in names
+                if name == "blueprint.yaml"
+                or (name == "blueprints" and Path(directory).name != "officina")
+            },
+- path: tests/test_blueprint_schema_metadata.py
+  from: 'V4_TYPED_SCHEMAS = ("module.schema.json", "behavioral-source.schema.json")'
+  to: |-
+    V4_TYPED_SCHEMAS = ("module.schema.json", "behavioral-source.schema.json")
+    RELOCATED_FROZEN_VALIDATORS = {
+        "src/officina/common/blueprint_graph.py": "src/officina/blueprints/graph.py",
+        "src/officina/common/pooled_blueprint.py": "src/officina/blueprints/pooled.py",
+    }
+- path: tests/test_blueprint_schema_metadata.py
+  from: 'assert (REPO_ROOT / rule["validator"]).is_file(), rule_id'
+  to: |-
+    validator = RELOCATED_FROZEN_VALIDATORS.get(
+                rule["validator"], rule["validator"]
+            )
+            assert (REPO_ROOT / validator).is_file(), rule_id
+- path: tests/test_controller_protocol.py
+  from: |-
+    from officina.controller.protocol import (
+        ControllerMessage,
+        InvalidControllerMessageError,
+        JsonValue,
+        UnsupportedProtocolVersionError,
+    )
+  to: |-
+    from officina.controller.model import JsonValue
+    from officina.controller.protocol import (
+        ControllerMessage,
+        InvalidControllerMessageError,
+        UnsupportedProtocolVersionError,
+    )
+- path: tests/test_controller_protocol.py
+  from: |-
+    def test_controller_protocol_uses_its_canonical_module() -> None:
+        assert ControllerMessage.__module__ == "officina.controller.protocol"
+        assert JsonValue.__module__ == "officina.controller.model"
+  to: |-
+    def test_controller_protocol_uses_its_canonical_module() -> None:
+        assert ControllerMessage.__module__ == "officina.controller.protocol"
+- path: tests/validate_cross_platform.py
+  from: from officina.common import python_source_cache as cache_module
+  to: import officina.common.python_source_cache as cache_module
+- path: tests/test_python_source_cache.py
+  from: from officina.common import python_source_cache as cache_module
+  to: import officina.common.python_source_cache as cache_module
+- path: tests/test_officina_managed_runtime.py
+  from: from officina.common import atomic_files
+  to: import officina.common.atomic_files as atomic_files
+- path: tests/test_officina_dates.py
+  from: from officina.common import dates
+  to: import officina.common.dates as dates
+- path: src/officina/dispatcher/core.py
+  from: from officina.common import toml_io
+  to: import officina.common.toml_io as toml_io
+- path: src/officina/install/install_info.py
+  from: from officina.common import toml_io
+  to: import officina.common.toml_io as toml_io
+- path: src/officina/install/managed_runtime.py
+  from: from officina.common import atomic_files, toml_io
+  to: |-
+    import officina.common.atomic_files as atomic_files
+    import officina.common.toml_io as toml_io
+- path: src/officina/install/uv_bootstrap.py
+  from: from officina.common import atomic_files
+  to: import officina.common.atomic_files as atomic_files
+- path: skills/install-assistant-tools/_rtx/_config_bridge.py
+  from: from officina.common import codex_toml, toml_io
+  to: |-
+    import officina.common.codex_toml as codex_toml
+    import officina.common.toml_io as toml_io
+- path: skills/install-assistant-tools/_rtx/assets/bin/_agent_launch.py
+  from: from officina.common import toml_io
+  to: import officina.common.toml_io as toml_io
+- path: skills/install-assistant-tools/_rtx/_agent_launchers.py
+  from: from officina.common import toml_io
+  to: import officina.common.toml_io as toml_io
+- path: skills/recurring-tasks/_rtx/_run_record.py
+  from: from officina.common import atomic_files
+  to: import officina.common.atomic_files as atomic_files
+- path: tests/test_repository_validator_checks.py
+  from: |2-
+        assert json.loads(observation.read_text(encoding="utf-8")) == [
+            "module.py",
+            "notes.txt",
+            "repo_checks.py",
+            "src/officina/__init__.py",
+            "src/officina/validators/snapshot.py",
+            "src/officina/common/__init__.py",
+            "src/officina/repository/checks/discovery.py",
+            "src/officina/common/python_source_cache.py",
+            "src/officina/repository/checks/runner.py",
+            "validators/staged_probe.py",
+        ]
+  to: |2-
+        assert json.loads(observation.read_text(encoding="utf-8")) == [
+            "module.py",
+            "notes.txt",
+            "repo_checks.py",
+            "src/officina/__init__.py",
+            "src/officina/common/__init__.py",
+            "src/officina/common/python_source_cache.py",
+            "src/officina/repository/__init__.py",
+            "src/officina/repository/checks/__init__.py",
+            "src/officina/repository/checks/discovery.py",
+            "src/officina/repository/checks/runner.py",
+            "src/officina/validators/__init__.py",
+            "src/officina/validators/snapshot.py",
+            "validators/staged_probe.py",
+        ]
+- path: docs/superpowers/specs/2026-08-16-officina-source-organization-design.md
+  from: |-
+    **Status:** Approved architecture; detailed design awaiting user review
+    **Date:** 2026-08-16
+  to: |-
+    **Status:** Implemented mechanically through the blueprint-aware relocation manifest
+    **Date:** 2026-08-16
+
+    The final implementation uses README-only package initializers and direct
+    implementation-module imports; it does not use Python import facades.
+- path: docs/superpowers/plans/2026-08-16-officina-source-relocation.md
+  from: '**Tech Stack:** Python 3.11+, pytest, YAML/JSON package data, Officina blueprint metadata.'
+  to: |-
+    **Tech Stack:** Python 3.11+, pytest, YAML/JSON package data, Officina blueprint metadata.
+
+    ## Execution Status
+
+    - [x] Controller, configuration, docstring, blueprints, certification, credentials, and Git sources relocated.
+    - [x] Standards, visualization, repository checks, and validator snapshot encoded in the reusable manifest.
+    - [x] Reusable engine and manifest audited in a temporary copy: 409 focused tests passed.
+    - [x] Initial relocation application and one audited generated-block closure application completed.
+    - [x] Final verification: idempotent zero-change preflight, 410 focused tests, empty retired-address search, clean diff check, and 32/32 validators in a tracked-equivalent audit copy.
+    - [x] Reusable within-module trial: relocated the live standards extractor and its sidecar in a disposable copy, passed 15 focused tests, and reached a zero-change second preflight.
+- path: docs/superpowers/plans/2026-08-16-blueprint-aware-relocation-tool.md
+  from: '**Tech Stack:** Python 3.11+, PyYAML, pathlib, dataclasses, pytest, Officina blueprint schema v6.'
+  to: |-
+    **Tech Stack:** Python 3.11+, PyYAML, pathlib, dataclasses, pytest, Officina blueprint schema v6.
+
+    ## Execution Status
+
+    - [x] Typed manifest, projected change set, ownership transfer, catalogs, digest closure, and CLI implemented.
+    - [x] Officina acceptance manifest passes read-only preflight.
+    - [x] Temporary-copy application passed 409 focused tests.
+    - [x] Initial relocation application and one audited generated-block closure application completed.
+    - [x] Final real-tree verification: zero-change idempotency report, 410 focused tests, empty retired-address search, clean diff check, and 32/32 validators in a tracked-equivalent audit copy.
+    - [x] Within-module reuse trial: moved the standards extractor and its sidecar in a disposable repository copy, passed 15 focused tests, and reached zero-change idempotency.
+
+package_catalogs:
+- path: src/officina/common
+  summary: Cross-cutting Officina primitives.
+  description: This package contains small shared utilities that do not constitute an independent subsystem. Callers import concrete owning modules.
+  roles:
+    atomic_files.py: Performs confined regular-file reads and atomic create/replace writes.
+    codex_toml.py: Reads and updates Codex configuration without discarding unrelated TOML content.
+    dates.py: Normalizes repository date values and date-oriented filenames.
+    famulus_paths/: Resolves installed Famulus and repository paths across supported hosts.
+    python_source_cache.py: Caches parsed Python source while preserving path and content identity.
+    repository_paths.py: Resolves and normalizes paths within a repository boundary.
+    toml_io.py: Provides the shared TOML parsing and serialization primitives.
+- path: src/officina/blueprints
+  summary: Blueprint discovery, validation, authorization, and projection.
+  description: This package owns the repository-blueprint model and its mechanical consumers. Callers import concrete owning modules.
+  roles:
+    authorization.py: Resolves whether a module caller may use a declared blueprint export.
+    graph.py: Loads registered blueprints into the canonical dependency graph.
+    inventory.py: Discovers blueprint documents and their owning repository paths.
+    pooled.py: Combines related blueprint records into deterministic pooled views.
+    process_binding.py: Compiles declared process bindings into executable argument vectors.
+    projection.py: Projects blueprint interfaces and authorization into consumer-facing records.
+    search.py: Searches blueprint metadata and renders stable machine-readable results.
+    template.py: Validates and expands blueprint template declarations.
+- path: src/officina/certification
+  summary: Certification hashing, records, and currentness views.
+  description: This package owns deterministic certificate construction and inspection. Callers import concrete owning modules.
+  roles:
+    hashing.py: Computes canonical node hashes and certification-basis closures.
+    records.py: Parses, normalizes, and writes certificate-history records.
+    view.py: Evaluates certificate currentness, exports, and authorization views.
+- path: src/officina/configuration
+  summary: Configuration loading and repository-boundary validation.
+  description: This package owns configuration-aware schemas and explicit repository configuration loading. Callers import concrete owning modules.
+  roles:
+    configured_schema.py: Builds and validates schemas whose constraints come from repository configuration.
+    repository.py: Loads and validates the repository's Officina configuration.
+    schema.json: Defines the accepted repository-configuration document shape.
+- path: src/officina/controller
+  summary: Controller models and invocation protocol.
+  description: This package owns controller data structures and their invocation protocol. Callers import concrete owning modules.
+  roles:
+    model.py: Defines controller request, response, identifier, and JSON value models.
+    protocol.py: Defines the lifecycle and submission protocol implemented by controllers.
+- path: src/officina/credentials
+  summary: Credential files, OAuth JSON, and secret storage.
+  description: This package owns host-neutral credential persistence and lookup. Callers import concrete owning modules.
+  roles:
+    google.py: Resolves and validates Google credential-file bindings.
+    oauth.py: Reads and writes OAuth client and token JSON documents safely.
+    secret_store.py: Stores and retrieves namespaced secrets through the supported backend.
+- path: src/officina/docstring
+  summary: Docstring parsing, policy, and validation.
+  description: This package owns the structured docstring format and its validators. Callers import concrete owning modules.
+  roles:
+    config.yaml: Configures the active structured-docstring schema and policy inputs.
+    parser.py: Parses structured module, callable, graph, ownership, and pipeline sections.
+    policy.py: Loads the configured docstring rules used by repository validation.
+    validation.py: Applies semantic checks to parsed structured docstrings.
+- path: src/officina/git
+  summary: Git provenance and isolated repository snapshots.
+  description: This package owns Git inspection and materialization behavior. Callers import concrete owning modules.
+  roles:
+    provenance.py: Captures commit readiness, provenance, and isolated Git snapshots.
+- path: src/officina/standards
+  summary: Pinned-standard extraction and querying.
+  description: This package validates standard import closures and exposes deterministic queries over them. Callers import concrete owning modules.
+  roles:
+    extractor.py: Resolves a standard and its pinned import closure into one validated view.
+    query.py: Answers deterministic task and requirements queries over extracted standards.
+- path: src/officina/visualization
+  summary: Graph extraction, payload processing, rendering, and serving.
+  description: This package owns the graph model and concrete blueprint and docstring visualization pipelines. Callers import concrete owning modules.
+  roles:
+    artifacts.py: Defines and writes the HTML and JSON artifacts produced by visualization runs.
+    base_extractor.py: Defines the common graph-source extraction contract.
+    base_renderer.py: Coordinates graph payload reduction, HTML rendering, and output writing.
+    base_renderer_cli.py: Implements the shared renderer command-line interface.
+    base_visualizer.py: Resolves graph sources and connects extractors to renderers.
+    elk_html_renderer.py: Converts graph payloads into the self-contained ELK HTML viewer.
+    from_blueprint/: Extracts and presents dependency graphs from Officina blueprints.
+    from_docstring/: Extracts and presents dependency graphs from structured docstrings.
+    graph.py: Defines graph nodes, edges, validation, filtering, and serialization.
+    graph_specification.schema.json: Defines the JSON graph payload accepted by renderers.
+    html_renderer/: Owns the HTML shell, browser runtime, styles, and vendored renderer assets.
+    payload.py: Validates and normalizes renderer payload mappings.
+    server.py: Serves generated visualization artifacts from a bounded local HTTP server.
+- path: src/officina/visualization/from_blueprint
+  summary: Blueprint-to-graph extraction and visualization.
+  description: This package converts repository blueprint graphs into renderable graph payloads.
+  roles:
+    __main__.py: Provides the blueprint visualization command-line entry point.
+    catalog.py: Builds presentation catalogs for modules, sources, interfaces, and files.
+    details.py: Formats detailed inspector content for blueprint graph entities.
+    extractor.py: Extracts graph nodes and edges from the repository blueprint graph.
+    payload_builder.py: Assembles validated renderer payloads from extracted blueprint data.
+    presentation_nodes.py: Adds presentation-only grouping and explanatory nodes.
+    scope.py: Selects the requested blueprint subgraph and traversal boundary.
+    visualizer.py: Orchestrates blueprint extraction, payload construction, and rendering.
+- path: src/officina/visualization/from_docstring
+  summary: Docstring-to-graph extraction and visualization.
+  description: This package converts structured Python docstrings into renderable dependency graphs.
+  roles:
+    __main__.py: Provides the docstring visualization command-line entry point.
+    io.py: Loads Python modules and writes docstring visualization outputs.
+    json_extractor.py: Converts parsed Python and docstring metadata into dependency JSON.
+    parser.py: Parses Python modules and their structured graph annotations.
+    payload_builder.py: Assembles validated renderer payloads for docstring graphs.
+    renderer.py: Renders docstring dependency payloads through the shared HTML renderer.
+    visualizer.py: Orchestrates module discovery, extraction, graph building, and rendering.
+- path: src/officina/visualization/html_renderer
+  summary: Browser assets for the ELK HTML renderer.
+  description: This package assembles the HTML, CSS, JavaScript, and vendored runtime inputs used by graph rendering.
+  roles:
+    assets.py: Loads and assembles the HTML template, styles, runtime modules, and vendored scripts.
+    dependencies.py: Declares renderer asset ordering and verifies vendored dependency provenance.
+    page.html: Provides the static HTML shell populated by the renderer.
+    viewer.css: Defines the graph canvas, controls, inspector, legend, and responsive layout styles.
+- path: src/officina/repository
+  summary: Repository-level inspection and conformance operations.
+  description: This package groups repository test discovery, local checks, and remote check orchestration. Callers import concrete owning modules.
+  roles:
+    checks/: Selects and executes local, snapshot, and remote repository checks.
+- path: src/officina/repository/checks
+  summary: Repository test and conformance-check execution.
+  description: This package owns local suite selection, validator snapshots, test discovery, and remote check helpers.
+  roles:
+    discovery.py: Discovers canonical repository test roots and classifies test modules.
+    remote.py: Submits and monitors remote repository-check jobs.
+    remote_macos_windows.py: Defines the macOS and Windows remote check matrices.
+    runner.py: Selects suites and coordinates local or parallel repository checks.
+- path: src/officina/validators
+  summary: Validation helpers for repository code-quality checks.
+  description: This package owns docstring validation and exact staged-repository snapshots. Callers import concrete owning modules.
+  roles:
+    docstring_validator.py: Validates structured docstrings and package file inventories.
+    snapshot.py: Runs validators against an exact staged-tree snapshot.
+
+forbid_facade_imports:
+- officina.common
+- officina.blueprints
+- officina.certification
+- officina.configuration
+- officina.controller
+- officina.credentials
+- officina.docstring
+- officina.git
+- officina.standards
+- officina.visualization
+- officina.repository
+- officina.repository.checks
+- officina.validators
+
+text_exclusions:
+- refactors/officina-source-relocation.yaml
+- docs/superpowers/specs/2026-08-16-officina-source-organization-design.md
+- docs/superpowers/plans/2026-08-16-officina-source-relocation.md
+- tests/test_officina_source_relocation_manifest.py
+- tests/fixtures/blueprint_schemas/v4/schema-meta.json
+- tests/fixtures/blueprint_schemas/v5/schema-meta.json
+- tests/fixtures/standards/skill-guidelines-source-map.yaml
+- tests/fixtures/standards/skill-guidelines.md
+- tests/fixtures/standards/skill-guidelines.v1.md
+- tests/fixtures/standards/skill-guidelines.v1.standard.yaml
+
+active_address_exclusions:
+- refactors/officina-source-relocation.yaml
+- docs/superpowers/specs/2026-08-16-officina-source-organization-design.md
+- docs/superpowers/plans/2026-08-16-officina-source-relocation.md
+- tests/test_officina_source_relocation_manifest.py
+
+standard_digest_roots:
+- references/node-standards
+- references/standards
+
+inventory_exclusions:
+- .claude

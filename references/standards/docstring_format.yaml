@@ -1,4 +1,4 @@
-# Human-readable format contract consumed by `officina.common.docstring`.
+# Human-readable format contract consumed by `officina.docstring`.
 #
 # Canonical policy location is `docstring.standard.yaml` with a full contract of
 # syntax behavior settings. This YAML file remains available as a compatibility

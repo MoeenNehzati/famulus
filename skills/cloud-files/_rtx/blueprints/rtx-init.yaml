@@ -18,6 +18,6 @@ interfaces: {}
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
-- interface: common.interface.google-credentials
+- interface: credentials.interface.google
   version: 1
 version: 1

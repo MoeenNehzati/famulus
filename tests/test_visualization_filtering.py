@@ -10,9 +10,9 @@ import tempfile
 
 import pytest
 
-from officina.common.visualization.base_renderer import BaseRenderer
-from officina.common.visualization.elk_html_renderer import build_html_with_elk
-from officina.common.visualization.graph import Graph
+from officina.visualization.base_renderer import BaseRenderer
+from officina.visualization.elk_html_renderer import build_html_with_elk
+from officina.visualization.graph import Graph
 
 
 class _ScriptCollector(HTMLParser):

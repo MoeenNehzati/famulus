@@ -182,7 +182,7 @@ standards:
         in-house implementations per host.
     - id: secret-store-boundary
       modality: required
-      statement: Skills store small local secrets through `officina.common.secret_store`, not by importing
+      statement: Skills store small local secrets through `officina.credentials.secret_store`, not by importing
         `keyring` directly or invoking host-specific credential commands.
   - kind: rule
     id: skill-guidelines.cross-platform-tools.requirement-003

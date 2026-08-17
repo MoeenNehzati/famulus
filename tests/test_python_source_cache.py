@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from officina.common import python_source_cache as cache_module
+import officina.common.python_source_cache as cache_module
 from officina.common.python_source_cache import PythonSourceCache
 
 

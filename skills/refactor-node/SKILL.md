@@ -13,9 +13,9 @@ Activation: user-request, skill-workflow; persistent modifier: no
 Skill Version: 6
 
 Uses Interfaces:
-- `refactor-node.source.gateway -> common.interface.query-standard@1`
 - `refactor-node.source.gateway -> refactor-node.source.instruction-refactoring.interface.refactor-instructions@1`
 - `refactor-node.source.gateway -> refactor-node.source.python-refactoring.interface.refactor-python@1`
+- `refactor-node.source.gateway -> standards.interface.query-standard@1`
 
 Public Interfaces:
 - `refactor-node.interface.default`
@@ -34,7 +34,7 @@ These interfaces are documented prompt surfaces. They are not executed through `
 <!-- END BLUEPRINT INTERFACES -->
 # Refactor Node
 
-Use `common.interface.query-standard` as the sole repository-policy query.
+Use `standards.interface.query-standard` as the sole repository-policy query.
 Select the root from the scope already established from the request and current
 artifact; the query validates and returns its complete pinned import closure.
 Never ask the query to infer ownership or reconstruct a blueprint graph.
@@ -43,7 +43,7 @@ Never ask the query to infer ownership or reconstruct a blueprint graph.
 
 Before querying policy, identify the selected registered component and directly
 affected implementation children from the current artifact and graph. Retain
-the query dry-run and verify caller, target `common.interface.query-standard`,
+the query dry-run and verify caller, target `standards.interface.query-standard`,
 repository root,
 selected standard path, task facts, view, and refs. Reject mismatches rather
 than executing against another checkout or inferred target.

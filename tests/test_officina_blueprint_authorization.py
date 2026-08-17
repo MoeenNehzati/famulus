@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from officina.common.blueprint_graph import (
+from officina.blueprints.graph import (
     RepositoryBlueprintGraph,
     load_repository_blueprint_graph,
 )
@@ -38,7 +38,7 @@ CALLER_SOURCES = {
 
 
 def _authorization_module():
-    return importlib.import_module("officina.common.blueprint_authorization")
+    return importlib.import_module("officina.blueprints.authorization")
 
 
 def _copy_v5_authorization_fixture(tmp_path: Path) -> Path:
@@ -582,14 +582,8 @@ def test_v5_authorization_result_is_deeply_immutable(
         result.effective_filters[0].admits_caller = False
 
 
-def test_common_package_exports_shared_authorization_api() -> None:
-    import officina.common as common  # noqa: PLC0415
-
+def test_authorization_uses_its_relocated_module() -> None:
     authorization = _authorization_module()
 
-    assert common.AuthorizationRequest is authorization.AuthorizationRequest
-    assert common.AuthorizationResult is authorization.AuthorizationResult
-    assert (
-        common.resolve_interface_authorization
-        is authorization.resolve_interface_authorization
-    )
+    assert authorization.AuthorizationRequest.__module__ == "officina.blueprints.authorization"
+    assert authorization.AuthorizationResult.__module__ == "officina.blueprints.authorization"

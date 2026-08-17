@@ -1,0 +1,277 @@
+content:
+- provenance\.py
+dependencies:
+- blueprint:
+    base: repository-root
+    path: src/officina/common/blueprints/atomic-files.yaml
+  reason: Imports confined file reads and atomic source-overlay writes from atomic_files.py.
+  source: common.source.atomic-files
+  version: 1
+- blueprint:
+    base: repository-root
+    path: src/officina/common/blueprints/repository-paths.yaml
+  reason: Imports canonical repository-relative path serialization from repository_paths.py.
+  source: common.source.repository-paths
+  version: 1
+description: Runs Git without ambient configuration or hooks to capture repository
+  snapshots, classify file provenance, prove commit readiness, pin immutable migration
+  refs, and safely materialize exact commit trees.
+gateway:
+  language: Python
+  path: provenance.py
+id: git.source.provenance
+interfaces:
+  git.source.provenance.interface.python-api:
+    contract:
+      arguments:
+        destination:
+          description: Existing empty private directory receiving an exact materialized
+            commit tree.
+          direct_io_ref: materialized-tree
+          required: false
+          sensitivity: user-private
+          type:
+            access: write
+            kind: dir
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+        inputs:
+          description: Operation-specific Git arguments, full commit ID, snapshot,
+            file paths, expected hashes, subprocess input bytes, or non-atomic fallback
+            selection.
+          required: false
+          sensitivity: user-private
+          type:
+            description: Operation-specific Python values supplied by the caller.
+            kind: string
+        operation:
+          description: Git provenance or materialization operation to perform.
+          required: true
+          sensitivity: public
+          type:
+            kind: enum
+            values:
+            - description: Run one explicit Git command with ambient Git configuration,
+                hooks, and prompts disabled.
+              value: run-git
+            - description: Capture the repository root and exact HEAD containing a
+                path.
+              value: capture-snapshot
+            - description: Check whether a captured repository still points to the
+                same HEAD.
+              value: compare-head
+            - description: Enumerate Git-ignored paths or ignored directories.
+              value: ignored-paths
+            - description: Classify one repository file as tracked, ignored, or untracked.
+              value: file-provenance
+            - description: Classify normalized, confined repository files as tracked,
+                ignored, or untracked in bounded Git calls.
+              value: file-provenance-batch
+            - description: Prove selected worktree files and index entries equal their
+                captured commit blobs and expected hashes.
+              value: check-readiness
+            - description: Resolve the immutable mechanical or source-overlay migration
+                ref.
+              value: read-migration-ref
+            - description: Create one reserved migration ref at an exact full commit
+                ID.
+              value: pin-migration-ref
+            - description: Reconstruct one exact commit tree into an existing empty
+                private directory.
+              value: materialize-commit
+        repository-root:
+          description: Git repository root for the selected operation.
+          direct_io_ref: git-repository
+          required: true
+          sensitivity: user-private
+          type:
+            access: read-write
+            kind: dir
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+      caller_warnings:
+      - external-side-effect: Pin operations create reserved refs under refs/famulus
+          and intentionally reject replacement.
+      - external-side-effect: Materialization creates the complete commit tree, including
+          confined symlinks and executable modes, in an empty private destination.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: Git worktree inputs, index entries, commit blobs, trees, ignored
+            paths, and repository metadata
+          formats:
+          - git
+          - binary
+          - text
+          id: git-repository
+          medium: repository-filesystem
+          path: <repository-root>/**
+          path_match: glob
+          sensitivity: user-private
+        - access: read
+          content: reserved Famulus migration refs
+          formats:
+          - git-ref
+          id: git-refs
+          medium: local-system
+          sensitivity: derived-private
+          system: git
+        writes:
+        - access: configure
+          content: reserved Famulus migration ref
+          formats:
+          - git-ref
+          id: git-refs
+          medium: local-system
+          sensitivity: derived-private
+          system: git
+        - access: write
+          content: exact regular files and confined symlinks from one commit tree
+          formats:
+          - binary
+          - symlink
+          id: materialized-tree
+          medium: local-filesystem
+          path: <destination>/**
+          path_match: glob
+          sensitivity: user-private
+          system: filesystem
+        - access: write
+          content: Python return value
+          formats:
+          - python-object
+          id: return-value
+          medium: local-system
+          sensitivity: user-private
+      execution:
+        consistency:
+          snapshot: Commit-sensitive operations first resolve an exact full commit
+            and compare files or materialize blobs from that immutable tree; worktree
+            readiness also observes current index and file state.
+        effects:
+        - action: update
+          confirmation_evidence:
+            direct_io_ref: git-refs
+            kind: direct-io
+          direct_io_ref: git-refs
+          id: pin-ref
+          may_occur_in_outcomes:
+          - ref-pinned
+          reversibility:
+            compensatable: An operator can delete an erroneously created reserved
+              ref after proving it was never used as migration evidence.
+          value_source:
+            argument_ref: inputs
+            kind: argument
+        - action: create
+          confirmation_evidence:
+            direct_io_ref: materialized-tree
+            kind: direct-io
+          direct_io_ref: materialized-tree
+          id: write-tree
+          may_occur_in_outcomes:
+          - materialized
+          reversibility:
+            reversible: Delete the dedicated materialization directory after use.
+          value_source:
+            argument_ref: inputs
+            kind: argument
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            per_effect_only: Reserved ref creation is one Git ref update, while commit
+              materialization is atomic per regular file but not across the whole
+              tree.
+          concurrent_invocations:
+            safe: Reserved refs use create-only semantics; materialization requires
+              an initially empty private destination and rejects collisions.
+          idempotency:
+            non_idempotent: Repeating pinning rejects an existing ref and repeating
+              materialization rejects the nonempty destination.
+          on_uncertain_completion:
+            verify_then_decide: Read the reserved ref or inspect the dedicated destination
+              before retrying.
+          partial_effects_on_failure:
+            possible: Materialization can leave a prefix of the commit tree when a
+              later path fails.
+          rollback_on_failure:
+            unavailable: The helper does not remove already materialized paths or
+              delete a created Git ref automatically.
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: result
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Use the captured or classified state only for the exact repository
+          and snapshot supplied.
+        class: success
+        effects: []
+        id: inspected
+        outputs:
+        - result
+      - caller_action: Treat the reserved ref as immutable and do not attempt replacement.
+        class: success
+        effects:
+        - pin-ref
+        id: ref-pinned
+        outputs:
+        - result
+      - caller_action: Use the destination only after the complete sorted path result
+          is returned.
+        class: success
+        effects:
+        - write-tree
+        id: materialized
+        outputs:
+        - result
+      - caller_action: Correct unavailable commits, unsafe paths or symlinks, nonempty
+          or insecure destinations, repository mismatch, Git errors, or readiness
+          mismatches before retrying.
+        class: error
+        effects: []
+        id: invalid-input
+        outputs: []
+      outputs:
+      - audience: machine
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Git command result, snapshot, readiness report, provenance classification,
+          ignored paths, exact commit ID, or sorted materialized paths.
+        direct_io_ref: return-value
+        empty: Snapshot capture returns no value outside a Git repository; ignored-path
+          and materialized-path collections can be empty.
+        id: result
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          description: Operation-specific Python subprocess result, dataclass, scalar,
+            tuple, or optional snapshot.
+          kind: string
+          sensitivity: user-private
+      preconditions:
+      - caller_action: Pass the repository top level discovered by Git.
+        check:
+          direct_io_ref: git-repository
+          kind: direct-io
+          predicate: exists
+        description: Git-oriented operations require repository-root to be the exact
+          discovered repository root.
+        id: repository-present
+        unmet_outcome: invalid-input
+    description: Captures Git snapshots, file provenance, and commit readiness for
+      Python callers.
+    version: 1
+node_type: behavioral_source
+schema_version: 6
+uses_interfaces: []
+version: 1

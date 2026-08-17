@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from officina import repository_checks as runner
+import officina.repository.checks.runner as runner
 
 
 def test_task_alias_and_selectors_reach_one_existing_runner_invocation(

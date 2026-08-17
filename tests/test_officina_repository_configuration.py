@@ -7,14 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from officina.common.configured_schema import (
+from officina.configuration.configured_schema import (
     ConfiguredSchemaError,
     validate_configuration,
 )
 
 
 def _repository_configuration_module():
-    return importlib.import_module("officina.common.repository_configuration")
+    return importlib.import_module("officina.configuration.repository")
 
 
 def _repository(tmp_path: Path, roots: tuple[str, ...] = ("skills", "src/officina")) -> Path:

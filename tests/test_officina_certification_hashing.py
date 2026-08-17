@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-import officina.common.certification_hashing as certification_hashing
-from officina.common.certification_hashing import (
+import officina.certification.hashing as certification_hashing
+from officina.certification.hashing import (
     CertificationHashError,
     NodeHashState,
     compute_certification_basis_hash,
@@ -231,7 +231,7 @@ def test_v5_check_registry_and_canonical_basis_are_selected() -> None:
     assert Path(
         "references/certification/certification-basis-roots.json"
     ) in basis
-    assert Path("src/officina/common/blueprint_authorization.py") in basis
+    assert Path("src/officina/blueprints/authorization.py") in basis
     validator_paths = {
         path.relative_to(REPO_ROOT)
         for root in (

@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
-from officina.common.visualization.server import (
+from officina.visualization.server import (
     NoCacheRequestHandler,
     ReusableThreadingHTTPServer,
     main,

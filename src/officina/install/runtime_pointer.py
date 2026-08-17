@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from officina.common.atomic_files import atomic_replace_bytes
-from officina.common.repository_configuration import (
+from officina.configuration.repository import (
     RepositoryConfigurationError,
     load_repository_configuration,
 )

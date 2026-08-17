@@ -8,7 +8,7 @@ import tempfile
 import pytest
 pytestmark = pytest.mark.xdist_group("browser")
 
-from officina.common.visualization.elk_html_renderer import build_html_with_elk
+from officina.visualization.elk_html_renderer import build_html_with_elk
 
 
 def _run_browser_case(

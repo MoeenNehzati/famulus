@@ -10,7 +10,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from officina.common import secret_store  # noqa: E402
+import officina.credentials.secret_store as secret_store  # noqa: E402
 
 
 class MemoryBackend:

@@ -222,7 +222,7 @@ platform_support:
 runtime_dependencies: []
 schema_version: 6
 uses_interfaces:
-- interface: common.interface.certificate-records
+- interface: certification.interface.records
   version: 1
 - interface: install.interface.managed-runtime
   version: 1

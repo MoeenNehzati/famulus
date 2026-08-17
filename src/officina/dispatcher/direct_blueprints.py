@@ -17,7 +17,7 @@ from typing import Mapping
 
 import yaml
 
-from officina.common.repository_configuration import RepositoryConfiguration
+from officina.configuration.repository import RepositoryConfiguration
 from officina.dispatcher.errors import DirectBlueprintError
 
 

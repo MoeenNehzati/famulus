@@ -1,13 +1,13 @@
 # Configured JSON Schemas
 
-`officina.common.configured_schema` is the repository boundary for loading
+`officina.configuration` is the repository boundary for loading
 configuration documents and JSON Schemas. Repository configurations stay as
 small, value-only YAML or JSON documents; they do not contain JSON Schema
 keywords or identify their own type.
 
 ## Configuration contract
 
-- `src/officina/common/configuration.schema.json` validates every supported
+- `src/officina/configuration/schema.json` validates every supported
   repository configuration through a strict natural-key `oneOf`.
 - The document's own keys identify its configuration family. There is no
   synthetic `kind` discriminator.
@@ -27,7 +27,7 @@ cloud-files settings. Add a new strict branch when another stable repository
 configuration family is introduced.
 
 ```python
-from officina.common.configured_schema import load_configuration
+from officina.configuration import load_configuration
 
 config = load_configuration("config.yaml")
 ```
@@ -65,7 +65,7 @@ taxonomy:
 ```
 
 ```python
-from officina.common.configured_schema import configured_validator
+from officina.configuration import configured_validator
 
 validator = configured_validator(
     "references/blueprint/module.schema.json",

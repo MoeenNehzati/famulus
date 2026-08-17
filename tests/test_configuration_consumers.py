@@ -9,13 +9,13 @@ import sys
 
 import pytest
 
-from officina.common.blueprint_graph import load_repository_blueprint_graph
-from officina.common.certification_hashing import (
+from officina.blueprints.graph import load_repository_blueprint_graph
+from officina.certification.hashing import (
     CertificationHashError,
     load_node_hash_policy,
 )
-from officina.common.configured_schema import ConfiguredSchemaError, load_configuration
-from officina.common.docstring.docstring_policy import load_docstring_config
+from officina.configuration.configured_schema import ConfiguredSchemaError, load_configuration
+from officina.docstring.policy import load_docstring_config
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -33,7 +33,7 @@ def _load_module(name: str, path: Path):
 @pytest.mark.parametrize(
     "relative_path",
     [
-        "src/officina/common/docstring/config.yaml",
+        "src/officina/docstring/config.yaml",
         "references/blueprint/config.yaml",
         "references/certification/node-hash-policy.yaml",
         "skills/recurring-tasks/_rtx/jobs.yaml",

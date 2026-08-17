@@ -11,12 +11,12 @@ for import_root in (REPO_ROOT, SRC_ROOT):
     if str(import_root) not in sys.path:
         sys.path.insert(0, str(import_root))
 
-from officina.common.blueprint_graph import (  # noqa: E402
+from officina.blueprints.graph import (  # noqa: E402
     BlueprintGraphError,
     RepositoryBlueprintGraph,
     load_repository_blueprint_graph,
 )
-from officina.common.blueprint_inventory import BlueprintInventoryError  # noqa: E402
+from officina.blueprints.inventory import BlueprintInventoryError  # noqa: E402
 from validators.skill_md_body import (  # noqa: E402
     generated_interface_block,
     hand_authored_skill_body,

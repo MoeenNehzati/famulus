@@ -5,7 +5,7 @@ This pipeline keeps docstring parsing/validation explicit and machine-checkable.
 ## 1) Policy + Syntax inputs
 - `references/standards/docstring.standard.yaml`: semantic policy (`required` sections, lengths, checks, toggles).
 - `references/standards/docstring.standard.lark`: parser grammar for docstring micro-syntax (edges, wraps, module dependencies, strict pseudocode bullets).
-- `src/officina/common/docstring/config.yaml`: repo-local config (`allowed_abs`, dependency section names, syntax toggles, and ordered path profiles).
+- `src/officina/docstring/config.yaml`: repo-local config (`allowed_abs`, dependency section names, syntax toggles, and ordered path profiles).
 - Keep behavior policy in YAML; keep punctuation/shape syntax in `.lark`.
 - Users should not edit Python to tune docstring policy; repo-specific knobs belong in `config.yaml`.
 
@@ -13,20 +13,21 @@ This pipeline keeps docstring parsing/validation explicit and machine-checkable.
 
 The docstring stack has four layers:
 
-- `officina.common.docstring.docstring_policy` loads the portable standard,
+- `officina.docstring.policy` loads the portable standard,
   repo-local config, and path profiles into one effective policy object.
-- `officina.common.docstring.docstring_parser` parses docstring syntax into
+- `officina.docstring.parser` parses docstring syntax into
   typed IR objects. It should not own behavioral policy beyond recognizing
   configured section names.
-- `officina.common.docstring.docstring_validation` checks docstring-local
+- `officina.docstring.validation` checks docstring-local
   format rules: sections, Lark syntax, dependency rationale shape, resources,
   dataflow, and pseudocode structure.
 - `officina.validators.docstring_validator` checks Python-module behavior:
   AST-observed repo calls/products, wrapper edges, dispatch grounding,
   ownership resolution, and check-group filtering.
 
-`officina.common.docstring.docstring_schema` is a deprecated compatibility alias
-for `docstring_policy`; new internal imports should not use it.
+The package gateway is `officina.docstring`; implementation-specific imports use
+`officina.docstring.parser`, `officina.docstring.policy`, or
+`officina.docstring.validation`.
 
 ## 1b) Repo dependency sections
 
@@ -81,7 +82,7 @@ specific keys fit; it requires a longer concrete explanation. The checker code
 for this syntax is `docstring.dependency-why-action`.
 
 Section-specific action sets are declarative policy in
-`src/officina/common/docstring/config.yaml` under
+`src/officina/docstring/config.yaml` under
 `dependency_why.section_actions`. The default intent is:
 
 - `calls`: operational actions such as `computes`, `parses`, `validates`,
@@ -246,7 +247,7 @@ callable and dependency names, then reports copied prose templates with
 
 ## 1e) Repo-local profiles
 
-Profiles in `src/officina/common/docstring/config.yaml` are ordered path
+Profiles in `src/officina/docstring/config.yaml` are ordered path
 overrides. Later matching profiles override earlier matching profiles for the
 settings they mention. Profile names are labels only; behavior comes from
 `applies_to`, `callable`, and `checks`.
@@ -298,32 +299,32 @@ manual rewrites without proving semantic usefulness.
 Visualization follows a two-stage path:
 
 1. **Extract graph JSON from docstrings**
-- `officina.common.visualization.from_docstring.json_extractor.extract_docstring_dependency_json(module_path)`
-- Or call the public helpers in `officina.common.visualization.from_docstring`
+- `officina.visualization.from_docstring.json_extractor.extract_docstring_dependency_json(module_path)`
+- Or call the public helpers in `officina.visualization.from_docstring`
   for custom extraction/rendering control.
 2. **Render JSON through shared core**
-  - `officina.common.visualization.from_docstring` prepares docstring graph
-payloads and renders them through `officina.common.visualization.ElkHtmlRenderer`.
+  - `officina.visualization.from_docstring` prepares docstring graph
+payloads and renders them through `officina.visualization.ElkHtmlRenderer`.
 3. **Compatibility**
-- `officina.common.visualization.from_docstring` exposes the extractor contract
+- `officina.visualization.from_docstring` exposes the extractor contract
   and now contains `DocstringCoreJsonExtractor` for `BaseGraphBuilder`.
 
 ### 1f) Core serving API
 
-- `officina.common.visualization.start_graph_server(directory, host='127.0.0.1', port=8765, ...)`
+- `officina.visualization.start_graph_server(directory, host='127.0.0.1', port=8765, ...)`
   - starts a background `http.server` subprocess for a directory
   - returns `GraphServer(process, host, port, directory)`
   - exposes `.url` for opening the viewer and `.stop()` for teardown.
 
 ## 2) Runtime flow
-1. Loader reads the standard via `officina.common.docstring.load_docstring_schema(...)`.
+1. Loader reads the standard via `officina.docstring.load_docstring_schema(...)`.
 2. Repo config from `config.yaml` is injected into the portable policy.
 3. Module validation applies ordered path profiles to produce the effective per-file schema.
-4. Parser (`officina.common.docstring.docstring_parser`) parses raw docstring text:
+4. Parser (`officina.docstring.parser`) parses raw docstring text:
    - callable docs -> `FunctionSpec`
    - module pipeline docs -> `PipelineSpec`
    - module AST scan -> `parse_function_graphs`
-5. Validator (`officina.common.docstring.docstring_validation`) validates against policy and returns `ParserIssue` objects.
+5. Validator (`officina.docstring.validation`) validates against policy and returns `ParserIssue` objects.
 6. Issues flow back as structured codes/messages (`docstring.*`) to CI or local tooling.
 
 ### 2a) Checkers, groups, and semantics
@@ -347,17 +348,17 @@ Why class files are special:
 - Method dependencies belong on the method docstrings that actually use them.
 
 ## 3) Key module entry points
-- `officina.common.docstring.parse_graph_block(docstring)`
-- `officina.common.docstring.parse_pipeline(docstring)`
-- `officina.common.docstring.parse_function_graphs(ast_tree)`
-- `officina.common.docstring.parse_ownable_registry(docstring)`
-- `officina.common.docstring.validate_edge_expression(text)`
+- `officina.docstring.parse_graph_block(docstring)`
+- `officina.docstring.parse_pipeline(docstring)`
+- `officina.docstring.parse_function_graphs(ast_tree)`
+- `officina.docstring.parse_ownable_registry(docstring)`
+- `officina.docstring.validate_edge_expression(text)`
 
 ## 4) Key check entry points
-- `officina.common.docstring.check_graph_docstring(docstring)`
-- `officina.common.docstring.check_pipeline_docstring(docstring)`
-- `officina.common.docstring.validate_pipeline_docstring(docstring)`
-- `officina.common.docstring.check(docstring, kind="callable"|"pipeline"|"module"|"function"|"method"|"class")`
+- `officina.docstring.check_graph_docstring(docstring)`
+- `officina.docstring.check_pipeline_docstring(docstring)`
+- `officina.docstring.validate_pipeline_docstring(docstring)`
+- `officina.docstring.check(docstring, kind="callable"|"pipeline"|"module"|"function"|"method"|"class")`
 
 ## 5) Why this shape
 - Parsing focuses on extracting structured fields from docstrings.

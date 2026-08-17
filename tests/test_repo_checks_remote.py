@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from officina.repo_checks import remote
+import officina.repository.checks.remote as remote
 
 
 def test_generic_remote_transport_contains_no_platform_specific_topology() -> None:

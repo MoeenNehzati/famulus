@@ -30,7 +30,7 @@ class ClientSecretStoreUnavailable(ClientConfigError):
 
 
 def canonical_client_path(home: Path) -> Path:
-    from officina.common.google_credentials import canonical_client_path as _canonical_client_path
+    from officina.credentials.google import canonical_client_path as _canonical_client_path
 
     return _canonical_client_path(home=Path(home), platform=sys.platform)
 
@@ -162,8 +162,8 @@ def load_authorization_client(
     home: Path, *, platform: str = sys.platform, secret_backend=None
 ) -> dict[str, str]:
     """Load the redacted canonical client and prove its secret is readable."""
-    from officina.common import secret_store
-    from officina.common.google_credentials import canonical_client_path as shared_client_path
+    import officina.credentials.secret_store as secret_store
+    from officina.credentials.google import canonical_client_path as shared_client_path
 
     path = shared_client_path(home=Path(home), platform=platform)
     installed = _load_canonical_payload(path)
@@ -246,7 +246,7 @@ def client_status(home: Path, *, secret_backend=None) -> dict[str, object]:
 
 
 def install_client(source: Path, home: Path, replace: bool, secret_backend=None) -> dict[str, object]:
-    from officina.common.google_credentials import GoogleCredentialError, install_client as _install_client
+    from officina.credentials.google import GoogleCredentialError, install_client as _install_client
 
     payload = _load_client(Path(source))
     try:

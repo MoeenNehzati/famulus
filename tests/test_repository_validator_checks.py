@@ -15,9 +15,9 @@ from test_support.git_repository import GitTestRepository
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
-_RUNNER_PATH = _REPO_ROOT / "src" / "officina" / "_validator_snapshot.py"
+_RUNNER_PATH = _REPO_ROOT / "src" / "officina" / "validators" / "snapshot.py"
 _REPO_CHECKS_PATH = _REPO_ROOT / "repo_checks.py"
-_CHECKS_IMPL_PATH = _REPO_ROOT / "src" / "officina" / "repository_checks.py"
+_CHECKS_IMPL_PATH = _REPO_ROOT / "src" / "officina" / "repository" / "checks" / "runner.py"
 _SPEC = importlib.util.spec_from_file_location("validator_runner_under_test", _RUNNER_PATH)
 assert _SPEC is not None and _SPEC.loader is not None
 _RUNNER = importlib.util.module_from_spec(_SPEC)
@@ -34,14 +34,21 @@ def _initialize_runner_repository(repo: Path) -> Path:
     validators.mkdir(parents=True)
     officina = repo / "src" / "officina"
     common = officina / "common"
+    checks = officina / "repository" / "checks"
+    validator_package = officina / "validators"
     common.mkdir(parents=True)
-    shutil.copy2(_RUNNER_PATH, officina / "_validator_snapshot.py")
-    shutil.copy2(_CHECKS_IMPL_PATH, officina / "repository_checks.py")
+    checks.mkdir(parents=True)
+    validator_package.mkdir(parents=True)
+    shutil.copy2(_RUNNER_PATH, validator_package / "snapshot.py")
+    shutil.copy2(_CHECKS_IMPL_PATH, checks / "runner.py")
     shutil.copy2(_REPO_ROOT / "src" / "officina" / "__init__.py", officina / "__init__.py")
     shutil.copy2(_REPO_ROOT / "src" / "officina" / "common" / "__init__.py", common / "__init__.py")
+    shutil.copy2(_REPO_ROOT / "src" / "officina" / "repository" / "__init__.py", checks.parent / "__init__.py")
+    shutil.copy2(_REPO_ROOT / "src" / "officina" / "repository" / "checks" / "__init__.py", checks / "__init__.py")
+    shutil.copy2(_REPO_ROOT / "src" / "officina" / "validators" / "__init__.py", validator_package / "__init__.py")
     shutil.copy2(
-        _REPO_ROOT / "src" / "officina" / "common" / "discover_tests.py",
-        common / "discover_tests.py",
+        _REPO_ROOT / "src" / "officina" / "repository" / "checks" / "discovery.py",
+        checks / "discovery.py",
     )
     source_cache = (
         _REPO_ROOT / "src" / "officina" / "common" / "python_source_cache.py"
@@ -557,11 +564,14 @@ def test_staged_validator_receives_eligible_paths_with_unborn_head(
         "notes.txt",
         "repo_checks.py",
         "src/officina/__init__.py",
-        "src/officina/_validator_snapshot.py",
         "src/officina/common/__init__.py",
-        "src/officina/common/discover_tests.py",
         "src/officina/common/python_source_cache.py",
-        "src/officina/repository_checks.py",
+        "src/officina/repository/__init__.py",
+        "src/officina/repository/checks/__init__.py",
+        "src/officina/repository/checks/discovery.py",
+        "src/officina/repository/checks/runner.py",
+        "src/officina/validators/__init__.py",
+        "src/officina/validators/snapshot.py",
         "validators/staged_probe.py",
     ]
 

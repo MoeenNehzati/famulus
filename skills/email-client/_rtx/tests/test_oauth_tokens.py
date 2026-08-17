@@ -116,7 +116,7 @@ def test_xoauth2_string_matches_gmail_sasl_shape():
 # ── get_gmail_access_token: shared credential vs. legacy per-account OAuth ──
 
 def test_get_gmail_access_token_uses_shared_credential_when_credential_id_present(monkeypatch, tmp_path):
-    import officina.common.google_credentials as google_credentials
+    import officina.credentials.google as google_credentials
 
     calls = {}
 
@@ -165,7 +165,7 @@ def test_get_gmail_access_token_falls_back_to_legacy_oauth_without_credential_id
 
 
 def test_get_gmail_access_token_wraps_google_credential_error_as_oautherror(monkeypatch, tmp_path):
-    import officina.common.google_credentials as google_credentials
+    import officina.credentials.google as google_credentials
 
     def fake_refresh_access_token(credential_id, *, required_scopes, home, platform, urlopen=None, secret_backend=None):
         raise google_credentials.GoogleCredentialError(f"credential {credential_id} lacks required scopes")

@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Iterable, Mapping, Sequence
 
 if TYPE_CHECKING:
-    from officina.common.blueprint_graph import RepositoryBlueprintGraph
+    from officina.blueprints.graph import RepositoryBlueprintGraph
     from officina.dispatcher import ResolvedInvocationMetadata
 
 
@@ -408,12 +408,12 @@ expected_schema_version = int(sys.argv[5])
 officina_root = src_root / "officina"
 sys.path.insert(0, str(src_root))
 
-from officina.common.blueprint_graph import (
+from officina.blueprints.graph import (
     BlueprintGraphError,
     RepositoryBlueprintGraph,
     load_repository_blueprint_graph,
 )
-from officina.common.blueprint_inventory import iter_blueprints
+from officina.blueprints.inventory import iter_blueprints
 from officina.runtime.python_machine_interface import (
     DispatchDependencyResolver,
     PythonProcessTarget,
@@ -482,7 +482,7 @@ def collect_bound_paths(paths, interface):
         if path.suffix == ".py" and path.is_file() and is_under(path, repo_root):
             paths.add(path.as_posix())
 
-from officina.common.certification_view import CertificationDecision
+from officina.certification.view import CertificationDecision
 
 class TraceCertificationView:
     def check_export(self, module_id, interface_id, interface_version, source_node_id):

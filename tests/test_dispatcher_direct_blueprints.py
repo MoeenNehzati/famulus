@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from officina.common.repository_configuration import RepositoryConfiguration
+from officina.configuration.repository import RepositoryConfiguration
 from officina.dispatcher.direct_blueprints import (
     DirectBlueprintError,
     DirectBlueprintRepository,

@@ -12,7 +12,7 @@ import jsonschema
 import pytest
 import yaml
 
-from officina.common.blueprint_graph import load_repository_blueprint_graph
+from officina.blueprints.graph import load_repository_blueprint_graph
 
 
 ROOT = Path(__file__).resolve().parents[1]

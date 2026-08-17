@@ -224,7 +224,7 @@ def test_client_status_declares_every_google_client_path_it_reads(
     }
 
     assert declared_paths == {
-        "platform Famulus config root (see common.interface.google-credentials) / connect-google/client.json",
+        "platform Famulus config root (see credentials.interface.google) / connect-google/client.json",
         "$HOME/.config/cloud-files/client.json",
         "$HOME/.config/g-calendar/client.json",
     }

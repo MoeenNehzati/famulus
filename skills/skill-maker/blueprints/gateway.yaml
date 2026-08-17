@@ -220,7 +220,7 @@ interfaces:
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
-- interface: common.interface.query-standard
+- interface: standards.interface.query-standard
   version: 1
 - interface: skill-maker._rtx.interface.sync-blueprints
   version: 1

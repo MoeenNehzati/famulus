@@ -12,8 +12,8 @@ this repository retain their own upstream licenses.
 - License text: [`LICENSES/EPL-2.0.txt`](LICENSES/EPL-2.0.txt)
 - Copyright: Kiel University and other ELK contributors
 - Distributed files:
-  - `src/officina/common/visualization/html_renderer/vendor/elk.bundled.js`
-  - `src/officina/common/visualization/html_renderer/vendor/elk-worker.min.js`
+  - `src/officina/visualization/html_renderer/vendor/elk.bundled.js`
+  - `src/officina/visualization/html_renderer/vendor/elk-worker.min.js`
 
 Both distributed files are exact byte matches to their paths in the official
 `elkjs-0.10.0.tgz` npm package. Their SHA-256 values are recorded in
@@ -28,7 +28,7 @@ Both distributed files are exact byte matches to their paths in the official
 - License text: [`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt)
 - Copyright: The MathJax Consortium
 - Distributed file:
-  - `src/officina/common/visualization/html_renderer/vendor/mathjax-3.2.2-tex-svg.js`
+  - `src/officina/visualization/html_renderer/vendor/mathjax-3.2.2-tex-svg.js`
 
 The distributed file is an exact byte match to `es5/tex-svg.js` in the
 official `mathjax-3.2.2.tgz` npm package. Its SHA-256 value is recorded in

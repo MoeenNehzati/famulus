@@ -1,6 +1,6 @@
 schema_version: 1
 runtime_authority: pinned import closures rooted at references/node-standards/*.standard.yaml
-query_interface: common.interface.query-standard
+query_interface: standards.interface.query-standard
 source_authorities:
   skill-guidelines:
     former_path: references/skill-standards/skill-guidelines.standard.yaml

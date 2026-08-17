@@ -12,7 +12,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from officina.common import toml_io
+import officina.common.toml_io as toml_io
 from officina.dispatcher.direct_models import (
     InvocationDiagnostic,
     ResolvedInvocationMetadata,
@@ -33,7 +33,7 @@ from officina.dispatcher.errors import *  # noqa: F403
 def load_repository_blueprint_graph(*args: Any, **kwargs: Any) -> Any:
     """Lazy offline compatibility seam; never used by live dispatch resolution."""
 
-    from officina.common.blueprint_graph import load_repository_blueprint_graph as load
+    from officina.blueprints.graph import load_repository_blueprint_graph as load
 
     return load(*args, **kwargs)
 
@@ -41,7 +41,7 @@ def load_repository_blueprint_graph(*args: Any, **kwargs: Any) -> Any:
 def collect_blueprints(*args: Any, **kwargs: Any) -> Any:
     """Lazy offline compatibility seam for inventory-focused consumers."""
 
-    from officina.common.blueprint_inventory import collect_blueprints as collect
+    from officina.blueprints.inventory import collect_blueprints as collect
 
     return collect(*args, **kwargs)
 
@@ -49,7 +49,7 @@ def collect_blueprints(*args: Any, **kwargs: Any) -> Any:
 def repository_certification_view(*args: Any, **kwargs: Any) -> Any:
     """Lazy offline compatibility seam; never used by live dispatch resolution."""
 
-    from officina.common.certification_view import repository_certification_view as load
+    from officina.certification.view import repository_certification_view as load
 
     return load(*args, **kwargs)
 
@@ -146,12 +146,12 @@ def _resolve_legacy_trace_metadata(
 ) -> ResolvedInvocationMetadata:
     """Compatibility-only v4/v5 graph resolver for validators and old fixtures."""
 
-    from officina.common.blueprint_authorization import (
+    from officina.blueprints.authorization import (
         AuthorizationRequest,
         resolve_interface_authorization,
     )
-    from officina.common.blueprint_graph import resolve_export
-    from officina.common.process_binding_compiler import (
+    from officina.blueprints.graph import resolve_export
+    from officina.blueprints.process_binding import (
         compile_gateway_invocation,
         compile_route_smoke_invocation,
         parse_caller_invocation,

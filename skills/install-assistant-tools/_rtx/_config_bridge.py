@@ -59,7 +59,8 @@ if not __package__ and str(REPO_SRC) not in sys.path:
 if not __package__:
     sys.path.insert(0, str(Path(__file__).parent))
 
-from officina.common import codex_toml, toml_io
+import officina.common.codex_toml as codex_toml
+import officina.common.toml_io as toml_io
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 if __package__:

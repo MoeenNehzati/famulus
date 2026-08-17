@@ -167,7 +167,7 @@ interfaces:
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
-- interface: common.interface.query-standard
+- interface: standards.interface.query-standard
   version: 1
 - interface: refactor-node.source.instruction-refactoring.interface.refactor-instructions
   version: 1

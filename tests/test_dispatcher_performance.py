@@ -11,7 +11,7 @@ from pathlib import Path
 
 import yaml
 
-from officina.common.repository_configuration import (
+from officina.configuration.repository import (
     RepositoryConfiguration,
     load_repository_configuration,
 )

@@ -1,0 +1,28 @@
+authority:
+  owns_filesystem: []
+children: {}
+content:
+- __init__\.py
+- configured_schema\.py
+- repository\.py
+- schema\.json
+description: Configuration-aware schemas and explicit repository configuration loading.
+exports:
+  configuration.interface.repository:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: configuration.source.repository.interface.python-api
+gateway:
+  language: Python
+  path: __init__.py
+id: configuration
+namespace_exports: {}
+node_type: module
+schema_version: 6
+sources:
+  configuration.source.repository:
+    blueprint:
+      base: module-root
+      path: blueprints/repository.yaml
+version: 1

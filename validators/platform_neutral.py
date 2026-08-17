@@ -33,11 +33,11 @@ _SRC_ROOT = _REPO_ROOT / "src"
 if str(_SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(_SRC_ROOT))
 
-from officina.common.blueprint_graph import (  # noqa: E402
+from officina.blueprints.graph import (  # noqa: E402
     BlueprintGraphError,
     load_repository_blueprint_graph,
 )
-from officina.common.blueprint_inventory import BlueprintInventoryError  # noqa: E402
+from officina.blueprints.inventory import BlueprintInventoryError  # noqa: E402
 
 _PLATFORM_GROUPS: dict[str, tuple[set[str], re.Pattern[str]]] = {
     "claude": ({"claude"}, re.compile(r"(?i:(\.claude|claude))")),
@@ -190,7 +190,7 @@ def _canonical_blueprint_paths(repo_root: Path) -> frozenset[Path]:
 
     InstantiationsFromRepo
     ----------------------
-    .officina.common.blueprint_graph.load_repository_blueprint_graph:
+    .officina.blueprints.graph.load_repository_blueprint_graph:
       why:
         constructs: "Builds the canonical repository graph used for exclusions."
     ._validated_blueprint_paths:

@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Mapping
 
-from ..common.docstring.docstring_parser import (
+from ..docstring.parser import (
     ParserIssue,
     check_graph_docstring,
     check_pipeline_docstring,
@@ -18,7 +18,7 @@ from ..common.docstring.docstring_parser import (
     parse_ownership_reference,
     parse_ownable_registry,
 )
-from ..common.docstring.docstring_policy import (
+from ..docstring.policy import (
     ModuleDependencyConfig,
     DocstringSchema,
     OwnershipConfig,
@@ -26,7 +26,7 @@ from ..common.docstring.docstring_policy import (
     load_docstring_check_categories,
     load_docstring_schema,
 )
-from ..common.discover_tests import is_test_module as _is_repo_test_module
+from ..repository.checks.discovery import is_test_module as _is_repo_test_module
 
 _IGNORED_CALL_BASES = frozenset({
     "self",
@@ -586,7 +586,7 @@ def _resolve_check_group_codes(check_group: str) -> tuple[str, ...]:
 
     InstantiationsFromRepo
     ----------------------
-    ..common.docstring.docstring_policy.load_docstring_check_categories:
+    ..docstring.load_docstring_check_categories:
       why:
         constructs: "Builds the catalog of syntax and behavioral check codes used to expand check groups."
     """
@@ -3068,7 +3068,7 @@ def _collect_ownership_index(
 
     InstantiationsFromRepo
     ----------------------
-    ..common.docstring.docstring_parser.parse_ownable_registry:
+    ..docstring.parse_ownable_registry:
       why:
         constructs: "Builds ownership registry entries from module docstrings before callable checks run."
     """
@@ -3233,7 +3233,7 @@ def _iter_ownership_issues(
       why:
         constructs: "resolve ownership registry produces a value carried by iter ownership issues; this edge is documented from the observed product position in the body."
 
-    ..common.docstring.docstring_parser.parse_ownership_reference:
+    ..docstring.parse_ownership_reference:
       why:
         constructs: "Builds parsed ownership references so unresolved owner ids can be diagnosed."
     """
@@ -3402,7 +3402,7 @@ def _validate_node_docstring(
       why:
         computes: "should require docstring supplies repo-local behavior used by validate node docstring; this edge is documented from an observed call in the body."
 
-    ..common.docstring.docstring_parser.check_graph_docstring:
+    ..docstring.check_graph_docstring:
       why:
         computes: "Computes the check_graph_docstring contribution used by _validate_node_docstring."
 
@@ -3427,7 +3427,7 @@ def _validate_node_docstring(
       why:
         constructs: "iter wrap issues produces a value carried by validate node docstring; this edge is documented from the observed product position in the body."
 
-    ..common.docstring.docstring_parser.parse_graph_block:
+    ..docstring.parse_graph_block:
       why:
         constructs: "Builds the parsed callable docstring used for syntax and behavior validation."
     """
@@ -3587,7 +3587,7 @@ def _module_docstring_issues_by_check(
 
     CallsFromRepo
     -------------
-    ..common.docstring.docstring_parser.check_pipeline_docstring:
+    ..docstring.check_pipeline_docstring:
       why:
         computes: "Computes the check_pipeline_docstring contribution used by _module_docstring_issues_by_check."
     """
@@ -3735,7 +3735,7 @@ def _iter_repeated_template_issues(
       why:
         constructs: "normalized template text produces a value carried by iter repeated template issues; this edge is documented from the observed product position in the body."
 
-    ..common.docstring.docstring_parser.parse_graph_block:
+    ..docstring.parse_graph_block:
       why:
         constructs: "Builds parsed docstring sections whose prose is normalized for boilerplate detection."
     """
@@ -3928,7 +3928,7 @@ def validate_module_docstrings(
 
     CallsFromRepo
     -------------
-    ..common.docstring.docstring_policy.load_docstring_schema:
+    ..docstring.load_docstring_schema:
       why:
         reads: "Loads the standard and repository configuration that define validation policy."
     ..common.discover_tests.is_test_module:
@@ -3940,7 +3940,7 @@ def validate_module_docstrings(
 
     InstantiationsFromRepo
     ----------------------
-    ..common.docstring.docstring_policy.apply_docstring_profiles:
+    ..docstring.apply_docstring_profiles:
       why:
         transforms: "Builds path-specific policy rules before any checks execute."
     ._collect_import_aliases:

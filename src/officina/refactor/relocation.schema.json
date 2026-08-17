@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "moves": {"type": "array", "items": {"$ref": "#/$defs/rename"}},
+    "renames": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "paths": {"type": "array", "items": {"$ref": "#/$defs/rename"}},
+        "python_modules": {"type": "array", "items": {"$ref": "#/$defs/rename"}},
+        "source_ids": {"type": "array", "items": {"$ref": "#/$defs/rename"}},
+        "interface_ids": {"type": "array", "items": {"$ref": "#/$defs/rename"}}
+      }
+    },
+    "blueprint_documents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "document"],
+        "properties": {"path": {"type": "string"}, "document": {"type": "object"}}
+      }
+    },
+    "ownership_transfers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["from_blueprint", "to_blueprint", "source", "content"],
+        "properties": {
+          "from_blueprint": {"type": "string"},
+          "to_blueprint": {"type": "string"},
+          "source": {"$ref": "#/$defs/rename"},
+          "export": {"$ref": "#/$defs/rename"},
+          "content": {"$ref": "#/$defs/rename"}
+        }
+      }
+    },
+    "caller_additions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["blueprint", "interface", "caller"],
+        "properties": {
+          "blueprint": {"type": "string"},
+          "interface": {"type": "string"},
+          "caller": {"type": "string"}
+        }
+      }
+    },
+    "exact_rewrites": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "from", "to"],
+        "properties": {
+          "path": {"type": "string"},
+          "from": {"type": "string"},
+          "to": {"type": "string"},
+          "count": {"type": "integer", "minimum": 1}
+        }
+      }
+    },
+    "package_catalogs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "summary", "description"],
+        "properties": {
+          "path": {"type": "string"},
+          "summary": {"type": "string"},
+          "description": {"type": "string"},
+          "roles": {"type": "object", "additionalProperties": {"type": "string"}}
+        }
+      }
+    },
+    "forbid_facade_imports": {"$ref": "#/$defs/strings"},
+    "text_exclusions": {"$ref": "#/$defs/strings"},
+    "active_address_exclusions": {"$ref": "#/$defs/strings"},
+    "inventory_exclusions": {"$ref": "#/$defs/strings"},
+    "standard_digest_roots": {"$ref": "#/$defs/strings"}
+  },
+  "$defs": {
+    "rename": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to"],
+      "properties": {"from": {"type": "string"}, "to": {"type": "string"}}
+    },
+    "strings": {"type": "array", "items": {"type": "string"}}
+  }
+}

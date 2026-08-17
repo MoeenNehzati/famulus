@@ -2,7 +2,7 @@
 
 `scripts/search_blueprints.py` searches the repository's canonical module and
 behavioral-source blueprints. The reusable API is
-`officina.blueprint_search.search_blueprints`; the script is a JSON-emitting
+`officina.blueprints.search.search_blueprints`; the script is a JSON-emitting
 CLI wrapper.
 
 Inventory discovers:
@@ -17,7 +17,7 @@ It does not infer nodes from hidden sidecars or arbitrary YAML files.
 ## Python API
 
 ```python
-from officina.blueprint_search import search_blueprints
+from officina.blueprints.search import search_blueprints
 
 rows = search_blueprints(
     "/path/to/repository",

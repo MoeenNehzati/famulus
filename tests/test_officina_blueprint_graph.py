@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-import officina.common.blueprint_graph as blueprint_graph
-from officina.common.blueprint_graph import (
+import officina.blueprints.graph as blueprint_graph
+from officina.blueprints.graph import (
     BlueprintDiagnostic,
     BlueprintGraphError,
     BlueprintNode,
@@ -1191,19 +1191,19 @@ def test_v5_repository_loader_is_explicit_and_v4_default_is_unchanged(
     )
 
 
-def test_common_blueprint_declares_resolve_authorization_as_one_enum_value() -> None:
+def test_blueprints_module_declares_resolve_authorization_as_one_enum_value() -> None:
     declaration = yaml.safe_load(
         (
             Path(__file__).resolve().parents[1]
             / "src"
             / "officina"
-            / "common"
             / "blueprints"
-            / "blueprint-graph.yaml"
+            / "blueprints"
+            / "graph.yaml"
         ).read_text(encoding="utf-8")
     )
     operations = declaration["interfaces"][
-        "common.source.blueprint-graph.interface.python-api"
+        "blueprints.source.graph.interface.python-api"
     ]["contract"]["arguments"]["operation"]["type"]["values"]
     resolve_authorization = next(
         operation

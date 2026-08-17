@@ -140,7 +140,7 @@ def _codex_profile_overrides(repo_root: Path | None, agent: str) -> list[str]:
         repo_src = repo_root / "src"
         if str(repo_src) not in sys.path:
             sys.path.insert(0, str(repo_src))
-        from officina.common import toml_io
+        import officina.common.toml_io as toml_io
 
         with toml_io.open(repo_root / "profiles", f"{agent}.config.toml") as handle:
             data = tomllib.loads(handle.read())

@@ -238,6 +238,6 @@ platform_support:
 runtime_dependencies: []
 schema_version: 6
 uses_interfaces:
-- interface: common.interface.oauth-json
+- interface: credentials.interface.oauth
   version: 1
 version: 1

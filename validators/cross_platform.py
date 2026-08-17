@@ -30,12 +30,12 @@ if str(_REPO_ROOT) not in sys.path:
 if str(_SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(_SRC_ROOT))
 
-from officina.common.blueprint_graph import (  # noqa: E402
+from officina.blueprints.graph import (  # noqa: E402
     BlueprintGraphError,
     RepositoryBlueprintGraph,
     load_repository_blueprint_graph,
 )
-from officina.common.blueprint_inventory import BlueprintInventoryError  # noqa: E402
+from officina.blueprints.inventory import BlueprintInventoryError  # noqa: E402
 from officina.common.python_source_cache import PythonSourceCache  # noqa: E402
 from officina.common.repository_paths import repository_relative_path  # noqa: E402
 from validators.skill_runtime_files import _registered_child_artifact  # noqa: E402
@@ -1110,7 +1110,7 @@ def _validate(
 
     InstantiationsFromRepo
     ----------------------
-    .officina.common.blueprint_graph.load_repository_blueprint_graph:
+    .officina.blueprints.graph.load_repository_blueprint_graph:
       why:
         constructs: "Builds standalone blueprint preparation when no graph is supplied."
     ._validate_v4_blueprints:

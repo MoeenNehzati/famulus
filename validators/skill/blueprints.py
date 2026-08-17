@@ -12,14 +12,14 @@ _SRC_ROOT = _REPO_ROOT / "src"
 if str(_SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(_SRC_ROOT))
 
-from officina.common.blueprint_graph import (  # noqa: E402
+from officina.blueprints.graph import (  # noqa: E402
     BlueprintGraphError,
     RepositoryBlueprintGraph,
     authored_node_input_paths,
     load_repository_blueprint_graph,
     validate_runtime_file_path,
 )
-from officina.common.blueprint_inventory import (  # noqa: E402
+from officina.blueprints.inventory import (  # noqa: E402
     BlueprintInventoryError,
 )
 from officina.common.repository_paths import (  # noqa: E402

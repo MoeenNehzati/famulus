@@ -12,7 +12,7 @@ from test_support.git_repository import GitTestRepository
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _ADAPTER_PATH = _REPO_ROOT / "validators" / "docstrings.py"
-_RUNNER_PATH = _REPO_ROOT / "src" / "officina" / "_validator_snapshot.py"
+_RUNNER_PATH = _REPO_ROOT / "src" / "officina" / "validators" / "snapshot.py"
 
 
 def _load_adapter():

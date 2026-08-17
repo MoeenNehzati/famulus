@@ -7,7 +7,7 @@ from typing import Any, Mapping, Sequence
 
 import yaml
 
-from officina.common.configured_schema import load_configuration, validate_configuration
+from officina.configuration.configured_schema import load_configuration, validate_configuration
 
 
 Job = dict[str, Any]

@@ -13,8 +13,8 @@ Activation: user-request, skill-workflow; persistent modifier: no
 Skill Version: 5
 
 Uses Interfaces:
-- `skill-maker.source.gateway -> common.interface.query-standard@1`
 - `skill-maker.source.gateway -> skill-maker._rtx.interface.sync-blueprints@1`
+- `skill-maker.source.gateway -> standards.interface.query-standard@1`
 
 Public Interfaces:
 - `skill-maker.interface.default`
@@ -42,7 +42,7 @@ out a named branch first.
 
 ## Standards retrieval
 
-Before authoring, query `common.interface.query-standard` with
+Before authoring, query `standards.interface.query-standard` with
 `task.kind=author-skill` and `--view requirements`, selecting one canonical root
 per component:
 

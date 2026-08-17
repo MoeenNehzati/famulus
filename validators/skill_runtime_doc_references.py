@@ -12,7 +12,7 @@ for import_root in (REPO_ROOT, SRC_ROOT):
     if str(import_root) not in sys.path:
         sys.path.insert(0, str(import_root))
 
-from officina.common.blueprint_graph import (  # noqa: E402
+from officina.blueprints.graph import (  # noqa: E402
     BlueprintGraphError,
     load_module_blueprint,
 )
@@ -104,7 +104,7 @@ def _declared_public_interface_ids(
 
     InstantiationsFromRepo
     ----------------------
-    officina.common.blueprint_graph.load_module_blueprint:
+    officina.blueprints.graph.load_module_blueprint:
       why:
         constructs: "Builds the validated module declaration used for masking."
     """

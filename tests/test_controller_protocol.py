@@ -14,8 +14,8 @@ SRC_ROOT = Path(__file__).resolve().parents[1] / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from officina.common.controller import JsonValue
-from officina.common.controller_protocol import (
+from officina.controller.model import JsonValue
+from officina.controller.protocol import (
     ControllerMessage,
     InvalidControllerMessageError,
     UnsupportedProtocolVersionError,
@@ -44,6 +44,10 @@ class ExampleMessage(ControllerMessage):
             protocol_version=value["protocol_version"],  # type: ignore[arg-type]
             value=value["value"],  # type: ignore[arg-type]
         )
+
+
+def test_controller_protocol_uses_its_canonical_module() -> None:
+    assert ControllerMessage.__module__ == "officina.controller.protocol"
 
 
 def test_message_json_is_canonical_and_round_trips_through_subclass() -> None:

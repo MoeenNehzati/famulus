@@ -1,0 +1,39 @@
+authority:
+  owns_filesystem: []
+children: {}
+content:
+- __init__\.py
+- extractor\.py
+- query\.py
+description: Pinned-standard closure validation and deterministic standard queries.
+exports:
+  standards.interface.extractor:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - common
+    source_interface: standards.source.extractor.interface.python-api
+  standards.interface.query-standard:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - refactor-node
+      - skill-maker
+    source_interface: standards.source.query.interface.query-standard
+gateway:
+  language: Python
+  path: __init__.py
+id: standards
+namespace_exports: {}
+node_type: module
+schema_version: 6
+sources:
+  standards.source.extractor:
+    blueprint:
+      base: module-root
+      path: blueprints/extractor.yaml
+  standards.source.query:
+    blueprint:
+      base: module-root
+      path: blueprints/query.yaml
+version: 1

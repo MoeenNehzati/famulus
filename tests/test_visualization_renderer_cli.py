@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from officina.common.visualization import base_renderer_cli
+import officina.visualization.base_renderer_cli as base_renderer_cli
 
 
 def test_core_renderer_prepares_math_dependency_presentation_defaults() -> None:

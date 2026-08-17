@@ -469,6 +469,6 @@ platform_support:
 runtime_dependencies: []
 schema_version: 6
 uses_interfaces:
-- interface: common.interface.google-credentials
+- interface: credentials.interface.google
   version: 1
 version: 1

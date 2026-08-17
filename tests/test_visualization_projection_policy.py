@@ -4,8 +4,8 @@ from copy import deepcopy
 
 import pytest
 
-from officina.common.visualization.from_blueprint.catalog import build_relation_semantics
-from officina.common.visualization.payload import GraphPayloadProcessor
+from officina.visualization.from_blueprint.catalog import build_relation_semantics
+from officina.visualization.payload import GraphPayloadProcessor
 
 
 def _payload() -> dict:

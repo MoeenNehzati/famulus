@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-import officina.common.blueprint_graph as blueprint_graph
+import officina.blueprints.graph as blueprint_graph
 from docs_tooling.catalog import SkillInfo, load_catalog, skills_by_domain
 from docs_tooling.render import render_doc_with_updated_blocks, render_skill_index
 

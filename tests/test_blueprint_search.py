@@ -10,8 +10,8 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-import officina.blueprint_search as blueprint_search_module  # noqa: E402
-from officina.blueprint_search import (  # noqa: E402
+import officina.blueprints.search as blueprint_search_module  # noqa: E402
+from officina.blueprints.search import (  # noqa: E402
     BlueprintSearchError,
     iter_blueprints,
     load_blueprint_record,

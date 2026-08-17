@@ -14,7 +14,7 @@ SRC_ROOT = REPO_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from officina.blueprint_search import BlueprintSearchError, load_query_file, search_blueprints
+from officina.blueprints.search import BlueprintSearchError, load_query_file, search_blueprints
 
 
 def main(argv: Sequence[str] | None = None) -> int:

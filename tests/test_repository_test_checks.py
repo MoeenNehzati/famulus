@@ -19,7 +19,9 @@ MODULE_PATH = (
     REPO_ROOT
     / "src"
     / "officina"
-    / "repository_checks.py"
+    / "repository"
+    / "checks"
+    / "runner.py"
 )
 SPEC = importlib.util.spec_from_file_location("run_python_tests", MODULE_PATH)
 assert SPEC is not None
@@ -108,7 +110,7 @@ def test_real_pytest_collection_combines_validator_and_standard_items(
             "-m",
             "pytest",
             "-p",
-            "officina.repository_checks",
+            "officina.repository.checks.runner",
             "--collect-only",
             "-q",
             "--officina-run-validators",

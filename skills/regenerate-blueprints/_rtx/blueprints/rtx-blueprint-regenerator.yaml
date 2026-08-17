@@ -226,6 +226,6 @@ runtime_dependencies:
   version: any
 schema_version: 6
 uses_interfaces:
-- interface: common.interface.blueprint-template
+- interface: blueprints.interface.template
   version: 1
 version: 1

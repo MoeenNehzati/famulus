@@ -68,7 +68,7 @@ def account_registry(
 
 @pytest.fixture
 def google_file_fakes(monkeypatch: pytest.MonkeyPatch):
-    from officina.common import google_credentials
+    import officina.credentials.google as google_credentials
 
     descriptors: dict[Path, SimpleNamespace] = {}
     refresh_calls: list[Path] = []
@@ -231,7 +231,7 @@ def test_scope_or_probe_failure_never_writes(
     assert account_registry.path.read_bytes() == before
 
     monkeypatch.setattr(
-        "officina.common.google_credentials.refresh_access_token_from_file",
+        "officina.credentials.google.refresh_access_token_from_file",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("secret missing")),
     )
     with pytest.raises(accounts_module.CredentialFileBindingError) as exc_info:
@@ -383,7 +383,7 @@ def test_unprovable_legacy_identity_requires_approval_then_can_be_replaced(
     successful_probe,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from officina.common import google_credentials
+    import officina.credentials.google as google_credentials
 
     descriptor = google_file_fakes.add(
         account_registry.home / "credentials" / "new.json"
@@ -441,7 +441,7 @@ def test_present_invalid_file_binding_never_falls_back(
         lambda *_args, **_kwargs: pytest.fail("legacy OAuth fallback must not run"),
     )
     monkeypatch.setattr(
-        "officina.common.google_credentials.refresh_access_token",
+        "officina.credentials.google.refresh_access_token",
         lambda *_args, **_kwargs: pytest.fail("credential ID fallback must not run"),
     )
 
@@ -454,7 +454,7 @@ def test_runtime_prefers_file_over_id_and_legacy(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    from officina.common import google_credentials
+    import officina.credentials.google as google_credentials
 
     descriptor = (tmp_path / "gmail.json").resolve()
     account = {

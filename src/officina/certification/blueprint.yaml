@@ -1,0 +1,61 @@
+authority:
+  owns_filesystem: []
+children: {}
+content:
+- __init__\.py
+- hashing\.py
+- records\.py
+- view\.py
+description: Canonical certification hashing, signed certificate records, and read-only
+  certificate currentness views.
+exports:
+  certification.interface.records:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - install-assistant-tools
+      - install-assistant-tools._rtx
+      - skill-certifier
+      - skill-certifier._rtx
+      - skill-drift
+      - skill-drift._rtx
+    source_interface: certification.source.records.interface.python-api
+  certification.interface.hashing:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - skill-certifier
+      - skill-certifier._rtx
+      - skill-drift
+      - skill-drift._rtx
+    source_interface: certification.source.hashing.interface.python-api
+  certification.interface.view:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - skill-certifier
+      - skill-certifier._rtx
+      - skill-drift
+      - skill-drift._rtx
+    source_interface: certification.source.view.interface.python-api
+gateway:
+  language: Python
+  path: __init__.py
+id: certification
+namespace_exports: {}
+node_type: module
+schema_version: 6
+sources:
+  certification.source.hashing:
+    blueprint:
+      base: module-root
+      path: blueprints/hashing.yaml
+  certification.source.records:
+    blueprint:
+      base: module-root
+      path: blueprints/records.yaml
+  certification.source.view:
+    blueprint:
+      base: module-root
+      path: blueprints/view.yaml
+version: 1

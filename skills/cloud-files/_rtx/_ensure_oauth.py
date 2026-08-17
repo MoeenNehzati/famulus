@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Callable
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
-from officina.common.configured_schema import load_configuration, validate_configuration
+from officina.configuration.configured_schema import load_configuration, validate_configuration
 
 CONFIG_DIR_NAME = "cloud-files"
 LABEL = "Google Drive (cloud-files)"
@@ -180,9 +180,9 @@ def use_google_credential(*, credential_id: str, home: Path, platform: str = sys
     Validates the credential grants Drive scope *before* writing anything, then
     stores only the opaque ``credential_id`` in cloud-files' own config.json —
     never the client secret or refresh token, which stay in
-    officina.common.google_credentials' registry/secret store.
+    officina.credentials.google' registry/secret store.
     """
-    from officina.common.google_credentials import SERVICE_SCOPES, GoogleCredentialError, load_credential
+    from officina.credentials.google import SERVICE_SCOPES, GoogleCredentialError, load_credential
 
     try:
         ref = load_credential(credential_id, home=home, platform=platform)
@@ -198,7 +198,7 @@ def _existing_binding_subject(
     config: dict[str, object], *, home: Path, platform: str
 ) -> tuple[bool, str | None]:
     """Return whether prior OAuth state exists and its stable subject when provable."""
-    from officina.common.google_credentials import (
+    from officina.credentials.google import (
         GoogleCredentialError,
         load_credential,
         load_credential_file,
@@ -240,7 +240,7 @@ def use_google_credential_file(
     urlopen: Callable = urllib.request.urlopen,
 ) -> dict[str, object]:
     """Validate, live-probe, then persist one Drive descriptor path."""
-    from officina.common.google_credentials import (
+    from officina.credentials.google import (
         GoogleCredentialError,
         SERVICE_SCOPES,
         load_credential_file,

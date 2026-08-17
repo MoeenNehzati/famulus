@@ -125,7 +125,7 @@ def assemble_site(
     )
     if build_graph:
         if graph_builder is None:
-            from officina.common.visualization.from_blueprint import (
+            from officina.visualization.from_blueprint import (
                 build_blueprint_graph,
             )
 

@@ -244,6 +244,6 @@ runtime_dependencies:
   version: any
 schema_version: 6
 uses_interfaces:
-- interface: common.interface.secret-store
+- interface: credentials.interface.secret-store
   version: 1
 version: 1

@@ -456,12 +456,12 @@ platform_support:
 runtime_dependencies: []
 schema_version: 6
 uses_interfaces:
-- interface: common.interface.certification-hashing
+- interface: certification.interface.hashing
   version: 1
-- interface: common.interface.certificate-records
+- interface: certification.interface.records
   version: 1
-- interface: common.interface.blueprint-graph
+- interface: blueprints.interface.graph
   version: 1
-- interface: common.interface.certification-view
+- interface: certification.interface.view
   version: 1
 version: 1

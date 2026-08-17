@@ -59,7 +59,7 @@ When the source is ambiguous:
 
 ## Canonical output
 
-Write one JSON object accepted by `src/officina/common/visualization/graph_specification.schema.json`:
+Write one JSON object accepted by `src/officina/visualization/graph_specification.schema.json`:
 
 - top-level `schema_version` is the integer `2`
 - top-level `entities` is always present, including when empty

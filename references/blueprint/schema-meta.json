@@ -225,7 +225,7 @@
         "rule_kind": "repository-validation",
         "description": "Require each skill module ID to equal its skill directory name.",
         "creation": "Name blueprint.yaml with the exact module directory ID.",
-        "validator": "src/officina/common/blueprint_graph.py",
+        "validator": "src/officina/blueprints/graph.py",
         "tests": [
           "tests/test_officina_blueprint_graph.py"
         ],
@@ -359,7 +359,7 @@
         "rule_kind": "repository-validation",
         "description": "Validate source platform support and where each dependency applies through the reachable required interface closure.",
         "creation": "State source support explicitly, list non-stdlib dependencies, and never claim a platform absent from a required interface.",
-        "validator": "src/officina/common/blueprint_graph.py",
+        "validator": "src/officina/blueprints/graph.py",
         "tests": [
           "tests/test_typed_blueprint_schemas.py",
           "tests/test_officina_blueprint_graph.py"
@@ -477,7 +477,7 @@
         "rule_kind": "repository-validation",
         "description": "Allow only the declared relation types between modules and behavioral sources.",
         "creation": "Use x-famulus.relationship_matrix as the complete node-relation policy.",
-        "validator": "src/officina/common/blueprint_graph.py",
+        "validator": "src/officina/blueprints/graph.py",
         "tests": [
           "tests/test_officina_blueprint_graph.py",
           "tests/validate_blueprint_relationships.py"
@@ -542,7 +542,7 @@
         "rule_kind": "repository-validation",
         "description": "Treat pooled blueprint review as a certificate-backed generated projection rather than graph authority.",
         "creation": "Render the review from the validated graph and current node certificates.",
-        "validator": "src/officina/common/pooled_blueprint.py",
+        "validator": "src/officina/blueprints/pooled.py",
         "tests": [
           "tests/test_officina_pooled_blueprint.py"
         ],

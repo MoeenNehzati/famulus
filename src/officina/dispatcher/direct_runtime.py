@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from officina.common.repository_configuration import (
+from officina.configuration.repository import (
     RepositoryConfiguration,
     RepositoryConfigurationError,
     load_repository_configuration,

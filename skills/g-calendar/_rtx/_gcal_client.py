@@ -106,7 +106,7 @@ def get_access_token(*, home: Path | None = None, platform: str = sys.platform) 
         value = config["credential_file"]
         if not isinstance(value, str) or not value.strip():
             raise RuntimeError("configured credential_file must be a nonempty path string")
-        from officina.common.google_credentials import (
+        from officina.credentials.google import (
             SERVICE_SCOPES,
             refresh_access_token_from_file,
         )
@@ -118,7 +118,7 @@ def get_access_token(*, home: Path | None = None, platform: str = sys.platform) 
 
     credential_id = _load_credential_id(config)
     if credential_id:
-        from officina.common.google_credentials import SERVICE_SCOPES, refresh_access_token
+        from officina.credentials.google import SERVICE_SCOPES, refresh_access_token
 
         return refresh_access_token(
             credential_id,

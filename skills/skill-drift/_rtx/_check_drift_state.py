@@ -28,13 +28,13 @@ else:
         dedupe_skill_sources,
         observed_skill_sources,
     )
-from officina.common.certification_hashing import CertificationHashError, NodeHashState
-from officina.common.certificate_records import certificate_public_key_root
-from officina.common.blueprint_graph import (
+from officina.certification.hashing import CertificationHashError, NodeHashState
+from officina.certification.records import certificate_public_key_root
+from officina.blueprints.graph import (
     RepositoryBlueprintGraph,
     load_repository_blueprint_graph,
 )
-from officina.common.certification_view import (
+from officina.certification.view import (
     CertificateCurrentnessReport,
     RepositoryCertificationError,
     certificate_log_path,

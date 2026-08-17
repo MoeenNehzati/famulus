@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Mapping
 
 if TYPE_CHECKING:
-    from officina.common.blueprint_authorization import AuthorizationResult
+    from officina.blueprints.authorization import AuthorizationResult
     from officina.runtime.python_machine_interface import PythonProcessTarget
 
 

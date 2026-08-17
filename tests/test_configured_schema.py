@@ -8,8 +8,8 @@ from pathlib import Path
 import jsonschema
 import pytest
 
-from officina.common import configured_schema as configured_schema_module
-from officina.common.configured_schema import (
+import officina.configuration.configured_schema as configured_schema_module
+from officina.configuration.configured_schema import (
     ConfiguredSchemaBundle,
     ConfiguredSchemaError,
     configured_validator,
@@ -20,7 +20,7 @@ from officina.common.configured_schema import (
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-ANNOTATION_SCHEMA_PATH = REPO_ROOT / "src/officina/common/configuration.schema.json"
+ANNOTATION_SCHEMA_PATH = REPO_ROOT / "src/officina/configuration/schema.json"
 
 
 def _protocol() -> dict:

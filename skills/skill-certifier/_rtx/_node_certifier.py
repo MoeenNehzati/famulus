@@ -16,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from officina.common.certification_hashing import (
+from officina.certification.hashing import (
     CANONICAL_NODE_HASH_POLICY,
     CERTIFIER_CHECK_REGISTRY,
     CertificationHashError,
@@ -32,7 +32,7 @@ from officina.common.certification_hashing import (
     resolve_certification_basis_paths,
     route_smoke_trace_signature,
 )
-from officina.common.certificate_records import (
+from officina.certification.records import (
     CertificateSigningKey,
     certificate_public_key_root,
     canonical_certificate_envelope_bytes,
@@ -48,18 +48,18 @@ from officina.common.atomic_files import (
     atomic_replace_bytes,
     read_regular_file_bytes,
 )
-from officina.common.blueprint_graph import (
+from officina.blueprints.graph import (
     BlueprintGraphError,
     BlueprintNode,
     RepositoryBlueprintGraph,
     load_repository_blueprint_graph,
 )
-from officina.common.certification_view import (
+from officina.certification.view import (
     CertificateCurrentnessView,
     certificate_log_path,
     evaluate_certificate_currentness,
 )
-from officina.common.git_provenance import (
+from officina.git.provenance import (
     CommitReadiness,
     GitMaterializationError,
     GitSnapshot,
@@ -73,12 +73,12 @@ from officina.common.repository_paths import (
     RepositoryPathError,
     repository_relative_path,
 )
-from officina.common.pooled_blueprint import (
+from officina.blueprints.pooled import (
     PooledReviewValidationError,
     pooled_review_path,
     render_pooled_review,
 )
-from officina.common.process_binding_compiler import gateway_language_name
+from officina.blueprints.process_binding import gateway_language_name
 from officina.runtime.python_machine_interface import (
     PythonArgvMachineInterface,
     PythonProcessTarget,
@@ -746,7 +746,7 @@ class CommitReadinessInspector:
 
         InstantiationsFromRepo
         ----------------------
-        officina.common.git_provenance.run_git:
+        officina.git.provenance.run_git:
           why:
             constructs: "Produces the batched tree bytes parsed into returned commit entries."
         """
@@ -806,7 +806,7 @@ class CommitReadinessInspector:
 
         InstantiationsFromRepo
         ----------------------
-        officina.common.git_provenance.run_git:
+        officina.git.provenance.run_git:
           why:
             constructs: "Produces the batched index bytes parsed into returned grouped entries."
         """
@@ -871,7 +871,7 @@ class CommitReadinessInspector:
 
         InstantiationsFromRepo
         ----------------------
-        officina.common.git_provenance.run_git:
+        officina.git.provenance.run_git:
           why:
             constructs: "Produces size-delimited batch output parsed into returned blob bytes."
         """
@@ -1052,7 +1052,7 @@ class CommitReadinessInspector:
 
         InstantiationsFromRepo
         ----------------------
-        officina.common.git_provenance.CommitReadiness:
+        officina.git.provenance.CommitReadiness:
           why:
             constructs: "Carries the final source evidence and ordered findings to the repository freeze guard."
         """
@@ -1162,7 +1162,7 @@ def _python_route_smoke_trace_specs(
 
     Pseudocode
     ----------
-    - raise %officina.common.certification_hashing.CertificationHashError(invalid_route_smoke_subject)
+    - raise %officina.certification.hashing.CertificationHashError(invalid_route_smoke_subject)
     - set selected = requested_behavioral_sources
     - for interface in selected_interfaces:
       - if gateway_language_is_python:
@@ -1175,13 +1175,13 @@ def _python_route_smoke_trace_specs(
 
     CallsFromRepo
     -------------
-    officina.common.process_binding_compiler.gateway_language_name:
+    officina.blueprints.process_binding.gateway_language_name:
       why:
         computes: "Classifies the gateway language so only Python process bindings enter route-smoke tracing."
 
     InstantiationsFromRepo
     ----------------------
-    officina.common.certification_hashing.CertificationHashError:
+    officina.certification.hashing.CertificationHashError:
       why:
         raises: "Rejected route-smoke inputs leave the helper as a typed hash-policy error."
     officina.runtime.python_machine_interface.PythonProcessTarget:
@@ -1401,13 +1401,13 @@ class RouteSmokeAuditor:
         officina.runtime.python_machine_interface.trace_python_route_smoke_dependencies_batch:
           why:
             constructs: "Produces the independently observed loaded paths carried into dependency mapping."
-        officina.common.certification_hashing.map_route_smoke_dependencies:
+        officina.certification.hashing.map_route_smoke_dependencies:
           why:
             transforms: "Produces canonical dependency mappings carried into each returned signature."
-        officina.common.certification_hashing.route_smoke_trace_signature:
+        officina.certification.hashing.route_smoke_trace_signature:
           why:
             serializes: "Produces the deterministic dependency signature carried in the audit result."
-        officina.common.certification_hashing.CertificationHashError:
+        officina.certification.hashing.CertificationHashError:
           why:
             raises: "Carries route tracing failures to the session stability boundary."
         """
@@ -1665,7 +1665,7 @@ def _passed_check(
 
     CallsFromRepo
     -------------
-    officina.common.certification_hashing.certifier_check_registry:
+    officina.certification.hashing.certifier_check_registry:
       why:
         validates: "Selects the versioned check registry used to authorize the requested gate name."
 
@@ -1979,7 +1979,7 @@ def _validate_semantic_attestation(
     .protected_review_projection:
       why:
         validates: "Compares protected graph projections after path-level review checks pass."
-    officina.common.git_provenance.materialize_git_commit:
+    officina.git.provenance.materialize_git_commit:
       why:
         writes: "Expands the mechanical commit into the temporary attestation workspace."
 
@@ -1988,10 +1988,10 @@ def _validate_semantic_attestation(
     .CertificationError:
       why:
         raises: "Any failed replay, ancestry, diff, or projection check leaves as a typed certifier rejection."
-    officina.common.blueprint_graph.load_repository_blueprint_graph:
+    officina.blueprints.graph.load_repository_blueprint_graph:
       why:
         constructs: "The replayed graph provides the baseline projection compared against the reviewed graph."
-    officina.common.git_provenance.run_git:
+    officina.git.provenance.run_git:
       why:
         constructs: "Ancestry and changed-path command results are carried into attestation branch decisions."
     """
@@ -2259,22 +2259,22 @@ class RepositoryEvidenceLoader:
 
         InstantiationsFromRepo
         ----------------------
-        officina.common.blueprint_graph.load_repository_blueprint_graph:
+        officina.blueprints.graph.load_repository_blueprint_graph:
           why:
             constructs: "Produces the closed graph carried throughout the returned evidence."
         .certification_completeness_findings:
           why:
             constructs: "Produces completeness findings inspected before hash evidence is accepted."
-        officina.common.certification_hashing.resolve_certification_basis_paths:
+        officina.certification.hashing.resolve_certification_basis_paths:
           why:
             transforms: "Produces basis paths carried into hashing and returned evidence."
-        officina.common.certification_hashing.compute_certification_basis_hash:
+        officina.certification.hashing.compute_certification_basis_hash:
           why:
             serializes: "Produces the basis digest carried into node-state derivation and returned evidence."
-        officina.common.certification_hashing.compute_node_hash_states:
+        officina.certification.hashing.compute_node_hash_states:
           why:
             constructs: "Produces canonical states carried into identity derivation and returned evidence."
-        officina.common.certification_hashing.derive_certifier_identity:
+        officina.certification.hashing.derive_certifier_identity:
           why:
             constructs: "Produces certifier identity carried in the returned evidence."
         .CertificationError:
@@ -2427,7 +2427,7 @@ class RepositoryFreezeGuard:
 
         InstantiationsFromRepo
         ----------------------
-        officina.common.git_provenance.run_git:
+        officina.git.provenance.run_git:
           why:
             constructs: "Produces raw status bytes parsed into the returned record tuple."
         .CertificationError:
@@ -2777,7 +2777,7 @@ class RepositoryFreezeGuard:
 
         InstantiationsFromRepo
         ----------------------
-        officina.common.git_provenance.run_git:
+        officina.git.provenance.run_git:
           why:
             constructs: "Produces index-comparison evidence enforced during the phase."
         officina.common.atomic_files.read_regular_file_bytes:
@@ -3019,10 +3019,10 @@ class CertificateBatchIssuer:
         officina.common.atomic_files.read_regular_file_bytes:
           why:
             constructs: "Produces exact predecessor bytes carried into compare-and-append."
-        officina.common.certificate_records.parse_certificate_log:
+        officina.certification.records.parse_certificate_log:
           why:
             constructs: "Produces verified predecessor entries used to select the final record."
-        officina.common.certificate_records.certificate_entry_hash:
+        officina.certification.records.certificate_entry_hash:
           why:
             serializes: "Produces the predecessor hash carried into the new payload."
         """
@@ -3074,7 +3074,7 @@ class CertificateBatchIssuer:
         ._semantic_attestation_check:
           why:
             computes: "Builds the schema-selected semantic record consumed immediately by normalization."
-        officina.common.certification_hashing.expected_certifier_checks:
+        officina.certification.hashing.expected_certifier_checks:
           why:
             validates: "Compares normalized records with the immutable selected registry."
 
@@ -3083,7 +3083,7 @@ class CertificateBatchIssuer:
         ._build_gate_evidence:
           why:
             constructs: "Produces the node evidence carried through every gate record."
-        officina.common.certification_hashing.normalize_node_checks:
+        officina.certification.hashing.normalize_node_checks:
           why:
             transforms: "Produces the canonical check tuple returned for payload construction."
         .CertificationError:
@@ -3197,7 +3197,7 @@ class CertificateBatchIssuer:
 
         CallsFromRepo
         -------------
-        officina.common.certificate_records.canonical_certificate_envelope_bytes:
+        officina.certification.records.canonical_certificate_envelope_bytes:
           why:
             serializes: "Serializes the signed envelope immediately before framing."
         officina.common.atomic_files.atomic_compare_and_append_bytes:
@@ -3209,7 +3209,7 @@ class CertificateBatchIssuer:
         ._build_certificate_payload:
           why:
             constructs: "Produces the payload carried into signing."
-        officina.common.certificate_records.sign_certificate_payload:
+        officina.certification.records.sign_certificate_payload:
           why:
             constructs: "Produces the signed envelope carried into canonical serialization."
         .CertificationError:
@@ -3335,19 +3335,19 @@ class CertificateBatchIssuer:
 
         CallsFromRepo
         -------------
-        officina.common.git_provenance.snapshot_head_matches:
+        officina.git.provenance.snapshot_head_matches:
           why:
             validates: "Rejects HEAD drift immediately before the append."
-        officina.common.certification_hashing.expected_certifier_checks:
+        officina.certification.hashing.expected_certifier_checks:
           why:
             validates: "Rejects registry drift immediately after the append."
 
         InstantiationsFromRepo
         ----------------------
-        officina.common.certification_view.certificate_log_path:
+        officina.certification.view.certificate_log_path:
           why:
             constructs: "Produces the node log path carried through the complete issuance operation."
-        officina.common.git_provenance.capture_git_snapshot:
+        officina.git.provenance.capture_git_snapshot:
           why:
             constructs: "Produces the post-append snapshot used to reject HEAD drift."
         .CertificationError:
@@ -3481,13 +3481,13 @@ def _certify_repository(
     officina.common.atomic_files.read_regular_file_bytes:
       why:
         computes: "Checks generated pooled-review bytes immediately after publication."
-    officina.common.certificate_records.certificate_public_key_root:
+    officina.certification.records.certificate_public_key_root:
       why:
         computes: "Selects whether repository-owned signing material provisioning applies."
-    officina.common.pooled_blueprint.pooled_review_path:
+    officina.blueprints.pooled.pooled_review_path:
       why:
         computes: "Selects generated review paths used by freeze allowances and publication."
-    officina.common.pooled_blueprint.render_pooled_review:
+    officina.blueprints.pooled.render_pooled_review:
       why:
         serializes: "Renders the final certificate-backed review before its bounded write."
     officina.common.repository_paths.repository_relative_path:
@@ -3511,28 +3511,28 @@ def _certify_repository(
     .RouteSmokeAuditor:
       why:
         constructs: "Carries route configuration through two independent dependency traces."
-    officina.common.certificate_records.load_or_create_certificate_signing_key:
+    officina.certification.records.load_or_create_certificate_signing_key:
       why:
         constructs: "Produces externally rooted signing material carried into batch issuance."
-    officina.common.certificate_records.provision_certificate_signing_material:
+    officina.certification.records.provision_certificate_signing_material:
       why:
         constructs: "Produces repository-owned signing material carried into batch issuance."
-    officina.common.certification_hashing.certification_target_postorder:
+    officina.certification.hashing.certification_target_postorder:
       why:
         transforms: "Produces dependency-ordered node IDs carried into batch issuance."
-    officina.common.certification_view.CertificateCurrentnessView:
+    officina.certification.view.CertificateCurrentnessView:
       why:
         constructs: "Carries final current certificates into pooled-review rendering."
-    officina.common.certification_view.evaluate_certificate_currentness:
+    officina.certification.view.evaluate_certificate_currentness:
       why:
         constructs: "Produces the final report used to verify written nodes and reviews."
-    officina.common.git_provenance.blueprint_v4_mechanical_commit:
+    officina.git.provenance.blueprint_v4_mechanical_commit:
       why:
         constructs: "Produces the optional migration baseline used by semantic replay."
-    officina.common.git_provenance.capture_git_snapshot:
+    officina.git.provenance.capture_git_snapshot:
       why:
         constructs: "Produces initial and final snapshots used to reject HEAD drift."
-    officina.common.git_provenance.run_git:
+    officina.git.provenance.run_git:
       why:
         constructs: "Produces candidate atomicity evidence before migration review."
     """
@@ -4173,10 +4173,10 @@ def certify(
 
     CallsFromRepo
     -------------
-    officina.common.certificate_records.certificate_public_key_root:
+    officina.certification.records.certificate_public_key_root:
       why:
         computes: "Supplies the public-key root passed into the private writer."
-    officina.common.certification_view.certificate_log_path:
+    officina.certification.view.certificate_log_path:
       why:
         computes: "Maps each certified node to the log path reported in public outcomes."
 
@@ -4200,7 +4200,7 @@ def certify(
     .run_mechanical_checks:
       why:
         constructs: "Validator command evidence is returned alongside certification outcomes."
-    officina.common.blueprint_graph.load_repository_blueprint_graph:
+    officina.blueprints.graph.load_repository_blueprint_graph:
       why:
         constructs: "The reviewed current-schema graph drives target resolution and outcome path lookup."
     """

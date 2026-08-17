@@ -1,9 +1,9 @@
 # Officina visualization module
 
-`officina.common.visualization` is the shared graph payload and rendering layer
+`officina.visualization` is the shared graph payload and rendering layer
 for repository visualizations. Domain-specific extractors should produce the
 canonical JSON shape in
-`src/officina/common/visualization/graph_specification.schema.json`; the common
+`src/officina/visualization/graph_specification.schema.json`; the common
 renderer then handles validation, layout, HTML rendering, serving, and generic
 graph operations.
 
@@ -120,12 +120,12 @@ Dim actions to the entire set and retains one primary node for inspection and
 ancestor focus.
 
 Domain code should import `build_html_with_elk` from
-`officina.common.visualization.elk_html_renderer` or use `ElkHtmlRenderer`.
+`officina.visualization.elk_html_renderer` or use `ElkHtmlRenderer`.
 `base_renderer.py` intentionally does not export ELK-specific functions.
 
 ## Docstring graph adapter
 
-`officina.common.visualization.from_docstring` is intentionally shallow:
+`officina.visualization.from_docstring` is intentionally shallow:
 
 - It runs docstring validation before extraction.
 - It converts `CallsFromRepo`, `InstantiationsFromRepo`, `Wraps`, and
@@ -148,7 +148,7 @@ reduction logic into the domain package.
 
 ## Blueprint graph adapter
 
-`officina.common.visualization.from_blueprint` calls
+`officina.visualization.from_blueprint` calls
 `load_repository_blueprint_graph(...)` and visualizes its canonical logical
 nodes. It never traverses or parses blueprint files independently.
 
@@ -164,7 +164,7 @@ Use whole-repository scope for an architectural overview, or pass logical
 skill/module ids to select a smaller scope:
 
 ```bash
-python -m officina.common.visualization.from_blueprint . \
+python -m officina.visualization.from_blueprint . \
   --skills skill-certifier \
   --output-dir graphs/blueprint \
   --name skill-certifier
@@ -231,7 +231,7 @@ The renderer remains domain-neutral. Adapters choose node `type` and `kind`,
 edge `type`, containment, decorations, and metadata; the renderer maps those generic fields
 to filtering, palettes, shapes, layout, and details. The complete maintenance
 contract and extension guide is in
-`src/officina/common/visualization/html_renderer/README.md`.
+`src/officina/visualization/html_renderer/README.md`.
 
 Node `presentation` is also part of the generic contract. Its `form` distinguishes
 ordinary nodes from containment frames, while `tone` controls relative visual

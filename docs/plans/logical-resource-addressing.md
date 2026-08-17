@@ -376,7 +376,7 @@ This enforcement proves that declarations are well-formed, mutually interpretabl
 - `references/blueprint/legacy-skill.schema.json` — add the compatible `resource` field to `directIoEntry`.
 - `skills/skill-maker/validators/blueprints.py` — call shared resource validation during blueprint checks.
 - `validators/resource_registry.py` — repository-level registry and declaration validation.
-- `src/officina/common/blueprint_graph.py` — expose normalized authored resource declarations and deterministic direct-edge path traversal without mixing the overlay into `BlueprintEdge`.
+- `src/officina/blueprints/graph.py` — expose normalized authored resource declarations and deterministic direct-edge path traversal without mixing the overlay into `BlueprintEdge`.
 - `tests/test_officina_resource_registry.py` — registry schema, uniqueness, and ambiguity tests.
 - `tests/test_officina_resource_patterns.py` — grammar and overlap unit tests.
 - `tests/test_officina_resource_influence.py` — ordered-pair, effective-access, edge, and evidence tests.
@@ -463,7 +463,7 @@ This enforcement proves that declarations are well-formed, mutually interpretabl
 **Files:**
 - Create: `src/officina/resources/influence.py`
 - Modify: `src/officina/resources/__init__.py`
-- Modify: `src/officina/common/blueprint_graph.py`
+- Modify: `src/officina/blueprints/graph.py`
 - Test: `tests/test_officina_resource_influence.py`
 - Test: `tests/test_officina_blueprint_graph.py`
 

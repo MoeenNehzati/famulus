@@ -226,10 +226,10 @@ def test_blueprint_graph_shared_module_is_platform_neutral(tmp_path: Path) -> No
         Path(__file__).resolve().parents[1]
         / "src"
         / "officina"
-        / "common"
-        / "blueprint_graph.py"
+        / "blueprints"
+        / "graph.py"
     )
-    target = tmp_path / "src" / "officina" / "common" / "blueprint_graph.py"
+    target = tmp_path / "src" / "officina" / "blueprints" / "graph.py"
     target.parent.mkdir(parents=True)
     target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
 

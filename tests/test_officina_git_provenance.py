@@ -10,8 +10,8 @@ import subprocess
 
 import pytest
 
-from officina.common import git_provenance
-from officina.common.git_provenance import (
+import officina.git.provenance as git_provenance
+from officina.git.provenance import (
     BLUEPRINT_V4_MECHANICAL_REF,
     GitMaterializationError,
     blueprint_v4_mechanical_commit,

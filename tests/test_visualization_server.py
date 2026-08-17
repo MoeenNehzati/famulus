@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-server = importlib.import_module("officina.common.visualization.server")
+server = importlib.import_module("officina.visualization.server")
 
 
 @pytest.mark.parametrize("port", ["0", "65536"])
