@@ -397,7 +397,10 @@ class ChangeSet:
     deletes: set[str] = field(default_factory=set)
     expected: dict[str, bytes | None] = field(default_factory=dict)
     blueprint_changes: set[str] = field(default_factory=set)
+    certification_basis_changes: set[str] = field(default_factory=set)
     digest_changes: set[str] = field(default_factory=set)
+    generated_artifact_changes: set[str] = field(default_factory=set)
+    validation_results: set[str] = field(default_factory=set)
     base_files: set[str] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -494,7 +497,10 @@ class ChangeSet:
             "writes": sorted(self.writes),
             "deletes": sorted(self.deletes),
             "blueprint_changes": sorted(self.blueprint_changes),
+            "certification_basis_changes": sorted(self.certification_basis_changes),
             "digest_changes": sorted(self.digest_changes),
+            "generated_artifact_changes": sorted(self.generated_artifact_changes),
+            "validation_results": sorted(self.validation_results),
             "unresolved_references": [],
         }
 
@@ -956,6 +962,15 @@ def plan_relocation(root: Path, manifest: RelocationManifest) -> ChangeSet:
     _project_catalogs(changes, manifest)
     _validate_package_boundary_declarations(changes, manifest)
     _project_standard_digests(changes, manifest)
+    from .closure import MechanicalClosureError, close_projected_relocation
+
+    try:
+        closure = close_projected_relocation(changes, manifest)
+    except MechanicalClosureError as exc:
+        raise RelocationError(str(exc)) from exc
+    changes.certification_basis_changes.update(closure.certification_basis_changes)
+    changes.generated_artifact_changes.update(closure.generated_artifact_changes)
+    changes.validation_results.update(closure.validation_results)
     _validate_projected_tree(changes, manifest)
     return changes
 
