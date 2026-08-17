@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import stat
-import subprocess
 import sys
 
 import pytest
@@ -573,59 +572,6 @@ def test_exact_rewrite_applies_when_replacement_is_a_prefix_of_old(
     assert first.read_text("module.py") == "HEADER\n"
     apply_change_set(first)
     assert plan_relocation(tmp_path, manifest).report()["writes"] == []
-
-
-def test_command_preflights_then_applies_the_same_report(tmp_path: Path) -> None:
-    """The thin command exposes one manifest through read-only and apply modes."""
-
-    _write(tmp_path / "old.py", "VALUE = 1\n")
-    manifest_path = tmp_path / "move.yaml"
-    _write(
-        manifest_path,
-        yaml.safe_dump(
-            {
-                "schema_version": 2,
-                "moves": [{"from": "old.py", "to": "new.py"}],
-            },
-            sort_keys=False,
-        ),
-    )
-    command = Path(__file__).resolve().parents[4] / "scripts/relocate_officina_sources.py"
-    preflight = subprocess.run(
-        [
-            sys.executable,
-            str(command),
-            "--root",
-            str(tmp_path),
-            "--manifest",
-            str(manifest_path),
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert preflight.returncode == 0, preflight.stderr
-    assert (tmp_path / "old.py").exists()
-    expected_report = json.loads(preflight.stdout)
-
-    applied = subprocess.run(
-        [
-            sys.executable,
-            str(command),
-            "--root",
-            str(tmp_path),
-            "--manifest",
-            str(manifest_path),
-            "--apply",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert applied.returncode == 0, applied.stderr
-    assert json.loads(applied.stdout) == expected_report
-    assert not (tmp_path / "old.py").exists()
-    assert (tmp_path / "new.py").read_text(encoding="utf-8") == "VALUE = 1\n"
 
 
 def test_plan_snapshots_repository_file_inventory_once(

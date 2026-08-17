@@ -494,31 +494,9 @@ exact_rewrites:
   from: from officina.refactor.relocation import (
   to: from ._relocation_engine import (
   count: 1
-- path: scripts/relocate_officina_sources.py
-  from: |-
-    SCRIPT_REPOSITORY = Path(__file__).resolve().parents[1]
-    SOURCE_ROOT = SCRIPT_REPOSITORY / "src"
-    if str(SOURCE_ROOT) not in sys.path:
-        sys.path.insert(0, str(SOURCE_ROOT))
-
-    from officina.refactor.relocation import (  # noqa: E402
-  to: |-
-    SCRIPT_REPOSITORY = Path(__file__).resolve().parents[1]
-    SOURCE_ROOT = SCRIPT_REPOSITORY / "src"
-    RELOCATION_SKILL_ROOT = SCRIPT_REPOSITORY / "skills/relocate-nodes"
-    for import_root in (SOURCE_ROOT, RELOCATION_SKILL_ROOT):
-        if str(import_root) not in sys.path:
-            sys.path.insert(0, str(import_root))
-
-    from _rtx._relocation_engine import (  # noqa: E402
-  count: 1
 - path: skills/relocate-nodes/_rtx/tests/test_relocation_engine.py
   from: from officina.refactor.relocation import (
   to: from .._relocation_engine import (
-  count: 1
-- path: skills/relocate-nodes/_rtx/tests/test_relocation_engine.py
-  from: 'command = Path(__file__).resolve().parents[1] / "scripts/relocate_officina_sources.py"'
-  to: 'command = Path(__file__).resolve().parents[4] / "scripts/relocate_officina_sources.py"'
   count: 1
 - path: skills/relocate-nodes/_rtx/tests/test_relocation_closure.py
   from: |-
@@ -587,7 +565,7 @@ exact_rewrites:
     if str(RELOCATION_SKILL_ROOT) not in sys.path:
         sys.path.insert(0, str(RELOCATION_SKILL_ROOT))
 
-    from _rtx._relocation_engine import load_manifest  # noqa: E402
+    from _rtx._relocation_engine import load_manifest, plan_relocation  # noqa: E402
   count: 1
 - path: tests/test_officina_source_relocation_manifest.py
   from: tests/test_officina_relocation_closure.py
@@ -792,6 +770,7 @@ text_exclusions:
 - .superpowers/sdd/2026-08-17-officina-relocation-closure/task-3-report.md
 - .superpowers/sdd/2026-08-17-relocate-nodes-skill/task-1-report.md
 - .superpowers/sdd/2026-08-17-relocate-nodes-skill/task-2-brief.md
+- .superpowers/sdd/2026-08-17-relocate-nodes-skill/task-2-report.md
 - docs/superpowers/specs/2026-08-16-officina-source-organization-design.md
 - docs/superpowers/specs/2026-08-17-relocate-nodes-skill-design.md
 - docs/superpowers/plans/2026-08-16-officina-source-relocation.md
@@ -819,6 +798,7 @@ active_address_exclusions:
 - .superpowers/sdd/2026-08-17-officina-relocation-closure/task-3-report.md
 - .superpowers/sdd/2026-08-17-relocate-nodes-skill/task-1-report.md
 - .superpowers/sdd/2026-08-17-relocate-nodes-skill/task-2-brief.md
+- .superpowers/sdd/2026-08-17-relocate-nodes-skill/task-2-report.md
 - docs/superpowers/specs/2026-08-16-officina-source-organization-design.md
 - docs/superpowers/specs/2026-08-17-relocate-nodes-skill-design.md
 - docs/superpowers/plans/2026-08-16-officina-source-relocation.md

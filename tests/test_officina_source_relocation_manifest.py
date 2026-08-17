@@ -13,8 +13,9 @@ RELOCATION_SKILL_ROOT = REPO_ROOT / "skills/relocate-nodes"
 if str(RELOCATION_SKILL_ROOT) not in sys.path:
     sys.path.insert(0, str(RELOCATION_SKILL_ROOT))
 
-from _rtx._relocation_engine import load_manifest  # noqa: E402
+from _rtx._relocation_engine import load_manifest, plan_relocation  # noqa: E402
 MANIFEST_PATH = REPO_ROOT / "refactors/officina-source-relocation.yaml"
+TASK_2_REPORT = ".superpowers/sdd/2026-08-17-relocate-nodes-skill/task-2-report.md"
 
 
 def test_manifest_covers_every_remaining_domain_move_and_blueprint_transfer() -> None:
@@ -136,3 +137,37 @@ def test_manifest_declares_the_complete_extractor_transfer_fixture_subset() -> N
     )
     assert "skills/relocate-nodes/_rtx/tests/test_relocation_closure.py" in manifest.text_exclusions
     assert "skills/relocate-nodes/_rtx/tests/test_relocation_closure.py" in manifest.active_address_exclusions
+
+
+def test_task_2_report_is_excluded_from_rewrites_and_active_addresses() -> None:
+    """The current run report remains immutable historical evidence."""
+
+    manifest = load_manifest(MANIFEST_PATH)
+
+    assert TASK_2_REPORT in manifest.text_exclusions
+    assert TASK_2_REPORT in manifest.active_address_exclusions
+
+
+def test_exact_worktree_postflight_has_no_projected_changes() -> None:
+    """The completed bootstrap manifest is idempotent on the exact worktree."""
+
+    def synchronize(repository: Path, *, check: bool) -> None:
+        """Leave already-synchronized generated artifacts unchanged."""
+
+    report = plan_relocation(
+        REPO_ROOT,
+        load_manifest(MANIFEST_PATH),
+        synchronize=synchronize,
+    ).report()
+
+    for category in (
+        "moves",
+        "writes",
+        "deletes",
+        "blueprint_changes",
+        "certification_basis_changes",
+        "digest_changes",
+        "generated_artifact_changes",
+        "unresolved_references",
+    ):
+        assert report[category] == [], category

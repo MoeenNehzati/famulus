@@ -1,4 +1,4 @@
-"""Adapt one manifest-driven node relocation to the transition engine."""
+"""Adapt manifest-driven node relocation through the skill-owned engine."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 
 
 class Interface(PythonMachineInterface):
-    """Expose the temporary relocation engine through the registered route."""
+    """Expose the skill-owned relocation engine through the registered route."""
 
     prog = "relocate-nodes"
     description = "Preflight or atomically apply one manifest-driven node relocation."

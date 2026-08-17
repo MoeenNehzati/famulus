@@ -11,6 +11,7 @@ import yaml
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 RTX_ROOT = SKILL_ROOT / "_rtx"
+REPO_ROOT = SKILL_ROOT.parents[1]
 ADAPTER_PATH = RTX_ROOT / "_relocate_nodes.py"
 RUNTIME_PACKAGE = "relocate_nodes_contract_runtime"
 
@@ -70,6 +71,17 @@ def test_adapter_declares_exact_synchronizer_dispatch() -> None:
     assert call.target_module_id == "skill-maker._rtx"
     assert call.interface == "sync-blueprints"
     assert call.version == 1
+
+
+def test_registered_route_is_the_only_live_relocation_entrypoint() -> None:
+    documentation = (REPO_ROOT / "docs/officina/source-relocation.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert not (REPO_ROOT / "scripts/relocate_officina_sources.py").exists()
+    assert "dispatcher --caller-skill relocate-nodes" in documentation
+    assert "relocate-nodes._rtx.interface.relocate" in documentation
+    assert "relocate_officina_sources.py" not in documentation
 
 
 def test_runtime_engine_validates_manifest_with_its_adjacent_schema(

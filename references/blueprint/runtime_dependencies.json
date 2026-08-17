@@ -7080,7 +7080,7 @@
                 "macos": true,
                 "windows": true
               },
-              "reason": "Parses skill blueprint YAML files."
+              "reason": "Parses caller-selected relocation manifests in the skill-owned engine."
             },
             {
               "kind": "python-package",
@@ -7091,7 +7091,7 @@
                 "macos": true,
                 "windows": true
               },
-              "reason": "Parses the temporary relocation manifest through the transition engine."
+              "reason": "Parses skill blueprint YAML files."
             },
             {
               "kind": "python-package",
@@ -7102,7 +7102,7 @@
                 "macos": true,
                 "windows": true
               },
-              "reason": "Validates the temporary relocation manifest through the transition engine."
+              "reason": "Validates caller-selected relocation manifests against the skill-owned schema."
             }
           ]
         }

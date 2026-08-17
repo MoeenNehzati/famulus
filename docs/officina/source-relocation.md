@@ -1,10 +1,10 @@
 # Source relocation
 
-Use the manifest-driven relocation command when an Officina source, sidecar,
-or package must move without changing behavior. The command updates declared
-paths and typed identities across active repository text, regenerates declared
-package catalogs, validates the projected tree, and only writes when
-`--apply` is supplied.
+Use the registered `relocate-nodes` route when an Officina source, sidecar, or
+package must move without changing behavior. The route updates declared paths
+and typed identities across active repository text, regenerates declared
+package catalogs, validates the projected tree, and only writes when `--apply`
+is supplied.
 
 ## Workflow
 
@@ -14,7 +14,8 @@ package catalogs, validates the projected tree, and only writes when
 2. Run a read-only preflight:
 
    ```console
-   python3 scripts/relocate_officina_sources.py \
+   dispatcher --caller-skill relocate-nodes \
+     relocate-nodes._rtx.interface.relocate \
      --manifest refactors/example.yaml \
      --report /tmp/example-relocation-report.json
    ```
@@ -22,7 +23,8 @@ package catalogs, validates the projected tree, and only writes when
 3. Apply the same manifest to a disposable repository copy. Run the focused
    tests and validators for the package being moved, then rerun preflight. A
    completed relocation must report empty `moves`, `writes`, `deletes`,
-   `blueprint_changes`, `digest_changes`, and `unresolved_references`.
+   `blueprint_changes`, `certification_basis_changes`, `digest_changes`,
+   `generated_artifact_changes`, and `unresolved_references`.
 4. Apply the audited manifest to the real worktree and repeat focused and
    repository-supported verification.
 

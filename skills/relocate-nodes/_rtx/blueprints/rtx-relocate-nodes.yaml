@@ -6,8 +6,8 @@ content:
 - tests/test_relocation_closure\.py
 - tests/test_relocation_engine\.py
 dependencies: []
-description: Adapts one manifest-driven relocation preflight or atomic application
-  to the temporary legacy relocation engine.
+description: Owns manifest-driven relocation preflight and atomic application through
+  the relocate-nodes skill runtime.
 gateway:
   language: Python>=3.11
   path: _relocate_nodes.py
@@ -178,12 +178,12 @@ runtime_dependencies:
 - kind: python-package
   name: PyYAML
   platforms: {linux: true, macos: true, windows: true}
-  reason: Parses the temporary relocation manifest through the transition engine.
+  reason: Parses caller-selected relocation manifests in the skill-owned engine.
   version: any
 - kind: python-package
   name: jsonschema
   platforms: {linux: true, macos: true, windows: true}
-  reason: Validates the temporary relocation manifest through the transition engine.
+  reason: Validates caller-selected relocation manifests against the skill-owned schema.
   version: any
 schema_version: 6
 uses_interfaces:
