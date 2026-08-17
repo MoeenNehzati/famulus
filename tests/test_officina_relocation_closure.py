@@ -541,6 +541,33 @@ def test_mode_only_generated_artifact_change_is_rejected(
         close_projected_relocation(changes, manifest)
 
 
+def test_empty_generated_file_replaced_by_directory_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A synchronizer cannot exchange an empty generated file for a directory."""
+
+    changes, manifest = _closure_fixture(tmp_path, skill_content="")
+
+    def sync(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        """Replace one same-mode empty generated file with a directory."""
+
+        if "--check" not in args[0]:
+            target = Path(str(kwargs["cwd"])) / "skills/demo/SKILL.md"
+            target.unlink()
+            target.mkdir()
+            target.chmod(0o644)
+        return _sync_without_writes(*args, **kwargs)
+
+    monkeypatch.setattr("officina.refactor.closure.load_repository_blueprint_graph", _pass_graph)
+    monkeypatch.setattr("officina.refactor.closure.subprocess.run", sync)
+
+    with pytest.raises(
+        MechanicalClosureError,
+        match=r"unexpected shadow kind change: skills/demo/SKILL\.md",
+    ):
+        close_projected_relocation(changes, manifest)
+
+
 def test_plan_absorbs_calculated_closure_categories_into_its_report(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

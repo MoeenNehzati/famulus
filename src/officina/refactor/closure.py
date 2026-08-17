@@ -17,7 +17,7 @@ import stat
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from officina.blueprints.graph import load_repository_blueprint_graph
 
@@ -149,7 +149,9 @@ def _materialize_projection(changes: ChangeSet, shadow_root: Path) -> None:
         target.chmod(_mode_for_projected_path(changes, relative))
 
 
-def _snapshot(shadow_root: Path) -> dict[str, tuple[bytes, int, bool]]:
+def _snapshot(
+    shadow_root: Path,
+) -> dict[str, tuple[bytes, int, Literal["directory", "file", "symlink"]]]:
     """Capture every shadow directory, file, and symlink after one action.
 
     Materialization exclusions limit only the synchronizer's inputs. The
@@ -159,24 +161,24 @@ def _snapshot(shadow_root: Path) -> dict[str, tuple[bytes, int, bool]]:
     set.
     """
 
-    result: dict[str, tuple[bytes, int, bool]] = {}
+    result: dict[str, tuple[bytes, int, Literal["directory", "file", "symlink"]]] = {}
     for path in shadow_root.rglob("*"):
         if path.is_symlink():
             relative = path.relative_to(shadow_root).as_posix()
             result[relative] = (
                 path.readlink().as_posix().encode("utf-8"),
                 stat.S_IMODE(path.lstat().st_mode),
-                True,
+                "symlink",
             )
             continue
         if path.is_dir():
             relative = path.relative_to(shadow_root).as_posix()
-            result[relative] = (b"", stat.S_IMODE(path.stat().st_mode), False)
+            result[relative] = (b"", stat.S_IMODE(path.stat().st_mode), "directory")
             continue
         if not path.is_file():
             continue
         relative = path.relative_to(shadow_root).as_posix()
-        result[relative] = (path.read_bytes(), stat.S_IMODE(path.stat().st_mode), False)
+        result[relative] = (path.read_bytes(), stat.S_IMODE(path.stat().st_mode), "file")
     return result
 
 
@@ -370,8 +372,8 @@ def _allowed_generated_change(relative: str, before: bytes, after: bytes) -> boo
 
 def _reconcile_generated_changes(
     changes: ChangeSet,
-    before: dict[str, tuple[bytes, int, bool]],
-    after: dict[str, tuple[bytes, int, bool]],
+    before: dict[str, tuple[bytes, int, Literal["directory", "file", "symlink"]]],
+    after: dict[str, tuple[bytes, int, Literal["directory", "file", "symlink"]]],
 ) -> tuple[str, ...]:
     """Reject unapproved synchronizer writes and absorb exact allowed bytes/modes.
 
@@ -388,8 +390,10 @@ def _reconcile_generated_changes(
             continue
         if current is None:
             raise MechanicalClosureError(f"unexpected shadow delete: {relative}")
-        if current[2] or (previous is not None and previous[2]):
+        if current[2] == "symlink" or (previous is not None and previous[2] == "symlink"):
             raise MechanicalClosureError(f"unexpected shadow symlink: {relative}")
+        if previous is not None and previous[2] != current[2]:
+            raise MechanicalClosureError(f"unexpected shadow kind change: {relative}")
         if previous is not None and previous[0] == current[0]:
             raise MechanicalClosureError(f"unexpected shadow mode change: {relative}")
         before_bytes = previous[0] if previous is not None else b""
@@ -403,8 +407,8 @@ def _reconcile_generated_changes(
 
 
 def _first_snapshot_difference(
-    before: dict[str, tuple[bytes, int, bool]],
-    after: dict[str, tuple[bytes, int, bool]],
+    before: dict[str, tuple[bytes, int, Literal["directory", "file", "symlink"]]],
+    after: dict[str, tuple[bytes, int, Literal["directory", "file", "symlink"]]],
 ) -> str | None:
     """Return the first deterministic path whose shadow bytes or mode changed.
 
