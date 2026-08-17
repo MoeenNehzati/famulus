@@ -582,8 +582,7 @@ git commit -m "Close relocations before atomic publication"
 
 **Files:**
 
-- Modify: `refactors/officina-source-relocation.yaml`
-- Modify: `tests/test_officina_source_relocation_manifest.py`
+- Modify: `tests/test_officina_source_relocation_manifest.py` (end-to-end fixture only)
 - Modify: `docs/superpowers/specs/2026-08-17-officina-relocation-closure-design.md`
 - Modify: `docs/superpowers/plans/2026-08-17-officina-relocation-closure.md`
 

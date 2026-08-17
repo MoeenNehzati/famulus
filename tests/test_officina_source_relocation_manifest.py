@@ -50,7 +50,7 @@ def test_manifest_covers_every_remaining_domain_move_and_blueprint_transfer() ->
         "src/officina/validators",
     }.issubset(catalog_paths)
     boundaries = {boundary.path: boundary for boundary in manifest.package_boundaries}
-    assert {(boundary.path, boundary.disposition) for boundary in boundaries.values()} >= {
+    assert {(boundary.path, boundary.disposition) for boundary in boundaries.values()} == {
         ("src/officina/standards", "registered-module"),
         ("src/officina/visualization", "unregistered-package"),
         ("src/officina/repository", "unregistered-package"),
