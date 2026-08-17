@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -25,6 +27,52 @@ def _isolate_managed_uv_bootstrap(monkeypatch):
     runtime and installer integration suites.
     """
     monkeypatch.setattr(install.uv_bootstrap, "bootstrap_uv", lambda **kw: None)
+
+
+def test_interface_restarts_with_current_source_when_runtime_module_is_foreign(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    foreign_module = tmp_path / "old-runtime" / "officina" / "install" / "managed_runtime.py"
+    calls: list[tuple[list[str], dict[str, object]]] = []
+    monkeypatch.setattr(install.managed_runtime, "__file__", str(foreign_module))
+
+    def run_child(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append((command, kwargs))
+        return subprocess.CompletedProcess(command, 7)
+
+    monkeypatch.setattr(install.subprocess, "run", run_child)
+
+    status = install.Interface().run(["--non-interactive", "--no-dev-mode"])
+
+    assert status == 7
+    assert calls[0][0] == [
+        sys.executable,
+        str(Path(install.__file__).resolve()),
+        "--non-interactive",
+        "--no-dev-mode",
+    ]
+    child_env = calls[0][1]["env"]
+    assert isinstance(child_env, dict)
+    assert child_env["PYTHONPATH"].split(os.pathsep)[0] == str(install.REPO_SRC)
+    assert calls[0][1]["check"] is False
+
+
+def test_interface_runs_in_process_when_runtime_module_is_current(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[list[str]] = []
+    monkeypatch.setattr(install, "main", lambda argv: calls.append(argv) or 3)
+    monkeypatch.setattr(
+        install.subprocess,
+        "run",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("current source must not restart")
+        ),
+    )
+
+    assert install.Interface().run(["--help"]) == 3
+    assert calls == [["--help"]]
 
 
 def test_plugin_mode_skips_dev_link(tmp_path, monkeypatch):

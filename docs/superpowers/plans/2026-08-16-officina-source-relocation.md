@@ -17,6 +17,7 @@
 - [x] Final verification: idempotent zero-change preflight, 410 focused tests, empty retired-address search, clean diff check, and 32/32 validators in a tracked-equivalent audit copy.
 - [x] Reusable within-module trial: relocated the live standards extractor and its sidecar in a disposable copy, passed 15 focused tests, and reached a zero-change second preflight.
 - [x] Rename-aware docstring regression gate: preserve strict checks for new findings while preventing unchanged legacy findings from blocking mechanical relocations.
+- [ ] Current-source installer bootstrap: rebuild the managed runtime without importing Officina APIs from the active release.
 
 ## Global Constraints
 
@@ -186,6 +187,33 @@
 
   Run the two focused test files, `repo/docstrings`, `repo/skip_hygiene`, `git diff --check`, and the relocation idempotence check.
 
-- [x] **Step 6: Commit the validator fix, then certify the exact final commit**
+- [ ] **Step 6: Commit the validator fix, then certify the exact final commit**
 
   Stage only the four implementation/test files and this plan, inspect the staged diff, commit, verify the worktree is clean, and invoke `skill-certifier._rtx.interface.certify` through `dispatcher` with the full reviewed commit hash.
+
+### Task 8: Current-source managed-runtime bootstrap
+
+**Files:**
+- Modify: `skills/install-assistant-tools/_rtx/_phase_entry.py`
+- Modify: `skills/install-assistant-tools/_rtx/tests/test_install.py`
+
+**Interfaces:**
+- Preserves: `install-assistant-tools._rtx.interface.scripts-install` and its interactive/non-interactive arguments.
+- Produces: a fresh child process that executes the current `_phase_entry.py` with the current checkout's `src/` first on `PYTHONPATH` whenever the dispatcher loaded Officina from another runtime tree.
+- Excludes: version detection, old-signature fallbacks, mutation of the active release, and direct calls into an older Officina API.
+
+- [x] **Step 1: Add failing restart-boundary tests**
+
+  Prove that a foreign `managed_runtime.py` location causes one current-source child invocation with unchanged arguments and exit status, while an already-current source runs in-process without recursion.
+
+- [x] **Step 2: Implement the current-source restart boundary**
+
+  Compare the loaded managed-runtime module with `REPO_SRC`; when they differ, run the same phase entry under `sys.executable` with `REPO_SRC` prepended to `PYTHONPATH` and inherited terminal streams.
+
+- [x] **Step 3: Run focused installer and managed-runtime tests**
+
+  Run the installer orchestration tests, managed-runtime tests, staged docstring validation, and `git diff --check`.
+
+- [ ] **Step 4: Commit, refresh, verify, and certify**
+
+  Commit the bootstrap fix, run the public installer interface in approved development mode, verify the active release and dispatcher help, then certify the exact final commit and commit only generated certificate records if required.

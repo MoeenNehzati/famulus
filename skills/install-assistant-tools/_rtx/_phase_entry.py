@@ -22,7 +22,9 @@ Run individual scripts directly for targeted repairs:
 from __future__ import annotations
 
 import argparse
+import os
 import platform
+import subprocess
 import sys
 from pathlib import Path
 
@@ -356,6 +358,29 @@ class Interface(PythonArgvMachineInterface):
     prog = "phase_entry.py"
 
     def run(self, argv: list[str]) -> int:
+        loaded_runtime = Path(getattr(managed_runtime, "__file__", "")).resolve()
+        current_runtime = (
+            REPO_SRC / "officina" / "install" / "managed_runtime.py"
+        ).resolve()
+        if loaded_runtime != current_runtime:
+            # A managed-runtime update must be built by the source being
+            # installed, never by whatever Officina API happens to be active.
+            # A fresh interpreter has no cached ``officina`` package, so
+            # prepending REPO_SRC selects this checkout atomically for the
+            # complete installer process while retaining the caller's TTY.
+            child_env = os.environ.copy()
+            inherited_pythonpath = child_env.get("PYTHONPATH")
+            child_env["PYTHONPATH"] = (
+                str(REPO_SRC)
+                if not inherited_pythonpath
+                else f"{REPO_SRC}{os.pathsep}{inherited_pythonpath}"
+            )
+            result = subprocess.run(
+                [sys.executable, str(Path(__file__).resolve()), *argv],
+                env=child_env,
+                check=False,
+            )
+            return result.returncode
         return main(argv)
 
 
