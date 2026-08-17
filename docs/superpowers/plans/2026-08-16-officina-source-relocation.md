@@ -16,6 +16,7 @@
 - [x] Initial relocation application and one audited generated-block closure application completed.
 - [x] Final verification: idempotent zero-change preflight, 410 focused tests, empty retired-address search, clean diff check, and 32/32 validators in a tracked-equivalent audit copy.
 - [x] Reusable within-module trial: relocated the live standards extractor and its sidecar in a disposable copy, passed 15 focused tests, and reached a zero-change second preflight.
+- [x] Rename-aware docstring regression gate: preserve strict checks for new findings while preventing unchanged legacy findings from blocking mechanical relocations.
 
 ## Global Constraints
 
@@ -151,3 +152,40 @@
 - [x] Run focused domain suites followed by the repository-supported broader check.
 - [x] Run `git diff --check`, inspect the exact scoped diff, and report unrelated dirty state separately.
 - [x] Present the completed relocation for user review and explicit commit authorization.
+
+### Task 7: Rename-aware staged docstring regressions
+
+**Files:**
+- Modify: `src/officina/validators/snapshot.py`
+- Modify: `validators/docstrings.py`
+- Modify: `tests/test_repository_validator_checks.py`
+- Modify: `tests/test_docstrings_validator.py`
+
+**Interfaces:**
+- Produces: an immutable `.git/officina-validator-baseline/` tree inside each staged validator mirror, keyed by the staged destination path and populated from the captured HEAD file or its rename source.
+- Preserves: `validate_staged(repo_root, staged_paths) -> list[str]` and every existing validator-runner interface.
+- Enforces: only staged docstring findings absent from the corresponding captured-HEAD baseline; new files have an empty baseline and therefore remain fully strict.
+
+- [x] **Step 1: Add failing snapshot and adapter tests**
+
+  Cover same-path modification baselines, rename-source baselines, unchanged legacy-finding suppression, new-finding rejection, and full enforcement for new files.
+
+- [x] **Step 2: Run the focused tests and confirm the missing-baseline behavior fails**
+
+  Run `pytest -q tests/test_repository_validator_checks.py tests/test_docstrings_validator.py` and retain the failure as the red phase.
+
+- [x] **Step 3: Materialize captured-HEAD baselines inside the isolated staged mirror**
+
+  Resolve same-path predecessors from the captured HEAD tree, resolve renamed predecessors from the captured index diff, copy only regular-file blobs, and fail closed on malformed Git output or unreadable objects.
+
+- [x] **Step 4: Subtract matching baseline issue fingerprints in the staged docstring adapter**
+
+  Compare findings by code, severity, node id, and message while deliberately excluding path and line number. Use multiset subtraction so duplicate diagnostics cannot be hidden accidentally. A missing, undecodable, or unparsable baseline suppresses nothing.
+
+- [x] **Step 5: Run focused and staged validation**
+
+  Run the two focused test files, `repo/docstrings`, `repo/skip_hygiene`, `git diff --check`, and the relocation idempotence check.
+
+- [x] **Step 6: Commit the validator fix, then certify the exact final commit**
+
+  Stage only the four implementation/test files and this plan, inspect the staged diff, commit, verify the worktree is clean, and invoke `skill-certifier._rtx.interface.certify` through `dispatcher` with the full reviewed commit hash.

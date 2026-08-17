@@ -808,15 +808,267 @@ def _changed_regular_paths(
     return tuple(sorted(changed))
 
 
-def _build_isolated_git_dir(
+def _head_regular_entries(
+    repo_root: Path,
     snapshot: _RepositorySnapshot,
-    mirror_root: Path,
-) -> Path:
-    """Construct child Git metadata from the same copied index snapshot.
+) -> dict[str, _IndexEntry]:
+    """Return regular-file entries from the captured HEAD tree.
 
     Intent
     ------
-    Give validators writable isolated Git state paired with staged mirror bytes.
+    Resolve immutable predecessor blobs for staged regression comparisons.
+
+    Rationale
+    ---------
+    Validators must compare staged bytes with the same HEAD captured beside the
+    copied index, never with a later live branch state or working-tree file.
+
+    Pseudocode
+    ----------
+    - if captured HEAD is unborn:
+      - return empty entry map
+    - set tree_records = recursive NUL-delimited listing of captured HEAD
+    - set regular_entries = validated regular blob records keyed by path
+    - return regular_entries
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._run_snapshot_git:
+      why:
+        constructs: "Builds the immutable captured-HEAD tree listing used to resolve predecessor blobs."
+    ._IndexEntry:
+      why:
+        constructs: "Builds each regular captured-HEAD blob record retained for baseline materialization."
+    .ValidatorRunnerError:
+      why:
+        raises: "Reports an unreadable or malformed captured-HEAD tree record before any baseline file is written."
+    """
+    if snapshot.head_commit is None:
+        return {}
+    result = _run_snapshot_git(
+        repo_root,
+        snapshot,
+        "ls-tree",
+        "-r",
+        "-z",
+        snapshot.head_commit,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise ValidatorRunnerError(f"cannot enumerate captured HEAD: {detail}")
+    entries: dict[str, _IndexEntry] = {}
+    for raw_record in result.stdout.split(b"\0"):
+        if not raw_record:
+            continue
+        metadata, separator, raw_path = raw_record.partition(b"\t")
+        fields = metadata.split()
+        if not separator or len(fields) != 3 or not raw_path:
+            raise ValidatorRunnerError("malformed captured HEAD tree record")
+        mode_bytes, object_type, object_id_bytes = fields
+        if object_type != b"blob":
+            continue
+        try:
+            mode = mode_bytes.decode("ascii")
+            object_id = object_id_bytes.decode("ascii")
+            relative_path = raw_path.decode("utf-8", errors="surrogateescape")
+        except UnicodeError as exc:
+            raise ValidatorRunnerError(
+                "malformed captured HEAD tree encoding"
+            ) from exc
+        if mode not in _REGULAR_MODES:
+            continue
+        if relative_path in entries:
+            raise ValidatorRunnerError(
+                f"{relative_path}: duplicate captured HEAD tree entry"
+            )
+        entries[relative_path] = _IndexEntry(
+            mode,
+            object_id,
+            "0",
+            relative_path,
+        )
+    return entries
+
+
+def _rename_predecessors(
+    repo_root: Path,
+    snapshot: _RepositorySnapshot,
+) -> dict[str, str]:
+    """Map staged rename destinations to captured-HEAD source paths.
+
+    Intent
+    ------
+    Preserve issue identity when a mechanical refactor changes only a file path.
+
+    Rationale
+    ---------
+    Same-path lookup cannot distinguish a genuinely new file from a renamed
+    legacy file, while Git's captured index-versus-HEAD diff can do so without
+    consulting mutable working-tree state.
+
+    Pseudocode
+    ----------
+    - if captured HEAD is unborn:
+      - return empty rename map
+    - set rename_records = NUL-delimited rename-status diff of captured index and HEAD
+    - set rename_predecessors = decoded rename records keyed by destination
+    - return rename_predecessors
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._run_snapshot_git:
+      why:
+        constructs: "Builds the rename-aware captured index diff used to relate destination paths to HEAD predecessors."
+    .ValidatorRunnerError:
+      why:
+        raises: "Reports failed, malformed, duplicate, or incorrectly encoded rename records."
+    """
+    if snapshot.head_commit is None:
+        return {}
+    result = _run_snapshot_git(
+        repo_root,
+        snapshot,
+        "diff",
+        "--cached",
+        "--name-status",
+        "-z",
+        "--find-renames",
+        "--diff-filter=R",
+        snapshot.head_commit,
+        "--",
+    )
+    if result.returncode != 0:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise ValidatorRunnerError(f"cannot identify staged renames: {detail}")
+    fields = result.stdout.split(b"\0")
+    if fields and fields[-1] == b"":
+        fields.pop()
+    predecessors: dict[str, str] = {}
+    offset = 0
+    while offset < len(fields):
+        if offset + 2 >= len(fields):
+            raise ValidatorRunnerError("malformed staged rename record")
+        raw_status, raw_source, raw_destination = fields[offset : offset + 3]
+        offset += 3
+        if not raw_status.startswith(b"R") or not raw_source or not raw_destination:
+            raise ValidatorRunnerError("malformed staged rename record")
+        try:
+            raw_status.decode("ascii")
+            source = raw_source.decode("utf-8", errors="surrogateescape")
+            destination = raw_destination.decode("utf-8", errors="surrogateescape")
+        except UnicodeError as exc:
+            raise ValidatorRunnerError("malformed staged rename encoding") from exc
+        if destination in predecessors:
+            raise ValidatorRunnerError(
+                f"{destination}: duplicate staged rename destination"
+            )
+        predecessors[destination] = source
+    return predecessors
+
+
+def _materialize_staged_baselines(
+    repo_root: Path,
+    snapshot: _RepositorySnapshot,
+    mirror_root: Path,
+    staged_paths: Sequence[str],
+) -> Path:
+    """Write captured-HEAD predecessor blobs beneath isolated Git metadata.
+
+    Intent
+    ------
+    Supply staged-aware validators with immutable same-path comparison inputs.
+
+    Rationale
+    ---------
+    Keeping baselines under the mirror's private Git directory leaves validator
+    interfaces unchanged and prevents baseline files from entering tracked-tree
+    discovery, imports, or repository content scans.
+
+    Pseudocode
+    ----------
+    - set baseline_root = private directory beneath mirror Git metadata
+    - set head_entries = regular files in captured HEAD
+    - set rename_sources = rename destination to HEAD source mapping
+    - set baseline_entries = regular predecessor blobs addressed by staged destination
+    - set baseline_files = baseline_entries written beneath baseline_root with captured modes
+    - return baseline_root
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._read_regular_blobs:
+      why:
+        reads: "Reads immutable predecessor blob bytes by captured object ID before baseline materialization."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._head_regular_entries:
+      why:
+        constructs: "Builds the captured-HEAD path and blob map consulted for each staged destination."
+    ._rename_predecessors:
+      why:
+        constructs: "Builds rename destination mappings so moved files retain their original baseline."
+    ._IndexEntry:
+      why:
+        constructs: "Builds destination-keyed blob records used by the common batch blob reader."
+    ._safe_mirror_path:
+      why:
+        constructs: "Builds each bounded private baseline destination before bytes are written."
+    """
+    baseline_root = mirror_root / ".git" / "officina-validator-baseline"
+    head_entries = _head_regular_entries(repo_root, snapshot)
+    predecessors = _rename_predecessors(repo_root, snapshot)
+    baseline_entries: list[_IndexEntry] = []
+    for destination in sorted(staged_paths):
+        source = predecessors.get(destination, destination)
+        head_entry = head_entries.get(source)
+        if head_entry is None:
+            continue
+        baseline_entries.append(
+            _IndexEntry(
+                head_entry.mode,
+                head_entry.object_id,
+                "0",
+                destination,
+            )
+        )
+    for entry, content in zip(
+        baseline_entries,
+        _read_regular_blobs(repo_root, baseline_entries),
+        strict=True,
+    ):
+        destination = _safe_mirror_path(baseline_root, entry.relative_path)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(content)
+        if os.name == "posix":
+            destination.chmod(0o755 if entry.mode == "100755" else 0o644)
+    return baseline_root
+
+
+def _build_isolated_git_dir(
+    snapshot: _RepositorySnapshot,
+    mirror_root: Path,
+    *,
+    repo_root: Path | None = None,
+    staged_paths: Sequence[str] = (),
+) -> Path:
+    """Construct child Git metadata and optional captured-HEAD baselines.
+
+    Intent
+    ------
+    Give validators writable isolated Git state paired with staged mirror bytes
+    and, during complete staged-view preparation, immutable predecessor files.
 
     Rationale
     ---------
@@ -827,11 +1079,19 @@ def _build_isolated_git_dir(
     ----------
     - set isolated_metadata = Git directories and unborn validator HEAD
     - set isolated_index = captured index and shared-index bytes
+    - if source root is supplied:
+      - set baseline_files = captured HEAD predecessors for staged paths
     - return isolated Git directory
 
     Wraps
     -----
     - none
+
+    CallsFromRepo
+    -------------
+    ._materialize_staged_baselines:
+      why:
+        writes: "Writes immutable captured-HEAD predecessor files only when preparing a complete staged repository view."
 
     InstantiationsFromRepo
     ----------------------
@@ -862,6 +1122,13 @@ def _build_isolated_git_dir(
         for shared_index in snapshot.git_dir.glob("sharedindex.*"):
             if shared_index.is_file():
                 shutil.copy2(shared_index, isolated_git_dir / shared_index.name)
+        if repo_root is not None:
+            _materialize_staged_baselines(
+                repo_root,
+                snapshot,
+                mirror_root,
+                staged_paths,
+            )
     except OSError as exc:
         raise ValidatorRunnerError(
             f"cannot construct isolated Git metadata: {exc}"
@@ -1353,7 +1620,12 @@ def staged_repository_view(repo_root: Path) -> Iterator[PreparedRepositoryView]:
         entries = _index_entries(root, snapshot=snapshot)
         staged_paths = _changed_regular_paths(root, snapshot, entries)
         mirror_root, _entries = _materialize_tracked_mirror(root, entries)
-        _build_isolated_git_dir(snapshot, mirror_root)
+        _build_isolated_git_dir(
+            snapshot,
+            mirror_root,
+            repo_root=root,
+            staged_paths=staged_paths,
+        )
         yield PreparedRepositoryView(mirror_root, staged_paths)
     finally:
         if mirror_root is not None:

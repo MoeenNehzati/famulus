@@ -143,6 +143,69 @@ def test_validate_staged_propagates_checker_infrastructure_unicode_errors(
         adapter.validate_staged(repo, ["module.py"])
 
 
+def test_validate_staged_reports_only_findings_absent_from_head_baseline(
+    tmp_path: Path,
+) -> None:
+    adapter = _load_adapter()
+    repo = tmp_path / "repo"
+    module = repo / "src" / "module.py"
+    baseline = (
+        repo
+        / ".git"
+        / "officina-validator-baseline"
+        / "src"
+        / "module.py"
+    )
+    module.parent.mkdir(parents=True)
+    baseline.parent.mkdir(parents=True)
+    baseline.write_text(
+        '"""Baseline module."""\n\n'
+        "def legacy():\n"
+        "    return 1\n",
+        encoding="utf-8",
+    )
+    module.write_text(
+        '"""Staged module."""\n\n'
+        "def legacy():\n"
+        "    return 1\n\n"
+        "def introduced():\n"
+        "    return 2\n",
+        encoding="utf-8",
+    )
+
+    errors = adapter.validate_staged(repo, ["src/module.py"])
+
+    assert len(errors) == 1
+    assert "introduced" in errors[0]
+    assert "docstring.missing" in errors[0]
+
+
+def test_validate_staged_suppresses_unchanged_renamed_file_findings(
+    tmp_path: Path,
+) -> None:
+    adapter = _load_adapter()
+    repo = tmp_path / "repo"
+    module = repo / "src" / "renamed.py"
+    baseline = (
+        repo
+        / ".git"
+        / "officina-validator-baseline"
+        / "src"
+        / "renamed.py"
+    )
+    source = (
+        '"""Renamed module."""\n\n'
+        "def legacy():\n"
+        "    return 1\n"
+    )
+    module.parent.mkdir(parents=True)
+    baseline.parent.mkdir(parents=True)
+    module.write_text(source, encoding="utf-8")
+    baseline.write_text(source, encoding="utf-8")
+
+    assert adapter.validate_staged(repo, ["src/renamed.py"]) == []
+
+
 def test_validate_without_staged_protocol_fails_closed(tmp_path: Path) -> None:
     adapter = _load_adapter()
 
@@ -191,3 +254,34 @@ def test_root_runner_executes_docstring_adapter_against_staged_bytes(
     )
     assert "src/staged_bad.py" in results["repo/docstrings"][0]
     assert "docstring.missing" in results["repo/docstrings"][0]
+
+
+def test_root_runner_suppresses_unchanged_findings_across_a_staged_rename(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repository = GitTestRepository.create(repo)
+    shutil.copytree(
+        _REPO_ROOT / "src" / "officina",
+        repo / "src" / "officina",
+        dirs_exist_ok=True,
+    )
+    shutil.copy2(_REPO_ROOT / "repo_checks.py", repo / "repo_checks.py")
+    (repo / "validators").mkdir()
+    shutil.copy2(_ADAPTER_PATH, repo / "validators" / "docstrings.py")
+    (repo / "src" / "legacy.py").write_text(
+        '"""Legacy module."""\n\n'
+        "def undocumented():\n"
+        "    return 1\n",
+        encoding="utf-8",
+    )
+    repository.git("add", ".")
+    repository.git("commit", "--quiet", "-m", "fixture baseline")
+    repository.git("mv", "src/legacy.py", "src/renamed.py")
+
+    results = _load_runner().run_all(
+        repo,
+        validator_ids=["repo/docstrings"],
+    )
+
+    assert results == {}

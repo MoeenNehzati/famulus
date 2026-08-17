@@ -696,6 +696,33 @@ def test_captured_index_drives_both_paths_and_mirrored_bytes(
         shutil.rmtree(snapshot.root)
 
 
+def test_staged_view_materializes_head_baselines_for_modifications_and_renames(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    _initialize_runner_repository(repo)
+    repository = GitTestRepository(repo)
+    (repo / "modified.py").write_text("VALUE = 'baseline'\n", encoding="utf-8")
+    (repo / "old.py").write_text("VALUE = 'renamed baseline'\n", encoding="utf-8")
+    _require_git_ok(repository.git("add", "."))
+    _require_git_ok(repository.git("commit", "-qm", "baseline"))
+
+    (repo / "modified.py").write_text("VALUE = 'staged'\n", encoding="utf-8")
+    (repo / "new.py").write_text("VALUE = 'new'\n", encoding="utf-8")
+    _require_git_ok(repository.git("mv", "old.py", "renamed.py"))
+    _require_git_ok(repository.git("add", "modified.py", "new.py"))
+
+    with _RUNNER.staged_repository_view(repo) as view:
+        baseline = view.root / ".git" / "officina-validator-baseline"
+        assert (baseline / "modified.py").read_text(encoding="utf-8") == (
+            "VALUE = 'baseline'\n"
+        )
+        assert (baseline / "renamed.py").read_text(encoding="utf-8") == (
+            "VALUE = 'renamed baseline'\n"
+        )
+        assert not (baseline / "new.py").exists()
+
+
 def test_snapshot_capture_fails_if_head_changes_while_index_is_copied(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ast
+from collections import Counter
 from pathlib import Path, PurePosixPath
 from typing import Sequence
 
@@ -96,6 +97,87 @@ def _issue_sort_key(issue: DocstringValidationIssue) -> tuple[object, ...]:
     )
 
 
+def _issue_fingerprint(issue: DocstringValidationIssue) -> tuple[str, ...]:
+    """Return the location-independent identity of one checker finding.
+
+    Intent
+    ------
+    Match a staged diagnostic with the same semantic diagnostic from captured HEAD.
+
+    Rationale
+    ---------
+    Mechanical edits can move a file or shift source lines without changing its
+    docstring debt, so paths and line numbers must not turn an old finding into a
+    false regression.
+
+    Pseudocode
+    ----------
+    - return code severity node id and message
+
+    Wraps
+    -----
+    - none
+    """
+    return (
+        issue.code,
+        issue.severity,
+        issue.node_id or "",
+        issue.message,
+    )
+
+
+def _baseline_issues(
+    repo_root: Path,
+    relative_path: str,
+) -> tuple[DocstringValidationIssue, ...]:
+    """Validate the captured-HEAD predecessor for one staged Python path.
+
+    Intent
+    ------
+    Build the issue multiset that may be suppressed as pre-existing debt.
+
+    Rationale
+    ---------
+    The staged snapshot owns an immutable private baseline tree. Missing,
+    undecodable, or unparsable predecessors suppress nothing, which keeps new
+    files and malformed historical inputs fail-closed under staged validation.
+
+    Pseudocode
+    ----------
+    - set baseline_root = private captured-HEAD tree beneath mirror Git metadata
+    - set baseline_path = safe Python path for relative_path beneath baseline_root
+    - if baseline path is missing undecodable or unparsable:
+      - return empty issue tuple
+    - return canonical findings for baseline_path
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._eligible_python_path:
+      why:
+        constructs: "Builds the bounded captured-HEAD Python path without trusting a staged relative path directly."
+    officina.validators.docstring_validator.validate_module_docstrings:
+      why:
+        constructs: "Builds canonical predecessor findings under the same path-sensitive policy as staged findings."
+    """
+    baseline_root = repo_root / ".git" / "officina-validator-baseline"
+    try:
+        baseline_path = _eligible_python_path(baseline_root, relative_path)
+    except OSError:
+        return ()
+    if baseline_path is None:
+        return ()
+    try:
+        source = baseline_path.read_text(encoding="utf-8")
+        ast.parse(source, filename=str(baseline_path))
+        return validate_module_docstrings(baseline_path)
+    except (OSError, UnicodeError, SyntaxError):
+        return ()
+
+
 def _format_issue(
     repo_root: Path,
     issue: DocstringValidationIssue,
@@ -168,6 +250,15 @@ def validate_staged(
     -----
     - none
 
+    CallsFromRepo
+    -------------
+    ._baseline_issues:
+      why:
+        computes: "Builds the captured-HEAD issue sequence used to distinguish regressions from unchanged debt."
+    ._issue_fingerprint:
+      why:
+        computes: "Builds location-independent issue identities for staged and captured-HEAD comparison."
+
     InstantiationsFromRepo
     ----------------------
     officina.validators.docstring_validator.validate_module_docstrings:
@@ -179,6 +270,9 @@ def validate_staged(
     ._format_issue:
       why:
         constructs: "Builds each stable root-validator message from a canonical structured finding."
+    ._issue_fingerprint:
+      why:
+        constructs: "Builds each comparison key carried into the baseline issue multiset and staged suppression decision."
     """
 
     errors: list[str] = []
@@ -213,10 +307,16 @@ def validate_staged(
             errors.append(f"{location}: cannot parse Python: {exc.msg}")
             continue
         issues = validate_module_docstrings(module_path)
-        errors.extend(
-            _format_issue(repo_root, issue)
-            for issue in sorted(issues, key=_issue_sort_key)
+        baseline_counts = Counter(
+            _issue_fingerprint(issue)
+            for issue in _baseline_issues(repo_root, relative_path)
         )
+        for issue in sorted(issues, key=_issue_sort_key):
+            fingerprint = _issue_fingerprint(issue)
+            if baseline_counts[fingerprint] > 0:
+                baseline_counts[fingerprint] -= 1
+                continue
+            errors.append(_format_issue(repo_root, issue))
     return errors
 
 
