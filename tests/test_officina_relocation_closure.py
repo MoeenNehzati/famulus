@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import subprocess
+from typing import Callable
 
 import pytest
+import yaml
 
 from officina.refactor.closure import (
     MechanicalClosureError,
@@ -17,8 +19,60 @@ from officina.refactor.relocation import (
     ChangeSet,
     PackageCatalog,
     RelocationManifest,
+    apply_change_set,
+    load_manifest,
     plan_relocation,
 )
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+MANIFEST_PATH = REPO_ROOT / "refactors/officina-source-relocation.yaml"
+
+
+def _empty_runtime_dependencies() -> str:
+    """Render the deterministic empty v2 runtime-dependency artifact."""
+
+    return json.dumps(
+        {
+            "version": 2,
+            "skills": {},
+            "all": {
+                "python-package": [],
+                "binary": [],
+                "system-service": [],
+                "system-library": [],
+                "external-application": [],
+                "runtime": [],
+                "model-data": [],
+            },
+        },
+        indent=2,
+    ) + "\n"
+
+
+def _fixture_synchronizer() -> str:
+    """Build the tiny shadow-only synchronizer used by the acceptance fixture."""
+
+    return f'''"""Synchronize the fixture's one generated artifact."""
+
+import sys
+from pathlib import Path
+
+import officina
+
+
+if officina.ORIGIN != "shadow":
+    raise SystemExit("fixture synchronizer did not import shadow officina")
+
+root = Path(__file__).resolve().parents[3]
+target = root / "references/blueprint/runtime_dependencies.json"
+expected = {_empty_runtime_dependencies()!r}
+if "--check" in sys.argv:
+    if target.read_text(encoding="utf-8") != expected:
+        raise SystemExit("fixture runtime dependencies are out of sync")
+else:
+    target.write_text(expected, encoding="utf-8")
+'''
 
 
 def _write(path: Path, text: str) -> None:
@@ -476,3 +530,253 @@ def test_check_synchronizer_write_is_rejected_with_exact_path(
         match=r"blueprint synchronizer check changed shadow: check-write\.txt",
     ):
         close_projected_relocation(changes, manifest)
+
+
+def _extractor_acceptance_manifest() -> RelocationManifest:
+    """Select the real v2 declarations needed for one complete source transfer."""
+
+    manifest = load_manifest(MANIFEST_PATH)
+
+    def one[T](values: tuple[T, ...], predicate: Callable[[T], bool]) -> T:
+        """Return the one declaration matching the acceptance-fixture predicate."""
+
+        return next(value for value in values if predicate(value))
+
+    moves = tuple(
+        one(
+            manifest.moves,
+            lambda move, source=source: move.source == source,
+        )
+        for source in (
+            "src/officina/common/standard_extractor.py",
+            "src/officina/common/blueprints/standard-extractor.yaml",
+        )
+    )
+    return RelocationManifest(
+        moves=moves,
+        renames={
+            "python_modules": (
+                one(
+                    manifest.renames["python_modules"],
+                    lambda rename: rename.old == "officina.common.standard_extractor",
+                ),
+            ),
+            "source_ids": (
+                one(
+                    manifest.renames["source_ids"],
+                    lambda rename: rename.old == "common.source.standard-extractor",
+                ),
+            ),
+            "interface_ids": tuple(
+                rename
+                for rename in manifest.renames["interface_ids"]
+                if rename.old.startswith("common.source.standard-extractor")
+                or rename.old == "common.interface.standard-extractor"
+            ),
+        },
+        blueprint_documents=(
+            one(
+                manifest.blueprint_documents,
+                lambda document: document[0] == "src/officina/standards/blueprint.yaml",
+            ),
+        ),
+        ownership_transfers=(
+            one(
+                manifest.ownership_transfers,
+                lambda transfer: transfer.source.old == "common.source.standard-extractor",
+            ),
+        ),
+        exact_rewrites=tuple(
+            rewrite
+            for rewrite in manifest.exact_rewrites
+            if rewrite.path == "src/officina/standards/blueprints/extractor.yaml"
+        ),
+        package_catalogs=(
+            one(
+                manifest.package_catalogs,
+                lambda catalog: catalog.path == "src/officina/standards",
+            ),
+        ),
+        package_boundaries=(
+            one(
+                manifest.package_boundaries,
+                lambda boundary: boundary.path == "src/officina/standards",
+            ),
+        ),
+    )
+
+
+def _write_extractor_acceptance_fixture(tmp_path: Path) -> dict[str, bytes]:
+    """Create only the canonical inputs for one real Officina extractor relocation."""
+
+    for schema in (REPO_ROOT / "references/blueprint").glob("*.json"):
+        destination = tmp_path / "references/blueprint" / schema.name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        _write(destination, schema.read_text(encoding="utf-8"))
+    _write(
+        tmp_path / "references/blueprint/config.yaml",
+        (REPO_ROOT / "references/blueprint/config.yaml").read_text(encoding="utf-8"),
+    )
+    synchronizer = tmp_path / "skills/skill-maker/_rtx/_blueprint_syncer.py"
+    _write(synchronizer, _fixture_synchronizer())
+    synchronizer.chmod(0o755)
+    _write(tmp_path / "src/officina/__init__.py", 'ORIGIN = "shadow"\n')
+    _write(tmp_path / "src/officina/common/__init__.py", '"""Common fixture."""\n')
+    _write(tmp_path / "src/officina/common/standard_extractor.py", "VALUE = 1\n")
+    _write(
+        tmp_path / "src/officina/common/blueprint.yaml",
+        yaml.safe_dump(
+            {
+                "authority": {"owns_filesystem": []},
+                "children": {},
+                "content": [r"__init__\.py", r"standard_extractor\.py"],
+                "description": "Fixture source owner.",
+                "exports": {
+                    "common.interface.standard-extractor": {
+                        "access": {"allow_all_modules": True, "allowed_callers": []},
+                        "source_interface": "common.source.standard-extractor.interface.python-api",
+                    }
+                },
+                "gateway": {"language": "Python", "path": "__init__.py"},
+                "id": "common",
+                "namespace_exports": {},
+                "node_type": "module",
+                "schema_version": 6,
+                "sources": {
+                    "common.source.standard-extractor": {
+                        "blueprint": {
+                            "base": "module-root",
+                            "path": "blueprints/standard-extractor.yaml",
+                        }
+                    }
+                },
+                "version": 1,
+            },
+            sort_keys=False,
+        ),
+    )
+    _write(
+        tmp_path / "src/officina/common/blueprints/standard-extractor.yaml",
+        yaml.safe_dump(
+            {
+                "content": [r"standard_extractor\.py"],
+                "dependencies": [],
+                "description": "Fixture extractor source.",
+                "gateway": {"language": "Python", "path": "standard_extractor.py"},
+                "id": "common.source.standard-extractor",
+                "interfaces": {
+                    "common.source.standard-extractor.interface.python-api": {"version": 1}
+                },
+                "node_type": "behavioral_source",
+                "schema_version": 6,
+                "uses_interfaces": [],
+                "version": 1,
+            },
+            sort_keys=False,
+        ),
+    )
+    _write(
+        tmp_path / "consumer.py",
+        "from officina.common.standard_extractor import VALUE\n",
+    )
+    _write(tmp_path / "unrelated-dirty.md", "do not relocate\n")
+    _write(
+        tmp_path / "references/certification/certification-basis-roots.json",
+        json.dumps(["src/officina/__init__.py"], indent=2) + "\n",
+    )
+    _write(
+        tmp_path / "references/blueprint/runtime_dependencies.json",
+        '{"stale": true}\n',
+    )
+    return {
+        relative: (tmp_path / relative).read_bytes()
+        for relative in (
+            "src/officina/common/standard_extractor.py",
+            "src/officina/common/blueprints/standard-extractor.yaml",
+            "src/officina/common/blueprint.yaml",
+            "consumer.py",
+            "unrelated-dirty.md",
+            "references/certification/certification-basis-roots.json",
+            "references/blueprint/runtime_dependencies.json",
+        )
+    }
+
+
+def test_one_preflight_closes_real_extractor_relocation_and_is_idempotent(
+    tmp_path: Path,
+) -> None:
+    """One v2 preflight carries the move, closure artifacts, and no-op rerun."""
+
+    before = _write_extractor_acceptance_fixture(tmp_path)
+
+    changes = plan_relocation(tmp_path, _extractor_acceptance_manifest())
+
+    assert (tmp_path / "src/officina/common/standard_extractor.py").read_bytes() == before[
+        "src/officina/common/standard_extractor.py"
+    ]
+    assert not (tmp_path / "src/officina/standards/extractor.py").exists()
+    assert changes.report()["moves"] == [
+        {
+            "from": "src/officina/common/blueprints/standard-extractor.yaml",
+            "to": "src/officina/standards/blueprints/extractor.yaml",
+        },
+        {
+            "from": "src/officina/common/standard_extractor.py",
+            "to": "src/officina/standards/extractor.py",
+        },
+    ]
+    assert changes.read_text("consumer.py") == "from officina.standards.extractor import VALUE\n"
+    standards = yaml.safe_load(changes.read_text("src/officina/standards/blueprint.yaml"))
+    extractor = yaml.safe_load(
+        changes.read_text("src/officina/standards/blueprints/extractor.yaml")
+    )
+    assert standards["sources"] == {
+        "standards.source.extractor": {
+            "blueprint": {"base": "module-root", "path": "blueprints/extractor.yaml"}
+        }
+    }
+    assert extractor["id"] == "standards.source.extractor"
+    assert extractor["gateway"]["path"] == "extractor.py"
+    assert extractor["dependencies"] == []
+    assert "common.source.standard-extractor" not in json.dumps(standards)
+    assert "standard_extractor.py" not in json.dumps(extractor)
+    assert json.loads(
+        changes.read_text("references/certification/certification-basis-roots.json")
+    ) == ["src/officina/__init__.py", "src/officina/standards/__init__.py"]
+    runtime_dependencies = json.loads(
+        changes.read_text("references/blueprint/runtime_dependencies.json")
+    )
+    assert json.dumps(runtime_dependencies, indent=2) + "\n" == _empty_runtime_dependencies()
+    assert changes.report()["certification_basis_changes"] == [
+        "references/certification/certification-basis-roots.json"
+    ]
+    assert changes.report()["generated_artifact_changes"] == [
+        "references/blueprint/runtime_dependencies.json"
+    ]
+    assert changes.report()["validation_results"] == [
+        "blueprint synchronizer check",
+        "blueprint synchronizer synchronize",
+        "repository blueprint graph",
+    ]
+    assert (tmp_path / "unrelated-dirty.md").read_bytes() == before["unrelated-dirty.md"]
+
+    apply_change_set(changes)
+
+    assert not (tmp_path / "src/officina/common/standard_extractor.py").exists()
+    assert not (
+        tmp_path / "src/officina/common/blueprints/standard-extractor.yaml"
+    ).exists()
+    assert (tmp_path / "src/officina/standards/extractor.py").is_file()
+    assert (tmp_path / "src/officina/standards/blueprints/extractor.yaml").is_file()
+    assert (tmp_path / "unrelated-dirty.md").read_bytes() == before["unrelated-dirty.md"]
+
+    second = plan_relocation(tmp_path, _extractor_acceptance_manifest()).report()
+
+    for category in (
+        "moves",
+        "writes",
+        "deletes",
+        "certification_basis_changes",
+        "generated_artifact_changes",
+    ):
+        assert second[category] == []

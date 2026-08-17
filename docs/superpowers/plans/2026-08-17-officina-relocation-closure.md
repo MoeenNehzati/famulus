@@ -197,6 +197,28 @@ git add tests/test_officina_source_relocation_manifest.py tests/test_officina_re
 git commit -m "Prove one-pass Officina relocation"
 ```
 
+**Task 3 execution record (2026-08-17):**
+
+- The acceptance assertion was first RED with the canonical synchronizer copied
+  into the miniature fixture: it required `officina.runtime`, which the
+  deliberately small shadow does not provide. The fixture now uses a small
+  executable synchronizer that imports `officina` from shadow `src`, writes a
+  deterministic empty v2 runtime-dependencies artifact, and verifies those
+  exact bytes under `--check`.
+- `pytest -q tests/test_officina_relocation_closure.py -k real_extractor_relocation tests/test_officina_source_relocation_manifest.py` passed (`1 passed, 20 deselected`).
+- The first read-only real preflight reported exactly one write and
+  certification-basis change, both
+  `references/certification/certification-basis-roots.json`; it reported no
+  moves, deletes, generated changes, blueprint changes, or digest changes, and
+  completed synchronizer synchronize/check plus repository-graph validation.
+- The approved `--apply` published that one already-planned basis update. The
+  second read-only preflight reported zero moves, writes, deletes,
+  certification-basis changes, and generated changes, while again completing
+  the same synchronizer and graph validations.
+- `pytest -q tests/test_officina_relocation.py tests/test_officina_relocation_closure.py tests/test_officina_source_relocation_manifest.py` passed (`43 passed in 1.18s`).
+- `python3 repo_checks.py --suite validators` passed (`32 passed`; validator
+  task exit 0).
+
 ---
 
 ## Final review checklist

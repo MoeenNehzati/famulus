@@ -591,6 +591,8 @@ text_exclusions:
 - docs/superpowers/specs/2026-08-16-officina-source-organization-design.md
 - docs/superpowers/plans/2026-08-16-officina-source-relocation.md
 - tests/test_officina_source_relocation_manifest.py
+# This relocation fixture deliberately retains retired addresses as assertions.
+- tests/test_officina_relocation_closure.py
 - tests/fixtures/blueprint_schemas/v4/schema-meta.json
 - tests/fixtures/blueprint_schemas/v5/schema-meta.json
 - tests/fixtures/standards/skill-guidelines-source-map.yaml
@@ -603,6 +605,8 @@ active_address_exclusions:
 - docs/superpowers/specs/2026-08-16-officina-source-organization-design.md
 - docs/superpowers/plans/2026-08-16-officina-source-relocation.md
 - tests/test_officina_source_relocation_manifest.py
+# The same relocation fixture is intentionally not an active production address.
+- tests/test_officina_relocation_closure.py
 
 standard_digest_roots:
 - references/node-standards

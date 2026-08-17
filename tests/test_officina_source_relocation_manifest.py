@@ -98,3 +98,37 @@ def test_generated_package_readmes_explain_file_relevance() -> None:
         initializer = REPO_ROOT / catalog.path / "__init__.py"
         text = initializer.read_text(encoding="utf-8")
         assert not any(placeholder in text for placeholder in placeholders), initializer
+
+
+def test_manifest_declares_the_complete_extractor_transfer_fixture_subset() -> None:
+    """The end-to-end fixture draws every extractor address from manifest v2."""
+
+    manifest = load_manifest(MANIFEST_PATH)
+    moves = {(move.source, move.target) for move in manifest.moves}
+    assert {
+        (
+            "src/officina/common/standard_extractor.py",
+            "src/officina/standards/extractor.py",
+        ),
+        (
+            "src/officina/common/blueprints/standard-extractor.yaml",
+            "src/officina/standards/blueprints/extractor.yaml",
+        ),
+    }.issubset(moves)
+    assert any(
+        transfer.source.old == "common.source.standard-extractor"
+        and transfer.source.new == "standards.source.extractor"
+        and transfer.from_blueprint == "src/officina/common/blueprint.yaml"
+        and transfer.to_blueprint == "src/officina/standards/blueprint.yaml"
+        for transfer in manifest.ownership_transfers
+    )
+    assert any(
+        catalog.path == "src/officina/standards" for catalog in manifest.package_catalogs
+    )
+    assert any(
+        boundary.path == "src/officina/standards"
+        and boundary.disposition == "registered-module"
+        for boundary in manifest.package_boundaries
+    )
+    assert "tests/test_officina_relocation_closure.py" in manifest.text_exclusions
+    assert "tests/test_officina_relocation_closure.py" in manifest.active_address_exclusions
