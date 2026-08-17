@@ -11,6 +11,9 @@ INTRO_SNIPPETS = (
 )
 REQUIRED_SNIPPETS = (
     "Recommended: plugin install",
+    "No promoted stable release",
+    "_phase_entry.py",
+    "https://github.com/MoeenNehzati/famulus/issues",
     "docs/officina/installation.md",
     "Plan my day",
     "Wrap up today",
@@ -24,6 +27,7 @@ REQUIRED_SNIPPETS = (
 )
 FORBIDDEN_SNIPPETS = (
     "The dispatcher is the only approved route",
+    "_install_scaffold.py --repo-root <FAMULUS_DIR>",
     "docs/officina/skill-blueprints.md",
     "validators/` and `skills/skill-maker/validators/",
 )

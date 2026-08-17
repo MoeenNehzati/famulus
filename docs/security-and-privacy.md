@@ -1,9 +1,13 @@
 # Security and privacy
 
-This document describes the implemented Famulus trust boundary audited at
-commit `777b8c03a103` on 2026-08-13. It is an implementation inventory, not a
-security certification. The limitations near the end are release work, not
-features that are already mitigated.
+This document describes the implemented Famulus trust boundary originally
+audited at commit `777b8c03a103` on 2026-08-13 and delta-reviewed through
+commit `e74b8ad7` on 2026-08-17. The delta review covered the credential-module
+relocation, process-local Drive access-token caching and error reporting, the
+dedicated `background_run` agent and unattended launch path, and the
+current-source managed-runtime bootstrap. It is an implementation inventory,
+not a security certification. The limitations near the end are release work,
+not features that are already mitigated.
 
 For private vulnerability reporting, see the repository's
 [security policy](../SECURITY.md).
@@ -49,7 +53,7 @@ personal-assistant workflows.
 | `daily-plan` | Calendar data, weather, lists, and existing plans | Writes plans and plan metadata to Drive; list-changing requests can update master lists |
 | `wrap-up` | Plans, lists, and session context | Updates plans and lists after a consolidated user review |
 | `recurring-tasks` | Job definitions, run status, and captured job output | Installs and removes per-user scheduled jobs; enabled jobs may invoke other skills without a new interactive prompt |
-| `install-assistant-tools` | Host configuration and the selected installation source | Installs launchers, hooks, profiles, runtime files, and optional scheduled integrations; uninstall and purge remove only the resources they currently own |
+| `install-assistant-tools` | Host configuration and the selected installation source | Installs launchers, hooks, profiles, runtime files, and the unattended `background_run` prerequisite; it does not enable jobs, and uninstall/purge remove only resources they currently own |
 | `get-weather` | A location supplied by the user or another workflow | Sends that location to Open-Meteo geocoding and forecast services; it uses no credential |
 | `send-feedback` | A reviewed, redacted diagnostic report | Sends the report by email only after preview and explicit approval |
 
@@ -210,6 +214,23 @@ The implemented public workflows use the following boundaries:
   is not an operating-system sandbox. The host agent still controls filesystem,
   network, subprocess, and approval policy.
 
+### Unattended recurring execution
+
+Phase 1 always installs `invoke-skill` and its required `background_run`
+launcher, profile, and worker directory. That installation alone does not
+create or enable a scheduled job. A job runs only after the user explicitly
+asks `recurring-tasks` to create or enable it.
+
+Once enabled, `invoke-skill` starts `background_run` using Claude's
+`bypassPermissions` mode or Codex's
+`--dangerously-bypass-approvals-and-sandbox` mode. This prevents an unattended
+process from stalling on an approval prompt, but it also means there is no
+interactive approval or Codex sandbox boundary during that run. The effective
+boundary is therefore the operating-system account, host-agent credentials,
+job definition, selected skill interface, working directory, and the
+`background_run` instructions. Review all of those before enabling a job;
+disable the job before changing its skill, permissions, or connected account.
+
 ### External content is untrusted
 
 Email bodies, calendar descriptions, Drive files, web pages, attachments, and
@@ -287,6 +308,9 @@ The audit identified these unresolved items:
    working copies, or logs still have paths inside replaceable plugin content.
 8. Email recipients, subjects, and attachment paths are present in local
    process arguments; only the email body is passed through standard input.
+9. Enabled recurring jobs deliberately run without interactive host approvals
+   or the Codex sandbox; their safety depends on the pre-reviewed job and skill
+   boundary rather than per-action confirmation.
 
 These limitations are accepted only for explicitly experimental integrations.
 The affected workflow must receive the relevant hardening before it is

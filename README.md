@@ -1,6 +1,22 @@
 # Famulus
 
 Famulus is a cross-llm skills library for personal planning, research-heavy writing, and continuous skill development. It supports both Claude Code and Codex.
+
+## Project Status and Requirements
+
+Famulus is on the `0.1.0` development line. **No promoted stable release** or
+long-term version-support policy exists yet. Credential-free research and
+writing workflows are the lowest-risk starting point; Google integrations and
+unattended recurring jobs remain experimental.
+
+To install Famulus you need:
+
+- a plugin-capable Claude Code or Codex installation; Famulus does not yet
+  publish a minimum supported host-version matrix
+- Python 3.11 or newer to launch the workstation installer
+- network access during first setup so the installer can obtain its pinned
+  `uv`, managed CPython, and hash-locked Python packages
+
 ## What It Is Good At
 
 Famulus is meant to be a personal research assistant, with both personal and research workflows. On the personal side, it connects to your email and calendar, provides a cloud-backed list manager for your todo and triage lists, extracts triage items from your email, and prepares handoffs by updating session documentation and lessons. Most importantly, it can plan your day from your calendar and lists, then document your progress at the end of the day and remind you about sessions that still need handoff.
@@ -31,21 +47,53 @@ codex plugin add famulus@nullkit --json
 
 Then run the `install-assistant-tools` skill to add the local scaffold that plugin installation does not create by itself: `dispatcher`, `invoke-skill`, optional agent launchers, profile files, and PATH wiring.
 
-For minimum non-interactive setup, run the Python scaffold installer directly from the installed plugin or checkout:
+For minimum non-interactive setup, first locate the installed plugin directory
+(`installPath` in `claude plugin list --json`, or `source.path` in
+`codex plugin list --json`). Call that directory `<FAMULUS_DIR>`, then run the
+Phase 1 orchestrator:
 
 ```bash
-python3 <FAMULUS_DIR>/skills/install-assistant-tools/_rtx/_install_scaffold.py --repo-root <FAMULUS_DIR>
+python3 <FAMULUS_DIR>/skills/install-assistant-tools/_rtx/_phase_entry.py \
+  --non-interactive --no-dev-mode --no-optional-deps
 ```
 
-Pass `--home DIR`, `--bin-dir DIR`, and `--shell-rc FILE` when provisioning into a custom environment.
+Unlike the scaffold-only repair script, this command first builds and activates
+the managed runtime and then writes `dispatcher`, `llm-wakeup`/`lw`,
+`invoke-skill`, and its required `background_run` launcher. It installs no
+optional interactive agent launchers. Pass `--agents assistant,collab,coauthor,tw`
+to add them, and use `--home DIR`, `--bin-dir DIR`, or `--shell-rc FILE` when
+provisioning a custom environment.
 
 For development mode, repair flows, and more installation detail, see [docs/officina/installation.md](docs/officina/installation.md).
 
+### Update or remove
+
+Refresh the host plugin first:
+
+```bash
+# Claude Code
+claude plugin marketplace update nullkit
+claude plugin update famulus@nullkit
+
+# Codex
+codex plugin marketplace upgrade nullkit --json
+```
+
+After an update, restart the host and rerun the Phase 1 command above from the
+refreshed `<FAMULUS_DIR>` so the managed runtime and local launchers match the
+plugin source. Before removing the plugin, disable recurring jobs and run the
+manifest-based workstation uninstaller while `<FAMULUS_DIR>` still exists.
+Exact removal commands and the separate credential-revocation steps are in the
+[installation lifecycle](docs/officina/installation.md#6-updating-repairing-and-removing-famulus).
+
 ## Platform Support
 
-Famulus works with both Claude Code and Codex.
+Famulus targets both Claude Code and Codex.
 
-The install and packaging paths have CI coverage on Linux, macOS, and Windows through [`.github/workflows/python-tests.yml`](.github/workflows/python-tests.yml). In practice, it has only been tested thoroughly on Linux.
+The install and packaging paths run in CI on Linux, macOS, and Windows through
+[`.github/workflows/python-tests.yml`](.github/workflows/python-tests.yml).
+Linux has the deepest real-world testing; macOS and Windows support remains
+preliminary, and a green workflow should be checked for the commit you install.
 
 ## Featured Flows
 
@@ -151,6 +199,13 @@ The workstation installer provides three main agent launchers:
 - `collab` for longer project sessions with continuity and handoff behavior
 - `coauthor` for writing-focused sessions
 
+It also installs `background_run`, a non-interactive launcher required by
+`invoke-skill` for explicitly enabled recurring jobs. It is not an ordinary
+interactive launcher. Scheduled invocations use host approval/sandbox bypass
+modes so they cannot pause for a person who is not present; review the
+[unattended execution boundary](docs/security-and-privacy.md#authorization-and-confirmation-boundaries)
+before enabling any recurring job.
+
 Those launchers work with both Claude Code and Codex. A separate `tw` / `tmux-workspace` wrapper can launch them inside a prearranged tmux workspace with assistant, terminal, scratch, and logs panes/windows.
 
 Usage details and documentation for the launchers are in [docs/launchers.md](docs/launchers.md).
@@ -172,6 +227,14 @@ Usage details and documentation for the launchers are in [docs/launchers.md](doc
 - [docs/contributors/documentation-system.md](docs/contributors/documentation-system.md) — documentation generation and validation
 - [docs/contributors/README.md](docs/contributors/README.md) — maintainer and skill-extension entrypoint
 - [docs/testing.md](docs/testing.md) — test commands, suite policy, hooks, CI, and parallel execution
+
+## Support
+
+Report non-sensitive bugs and documentation problems through the
+[public issue tracker](https://github.com/MoeenNehzati/famulus/issues).
+Use the private route in [SECURITY.md](SECURITY.md) for vulnerabilities, and
+never include credentials, tokens, private documents, or personal data in an
+issue.
 
 
 ## Maintainer Checks

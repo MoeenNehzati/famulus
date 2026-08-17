@@ -1,10 +1,11 @@
 # Dependency and bootstrap audit
 
 This is the release-readiness record for executable bootstraps, managed
-runtime dependencies, and vendored executable assets. It was updated after an
-asset-provenance audit of commit `3bc38179` on 2026-08-15. It records what the
-current installer does; it is not a lock file or a software-composition
-analysis of a future release.
+runtime dependencies, and vendored executable assets. The dependency and
+installer inventory was reviewed against commit `e74b8ad7` on 2026-08-17; the
+vendored-asset provenance was audited at commit `3bc38179` on 2026-08-15. It
+records what the current installer does; it is not a lock file or a
+software-composition analysis of a future release.
 
 ## Shipped installation path
 
@@ -45,6 +46,9 @@ direct packages. Repeated declarations are collapsed here.
 | `dateparser` | Any version | BSD-3-Clause | Open-ended |
 | `jsonschema` | `>=4` or any version | MIT | Open-ended declarations must converge in the release lock |
 | `keyring` | Any version | MIT | Open-ended |
+| `pyflakes` | `3.2.0` in the managed core | MIT | Supports the certifier's Python-source validation |
+| `pytest` | `8.3.4` in the managed core | MIT | Runs repository and skill validation inside the managed environment |
+| `pytest-xdist` | `3.8.0` in the managed core | MIT | Provides the repository validator runner's parallel worker support |
 | `rich` | Any version | MIT | Open-ended |
 | `marker-pdf` | Any version; Linux blueprint declaration | Apache-2.0 for code | Excluded from the first supported release lock and installer; its model weights have separate use terms |
 
