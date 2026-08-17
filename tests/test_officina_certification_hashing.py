@@ -278,3 +278,18 @@ def test_validator_repository_imports_are_certification_basis_covered() -> None:
 
     assert imported_paths
     assert imported_paths <= basis
+
+
+def test_route_smoke_bootstrap_package_initializers_are_basis_covered() -> None:
+    basis = {
+        path.relative_to(REPO_ROOT)
+        for path in resolve_certification_basis_paths(REPO_ROOT)
+    }
+
+    assert {
+        Path("src/officina/blueprints/__init__.py"),
+        Path("src/officina/certification/__init__.py"),
+        Path("src/officina/configuration/__init__.py"),
+        Path("src/officina/credentials/__init__.py"),
+        Path("src/officina/git/__init__.py"),
+    } <= basis
