@@ -154,6 +154,7 @@ def _require_closure_inputs(shadow_root: Path) -> None:
         _SYNCER_PATH,
         _BASIS_PATH,
         "references/blueprint",
+        "references/blueprint/module.schema.json",
     )
     for relative in required:
         if not (shadow_root / relative).exists():
@@ -330,6 +331,8 @@ def _reconcile_generated_changes(
             continue
         if current is None:
             raise MechanicalClosureError(f"unexpected shadow delete: {relative}")
+        if previous is not None and previous[0] == current[0]:
+            raise MechanicalClosureError(f"unexpected shadow mode change: {relative}")
         before_bytes = previous[0] if previous is not None else b""
         if not _allowed_generated_change(relative, before_bytes, current[0]):
             raise MechanicalClosureError(f"unexpected shadow write: {relative}")

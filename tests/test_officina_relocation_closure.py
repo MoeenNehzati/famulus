@@ -32,6 +32,7 @@ def _closure_fixture(
     tmp_path: Path,
     initializer: str = '"""Catalog package."""\n',
     skill_content: str = "# Demo\n<!-- BEGIN BLUEPRINT CONTRACT -->\nold\n<!-- END BLUEPRINT CONTRACT -->\n",
+    include_module_schema: bool = True,
 ) -> tuple[ChangeSet, RelocationManifest]:
     """Build the smallest projected tree that exercises mechanical closure."""
 
@@ -41,6 +42,8 @@ def _closure_fixture(
     )
     _write(tmp_path / "src/officina/__init__.py", '"""Officina."""\n')
     _write(tmp_path / "references/blueprint/schema.json", "{}\n")
+    if include_module_schema:
+        _write(tmp_path / "references/blueprint/module.schema.json", "{}\n")
     _write(
         tmp_path / "skills/skill-maker/_rtx/_blueprint_syncer.py",
         '"""Fixture synchronizer."""\n',
@@ -246,6 +249,56 @@ def test_partial_canonical_marker_requires_the_missing_closure_input(
         match=r"missing closure input: skills/skill-maker/_rtx/_blueprint_syncer\.py",
     ):
         close_projected_relocation(changes, RelocationManifest())
+
+
+def test_partial_schema_cannot_fall_back_to_the_live_imported_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A shadow graph load requires its own module schema before imported code runs."""
+
+    changes, manifest = _closure_fixture(tmp_path, include_module_schema=False)
+
+    def graph_must_not_run(*args: object, **kwargs: object) -> object:
+        """Fail if an incomplete shadow reaches the imported graph loader."""
+
+        pytest.fail("graph loader must not run without the shadow module schema")
+
+    monkeypatch.setattr(
+        "officina.refactor.closure.load_repository_blueprint_graph",
+        graph_must_not_run,
+    )
+    monkeypatch.setattr("officina.refactor.closure.subprocess.run", _sync_without_writes)
+
+    with pytest.raises(
+        MechanicalClosureError,
+        match=r"missing closure input: references/blueprint/module\.schema\.json",
+    ):
+        close_projected_relocation(changes, manifest)
+
+
+def test_mode_only_generated_artifact_change_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A synchronizer may not change a generated artifact mode without its bytes."""
+
+    changes, manifest = _closure_fixture(tmp_path)
+
+    def sync(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        """Change only the shadow skill mode during the synchronization pass."""
+
+        if "--check" not in args[0]:
+            shadow = Path(str(kwargs["cwd"]))
+            (shadow / "skills/demo/SKILL.md").chmod(0o755)
+        return _sync_without_writes(*args, **kwargs)
+
+    monkeypatch.setattr("officina.refactor.closure.load_repository_blueprint_graph", _pass_graph)
+    monkeypatch.setattr("officina.refactor.closure.subprocess.run", sync)
+
+    with pytest.raises(
+        MechanicalClosureError,
+        match=r"unexpected shadow mode change: skills/demo/SKILL\.md",
+    ):
+        close_projected_relocation(changes, manifest)
 
 
 def test_plan_absorbs_calculated_closure_categories_into_its_report(
