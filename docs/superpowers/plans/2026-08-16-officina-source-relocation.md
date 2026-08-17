@@ -231,7 +231,7 @@
 
 **Interfaces:**
 - Preserves: the certifier interface and mechanical gate behavior.
-- Adds: exact managed-runtime dependencies `pytest==8.3.4` and `pytest-xdist==3.8.0`, which the certifier's existing repository-validator subprocess requires.
+- Adds: exact managed-runtime dependencies `pytest==8.3.4`, `pytest-xdist==3.8.0`, and `pyflakes==3.2.0`, which the certifier's existing repository-validator subprocess requires.
 - Excludes: ambient-Python fallback, validator bypass, and optional dependency installation.
 
 - [x] **Step 1: Add a failing generated-manifest dependency test**

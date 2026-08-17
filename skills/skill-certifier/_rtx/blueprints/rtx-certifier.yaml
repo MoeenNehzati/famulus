@@ -355,6 +355,14 @@ runtime_dependencies:
   reason: Parses v5 blueprint declarations during semantic inspection.
   version: any
 - kind: python-package
+  name: pyflakes
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Provides the undefined-name analysis used by the repository validator gate.
+  version: ==3.2.0
+- kind: python-package
   name: pytest
   platforms:
     linux: true

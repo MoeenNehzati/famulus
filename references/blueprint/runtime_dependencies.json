@@ -6710,6 +6710,17 @@
             },
             {
               "kind": "python-package",
+              "name": "pyflakes",
+              "version": "==3.2.0",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the undefined-name analysis used by the repository validator gate."
+            },
+            {
+              "kind": "python-package",
               "name": "pytest",
               "version": "==8.3.4",
               "platforms": {
@@ -6819,6 +6830,7 @@
       "jsonschema",
       "keyring",
       "marker-pdf",
+      "pyflakes",
       "pytest",
       "pytest-xdist",
       "rich"

@@ -7,6 +7,7 @@ dateparser
 jsonschema
 jsonschema>=4
 keyring
+pyflakes==3.2.0
 pytest-xdist==3.8.0
 pytest==8.3.4
 PyYAML

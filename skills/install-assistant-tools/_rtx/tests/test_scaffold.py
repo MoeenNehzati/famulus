@@ -389,6 +389,7 @@ def test_certifier_runtime_declares_its_validator_runner_dependencies() -> None:
 
     assert versions["pytest"] == "==8.3.4"
     assert versions["pytest-xdist"] == "==3.8.0"
+    assert versions["pyflakes"] == "==3.2.0"
 
 
 def test_certificate_signing_material_capability_uses_shared_owner(
