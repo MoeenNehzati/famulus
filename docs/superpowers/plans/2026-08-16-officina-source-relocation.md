@@ -18,6 +18,7 @@
 - [x] Reusable within-module trial: relocated the live standards extractor and its sidecar in a disposable copy, passed 15 focused tests, and reached a zero-change second preflight.
 - [x] Rename-aware docstring regression gate: preserve strict checks for new findings while preventing unchanged legacy findings from blocking mechanical relocations.
 - [ ] Current-source installer bootstrap: rebuild the managed runtime without importing Officina APIs from the active release.
+- [ ] Certifier runtime closure: install the repository validator dependencies required before signing.
 
 ## Global Constraints
 
@@ -217,3 +218,23 @@
 - [ ] **Step 4: Commit, refresh, verify, and certify**
 
   Commit the bootstrap fix, run the public installer interface in approved development mode, verify the active release and dispatcher help, then certify the exact final commit and commit only generated certificate records if required.
+
+### Task 9: Certifier validator runtime dependencies
+
+**Files:**
+- Modify: `skills/skill-certifier/_rtx/blueprints/rtx-certifier.yaml`
+- Regenerate: `references/blueprint/runtime_dependencies.json`
+- Regenerate: `references/runtime/requirements-core.in`
+- Regenerate: `references/runtime/requirements-core.lock`
+- Modify: `skills/install-assistant-tools/_rtx/tests/test_scaffold.py`
+- Modify: `tests/test_officina_managed_runtime.py`
+
+**Interfaces:**
+- Preserves: the certifier interface and mechanical gate behavior.
+- Adds: exact managed-runtime dependencies `pytest==8.3.4` and `pytest-xdist==3.8.0`, which the certifier's existing repository-validator subprocess requires.
+- Excludes: ambient-Python fallback, validator bypass, and optional dependency installation.
+
+- [x] **Step 1: Add a failing generated-manifest dependency test**
+- [x] **Step 2: Declare the dependencies and regenerate blueprint/runtime artifacts**
+- [x] **Step 3: Regenerate and verify the hash-checked runtime lock**
+- [ ] **Step 4: Commit, refresh the runtime, and rerun certification**

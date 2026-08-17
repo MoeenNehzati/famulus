@@ -6707,6 +6707,28 @@
                 "windows": true
               },
               "reason": "Provides the system credential-store API imported by secret_store.py."
+            },
+            {
+              "kind": "python-package",
+              "name": "pytest",
+              "version": "==8.3.4",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Executes the repository validator gate before any certificate is signed."
+            },
+            {
+              "kind": "python-package",
+              "name": "pytest-xdist",
+              "version": "==3.8.0",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the parallel pytest worker support used by the repository validator runner."
             }
           ]
         }
@@ -6797,6 +6819,8 @@
       "jsonschema",
       "keyring",
       "marker-pdf",
+      "pytest",
+      "pytest-xdist",
       "rich"
     ],
     "binary": [

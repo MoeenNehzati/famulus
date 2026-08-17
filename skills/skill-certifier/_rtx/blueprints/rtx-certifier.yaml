@@ -354,6 +354,22 @@ runtime_dependencies:
     windows: true
   reason: Parses v5 blueprint declarations during semantic inspection.
   version: any
+- kind: python-package
+  name: pytest
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Executes the repository validator gate before any certificate is signed.
+  version: ==8.3.4
+- kind: python-package
+  name: pytest-xdist
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Provides the parallel pytest worker support used by the repository validator runner.
+  version: ==3.8.0
 schema_version: 6
 uses_interfaces:
 - interface: certification.interface.hashing

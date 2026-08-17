@@ -293,6 +293,8 @@ def test_declared_python_packages_matches_today_baseline():
         "jsonschema>=4",
         "keyring",
         "marker-pdf",
+        "pytest-xdist==3.8.0",
+        "pytest==8.3.4",
         "PyYAML>=6",
         "rich",
     )
@@ -338,6 +340,8 @@ def test_declared_python_packages_include_optional_false_excludes_marker_pdf():
         "dateparser",
         "jsonschema>=4",
         "keyring",
+        "pytest-xdist==3.8.0",
+        "pytest==8.3.4",
         "PyYAML>=6",
         "rich",
     )

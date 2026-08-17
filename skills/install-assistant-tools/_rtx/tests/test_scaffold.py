@@ -372,6 +372,25 @@ def test_runtime_dependencies_manifest_uses_direct_route_schema_v2():
     assert set(dep["platforms"]) <= {"linux", "macos", "windows"}
 
 
+def test_certifier_runtime_declares_its_validator_runner_dependencies() -> None:
+    repo_root = Path(__file__).resolve().parents[4]
+    payload = json.loads(
+        (repo_root / scaffold.RUNTIME_DEPENDENCIES_MANIFEST).read_text(
+            encoding="utf-8"
+        )
+    )
+    dependencies = payload["skills"]["skill-certifier"]["interfaces"][
+        "skill-certifier._rtx.interface.certify"
+    ]["dependencies"]
+    versions = {
+        dependency["name"]: dependency["version"]
+        for dependency in dependencies
+    }
+
+    assert versions["pytest"] == "==8.3.4"
+    assert versions["pytest-xdist"] == "==3.8.0"
+
+
 def test_certificate_signing_material_capability_uses_shared_owner(
     tmp_path,
     monkeypatch,
