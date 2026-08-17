@@ -62,11 +62,16 @@ DATA
 RENDER(job) -> registration
     derived from jobs.yaml and the install layout ONLY.
     never from the calling process's environment.
+    the install layout includes the OWNER: the one checkout these
+    registrations were installed from, recorded beside them.
 
 SYNC()                                    # user-invoked
+    refuse unless this checkout is the owner   # adopt only when nothing
+                                               # is installed and none is recorded
     for each enabled job:      write RENDER(job)
     for each registration with no enabled job:   remove it
     reload the scheduler; activate the enabled registrations
+    record this checkout as the owner            # after the writes succeed
 
 RUN(job)                                  # scheduler-invoked
     mark in-flight
@@ -82,7 +87,11 @@ CHECK()                            # invoked outside the scheduler it inspects
     fail unless the scheduler is reachable
     fail unless the scheduler can resolve the agent command
     for each enabled job:
-        fail unless installed registration == RENDER(job)
+        if a recorded owner exists and is not this checkout:
+            say so and do not judge the registration   # never "stale"
+        else:
+            fail unless installed registration == RENDER(job)
+            fail unless what the registration invokes still exists
         if a run is in flight:
             fail if it started longer ago than the job timeout
         else:
@@ -108,6 +117,16 @@ CHECK()                            # invoked outside the scheduler it inspects
 4. **`CHECK` runs outside the scheduler it inspects**, driven by an
    independent timer, so it still reports when the scheduler itself is what
    has failed.
+5. **One checkout owns the installation, and it is recorded — not inferred.**
+   The host has one installation and as many copies of this skill as there are
+   checkouts. Every module used to derive the answer from its own `__file__`,
+   so a sync from any copy silently repointed the installation at that copy. A
+   sync from a worktree repointed the sentinel, which then rendered its
+   expectation from the worktree and reported `service unit stale` for every
+   job, four-hourly, against an installation that was healthy. Taking ownership
+   is refused from a temporary copy however it is reached, and a *missing*
+   record authorizes adoption only when nothing is installed — otherwise
+   deleting one file would disarm the guard.
 
 A job may declare that certain failures are transient — an exit code plus
 patterns that must appear in that run's own output. `EVALUATE` applies this

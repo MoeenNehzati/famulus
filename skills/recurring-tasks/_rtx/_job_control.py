@@ -90,6 +90,9 @@ def sync_units(jobs_file: Path | None = None) -> None:
 
 def enable_job(name: str, jobs_file: Path = JOBS_FILE, sync: bool = True) -> None:
     """Enable a job."""
+    if sync:
+        # Before the edit, not after: a refusal must leave jobs.yaml alone.
+        _unit_writer.ensure_owner()
     jobs = load_jobs(jobs_file)
     for job in jobs:
         if job["name"] == name:
@@ -104,6 +107,9 @@ def enable_job(name: str, jobs_file: Path = JOBS_FILE, sync: bool = True) -> Non
 
 def disable_job(name: str, jobs_file: Path = JOBS_FILE, sync: bool = True) -> None:
     """Disable a job."""
+    if sync:
+        # Before the edit, not after: a refusal must leave jobs.yaml alone.
+        _unit_writer.ensure_owner()
     jobs = load_jobs(jobs_file)
     for job in jobs:
         if job["name"] == name:

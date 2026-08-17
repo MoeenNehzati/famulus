@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 from ._base_backend import ScheduleContext, ScheduleJob
+
+try:  # Mirrors the sibling-import dance the rest of _rtx uses when run unpackaged.
+    from .._install_owner import read_owner
+except ImportError:  # pragma: no cover - exercised only outside the package
+    from _install_owner import read_owner
 from ._linux_backend import (
     PREFIX,
     cron_to_systemd_calendar,
@@ -46,6 +51,20 @@ def check_job_configuration(
         return None
 
     unit_dir = context.unit_dir or default_unit_dir()
+    # Rendering an expectation from a copy that does not own the installation
+    # can only ever produce a mismatch, because the executor path it renders is
+    # its own. Reporting that as drift is what turned a worktree sync into
+    # "service unit stale" for every job, four-hourly, against an installation
+    # that was healthy. Decline to judge registration instead; the caller's
+    # remaining checks (freshness, activity) do not depend on this copy's paths.
+    # A *missing* record is deliberately not a refusal here: there is nothing to
+    # contradict, and SYNC owns that case.
+    owner = read_owner(unit_dir)
+    if owner is not None and owner != context.skill_dir:
+        return (
+            f"{job.name}: registration not verified -- this copy does not own "
+            f"the installation (owner: {owner})"
+        )
     service_name = f"{PREFIX}{job.name}.service"
     timer_name = f"{PREFIX}{job.name}.timer"
     expected = (
@@ -79,4 +98,11 @@ def check_job_configuration(
             return f"{job.name}: {kind} unit unreadable: {exc}"
         if actual != wanted:
             return f"{job.name}: {kind} unit stale"
+    # Byte-identical units still cannot run if what they invoke is gone. A sync
+    # from a checkout that was later deleted leaves exactly that: a clean
+    # comparison over a registration that fails to exec, with nothing else to
+    # notice until the outcome record goes stale a full interval later.
+    executor = context.skill_dir / "_job_executor.py"
+    if not executor.exists():
+        return f"{job.name}: executor missing ({executor})"
     return None
