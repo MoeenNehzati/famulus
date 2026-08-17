@@ -46,11 +46,13 @@ The migration removes:
 - `refactors/officina-source-relocation.yaml`
 - the empty `refactors/` directory, if no other files exist
 
-The final historical manifest is saved temporarily before removal. Its two
-spent rewrites targeting the deleted bootstrap acceptance test are removed in
-a separate temporary final-check fixture; that narrow fixture verifies the
-empty postflight without weakening the relocation engine or restoring the
-deleted test.
+The final historical manifest is saved unchanged temporarily as migration
+evidence before removal. It is not a valid post-removal fixture because its
+exact rewrites intentionally name bootstrap files that the cleanup deletes.
+Idempotence is therefore verified against the live repository before removal;
+after removal, a minimal schema-v2 no-op manifest verifies only the registered
+route, parser, report shape, and empty-change behavior. Neither check weakens
+the relocation engine or restores a spent bootstrap artifact.
 
 ## Interfaces and workflow
 

@@ -438,12 +438,20 @@ Document the identical command with `--apply`, the required second empty preflig
 
 - [x] **Step 4: Synchronize, validate idempotence, and search live surfaces**
 
-The unchanged saved historical manifest cannot be the final postflight fixture:
-it contains two exact rewrites whose target is the bootstrap acceptance test
-deleted in this task. Preserve that original `/tmp` copy unchanged as evidence,
-and derive `/tmp/relocate-nodes-final-self-check.yaml` by removing only those
-two spent exact-rewrite declarations. Do not weaken the relocation engine or
-restore the deleted test.
+The unchanged saved historical manifest cannot be the final post-removal
+fixture: it contains spent exact rewrites whose targets are bootstrap files
+deleted in this task. Preserve that original `/tmp` copy unchanged as evidence.
+The exact-worktree empty postflight was already established before deleting
+those artifacts. For the final route smoke, create
+`/tmp/relocate-nodes-final-self-check.yaml` containing only:
+
+```yaml
+schema_version: 2
+```
+
+This final check verifies the registered route, parser, report shape, and
+empty-change behavior; it is not presented as replay of the historical plan.
+Do not weaken the relocation engine or restore a deleted bootstrap artifact.
 
 Run:
 
@@ -454,7 +462,7 @@ Run:
 rg -n "officina\.refactor|relocate_officina_sources|refactors/officina-source-relocation" skills src scripts tests docs/officina references officina.toml pyproject.toml
 ```
 
-Expected: synchronizer PASS; relocation report has empty
+Expected: synchronizer PASS; the no-op route-smoke report has empty
 moves/writes/deletes/generated/blueprint/digest/basis/unresolved sets; `rg`
 finds only the explicit negative cleanup assertions.
 
