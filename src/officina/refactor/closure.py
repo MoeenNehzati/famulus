@@ -9,13 +9,11 @@ It never writes the repository supplied by the change set.
 from __future__ import annotations
 
 import ast
+from collections.abc import Callable
 from dataclasses import dataclass
 import json
-import os
 from pathlib import Path, PurePosixPath
 import stat
-import subprocess
-import sys
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Literal
 
@@ -28,7 +26,6 @@ if TYPE_CHECKING:
 _BASIS_PATH = "references/certification/certification-basis-roots.json"
 _SCHEMA_PREFIX = "references/blueprint/"
 _MODULE_SCHEMA_PATH = "references/blueprint/module.schema.json"
-_SYNCER_PATH = "skills/skill-maker/_rtx/_blueprint_syncer.py"
 _SHADOW_EXCLUDED_PARTS = {
     ".agents",
     ".certificates",
@@ -185,21 +182,18 @@ def _snapshot(
 def _closure_applies(projected_files: set[str]) -> bool:
     """Return whether this projection presents any canonical Officina closure marker.
 
-    Plain mechanics fixtures intentionally contain neither the schema inventory
-    nor synchronizer. Seeing either marker means the tree claims to be an
-    Officina closure input and all required inputs must be present.
+    Plain mechanics fixtures intentionally contain no schema inventory. Seeing
+    a schema marker means the tree claims to be an Officina closure input and
+    all required inputs, including an injected synchronizer, must be present.
     """
 
-    return _SYNCER_PATH in projected_files or any(
-        path.startswith(_SCHEMA_PREFIX) for path in projected_files
-    )
+    return any(path.startswith(_SCHEMA_PREFIX) for path in projected_files)
 
 
 def _require_closure_inputs(shadow_root: Path) -> None:
     """Reject an incomplete canonical closure tree with the missing exact path."""
 
     required = (
-        _SYNCER_PATH,
         _BASIS_PATH,
         "references/blueprint",
     )
@@ -274,50 +268,6 @@ def _update_certification_basis(shadow_root: Path, manifest: RelocationManifest)
         encoding="utf-8",
     )
     return True
-
-
-def _run_synchronizer(shadow_root: Path, *, check: bool) -> None:
-    """Run one canonical synchronizer action in the shadow and report failures.
-
-    The synchronizer script was materialized from the projected repository, so
-    its own root resolution points at the shadow rather than the real worktree.
-    Text capture is explicit to keep errors deterministic and diagnosable.
-    """
-
-    command = [
-        sys.executable,
-        _SYNCER_PATH,
-        "--schema-version",
-        "6",
-    ]
-    action = "check" if check else "synchronize"
-    if check:
-        command.append("--check")
-    environment = os.environ.copy()
-    shadow_src = str(shadow_root / "src")
-    existing_pythonpath = environment.get("PYTHONPATH")
-    environment["PYTHONPATH"] = (
-        shadow_src
-        if not existing_pythonpath
-        else shadow_src + os.pathsep + existing_pythonpath
-    )
-    environment["PYTHONDONTWRITEBYTECODE"] = "1"
-    completed = subprocess.run(
-        command,
-        cwd=shadow_root,
-        check=False,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="strict",
-        env=environment,
-    )
-    if completed.returncode != 0:
-        details = (completed.stderr or completed.stdout).strip()
-        suffix = f": {details}" if details else ""
-        raise MechanicalClosureError(
-            f"blueprint synchronizer {action} failed at {_SYNCER_PATH} with exit {completed.returncode}{suffix}"
-        )
 
 
 def _generated_skill_change(before: bytes, after: bytes, relative: str) -> bool:
@@ -426,36 +376,41 @@ def _first_snapshot_difference(
 def close_projected_relocation(
     changes: ChangeSet,
     manifest: RelocationManifest,
+    *,
+    synchronize: Callable[[Path], None] | None = None,
 ) -> MechanicalClosureResult:
     """Close deterministic blueprint artifacts without changing the real tree.
 
     A projection with neither canonical graph-schema nor synchronizer marker is
-    a narrow relocation-mechanics fixture and has no closure work. Once either
-    marker is present, all canonical closure inputs are required. The function
-    updates only the supplied in-memory ``ChangeSet`` and returns exact report
-    categories for certification-basis, generated-artifact, and graph/sync
-    validation results.
+    a narrow relocation-mechanics fixture and has no closure work. Once a
+    marker is present, all canonical closure inputs and an authorized injected
+    synchronizer are required. The function updates only the supplied in-memory
+    ``ChangeSet`` and returns exact report categories for certification-basis,
+    generated-artifact, and graph/sync validation results.
     """
 
     if not _closure_applies(changes.projected_files()):
         return MechanicalClosureResult()
+    if synchronize is None:
+        raise MechanicalClosureError("missing closure synchronizer")
 
     with TemporaryDirectory(prefix="officina-relocation-") as temporary:
         shadow_root = Path(temporary)
         _materialize_projection(changes, shadow_root)
         _require_closure_inputs(shadow_root)
         basis_changed = _update_certification_basis(shadow_root, manifest)
-        before_sync = _snapshot(shadow_root)
-        _run_synchronizer(shadow_root, check=False)
-        after_sync = _snapshot(shadow_root)
-        generated = _reconcile_generated_changes(changes, before_sync, after_sync)
-        _run_synchronizer(shadow_root, check=True)
+        before_check = _snapshot(shadow_root)
+        synchronize(shadow_root, check=True)
         after_check = _snapshot(shadow_root)
-        check_difference = _first_snapshot_difference(after_sync, after_check)
+        check_difference = _first_snapshot_difference(before_check, after_check)
         if check_difference is not None:
             raise MechanicalClosureError(
                 f"blueprint synchronizer check changed shadow: {check_difference}"
             )
+        before_sync = _snapshot(shadow_root)
+        synchronize(shadow_root, check=False)
+        after_sync = _snapshot(shadow_root)
+        generated = _reconcile_generated_changes(changes, before_sync, after_sync)
         try:
             load_repository_blueprint_graph(
                 shadow_root,
@@ -476,8 +431,8 @@ def close_projected_relocation(
             certification_basis_changes=basis_changes,
             generated_artifact_changes=generated,
             validation_results=(
-                "blueprint synchronizer synchronize",
                 "blueprint synchronizer check",
+                "blueprint synchronizer synchronize",
                 "repository blueprint graph",
             ),
         )

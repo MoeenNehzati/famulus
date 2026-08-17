@@ -7080,6 +7080,17 @@
                 "macos": true,
                 "windows": true
               },
+              "reason": "Parses skill blueprint YAML files."
+            },
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Parses the temporary relocation manifest through the transition engine."
             },
             {

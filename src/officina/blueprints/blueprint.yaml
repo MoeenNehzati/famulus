@@ -24,6 +24,7 @@ exports:
       - skill-drift._rtx
       - skill-maker
       - skill-maker._rtx
+      - relocate-nodes._rtx
     source_interface: blueprints.source.graph.interface.python-api
   blueprints.interface.template:
     access:

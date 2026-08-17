@@ -44,6 +44,7 @@ namespace_exports:
         allow_all_modules: false
         allowed_callers:
         - skill-certifier
+        - relocate-nodes._rtx
 node_type: module
 schema_version: 6
 sources:

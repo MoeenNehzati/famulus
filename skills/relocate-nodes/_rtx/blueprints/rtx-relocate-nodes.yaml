@@ -24,7 +24,7 @@ interfaces:
           sensitivity: user-private
           type: {kind: file, access: read, must_exist: true, relative_to: caller-cwd, syntax: literal, opaque_content: true}
         report:
-          description: Optional destination for the JSON relocation report.
+          description: Optional external-only destination for the JSON relocation report.
           direct_io_ref: report-file
           required: false
           sensitivity: user-private
@@ -72,7 +72,7 @@ interfaces:
           access: write
           path: <report>
           path_match: exact
-          content: Optional stable JSON relocation report.
+          content: Optional stable JSON relocation report outside the selected repository.
           formats: [json]
           sensitivity: derived-private
         - id: error
@@ -181,5 +181,9 @@ runtime_dependencies:
   reason: Validates the temporary relocation manifest through the transition engine.
   version: any
 schema_version: 6
-uses_interfaces: []
+uses_interfaces:
+- interface: blueprints.interface.graph
+  version: 1
+- interface: skill-maker._rtx.interface.sync-blueprints
+  version: 1
 version: 1

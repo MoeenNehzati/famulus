@@ -6,15 +6,17 @@ import ast
 import json
 from pathlib import Path
 import subprocess
+import sys
 from typing import Callable, TypeVar
 
 import pytest
 import yaml
 
+import officina.refactor.closure as closure_module
 from officina.refactor.closure import (
     MechanicalClosureError,
     MechanicalClosureResult,
-    close_projected_relocation,
+    close_projected_relocation as _close_projected_relocation,
 )
 from officina.refactor.relocation import (
     ChangeSet,
@@ -29,6 +31,35 @@ from officina.refactor.relocation import (
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = REPO_ROOT / "refactors/officina-source-relocation.yaml"
 T = TypeVar("T")
+
+
+closure_module.subprocess = subprocess
+
+
+def _fixture_synchronize(repository: Path, *, check: bool) -> None:
+    """Adapt legacy fixture callbacks to the injected synchronizer boundary."""
+
+    command = [sys.executable, "fixture-synchronizer"]
+    if check:
+        command.append("--check")
+    completed = closure_module.subprocess.run(command, cwd=repository)
+    if completed.returncode != 0:
+        raise MechanicalClosureError("fixture synchronizer failed")
+
+
+def close_projected_relocation(
+    changes: ChangeSet,
+    manifest: RelocationManifest,
+    *,
+    synchronize: Callable[[Path], None] | None = None,
+) -> MechanicalClosureResult:
+    """Inject a test-owned synchronizer when a test has no explicit one."""
+
+    return _close_projected_relocation(
+        changes,
+        manifest,
+        synchronize=synchronize or _fixture_synchronize,
+    )
 
 
 def test_relocation_closure_test_module_parses_as_python_311() -> None:
@@ -201,29 +232,49 @@ def test_shadow_rejects_unsafe_symlink(
         close_projected_relocation(changes, manifest)
 
 
-def test_synchronizer_imports_officina_from_shadow_src(
+def test_injected_synchronizer_receives_the_shadow_repository(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The copied synchronizer imports the shadow package before the live checkout."""
+    """The injected synchronizer receives the materialized shadow rather than source."""
 
     changes, manifest = _closure_fixture(
         tmp_path,
         officina_content='ORIGIN = "shadow"\n',
-        syncer_content=(
-            "import officina\n"
-            'if officina.ORIGIN != "shadow":\n'
-            "    raise SystemExit(7)\n"
-        ),
+        syncer_content="unused by the injected synchronizer\n",
     )
     monkeypatch.setattr("officina.refactor.closure.load_repository_blueprint_graph", _pass_graph)
 
-    result = close_projected_relocation(changes, manifest)
+    def synchronize(repository: Path, *, check: bool) -> None:
+        assert (repository / "src/officina/__init__.py").read_text(encoding="utf-8") == (
+            'ORIGIN = "shadow"\n'
+        )
+
+    result = close_projected_relocation(changes, manifest, synchronize=synchronize)
 
     assert result.validation_results == (
-        "blueprint synchronizer synchronize",
         "blueprint synchronizer check",
+        "blueprint synchronizer synchronize",
         "repository blueprint graph",
     )
+
+
+def test_closure_uses_the_injected_synchronizer_for_check_then_sync(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Closure uses the supplied authorized synchronizer instead of a private path."""
+
+    changes, manifest = _closure_fixture(tmp_path)
+    calls: list[tuple[Path, bool]] = []
+
+    def synchronize(repository: Path, *, check: bool) -> None:
+        calls.append((repository, check))
+
+    monkeypatch.setattr("officina.refactor.closure.load_repository_blueprint_graph", _pass_graph)
+
+    close_projected_relocation(changes, manifest, synchronize=synchronize)
+
+    assert [check for _, check in calls] == [True, False]
+    assert all(repository != tmp_path for repository, _ in calls)
 
 
 def test_shadow_excludes_assistant_tooling_metadata(
@@ -475,7 +526,7 @@ def test_partial_canonical_marker_requires_the_missing_closure_input(
 
     with pytest.raises(
         MechanicalClosureError,
-        match=r"missing closure input: skills/skill-maker/_rtx/_blueprint_syncer\.py",
+        match=r"missing closure input: references/certification/certification-basis-roots\.json",
     ):
         close_projected_relocation(changes, RelocationManifest())
 
@@ -581,7 +632,7 @@ def test_plan_absorbs_calculated_closure_categories_into_its_report(
     )
     monkeypatch.setattr(
         "officina.refactor.closure.close_projected_relocation",
-        lambda changes, manifest: result,
+        lambda changes, manifest, *, synchronize: result,
     )
 
     report = plan_relocation(tmp_path, RelocationManifest()).report()
@@ -817,7 +868,17 @@ def test_one_preflight_closes_real_extractor_relocation_and_is_idempotent(
 
     before = _write_extractor_acceptance_fixture(tmp_path)
 
-    changes = plan_relocation(tmp_path, _extractor_acceptance_manifest())
+    def synchronize(repository: Path, *, check: bool) -> None:
+        target = repository / "references/blueprint/runtime_dependencies.json"
+        expected = _empty_runtime_dependencies()
+        if not check:
+            target.write_text(expected, encoding="utf-8")
+
+    changes = plan_relocation(
+        tmp_path,
+        _extractor_acceptance_manifest(),
+        synchronize=synchronize,
+    )
 
     assert {
         relative: (tmp_path / relative).read_bytes() for relative in before
@@ -878,7 +939,11 @@ def test_one_preflight_closes_real_extractor_relocation_and_is_idempotent(
     assert (tmp_path / "src/officina/standards/blueprints/extractor.yaml").is_file()
     assert (tmp_path / "unrelated-dirty.md").read_bytes() == before["unrelated-dirty.md"]
 
-    second = plan_relocation(tmp_path, _extractor_acceptance_manifest()).report()
+    second = plan_relocation(
+        tmp_path,
+        _extractor_acceptance_manifest(),
+        synchronize=synchronize,
+    ).report()
 
     for category in (
         "moves",

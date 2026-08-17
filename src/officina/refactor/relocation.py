@@ -15,7 +15,7 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import stat
-from typing import Any, Iterable, Literal, Mapping
+from typing import Any, Callable, Iterable, Literal, Mapping
 
 import jsonschema
 import yaml
@@ -946,7 +946,12 @@ def _validate_projected_tree(changes: ChangeSet, manifest: RelocationManifest) -
         raise RelocationError("projected-tree validation failed:\n" + "\n".join(failures[:100]))
 
 
-def plan_relocation(root: Path, manifest: RelocationManifest) -> ChangeSet:
+def plan_relocation(
+    root: Path,
+    manifest: RelocationManifest,
+    *,
+    synchronize: Callable[[Path], None] | None = None,
+) -> ChangeSet:
     """Build and validate a complete relocation without writing to disk."""
 
     root = root.resolve()
@@ -965,7 +970,11 @@ def plan_relocation(root: Path, manifest: RelocationManifest) -> ChangeSet:
     from .closure import MechanicalClosureError, close_projected_relocation
 
     try:
-        closure = close_projected_relocation(changes, manifest)
+        closure = close_projected_relocation(
+            changes,
+            manifest,
+            synchronize=synchronize,
+        )
     except MechanicalClosureError as exc:
         raise RelocationError(str(exc)) from exc
     changes.certification_basis_changes.update(closure.certification_basis_changes)
