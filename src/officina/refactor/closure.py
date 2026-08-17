@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 
 _BASIS_PATH = "references/certification/certification-basis-roots.json"
 _SCHEMA_PREFIX = "references/blueprint/"
+_MODULE_SCHEMA_PATH = "references/blueprint/module.schema.json"
 _SYNCER_PATH = "skills/skill-maker/_rtx/_blueprint_syncer.py"
 _SHADOW_EXCLUDED_PARTS = {
     ".certificates",
@@ -154,11 +155,12 @@ def _require_closure_inputs(shadow_root: Path) -> None:
         _SYNCER_PATH,
         _BASIS_PATH,
         "references/blueprint",
-        "references/blueprint/module.schema.json",
     )
     for relative in required:
         if not (shadow_root / relative).exists():
             raise MechanicalClosureError(f"missing closure input: {relative}")
+    if not (shadow_root / _MODULE_SCHEMA_PATH).is_file():
+        raise MechanicalClosureError(f"missing closure input: {_MODULE_SCHEMA_PATH}")
 
 
 def _read_basis(shadow_root: Path) -> list[str]:

@@ -33,6 +33,7 @@ def _closure_fixture(
     initializer: str = '"""Catalog package."""\n',
     skill_content: str = "# Demo\n<!-- BEGIN BLUEPRINT CONTRACT -->\nold\n<!-- END BLUEPRINT CONTRACT -->\n",
     include_module_schema: bool = True,
+    module_schema_directory: bool = False,
 ) -> tuple[ChangeSet, RelocationManifest]:
     """Build the smallest projected tree that exercises mechanical closure."""
 
@@ -44,6 +45,11 @@ def _closure_fixture(
     _write(tmp_path / "references/blueprint/schema.json", "{}\n")
     if include_module_schema:
         _write(tmp_path / "references/blueprint/module.schema.json", "{}\n")
+    elif module_schema_directory:
+        _write(
+            tmp_path / "references/blueprint/module.schema.json/placeholder",
+            "not a schema file\n",
+        )
     _write(
         tmp_path / "skills/skill-maker/_rtx/_blueprint_syncer.py",
         '"""Fixture synchronizer."""\n',
@@ -251,12 +257,23 @@ def test_partial_canonical_marker_requires_the_missing_closure_input(
         close_projected_relocation(changes, RelocationManifest())
 
 
+@pytest.mark.parametrize(
+    "module_schema_directory",
+    [False, True],
+    ids=["missing", "directory"],
+)
 def test_partial_schema_cannot_fall_back_to_the_live_imported_checkout(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    module_schema_directory: bool,
 ) -> None:
-    """A shadow graph load requires its own module schema before imported code runs."""
+    """A shadow graph load requires a schema file before imported code runs."""
 
-    changes, manifest = _closure_fixture(tmp_path, include_module_schema=False)
+    changes, manifest = _closure_fixture(
+        tmp_path,
+        include_module_schema=False,
+        module_schema_directory=module_schema_directory,
+    )
 
     def graph_must_not_run(*args: object, **kwargs: object) -> object:
         """Fail if an incomplete shadow reaches the imported graph loader."""
