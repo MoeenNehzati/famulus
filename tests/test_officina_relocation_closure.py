@@ -375,6 +375,31 @@ def test_unexpected_shadow_write_is_rejected_with_exact_path(
         close_projected_relocation(changes, manifest)
 
 
+def test_excluded_synchronize_write_is_rejected_with_exact_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A synchronizer cannot hide a generated cache artifact from reconciliation."""
+
+    changes, manifest = _closure_fixture(tmp_path)
+
+    def sync(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        """Write an excluded cache file during the synchronization action."""
+
+        if "--check" not in args[0]:
+            shadow = Path(str(kwargs["cwd"]))
+            (shadow / ".git").write_text("unexpected\n", encoding="utf-8")
+        return _sync_without_writes(*args, **kwargs)
+
+    monkeypatch.setattr("officina.refactor.closure.load_repository_blueprint_graph", _pass_graph)
+    monkeypatch.setattr("officina.refactor.closure.subprocess.run", sync)
+
+    with pytest.raises(
+        MechanicalClosureError,
+        match=r"unexpected shadow write: \.git",
+    ):
+        close_projected_relocation(changes, manifest)
+
+
 def test_graph_failure_leaves_real_repository_unchanged(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -404,6 +429,28 @@ def test_graph_failure_leaves_real_repository_unchanged(
         if path.is_file()
     }
     assert after == before
+
+
+def test_excluded_synchronize_directory_is_rejected_with_exact_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A synchronizer cannot hide a new excluded directory from reconciliation."""
+
+    changes, manifest = _closure_fixture(tmp_path)
+
+    def sync(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        """Create one excluded output directory during synchronization."""
+
+        if "--check" not in args[0]:
+            shadow = Path(str(kwargs["cwd"]))
+            (shadow / "_build").mkdir()
+        return _sync_without_writes(*args, **kwargs)
+
+    monkeypatch.setattr("officina.refactor.closure.load_repository_blueprint_graph", _pass_graph)
+    monkeypatch.setattr("officina.refactor.closure.subprocess.run", sync)
+
+    with pytest.raises(MechanicalClosureError, match=r"unexpected shadow write: _build"):
+        close_projected_relocation(changes, manifest)
 
 
 def test_plain_mechanics_fixture_skips_closure_without_canonical_markers(
@@ -542,6 +589,31 @@ def test_check_synchronizer_write_is_rejected_with_exact_path(
     with pytest.raises(
         MechanicalClosureError,
         match=r"blueprint synchronizer check changed shadow: check-write\.txt",
+    ):
+        close_projected_relocation(changes, manifest)
+
+
+def test_excluded_check_write_is_rejected_with_exact_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A check action cannot hide an excluded assistant-tooling artifact."""
+
+    changes, manifest = _closure_fixture(tmp_path)
+
+    def sync(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        """Write an excluded assistant artifact only during the check action."""
+
+        if "--check" in args[0]:
+            shadow = Path(str(kwargs["cwd"]))
+            (shadow / ".agents").write_text("unexpected\n", encoding="utf-8")
+        return _sync_without_writes(*args, **kwargs)
+
+    monkeypatch.setattr("officina.refactor.closure.load_repository_blueprint_graph", _pass_graph)
+    monkeypatch.setattr("officina.refactor.closure.subprocess.run", sync)
+
+    with pytest.raises(
+        MechanicalClosureError,
+        match=r"blueprint synchronizer check changed shadow: \.agents",
     ):
         close_projected_relocation(changes, manifest)
 

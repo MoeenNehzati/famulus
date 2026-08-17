@@ -150,30 +150,32 @@ def _materialize_projection(changes: ChangeSet, shadow_root: Path) -> None:
 
 
 def _snapshot(shadow_root: Path) -> dict[str, tuple[bytes, int, bool]]:
-    """Capture included regular-file bytes and modes after one shadow action.
+    """Capture every shadow directory, file, and symlink after one action.
 
-    The snapshot is the write boundary for the canonical synchronizer. New,
-    removed, byte-changed, or mode-changed entries can therefore be checked
-    before any result is returned to the in-memory change set.
+    Materialization exclusions limit only the synchronizer's inputs. The
+    snapshot is its write boundary, so it deliberately includes artifacts in
+    excluded trees too. New, removed, byte-changed, or mode-changed entries
+    can therefore be rejected before any result reaches the in-memory change
+    set.
     """
 
     result: dict[str, tuple[bytes, int, bool]] = {}
     for path in shadow_root.rglob("*"):
         if path.is_symlink():
             relative = path.relative_to(shadow_root).as_posix()
-            if _is_excluded(relative):
-                continue
             result[relative] = (
                 path.readlink().as_posix().encode("utf-8"),
                 stat.S_IMODE(path.lstat().st_mode),
                 True,
             )
             continue
+        if path.is_dir():
+            relative = path.relative_to(shadow_root).as_posix()
+            result[relative] = (b"", stat.S_IMODE(path.stat().st_mode), False)
+            continue
         if not path.is_file():
             continue
         relative = path.relative_to(shadow_root).as_posix()
-        if _is_excluded(relative):
-            continue
         result[relative] = (path.read_bytes(), stat.S_IMODE(path.stat().st_mode), False)
     return result
 
@@ -297,6 +299,7 @@ def _run_synchronizer(shadow_root: Path, *, check: bool) -> None:
         if not existing_pythonpath
         else shadow_src + os.pathsep + existing_pythonpath
     )
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
     completed = subprocess.run(
         command,
         cwd=shadow_root,

@@ -65,7 +65,8 @@ Within the shadow tree, the coordinator:
 
 1. updates the sorted, unique certification-basis JSON list from approved
    README-only Officina catalog initializers;
-2. snapshots every included shadow file's bytes and mode;
+2. snapshots every shadow path's content identity and mode, including any
+   artifact the synchronizer creates in an excluded input tree;
 3. runs the copied canonical blueprint synchronizer once with schema version 6
    and the shadow `src` directory first in `PYTHONPATH`;
 4. permits changed bytes only in generated blocks of `skills/*/SKILL.md` and
