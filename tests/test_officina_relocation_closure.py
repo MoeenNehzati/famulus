@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import ast
 import json
 from pathlib import Path
 import subprocess
-from typing import Callable
+from typing import Callable, TypeVar
 
 import pytest
 import yaml
@@ -27,6 +28,19 @@ from officina.refactor.relocation import (
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = REPO_ROOT / "refactors/officina-source-relocation.yaml"
+T = TypeVar("T")
+
+
+def test_relocation_closure_test_module_parses_as_python_311() -> None:
+    """The acceptance fixture remains runnable on the oldest supported Python."""
+
+    ast.parse(Path(__file__).read_text(encoding="utf-8"), feature_version=(3, 11))
+
+
+def _one(values: tuple[T, ...], predicate: Callable[[T], bool]) -> T:
+    """Return the one declaration matching an acceptance-fixture predicate."""
+
+    return next(value for value in values if predicate(value))
 
 
 def _empty_runtime_dependencies() -> str:
@@ -537,13 +551,8 @@ def _extractor_acceptance_manifest() -> RelocationManifest:
 
     manifest = load_manifest(MANIFEST_PATH)
 
-    def one[T](values: tuple[T, ...], predicate: Callable[[T], bool]) -> T:
-        """Return the one declaration matching the acceptance-fixture predicate."""
-
-        return next(value for value in values if predicate(value))
-
     moves = tuple(
-        one(
+        _one(
             manifest.moves,
             lambda move, source=source: move.source == source,
         )
@@ -556,13 +565,13 @@ def _extractor_acceptance_manifest() -> RelocationManifest:
         moves=moves,
         renames={
             "python_modules": (
-                one(
+                _one(
                     manifest.renames["python_modules"],
                     lambda rename: rename.old == "officina.common.standard_extractor",
                 ),
             ),
             "source_ids": (
-                one(
+                _one(
                     manifest.renames["source_ids"],
                     lambda rename: rename.old == "common.source.standard-extractor",
                 ),
@@ -575,13 +584,13 @@ def _extractor_acceptance_manifest() -> RelocationManifest:
             ),
         },
         blueprint_documents=(
-            one(
+            _one(
                 manifest.blueprint_documents,
                 lambda document: document[0] == "src/officina/standards/blueprint.yaml",
             ),
         ),
         ownership_transfers=(
-            one(
+            _one(
                 manifest.ownership_transfers,
                 lambda transfer: transfer.source.old == "common.source.standard-extractor",
             ),
@@ -592,13 +601,13 @@ def _extractor_acceptance_manifest() -> RelocationManifest:
             if rewrite.path == "src/officina/standards/blueprints/extractor.yaml"
         ),
         package_catalogs=(
-            one(
+            _one(
                 manifest.package_catalogs,
                 lambda catalog: catalog.path == "src/officina/standards",
             ),
         ),
         package_boundaries=(
-            one(
+            _one(
                 manifest.package_boundaries,
                 lambda boundary: boundary.path == "src/officina/standards",
             ),
@@ -711,9 +720,9 @@ def test_one_preflight_closes_real_extractor_relocation_and_is_idempotent(
 
     changes = plan_relocation(tmp_path, _extractor_acceptance_manifest())
 
-    assert (tmp_path / "src/officina/common/standard_extractor.py").read_bytes() == before[
-        "src/officina/common/standard_extractor.py"
-    ]
+    assert {
+        relative: (tmp_path / relative).read_bytes() for relative in before
+    } == before
     assert not (tmp_path / "src/officina/standards/extractor.py").exists()
     assert changes.report()["moves"] == [
         {

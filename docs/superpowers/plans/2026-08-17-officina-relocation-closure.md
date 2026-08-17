@@ -138,6 +138,14 @@ git commit -m "Close mechanical relocation artifacts"
 - Modify: `tests/test_officina_source_relocation_manifest.py`
 - Modify: `tests/test_officina_relocation_closure.py`
 - Modify: `docs/superpowers/plans/2026-08-17-officina-relocation-closure.md`
+- Modify: `refactors/officina-source-relocation.yaml`
+- Modify: `references/certification/certification-basis-roots.json`
+
+The approved fixture contains retired addresses as test assertions, so the
+manifest explicitly excludes `tests/test_officina_relocation_closure.py` from
+both text rewrites and active-address validation. The command's one approved
+real-worktree application publishes the resulting sorted certification-basis
+update; no production Python is changed.
 
 **Step 1: Add one end-to-end acceptance fixture**
 
@@ -173,7 +181,10 @@ Run the real already-relocated manifest read-only:
 scripts/relocate_officina_sources.py --root . --manifest refactors/officina-source-relocation.yaml
 ```
 
-Expected: exit 0 and an empty mechanical change report with successful graph/synchronizer validation.
+Expected: the first report contains only the deterministic certification-basis
+write. Apply that exact change in the isolated feature worktree, then require a
+second read-only report with no moves, writes, deletes, basis changes, or
+generated changes and successful graph/synchronizer validation.
 
 Run repository validators as post-implementation verification, not from relocation:
 
@@ -190,10 +201,12 @@ git diff --check
 git status --short
 ```
 
-Confirm no visualization, certification runtime, validator, or skill-drift implementation path changed. Record verified commands/results in this plan, then commit only the three Task 3 files:
+Confirm no visualization, certification runtime, validator, or skill-drift
+implementation path changed. Record verified commands/results in this plan,
+then commit only the approved five Task 3 paths:
 
 ```bash
-git add tests/test_officina_source_relocation_manifest.py tests/test_officina_relocation_closure.py docs/superpowers/plans/2026-08-17-officina-relocation-closure.md
+git add tests/test_officina_source_relocation_manifest.py tests/test_officina_relocation_closure.py docs/superpowers/plans/2026-08-17-officina-relocation-closure.md refactors/officina-source-relocation.yaml references/certification/certification-basis-roots.json
 git commit -m "Prove one-pass Officina relocation"
 ```
 
