@@ -26,27 +26,31 @@ skills/relocate-nodes/
     blueprint.yaml
     blueprints/rtx-relocate-nodes.yaml
     _relocate_nodes.py
-    relocation.py
-    closure.py
-    relocation.schema.json
+    _relocation_engine.py
+    _relocation_closure.py
+    schemas/relocation.schema.json
     tests/
 ```
 
 `_rtx/__init__.py` is documentation-only and describes the purpose of every
 runtime file; it exports no Python facade. The registered runtime source owns
-the dispatcher adapter. `relocation.py` retains planning, validation, reporting,
-and atomic publication. `closure.py` retains shadow-tree synchronization and
-graph validation. The JSON schema remains adjacent to its parser.
+the dispatcher adapter. `_relocation_engine.py` retains planning, validation,
+reporting, and atomic publication. `_relocation_closure.py` retains shadow-tree
+synchronization and graph validation. The parser resolves its JSON schema from
+the registered `schemas/` child-artifact directory.
 
-After migration, remove:
+The migration removes:
 
 - `src/officina/refactor/`
 - `scripts/relocate_officina_sources.py`
 - `refactors/officina-source-relocation.yaml`
 - the empty `refactors/` directory, if no other files exist
 
-The final historical manifest is used once to perform and verify this
-self-relocation before it is deleted.
+The final historical manifest is saved temporarily before removal. Its two
+spent rewrites targeting the deleted bootstrap acceptance test are removed in
+a separate temporary final-check fixture; that narrow fixture verifies the
+empty postflight without weakening the relocation engine or restoring the
+deleted test.
 
 ## Interfaces and workflow
 
@@ -70,6 +74,11 @@ in-memory change set, closes generated blueprint and certification-basis
 artifacts in a shadow repository, validates the canonical blueprint graph, and
 emits the existing structured JSON report. `--apply` publishes the already
 validated change set atomically.
+
+The runtime dispatches shadow synchronization through the authorized
+`skill-maker._rtx.interface.sync-blueprints` interface and consumes
+`blueprints.interface.graph` for validation. It never invokes another skill's
+private runtime file by path.
 
 The skill instructions require an exact manifest and a reviewed preflight
 before apply. They report moves, writes, deletes, unresolved references,

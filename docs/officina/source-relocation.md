@@ -8,28 +8,43 @@ is supplied.
 
 ## Workflow
 
-1. Add a YAML manifest under `refactors/`. Declare file moves and any changed
-   Python modules, source IDs, interface IDs, blueprint ownership, caller
-   authorization, or exact location-dependent text.
+1. Build an exact YAML manifest at a temporary or caller-selected path. Declare
+   file moves and any changed Python modules, source IDs, interface IDs,
+   blueprint ownership, caller authorization, or exact location-dependent text.
 2. Run a read-only preflight:
 
    ```console
    dispatcher --caller-skill relocate-nodes \
      relocate-nodes._rtx.interface.relocate \
-     --manifest refactors/example.yaml \
-     --report /tmp/example-relocation-report.json
+     --root /absolute/repository \
+     --manifest /tmp/relocation.yaml \
+     --report /tmp/relocation-report.json
    ```
 
-3. Apply the same manifest to a disposable repository copy. Run the focused
-   tests and validators for the package being moved, then rerun preflight. A
-   completed relocation must report empty `moves`, `writes`, `deletes`,
+3. Review every structured report category: `moves`, `writes`, `deletes`,
    `blueprint_changes`, `certification_basis_changes`, `digest_changes`,
-   `generated_artifact_changes`, and `unresolved_references`.
-4. Apply the audited manifest to the real worktree and repeat focused and
-   repository-supported verification.
+   `generated_artifact_changes`, `unresolved_references`, and
+   `validation_results`. Stop if unresolved references remain or any projected
+   change is not intended.
+4. Apply the accepted manifest with the identical command plus `--apply`:
 
-The current full-tree manifest is
-[`refactors/officina-source-relocation.yaml`](../../refactors/officina-source-relocation.yaml).
+   ```console
+   dispatcher --caller-skill relocate-nodes \
+     relocate-nodes._rtx.interface.relocate \
+     --root /absolute/repository \
+     --manifest /tmp/relocation.yaml \
+     --report /tmp/relocation-report.json \
+     --apply
+   ```
+
+5. Run the read-only preflight from step 2 again. A completed relocation must
+   report empty `moves`, `writes`, `deletes`, `blueprint_changes`,
+   `certification_basis_changes`, `digest_changes`,
+   `generated_artifact_changes`, and `unresolved_references`.
+6. Run focused tests and repository-supported validation for the moved nodes.
+
+Completed manifests are temporary inputs, not repository history. Remove them
+after the empty second preflight and required verification are recorded.
 
 ## Manifest responsibilities
 

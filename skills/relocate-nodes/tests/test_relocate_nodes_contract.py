@@ -84,6 +84,18 @@ def test_registered_route_is_the_only_live_relocation_entrypoint() -> None:
     assert "relocate_officina_sources.py" not in documentation
 
 
+@pytest.mark.parametrize(
+    "legacy",
+    (
+        REPO_ROOT / "src/officina/refactor",
+        REPO_ROOT / "scripts/relocate_officina_sources.py",
+        REPO_ROOT / "refactors/officina-source-relocation.yaml",
+    ),
+)
+def test_legacy_relocation_surfaces_are_absent(legacy: Path) -> None:
+    assert not legacy.exists()
+
+
 def test_runtime_engine_validates_manifest_with_its_adjacent_schema(
     tmp_path: Path,
 ) -> None:

@@ -19,18 +19,21 @@ from .._relocation_closure import (
     close_projected_relocation as _close_projected_relocation,
 )
 from .._relocation_engine import (
-    ChangeSet,
-    PackageCatalog,
-    RelocationManifest,
     BlueprintSynchronizer,
+    ChangeSet,
+    ExactRewrite,
+    Move,
+    OwnershipTransfer,
+    PackageBoundary,
+    PackageCatalog,
+    Rename,
+    RelocationManifest,
     apply_change_set,
-    load_manifest,
     plan_relocation,
 )
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-MANIFEST_PATH = REPO_ROOT / "refactors/officina-source-relocation.yaml"
 T = TypeVar("T")
 
 
@@ -706,69 +709,119 @@ def test_excluded_check_write_is_rejected_with_exact_path(
 
 
 def _extractor_acceptance_manifest() -> RelocationManifest:
-    """Select the real v2 declarations needed for one complete source transfer."""
+    """Build the narrow declarations needed for one complete source transfer."""
 
-    manifest = load_manifest(MANIFEST_PATH)
-
-    moves = tuple(
-        _one(
-            manifest.moves,
-            lambda move, source=source: move.source == source,
-        )
-        for source in (
-            "src/officina/common/standard_extractor.py",
-            "src/officina/common/blueprints/standard-extractor.yaml",
-        )
-    )
     return RelocationManifest(
-        moves=moves,
+        moves=(
+            Move(
+                "src/officina/common/standard_extractor.py",
+                "src/officina/standards/extractor.py",
+            ),
+            Move(
+                "src/officina/common/blueprints/standard-extractor.yaml",
+                "src/officina/standards/blueprints/extractor.yaml",
+            ),
+        ),
         renames={
             "python_modules": (
-                _one(
-                    manifest.renames["python_modules"],
-                    lambda rename: rename.old == "officina.common.standard_extractor",
+                Rename(
+                    "officina.common.standard_extractor",
+                    "officina.standards.extractor",
                 ),
             ),
             "source_ids": (
-                _one(
-                    manifest.renames["source_ids"],
-                    lambda rename: rename.old == "common.source.standard-extractor",
+                Rename(
+                    "common.source.standard-extractor",
+                    "standards.source.extractor",
                 ),
             ),
-            "interface_ids": tuple(
-                rename
-                for rename in manifest.renames["interface_ids"]
-                if rename.old.startswith("common.source.standard-extractor")
-                or rename.old == "common.interface.standard-extractor"
+            "interface_ids": (
+                Rename(
+                    "common.source.standard-extractor.interface.python-api",
+                    "standards.source.extractor.interface.python-api",
+                ),
+                Rename(
+                    "common.interface.standard-extractor",
+                    "standards.interface.extractor",
+                ),
             ),
         },
         blueprint_documents=(
-            _one(
-                manifest.blueprint_documents,
-                lambda document: document[0] == "src/officina/standards/blueprint.yaml",
+            (
+                "src/officina/standards/blueprint.yaml",
+                {
+                    "authority": {"owns_filesystem": []},
+                    "children": {},
+                    "content": [r"__init__\.py"],
+                    "description": (
+                        "Pinned-standard closure validation and deterministic "
+                        "standard queries."
+                    ),
+                    "exports": {},
+                    "gateway": {"language": "Python", "path": "__init__.py"},
+                    "id": "standards",
+                    "namespace_exports": {},
+                    "node_type": "module",
+                    "schema_version": 6,
+                    "sources": {},
+                    "version": 1,
+                },
             ),
         ),
         ownership_transfers=(
-            _one(
-                manifest.ownership_transfers,
-                lambda transfer: transfer.source.old == "common.source.standard-extractor",
+            OwnershipTransfer(
+                from_blueprint="src/officina/common/blueprint.yaml",
+                to_blueprint="src/officina/standards/blueprint.yaml",
+                source=Rename(
+                    "common.source.standard-extractor",
+                    "standards.source.extractor",
+                ),
+                export=Rename(
+                    "common.interface.standard-extractor",
+                    "standards.interface.extractor",
+                ),
+                content=Rename(r"standard_extractor\.py", r"extractor\.py"),
             ),
         ),
-        exact_rewrites=tuple(
-            rewrite
-            for rewrite in manifest.exact_rewrites
-            if rewrite.path == "src/officina/standards/blueprints/extractor.yaml"
+        exact_rewrites=(
+            ExactRewrite(
+                "src/officina/standards/blueprints/extractor.yaml",
+                r"standard_extractor\.py",
+                r"extractor\.py",
+            ),
+            ExactRewrite(
+                "src/officina/standards/blueprints/extractor.yaml",
+                "path: standard_extractor.py",
+                "path: extractor.py",
+            ),
         ),
         package_catalogs=(
-            _one(
-                manifest.package_catalogs,
-                lambda catalog: catalog.path == "src/officina/standards",
+            PackageCatalog(
+                path="src/officina/standards",
+                summary="Pinned-standard extraction and querying.",
+                description=(
+                    "This package validates standard import closures and exposes "
+                    "deterministic queries over them. Callers import concrete "
+                    "owning modules."
+                ),
+                roles={
+                    "extractor.py": (
+                        "Resolves a standard and its pinned import closure into "
+                        "one validated view."
+                    ),
+                    "query.py": (
+                        "Answers deterministic task and requirements queries over "
+                        "extracted standards."
+                    ),
+                },
             ),
         ),
         package_boundaries=(
-            _one(
-                manifest.package_boundaries,
-                lambda boundary: boundary.path == "src/officina/standards",
+            PackageBoundary(
+                path="src/officina/standards",
+                disposition="registered-module",
+                module_id="standards",
+                blueprint="src/officina/standards/blueprint.yaml",
             ),
         ),
     )
