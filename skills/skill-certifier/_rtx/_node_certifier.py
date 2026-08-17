@@ -426,117 +426,6 @@ def protected_review_projection(
     return {"nodes": projected, "helper_edges": helper_edges}
 
 
-class _EphemeralSecretBackend:
-    """_EphemeralSecretBackend keeps signing secrets in memory for tests.
-
-    Intent
-    ------
-    Provide the secret-backend protocol used by certificate signing without touching a persistent key store.
-
-    Rationale
-    ---------
-    Tests need deterministic isolation for generated keys; the namespace/key dictionary mimics storage while remaining process-local.
-
-    Pseudocode
-    ----------
-    - set secret_table = empty_mapping
-    - return backend
-
-    Wraps
-    -----
-    - none
-    """
-    name = "ephemeral-v4-candidate"
-
-    def __init__(self) -> None:
-        """__init__ creates the in-memory namespace table.
-
-        Intent
-        ------
-        Initialize the private mapping that stores test signing secrets by namespace and key.
-
-        Rationale
-        ---------
-        The backend must start empty for each test run so key provisioning cannot leak across certification scenarios.
-
-        Pseudocode
-        ----------
-        - set values = empty_mapping
-        - return initialized_backend
-
-        Wraps
-        -----
-        - none
-        """
-        self._values: dict[tuple[str, str], str] = {}
-
-    def store(self, namespace: str, key: str, secret: str) -> None:
-        """store writes one namespaced secret value.
-
-        Intent
-        ------
-        Persist the supplied bytes under the namespace/key pair used by the signing-material helpers.
-
-        Rationale
-        ---------
-        The fake backend has to match the production lookup contract while avoiding filesystem or external secret-service dependencies.
-
-        Pseudocode
-        ----------
-        - set stored_secret = secret_bytes
-        - return stored_secret
-
-        Wraps
-        -----
-        - none
-        """
-        self._values[(namespace, key)] = secret
-
-    def lookup(self, namespace: str, key: str) -> str | None:
-        """lookup reads one namespaced secret value.
-
-        Intent
-        ------
-        Return the bytes previously stored for the namespace/key pair, or no value when the key is absent.
-
-        Rationale
-        ---------
-        Certificate helpers use lookup to decide whether to reuse signing material, so absence must be represented without raising.
-
-        Pseudocode
-        ----------
-        - set value = values_for_namespace_key
-        - return value
-
-        Wraps
-        -----
-        - none
-        """
-        return self._values.get((namespace, key))
-
-    def clear(self, namespace: str, key: str) -> bool:
-        """clear removes one namespaced secret value.
-
-        Intent
-        ------
-        Delete the stored bytes for a namespace/key pair and report whether anything was removed.
-
-        Rationale
-        ---------
-        Tests can reset signing state through the same backend abstraction that production code uses for key lifecycle operations.
-
-        Pseudocode
-        ----------
-        - set existed = remove_namespace_key
-        - return existed
-
-        Wraps
-        -----
-        - none
-        """
-        return self._values.pop((namespace, key), None) is not None
-
-
 def _hash_bytes(value: bytes) -> str:
     """_hash_bytes returns the canonical SHA-256 label for byte evidence.
 
@@ -659,28 +548,6 @@ class CommitReadinessInspector:
         self._expected_hashes = dict(expected_hashes)
         self._allow_non_atomic = allow_non_atomic
 
-    @staticmethod
-    def _literal_pathspec(relative_path: str) -> str:
-        """Encode one repository path as a literal Git pathspec.
-
-        Intent
-        ------
-        Prevent Git pathspec metacharacters in tracked filenames from changing query scope.
-
-        Rationale
-        ---------
-        Batch queries must preserve exact-path semantics for unusual but valid repository names.
-
-        Pseudocode
-        ----------
-        - return literal_pathspec_for_relative_path
-
-        Wraps
-        -----
-        - none
-        """
-        return f":(literal){relative_path}"
-
     def _normalize_paths(self, reasons: set[str]) -> tuple[str, ...]:
         """Normalize input paths and record containment failures.
 
@@ -723,21 +590,24 @@ class CommitReadinessInspector:
     def _commit_entries(
         self,
         relative_paths: Sequence[str],
-    ) -> dict[str, tuple[str, str]]:
-        """Load commit modes and object IDs in one tree query.
+    ) -> dict[str, tuple[str, str]] | None:
+        """Load requested commit modes and object IDs in one tree query.
 
         Intent
         ------
-        Map every valid exact input path to its commit mode and blob object ID.
+        Filter the captured commit's complete recursive tree to the exact requested input paths and map each matching blob to its mode and object ID.
 
         Rationale
         ---------
-        One bounded tree query replaces one subprocess per path without changing missing-entry behavior.
+        A fixed-size Git command avoids host command-line limits, while set membership keeps filtering linear in the returned tree size.
 
         Pseudocode
         ----------
-        - set tree_result = batched_commit_tree_query
-        - set commit_entries = parsed_exact_blob_entries
+        - set requested_paths = exact_input_path_set
+        - set tree_result = complete_recursive_commit_tree_query
+        - if tree_result failed:
+          - return unavailable
+        - set commit_entries = requested_parsed_blob_entries
         - return commit_entries
 
         Wraps
@@ -753,17 +623,18 @@ class CommitReadinessInspector:
         assert self._snapshot is not None
         if not relative_paths:
             return {}
+        requested_paths = set(relative_paths)
         result = run_git(
             self._snapshot.repo_root,
             "ls-tree",
+            "-r",
             "-z",
+            "--full-tree",
             self._snapshot.commit,
-            "--",
-            *(self._literal_pathspec(path) for path in relative_paths),
             check=False,
         )
         if result.returncode != 0:
-            return {}
+            return None
         entries: dict[str, tuple[str, str]] = {}
         for record in result.stdout.rstrip(b"\0").split(b"\0"):
             metadata, separator, raw_path = record.partition(b"\t")
@@ -776,28 +647,31 @@ class CommitReadinessInspector:
                 object_id = fields[2].decode("ascii")
             except UnicodeError:
                 continue
-            if relative_path in relative_paths:
+            if relative_path in requested_paths:
                 entries[relative_path] = (mode, object_id)
         return entries
 
     def _index_entries(
         self,
         relative_paths: Sequence[str],
-    ) -> dict[str, tuple[tuple[str, str, str], ...]]:
-        """Load index modes, object IDs, and stages in one query.
+    ) -> dict[str, tuple[tuple[str, str, str], ...]] | None:
+        """Load requested index modes, object IDs, and stages in one query.
 
         Intent
         ------
-        Group every valid index entry by exact repository-relative input path.
+        Filter the complete index to the exact requested repository-relative inputs and group every matching entry by path.
 
         Rationale
         ---------
-        Batched index inspection retains conflict-stage evidence while avoiding per-path process startup.
+        A fixed-size Git command avoids host command-line limits and still retains conflict-stage evidence for requested paths.
 
         Pseudocode
         ----------
-        - set index_result = batched_index_query
-        - set grouped_entries = parsed_index_records_by_path
+        - set requested_paths = exact_input_path_set
+        - set index_result = complete_index_query
+        - if index_result failed:
+          - return unavailable
+        - set grouped_entries = requested_index_records_by_path
         - return grouped_entries_without_malformed_paths
 
         Wraps
@@ -813,17 +687,16 @@ class CommitReadinessInspector:
         assert self._snapshot is not None
         if not relative_paths:
             return {}
+        requested_paths = set(relative_paths)
         result = run_git(
             self._snapshot.repo_root,
             "ls-files",
             "--stage",
             "-z",
-            "--",
-            *(self._literal_pathspec(path) for path in relative_paths),
             check=False,
         )
         if result.returncode != 0:
-            return {}
+            return None
         grouped: dict[str, list[tuple[str, str, str]]] = {}
         invalid: set[str] = set()
         for record in result.stdout.rstrip(b"\0").split(b"\0"):
@@ -831,6 +704,8 @@ class CommitReadinessInspector:
             try:
                 relative_path = os.fsdecode(raw_path)
             except UnicodeError:
+                continue
+            if relative_path not in requested_paths:
                 continue
             fields = metadata.split()
             if not separator or len(fields) != 3:
@@ -848,12 +723,12 @@ class CommitReadinessInspector:
             if path not in invalid
         }
 
-    def _commit_blobs(self, object_ids: Sequence[str]) -> dict[str, bytes]:
+    def _commit_blobs(self, object_ids: Sequence[str]) -> dict[str, bytes] | None:
         """Read unique commit blobs through one size-delimited batch.
 
         Intent
         ------
-        Return exact blob bytes keyed by object ID for every requested commit object that Git can read.
+        Return exact blob bytes keyed by object ID for every requested commit object that Git can read, or report that the batch query failed.
 
         Rationale
         ---------
@@ -889,7 +764,7 @@ class CommitReadinessInspector:
             ),
         )
         if result.returncode != 0:
-            return {}
+            return None
         blobs: dict[str, bytes] = {}
         output = result.stdout
         offset = 0
@@ -1028,7 +903,7 @@ class CommitReadinessInspector:
 
         Intent
         ------
-        Compare commit, index, worktree, mode, and expected-hash evidence for every normalized input.
+        Compare commit, index, worktree, mode, and expected-hash evidence for every normalized input while naming unavailable metadata sources directly.
 
         Rationale
         ---------
@@ -1036,7 +911,9 @@ class CommitReadinessInspector:
 
         Pseudocode
         ----------
-        - set git_evidence = batched_tree_index_and_blob_observations
+        - set git_evidence = fixed-command tree index and blob observations
+        - if a metadata query failed:
+          - return failed readiness naming that query
         - set reasons = deterministic_per_path_comparison_findings
         - return readiness_from_reasons_and_snapshot
 
@@ -1067,7 +944,13 @@ class CommitReadinessInspector:
         except OSError:
             reasons.update(f"git-unavailable:{path}" for path in relative_paths)
             return CommitReadiness(False, None, tuple(sorted(reasons)))
-        blob_query_unavailable = False
+        if commit_entries is None:
+            reasons.add("git-tree-query-failed")
+        if index_entries is None:
+            reasons.add("git-index-query-failed")
+        if commit_entries is None or index_entries is None:
+            return CommitReadiness(False, None, tuple(sorted(reasons)))
+
         try:
             commit_blobs = self._commit_blobs(
                 tuple(object_id for _mode, object_id in commit_entries.values())
@@ -1075,6 +958,11 @@ class CommitReadinessInspector:
         except OSError:
             commit_blobs = {}
             blob_query_unavailable = True
+        else:
+            blob_query_unavailable = False
+        if commit_blobs is None:
+            reasons.add("git-blob-query-failed")
+            return CommitReadiness(False, None, tuple(sorted(reasons)))
 
         for relative_path in relative_paths:
             commit_entry = commit_entries.get(relative_path)

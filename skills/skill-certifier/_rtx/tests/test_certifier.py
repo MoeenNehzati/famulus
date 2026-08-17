@@ -100,6 +100,7 @@ def test_certifier_does_not_expose_legacy_audit_health_authority() -> None:
         "_hash_items",
         "collect_targets",
         "reviewed_repository_target_requests",
+        "_EphemeralSecretBackend",
     ):
         assert not hasattr(certifier, name)
     assert "compute-hashes" not in certifier.Interface.dispatches
@@ -852,7 +853,15 @@ def test_private_writer_runs_full_readiness_only_at_batch_boundaries(
 
 @pytest.mark.parametrize(
     "mutation",
-    ("clean", "content", "worktree-mode", "index-mode", "missing", "symlink"),
+    (
+        "clean",
+        "content",
+        "worktree-mode",
+        "index-mode",
+        "missing",
+        "symlink",
+        "expected-hash",
+    ),
 )
 def test_batched_readiness_matches_canonical_per_path_decisions(
     tmp_path: Path,
@@ -882,6 +891,8 @@ def test_batched_readiness_matches_canonical_per_path_decisions(
     elif mutation == "symlink":
         target.unlink()
         target.symlink_to("blueprint.yaml")
+    elif mutation == "expected-hash":
+        expected_hashes[target.relative_to(tmp_path).as_posix()] = "sha256:incorrect"
 
     canonical = check_commit_readiness(snapshot, paths, expected_hashes)
     batched = certifier.CommitReadinessInspector(
@@ -906,11 +917,11 @@ def test_batched_readiness_uses_fixed_git_process_count(
         tmp_path / "references" / "certification" / "node-hash-policy.yaml",
     )
     expected_hashes = certifier._expected_file_hashes(snapshot, paths)
-    operations: list[str] = []
+    operations: list[tuple[str, ...]] = []
     real_run_git = certifier.run_git
 
     def counted_run_git(repo_root: Path, *args: str, **kwargs: object):
-        operations.append(args[0])
+        operations.append(args)
         return real_run_git(repo_root, *args, **kwargs)
 
     monkeypatch.setattr(certifier, "run_git", counted_run_git)
@@ -922,7 +933,228 @@ def test_batched_readiness_uses_fixed_git_process_count(
     ).inspect()
 
     assert readiness.stamp_worthy
-    assert operations == ["ls-tree", "ls-files", "cat-file"]
+    assert operations == [
+        ("ls-tree", "-r", "-z", "--full-tree", snapshot.commit),
+        ("ls-files", "--stage", "-z"),
+        ("cat-file", "--batch"),
+    ]
+
+
+def test_commit_tree_filter_does_not_scan_the_requested_sequence_for_each_entry(
+    tmp_path: Path,
+) -> None:
+    materialize_repository_fixture(tmp_path)
+    snapshot = certifier.capture_git_snapshot(tmp_path)
+    assert snapshot is not None
+
+    class MembershipRejectingPaths(tuple[str, ...]):
+        def __contains__(self, _value: object) -> bool:
+            raise AssertionError("tree filtering must use a set")
+
+    relative_paths = MembershipRejectingPaths(
+        (
+            "skills/demo-skill/SKILL.md",
+            "skills/demo-skill/blueprint.yaml",
+        )
+    )
+
+    entries = certifier.CommitReadinessInspector(
+        snapshot,
+        (),
+        {},
+    )._commit_entries(relative_paths)
+
+    assert entries is not None
+    assert set(entries) == set(relative_paths)
+
+
+@pytest.mark.parametrize(
+    ("failed_operation", "expected_reason"),
+    (
+        ("ls-tree", "git-tree-query-failed"),
+        ("ls-files", "git-index-query-failed"),
+        ("cat-file", "git-blob-query-failed"),
+    ),
+)
+def test_batched_readiness_names_failed_metadata_query(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failed_operation: str,
+    expected_reason: str,
+) -> None:
+    materialize_repository_fixture(tmp_path)
+    snapshot = certifier.capture_git_snapshot(tmp_path)
+    assert snapshot is not None
+    path = tmp_path / "skills" / "demo-skill" / "SKILL.md"
+    expected_hashes = certifier._expected_file_hashes(snapshot, (path,))
+    real_run_git = certifier.run_git
+
+    def fail_metadata_query(repo_root: Path, *args: str, **kwargs: object):
+        if args[0] == failed_operation:
+            return SimpleNamespace(returncode=1, stdout=b"", stderr=b"query failed")
+        return real_run_git(repo_root, *args, **kwargs)
+
+    monkeypatch.setattr(certifier, "run_git", fail_metadata_query)
+
+    readiness = certifier.CommitReadinessInspector(
+        snapshot,
+        (path,),
+        expected_hashes,
+    ).inspect()
+
+    assert readiness.reasons == (expected_reason,)
+
+
+def test_batched_readiness_preserves_unusual_tracked_filename(
+    tmp_path: Path,
+) -> None:
+    materialize_repository_fixture(tmp_path)
+    relative_path = "skills/demo-skill/literal[edge]*?.txt"
+    path = tmp_path / relative_path
+    path.write_text("unusual but valid\n", encoding="utf-8")
+    repository = GitTestRepository(tmp_path)
+    repository.git("add", "--", relative_path)
+    repository.git("commit", "-qm", "add unusual path")
+    snapshot = certifier.capture_git_snapshot(tmp_path)
+    assert snapshot is not None
+    expected_hashes = certifier._expected_file_hashes(snapshot, (path,))
+
+    readiness = certifier.CommitReadinessInspector(
+        snapshot,
+        (path,),
+        expected_hashes,
+    ).inspect()
+
+    assert readiness.stamp_worthy
+
+
+def test_batched_readiness_matches_outside_repository_decision(
+    tmp_path: Path,
+) -> None:
+    materialize_repository_fixture(tmp_path)
+    snapshot = certifier.capture_git_snapshot(tmp_path)
+    assert snapshot is not None
+    tracked_path = tmp_path / "skills" / "demo-skill" / "SKILL.md"
+    outside_path = tmp_path.parent / f"{tmp_path.name}-outside.txt"
+    outside_path.write_text("outside\n", encoding="utf-8")
+    paths = (tracked_path, outside_path)
+    expected_hashes = certifier._expected_file_hashes(snapshot, paths)
+
+    canonical = check_commit_readiness(snapshot, paths, expected_hashes)
+    batched = certifier.CommitReadinessInspector(
+        snapshot,
+        paths,
+        expected_hashes,
+    ).inspect()
+
+    assert batched == canonical
+
+
+def test_batched_readiness_matches_conflicted_index_decision(
+    tmp_path: Path,
+) -> None:
+    materialize_repository_fixture(tmp_path)
+    repository = GitTestRepository(tmp_path)
+    relative_path = "skills/demo-skill/SKILL.md"
+    path = tmp_path / relative_path
+    original_object = repository.git(
+        "rev-parse",
+        f"HEAD:{relative_path}",
+    ).stdout.decode("ascii").strip()
+    conflicting_object = repository.git(
+        "hash-object",
+        "-w",
+        "--stdin",
+        input_bytes=b"conflicting index content\n",
+    ).stdout.decode("ascii").strip()
+    repository.git("update-index", "--force-remove", "--", relative_path)
+    repository.git(
+        "update-index",
+        "--index-info",
+        input_bytes=(
+            f"100644 {original_object} 1\t{relative_path}\n"
+            f"100644 {conflicting_object} 2\t{relative_path}\n"
+        ).encode("utf-8"),
+    )
+    snapshot = certifier.capture_git_snapshot(tmp_path)
+    assert snapshot is not None
+    expected_hashes = certifier._expected_file_hashes(snapshot, (path,))
+
+    canonical = check_commit_readiness(snapshot, (path,), expected_hashes)
+    batched = certifier.CommitReadinessInspector(
+        snapshot,
+        (path,),
+        expected_hashes,
+    ).inspect()
+
+    assert batched == canonical
+    assert batched.reasons == (f"nonzero-index-stage:{relative_path}",)
+
+
+def test_batched_readiness_matches_unsupported_commit_mode(
+    tmp_path: Path,
+) -> None:
+    if sys.platform == "win32":
+        # famulus-skip: category=platform-contract; reason=requires creation of a committed symbolic link; alternate=unsupported index stages and native-read branch cover platform-neutral fail-closed handling
+        pytest.skip("symbolic-link fixture is unavailable")
+    materialize_repository_fixture(tmp_path)
+    relative_path = "skills/demo-skill/linked-input"
+    path = tmp_path / relative_path
+    path.symlink_to("SKILL.md")
+    repository = GitTestRepository(tmp_path)
+    repository.git("add", "--", relative_path)
+    repository.git("commit", "-qm", "add symbolic input")
+    snapshot = certifier.capture_git_snapshot(tmp_path)
+    assert snapshot is not None
+
+    canonical = check_commit_readiness(snapshot, (path,), {})
+    batched = certifier.CommitReadinessInspector(
+        snapshot,
+        (path,),
+        {},
+    ).inspect()
+
+    assert batched == canonical
+    assert batched.reasons == (f"unsupported-commit-mode:{relative_path}",)
+
+
+def test_read_worktree_file_uses_native_confined_reader_when_required(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    materialize_repository_fixture(tmp_path)
+    snapshot = certifier.capture_git_snapshot(tmp_path)
+    assert snapshot is not None
+    calls: list[tuple[Path, Path, bool]] = []
+
+    def native_read(
+        path: Path,
+        *,
+        allowed_root: Path,
+        allow_non_atomic: bool,
+    ) -> bytes:
+        calls.append((path, allowed_root, allow_non_atomic))
+        return b"native bytes"
+
+    monkeypatch.setattr(certifier, "read_regular_file_bytes", native_read)
+    monkeypatch.setattr(certifier, "os", SimpleNamespace(name="nt"))
+    inspector = certifier.CommitReadinessInspector(
+        snapshot,
+        (),
+        {},
+        allow_non_atomic=True,
+    )
+
+    result = inspector._read_worktree_file("skills/demo-skill/SKILL.md")
+
+    assert result == (b"native bytes", None, None)
+    assert calls == [
+        (
+            tmp_path / "skills" / "demo-skill" / "SKILL.md",
+            tmp_path,
+            True,
+        )
+    ]
 
 
 def test_batched_readiness_preserves_blob_query_unavailable_reason(
