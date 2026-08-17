@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import stat
 import subprocess
 import sys
 
@@ -232,6 +233,37 @@ def test_catalog_generation_and_application_are_idempotent(tmp_path: Path) -> No
     second = plan_relocation(tmp_path, manifest)
     assert second.report()["moves"] == []
     assert second.report()["writes"] == []
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX executable modes")
+def test_application_preserves_modes_of_moved_and_rewritten_files(
+    tmp_path: Path,
+) -> None:
+    """Publishing projected bytes must not remove existing executable bits."""
+
+    moved = tmp_path / "old.py"
+    rewritten = tmp_path / "runner.py"
+    _write(moved, "VALUE = 1\n")
+    _write(rewritten, "MODULE = 'old.module'\n")
+    moved.chmod(0o755)
+    rewritten.chmod(0o755)
+    manifest = _manifest(
+        tmp_path / "move.yaml",
+        {
+            "schema_version": 1,
+            "moves": [{"from": "old.py", "to": "new.py"}],
+            "renames": {
+                "python_modules": [
+                    {"from": "old.module", "to": "new.module"}
+                ]
+            },
+        },
+    )
+
+    apply_change_set(plan_relocation(tmp_path, manifest))
+
+    assert stat.S_IMODE((tmp_path / "new.py").stat().st_mode) == 0o755
+    assert stat.S_IMODE(rewritten.stat().st_mode) == 0o755
 
 
 def test_catalog_regeneration_preserves_an_unchanged_moved_initializer(

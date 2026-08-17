@@ -14,6 +14,7 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import re
+import stat
 from typing import Any, Iterable, Mapping
 
 import jsonschema
@@ -322,6 +323,7 @@ class ChangeSet:
     inventory_exclusions: tuple[str, ...] = ()
     moves: list[Move] = field(default_factory=list)
     writes: dict[str, bytes] = field(default_factory=dict)
+    write_modes: dict[str, int] = field(default_factory=dict)
     deletes: set[str] = field(default_factory=set)
     expected: dict[str, bytes | None] = field(default_factory=dict)
     blueprint_changes: set[str] = field(default_factory=set)
@@ -390,6 +392,12 @@ class ChangeSet:
             return
         self.expected.setdefault(relative, self._disk_bytes(relative))
         self.writes[relative] = payload
+        disk_path = self.root / relative
+        if disk_path.is_file():
+            self.write_modes.setdefault(
+                relative,
+                stat.S_IMODE(disk_path.stat().st_mode),
+            )
         self.deletes.discard(relative)
 
     def write_text(self, relative: str, text: str) -> None:
@@ -461,6 +469,9 @@ def _project_moves(changes: ChangeSet, manifest: RelocationManifest) -> None:
             changes.expected.setdefault(source_relative, source_file.read_bytes())
             changes.expected.setdefault(target_relative, None)
             changes.writes[target_relative] = source_file.read_bytes()
+            changes.write_modes[target_relative] = stat.S_IMODE(
+                source_file.stat().st_mode
+            )
             changes.deletes.add(source_relative)
 
 
@@ -820,6 +831,8 @@ def apply_change_set(changes: ChangeSet) -> None:
             if temporary.exists():
                 raise RelocationError(f"staging path already exists: {temporary}")
             temporary.write_bytes(payload)
+            if relative in changes.write_modes:
+                temporary.chmod(changes.write_modes[relative])
             staged[relative] = temporary
         for relative, temporary in staged.items():
             os.replace(temporary, changes.root / relative)
