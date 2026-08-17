@@ -83,6 +83,8 @@ python3 -m pip install -r requirements-docs.txt
 
 The site includes:
 
+- the repository `README.md` as the website homepage
+- `docs/README.md` as the `/documentation/` index
 - every regular file under `docs/`, recursively, except `docs/plans/`
 - standalone assets such as generated HTML demos under `docs/demo/`
 - the generated interactive repository blueprint graph

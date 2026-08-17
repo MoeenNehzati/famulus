@@ -2,9 +2,10 @@
 
 The source repository contains working notes and implementation plans that are
 not part of the public documentation website.  This module makes that boundary
-explicit: it stages the complete ``docs`` tree except ``docs/plans`` under an
-ignored build directory.  Links to files outside that surface remain useful by
-becoming links to their GitHub source pages.
+explicit: it stages the repository ``README.md`` as the homepage and the
+complete ``docs`` tree except ``docs/plans`` under an ignored build directory.
+Links to files outside that surface remain useful by becoming links to their
+GitHub source pages.
 
 The assembler deliberately does not render Markdown or serve HTTP.  MkDocs owns
 those standard presentation concerns; this module owns only Famulus-specific
@@ -67,7 +68,7 @@ def sync_published_docs(
     if not docs_root.is_dir():
         raise FileNotFoundError(f"documentation directory does not exist: {docs_root}")
 
-    published = _published_paths(docs_root)
+    published = _published_paths(root, docs_root)
     _clear_managed_site_sources(output)
 
     for source, destination_relative in published.items():
@@ -125,7 +126,7 @@ def assemble_site(
     )
     if build_graph:
         if graph_builder is None:
-            from officina.visualization.from_blueprint import (
+            from officina.visualization.from_blueprint.visualizer import (
                 build_blueprint_graph,
             )
 
@@ -146,11 +147,15 @@ def _validate_output_path(root: Path, docs_root: Path, output: Path) -> None:
         raise ValueError(f"refusing to stage documentation over source path: {output}")
 
 
-def _published_paths(docs_root: Path) -> dict[Path, Path]:
+def _published_paths(repo_root: Path, docs_root: Path) -> dict[Path, Path]:
     """Return the source-to-staged mapping for public documentation files."""
 
-    published: dict[Path, Path] = {}
-    destinations: set[Path] = set()
+    root_readme = repo_root / "README.md"
+    if not root_readme.is_file():
+        raise FileNotFoundError(f"repository README does not exist: {root_readme}")
+
+    published: dict[Path, Path] = {root_readme.resolve(): Path("index.md")}
+    destinations: set[Path] = {Path("index.md")}
     for source in sorted(docs_root.rglob("*")):
         relative = source.relative_to(docs_root)
         if not source.is_file() or source.is_symlink():
@@ -158,7 +163,9 @@ def _published_paths(docs_root: Path) -> dict[Path, Path]:
         if relative.parts[0] == "plans":
             continue
         destination = (
-            Path("index.md") if relative == Path("README.md") else relative
+            Path("documentation/index.md")
+            if relative == Path("README.md")
+            else relative
         )
         if destination in destinations:
             raise ValueError(f"duplicate documentation destination: {destination}")

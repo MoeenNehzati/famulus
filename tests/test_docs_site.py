@@ -20,7 +20,12 @@ def _write(path: Path, content: str) -> None:
 def test_assemble_site_publishes_docs_tree_except_plans(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     output = repo / "_build" / "docs-site" / "source"
-    _write(repo / "README.md", "# Repository\n")
+    _write(
+        repo / "README.md",
+        "# Repository\n\n"
+        "[Architecture](docs/architecture.md)\n"
+        "[Private plan](docs/plans/private.md)\n",
+    )
     _write(
         repo / "docs" / "README.md",
         "# Documentation\n\n"
@@ -69,7 +74,12 @@ def test_assemble_site_publishes_docs_tree_except_plans(tmp_path: Path) -> None:
     result = assemble_site(repo, output, graph_builder=write_graph)
 
     assert result == output
-    assert (output / "index.md").is_file()
+    assert (output / "index.md").read_text(encoding="utf-8").startswith(
+        "# Repository"
+    )
+    assert (output / "documentation" / "index.md").read_text(
+        encoding="utf-8"
+    ).startswith("# Documentation")
     assert (output / "architecture.md").is_file()
     assert (output / "contributors" / "README.md").is_file()
     assert (output / "contributors" / "nested" / "guide.md").is_file()
@@ -85,12 +95,19 @@ def test_assemble_site_publishes_docs_tree_except_plans(tmp_path: Path) -> None:
     assert not (output / "plans").exists()
 
     homepage = (output / "index.md").read_text(encoding="utf-8")
-    assert "[Officina](officina/architecture.md)" in homepage
-    assert "[Dependency graph](demo/dependency-graph.html)" in homepage
+    assert "[Architecture](architecture.md)" in homepage
     assert (
         "[Private plan](https://github.com/MoeenNehzati/famulus/blob/master/"
         "docs/plans/private.md)"
     ) in homepage
+
+    documentation_index = (output / "documentation" / "index.md").read_text(
+        encoding="utf-8"
+    )
+    assert "[Officina](../officina/architecture.md)" in documentation_index
+    assert (
+        "[Dependency graph](../demo/dependency-graph.html)" in documentation_index
+    )
 
 
 def test_assemble_site_preserves_site_links_and_rewrites_unpublished_targets(
@@ -126,13 +143,45 @@ def test_assemble_site_preserves_site_links_and_rewrites_unpublished_targets(
 
     assemble_site(repo, output, graph_builder=write_graph)
 
-    homepage = (output / "index.md").read_text(encoding="utf-8")
-    assert "[Architecture](architecture.md#scope)" in homepage
-    assert "[Domain guide](domains/personal-assistance.md)" in homepage
-    assert (
-        "[Repository README](https://github.com/MoeenNehzati/famulus/blob/master/README.md)"
-    ) in homepage
-    assert "[External](https://example.com/)" in homepage
+    documentation_index = (output / "documentation" / "index.md").read_text(
+        encoding="utf-8"
+    )
+    assert "[Architecture](../architecture.md#scope)" in documentation_index
+    assert "[Domain guide](../domains/personal-assistance.md)" in documentation_index
+    assert "[Repository README](../index.md)" in documentation_index
+    assert "[External](https://example.com/)" in documentation_index
+
+
+def test_assemble_site_resolves_default_graph_builder_from_visualizer(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repo = tmp_path / "repo"
+    output = repo / "_build" / "docs-site" / "source"
+    _write(repo / "README.md", "# Repository\n")
+    _write(repo / "docs" / "README.md", "# Documentation\n")
+
+    from officina.visualization.from_blueprint import visualizer
+
+    def write_graph(
+        repo_root: str | Path,
+        *,
+        output_dir: str | Path,
+        name: str | None,
+        write_json: bool,
+    ) -> list[Path]:
+        assert Path(repo_root) == repo
+        assert name == "repository"
+        assert write_json is False
+        html = Path(output_dir) / "repository.html"
+        _write(html, "<!doctype html><title>Blueprint</title>\n")
+        return [html]
+
+    monkeypatch.setattr(visualizer, "build_blueprint_graph", write_graph)
+
+    assemble_site(repo, output)
+
+    assert (output / "graphs" / "blueprint" / "repository.html").is_file()
 
 
 def test_docs_site_cli_exposes_local_serve_and_static_build_commands() -> None:
