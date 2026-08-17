@@ -10,10 +10,12 @@ import sys
 
 SCRIPT_REPOSITORY = Path(__file__).resolve().parents[1]
 SOURCE_ROOT = SCRIPT_REPOSITORY / "src"
-if str(SOURCE_ROOT) not in sys.path:
-    sys.path.insert(0, str(SOURCE_ROOT))
+RELOCATION_SKILL_ROOT = SCRIPT_REPOSITORY / "skills/relocate-nodes"
+for import_root in (SOURCE_ROOT, RELOCATION_SKILL_ROOT):
+    if str(import_root) not in sys.path:
+        sys.path.insert(0, str(import_root))
 
-from officina.refactor.relocation import (  # noqa: E402
+from _rtx._relocation_engine import (  # noqa: E402
     RelocationError,
     apply_change_set,
     load_manifest,

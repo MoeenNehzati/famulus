@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import sys
+from types import ModuleType
 
 import pytest
 import yaml
@@ -10,16 +12,22 @@ import yaml
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 RTX_ROOT = SKILL_ROOT / "_rtx"
 ADAPTER_PATH = RTX_ROOT / "_relocate_nodes.py"
+RUNTIME_PACKAGE = "relocate_nodes_contract_runtime"
 
 
 def _load_adapter():
-    spec = importlib.util.spec_from_file_location(
-        "relocate_nodes_contract_adapter",
-        ADAPTER_PATH,
-    )
+    return _load_runtime_module(f"{RUNTIME_PACKAGE}._relocate_nodes", ADAPTER_PATH)
+
+
+def _load_runtime_module(name: str, path: Path):
+    package = ModuleType(RUNTIME_PACKAGE)
+    package.__path__ = [str(RTX_ROOT)]
+    sys.modules.setdefault(RUNTIME_PACKAGE, package)
+    spec = importlib.util.spec_from_file_location(name, path)
     if spec is None or spec.loader is None:
-        raise RuntimeError(f"Unable to load relocate-nodes adapter from {ADAPTER_PATH}")
+        raise RuntimeError(f"Unable to load relocate-nodes runtime from {path}")
     module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -62,6 +70,21 @@ def test_adapter_declares_exact_synchronizer_dispatch() -> None:
     assert call.target_module_id == "skill-maker._rtx"
     assert call.interface == "sync-blueprints"
     assert call.version == 1
+
+
+def test_runtime_engine_validates_manifest_with_its_adjacent_schema(
+    tmp_path: Path,
+) -> None:
+    engine = _load_runtime_module(
+        f"{RUNTIME_PACKAGE}._relocation_engine",
+        RTX_ROOT / "_relocation_engine.py",
+    )
+    manifest = tmp_path / "relocation.yaml"
+    manifest.write_text("schema_version: 2\n", encoding="utf-8")
+
+    loaded = engine.load_manifest(manifest)
+
+    assert loaded.moves == ()
 
 
 def test_adapter_rejects_report_path_inside_selected_repository(

@@ -15,7 +15,7 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import stat
-from typing import Any, Callable, Iterable, Literal, Mapping
+from typing import Any, Iterable, Literal, Mapping, Protocol
 
 import jsonschema
 import yaml
@@ -66,6 +66,13 @@ _SCHEMA_VERSION = 2
 
 class RelocationError(RuntimeError):
     """Signal an unsafe, ambiguous, or incomplete relocation."""
+
+
+class BlueprintSynchronizer(Protocol):
+    """Synchronize or check generated blueprints in one projected repository."""
+
+    def __call__(self, repository: Path, *, check: bool) -> None:
+        """Synchronize when ``check`` is false; otherwise verify without writes."""
 
 
 @dataclass(frozen=True)
@@ -204,7 +211,7 @@ def load_manifest(path: Path) -> RelocationManifest:
     if value.get("schema_version") != _SCHEMA_VERSION:
         raise RelocationError(f"schema_version must be {_SCHEMA_VERSION}")
 
-    schema_path = Path(__file__).with_name("relocation.schema.json")
+    schema_path = Path(__file__).resolve().parent / "schemas/relocation.schema.json"
     try:
         jsonschema.validate(value, json.loads(schema_path.read_text(encoding="utf-8")))
     except (jsonschema.ValidationError, json.JSONDecodeError, OSError) as exc:
@@ -950,7 +957,7 @@ def plan_relocation(
     root: Path,
     manifest: RelocationManifest,
     *,
-    synchronize: Callable[[Path], None] | None = None,
+    synchronize: BlueprintSynchronizer | None = None,
 ) -> ChangeSet:
     """Build and validate a complete relocation without writing to disk."""
 
@@ -967,7 +974,7 @@ def plan_relocation(
     _project_catalogs(changes, manifest)
     _validate_package_boundary_declarations(changes, manifest)
     _project_standard_digests(changes, manifest)
-    from .closure import MechanicalClosureError, close_projected_relocation
+    from ._relocation_closure import MechanicalClosureError, close_projected_relocation
 
     try:
         closure = close_projected_relocation(

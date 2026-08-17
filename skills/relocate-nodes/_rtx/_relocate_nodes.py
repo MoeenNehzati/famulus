@@ -46,14 +46,14 @@ class Interface(PythonMachineInterface):
         )
         if result.returncode != 0:
             detail = result.stderr.strip() if isinstance(result.stderr, str) else ""
-            from officina.refactor.relocation import RelocationError
+            from ._relocation_engine import RelocationError
 
             raise RelocationError(
                 "blueprint synchronizer failed" + (f": {detail}" if detail else "")
             )
 
     def run(self, args: argparse.Namespace) -> int:
-        from officina.refactor.relocation import (
+        from ._relocation_engine import (
             RelocationError,
             apply_change_set,
             load_manifest,

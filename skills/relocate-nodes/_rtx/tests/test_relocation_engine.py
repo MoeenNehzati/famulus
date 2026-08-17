@@ -11,7 +11,7 @@ import sys
 import pytest
 import yaml
 
-from officina.refactor.relocation import (
+from .._relocation_engine import (
     RelocationError,
     apply_change_set,
     load_manifest,
@@ -590,7 +590,7 @@ def test_command_preflights_then_applies_the_same_report(tmp_path: Path) -> None
             sort_keys=False,
         ),
     )
-    command = Path(__file__).resolve().parents[1] / "scripts/relocate_officina_sources.py"
+    command = Path(__file__).resolve().parents[4] / "scripts/relocate_officina_sources.py"
     preflight = subprocess.run(
         [
             sys.executable,

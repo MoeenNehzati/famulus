@@ -9,6 +9,11 @@ children: {}
 content:
 - __init__\.py
 - _relocate_nodes\.py
+- _relocation_closure\.py
+- _relocation_engine\.py
+- schemas/relocation\.schema\.json
+- tests/test_relocation_closure\.py
+- tests/test_relocation_engine\.py
 description: Private Python runtime for manifest-driven registered-node relocation.
 exports:
   relocate-nodes._rtx.interface.relocate:

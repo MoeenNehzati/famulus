@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 
 import yaml
 
-from officina.refactor.relocation import load_manifest
-
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+RELOCATION_SKILL_ROOT = REPO_ROOT / "skills/relocate-nodes"
+if str(RELOCATION_SKILL_ROOT) not in sys.path:
+    sys.path.insert(0, str(RELOCATION_SKILL_ROOT))
+
+from _rtx._relocation_engine import load_manifest  # noqa: E402
 MANIFEST_PATH = REPO_ROOT / "refactors/officina-source-relocation.yaml"
 
 
@@ -130,5 +134,5 @@ def test_manifest_declares_the_complete_extractor_transfer_fixture_subset() -> N
         and boundary.disposition == "registered-module"
         for boundary in manifest.package_boundaries
     )
-    assert "tests/test_officina_relocation_closure.py" in manifest.text_exclusions
-    assert "tests/test_officina_relocation_closure.py" in manifest.active_address_exclusions
+    assert "skills/relocate-nodes/_rtx/tests/test_relocation_closure.py" in manifest.text_exclusions
+    assert "skills/relocate-nodes/_rtx/tests/test_relocation_closure.py" in manifest.active_address_exclusions

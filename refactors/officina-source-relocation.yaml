@@ -23,6 +23,11 @@ moves:
   to: src/officina/repository/checks/__init__.py
 - from: src/officina/_validator_snapshot.py
   to: src/officina/validators/snapshot.py
+- {from: src/officina/refactor/relocation.py, to: skills/relocate-nodes/_rtx/_relocation_engine.py}
+- {from: src/officina/refactor/closure.py, to: skills/relocate-nodes/_rtx/_relocation_closure.py}
+- {from: src/officina/refactor/relocation.schema.json, to: skills/relocate-nodes/_rtx/schemas/relocation.schema.json}
+- {from: tests/test_officina_relocation.py, to: skills/relocate-nodes/_rtx/tests/test_relocation_engine.py}
+- {from: tests/test_officina_relocation_closure.py, to: skills/relocate-nodes/_rtx/tests/test_relocation_closure.py}
 
 # Every package boundary created by these moves or their README-only catalogs
 # declares its registration policy explicitly. Only standards is a module.
@@ -432,6 +437,196 @@ exact_rewrites:
     - [x] Initial relocation application and one audited generated-block closure application completed.
     - [x] Final real-tree verification: zero-change idempotency report, 410 focused tests, empty retired-address search, clean diff check, and 32/32 validators in a tracked-equivalent audit copy.
     - [x] Within-module reuse trial: moved the standards extractor and its sidecar in a disposable repository copy, passed 15 focused tests, and reached zero-change idempotency.
+- path: skills/relocate-nodes/_rtx/_relocation_engine.py
+  from: from typing import Any, Callable, Iterable, Literal, Mapping
+  to: from typing import Any, Iterable, Literal, Mapping, Protocol
+  count: 1
+- path: skills/relocate-nodes/_rtx/_relocation_engine.py
+  from: |-
+    class RelocationError(RuntimeError):
+        """Signal an unsafe, ambiguous, or incomplete relocation."""
+  to: |-
+    class RelocationError(RuntimeError):
+        """Signal an unsafe, ambiguous, or incomplete relocation."""
+
+
+    class BlueprintSynchronizer(Protocol):
+        """Synchronize or check generated blueprints in one projected repository."""
+
+        def __call__(self, repository: Path, *, check: bool) -> None:
+            """Synchronize when ``check`` is false; otherwise verify without writes."""
+  count: 1
+- path: skills/relocate-nodes/_rtx/_relocation_engine.py
+  from: 'schema_path = Path(__file__).with_name("relocation.schema.json")'
+  to: 'schema_path = Path(__file__).resolve().parent / "schemas/relocation.schema.json"'
+  count: 1
+- path: skills/relocate-nodes/_rtx/_relocation_engine.py
+  from: 'synchronize: Callable[[Path], None] | None = None,'
+  to: 'synchronize: BlueprintSynchronizer | None = None,'
+  count: 1
+- path: skills/relocate-nodes/_rtx/_relocation_engine.py
+  from: from .closure import MechanicalClosureError, close_projected_relocation
+  to: from ._relocation_closure import MechanicalClosureError, close_projected_relocation
+  count: 1
+- path: skills/relocate-nodes/_rtx/_relocation_closure.py
+  from: |-
+    from collections.abc import Callable
+    from dataclasses import dataclass
+  to: from dataclasses import dataclass
+  count: 1
+- path: skills/relocate-nodes/_rtx/_relocation_closure.py
+  from: |-
+    if TYPE_CHECKING:
+        from .relocation import ChangeSet, RelocationManifest
+  to: |-
+    if TYPE_CHECKING:
+        from ._relocation_engine import BlueprintSynchronizer, ChangeSet, RelocationManifest
+  count: 1
+- path: skills/relocate-nodes/_rtx/_relocation_closure.py
+  from: 'synchronize: Callable[[Path], None] | None = None,'
+  to: 'synchronize: BlueprintSynchronizer | None = None,'
+  count: 1
+- path: skills/relocate-nodes/_rtx/_relocate_nodes.py
+  from: from officina.refactor.relocation import RelocationError
+  to: from ._relocation_engine import RelocationError
+  count: 1
+- path: skills/relocate-nodes/_rtx/_relocate_nodes.py
+  from: from officina.refactor.relocation import (
+  to: from ._relocation_engine import (
+  count: 1
+- path: scripts/relocate_officina_sources.py
+  from: |-
+    SCRIPT_REPOSITORY = Path(__file__).resolve().parents[1]
+    SOURCE_ROOT = SCRIPT_REPOSITORY / "src"
+    if str(SOURCE_ROOT) not in sys.path:
+        sys.path.insert(0, str(SOURCE_ROOT))
+
+    from officina.refactor.relocation import (  # noqa: E402
+  to: |-
+    SCRIPT_REPOSITORY = Path(__file__).resolve().parents[1]
+    SOURCE_ROOT = SCRIPT_REPOSITORY / "src"
+    RELOCATION_SKILL_ROOT = SCRIPT_REPOSITORY / "skills/relocate-nodes"
+    for import_root in (SOURCE_ROOT, RELOCATION_SKILL_ROOT):
+        if str(import_root) not in sys.path:
+            sys.path.insert(0, str(import_root))
+
+    from _rtx._relocation_engine import (  # noqa: E402
+  count: 1
+- path: skills/relocate-nodes/_rtx/tests/test_relocation_engine.py
+  from: from officina.refactor.relocation import (
+  to: from .._relocation_engine import (
+  count: 1
+- path: skills/relocate-nodes/_rtx/tests/test_relocation_engine.py
+  from: 'command = Path(__file__).resolve().parents[1] / "scripts/relocate_officina_sources.py"'
+  to: 'command = Path(__file__).resolve().parents[4] / "scripts/relocate_officina_sources.py"'
+  count: 1
+- path: skills/relocate-nodes/_rtx/tests/test_relocation_closure.py
+  from: |-
+    import officina.refactor.closure as closure_module
+    from officina.refactor.closure import (
+  to: |-
+    from .. import _relocation_closure as closure_module
+    from .._relocation_closure import (
+  count: 1
+- path: skills/relocate-nodes/_rtx/tests/test_relocation_closure.py
+  from: from officina.refactor.relocation import (
+  to: from .._relocation_engine import (
+  count: 1
+- path: skills/relocate-nodes/_rtx/tests/test_relocation_closure.py
+  from: |2-
+        RelocationManifest,
+        apply_change_set,
+  to: |2-
+        RelocationManifest,
+        BlueprintSynchronizer,
+        apply_change_set,
+  count: 1
+- path: skills/relocate-nodes/_rtx/tests/test_relocation_closure.py
+  from: 'REPO_ROOT = Path(__file__).resolve().parents[1]'
+  to: 'REPO_ROOT = Path(__file__).resolve().parents[4]'
+  count: 1
+- path: skills/relocate-nodes/_rtx/tests/test_relocation_closure.py
+  from: 'synchronize: Callable[[Path], None] | None = None,'
+  to: 'synchronize: BlueprintSynchronizer | None = None,'
+  count: 1
+- path: skills/relocate-nodes/_rtx/tests/test_relocation_closure.py
+  from: 'monkeypatch.setattr("officina.refactor.closure.load_repository_blueprint_graph",'
+  to: 'monkeypatch.setattr(closure_module, "load_repository_blueprint_graph",'
+  count: 18
+- path: skills/relocate-nodes/_rtx/tests/test_relocation_closure.py
+  from: "        \"officina.refactor.closure.load_repository_blueprint_graph\",\n        graph_must_not_run,"
+  to: "        closure_module,\n        \"load_repository_blueprint_graph\",\n        graph_must_not_run,"
+  count: 1
+- path: skills/relocate-nodes/_rtx/tests/test_relocation_closure.py
+  from: '"officina.refactor.closure.subprocess.run"'
+  to: 'closure_module.subprocess, "run"'
+  count: 16
+- path: skills/relocate-nodes/_rtx/tests/test_relocation_closure.py
+  from: "        \"officina.refactor.closure.close_projected_relocation\",\n        lambda changes, manifest, *, synchronize: result,"
+  to: "        closure_module,\n        \"close_projected_relocation\",\n        lambda changes, manifest, *, synchronize: result,"
+  count: 1
+- path: tests/test_officina_source_relocation_manifest.py
+  from: |-
+    from pathlib import Path
+
+    import yaml
+
+    from officina.refactor.relocation import load_manifest
+
+
+    REPO_ROOT = Path(__file__).resolve().parents[1]
+  to: |-
+    from pathlib import Path
+    import sys
+
+    import yaml
+
+
+    REPO_ROOT = Path(__file__).resolve().parents[1]
+    RELOCATION_SKILL_ROOT = REPO_ROOT / "skills/relocate-nodes"
+    if str(RELOCATION_SKILL_ROOT) not in sys.path:
+        sys.path.insert(0, str(RELOCATION_SKILL_ROOT))
+
+    from _rtx._relocation_engine import load_manifest  # noqa: E402
+  count: 1
+- path: tests/test_officina_source_relocation_manifest.py
+  from: tests/test_officina_relocation_closure.py
+  to: skills/relocate-nodes/_rtx/tests/test_relocation_closure.py
+  count: 2
+- path: skills/relocate-nodes/_rtx/blueprint.yaml
+  from: |-
+    - __init__\.py
+    - _relocate_nodes\.py
+  to: |-
+    - __init__\.py
+    - _relocate_nodes\.py
+    - _relocation_closure\.py
+    - _relocation_engine\.py
+    - schemas/relocation\.schema\.json
+    - tests/test_relocation_closure\.py
+    - tests/test_relocation_engine\.py
+  count: 1
+- path: skills/relocate-nodes/_rtx/blueprints/rtx-relocate-nodes.yaml
+  from: |-
+    content:
+    - _relocate_nodes\.py
+  to: |-
+    content:
+    - _relocate_nodes\.py
+    - _relocation_closure\.py
+    - _relocation_engine\.py
+    - schemas/relocation\.schema\.json
+    - tests/test_relocation_closure\.py
+    - tests/test_relocation_engine\.py
+  count: 1
+- path: skills/relocate-nodes/_rtx/__init__.py
+  from: |-
+    adapts the registered route; _relocation_engine.py and _relocation_closure.py are
+    forthcoming helpers; relocation.schema.json defines manifests; blueprints/ owns
+  to: |-
+    adapts the registered route; _relocation_engine.py and _relocation_closure.py own
+    relocation mechanics; schemas/relocation.schema.json defines manifests; blueprints/ owns
+  count: 1
 
 package_catalogs:
 - path: src/officina/common
@@ -588,11 +783,24 @@ forbid_facade_imports:
 
 text_exclusions:
 - refactors/officina-source-relocation.yaml
+- .superpowers/sdd/2026-08-17-officina-relocation-closure/progress.md
+- .superpowers/sdd/2026-08-17-officina-relocation-closure/task-1-brief.md
+- .superpowers/sdd/2026-08-17-officina-relocation-closure/task-1-report.md
+- .superpowers/sdd/2026-08-17-officina-relocation-closure/task-2-brief.md
+- .superpowers/sdd/2026-08-17-officina-relocation-closure/task-2-report.md
+- .superpowers/sdd/2026-08-17-officina-relocation-closure/task-3-brief.md
+- .superpowers/sdd/2026-08-17-officina-relocation-closure/task-3-report.md
+- .superpowers/sdd/2026-08-17-relocate-nodes-skill/task-1-report.md
+- .superpowers/sdd/2026-08-17-relocate-nodes-skill/task-2-brief.md
 - docs/superpowers/specs/2026-08-16-officina-source-organization-design.md
+- docs/superpowers/specs/2026-08-17-relocate-nodes-skill-design.md
 - docs/superpowers/plans/2026-08-16-officina-source-relocation.md
+- docs/superpowers/plans/2026-08-16-blueprint-aware-relocation-tool.md
+- docs/superpowers/plans/2026-08-17-officina-relocation-closure.md
+- docs/superpowers/plans/2026-08-17-relocate-nodes-skill.md
 - tests/test_officina_source_relocation_manifest.py
 # This relocation fixture deliberately retains retired addresses as assertions.
-- tests/test_officina_relocation_closure.py
+- skills/relocate-nodes/_rtx/tests/test_relocation_closure.py
 - tests/fixtures/blueprint_schemas/v4/schema-meta.json
 - tests/fixtures/blueprint_schemas/v5/schema-meta.json
 - tests/fixtures/standards/skill-guidelines-source-map.yaml
@@ -602,11 +810,24 @@ text_exclusions:
 
 active_address_exclusions:
 - refactors/officina-source-relocation.yaml
+- .superpowers/sdd/2026-08-17-officina-relocation-closure/progress.md
+- .superpowers/sdd/2026-08-17-officina-relocation-closure/task-1-brief.md
+- .superpowers/sdd/2026-08-17-officina-relocation-closure/task-1-report.md
+- .superpowers/sdd/2026-08-17-officina-relocation-closure/task-2-brief.md
+- .superpowers/sdd/2026-08-17-officina-relocation-closure/task-2-report.md
+- .superpowers/sdd/2026-08-17-officina-relocation-closure/task-3-brief.md
+- .superpowers/sdd/2026-08-17-officina-relocation-closure/task-3-report.md
+- .superpowers/sdd/2026-08-17-relocate-nodes-skill/task-1-report.md
+- .superpowers/sdd/2026-08-17-relocate-nodes-skill/task-2-brief.md
 - docs/superpowers/specs/2026-08-16-officina-source-organization-design.md
+- docs/superpowers/specs/2026-08-17-relocate-nodes-skill-design.md
 - docs/superpowers/plans/2026-08-16-officina-source-relocation.md
+- docs/superpowers/plans/2026-08-16-blueprint-aware-relocation-tool.md
+- docs/superpowers/plans/2026-08-17-officina-relocation-closure.md
+- docs/superpowers/plans/2026-08-17-relocate-nodes-skill.md
 - tests/test_officina_source_relocation_manifest.py
 # The same relocation fixture is intentionally not an active production address.
-- tests/test_officina_relocation_closure.py
+- skills/relocate-nodes/_rtx/tests/test_relocation_closure.py
 
 standard_digest_roots:
 - references/node-standards

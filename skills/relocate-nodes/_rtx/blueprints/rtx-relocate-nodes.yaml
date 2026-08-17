@@ -1,5 +1,10 @@
 content:
 - _relocate_nodes\.py
+- _relocation_closure\.py
+- _relocation_engine\.py
+- schemas/relocation\.schema\.json
+- tests/test_relocation_closure\.py
+- tests/test_relocation_engine\.py
 dependencies: []
 description: Adapts one manifest-driven relocation preflight or atomic application
   to the temporary legacy relocation engine.

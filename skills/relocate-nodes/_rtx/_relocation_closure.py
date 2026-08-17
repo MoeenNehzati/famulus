@@ -9,7 +9,6 @@ It never writes the repository supplied by the change set.
 from __future__ import annotations
 
 import ast
-from collections.abc import Callable
 from dataclasses import dataclass
 import json
 from pathlib import Path, PurePosixPath
@@ -20,7 +19,7 @@ from typing import TYPE_CHECKING, Literal
 from officina.blueprints.graph import load_repository_blueprint_graph
 
 if TYPE_CHECKING:
-    from .relocation import ChangeSet, RelocationManifest
+    from ._relocation_engine import BlueprintSynchronizer, ChangeSet, RelocationManifest
 
 
 _BASIS_PATH = "references/certification/certification-basis-roots.json"
@@ -377,7 +376,7 @@ def close_projected_relocation(
     changes: ChangeSet,
     manifest: RelocationManifest,
     *,
-    synchronize: Callable[[Path], None] | None = None,
+    synchronize: BlueprintSynchronizer | None = None,
 ) -> MechanicalClosureResult:
     """Close deterministic blueprint artifacts without changing the real tree.
 

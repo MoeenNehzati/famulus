@@ -12,23 +12,24 @@ from typing import Callable, TypeVar
 import pytest
 import yaml
 
-import officina.refactor.closure as closure_module
-from officina.refactor.closure import (
+from .. import _relocation_closure as closure_module
+from .._relocation_closure import (
     MechanicalClosureError,
     MechanicalClosureResult,
     close_projected_relocation as _close_projected_relocation,
 )
-from officina.refactor.relocation import (
+from .._relocation_engine import (
     ChangeSet,
     PackageCatalog,
     RelocationManifest,
+    BlueprintSynchronizer,
     apply_change_set,
     load_manifest,
     plan_relocation,
 )
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[4]
 MANIFEST_PATH = REPO_ROOT / "refactors/officina-source-relocation.yaml"
 T = TypeVar("T")
 
@@ -51,7 +52,7 @@ def close_projected_relocation(
     changes: ChangeSet,
     manifest: RelocationManifest,
     *,
-    synchronize: Callable[[Path], None] | None = None,
+    synchronize: BlueprintSynchronizer | None = None,
 ) -> MechanicalClosureResult:
     """Inject a test-owned synchronizer when a test has no explicit one."""
 
@@ -95,31 +96,6 @@ def _empty_runtime_dependencies() -> str:
     ) + "\n"
 
 
-def _fixture_synchronizer() -> str:
-    """Build the tiny shadow-only synchronizer used by the acceptance fixture."""
-
-    return f'''"""Synchronize the fixture's one generated artifact."""
-
-import sys
-from pathlib import Path
-
-import officina
-
-
-if officina.ORIGIN != "shadow":
-    raise SystemExit("fixture synchronizer did not import shadow officina")
-
-root = Path(__file__).resolve().parents[3]
-target = root / "references/blueprint/runtime_dependencies.json"
-expected = {_empty_runtime_dependencies()!r}
-if "--check" in sys.argv:
-    if target.read_text(encoding="utf-8") != expected:
-        raise SystemExit("fixture runtime dependencies are out of sync")
-else:
-    target.write_text(expected, encoding="utf-8")
-'''
-
-
 def _write(path: Path, text: str) -> None:
     """Write one UTF-8 fixture file, creating its parents."""
 
@@ -136,7 +112,6 @@ def _closure_fixture(
     agents_link_target: str | None = None,
     assistant_tooling: bool = False,
     officina_content: str = '"""Officina."""\n',
-    syncer_content: str = '"""Fixture synchronizer."""\n',
 ) -> tuple[ChangeSet, RelocationManifest]:
     """Build the smallest projected tree that exercises mechanical closure."""
 
@@ -153,10 +128,6 @@ def _closure_fixture(
             tmp_path / "references/blueprint/module.schema.json/placeholder",
             "not a schema file\n",
         )
-    _write(
-        tmp_path / "skills/skill-maker/_rtx/_blueprint_syncer.py",
-        syncer_content,
-    )
     _write(
         tmp_path / "skills/demo/SKILL.md",
         skill_content,
@@ -199,8 +170,8 @@ def test_shadow_preserves_an_internal_relative_symlink(
         observed.append(shadow_link.readlink().as_posix())
         return _sync_without_writes(*args, **kwargs)
 
-    monkeypatch.setattr("officina.refactor.closure.load_repository_blueprint_graph", _pass_graph)
-    monkeypatch.setattr("officina.refactor.closure.subprocess.run", sync)
+    monkeypatch.setattr(closure_module, "load_repository_blueprint_graph", _pass_graph)
+    monkeypatch.setattr(closure_module.subprocess, "run", sync)
 
     close_projected_relocation(changes, manifest)
 
@@ -225,8 +196,8 @@ def test_shadow_rejects_unsafe_symlink(
     if external_target:
         _write(tmp_path.parent / "outside.md", "outside\n")
     changes, manifest = _closure_fixture(tmp_path, agents_link_target=link_target)
-    monkeypatch.setattr("officina.refactor.closure.load_repository_blueprint_graph", _pass_graph)
-    monkeypatch.setattr("officina.refactor.closure.subprocess.run", _sync_without_writes)
+    monkeypatch.setattr(closure_module, "load_repository_blueprint_graph", _pass_graph)
+    monkeypatch.setattr(closure_module.subprocess, "run", _sync_without_writes)
 
     with pytest.raises(MechanicalClosureError, match=r"unsafe shadow symlink: AGENTS\.md"):
         close_projected_relocation(changes, manifest)
@@ -240,9 +211,8 @@ def test_injected_synchronizer_receives_the_shadow_repository(
     changes, manifest = _closure_fixture(
         tmp_path,
         officina_content='ORIGIN = "shadow"\n',
-        syncer_content="unused by the injected synchronizer\n",
     )
-    monkeypatch.setattr("officina.refactor.closure.load_repository_blueprint_graph", _pass_graph)
+    monkeypatch.setattr(closure_module, "load_repository_blueprint_graph", _pass_graph)
 
     def synchronize(repository: Path, *, check: bool) -> None:
         assert (repository / "src/officina/__init__.py").read_text(encoding="utf-8") == (
@@ -269,7 +239,7 @@ def test_closure_uses_the_injected_synchronizer_for_sync_then_check(
     def synchronize(repository: Path, *, check: bool) -> None:
         calls.append((repository, check))
 
-    monkeypatch.setattr("officina.refactor.closure.load_repository_blueprint_graph", _pass_graph)
+    monkeypatch.setattr(closure_module, "load_repository_blueprint_graph", _pass_graph)
 
     close_projected_relocation(changes, manifest, synchronize=synchronize)
 
@@ -301,7 +271,7 @@ def test_stale_generated_artifact_is_synchronized_before_check_and_graph(
     def graph(*args: object, **kwargs: object) -> None:
         calls.append("graph")
 
-    monkeypatch.setattr("officina.refactor.closure.load_repository_blueprint_graph", graph)
+    monkeypatch.setattr(closure_module, "load_repository_blueprint_graph", graph)
 
     result = close_projected_relocation(changes, manifest, synchronize=synchronize)
 
@@ -330,8 +300,8 @@ def test_shadow_excludes_assistant_tooling_metadata(
         assert not (shadow / ".codex").exists()
         return _sync_without_writes(*args, **kwargs)
 
-    monkeypatch.setattr("officina.refactor.closure.load_repository_blueprint_graph", _pass_graph)
-    monkeypatch.setattr("officina.refactor.closure.subprocess.run", sync)
+    monkeypatch.setattr(closure_module, "load_repository_blueprint_graph", _pass_graph)
+    monkeypatch.setattr(closure_module.subprocess, "run", sync)
 
     close_projected_relocation(changes, manifest)
 
@@ -354,8 +324,8 @@ def test_readme_only_officina_catalog_initializers_join_certification_basis(
     """A manifest catalog initializer adds one sorted certification-basis entry."""
 
     changes, manifest = _closure_fixture(tmp_path)
-    monkeypatch.setattr("officina.refactor.closure.load_repository_blueprint_graph", _pass_graph)
-    monkeypatch.setattr("officina.refactor.closure.subprocess.run", _sync_without_writes)
+    monkeypatch.setattr(closure_module, "load_repository_blueprint_graph", _pass_graph)
+    monkeypatch.setattr(closure_module.subprocess, "run", _sync_without_writes)
 
     result = close_projected_relocation(changes, manifest)
 
@@ -374,8 +344,8 @@ def test_substantive_initializer_is_not_added_to_certification_basis(
     """Executable package code is rejected instead of receiving certification trust."""
 
     changes, manifest = _closure_fixture(tmp_path, "VALUE = 1\n")
-    monkeypatch.setattr("officina.refactor.closure.load_repository_blueprint_graph", _pass_graph)
-    monkeypatch.setattr("officina.refactor.closure.subprocess.run", _sync_without_writes)
+    monkeypatch.setattr(closure_module, "load_repository_blueprint_graph", _pass_graph)
+    monkeypatch.setattr(closure_module.subprocess, "run", _sync_without_writes)
 
     with pytest.raises(
         MechanicalClosureError,
@@ -399,8 +369,8 @@ def test_shadow_contains_projection_without_mutating_real_repository(
         observed.append((shadow / "src/officina/catalog/__init__.py").read_text(encoding="utf-8"))
         return _sync_without_writes(*args, **kwargs)
 
-    monkeypatch.setattr("officina.refactor.closure.load_repository_blueprint_graph", _pass_graph)
-    monkeypatch.setattr("officina.refactor.closure.subprocess.run", sync)
+    monkeypatch.setattr(closure_module, "load_repository_blueprint_graph", _pass_graph)
+    monkeypatch.setattr(closure_module.subprocess, "run", sync)
 
     close_projected_relocation(changes, manifest)
 
@@ -429,8 +399,8 @@ def test_syncer_generated_bytes_are_reconciled_into_change_set(
             )
         return _sync_without_writes(*args, **kwargs)
 
-    monkeypatch.setattr("officina.refactor.closure.load_repository_blueprint_graph", _pass_graph)
-    monkeypatch.setattr("officina.refactor.closure.subprocess.run", sync)
+    monkeypatch.setattr(closure_module, "load_repository_blueprint_graph", _pass_graph)
+    monkeypatch.setattr(closure_module.subprocess, "run", sync)
 
     result = close_projected_relocation(changes, manifest)
 
@@ -456,8 +426,8 @@ def test_unexpected_shadow_write_is_rejected_with_exact_path(
             (shadow / "unapproved.txt").write_text("unexpected\n", encoding="utf-8")
         return _sync_without_writes(*args, **kwargs)
 
-    monkeypatch.setattr("officina.refactor.closure.load_repository_blueprint_graph", _pass_graph)
-    monkeypatch.setattr("officina.refactor.closure.subprocess.run", sync)
+    monkeypatch.setattr(closure_module, "load_repository_blueprint_graph", _pass_graph)
+    monkeypatch.setattr(closure_module.subprocess, "run", sync)
 
     with pytest.raises(MechanicalClosureError, match=r"unexpected shadow write: unapproved\.txt"):
         close_projected_relocation(changes, manifest)
@@ -478,8 +448,8 @@ def test_excluded_synchronize_write_is_rejected_with_exact_path(
             (shadow / ".git").write_text("unexpected\n", encoding="utf-8")
         return _sync_without_writes(*args, **kwargs)
 
-    monkeypatch.setattr("officina.refactor.closure.load_repository_blueprint_graph", _pass_graph)
-    monkeypatch.setattr("officina.refactor.closure.subprocess.run", sync)
+    monkeypatch.setattr(closure_module, "load_repository_blueprint_graph", _pass_graph)
+    monkeypatch.setattr(closure_module.subprocess, "run", sync)
 
     with pytest.raises(
         MechanicalClosureError,
@@ -505,8 +475,8 @@ def test_graph_failure_leaves_real_repository_unchanged(
 
         raise ValueError("invalid graph")
 
-    monkeypatch.setattr("officina.refactor.closure.load_repository_blueprint_graph", fail_graph)
-    monkeypatch.setattr("officina.refactor.closure.subprocess.run", _sync_without_writes)
+    monkeypatch.setattr(closure_module, "load_repository_blueprint_graph", fail_graph)
+    monkeypatch.setattr(closure_module.subprocess, "run", _sync_without_writes)
 
     with pytest.raises(MechanicalClosureError, match=r"repository graph validation failed: invalid graph"):
         close_projected_relocation(changes, manifest)
@@ -534,8 +504,8 @@ def test_excluded_synchronize_directory_is_rejected_with_exact_path(
             (shadow / "_build").mkdir()
         return _sync_without_writes(*args, **kwargs)
 
-    monkeypatch.setattr("officina.refactor.closure.load_repository_blueprint_graph", _pass_graph)
-    monkeypatch.setattr("officina.refactor.closure.subprocess.run", sync)
+    monkeypatch.setattr(closure_module, "load_repository_blueprint_graph", _pass_graph)
+    monkeypatch.setattr(closure_module.subprocess, "run", sync)
 
     with pytest.raises(MechanicalClosureError, match=r"unexpected shadow write: _build"):
         close_projected_relocation(changes, manifest)
@@ -592,10 +562,11 @@ def test_partial_schema_cannot_fall_back_to_the_live_imported_checkout(
         pytest.fail("graph loader must not run without the shadow module schema")
 
     monkeypatch.setattr(
-        "officina.refactor.closure.load_repository_blueprint_graph",
+        closure_module,
+        "load_repository_blueprint_graph",
         graph_must_not_run,
     )
-    monkeypatch.setattr("officina.refactor.closure.subprocess.run", _sync_without_writes)
+    monkeypatch.setattr(closure_module.subprocess, "run", _sync_without_writes)
 
     with pytest.raises(
         MechanicalClosureError,
@@ -619,8 +590,8 @@ def test_mode_only_generated_artifact_change_is_rejected(
             (shadow / "skills/demo/SKILL.md").chmod(0o755)
         return _sync_without_writes(*args, **kwargs)
 
-    monkeypatch.setattr("officina.refactor.closure.load_repository_blueprint_graph", _pass_graph)
-    monkeypatch.setattr("officina.refactor.closure.subprocess.run", sync)
+    monkeypatch.setattr(closure_module, "load_repository_blueprint_graph", _pass_graph)
+    monkeypatch.setattr(closure_module.subprocess, "run", sync)
 
     with pytest.raises(
         MechanicalClosureError,
@@ -646,8 +617,8 @@ def test_empty_generated_file_replaced_by_directory_is_rejected(
             target.chmod(0o644)
         return _sync_without_writes(*args, **kwargs)
 
-    monkeypatch.setattr("officina.refactor.closure.load_repository_blueprint_graph", _pass_graph)
-    monkeypatch.setattr("officina.refactor.closure.subprocess.run", sync)
+    monkeypatch.setattr(closure_module, "load_repository_blueprint_graph", _pass_graph)
+    monkeypatch.setattr(closure_module.subprocess, "run", sync)
 
     with pytest.raises(
         MechanicalClosureError,
@@ -668,7 +639,8 @@ def test_plan_absorbs_calculated_closure_categories_into_its_report(
         validation_results=("repository blueprint graph",),
     )
     monkeypatch.setattr(
-        "officina.refactor.closure.close_projected_relocation",
+        closure_module,
+        "close_projected_relocation",
         lambda changes, manifest, *, synchronize: result,
     )
 
@@ -698,8 +670,8 @@ def test_check_synchronizer_write_is_rejected_with_exact_path(
             (shadow / "check-write.txt").write_text("unexpected\n", encoding="utf-8")
         return _sync_without_writes(*args, **kwargs)
 
-    monkeypatch.setattr("officina.refactor.closure.load_repository_blueprint_graph", _pass_graph)
-    monkeypatch.setattr("officina.refactor.closure.subprocess.run", sync)
+    monkeypatch.setattr(closure_module, "load_repository_blueprint_graph", _pass_graph)
+    monkeypatch.setattr(closure_module.subprocess, "run", sync)
 
     with pytest.raises(
         MechanicalClosureError,
@@ -723,8 +695,8 @@ def test_excluded_check_write_is_rejected_with_exact_path(
             (shadow / ".agents").write_text("unexpected\n", encoding="utf-8")
         return _sync_without_writes(*args, **kwargs)
 
-    monkeypatch.setattr("officina.refactor.closure.load_repository_blueprint_graph", _pass_graph)
-    monkeypatch.setattr("officina.refactor.closure.subprocess.run", sync)
+    monkeypatch.setattr(closure_module, "load_repository_blueprint_graph", _pass_graph)
+    monkeypatch.setattr(closure_module.subprocess, "run", sync)
 
     with pytest.raises(
         MechanicalClosureError,
@@ -813,9 +785,6 @@ def _write_extractor_acceptance_fixture(tmp_path: Path) -> dict[str, bytes]:
         tmp_path / "references/blueprint/config.yaml",
         (REPO_ROOT / "references/blueprint/config.yaml").read_text(encoding="utf-8"),
     )
-    synchronizer = tmp_path / "skills/skill-maker/_rtx/_blueprint_syncer.py"
-    _write(synchronizer, _fixture_synchronizer())
-    synchronizer.chmod(0o755)
     _write(tmp_path / "src/officina/__init__.py", 'ORIGIN = "shadow"\n')
     _write(tmp_path / "src/officina/common/__init__.py", '"""Common fixture."""\n')
     _write(tmp_path / "src/officina/common/standard_extractor.py", "VALUE = 1\n")
