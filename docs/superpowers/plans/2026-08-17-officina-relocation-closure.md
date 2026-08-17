@@ -92,9 +92,9 @@ closure failures. `relocation.py` imports the coordinator locally inside
 The coordinator must:
 
 1. Create a `TemporaryDirectory` and materialize `changes.projected_files()` from `ChangeSet.read_bytes()`.
-2. Preserve `100644`/`100755` modes, reject included symlinks, and exclude `.git`, caches, environments, build output, `.certificates`, and `.pooled-reviews`.
+2. Preserve `100644`/`100755` modes and included regular-file repository-internal relative symlink link text only when the resolved target remains an existing projected path; reject absolute, escaping, cyclic, and dangling included links with their exact paths. Exclude `.git`, `.codex`, `.agents`, caches, environments, build output, `.certificates`, and `.pooled-reviews`.
 3. Parse `references/certification/certification-basis-roots.json` in the shadow. Existing move/path rewrites have already adjusted moved entries. Add each manifest `package_catalogs` initializer under `src/officina/**` only when its AST is exactly one module docstring. Keep entries sorted and unique. Reject a substantive initializer with its exact path rather than trusting it.
-4. Snapshot shadow bytes/modes, run the copied canonical `skills/skill-maker/_rtx/_blueprint_syncer.py` once with `sys.executable`, `cwd=shadow_root`, schema version 6, and explicit UTF-8 capture, then run it once with `--check`.
+4. Snapshot shadow bytes/modes, run the copied canonical `skills/skill-maker/_rtx/_blueprint_syncer.py` once with `sys.executable`, `cwd=shadow_root`, schema version 6, explicit UTF-8 capture, and the shadow `src` prepended to `PYTHONPATH`, then run it once with `--check`.
 5. Permit synchronizer changes only to generated blocks in `skills/*/SKILL.md` and `references/blueprint/runtime_dependencies.json`. Report and reject any other changed path.
 6. Load `load_repository_blueprint_graph(shadow_root, schema_root=shadow_root / "references/blueprint", expected_schema_version=6)` after synchronization.
 7. Reconcile exact allowed changed bytes and modes through `ChangeSet.write_bytes`; do not write to the real root.

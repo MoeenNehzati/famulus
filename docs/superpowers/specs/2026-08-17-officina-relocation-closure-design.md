@@ -41,10 +41,15 @@ publication.
 
 ## Shadow boundary
 
-`closure.py` materializes the projected regular files from `ChangeSet` into a
-`TemporaryDirectory`, preserving bytes and modes. It rejects an included
-symlink and excludes Git metadata, worktrees, caches, virtual environments,
-dependency directories, build output, certificate records, and pooled reviews.
+`closure.py` materializes projected regular files and safe repository-internal
+relative symlinks from `ChangeSet` into a `TemporaryDirectory`, preserving
+file bytes/modes and symlink link text. Included regular-file symlinks are
+accepted only when their resolved target is an existing projected path within
+the repository; absolute, escaping, cyclic, and dangling included links fail
+with the link's exact path. The shadow
+excludes Git metadata, assistant tooling metadata (`.codex` and `.agents`),
+worktrees, caches, virtual environments, dependency directories, build output,
+certificate records, and pooled reviews.
 
 A tiny relocation-mechanics fixture with neither canonical marker has no
 closure work. A tree containing either `references/blueprint/` or
@@ -61,7 +66,8 @@ Within the shadow tree, the coordinator:
 1. updates the sorted, unique certification-basis JSON list from approved
    README-only Officina catalog initializers;
 2. snapshots every included shadow file's bytes and mode;
-3. runs the copied canonical blueprint synchronizer once with schema version 6;
+3. runs the copied canonical blueprint synchronizer once with schema version 6
+   and the shadow `src` directory first in `PYTHONPATH`;
 4. permits changed bytes only in generated blocks of `skills/*/SKILL.md` and
    `references/blueprint/runtime_dependencies.json`;
 5. reconciles those exact allowed bytes and modes into the in-memory

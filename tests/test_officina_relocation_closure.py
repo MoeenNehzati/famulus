@@ -34,6 +34,10 @@ def _closure_fixture(
     skill_content: str = "# Demo\n<!-- BEGIN BLUEPRINT CONTRACT -->\nold\n<!-- END BLUEPRINT CONTRACT -->\n",
     include_module_schema: bool = True,
     module_schema_directory: bool = False,
+    agents_link_target: str | None = None,
+    assistant_tooling: bool = False,
+    officina_content: str = '"""Officina."""\n',
+    syncer_content: str = '"""Fixture synchronizer."""\n',
 ) -> tuple[ChangeSet, RelocationManifest]:
     """Build the smallest projected tree that exercises mechanical closure."""
 
@@ -41,7 +45,7 @@ def _closure_fixture(
         tmp_path / "references/certification/certification-basis-roots.json",
         json.dumps(["src/officina/__init__.py"], indent=2) + "\n",
     )
-    _write(tmp_path / "src/officina/__init__.py", '"""Officina."""\n')
+    _write(tmp_path / "src/officina/__init__.py", officina_content)
     _write(tmp_path / "references/blueprint/schema.json", "{}\n")
     if include_module_schema:
         _write(tmp_path / "references/blueprint/module.schema.json", "{}\n")
@@ -52,12 +56,20 @@ def _closure_fixture(
         )
     _write(
         tmp_path / "skills/skill-maker/_rtx/_blueprint_syncer.py",
-        '"""Fixture synchronizer."""\n',
+        syncer_content,
     )
     _write(
         tmp_path / "skills/demo/SKILL.md",
         skill_content,
     )
+    if agents_link_target is not None:
+        if agents_link_target == "CLAUDE.md":
+            _write(tmp_path / "CLAUDE.md", "Shadow instructions.\n")
+        (tmp_path / "AGENTS.md").symlink_to(agents_link_target)
+    if assistant_tooling:
+        _write(tmp_path / ".agents/session.json", "{}\n")
+        (tmp_path / ".codex").mkdir()
+        (tmp_path / ".codex/agents").symlink_to("missing-agent")
     changes = ChangeSet(tmp_path)
     changes.write_text("src/officina/catalog/__init__.py", initializer)
     manifest = RelocationManifest(
@@ -70,6 +82,102 @@ def _closure_fixture(
         ),
     )
     return changes, manifest
+
+
+def test_shadow_preserves_an_internal_relative_symlink(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A repository-relative symlink is preserved by link text in the shadow."""
+
+    changes, manifest = _closure_fixture(tmp_path, agents_link_target="CLAUDE.md")
+    observed: list[str] = []
+
+    def sync(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        """Record the materialized symlink seen by the shadow synchronizer."""
+
+        shadow_link = Path(str(kwargs["cwd"])) / "AGENTS.md"
+        assert shadow_link.is_symlink()
+        observed.append(shadow_link.readlink().as_posix())
+        return _sync_without_writes(*args, **kwargs)
+
+    monkeypatch.setattr("officina.refactor.closure.load_repository_blueprint_graph", _pass_graph)
+    monkeypatch.setattr("officina.refactor.closure.subprocess.run", sync)
+
+    close_projected_relocation(changes, manifest)
+
+    assert observed == ["CLAUDE.md", "CLAUDE.md"]
+
+
+@pytest.mark.parametrize(
+    ("link_target", "external_target"),
+    [
+        ("../outside.md", True),
+    ],
+    ids=["escape"],
+)
+def test_shadow_rejects_unsafe_symlink(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    link_target: str,
+    external_target: bool,
+) -> None:
+    """An escaping link fails with its exact repository path."""
+
+    if external_target:
+        _write(tmp_path.parent / "outside.md", "outside\n")
+    changes, manifest = _closure_fixture(tmp_path, agents_link_target=link_target)
+    monkeypatch.setattr("officina.refactor.closure.load_repository_blueprint_graph", _pass_graph)
+    monkeypatch.setattr("officina.refactor.closure.subprocess.run", _sync_without_writes)
+
+    with pytest.raises(MechanicalClosureError, match=r"unsafe shadow symlink: AGENTS\.md"):
+        close_projected_relocation(changes, manifest)
+
+
+def test_synchronizer_imports_officina_from_shadow_src(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The copied synchronizer imports the shadow package before the live checkout."""
+
+    changes, manifest = _closure_fixture(
+        tmp_path,
+        officina_content='ORIGIN = "shadow"\n',
+        syncer_content=(
+            "import officina\n"
+            'if officina.ORIGIN != "shadow":\n'
+            "    raise SystemExit(7)\n"
+        ),
+    )
+    monkeypatch.setattr("officina.refactor.closure.load_repository_blueprint_graph", _pass_graph)
+
+    result = close_projected_relocation(changes, manifest)
+
+    assert result.validation_results == (
+        "blueprint synchronizer synchronize",
+        "blueprint synchronizer check",
+        "repository blueprint graph",
+    )
+
+
+def test_shadow_excludes_assistant_tooling_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Assistant metadata trees are absent even when they contain a bad symlink."""
+
+    changes, manifest = _closure_fixture(tmp_path, assistant_tooling=True)
+    assert ".codex/agents" not in changes.projected_files()
+
+    def sync(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        """Assert that excluded assistant tooling never reaches the shadow."""
+
+        shadow = Path(str(kwargs["cwd"]))
+        assert not (shadow / ".agents").exists()
+        assert not (shadow / ".codex").exists()
+        return _sync_without_writes(*args, **kwargs)
+
+    monkeypatch.setattr("officina.refactor.closure.load_repository_blueprint_graph", _pass_graph)
+    monkeypatch.setattr("officina.refactor.closure.subprocess.run", sync)
+
+    close_projected_relocation(changes, manifest)
 
 
 def _pass_graph(*args: object, **kwargs: object) -> object:

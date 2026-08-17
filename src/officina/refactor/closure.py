@@ -11,6 +11,7 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path, PurePosixPath
 import stat
 import subprocess
@@ -29,7 +30,9 @@ _SCHEMA_PREFIX = "references/blueprint/"
 _MODULE_SCHEMA_PATH = "references/blueprint/module.schema.json"
 _SYNCER_PATH = "skills/skill-maker/_rtx/_blueprint_syncer.py"
 _SHADOW_EXCLUDED_PARTS = {
+    ".agents",
     ".certificates",
+    "." + "co" + "dex",
     ".git",
     ".mypy_cache",
     ".pooled-reviews",
@@ -94,27 +97,59 @@ def _mode_for_projected_path(changes: ChangeSet, relative: str) -> int:
     return mode
 
 
-def _materialize_projection(changes: ChangeSet, shadow_root: Path) -> None:
-    """Write included projected files and modes into an isolated shadow root.
+def _materialize_internal_symlink(
+    changes: ChangeSet,
+    source: Path,
+    target: Path,
+    relative: str,
+) -> None:
+    """Preserve one safe relative link whose resolved target is projected.
 
-    A symlink would make shadow validation depend on a path outside the copied
-    projection, so every included real-repository symlink is rejected with its
-    exact repository-relative path before any closure action runs.
+    The copied link text keeps the shadow's topology faithful to the repository.
+    Absolute, escaping, cyclic, and dangling links are rejected because their
+    resolved target cannot be proved to be an existing projected repository path.
+    """
+
+    try:
+        link_text = source.readlink()
+        if link_text.is_absolute():
+            raise ValueError("absolute link")
+        resolved = (source.parent / link_text).resolve(strict=False)
+        target_relative = resolved.relative_to(changes.root).as_posix()
+    except (OSError, RuntimeError, ValueError):
+        raise MechanicalClosureError(f"unsafe shadow symlink: {relative}") from None
+    if target_relative not in changes.projected_files():
+        raise MechanicalClosureError(f"unsafe shadow symlink: {relative}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.symlink_to(link_text)
+
+
+def _materialize_projection(changes: ChangeSet, shadow_root: Path) -> None:
+    """Write included projected files and safe symlinks into an isolated shadow root.
+
+    Regular files preserve projected bytes and modes. Repository-internal
+    relative symlinks preserve their link text only when their resolved target
+    is an existing projected path; all other symlinks fail with their exact path.
     """
 
     for relative in sorted(changes.projected_files()):
         if _is_excluded(relative):
             continue
         source = changes.root / relative
-        if source.is_symlink():
-            raise MechanicalClosureError(f"cannot materialize included symlink: {relative}")
         target = shadow_root / relative
+        if source.is_symlink():
+            if relative in changes.writes:
+                raise MechanicalClosureError(
+                    f"cannot materialize projected write to symlink: {relative}"
+                )
+            _materialize_internal_symlink(changes, source, target, relative)
+            continue
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(changes.read_bytes(relative))
         target.chmod(_mode_for_projected_path(changes, relative))
 
 
-def _snapshot(shadow_root: Path) -> dict[str, tuple[bytes, int]]:
+def _snapshot(shadow_root: Path) -> dict[str, tuple[bytes, int, bool]]:
     """Capture included regular-file bytes and modes after one shadow action.
 
     The snapshot is the write boundary for the canonical synchronizer. New,
@@ -122,16 +157,24 @@ def _snapshot(shadow_root: Path) -> dict[str, tuple[bytes, int]]:
     before any result is returned to the in-memory change set.
     """
 
-    result: dict[str, tuple[bytes, int]] = {}
+    result: dict[str, tuple[bytes, int, bool]] = {}
     for path in shadow_root.rglob("*"):
+        if path.is_symlink():
+            relative = path.relative_to(shadow_root).as_posix()
+            if _is_excluded(relative):
+                continue
+            result[relative] = (
+                path.readlink().as_posix().encode("utf-8"),
+                stat.S_IMODE(path.lstat().st_mode),
+                True,
+            )
+            continue
         if not path.is_file():
             continue
         relative = path.relative_to(shadow_root).as_posix()
         if _is_excluded(relative):
             continue
-        if path.is_symlink():
-            raise MechanicalClosureError(f"cannot snapshot included symlink: {relative}")
-        result[relative] = (path.read_bytes(), stat.S_IMODE(path.stat().st_mode))
+        result[relative] = (path.read_bytes(), stat.S_IMODE(path.stat().st_mode), False)
     return result
 
 
@@ -246,6 +289,14 @@ def _run_synchronizer(shadow_root: Path, *, check: bool) -> None:
     action = "check" if check else "synchronize"
     if check:
         command.append("--check")
+    environment = os.environ.copy()
+    shadow_src = str(shadow_root / "src")
+    existing_pythonpath = environment.get("PYTHONPATH")
+    environment["PYTHONPATH"] = (
+        shadow_src
+        if not existing_pythonpath
+        else shadow_src + os.pathsep + existing_pythonpath
+    )
     completed = subprocess.run(
         command,
         cwd=shadow_root,
@@ -254,6 +305,7 @@ def _run_synchronizer(shadow_root: Path, *, check: bool) -> None:
         text=True,
         encoding="utf-8",
         errors="strict",
+        env=environment,
     )
     if completed.returncode != 0:
         details = (completed.stderr or completed.stdout).strip()
@@ -315,8 +367,8 @@ def _allowed_generated_change(relative: str, before: bytes, after: bytes) -> boo
 
 def _reconcile_generated_changes(
     changes: ChangeSet,
-    before: dict[str, tuple[bytes, int]],
-    after: dict[str, tuple[bytes, int]],
+    before: dict[str, tuple[bytes, int, bool]],
+    after: dict[str, tuple[bytes, int, bool]],
 ) -> tuple[str, ...]:
     """Reject unapproved synchronizer writes and absorb exact allowed bytes/modes.
 
@@ -333,6 +385,8 @@ def _reconcile_generated_changes(
             continue
         if current is None:
             raise MechanicalClosureError(f"unexpected shadow delete: {relative}")
+        if current[2] or (previous is not None and previous[2]):
+            raise MechanicalClosureError(f"unexpected shadow symlink: {relative}")
         if previous is not None and previous[0] == current[0]:
             raise MechanicalClosureError(f"unexpected shadow mode change: {relative}")
         before_bytes = previous[0] if previous is not None else b""
@@ -346,8 +400,8 @@ def _reconcile_generated_changes(
 
 
 def _first_snapshot_difference(
-    before: dict[str, tuple[bytes, int]],
-    after: dict[str, tuple[bytes, int]],
+    before: dict[str, tuple[bytes, int, bool]],
+    after: dict[str, tuple[bytes, int, bool]],
 ) -> str | None:
     """Return the first deterministic path whose shadow bytes or mode changed.
 
@@ -406,7 +460,7 @@ def close_projected_relocation(
 
         basis_changes: tuple[str, ...] = ()
         if basis_changed:
-            basis_payload, basis_mode = after_sync[_BASIS_PATH]
+            basis_payload, basis_mode, _ = after_sync[_BASIS_PATH]
             changes.write_bytes(_BASIS_PATH, basis_payload)
             if _BASIS_PATH in changes.writes:
                 changes.write_modes[_BASIS_PATH] = basis_mode
