@@ -29,6 +29,8 @@
 - Modify: `src/officina/refactor/relocation.schema.json`
 - Modify: `src/officina/refactor/relocation.py`
 - Modify: `tests/test_officina_relocation.py`
+- Modify: `tests/test_officina_source_relocation_manifest.py`
+- Modify: `docs/superpowers/plans/2026-08-17-officina-relocation-closure.md`
 
 **Step 1: Write failing schema and parser tests**
 
@@ -109,10 +111,29 @@ pytest -q tests/test_officina_relocation.py -k 'manifest or boundary'
 
 Expected: PASS.
 
-**Step 4: Commit only Task 1 files**
+**Step 4: Migrate the repository acceptance manifest**
+
+Set its schema version to 2 and declare these package dispositions:
+
+```python
+{
+    ("src/officina/standards", "registered-module"),
+    ("src/officina/visualization", "unregistered-package"),
+    ("src/officina/repository", "unregistered-package"),
+    ("src/officina/repository/checks", "unregistered-package"),
+    ("src/officina/validators", "unregistered-package"),
+}
+```
+
+The registered `standards` boundary must declare module id `standards` and
+blueprint `src/officina/standards/blueprint.yaml`. Update the acceptance test
+to require the schema version and these exact declarations. This migration is
+Task 1 work because version-1 manifests are intentionally unsupported.
+
+**Step 5: Commit Task 1 and its manifest migration**
 
 ```bash
-git add src/officina/refactor/relocation.schema.json src/officina/refactor/relocation.py tests/test_officina_relocation.py
+git add src/officina/refactor/relocation.schema.json src/officina/refactor/relocation.py tests/test_officina_relocation.py refactors/officina-source-relocation.yaml tests/test_officina_source_relocation_manifest.py docs/superpowers/plans/2026-08-17-officina-relocation-closure.md
 git commit -m "Require relocation package dispositions"
 ```
 
@@ -557,7 +578,7 @@ git commit -m "Close relocations before atomic publication"
 
 ---
 
-### Task 7: Migrate and prove the Officina relocation acceptance case
+### Task 7: Prove the Officina relocation acceptance case end to end
 
 **Files:**
 
@@ -566,35 +587,15 @@ git commit -m "Close relocations before atomic publication"
 - Modify: `docs/superpowers/specs/2026-08-17-officina-relocation-closure-design.md`
 - Modify: `docs/superpowers/plans/2026-08-17-officina-relocation-closure.md`
 
-**Step 1: Write the failing acceptance assertions**
+**Step 1: Add the end-to-end acceptance proof**
 
-Update the manifest test to require schema v2 and these explicit dispositions:
+Add a clean fixture reconstructed from the pre-relocation paths and assert one
+invocation includes the previously missed README-only package initializers,
+blueprint dependency closure, and generated runtime manifest in the same
+`ChangeSet`, with no hand-authored post-plan patch. The schema-v2 manifest
+migration and its direct acceptance assertions are Task 1 work.
 
-```python
-assert {(item.path, item.disposition) for item in manifest.package_boundaries} >= {
-    ("src/officina/standards", "registered-module"),
-    ("src/officina/visualization", "unregistered-package"),
-    ("src/officina/repository", "unregistered-package"),
-    ("src/officina/repository/checks", "unregistered-package"),
-    ("src/officina/validators", "unregistered-package"),
-}
-```
-
-Add a clean fixture reconstructed from the pre-relocation paths and assert one invocation includes the previously missed README-only package initializers, blueprint dependency closure, and generated runtime manifest in the same `ChangeSet`, with no hand-authored post-plan patch.
-
-Run:
-
-```bash
-pytest -q tests/test_officina_source_relocation_manifest.py
-```
-
-Expected: FAIL until the acceptance manifest is version 2.
-
-**Step 2: Migrate the real manifest**
-
-Set `schema_version: 2` and add package-boundary declarations. Do not add compatibility moves, import facades, implicit caller grants, or visualization implementation edits. Preserve all existing move and typed-rename declarations.
-
-**Step 3: Run focused verification**
+**Step 2: Run focused verification**
 
 ```bash
 pytest -q tests/test_officina_relocation.py tests/test_officina_relocation_shadow.py tests/test_officina_relocation_closure.py tests/test_officina_source_relocation_manifest.py tests/test_node_certification_hashing.py tests/test_officina_python_machine_interface.py skills/skill-certifier/_rtx/tests/test_certifier.py tests/test_repository_validator_checks.py
@@ -618,7 +619,7 @@ python3 repo_checks.py --suite validators
 
 Expected: PASS. This is post-implementation verification, not a command embedded in relocation.
 
-**Step 4: Review the diff and update document status**
+**Step 3: Review the diff and update document status**
 
 Check only the implementation paths from Tasks 1-7, so concurrent visualization and skill-drift work cannot contaminate the review:
 
@@ -629,10 +630,10 @@ git status --short
 
 Verify that no visualization-development file and no paused skill-drift test is staged. Change the design spec status from `Draft for review` to `Implemented` only after all acceptance checks pass. Mark this plan’s tasks complete with the verified commands and results; do not claim certification.
 
-**Step 5: Commit the acceptance migration and documentation**
+**Step 4: Commit the end-to-end proof and documentation**
 
 ```bash
-git add refactors/officina-source-relocation.yaml tests/test_officina_source_relocation_manifest.py docs/superpowers/specs/2026-08-17-officina-relocation-closure-design.md docs/superpowers/plans/2026-08-17-officina-relocation-closure.md
+git add tests/test_officina_source_relocation_manifest.py docs/superpowers/specs/2026-08-17-officina-relocation-closure-design.md docs/superpowers/plans/2026-08-17-officina-relocation-closure.md
 git commit -m "Prove atomic Officina relocation closure"
 ```
 

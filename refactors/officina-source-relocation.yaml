@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 
 moves:
 - from: src/officina/common/standard_extractor.py
@@ -23,6 +23,22 @@ moves:
   to: src/officina/repository/checks/__init__.py
 - from: src/officina/_validator_snapshot.py
   to: src/officina/validators/snapshot.py
+
+# Every package boundary created by these moves or their README-only catalogs
+# declares its registration policy explicitly. Only standards is a module.
+package_boundaries:
+- path: src/officina/standards
+  disposition: registered-module
+  module_id: standards
+  blueprint: src/officina/standards/blueprint.yaml
+- path: src/officina/visualization
+  disposition: unregistered-package
+- path: src/officina/repository
+  disposition: unregistered-package
+- path: src/officina/repository/checks
+  disposition: unregistered-package
+- path: src/officina/validators
+  disposition: unregistered-package
 
 renames:
   python_modules:

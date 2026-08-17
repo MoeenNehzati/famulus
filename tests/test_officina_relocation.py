@@ -39,7 +39,7 @@ def test_preflight_uses_typed_renames_without_writing(tmp_path: Path) -> None:
     manifest = _manifest(
         tmp_path / "move.yaml",
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "moves": [{"from": "src/pkg/old_name.py", "to": "src/pkg/new/name.py"}],
             "renames": {
                 "python_modules": [{"from": "pkg.old_name", "to": "pkg.new.name"}],
@@ -65,16 +65,182 @@ def test_preflight_uses_typed_renames_without_writing(tmp_path: Path) -> None:
     )
 
 
+def test_manifest_v2_requires_explicit_package_boundary_dispositions(
+    tmp_path: Path,
+) -> None:
+    """A v2 manifest parses each declared package-policy record by disposition."""
+
+    manifest = _manifest(
+        tmp_path / "move.yaml",
+        {
+            "schema_version": 2,
+            "package_boundaries": [
+                {
+                    "path": "src/officina/tools",
+                    "disposition": "registered-module",
+                    "module_id": "tools",
+                    "blueprint": "src/officina/tools/blueprint.yaml",
+                },
+                {
+                    "path": "src/officina/helpers",
+                    "disposition": "unregistered-package",
+                },
+            ],
+        },
+    )
+
+    assert manifest.package_boundaries[0].module_id == "tools"
+    assert manifest.package_boundaries[1].module_id is None
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        {"schema_version": 1},
+        {
+            "schema_version": 2,
+            "package_boundaries": [
+                {"path": "src/officina/tools", "disposition": "registered-module"}
+            ],
+        },
+        {
+            "schema_version": 2,
+            "package_boundaries": [
+                {
+                    "path": "src/officina/tools",
+                    "disposition": "unregistered-package",
+                    "module_id": "tools",
+                }
+            ],
+        },
+        {
+            "schema_version": 2,
+            "package_boundaries": [
+                {
+                    "path": "src/officina/tools",
+                    "disposition": "existing-module",
+                    "blueprint": "src/officina/tools/blueprint.yaml",
+                }
+            ],
+        },
+    ],
+)
+def test_manifest_rejects_legacy_or_incoherent_boundary_policy(
+    tmp_path: Path,
+    value: dict[str, object],
+) -> None:
+    """Legacy schemas and disposition-incompatible fields are rejected."""
+
+    with pytest.raises(RelocationError):
+        _manifest(tmp_path / "move.yaml", value)
+
+
+def test_manifest_rejects_duplicate_package_boundary_paths(tmp_path: Path) -> None:
+    """One package path cannot be assigned two relocation dispositions."""
+
+    with pytest.raises(RelocationError, match="duplicate package boundary path"):
+        _manifest(
+            tmp_path / "move.yaml",
+            {
+                "schema_version": 2,
+                "package_boundaries": [
+                    {
+                        "path": "src/officina/tools",
+                        "disposition": "unregistered-package",
+                    },
+                    {
+                        "path": "src/officina/tools",
+                        "disposition": "unregistered-package",
+                    },
+                ],
+            },
+        )
+
+
+def test_boundary_policy_requires_a_declaration_for_a_new_package(
+    tmp_path: Path,
+) -> None:
+    """A moved initializer cannot create an undeclared package boundary."""
+
+    _write(tmp_path / "src/old/__init__.py", '"""Old package."""\n')
+    manifest = _manifest(
+        tmp_path / "move.yaml",
+        {
+            "schema_version": 2,
+            "moves": [{"from": "src/old", "to": "src/new"}],
+        },
+    )
+
+    with pytest.raises(RelocationError, match=r"src/new"):
+        plan_relocation(tmp_path, manifest)
+
+
+def test_boundary_policy_validates_declared_projection_state(tmp_path: Path) -> None:
+    """Each disposition constrains the projected module blueprint at its path."""
+
+    _write(tmp_path / "src/old/__init__.py", '"""Old package."""\n')
+    manifest = _manifest(
+        tmp_path / "move.yaml",
+        {
+            "schema_version": 2,
+            "moves": [{"from": "src/old", "to": "src/new"}],
+            "blueprint_documents": [
+                {
+                    "path": "src/new/blueprint.yaml",
+                    "document": {"id": "new", "node_type": "module"},
+                }
+            ],
+            "package_boundaries": [
+                {
+                    "path": "src/new",
+                    "disposition": "registered-module",
+                    "module_id": "new",
+                    "blueprint": "src/new/blueprint.yaml",
+                }
+            ],
+        },
+    )
+
+    assert plan_relocation(tmp_path, manifest).exists("src/new/blueprint.yaml")
+
+
+def test_boundary_policy_rejects_a_blueprint_for_an_unregistered_package(
+    tmp_path: Path,
+) -> None:
+    """Unregistered packages cannot project an Officina module blueprint."""
+
+    _write(tmp_path / "src/old/__init__.py", '"""Old package."""\n')
+    manifest = _manifest(
+        tmp_path / "move.yaml",
+        {
+            "schema_version": 2,
+            "moves": [{"from": "src/old", "to": "src/new"}],
+            "blueprint_documents": [
+                {
+                    "path": "src/new/blueprint.yaml",
+                    "document": {"id": "new", "node_type": "module"},
+                }
+            ],
+            "package_boundaries": [
+                {"path": "src/new", "disposition": "unregistered-package"}
+            ],
+        },
+    )
+
+    with pytest.raises(RelocationError, match=r"src/new/blueprint.yaml"):
+        plan_relocation(tmp_path, manifest)
+
+
 def test_manifest_rejects_unknown_or_escaping_declarations(tmp_path: Path) -> None:
     """Manifest validation closes typo and repository-escape routes."""
 
     with pytest.raises(RelocationError, match="unknown manifest key"):
-        _manifest(tmp_path / "unknown.yaml", {"schema_version": 1, "mvoes": []})
+        _manifest(tmp_path / "unknown.yaml", {"schema_version": 2, "mvoes": []})
     with pytest.raises(RelocationError, match="repository-relative"):
         _manifest(
             tmp_path / "escape.yaml",
             {
-                "schema_version": 1,
+                "schema_version": 2,
                 "moves": [{"from": "../outside.py", "to": "src/pkg/new.py"}],
             },
         )
@@ -143,7 +309,7 @@ def test_ownership_transfer_moves_blueprint_records_without_changing_contracts(
     manifest = _manifest(
         tmp_path / "move.yaml",
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "moves": [
                 {"from": "src/pkg/old/worker.py", "to": "src/pkg/new/worker.py"},
                 {
@@ -210,7 +376,7 @@ def test_catalog_generation_and_application_are_idempotent(tmp_path: Path) -> No
     manifest = _manifest(
         tmp_path / "move.yaml",
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "package_catalogs": [
                 {
                     "path": "src/pkg/domain",
@@ -251,7 +417,7 @@ def test_application_preserves_modes_of_moved_and_rewritten_files(
     manifest = _manifest(
         tmp_path / "move.yaml",
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "moves": [{"from": "old.py", "to": "new.py"}],
             "renames": {
                 "python_modules": [
@@ -289,8 +455,11 @@ Includes
     manifest = _manifest(
         tmp_path / "move.yaml",
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "moves": [{"from": "src/pkg/old", "to": "src/pkg/new"}],
+            "package_boundaries": [
+                {"path": "src/pkg/new", "disposition": "unregistered-package"}
+            ],
             "package_catalogs": [
                 {
                     "path": "src/pkg/new",
@@ -319,7 +488,7 @@ def test_exact_rewrite_precondition_fails_before_any_write(tmp_path: Path) -> No
     manifest = _manifest(
         tmp_path / "move.yaml",
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "exact_rewrites": [
                 {
                     "path": "src/pkg/module.py",
@@ -344,7 +513,7 @@ def test_exact_rewrite_is_idempotent_when_replacement_contains_original(
     manifest = _manifest(
         tmp_path / "move.yaml",
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "exact_rewrites": [
                 {
                     "path": "plan.md",
@@ -369,7 +538,7 @@ def test_exact_rewrite_rejects_old_and_new_text_side_by_side(tmp_path: Path) -> 
     manifest = _manifest(
         tmp_path / "move.yaml",
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "exact_rewrites": [
                 {"path": "module.py", "from": "OLD", "to": "NEW"}
             ],
@@ -389,7 +558,7 @@ def test_exact_rewrite_applies_when_replacement_is_a_prefix_of_old(
     manifest = _manifest(
         tmp_path / "move.yaml",
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "exact_rewrites": [
                 {
                     "path": "module.py",
@@ -415,7 +584,7 @@ def test_command_preflights_then_applies_the_same_report(tmp_path: Path) -> None
         manifest_path,
         yaml.safe_dump(
             {
-                "schema_version": 1,
+                "schema_version": 2,
                 "moves": [{"from": "old.py", "to": "new.py"}],
             },
             sort_keys=False,
@@ -470,7 +639,11 @@ def test_plan_snapshots_repository_file_inventory_once(
     manifest = _manifest(
         tmp_path / "move.yaml",
         {
-            "schema_version": 1,
+            "schema_version": 2,
+            "package_boundaries": [
+                {"path": "src/pkg/one", "disposition": "unregistered-package"},
+                {"path": "src/pkg/two", "disposition": "unregistered-package"},
+            ],
             "package_catalogs": [
                 {"path": "src/pkg/one", "summary": "One.", "description": "One."},
                 {"path": "src/pkg/two", "summary": "Two.", "description": "Two."},
@@ -512,7 +685,7 @@ def test_plan_excludes_nested_worktree_metadata(tmp_path: Path) -> None:
     manifest = _manifest(
         tmp_path / "move.yaml",
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "forbid_facade_imports": ["pkg.domain"],
             "inventory_exclusions": [".claude"],
         },

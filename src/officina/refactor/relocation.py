@@ -15,7 +15,7 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import stat
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Literal, Mapping
 
 import jsonschema
 import yaml
@@ -47,6 +47,7 @@ _TEXT_SUFFIXES = {
 }
 _TOP_LEVEL_KEYS = {
     "schema_version",
+    "package_boundaries",
     "moves",
     "renames",
     "blueprint_documents",
@@ -60,6 +61,7 @@ _TOP_LEVEL_KEYS = {
     "inventory_exclusions",
     "standard_digest_roots",
 }
+_SCHEMA_VERSION = 2
 
 
 class RelocationError(RuntimeError):
@@ -102,6 +104,28 @@ class PackageCatalog:
     roles: Mapping[str, str] = field(default_factory=dict)
 
 
+PackageDisposition = Literal[
+    "existing-module", "registered-module", "unregistered-package"
+]
+
+
+@dataclass(frozen=True)
+class PackageBoundary:
+    """Declare the approved registration policy for one projected package.
+
+    ``path`` identifies a package whose initializer is introduced by the
+    relocation projection. ``existing-module`` means its module blueprint was
+    already registered before the move. ``registered-module`` supplies the
+    explicit projected module identity and blueprint location. An
+    ``unregistered-package`` is intentionally left outside the module graph.
+    """
+
+    path: str
+    disposition: PackageDisposition
+    module_id: str | None = None
+    blueprint: str | None = None
+
+
 @dataclass(frozen=True)
 class OwnershipTransfer:
     """Transfer one behavioral source and optional export between modules."""
@@ -124,6 +148,7 @@ class RelocationManifest:
     caller_additions: tuple[tuple[str, str, str], ...] = ()
     exact_rewrites: tuple[ExactRewrite, ...] = ()
     package_catalogs: tuple[PackageCatalog, ...] = ()
+    package_boundaries: tuple[PackageBoundary, ...] = ()
     forbid_facade_imports: tuple[str, ...] = ()
     text_exclusions: tuple[str, ...] = ()
     active_address_exclusions: tuple[str, ...] = ()
@@ -176,8 +201,8 @@ def load_manifest(path: Path) -> RelocationManifest:
     unknown = sorted(set(value) - _TOP_LEVEL_KEYS)
     if unknown:
         raise RelocationError("unknown manifest key: " + ", ".join(unknown))
-    if value.get("schema_version") != 1:
-        raise RelocationError("schema_version must be 1")
+    if value.get("schema_version") != _SCHEMA_VERSION:
+        raise RelocationError(f"schema_version must be {_SCHEMA_VERSION}")
 
     schema_path = Path(__file__).with_name("relocation.schema.json")
     try:
@@ -290,6 +315,50 @@ def load_manifest(path: Path) -> RelocationManifest:
             )
         )
 
+    boundaries: list[PackageBoundary] = []
+    boundary_paths: set[str] = set()
+    for index, item in enumerate(
+        _sequence(value.get("package_boundaries"), field_name="package_boundaries")
+    ):
+        if not isinstance(item, dict):
+            raise RelocationError(f"package_boundaries[{index}] must be a mapping")
+        path_value = _repository_path(
+            item.get("path"), field_name=f"package_boundaries[{index}].path"
+        )
+        if path_value in boundary_paths:
+            raise RelocationError(f"duplicate package boundary path: {path_value}")
+        boundary_paths.add(path_value)
+        disposition = item.get("disposition")
+        if disposition not in {
+            "existing-module",
+            "registered-module",
+            "unregistered-package",
+        }:
+            raise RelocationError(
+                f"package_boundaries[{index}].disposition is invalid: {disposition!r}"
+            )
+        module_id = item.get("module_id")
+        blueprint = item.get("blueprint")
+        if disposition == "registered-module":
+            if not isinstance(module_id, str) or not module_id:
+                raise RelocationError(
+                    f"package_boundaries[{index}].module_id must be a non-empty string"
+                )
+            blueprint = _repository_path(
+                blueprint, field_name=f"package_boundaries[{index}].blueprint"
+            )
+        else:
+            module_id = None
+            blueprint = None
+        boundaries.append(
+            PackageBoundary(
+                path=path_value,
+                disposition=disposition,
+                module_id=module_id,
+                blueprint=blueprint,
+            )
+        )
+
     def string_tuple(key: str, *, paths: bool = False) -> tuple[str, ...]:
         values = _sequence(value.get(key), field_name=key)
         if not all(isinstance(item, str) and item for item in values):
@@ -307,6 +376,7 @@ def load_manifest(path: Path) -> RelocationManifest:
         caller_additions=tuple(caller_additions),
         exact_rewrites=tuple(exact_rewrites),
         package_catalogs=tuple(catalogs),
+        package_boundaries=tuple(boundaries),
         forbid_facade_imports=string_tuple("forbid_facade_imports"),
         text_exclusions=string_tuple("text_exclusions", paths=True),
         active_address_exclusions=string_tuple("active_address_exclusions", paths=True),
@@ -700,6 +770,82 @@ def _project_catalogs(changes: ChangeSet, manifest: RelocationManifest) -> None:
         changes.write_text(f"{catalog.path}/__init__.py", "\n".join(lines))
 
 
+def _validate_package_boundary_declarations(
+    changes: ChangeSet, manifest: RelocationManifest
+) -> None:
+    """Validate explicit registration policy for every newly projected package.
+
+    A package boundary is new when a move or README-only catalog adds its
+    ``__init__.py`` beyond the pre-move inventory. Each such path must have one
+    declaration. Existing modules must resolve to a pre-move module blueprint;
+    newly registered modules must match the declared projected blueprint and
+    module id; unregistered packages must not project a module blueprint.
+
+    Raises:
+        RelocationError: If a new package has no declaration or a declaration
+            conflicts with its pre-move or projected blueprint state.
+    """
+
+    declared = {boundary.path: boundary for boundary in manifest.package_boundaries}
+    new_boundaries = {
+        PurePosixPath(relative).parent.as_posix()
+        for relative in changes.projected_files() - changes.base_files
+        if PurePosixPath(relative).name == "__init__.py"
+    }
+    for path_value in sorted(new_boundaries - set(declared)):
+        raise RelocationError(
+            f"missing package boundary disposition; declare one for {path_value}"
+        )
+
+    for boundary in manifest.package_boundaries:
+        default_blueprint = f"{boundary.path}/blueprint.yaml"
+        if boundary.disposition == "existing-module":
+            if default_blueprint not in changes.base_files:
+                raise RelocationError(
+                    "existing-module requires a pre-move module blueprint at "
+                    f"{default_blueprint}"
+                )
+            blueprint = _yaml_mapping(changes, default_blueprint)
+            if blueprint.get("node_type") != "module" or not isinstance(
+                blueprint.get("id"), str
+            ):
+                raise RelocationError(
+                    "existing-module requires node_type 'module' and a string id at "
+                    f"{default_blueprint}"
+                )
+            continue
+
+        if boundary.disposition == "registered-module":
+            assert boundary.blueprint is not None
+            assert boundary.module_id is not None
+            if boundary.blueprint != default_blueprint:
+                raise RelocationError(
+                    "registered-module blueprint must equal "
+                    f"{default_blueprint}; received {boundary.blueprint}"
+                )
+            if not changes.exists(boundary.blueprint):
+                raise RelocationError(
+                    "registered-module declaration requires projected blueprint "
+                    f"{boundary.blueprint}"
+                )
+            blueprint = _yaml_mapping(changes, boundary.blueprint)
+            if (
+                blueprint.get("node_type") != "module"
+                or blueprint.get("id") != boundary.module_id
+            ):
+                raise RelocationError(
+                    "registered-module declaration requires node_type 'module' and "
+                    f"id {boundary.module_id!r} at {boundary.blueprint}"
+                )
+            continue
+
+        if changes.exists(default_blueprint):
+            raise RelocationError(
+                "unregistered-package cannot project a module blueprint at "
+                f"{default_blueprint}"
+            )
+
+
 def _project_standard_digests(changes: ChangeSet, manifest: RelocationManifest) -> None:
     standard_paths: list[str] = []
     for root_name in manifest.standard_digest_roots:
@@ -808,6 +954,7 @@ def plan_relocation(root: Path, manifest: RelocationManifest) -> ChangeSet:
     _project_blueprints(changes, manifest)
     _project_text_rewrites(changes, manifest)
     _project_catalogs(changes, manifest)
+    _validate_package_boundary_declarations(changes, manifest)
     _project_standard_digests(changes, manifest)
     _validate_projected_tree(changes, manifest)
     return changes

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import yaml
+
 from officina.refactor.relocation import load_manifest
 
 
@@ -14,6 +16,8 @@ MANIFEST_PATH = REPO_ROOT / "refactors/officina-source-relocation.yaml"
 def test_manifest_covers_every_remaining_domain_move_and_blueprint_transfer() -> None:
     """The acceptance manifest is complete enough to replace the one-off script."""
 
+    document = yaml.safe_load(MANIFEST_PATH.read_text(encoding="utf-8"))
+    assert document["schema_version"] == 2
     manifest = load_manifest(MANIFEST_PATH)
     moves = {(move.source, move.target) for move in manifest.moves}
     assert (
@@ -45,6 +49,17 @@ def test_manifest_covers_every_remaining_domain_move_and_blueprint_transfer() ->
         "src/officina/repository/checks",
         "src/officina/validators",
     }.issubset(catalog_paths)
+    boundaries = {boundary.path: boundary for boundary in manifest.package_boundaries}
+    assert {(boundary.path, boundary.disposition) for boundary in boundaries.values()} >= {
+        ("src/officina/standards", "registered-module"),
+        ("src/officina/visualization", "unregistered-package"),
+        ("src/officina/repository", "unregistered-package"),
+        ("src/officina/repository/checks", "unregistered-package"),
+        ("src/officina/validators", "unregistered-package"),
+    }
+    standards = boundaries["src/officina/standards"]
+    assert standards.module_id == "standards"
+    assert standards.blueprint == "src/officina/standards/blueprint.yaml"
     rewrites = {(rewrite.path, rewrite.old) for rewrite in manifest.exact_rewrites}
     assert (
         "src/officina/repository/checks/runner.py",

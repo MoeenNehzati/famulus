@@ -4,7 +4,11 @@
   "additionalProperties": false,
   "required": ["schema_version"],
   "properties": {
-    "schema_version": {"const": 1},
+    "schema_version": {"const": 2},
+    "package_boundaries": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/package_boundary"}
+    },
     "moves": {"type": "array", "items": {"$ref": "#/$defs/rename"}},
     "renames": {
       "type": "object",
@@ -94,6 +98,39 @@
       "required": ["from", "to"],
       "properties": {"from": {"type": "string"}, "to": {"type": "string"}}
     },
-    "strings": {"type": "array", "items": {"type": "string"}}
+    "strings": {"type": "array", "items": {"type": "string"}},
+    "package_boundary": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "disposition", "module_id", "blueprint"],
+          "properties": {
+            "path": {"type": "string"},
+            "disposition": {"const": "registered-module"},
+            "module_id": {"type": "string", "minLength": 1},
+            "blueprint": {"type": "string"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "disposition"],
+          "properties": {
+            "path": {"type": "string"},
+            "disposition": {"const": "existing-module"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "disposition"],
+          "properties": {
+            "path": {"type": "string"},
+            "disposition": {"const": "unregistered-package"}
+          }
+        }
+      ]
+    }
   }
 }
