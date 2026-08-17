@@ -1,6 +1,6 @@
 # Officina relocation closure transaction
 
-**Status:** Draft for review
+**Status:** Accepted for implementation
 
 **Date:** 2026-08-17
 
