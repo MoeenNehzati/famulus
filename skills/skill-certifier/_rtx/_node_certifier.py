@@ -1123,7 +1123,7 @@ def _python_route_smoke_trace_specs(
                 try:
                     logical_package = None
                     logical_entrypoint = None
-                    if graph.schema_version == 5:
+                    if graph.schema_version in {5, 6}:
                         module_id = graph.source_modules[node_id]
                         logical_package = logical_python_package_name(module_id)
                         path = Path(gateway_path)

@@ -1613,6 +1613,61 @@ def test_route_audit_uses_logical_package_and_explicit_shadow_schema(
     assert result == ((source_id, target, ()),)
 
 
+def test_v6_nested_module_route_target_uses_logical_package_identity(
+    tmp_path: Path,
+) -> None:
+    copy_legacy_fixture_tree(
+        LEGACY_AUTHORIZATION_FIXTURE / "modules",
+        tmp_path / "modules",
+    )
+    copy_legacy_fixture_tree(
+        LEGACY_AUTHORIZATION_FIXTURE / "skills",
+        tmp_path / "skills",
+    )
+    graph = certifier.load_repository_blueprint_graph(
+        tmp_path,
+        schema_root=LEGACY_SCHEMA_ROOT,
+        expected_schema_version=5,
+    )
+    source_id = "demo-rtx.source.runtime"
+    source = graph.nodes[source_id]
+    declaration = dict(source.declaration)
+    interfaces = dict(declaration["interfaces"])
+    interface_id = "demo-rtx.source.runtime.interface.execute"
+    interface = dict(interfaces[interface_id])
+    interface["process_binding"] = {
+        "kind": "process",
+        "entry": "Interface",
+        "arguments": {},
+        "fixed": [],
+    }
+    interfaces[interface_id] = interface
+    declaration["interfaces"] = interfaces
+    graph = replace(
+        graph,
+        schema_version=6,
+        nodes={
+            **graph.nodes,
+            source_id: replace(source, declaration=declaration),
+        },
+        source_modules={
+            **graph.source_modules,
+            source_id: "demo._rtx",
+        },
+    )
+
+    specification = certifier._python_route_smoke_trace_specs(
+        graph,
+        (source_id,),
+    )[0]
+
+    target = specification[2]
+    package = logical_python_package_name("demo._rtx")
+    assert target.gateway_path == Path("runtime.py")
+    assert target.logical_package == package
+    assert target.logical_entrypoint == f"{package}.runtime"
+
+
 def test_private_writer_route_audit_failure_precedes_every_append(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
