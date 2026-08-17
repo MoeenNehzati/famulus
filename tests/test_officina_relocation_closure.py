@@ -252,13 +252,13 @@ def test_injected_synchronizer_receives_the_shadow_repository(
     result = close_projected_relocation(changes, manifest, synchronize=synchronize)
 
     assert result.validation_results == (
-        "blueprint synchronizer check",
         "blueprint synchronizer synchronize",
+        "blueprint synchronizer check",
         "repository blueprint graph",
     )
 
 
-def test_closure_uses_the_injected_synchronizer_for_check_then_sync(
+def test_closure_uses_the_injected_synchronizer_for_sync_then_check(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Closure uses the supplied authorized synchronizer instead of a private path."""
@@ -273,8 +273,45 @@ def test_closure_uses_the_injected_synchronizer_for_check_then_sync(
 
     close_projected_relocation(changes, manifest, synchronize=synchronize)
 
-    assert [check for _, check in calls] == [True, False]
+    assert [check for _, check in calls] == [False, True]
     assert all(repository != tmp_path for repository, _ in calls)
+
+
+def test_stale_generated_artifact_is_synchronized_before_check_and_graph(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Synchronize stale generated output before the check-only and graph passes."""
+
+    changes, manifest = _closure_fixture(tmp_path)
+    target = "references/blueprint/runtime_dependencies.json"
+    expected = _empty_runtime_dependencies()
+    changes.write_text(target, "stale generated artifact\n")
+    calls: list[str] = []
+
+    def synchronize(repository: Path, *, check: bool) -> None:
+        generated = repository / target
+        if check:
+            calls.append("check")
+            if generated.read_text(encoding="utf-8") != expected:
+                raise MechanicalClosureError("fixture generated artifact is stale")
+            return
+        calls.append("synchronize")
+        generated.write_text(expected, encoding="utf-8")
+
+    def graph(*args: object, **kwargs: object) -> None:
+        calls.append("graph")
+
+    monkeypatch.setattr("officina.refactor.closure.load_repository_blueprint_graph", graph)
+
+    result = close_projected_relocation(changes, manifest, synchronize=synchronize)
+
+    assert calls == ["synchronize", "check", "graph"]
+    assert result.validation_results == (
+        "blueprint synchronizer synchronize",
+        "blueprint synchronizer check",
+        "repository blueprint graph",
+    )
+    assert changes.read_text(target) == expected
 
 
 def test_shadow_excludes_assistant_tooling_metadata(

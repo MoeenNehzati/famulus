@@ -399,6 +399,10 @@ def close_projected_relocation(
         _materialize_projection(changes, shadow_root)
         _require_closure_inputs(shadow_root)
         basis_changed = _update_certification_basis(shadow_root, manifest)
+        before_sync = _snapshot(shadow_root)
+        synchronize(shadow_root, check=False)
+        after_sync = _snapshot(shadow_root)
+        generated = _reconcile_generated_changes(changes, before_sync, after_sync)
         before_check = _snapshot(shadow_root)
         synchronize(shadow_root, check=True)
         after_check = _snapshot(shadow_root)
@@ -407,10 +411,6 @@ def close_projected_relocation(
             raise MechanicalClosureError(
                 f"blueprint synchronizer check changed shadow: {check_difference}"
             )
-        before_sync = _snapshot(shadow_root)
-        synchronize(shadow_root, check=False)
-        after_sync = _snapshot(shadow_root)
-        generated = _reconcile_generated_changes(changes, before_sync, after_sync)
         try:
             load_repository_blueprint_graph(
                 shadow_root,
@@ -431,8 +431,8 @@ def close_projected_relocation(
             certification_basis_changes=basis_changes,
             generated_artifact_changes=generated,
             validation_results=(
-                "blueprint synchronizer check",
                 "blueprint synchronizer synchronize",
+                "blueprint synchronizer check",
                 "repository blueprint graph",
             ),
         )
