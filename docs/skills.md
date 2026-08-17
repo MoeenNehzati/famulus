@@ -58,6 +58,7 @@ This page is the complete skill inventory. For walkthroughs and examples, start 
 
 - `hook-maker` — Design cross-host assistant hooks with one purpose and per-host bindings _(topics: assistant-authoring, assistant-architecture; activated by: user request, skill workflow)_
 - `regenerate-blueprints` — An existing skill blueprint needs regeneration, whether requested directly or required by another skill _(topics: assistant-authoring, assistant-architecture; activated by: user request, skill workflow)_
+- `relocate-nodes` — Registered Officina nodes or their owned files must be moved while mechanically updating blueprint ownership, references, generated artifacts, and callers _(topics: assistant-architecture, repository-workflow, assistant-assurance; activated by: user request, skill workflow)_
 - `skill-certifier` — Fresh certificates are requested for one or more Officina nodes _(topics: assistant-assurance, assistant-architecture; activated by: user request, skill workflow)_
 - `skill-drift` — Whether Officina node certificates are current or stale, or asks for canonical node hashes _(topics: assistant-assurance, assistant-architecture; activated by: user request, skill workflow)_
 - `update-standards` — Change canonical standards and keep their pinned closures aligned _(topics: assistant-authoring, assistant-architecture, assistant-assurance; activated by: user request, skill workflow)_

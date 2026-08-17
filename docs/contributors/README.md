@@ -57,6 +57,7 @@ These skills own assistant modules, standards, and their lifecycle.
 - `hook-maker` — Design cross-host assistant hooks with one purpose and per-host bindings
 - `refactor-node` — Refactor whole repository nodes or owned sub-scopes by gateway language
 - `regenerate-blueprints` — An existing skill blueprint needs regeneration, whether requested directly or required by another skill
+- `relocate-nodes` — Registered Officina nodes or their owned files must be moved while mechanically updating blueprint ownership, references, generated artifacts, and callers
 - `skill-certifier` — Fresh certificates are requested for one or more Officina nodes
 - `skill-drift` — Whether Officina node certificates are current or stale, or asks for canonical node hashes
 - `skill-maker` — Author new skills that conform to the repo's skill-writing guideline

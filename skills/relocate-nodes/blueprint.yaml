@@ -1,0 +1,52 @@
+authority:
+  owns_filesystem: []
+children:
+  _rtx: {}
+content:
+- SKILL\.md
+description: Owns the manifest-driven workflow for safely relocating registered
+  Officina nodes and their files.
+discovery:
+  mechanism: skill
+  catalog:
+    domain: assistant-development
+    topics:
+    - assistant-architecture
+    - repository-workflow
+    - assistant-assurance
+    visibility: listed
+  activated_by:
+  - user-request
+  - skill-workflow
+  persistent_modifier: false
+exports:
+  relocate-nodes.interface.default:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: relocate-nodes.source.gateway.interface.default
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: relocate-nodes
+namespace_exports:
+  _rtx:
+    version: 1
+    access:
+      allow_all_modules: false
+      allowed_callers: [relocate-nodes]
+    surface:
+      only:
+        relocate-nodes._rtx.interface.relocate: 1
+    interface_access:
+      relocate-nodes._rtx.interface.relocate:
+        allow_all_modules: false
+        allowed_callers: [relocate-nodes]
+node_type: module
+schema_version: 6
+sources:
+  relocate-nodes.source.gateway:
+    blueprint:
+      base: module-root
+      path: blueprints/gateway.yaml
+version: 1

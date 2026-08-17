@@ -7067,6 +7067,36 @@
         }
       }
     },
+    "relocate-nodes": {
+      "interfaces": {
+        "relocate-nodes._rtx.interface.relocate": {
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Parses the temporary relocation manifest through the transition engine."
+            },
+            {
+              "kind": "python-package",
+              "name": "jsonschema",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Validates the temporary relocation manifest through the transition engine."
+            }
+          ]
+        }
+      }
+    },
     "skill-certifier": {
       "interfaces": {
         "skill-certifier._rtx.interface.certify": {
