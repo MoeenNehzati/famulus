@@ -235,6 +235,7 @@ def test_catalog_generation_and_application_are_idempotent(tmp_path: Path) -> No
     assert second.report()["writes"] == []
 
 
+# famulus-skip: category=platform-contract; reason=POSIX executable modes are not represented faithfully on Windows; alternate=the relocation engine's byte-preservation and Windows-focused suites cover platform-neutral application behavior
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX executable modes")
 def test_application_preserves_modes_of_moved_and_rewritten_files(
     tmp_path: Path,
