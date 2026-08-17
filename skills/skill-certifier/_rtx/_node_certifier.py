@@ -1443,7 +1443,7 @@ def _build_certificate_payload(
         raise CertificationError(f"{node_id}: certificate subject requires a gateway path")
     return {
         "certificate_schema_version": (
-            2 if expected_schema_version == 5 else 1
+            2 if expected_schema_version in {5, 6} else 1
         ),
         "subject": {
             "id": node.node_id,
