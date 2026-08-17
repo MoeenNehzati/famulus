@@ -9,6 +9,127 @@ gateway:
 id: ci-debug.source.instructions-repair-element
 interfaces:
   ci-debug.source.instructions-repair-element.interface.repair-element:
+    contract:
+      arguments:
+        assignment:
+          description: One matrix element, shared debug context, current failure ledger,
+            repair branch, allowed path scope, and repair constraints.
+          required: true
+          sensitivity: user-private
+          type: {kind: string, sensitivity: user-private}
+      preconditions: []
+      interaction:
+        channel: tty
+        mode: interactive
+        unattended_outcome: blocked
+      caller_warnings:
+      - external-side-effect: Targeted runner invocations may dispatch remote CI and
+          persist non-secret reports in the shared debug context.
+      - external-side-effect: Evidence-backed repairs may be committed and pushed only
+          within the assigned Git workflow and path scope.
+      outputs:
+      - id: response
+        audience: human
+        cardinality: {minimum: 1, maximum: 1}
+        description: Repair commits, diff and targeted-test evidence, or a concrete
+          blocked reason for the assigned matrix element.
+        direct_io_ref: response
+        empty: Never empty.
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        type: {kind: string, sensitivity: derived-private}
+      outcomes:
+      - id: repaired
+        class: success
+        effects: [repository-change]
+        outputs: [response]
+        caller_action: Review the returned commits, diff, and reports before integration.
+      - id: blocked
+        class: partial
+        effects: [repository-change]
+        outputs: [response]
+        caller_action: Preserve completed evidence and resolve the reported repeated-failure
+          or repair blocker.
+      - id: failed
+        class: error
+        effects: []
+        outputs: [response]
+        caller_action: Correct invalid assignment, branch, context, selector, or runner
+          evidence before retrying.
+      execution:
+        consistency:
+          snapshot: Ledger updates are bound to the exact repair candidate and only
+            the selectors executed by each returned report.
+        effects:
+        - id: repository-change
+          action: update
+          direct_io_ref: repository-updates
+          may_occur_in_outcomes: [repaired, blocked]
+          confirmation_evidence: {kind: output, output_ref: response}
+          reversibility:
+            compensatable: Repair commits and returned diffs preserve evidence for an
+              explicit corrective commit.
+          value_source: {kind: argument, argument_ref: assignment}
+        lifecycle: finite
+        state_effect: mutating
+        mutation_safety:
+          atomicity:
+            per_effect_only: Diagnose, patch, commit, push, and verify one failure class
+              before advancing the ledger.
+          concurrent_invocations:
+            safe: Distinct assigned matrix elements may run in isolated branches and
+              non-overlapping path scopes.
+          idempotency:
+            non_idempotent: Repeating may dispatch remote tests or duplicate repair commits.
+          on_uncertain_completion:
+            verify_then_decide: Inspect the repair branch, exact SHA, shared context,
+              and request-scoped reports before retrying.
+          partial_effects_on_failure:
+            possible: Repair commits, pushes, or remote test runs may remain after interruption.
+          rollback_on_failure:
+            unavailable: Preserve committed evidence and return it to the coordinator
+              for an explicit Git-workflow decision.
+        verification:
+        - {method: output-schema, output_ref: response}
+        - {method: direct-io-state, direct_io_ref: repository-state}
+      helpers: []
+      direct_io:
+        network: []
+        reads:
+        - id: assignment
+          medium: prompt
+          system: agent-runtime
+          access: read
+          content: Assigned element, context, ledger, branch, allowed paths, and constraints.
+          formats: [text]
+          sensitivity: user-private
+        - id: repository-state
+          medium: local-filesystem
+          system: filesystem
+          access: read
+          content: Assigned repair branch, source and tests, Git state, prior reports,
+            and targeted-run evidence.
+          formats: [git-metadata, yaml, json, markdown, source-code, text]
+          sensitivity: user-private
+        writes:
+        - id: response
+          medium: prompt
+          system: agent-runtime
+          access: write
+          content: Repair result, commits, diff, test evidence, or blocker.
+          formats: [markdown]
+          sensitivity: derived-private
+        - id: repository-updates
+          medium: local-filesystem
+          system: filesystem
+          access: write
+          content: Evidence-backed changes and Git metadata within the assigned scope.
+          formats: [git-metadata, source-code, text]
+          sensitivity: user-private
+    description: Repair and verify one assigned CI matrix element without integrating
+      it or claiming overall CI success.
+    usage: assignment=<matrix element, context, ledger, repair branch, and path scope>
     version: 1
 node_type: behavioral_source
 schema_version: 6

@@ -22,6 +22,15 @@ Public Interfaces:
 - `ci-debug.interface.default`
 - `ci-debug.interface.repair-element`
 <!-- END BLUEPRINT CONTRACT -->
+<!-- BEGIN BLUEPRINT INTERFACES -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
+
+Instruction Interfaces:
+
+These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+- `ci-debug.interface.default` — Coordinate evidence-bounded CI repair until the complete matrix is green or one repair element returns a concrete blocker.
+- `ci-debug.interface.repair-element` — Repair and verify one assigned CI matrix element without integrating it or claiming overall CI success.
+<!-- END BLUEPRINT INTERFACES -->
 # CI Debug
 
 Create or reuse one non-secret debug context and supply it to every

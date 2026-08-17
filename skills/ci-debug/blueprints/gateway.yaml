@@ -9,6 +9,129 @@ gateway:
 id: ci-debug.source.gateway
 interfaces:
   ci-debug.source.gateway.interface.default:
+    contract:
+      arguments:
+        request:
+          description: Repository, workflow, pushed candidate, CI failure evidence,
+            repair constraints, and any existing non-secret debug context.
+          required: true
+          sensitivity: user-private
+          type: {kind: string, sensitivity: user-private}
+      preconditions: []
+      interaction:
+        channel: tty
+        mode: interactive
+        unattended_outcome: blocked
+      caller_warnings:
+      - external-side-effect: Full and targeted runner invocations may dispatch remote
+          CI and persist non-secret reports in the shared debug context.
+      - external-side-effect: Accepted repairs may be committed, pushed, and integrated
+          only through the declared Git workflow authority.
+      outputs:
+      - id: response
+        audience: human
+        cardinality: {minimum: 1, maximum: 1}
+        description: Current full-matrix result, integrated repair evidence, or a
+          concrete blocked reason.
+        direct_io_ref: response
+        empty: Never empty.
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        type: {kind: string, sensitivity: derived-private}
+      outcomes:
+      - id: green
+        class: success
+        effects: [repository-change]
+        outputs: [response]
+        caller_action: Accept green only from the complete CI report for the exact
+          integrated candidate.
+      - id: blocked
+        class: partial
+        effects: [repository-change]
+        outputs: [response]
+        caller_action: Resolve the reported repair-element blocker without discarding
+          already accepted repairs.
+      - id: failed
+        class: error
+        effects: []
+        outputs: [response]
+        caller_action: Resolve invalid repository, authentication, candidate, context,
+          or runner evidence before retrying.
+      execution:
+        consistency:
+          snapshot: Each full-matrix decision is bound to the exact pushed candidate;
+            targeted reports update only the failures they actually probed.
+        effects:
+        - id: repository-change
+          action: update
+          direct_io_ref: repository-updates
+          may_occur_in_outcomes: [green, blocked]
+          confirmation_evidence: {kind: output, output_ref: response}
+          reversibility:
+            compensatable: Git history and reviewed repair commits preserve evidence
+              for an explicit corrective change.
+          value_source: {kind: argument, argument_ref: request}
+        lifecycle: finite
+        state_effect: mutating
+        mutation_safety:
+          atomicity:
+            per_effect_only: Repair elements are reviewed and integrated separately
+              before the next full-matrix run.
+          concurrent_invocations:
+            unsafe: Concurrent coordinators can duplicate CI runs or integrate competing
+              repairs for the same candidate.
+          idempotency:
+            non_idempotent: Repeating may dispatch remote CI or duplicate Git changes.
+          on_uncertain_completion:
+            verify_then_decide: Inspect the exact pushed SHA, Git state, and request-scoped
+              reports before retrying.
+          partial_effects_on_failure:
+            possible: Remote runs or accepted repair commits may remain after interruption.
+          rollback_on_failure:
+            unavailable: Preserve accepted commits and remote-run evidence; repair through
+              the declared Git workflow instead of rewriting history.
+        verification:
+        - {method: output-schema, output_ref: response}
+        - {method: direct-io-state, direct_io_ref: repository-state}
+      helpers: []
+      direct_io:
+        network: []
+        reads:
+        - id: request
+          medium: prompt
+          system: agent-runtime
+          access: read
+          content: CI-debug request, constraints, approvals, and supplied evidence.
+          formats: [text]
+          sensitivity: user-private
+        - id: repository-state
+          medium: local-filesystem
+          system: filesystem
+          access: read
+          content: Repository state, workflow definitions, Git refs, failure reports,
+            repair diffs, and validation evidence.
+          formats: [git-metadata, yaml, json, markdown, source-code, text]
+          sensitivity: user-private
+        writes:
+        - id: response
+          medium: prompt
+          system: agent-runtime
+          access: write
+          content: Progress, full-matrix result, integrated repair evidence, or blocker.
+          formats: [markdown]
+          sensitivity: derived-private
+        - id: repository-updates
+          medium: local-filesystem
+          system: filesystem
+          access: write
+          content: User-authorized repair changes and Git metadata produced through
+            the declared Git workflow.
+          formats: [git-metadata, source-code, text]
+          sensitivity: user-private
+    description: Coordinate evidence-bounded CI repair until the complete matrix is
+      green or one repair element returns a concrete blocker.
+    usage: request=<repository, workflow, candidate, failure evidence, and constraints>
     version: 1
 node_type: behavioral_source
 schema_version: 6
