@@ -114,6 +114,7 @@ class ClaudeGithubInstallTests(unittest.TestCase):
                 installed_path / "hooks" / "inject_dispatcher_context.py",
                 installed_path / "llmhooks" / "inject_dispatcher_context.py",
                 installed_path / "agents" / "assistant.md",
+                installed_path / "agents" / "background_run.md",
                 installed_path / "agents" / "collab.md",
                 installed_path / "agents" / "coauthor.md",
                 installed_path / "skills" / "install-assistant-tools" / "_rtx" / "_phase_entry.py",
@@ -129,10 +130,10 @@ class ClaudeGithubInstallTests(unittest.TestCase):
             # Counts the agents in the *published* marketplace snapshot, not
             # the working tree, so it lags local additions until they are
             # pushed. Bump this when a new agent lands upstream.
-            self.assertIn("Agents (3)", details_text)
+            self.assertIn("Agents (4)", details_text)
             for skill_name in expected:
                 self.assertIn(skill_name, details_text)
-            for agent_name in ("assistant", "collab", "coauthor"):
+            for agent_name in ("assistant", "background_run", "collab", "coauthor"):
                 self.assertIn(agent_name, details_text)
 
             scaffold_bin = install_minimum_scaffold(
