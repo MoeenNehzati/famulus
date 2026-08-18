@@ -10,6 +10,11 @@ gateway:
 id: skill-certifier.source.gateway
 interfaces:
   skill-certifier.source.gateway.interface.default:
+    content:
+    - SKILL\.md
+    uses_interfaces:
+    - interface: skill-certifier._rtx.interface.certify
+      version: 1
     contract:
       arguments:
         request:

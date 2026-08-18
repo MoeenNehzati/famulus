@@ -13,3 +13,6 @@ interfaces:
   root.alpha.leaf.source.runtime.interface.execute:
     version: 3
     description: Execute the direct-routing fixture.
+    content:
+    - runtime\.py
+    uses_interfaces: []

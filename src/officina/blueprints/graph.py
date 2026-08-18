@@ -364,6 +364,12 @@ class RepositoryBlueprintGraph:
         default_factory=dict
     )
     routed_interfaces: tuple[RoutedInterface, ...] = ()
+    interface_content_paths: Mapping[str, tuple[Path, ...]] = field(
+        default_factory=dict
+    )
+    interface_uses: Mapping[str, tuple[tuple[str, int], ...]] = field(
+        default_factory=dict
+    )
 
 
 @dataclass(frozen=True)
@@ -5064,6 +5070,146 @@ def _v5_content_ownership(
     return direct_file_owners
 
 
+def _v6_interface_facets(
+    root: Path,
+    *,
+    modules: Mapping[str, BlueprintNode],
+    sources: Mapping[str, BlueprintNode],
+    source_modules: Mapping[str, str],
+    module_children: Mapping[str, tuple[str, ...]],
+    interface_uses_by_source: Mapping[str, tuple[tuple[str, int], ...]],
+) -> tuple[
+    dict[str, tuple[Path, ...]],
+    dict[str, tuple[tuple[str, int], ...]],
+]:
+    """Resolve explicit v6 interface facets inside source-owned envelopes.
+
+    Intent
+    ------
+    Materialize each source-interface content and interface-use subset from
+    authored v6 declarations without transferring node ownership or authority
+    to the interface.
+
+    Rationale
+    ---------
+    Certification needs one canonical graph-owned partition to attribute file
+    and dependency drift. Reusing node content resolution preserves path,
+    gateway, forbidden-artifact, child-module, and regular-file invariants.
+
+    Pseudocode
+    ----------
+    - for each behavioral source:
+      - resolve its complete content and interface-use envelopes
+      - for each declared interface:
+        - resolve interface content with the source gateway and ownership root
+        - reject content outside the source envelope
+        - reject interface uses outside the source envelope
+    - return canonical content and use mappings sorted by interface identity
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .resolved_node_content_paths:
+      why:
+        computes: "Applies the canonical node content grammar and gateway requirement to each interface subset."
+
+    InstantiationsFromRepo
+    ----------------------
+    .BlueprintNode:
+      why:
+        constructs: "Carries the source identity and gateway with one interface content declaration through canonical resolution."
+    .BlueprintGraphError:
+      why:
+        raises: "Rejects interface facets that escape their source-owned content or declared interface-use envelope."
+    """
+
+    content_paths: dict[str, tuple[Path, ...]] = {}
+    interface_uses: dict[str, tuple[tuple[str, int], ...]] = {}
+    for source_id, source in sorted(sources.items()):
+        module_id = source_modules[source_id]
+        excluded_roots = tuple(
+            modules[child_id].module_root
+            for child_id in module_children.get(module_id, ())
+        )
+        source_content = set(
+            resolved_node_content_paths(
+                source,
+                root,
+                excluded_module_roots=excluded_roots,
+            )
+        )
+        source_uses = set(interface_uses_by_source[source_id])
+        raw_interfaces = source.declaration.get("interfaces")
+        if not isinstance(raw_interfaces, Mapping):
+            raise BlueprintGraphError(
+                f"{source.blueprint_path}: interfaces must be a mapping"
+            )
+        for interface_id, declaration in sorted(raw_interfaces.items()):
+            if not isinstance(interface_id, str) or not isinstance(
+                declaration,
+                Mapping,
+            ):
+                raise BlueprintGraphError(
+                    f"{source.blueprint_path}: invalid source interface declaration"
+                )
+            raw_content = declaration.get("content")
+            facet_declaration = dict(source.declaration)
+            facet_declaration["content"] = raw_content
+            facet_node = BlueprintNode(
+                node_id=source.node_id,
+                node_type=source.node_type,
+                version=source.version,
+                module_root=source.module_root,
+                blueprint_path=source.blueprint_path,
+                gateway_path=source.gateway_path,
+                declaration=facet_declaration,
+            )
+            resolved = resolved_node_content_paths(
+                facet_node,
+                root,
+                excluded_module_roots=excluded_roots,
+            )
+            if not resolved or not set(resolved) <= source_content:
+                raise BlueprintGraphError(
+                    f"{interface_id}: content must be a non-empty subset of "
+                    f"source {source_id} content"
+                )
+
+            raw_uses = declaration.get("uses_interfaces")
+            if not isinstance(raw_uses, list):
+                raise BlueprintGraphError(
+                    f"{interface_id}: uses_interfaces must be a list"
+                )
+            uses: list[tuple[str, int]] = []
+            for index, use in enumerate(raw_uses):
+                if not isinstance(use, Mapping):
+                    raise BlueprintGraphError(
+                        f"{interface_id}: uses_interfaces[{index}] must be a mapping"
+                    )
+                target_id = use.get("interface")
+                version = use.get("version")
+                if (
+                    not isinstance(target_id, str)
+                    or not isinstance(version, int)
+                    or isinstance(version, bool)
+                ):
+                    raise BlueprintGraphError(
+                        f"{interface_id}: invalid uses_interfaces[{index}]"
+                    )
+                uses.append((target_id, version))
+            if not set(uses) <= source_uses:
+                raise BlueprintGraphError(
+                    f"{interface_id}: uses_interfaces must be a subset of "
+                    f"source {source_id} uses_interfaces"
+                )
+            content_paths[interface_id] = tuple(sorted(resolved))
+            interface_uses[interface_id] = tuple(sorted(uses))
+    return dict(sorted(content_paths.items())), dict(sorted(interface_uses.items()))
+
+
 def _unique_certification_edges(
     edges: list[CertificationEdge],
 ) -> tuple[CertificationEdge, ...]:
@@ -5529,6 +5675,18 @@ def _load_v5_repository_blueprint_graph(
         module_sources,
         module_children,
     )
+    if schema_version == 6:
+        interface_content_paths, interface_uses = _v6_interface_facets(
+            root,
+            modules=modules,
+            sources=sources,
+            source_modules=source_modules,
+            module_children=module_children,
+            interface_uses_by_source=interface_uses_by_source,
+        )
+    else:
+        interface_content_paths = {}
+        interface_uses = {}
     certification_edge_tuple = _unique_certification_edges(
         certification_edges
     )
@@ -5570,6 +5728,8 @@ def _load_v5_repository_blueprint_graph(
         module_ancestry=module_ancestry,
         namespace_routes=namespace_routes,
         routed_interfaces=routed_interfaces,
+        interface_content_paths=interface_content_paths,
+        interface_uses=interface_uses,
     )
 
 

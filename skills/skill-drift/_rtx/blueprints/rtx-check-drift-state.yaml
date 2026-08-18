@@ -16,6 +16,17 @@ gateway:
 id: skill-drift._rtx.source.rtx-check-drift-state
 interfaces:
   skill-drift._rtx.source.rtx-check-drift-state.interface.compute-hashes:
+    content:
+    - _check_drift_state\.py
+    uses_interfaces:
+    - interface: certification.interface.hashing
+      version: 1
+    - interface: certification.interface.records
+      version: 1
+    - interface: blueprints.interface.graph
+      version: 1
+    - interface: certification.interface.view
+      version: 1
     contract:
       arguments:
         json:
@@ -205,6 +216,17 @@ interfaces:
     usage: compute-hashes [target ...] [--skill-root ROOT] [--json]
     version: 1
   skill-drift._rtx.source.rtx-check-drift-state.interface.drift-status:
+    content:
+    - _check_drift_state\.py
+    uses_interfaces:
+    - interface: certification.interface.hashing
+      version: 1
+    - interface: certification.interface.records
+      version: 1
+    - interface: blueprints.interface.graph
+      version: 1
+    - interface: certification.interface.view
+      version: 1
     contract:
       arguments:
         all:

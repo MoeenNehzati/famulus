@@ -10,6 +10,9 @@ gateway:
 id: standards.source.extractor
 interfaces:
   standards.source.extractor.interface.python-api:
+    content:
+    - extractor\.py
+    uses_interfaces: []
     contract:
       arguments:
         repository:

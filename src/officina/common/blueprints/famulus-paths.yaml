@@ -10,6 +10,9 @@ gateway:
 id: common.source.famulus-paths
 interfaces:
   common.source.famulus-paths.interface.python-api:
+    content:
+    - famulus_paths/__init__\.py
+    uses_interfaces: []
     contract:
       arguments:
         platform:

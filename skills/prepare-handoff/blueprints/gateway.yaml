@@ -9,6 +9,9 @@ gateway:
 id: prepare-handoff.source.gateway
 interfaces:
   prepare-handoff.source.gateway.interface.default:
+    content:
+    - SKILL\.md
+    uses_interfaces: []
     contract:
       arguments:
         request:

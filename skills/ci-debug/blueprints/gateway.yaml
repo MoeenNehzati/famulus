@@ -9,6 +9,15 @@ gateway:
 id: ci-debug.source.gateway
 interfaces:
   ci-debug.source.gateway.interface.default:
+    content:
+    - SKILL\.md
+    uses_interfaces:
+    - interface: ci-debug._rtx.interface.run-ci
+      version: 1
+    - interface: ci-debug.source.instructions-repair-element.interface.repair-element
+      version: 1
+    - interface: git-workflow.interface.default
+      version: 1
     contract:
       arguments:
         request:

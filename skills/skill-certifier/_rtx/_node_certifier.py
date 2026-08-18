@@ -21,6 +21,7 @@ from officina.certification.hashing import (
     CERTIFIER_CHECK_REGISTRY,
     CertificationHashError,
     NodeHashState,
+    certification_facet_claims,
     certification_target_postorder,
     compute_node_hash_states,
     compute_certification_basis_hash,
@@ -1443,7 +1444,11 @@ def _build_certificate_payload(
         raise CertificationError(f"{node_id}: certificate subject requires a gateway path")
     return {
         "certificate_schema_version": (
-            2 if expected_schema_version in {5, 6} else 1
+            3
+            if expected_schema_version == 6
+            else 2
+            if expected_schema_version == 5
+            else 1
         ),
         "subject": {
             "id": node.node_id,
@@ -1462,6 +1467,11 @@ def _build_certificate_payload(
         "source_commit": source_commit,
         "input_manifest": [dict(entry) for entry in state.input_manifest],
         "dependencies": [dict(entry) for entry in state.dependency_hashes],
+        **(
+            {"facets": [dict(claim) for claim in certification_facet_claims(state)]}
+            if expected_schema_version == 6
+            else {}
+        ),
         "certification_basis_hash": state.certification_basis_hash,
         "certifier": dict(certifier_identity),
         "checks": [dict(check) for check in checks],

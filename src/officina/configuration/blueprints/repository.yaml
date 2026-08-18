@@ -9,6 +9,11 @@ gateway:
 id: configuration.source.repository
 interfaces:
   configuration.source.repository.interface.python-api:
+    content:
+    - repository\.py
+    uses_interfaces:
+    - interface: common.interface.toml-io
+      version: 1
     contract:
       arguments:
         config-path:

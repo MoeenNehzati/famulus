@@ -9,6 +9,9 @@ gateway:
 id: formal-prose-review.source.gateway
 interfaces:
   formal-prose-review.source.gateway.interface.default:
+    content:
+    - SKILL\.md
+    uses_interfaces: []
     contract:
       arguments:
         request:

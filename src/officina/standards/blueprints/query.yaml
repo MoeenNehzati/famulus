@@ -15,6 +15,11 @@ gateway:
 id: standards.source.query
 interfaces:
   standards.source.query.interface.query-standard:
+    content:
+    - query\.py
+    uses_interfaces:
+    - interface: standards.interface.extractor
+      version: 1
     contract:
       arguments:
         facts-json:

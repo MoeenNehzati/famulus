@@ -9,6 +9,9 @@ gateway:
 id: common.source.repository-paths
 interfaces:
   common.source.repository-paths.interface.python-api:
+    content:
+    - repository_paths\.py
+    uses_interfaces: []
     contract:
       arguments:
         operation:

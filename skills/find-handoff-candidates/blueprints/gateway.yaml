@@ -9,6 +9,15 @@ gateway:
 id: find-handoff-candidates.source.gateway
 interfaces:
   find-handoff-candidates.source.gateway.interface.default:
+    content:
+    - SKILL\.md
+    uses_interfaces:
+    - interface: prepare-handoff.interface.default
+      version: 1
+    - interface: find-handoff-candidates._rtx.interface.calibrate
+      version: 1
+    - interface: find-handoff-candidates._rtx.interface.scan
+      version: 1
     contract:
       arguments:
         request:

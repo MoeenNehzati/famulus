@@ -21,6 +21,9 @@ gateway:
 id: blueprints.source.pooled
 interfaces:
   blueprints.source.pooled.interface.python-api:
+    content:
+    - pooled\.py
+    uses_interfaces: []
     contract:
       arguments:
         inputs:

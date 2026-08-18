@@ -15,6 +15,9 @@ gateway:
 id: list-manager._rtx.source.rtx-list-beautify
 interfaces:
   list-manager._rtx.source.rtx-list-beautify.interface.beautify-list:
+    content:
+    - _list_beautify\.py
+    uses_interfaces: []
     contract:
       arguments:
         diff:

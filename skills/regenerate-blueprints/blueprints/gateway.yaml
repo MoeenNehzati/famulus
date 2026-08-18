@@ -9,6 +9,11 @@ gateway:
 id: regenerate-blueprints.source.gateway
 interfaces:
   regenerate-blueprints.source.gateway.interface.default:
+    content:
+    - SKILL\.md
+    uses_interfaces:
+    - interface: regenerate-blueprints._rtx.interface.regenerate-blueprint
+      version: 1
     contract:
       arguments:
         skill-name:

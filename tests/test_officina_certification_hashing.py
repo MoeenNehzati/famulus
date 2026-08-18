@@ -42,12 +42,13 @@ def test_hash_owner_does_not_expose_legacy_health_authority() -> None:
         assert not hasattr(certification_hashing, name)
 
 
-def test_node_hash_state_contains_only_v4_certificate_inputs() -> None:
+def test_node_hash_state_carries_canonical_facet_claims() -> None:
     assert {field.name for field in fields(NodeHashState)} == {
         "node_hash",
         "input_manifest",
         "dependency_hashes",
         "certification_basis_hash",
+        "facets",
     }
 
 

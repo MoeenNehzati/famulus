@@ -9,6 +9,9 @@ gateway:
 id: tool-applicability.source.gateway
 interfaces:
   tool-applicability.source.gateway.interface.default:
+    content:
+    - SKILL\.md
+    uses_interfaces: []
     contract:
       arguments:
         request:

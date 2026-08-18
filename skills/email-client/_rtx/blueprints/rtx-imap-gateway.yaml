@@ -21,6 +21,11 @@ gateway:
 id: email-client._rtx.source.rtx-imap-gateway
 interfaces:
   email-client._rtx.source.rtx-imap-gateway.interface.mail-attachments:
+    content:
+    - _imap_gateway\.py
+    uses_interfaces:
+    - interface: credentials.interface.secret-store
+      version: 1
     contract:
       arguments:
         account:
@@ -196,6 +201,11 @@ interfaces:
       ...]
     version: 1
   email-client._rtx.source.rtx-imap-gateway.interface.mail-folders:
+    content:
+    - _imap_gateway\.py
+    uses_interfaces:
+    - interface: credentials.interface.secret-store
+      version: 1
     contract:
       arguments:
         account:
@@ -339,6 +349,11 @@ interfaces:
     usage: -a <nickname>
     version: 1
   email-client._rtx.source.rtx-imap-gateway.interface.mail-list:
+    content:
+    - _imap_gateway\.py
+    uses_interfaces:
+    - interface: credentials.interface.secret-store
+      version: 1
     contract:
       arguments:
         account:
@@ -540,6 +555,11 @@ interfaces:
       YYYY-MM-DD] [key=value|key~=value ...] [--limit N]
     version: 1
   email-client._rtx.source.rtx-imap-gateway.interface.mail-read:
+    content:
+    - _imap_gateway\.py
+    uses_interfaces:
+    - interface: credentials.interface.secret-store
+      version: 1
     contract:
       arguments:
         account:
@@ -712,6 +732,11 @@ interfaces:
     usage: -a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] <uid>
     version: 1
   email-client._rtx.source.rtx-imap-gateway.interface.mail-save-attachments:
+    content:
+    - _imap_gateway\.py
+    uses_interfaces:
+    - interface: credentials.interface.secret-store
+      version: 1
     contract:
       arguments:
         account:

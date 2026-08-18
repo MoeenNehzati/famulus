@@ -15,6 +15,9 @@ gateway:
 id: cloud-files._rtx.source.rtx-write-llm-file
 interfaces:
   cloud-files._rtx.source.rtx-write-llm-file.interface.lists-write:
+    content:
+    - _write_llm_file\.py
+    uses_interfaces: []
     contract:
       arguments:
         content:
@@ -157,6 +160,9 @@ interfaces:
     usage: lists/<path>
     version: 1
   cloud-files._rtx.source.rtx-write-llm-file.interface.plans-write:
+    content:
+    - _write_llm_file\.py
+    uses_interfaces: []
     contract:
       arguments:
         content:

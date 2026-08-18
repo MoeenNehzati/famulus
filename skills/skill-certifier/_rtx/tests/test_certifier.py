@@ -184,14 +184,16 @@ def test_payload_schema_tracks_repository_schema(
         expected_schema_version=5,
         **common,
     )["certificate_schema_version"] == 2
-    assert certifier._build_certificate_payload(
+    v6_payload = certifier._build_certificate_payload(
         tmp_path,
         replace(graph, schema_version=6),
         states,
         node_id,
         expected_schema_version=6,
         **common,
-    )["certificate_schema_version"] == 2
+    )
+    assert v6_payload["certificate_schema_version"] == 3
+    assert v6_payload["facets"] == []
 
 
 def test_gate_records_use_the_schema_selected_registry() -> None:

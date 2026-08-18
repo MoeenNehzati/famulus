@@ -24,6 +24,12 @@ gateway:
 id: connect-google._rtx.source.rtx-authorize-services
 interfaces:
   connect-google._rtx.source.rtx-authorize-services.interface.authorize-services:
+    content:
+    - _browser_helper\.py
+    - _loopback_oauth\.py
+    uses_interfaces:
+    - interface: credentials.interface.google
+      version: 1
     contract:
       arguments:
         services:

@@ -9,6 +9,9 @@ gateway:
 id: common.source.dates
 interfaces:
   common.source.dates.interface.python-api:
+    content:
+    - dates\.py
+    uses_interfaces: []
     contract:
       arguments:
         operation:

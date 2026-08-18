@@ -22,6 +22,15 @@ gateway:
 id: connect-google._rtx.source.rtx-connect-services
 interfaces:
   connect-google._rtx.source.rtx-connect-services.interface.connect-services:
+    content:
+    - _connect_services\.py
+    uses_interfaces:
+    - interface: cloud-files._rtx.interface.use-google-credential-file
+      version: 1
+    - interface: email-client._rtx.interface.accounts-use-google-credential-file
+      version: 1
+    - interface: g-calendar._rtx.interface.use-google-credential-file
+      version: 1
     contract:
       arguments:
         services:
@@ -225,6 +234,15 @@ interfaces:
       [--no-open-browser] [--callback-port <port>]
     version: 1
   connect-google._rtx.source.rtx-connect-services.interface.bind-credential-file:
+    content:
+    - _connect_services\.py
+    uses_interfaces:
+    - interface: cloud-files._rtx.interface.use-google-credential-file
+      version: 1
+    - interface: email-client._rtx.interface.accounts-use-google-credential-file
+      version: 1
+    - interface: g-calendar._rtx.interface.use-google-credential-file
+      version: 1
     contract:
       arguments:
         credential-file:

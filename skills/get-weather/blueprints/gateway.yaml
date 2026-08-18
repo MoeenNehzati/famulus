@@ -9,6 +9,11 @@ gateway:
 id: get-weather.source.gateway
 interfaces:
   get-weather.source.gateway.interface.default:
+    content:
+    - SKILL\.md
+    uses_interfaces:
+    - interface: get-weather._rtx.interface.scripts-weather
+      version: 1
     contract:
       arguments:
         request:

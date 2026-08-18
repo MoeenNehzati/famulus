@@ -125,8 +125,45 @@ def _write_module(
     (module / "_rtx" / "worker.py").write_text("VALUE = 1\n", encoding="utf-8")
     (module / "ignored.txt").write_text("included local state\n", encoding="utf-8")
     (module / "events.log").write_text("runtime log\n", encoding="utf-8")
+    if schema_version == 6:
+        (module / "remainder.txt").write_text(
+            "remainder state\n",
+            encoding="utf-8",
+        )
     source_id = f"{module_id}.source.gateway"
     source_interface = f"{source_id}.interface.run"
+    source_content = [
+        r"SKILL\.md",
+        r"_rtx/worker\.py",
+        r"ignored\.txt",
+        r"events\.log",
+    ]
+    if schema_version == 6:
+        source_content.append(r"remainder\.txt")
+    source_uses = (
+        [{"interface": uses_export, "version": 1}]
+        if uses_export is not None
+        else []
+    )
+    interface_declaration = {
+        "version": 1,
+        "description": "Run.",
+        "contract": _contract(),
+    }
+    interfaces = {source_interface: interface_declaration}
+    if schema_version == 6:
+        interface_declaration["content"] = [
+            r"SKILL\.md",
+            r"_rtx/worker\.py",
+        ]
+        interface_declaration["uses_interfaces"] = source_uses
+        interfaces[f"{source_id}.interface.inspect"] = {
+            "version": 1,
+            "description": "Inspect.",
+            "content": [r"SKILL\.md", r"ignored\.txt"],
+            "uses_interfaces": [],
+            "contract": _contract(),
+        }
     _write_yaml(
         module / "blueprints" / "gateway.yaml",
         {
@@ -136,25 +173,10 @@ def _write_module(
             "version": 1,
             "description": "Gateway source.",
             "gateway": {"path": "SKILL.md", "language": "Markdown"},
-            "content": [
-                r"SKILL\.md",
-                r"_rtx/worker\.py",
-                r"ignored\.txt",
-                r"events\.log",
-            ],
+            "content": source_content,
             "dependencies": [],
-            "uses_interfaces": (
-                [{"interface": uses_export, "version": 1}]
-                if uses_export is not None
-                else []
-            ),
-            "interfaces": {
-                source_interface: {
-                    "version": 1,
-                    "description": "Run.",
-                    "contract": _contract(),
-                }
-            },
+            "uses_interfaces": source_uses,
+            "interfaces": interfaces,
         },
     )
     _write_yaml(
@@ -172,6 +194,7 @@ def _write_module(
                 r"_rtx/worker\.py",
                 r"ignored\.txt",
                 r"events\.log",
+                *([r"remainder\.txt"] if schema_version == 6 else []),
             ],
             "authority": {"owns_filesystem": []},
             "sources": {
@@ -471,6 +494,7 @@ def _add_contract_source(
     gateway_path: str,
     referenced_path: str | None = None,
     content_paths: tuple[str, ...] = (),
+    schema_version: int = 4,
 ) -> str:
     module_root = root / "skills" / module_id
     source_id = f"{module_id}.source.{source_name}"
@@ -479,7 +503,7 @@ def _add_contract_source(
     if referenced_path is not None:
         _set_output_schema(contract, referenced_path)
     source = {
-        "schema_version": 4,
+        "schema_version": schema_version,
         "node_type": "behavioral_source",
         "id": source_id,
         "version": 1,
@@ -499,6 +523,9 @@ def _add_contract_source(
             }
         },
     }
+    if schema_version == 6:
+        source["interfaces"][interface_id]["content"] = list(source["content"])
+        source["interfaces"][interface_id]["uses_interfaces"] = []
     blueprint_relative = f"blueprints/{source_name}.yaml"
     _write_yaml(module_root / blueprint_relative, source)
     module_path = module_root / "blueprint.yaml"
@@ -638,6 +665,226 @@ def test_v6_interface_dependency_hash_changes_with_used_contract(
     assert extracted["id"] == interface_id
     assert extracted["source_interface"] == source_interface_id
     assert certification_hashing.compute_interface_hash(changed) != first_hash
+
+
+def _facet(state: NodeHashState, facet_id: str):
+    return next(facet for facet in state.facets if facet.facet_id == facet_id)
+
+
+def test_v6_claimed_file_changes_only_its_interface_facet(
+    tmp_path: Path,
+) -> None:
+    root, policy = _v6_repository(tmp_path)
+    first = _v6_states(root, policy)
+    source_id = "provider-skill.source.gateway"
+    run_id = f"{source_id}.interface.run"
+    inspect_id = f"{source_id}.interface.inspect"
+
+    (root / "skills/provider-skill/_rtx/worker.py").write_text(
+        "VALUE = 2\n",
+        encoding="utf-8",
+    )
+    second = _v6_states(root, policy)
+
+    assert _facet(second[source_id], run_id).local_hash != _facet(
+        first[source_id], run_id
+    ).local_hash
+    assert _facet(second[source_id], inspect_id) == _facet(
+        first[source_id], inspect_id
+    )
+    assert _facet(second[source_id], source_id) == _facet(
+        first[source_id], source_id
+    )
+    assert second[source_id].node_hash != first[source_id].node_hash
+
+
+def test_v6_unclaimed_file_changes_only_remainder_facet(
+    tmp_path: Path,
+) -> None:
+    root, policy = _v6_repository(tmp_path)
+    first = _v6_states(root, policy)
+    source_id = "provider-skill.source.gateway"
+    run_id = f"{source_id}.interface.run"
+    inspect_id = f"{source_id}.interface.inspect"
+
+    (root / "skills/provider-skill/remainder.txt").write_text(
+        "changed remainder\n",
+        encoding="utf-8",
+    )
+    second = _v6_states(root, policy)
+
+    assert _facet(second[source_id], run_id) == _facet(first[source_id], run_id)
+    assert _facet(second[source_id], inspect_id) == _facet(
+        first[source_id], inspect_id
+    )
+    assert _facet(second[source_id], source_id).local_hash != _facet(
+        first[source_id], source_id
+    ).local_hash
+    assert second[source_id].node_hash != first[source_id].node_hash
+
+
+def test_v6_used_interface_change_updates_dependency_not_consumer_local_hash(
+    tmp_path: Path,
+) -> None:
+    root, policy = _v6_repository(tmp_path)
+    first = _v6_states(root, policy)
+    consumer_id = "consumer-skill.source.gateway"
+    consumer_interface = f"{consumer_id}.interface.run"
+
+    (root / "skills/provider-skill/_rtx/worker.py").write_text(
+        "VALUE = 2\n",
+        encoding="utf-8",
+    )
+    second = _v6_states(root, policy)
+
+    first_facet = _facet(first[consumer_id], consumer_interface)
+    second_facet = _facet(second[consumer_id], consumer_interface)
+    assert second_facet.local_hash == first_facet.local_hash
+    assert second_facet.dependency_hashes != first_facet.dependency_hashes
+    assert second[consumer_id].node_hash == first[consumer_id].node_hash
+
+
+def test_v6_source_without_interfaces_has_only_remainder_facet(
+    tmp_path: Path,
+) -> None:
+    root, policy = _v6_repository(tmp_path)
+    source_path = root / "skills/provider-skill/blueprints/gateway.yaml"
+    source = yaml.safe_load(source_path.read_text(encoding="utf-8"))
+    source["interfaces"] = {}
+    _write_yaml(source_path, source)
+    module_path = root / "skills/provider-skill/blueprint.yaml"
+    module = yaml.safe_load(module_path.read_text(encoding="utf-8"))
+    module["exports"] = {}
+    _write_yaml(module_path, module)
+    consumer_path = root / "skills/consumer-skill/blueprints/gateway.yaml"
+    consumer = yaml.safe_load(consumer_path.read_text(encoding="utf-8"))
+    consumer["uses_interfaces"] = []
+    consumer["interfaces"][
+        "consumer-skill.source.gateway.interface.run"
+    ]["uses_interfaces"] = []
+    _write_yaml(consumer_path, consumer)
+
+    states = _v6_states(root, policy)
+    facets = states["provider-skill.source.gateway"].facets
+
+    assert [(facet.facet_type, facet.facet_id) for facet in facets] == [
+        ("remainder", "provider-skill.source.gateway")
+    ]
+
+
+def test_v6_source_hash_uses_versioned_interface_projection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, policy = _v6_repository(tmp_path)
+    captured: list[object] = []
+    real_hash_value = certification_hashing._hash_value
+
+    def capture(value: object) -> str:
+        captured.append(deepcopy(value))
+        return real_hash_value(value)
+
+    monkeypatch.setattr(certification_hashing, "_hash_value", capture)
+    _v6_states(root, policy)
+
+    source_id = "provider-skill.source.gateway"
+    aggregate = next(
+        value
+        for value in captured
+        if isinstance(value, dict)
+        and value.get("node_id") == source_id
+        and "remainder_hash" in value
+    )
+    assert aggregate["interfaces"] == [
+        {
+            "id": f"{source_id}.interface.inspect",
+            "version": 1,
+            "interface_hash": aggregate["interfaces"][0]["interface_hash"],
+        },
+        {
+            "id": f"{source_id}.interface.run",
+            "version": 1,
+            "interface_hash": aggregate["interfaces"][1]["interface_hash"],
+        },
+    ]
+
+
+def test_v6_interface_contract_files_belong_to_originating_facet(
+    tmp_path: Path,
+) -> None:
+    root, policy = _v6_repository(tmp_path)
+    module = root / "skills/provider-skill"
+    contract_path = module / "run.schema.json"
+    contract_path.write_text('{"type":"string"}\n', encoding="utf-8")
+    source_path = module / "blueprints/gateway.yaml"
+    source = yaml.safe_load(source_path.read_text(encoding="utf-8"))
+    source["content"].append(r"run\.schema\.json")
+    run_id = "provider-skill.source.gateway.interface.run"
+    inspect_id = "provider-skill.source.gateway.interface.inspect"
+    _set_output_schema(source["interfaces"][run_id]["contract"], "run.schema.json")
+    _write_yaml(source_path, source)
+    module_path = module / "blueprint.yaml"
+    module_declaration = yaml.safe_load(module_path.read_text(encoding="utf-8"))
+    module_declaration["content"].append(r"run\.schema\.json")
+    _write_yaml(module_path, module_declaration)
+    repository = GitTestRepository(root)
+    repository.git("add", ".")
+    repository.git("commit", "-qm", "add interface contract")
+
+    first = _v6_states(root, policy)
+    contract_path.write_text('{"type":"number"}\n', encoding="utf-8")
+    second = _v6_states(root, policy)
+    source_id = "provider-skill.source.gateway"
+
+    assert "skills/provider-skill/run.schema.json" in {
+        entry["path"] for entry in _facet(first[source_id], run_id).input_manifest
+    }
+    assert _facet(second[source_id], run_id).local_hash != _facet(
+        first[source_id], run_id
+    ).local_hash
+    assert _facet(second[source_id], inspect_id) == _facet(
+        first[source_id], inspect_id
+    )
+    assert _facet(second[source_id], source_id) == _facet(
+        first[source_id], source_id
+    )
+
+
+def test_v6_cross_owner_contract_dependency_belongs_to_originating_facet(
+    tmp_path: Path,
+) -> None:
+    root, policy = _v6_repository(tmp_path)
+    module = root / "skills/provider-skill"
+    contract_path = module / "run.schema.json"
+    contract_path.write_text('{"type":"string"}\n', encoding="utf-8")
+    contract_source = _add_contract_source(
+        root,
+        "provider-skill",
+        "run-contract",
+        "run.schema.json",
+        schema_version=6,
+    )
+    source_path = module / "blueprints/gateway.yaml"
+    source = yaml.safe_load(source_path.read_text(encoding="utf-8"))
+    run_id = "provider-skill.source.gateway.interface.run"
+    _set_output_schema(source["interfaces"][run_id]["contract"], "run.schema.json")
+    _write_yaml(source_path, source)
+    repository = GitTestRepository(root)
+    repository.git("add", ".")
+    repository.git("commit", "-qm", "add cross-owner interface contract")
+
+    state = _v6_states(root, policy)["provider-skill.source.gateway"]
+    interface_dependencies = {
+        (entry["relation"], entry["target"])
+        for entry in _facet(state, run_id).dependency_hashes
+    }
+    remainder_dependencies = {
+        (entry["relation"], entry["target"])
+        for entry in _facet(state, "provider-skill.source.gateway").dependency_hashes
+    }
+
+    assert ("references-cross-owner-contract", contract_source) in interface_dependencies
+    assert ("references-cross-owner-contract", contract_source) not in remainder_dependencies
 
 
 def test_repository_root_contract_reference_targets_exact_file_owner(
@@ -916,6 +1163,36 @@ def test_route_smoke_paths_map_to_input_dependency_or_basis(tmp_path: Path) -> N
     ]
     assert route_smoke_trace_signature(mappings) == route_smoke_trace_signature(
         tuple(reversed(mappings))
+    )
+
+
+def test_v6_route_smoke_accepts_manifest_bound_interface_dependency(
+    tmp_path: Path,
+) -> None:
+    root, policy = _v6_repository(tmp_path)
+    graph = load_repository_blueprint_graph(
+        root,
+        schema_root=CANONICAL_SCHEMA_ROOT,
+        expected_schema_version=6,
+    )
+    states = _v6_states(root, policy)
+    provider_path = root / "skills/provider-skill/_rtx/worker.py"
+
+    mappings = map_route_smoke_dependencies(
+        graph,
+        states,
+        source_node_id="consumer-skill.source.gateway",
+        loaded_paths=[provider_path],
+        certification_basis_paths=(),
+        repo_root=root,
+    )
+
+    assert mappings == (
+        certification_hashing.RouteSmokeDependencyMapping(
+            "skills/provider-skill/_rtx/worker.py",
+            "certification-dependency",
+            "provider-skill.source.gateway",
+        ),
     )
 
 

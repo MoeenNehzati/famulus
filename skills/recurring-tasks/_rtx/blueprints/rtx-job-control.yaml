@@ -46,6 +46,9 @@ gateway:
 id: recurring-tasks._rtx.source.rtx-job-control
 interfaces:
   recurring-tasks._rtx.source.rtx-job-control.interface.scripts-disable:
+    content:
+    - _job_control\.py
+    uses_interfaces: []
     contract:
       arguments:
         jobs-file:
@@ -246,6 +249,9 @@ interfaces:
     usage: <name> [--jobs-file FILE] [--no-sync]
     version: 1
   recurring-tasks._rtx.source.rtx-job-control.interface.scripts-enable:
+    content:
+    - _job_control\.py
+    uses_interfaces: []
     contract:
       arguments:
         jobs-file:
@@ -446,6 +452,9 @@ interfaces:
     usage: <name> [--jobs-file FILE] [--no-sync]
     version: 1
   recurring-tasks._rtx.source.rtx-job-control.interface.scripts-status:
+    content:
+    - _job_control\.py
+    uses_interfaces: []
     contract:
       arguments: {}
       caller_warnings: []
@@ -546,6 +555,9 @@ interfaces:
     usage: ''
     version: 1
   recurring-tasks._rtx.source.rtx-job-control.interface.scripts-test:
+    content:
+    - _job_control\.py
+    uses_interfaces: []
     contract:
       arguments:
         name:
@@ -723,6 +735,9 @@ interfaces:
     usage: <name>
     version: 1
   recurring-tasks._rtx.source.rtx-job-control.interface.scripts-view-logs:
+    content:
+    - _job_control\.py
+    uses_interfaces: []
     contract:
       arguments:
         job-name:

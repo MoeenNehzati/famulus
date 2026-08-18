@@ -277,16 +277,56 @@ def test_drift_derivation_delegates_schema_selection_to_canonical_owner(
     )
 
     assert result[0] == "graph"
+    expected_schema_root = (
+        tmp_path.resolve() / "references" / "blueprint"
+        if schema_version == 6
+        else None
+    )
     assert observed == [
         (
             tmp_path.resolve(),
             {
                 "expected_schema_version": schema_version,
-                "schema_root": None,
+                "schema_root": expected_schema_root,
                 "allow_non_atomic": False,
             },
         )
     ]
+
+
+def test_public_v6_drift_uses_live_schema_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: list[dict[str, object]] = []
+    derived = SimpleNamespace(
+        graph="graph",
+        states={},
+        certification_basis_hash="sha256:" + "b" * 64,
+        currentness="currentness",
+    )
+
+    def capture(_root: Path, **kwargs: object):
+        observed.append(kwargs)
+        return derived
+
+    monkeypatch.setattr(
+        checker,
+        "derive_repository_certification_state",
+        capture,
+    )
+    source = checker.SkillSource(
+        source="override",
+        package_root=tmp_path,
+        skills_root=tmp_path / "skills",
+    )
+
+    result = checker._derive_for_source(source, expected_schema_version=6)
+
+    assert result.graph == "graph"
+    assert observed[0]["schema_root"] == (
+        tmp_path / "references" / "blueprint"
+    )
 
 
 def test_drift_node_selection_uses_exact_global_module_id() -> None:

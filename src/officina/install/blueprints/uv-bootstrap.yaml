@@ -22,6 +22,11 @@ gateway:
 id: install.source.uv-bootstrap
 interfaces:
   install.source.uv-bootstrap.interface.python-api:
+    content:
+    - uv_bootstrap\.py
+    uses_interfaces:
+    - interface: common.interface.atomic-files
+      version: 1
     contract:
       arguments:
         uv-bin:

@@ -10,7 +10,12 @@ import pytest
 import yaml
 
 import officina.certification.view as certification_view_module
-from officina.certification.hashing import NodeHashState, compute_node_hash_states
+from officina.certification.hashing import (
+    CertificationFacetHashState,
+    NodeHashState,
+    certification_facet_claims,
+    compute_node_hash_states,
+)
 from officina.certification.records import (
     canonical_certificate_envelope_bytes,
     certificate_public_key_root,
@@ -815,6 +820,240 @@ def test_certificate_currentness_rejects_each_mismatched_projection(
 
     assert not status.current
     assert concern in status.concerns
+
+
+def _v6_facet_fixture(
+    root: Path,
+) -> tuple[object, dict[str, object], str, Path, object, str, str]:
+    graph, states, commit, public_key_root, _backend, key = _fixture(root)
+    graph = replace(graph, schema_version=6)
+    node_id = "demo-skill.source.gateway"
+    interface_id = f"{node_id}.interface.run"
+    state = states[node_id]
+    entries = tuple(state.input_manifest)
+    states[node_id] = replace(
+        state,
+        facets=(
+            CertificationFacetHashState(
+                facet_id=node_id,
+                facet_type="remainder",
+                local_hash="sha256:" + "1" * 64,
+                input_manifest=entries[1:],
+                dependency_hashes=(),
+            ),
+            CertificationFacetHashState(
+                facet_id=interface_id,
+                facet_type="interface",
+                local_hash="sha256:" + "2" * 64,
+                input_manifest=entries[:1],
+                dependency_hashes=(),
+            ),
+        ),
+    )
+    for current_id in _postorder(graph):
+        payload = _payload(
+            root,
+            graph,
+            states,
+            current_id,
+            commit,
+            key.key_id,
+        )
+        payload["certificate_schema_version"] = 3
+        payload["facets"] = [
+            dict(claim)
+            for claim in certification_facet_claims(states[current_id])
+        ]
+        _write_log(
+            graph,
+            current_id,
+            [sign_certificate_payload(payload, key)],
+        )
+    return graph, states, commit, public_key_root, key, node_id, interface_id
+
+
+@pytest.mark.parametrize(
+    ("facet_type", "field", "replacement", "concern_template"),
+    [
+        (
+            "interface",
+            "local_hash",
+            "sha256:" + "3" * 64,
+            "interface-hash-mismatch:{interface_id}",
+        ),
+        (
+            "interface",
+            "input_manifest",
+            [],
+            "interface-input-manifest-mismatch:{interface_id}",
+        ),
+        (
+            "interface",
+            "dependencies",
+            [
+                {
+                    "relation": "uses-source",
+                    "target": "demo-skill.source.gateway",
+                    "version": 1,
+                    "node_hash": "sha256:" + "4" * 64,
+                }
+            ],
+            "interface-dependency-mismatch:{interface_id}",
+        ),
+        (
+            "remainder",
+            "local_hash",
+            "sha256:" + "3" * 64,
+            "remainder-hash-mismatch",
+        ),
+        (
+            "remainder",
+            "input_manifest",
+            [],
+            "remainder-input-manifest-mismatch",
+        ),
+        (
+            "remainder",
+            "dependencies",
+            [
+                {
+                    "relation": "uses-source",
+                    "target": "demo-skill.source.gateway",
+                    "version": 1,
+                    "node_hash": "sha256:" + "4" * 64,
+                }
+            ],
+            "remainder-dependency-mismatch",
+        ),
+    ],
+)
+def test_v6_currentness_reports_exact_facet_mismatch(
+    tmp_path: Path,
+    facet_type: str,
+    field: str,
+    replacement: object,
+    concern_template: str,
+) -> None:
+    (
+        graph,
+        states,
+        commit,
+        public_key_root,
+        key,
+        node_id,
+        interface_id,
+    ) = _v6_facet_fixture(tmp_path)
+    payload = _payload(
+        tmp_path,
+        graph,
+        states,
+        node_id,
+        commit,
+        key.key_id,
+    )
+    payload["certificate_schema_version"] = 3
+    payload["facets"] = [
+        dict(claim) for claim in certification_facet_claims(states[node_id])
+    ]
+    target = next(
+        facet for facet in payload["facets"] if facet["type"] == facet_type
+    )
+    target[field] = replacement
+    _write_log(graph, node_id, [sign_certificate_payload(payload, key)])
+
+    report = evaluate_certificate_currentness(
+        graph,
+        states,
+        repo_root=tmp_path,
+        public_key_root=public_key_root,
+        source_commit=commit,
+        certifier_identity=CERTIFIER,
+        checks_by_node={current_id: CHECKS for current_id in graph.nodes},
+        certification_basis_paths=(),
+        schema_root=CANONICAL_SCHEMA_ROOT,
+        allow_non_atomic=True,
+    )
+
+    expected = concern_template.format(interface_id=interface_id)
+    assert expected in report.nodes[node_id].concerns
+
+
+def test_v6_currentness_rejects_noncanonical_facet_order(tmp_path: Path) -> None:
+    (
+        graph,
+        states,
+        commit,
+        public_key_root,
+        key,
+        node_id,
+        _interface_id,
+    ) = _v6_facet_fixture(tmp_path)
+    payload = _payload(
+        tmp_path,
+        graph,
+        states,
+        node_id,
+        commit,
+        key.key_id,
+    )
+    payload["certificate_schema_version"] = 3
+    payload["facets"] = [
+        dict(claim)
+        for claim in reversed(certification_facet_claims(states[node_id]))
+    ]
+    _write_log(graph, node_id, [sign_certificate_payload(payload, key)])
+
+    report = evaluate_certificate_currentness(
+        graph,
+        states,
+        repo_root=tmp_path,
+        public_key_root=public_key_root,
+        source_commit=commit,
+        certifier_identity=CERTIFIER,
+        checks_by_node={current_id: CHECKS for current_id in graph.nodes},
+        certification_basis_paths=(),
+        schema_root=CANONICAL_SCHEMA_ROOT,
+        allow_non_atomic=True,
+    )
+
+    assert "facet-order-mismatch" in report.nodes[node_id].concerns
+
+
+def test_v6_currentness_marks_pre_facet_payload_stale(tmp_path: Path) -> None:
+    (
+        graph,
+        states,
+        commit,
+        public_key_root,
+        key,
+        node_id,
+        _interface_id,
+    ) = _v6_facet_fixture(tmp_path)
+    payload = _payload(
+        tmp_path,
+        graph,
+        states,
+        node_id,
+        commit,
+        key.key_id,
+    )
+    payload["certificate_schema_version"] = 2
+    _write_log(graph, node_id, [sign_certificate_payload(payload, key)])
+
+    report = evaluate_certificate_currentness(
+        graph,
+        states,
+        repo_root=tmp_path,
+        public_key_root=public_key_root,
+        source_commit=commit,
+        certifier_identity=CERTIFIER,
+        checks_by_node={current_id: CHECKS for current_id in graph.nodes},
+        certification_basis_paths=(),
+        schema_root=CANONICAL_SCHEMA_ROOT,
+        allow_non_atomic=True,
+    )
+
+    assert "legacy-certificate-payload" in report.nodes[node_id].concerns
 
 
 def test_certificate_source_commits_are_issuance_provenance_not_currentness(

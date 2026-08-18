@@ -60,6 +60,12 @@ class _V4DerivedState:
     currentness: CertificateCurrentnessReport
 
 
+def _schema_root_for_version(root: Path, schema_version: int) -> Path | None:
+    """Return the live schema root unless v5 selects its retired owner."""
+
+    return root / "references" / "blueprint" if schema_version in {4, 6} else None
+
+
 def _v4_repository_state(
     repo_root: Path,
     *,
@@ -80,11 +86,7 @@ def _v4_repository_state(
         derived = derive_repository_certification_state(
             root,
             expected_schema_version=expected_schema_version,
-            schema_root=(
-                root / "references" / "blueprint"
-                if expected_schema_version == 4
-                else None
-            ),
+            schema_root=_schema_root_for_version(root, expected_schema_version),
             allow_non_atomic=allow_non_atomic,
         )
     except (CertificationHashError, RepositoryCertificationError, OSError, ValueError) as exc:
@@ -94,15 +96,7 @@ def _v4_repository_state(
         dict(derived.states),
         derived.source_commit,
         derived.certification_basis_hash,
-        (
-            root / "references" / "blueprint"
-            if expected_schema_version == 5
-            else root
-            / "references"
-            / "blueprint"
-            / "migrations"
-            / f"v{expected_schema_version}"
-        ),
+        root / "references" / "blueprint",
         dict(derived.certifier_identity),
     )
 
@@ -121,19 +115,7 @@ def _derive_v4_repository_state(
             root,
             public_key_root=public_key_root,
             expected_schema_version=expected_schema_version,
-            schema_root=(
-                root / "references" / "blueprint"
-                if expected_schema_version == 4
-                else (
-                    root
-                    / "references"
-                    / "blueprint"
-                    / "migrations"
-                    / f"v{expected_schema_version}"
-                    if expected_schema_version != 5
-                    else None
-                )
-            ),
+            schema_root=_schema_root_for_version(root, expected_schema_version),
             allow_non_atomic=allow_non_atomic,
         )
     except (CertificationHashError, RepositoryCertificationError, OSError, ValueError) as exc:
@@ -396,18 +378,9 @@ def _derive_for_source(
             source.package_root,
             public_key_root=certificate_public_key_root(source.package_root),
             expected_schema_version=expected_schema_version,
-            schema_root=(
-                source.package_root / "references" / "blueprint"
-                if expected_schema_version == 4
-                else (
-                    source.package_root
-                    / "references"
-                    / "blueprint"
-                    / "migrations"
-                    / f"v{expected_schema_version}"
-                    if expected_schema_version != 5
-                    else None
-                )
+            schema_root=_schema_root_for_version(
+                source.package_root,
+                expected_schema_version,
             ),
         )
     except (CertificationHashError, RepositoryCertificationError, OSError, ValueError) as exc:

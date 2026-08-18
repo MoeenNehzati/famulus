@@ -15,6 +15,7 @@ from .hashing import (
     CANONICAL_NODE_HASH_POLICY,
     CERTIFIER_NODE_ID,
     NodeHashState,
+    certification_facet_claims,
     certification_target_postorder,
     compute_certification_basis_hash,
     compute_node_hash_states,
@@ -258,6 +259,55 @@ def _certifier_currentness_identity(
     }
 
 
+def _facet_currentness_concerns(
+    payload_facets: object,
+    state: NodeHashState,
+) -> tuple[str, ...]:
+    """Name the exact schema-v6 certification facets that have drifted."""
+
+    expected = {
+        (claim["type"], claim["id"]): claim
+        for claim in certification_facet_claims(state)
+    }
+    if not isinstance(payload_facets, list):
+        return ("facet-set-mismatch",)
+
+    actual: dict[tuple[object, object], Mapping[str, object]] = {}
+    duplicate = False
+    for claim in payload_facets:
+        if not isinstance(claim, Mapping):
+            return ("facet-set-mismatch",)
+        key = (claim.get("type"), claim.get("id"))
+        if key in actual:
+            duplicate = True
+        actual[key] = claim
+
+    concerns: list[str] = []
+    if duplicate or actual.keys() != expected.keys():
+        concerns.append("facet-set-mismatch")
+    elif tuple(actual) != tuple(expected):
+        concerns.append("facet-order-mismatch")
+
+    fields = (
+        ("local_hash", "hash-mismatch"),
+        ("input_manifest", "input-manifest-mismatch"),
+        ("dependencies", "dependency-mismatch"),
+    )
+    for key in sorted(expected):
+        certified = actual.get(key)
+        if certified is None:
+            continue
+        facet_type, facet_id = key
+        for field, suffix in fields:
+            if certified.get(field) == expected[key][field]:
+                continue
+            if facet_type == "interface":
+                concerns.append(f"interface-{suffix}:{facet_id}")
+            else:
+                concerns.append(f"remainder-{suffix}")
+    return tuple(concerns)
+
+
 def evaluate_certificate_currentness(
     graph: RepositoryBlueprintGraph,
     states: Mapping[str, NodeHashState],
@@ -400,6 +450,13 @@ def evaluate_certificate_currentness(
                 and payload.get("certificate_schema_version") == 1
             ):
                 concerns.append("legacy-certificate-payload")
+            if graph.schema_version == 6:
+                if payload.get("certificate_schema_version") != 3:
+                    concerns.append("legacy-certificate-payload")
+                else:
+                    concerns.extend(
+                        _facet_currentness_concerns(payload.get("facets"), state)
+                    )
             if payload.get("subject") != _expected_subject(node, root):
                 concerns.append("subject-mismatch")
             if payload.get("input_manifest") != [dict(entry) for entry in state.input_manifest]:

@@ -14,8 +14,10 @@ Version 6 has two authored node types:
 
 - A `module` owns discovery, filesystem authority, contained behavioral
   sources, and exported interfaces.
-- A `behavioral_source` owns one whole-file gateway, its content selection,
-  intrinsic interface contracts, source dependencies, and interface uses.
+- A `behavioral_source` owns one whole-file gateway, content and interface-use
+  envelopes, intrinsic interface contracts, and source dependencies. Each
+  explicit interface claims content and interface-use subsets of those
+  envelopes.
 
 The blueprint graph derives certification dependencies from source use,
 private-interface use, module-export use, namespace routing, topology
@@ -125,12 +127,15 @@ when a certificate includes local inputs. Later currentness requires relevant
 tracked inputs to be clean at current `HEAD`, but does not require current
 `HEAD` to equal the certificate's issuance commit.
 
-`node_hash(x)` covers the canonical node identity and blueprint data together
-with the selected paths and their exact bytes. It excludes certificates,
-history, generated status artifacts, and dependency content. Changing an
-input path, byte, blueprint field, or node identity changes the node hash.
-Changing only a dependency makes the certificate suspect through its recorded
-dependency hash without changing the dependent's local node hash.
+For a version-6 behavioral source, each explicit interface has a local hash
+covering its canonical declaration and selected input manifest. Unclaimed
+source state forms a remainder facet. `node_hash(x)` aggregates the remainder
+and sorted interface local hashes. It excludes certificates, history, generated
+status artifacts, and dependency content. Changing an interface input changes
+that interface facet and the aggregate source hash; changing unclaimed input
+changes the remainder and aggregate. Changing only a dependency makes the
+owning facet suspect through its dependency claim without changing its local
+hash or the aggregate source hash.
 
 ## Certificate format
 
@@ -138,7 +143,7 @@ dependency hash without changing the dependent's local node hash.
 
 ```yaml
 payload:
-  certificate_schema_version: 2
+  certificate_schema_version: 3
   subject:
     id: example-skill._rtx.source.runtime
     node_type: behavioral_source
@@ -152,6 +157,20 @@ payload:
       digest: sha256:...
       git_provenance: tracked
   dependencies: []
+  facets:
+    - id: example-skill._rtx.source.runtime
+      type: remainder
+      local_hash: sha256:...
+      input_manifest: []
+      dependencies: []
+    - id: example-skill._rtx.source.runtime.interface.run
+      type: interface
+      local_hash: sha256:...
+      input_manifest:
+        - path: skills/example-skill/_rtx/runtime.py
+          digest: sha256:...
+          git_provenance: tracked
+      dependencies: []
   certification_basis_hash: sha256:...
   certifier:
     interface: skill-certifier._rtx.interface.certify
@@ -177,6 +196,10 @@ Each dependency entry contains `relation`, `target`, `version`, and
 `uses-private-interface`, `uses-export`, `references-cross-owner-contract`,
 `contains-source`, `routes-child-namespace`, and `routes-terminal-module`. The payload contains
 no separate dependency-certificate hash.
+
+Version-6 certificates use payload version 3 and include canonical facet
+claims. Payload versions 1 and 2 remain readable only as historical formats;
+they are not current version-6 certification state.
 
 Containment and route topology are certificate dependencies in version 6:
 module certificates depend on contained sources, parent namespace routes
@@ -225,6 +248,8 @@ A certificate is current only when all of the following hold:
 - its subject and source commit identify the current node state;
 - its input manifest resolves safely and every digest matches current bytes;
 - its recorded node hash equals the reconstructed node hash;
+- its facet set, local hashes, input manifests, and facet dependency claims
+  exactly match the reconstructed facets;
 - its dependency set exactly matches the derived direct dependencies, every
   target version and node hash matches, and every dependency certificate is
   current;
@@ -249,6 +274,7 @@ is_current(x):
         valid_signature(certificate)
         and safe_manifest_matches(certificate.payload.input_manifest)
         and certificate.payload.node_hash == node_hash(x)
+        and certificate.payload.facets == current_facet_claims(x)
         and certificate.payload.dependencies == current_dependency_claims(x)
         and all(is_current(d) for d in direct_dependencies(x))
         and certificate.payload.certifier == current_certifier_identity()

@@ -15,6 +15,9 @@ gateway:
 id: email-triage._rtx.source.rtx-log-compactor
 interfaces:
   email-triage._rtx.source.rtx-log-compactor.interface.scripts-prune-log:
+    content:
+    - _log_compactor\.py
+    uses_interfaces: []
     contract:
       arguments: {}
       caller_warnings:

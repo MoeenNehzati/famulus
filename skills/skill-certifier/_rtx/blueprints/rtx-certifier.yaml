@@ -11,6 +11,26 @@ gateway:
 id: skill-certifier._rtx.source.rtx-certifier
 interfaces:
   skill-certifier._rtx.source.rtx-certifier.interface.certify:
+    content:
+    - _node_certifier\.py
+    - __init__\.py
+    uses_interfaces:
+    - interface: certification.interface.hashing
+      version: 1
+    - interface: common.interface.atomic-files
+      version: 1
+    - interface: certification.interface.records
+      version: 1
+    - interface: blueprints.interface.graph
+      version: 1
+    - interface: certification.interface.view
+      version: 1
+    - interface: blueprints.interface.pooled
+      version: 1
+    - interface: git.interface.provenance
+      version: 1
+    - interface: common.interface.repository-paths
+      version: 1
     contract:
       arguments:
         allow-non-atomic:

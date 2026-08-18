@@ -14,6 +14,11 @@ gateway:
 id: email-triage._rtx.source.rtx-failure-sentinel
 interfaces:
   email-triage._rtx.source.rtx-failure-sentinel.interface.scripts-mark-failure:
+    content:
+    - _failure_sentinel\.py
+    uses_interfaces:
+    - interface: common.interface.famulus-paths
+      version: 1
     contract:
       arguments:
         reason:

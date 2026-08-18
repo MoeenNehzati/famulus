@@ -9,6 +9,9 @@ gateway:
 id: common.source.codex-toml
 interfaces:
   common.source.codex-toml.interface.python-api:
+    content:
+    - codex_toml\.py
+    uses_interfaces: []
     contract:
       arguments: {}
       caller_warnings: []

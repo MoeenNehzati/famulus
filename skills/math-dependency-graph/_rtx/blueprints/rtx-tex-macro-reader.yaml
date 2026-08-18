@@ -15,6 +15,9 @@ gateway:
 id: math-dependency-graph._rtx.source.rtx-tex-macro-reader
 interfaces:
   math-dependency-graph._rtx.source.rtx-tex-macro-reader.interface.scripts-extract-mathjax-macros:
+    content:
+    - _tex_macro_reader\.py
+    uses_interfaces: []
     contract:
       arguments:
         entrypoint:

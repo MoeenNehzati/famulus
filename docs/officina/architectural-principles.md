@@ -578,13 +578,23 @@ the node. A timestamp alone cannot establish that the evidence is current.
 
 A node hashes what it owns and certifies what it depends on.
 
-The local node hash covers the node's own behavior-relevant inputs. Dependency
-identities are recorded separately in the certificate. Recursively including
-dependency content in the local hash would obscure which node changed and
-would spread invalidation further than necessary.
+For a version-6 behavioral source, explicit interfaces hash their declarations
+and claimed input manifests as separate local facets. Unclaimed source state is
+hashed as a remainder facet. The source node hash aggregates those local facet
+hashes; it does not collapse them back into one opaque input hash. Modules
+retain their existing node-hash representation. A source without explicit
+interfaces consists of one remainder facet.
 
-When a dependency changes, the dependent becomes suspect because the state on
-which its review relied has changed. Its local identity remains unchanged.
+Dependency identities are recorded separately in the certificate. An
+interface-use dependency records the canonical interface hash, covering its
+declaration and selected content manifest rather than the provider's whole
+blueprint. Recursively including
+dependency content in a local facet hash would obscure whether local content or
+a dependency changed and would spread invalidation further than necessary.
+
+When a dependency changes, the dependent interface or remainder becomes
+suspect because the state on which its review relied has changed. Its local
+identity remains unchanged.
 
 ### 8.3 The certification basis
 

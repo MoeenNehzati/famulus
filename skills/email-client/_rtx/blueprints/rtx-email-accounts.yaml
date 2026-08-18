@@ -15,6 +15,13 @@ gateway:
 id: email-client._rtx.source.rtx-email-accounts
 interfaces:
   email-client._rtx.source.rtx-email-accounts.interface.accounts-add:
+    content:
+    - _email_accounts\.py
+    uses_interfaces:
+    - interface: credentials.interface.secret-store
+      version: 1
+    - interface: credentials.interface.google
+      version: 1
     contract:
       arguments:
         auth:
@@ -243,6 +250,13 @@ interfaces:
       [--imap-port P] [--smtp-host H] [--smtp-port P] [--starttls] [--auth app-password|gmail-oauth]
     version: 1
   email-client._rtx.source.rtx-email-accounts.interface.accounts-list:
+    content:
+    - _email_accounts\.py
+    uses_interfaces:
+    - interface: credentials.interface.secret-store
+      version: 1
+    - interface: credentials.interface.google
+      version: 1
     contract:
       arguments: {}
       caller_warnings: []
@@ -347,6 +361,13 @@ interfaces:
     usage: ''
     version: 1
   email-client._rtx.source.rtx-email-accounts.interface.accounts-remove:
+    content:
+    - _email_accounts\.py
+    uses_interfaces:
+    - interface: credentials.interface.secret-store
+      version: 1
+    - interface: credentials.interface.google
+      version: 1
     contract:
       arguments:
         nickname:
@@ -552,6 +573,13 @@ interfaces:
     usage: --nickname <nick> [--purge-credentials]
     version: 1
   email-client._rtx.source.rtx-email-accounts.interface.accounts-set-password:
+    content:
+    - _email_accounts\.py
+    uses_interfaces:
+    - interface: credentials.interface.secret-store
+      version: 1
+    - interface: credentials.interface.google
+      version: 1
     contract:
       arguments:
         nickname:
@@ -732,6 +760,13 @@ interfaces:
     usage: --nickname <nick> --purpose imap|smtp
     version: 1
   email-client._rtx.source.rtx-email-accounts.interface.accounts-setup-oauth:
+    content:
+    - _email_accounts\.py
+    uses_interfaces:
+    - interface: credentials.interface.secret-store
+      version: 1
+    - interface: credentials.interface.google
+      version: 1
     contract:
       arguments:
         client-config:
@@ -1042,6 +1077,13 @@ interfaces:
     usage: --nickname <nick> --client-config <path> [--no-open-browser]
     version: 1
   email-client._rtx.source.rtx-email-accounts.interface.accounts-update:
+    content:
+    - _email_accounts\.py
+    uses_interfaces:
+    - interface: credentials.interface.secret-store
+      version: 1
+    - interface: credentials.interface.google
+      version: 1
     contract:
       arguments:
         auth:
@@ -1262,6 +1304,13 @@ interfaces:
       H] [--imap-port P] [--smtp-host H] [--smtp-port P] [--auth app-password|gmail-oauth]
     version: 1
   email-client._rtx.source.rtx-email-accounts.interface.accounts-use-google-credential-file:
+    content:
+    - _email_accounts\.py
+    uses_interfaces:
+    - interface: credentials.interface.secret-store
+      version: 1
+    - interface: credentials.interface.google
+      version: 1
     contract:
       arguments:
         nickname:
@@ -1455,6 +1504,13 @@ interfaces:
     usage: --nickname <name> --credential-file <path> --home <dir> [--allow-account-change]
     version: 1
   email-client._rtx.source.rtx-email-accounts.interface.accounts-use-google-credential:
+    content:
+    - _email_accounts\.py
+    uses_interfaces:
+    - interface: credentials.interface.secret-store
+      version: 1
+    - interface: credentials.interface.google
+      version: 1
     contract:
       direct_io:
         network: []

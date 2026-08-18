@@ -9,6 +9,9 @@ gateway:
 id: pdf-to-markdown._rtx.source.rtx-source-fetcher
 interfaces:
   pdf-to-markdown._rtx.source.rtx-source-fetcher.interface.scripts-fetch-arxiv-source:
+    content:
+    - _source_fetcher\.py
+    uses_interfaces: []
     contract:
       arguments:
         arxiv-id:
