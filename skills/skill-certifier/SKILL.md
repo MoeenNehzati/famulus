@@ -10,62 +10,56 @@ description: >-
 Catalog: assistant-development; topics: assistant-assurance, assistant-architecture; visibility: listed
 Activation: user-request, skill-workflow; persistent modifier: no
 
-Skill Version: 2
+Skill Version: 4
 
 Uses Interfaces:
-- `skill-certifier.source.gateway -> skill-certifier._rtx.interface.certify@1`
+- `skill-certifier.source.gateway -> skill-certifier._rtx.interface.certify@2`
+- `skill-certifier.source.gateway -> skill-certifier.source.audit-behavioral-source.interface.audit@1`
+- `skill-certifier.source.gateway -> skill-certifier.source.audit-interface.interface.audit@1`
+- `skill-certifier.source.gateway -> skill-certifier.source.audit-module.interface.audit@1`
+- `skill-certifier.source.gateway -> skill-drift._rtx.interface.drift-status@2`
 
-Public Interfaces:
-- `skill-certifier.interface.default`
+Public Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
-<!-- BEGIN BLUEPRINT INTERFACES -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
+## Certification algorithm
 
-Instruction Interfaces:
+Resolve the requested target and hold its reviewed repository and commit
+stable. Then:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `skill-certifier.interface.default` — Certify exact target closures and report signed certificate outcomes.
-<!-- END BLUEPRINT INTERFACES -->
-## Certification Rules
+1. Invoke `skill-drift._rtx.interface.drift-status` in JSON mode. Use its stale
+   worklist to identify each exact changed file, interface, or dependency cause.
+2. Process only that worklist dependency-first. Interface facets are leaves
+   inside stale source nodes, not separate worklist nodes. For each stale
+   interface facet named by drift, use `audit-interface`; changed files are
+   evidence for their owning facet, not separate audit subjects.
+3. After affected leaf interfaces pass, use `audit-behavioral-source` only for
+   stale sources and affected source ancestors. Use `audit-module` only for
+   stale modules and affected module ancestors.
+4. When an audit returns `needs-context`, read the smallest additional evidence
+   or context scope it names and repeat that audit. Do not widen otherwise.
+   Stop on `reject` or an unresolved evidence gap.
+5. Invoke the declared mechanical `certify` interface for the requested target
+   and exact reviewed repository and commit. It independently recomputes
+   currentness, skips current nodes, route-smokes the stale worklist, and issues
+   stale nodes dependency-first.
 
-Use this skill only after reviewing the selected module and behavioral-source
-blueprints against their gateways, content, and actual behavior. Schema
-validity is necessary but does not establish semantic accuracy.
+Reuse only unchanged facet evidence whose claim is authenticated by the latest
+valid signed certificate and still matches the canonical facet state. A
+remainder-facet cause belongs to `audit-behavioral-source`; it does not create a
+remainder interface. A non-facet source or module cause starts at that owning
+audit rather than forcing unrelated leaf audits.
 
-The review must establish:
+Schema validity is necessary but does not establish semantic accuracy. The
+audit interfaces own semantic judgment. The mechanical interface invokes the
+repository validator runner, reconstructs every payload field, computes hashes,
+signs, appends certificate history, and performs post-write drift verification.
+Never ask it to sign caller-supplied certificate data.
 
-- every operation and argument is independently usable as declared, and the
-  process binding accepts exactly the documented invocation;
-- outputs, outcomes, errors, lifecycle, interaction mode, and verification
-  describe observed behavior;
-- reads, writes, network access, effects, helpers, dependencies, filesystem
-  authority, and protected-file boundaries are complete and mutually
-  consistent;
-- sensitivity, preconditions, warnings, platform claims, runtime dependencies,
-  and version compatibility are accurate;
-- every implicit instruction or implementation dependency is represented by
-  direct ownership, a declared interface use, or the certification basis.
+Existing logs must be canonical, schema-valid, signature-valid, unbroken, and
+a dependency-first prefix of the exact closure. New certificates require
+tracked inputs to match the reviewed commit and included local inputs to remain
+byte-stable. Dirty or unready state may be reported but must not be certified.
 
-Mechanical certification runs only through
-`skill-certifier._rtx.interface.certify`. It invokes the repository validator runner
-once, then owns hash computation, signing, append-only certificate writes, and
-post-write drift verification. It reconstructs every payload field internally
-and accepts only the exact reviewed repository and commit; it never signs
-caller-supplied certificate data.
-
-The canonical certification view normally requires current certificates. It
-also admits exact self-certification of `skill-certifier` when its certification
-closure has no history or has appendable canonical, schema-valid,
-signature-valid, unbroken history; the final signing key may be inactive.
-Existing logs must form a dependency-first prefix of the exact closure. Corrupt
-history, a non-prefix gap, a wrong-subject entry, or missing verification
-material fails closed.
-
-An exact target includes its certification dependency closure. Omitted targets
-select all repository nodes. New certificates require tracked inputs to match
-the reviewed commit and included local inputs to remain byte-stable. Dirty or
-unready state may be reported but must not be certified.
-
-If synchronization, structural validation, semantic review, hashing, signing,
-or post-write verification fails, retain earlier valid append-only history,
-report the failure, and do not claim current certification.
+If synchronization, validation, semantic audit, hashing, signing, or post-write
+verification fails, retain earlier valid append-only history, report the exact
+failure, and do not claim current certification.

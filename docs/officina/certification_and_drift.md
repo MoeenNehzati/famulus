@@ -174,7 +174,7 @@ payload:
   certification_basis_hash: sha256:...
   certifier:
     interface: skill-certifier._rtx.interface.certify
-    version: 1
+    version: 2
     node_hash: sha256:...
     source_commit: ...
   checks: []
@@ -223,13 +223,14 @@ availability of those machines and dependencies; ordinary tests own those
 questions.
 
 Python route-smoke dependency tracing is another certifier-owned mechanical
-check. For the selected dependency closure, each discovered implementation
+check. For the stale issuance worklist, each discovered implementation
 file or invoked interface must map to a directly owned certification input, an
 explicit certification dependency, or the certification basis. The certifier
 runs the scoped trace twice before any certificate append and requires the
 mapped signatures to agree. It records only the passed versioned check.
 Manifest and node-hash derivation are pure: drift and currentness never execute
-gateways or rerun route smoke.
+gateways or rerun route smoke. Nodes already current are neither route-smoked
+nor appended.
 
 Each node has one append-only certificate log. Every appended complete entry
 contains `payload` and `signature`, and the signature covers the canonical
@@ -245,7 +246,9 @@ that the newest entries were removed.
 A certificate is current only when all of the following hold:
 
 - its envelope and payload validate and its signature verifies under `key_id`;
-- its subject and source commit identify the current node state;
+- its subject identifies the current node, and its tracked inputs are clean and
+  reproducible at HEAD; `source_commit` records issuance provenance and need
+  not equal the current HEAD;
 - its input manifest resolves safely and every digest matches current bytes;
 - its recorded node hash equals the reconstructed node hash;
 - its facet set, local hashes, input manifests, and facet dependency claims
@@ -264,6 +267,15 @@ suspect. A suspect certificate is retained. It becomes current again without
 reissuance if all currentness conditions later return to the recorded values.
 Reissuing an unchanged certificate does not change the node hash or semantic
 interface projections.
+
+Drift projects these comparisons into an exact stale worklist. For interface
+and remainder facets it distinguishes local-hash, input-manifest, and direct-
+dependency mismatches. Input-manifest causes name added, removed, and changed
+files. Dependency causes cover all direct facet dependencies: interface uses
+name the interface id, while other relations name their relation and target.
+Certificate, basis, graph, or other non-facet concerns remain node-scoped. This
+worklist is diagnostic evidence for selective bottom-up semantic review, not
+authority to sign.
 
 In dependency-first pseudocode:
 
@@ -285,10 +297,20 @@ is_current(x):
     )
 ```
 
-When drift exists, the certifier runs its owned check scripts and semantic review.
-After each repair it discards the prior review snapshot, reloads the blueprint
-and graph, and reruns the checks. Only after discrepancies are resolved does it
-reconstruct the manifest, node hash, dependencies, basis hash, and checks
+When drift exists, certification uses the stale worklist for selective
+bottom-up semantic review: stale leaf interfaces first, then affected
+behavioral-source and module ancestors. An unchanged facet reuses evidence only
+when its claim is authenticated by the latest valid signed certificate and
+still matches canonical state; wider evidence is read only after
+`needs-context`. The signature covers the facet manifest and dependencies plus
+the certificate's whole-node semantic-review pass. Selective reuse interprets
+that pass as covering each included unchanged facet; it is not an independent
+per-facet semantic attestation.
+After each repair the certifier discards the prior review snapshot, reloads the
+blueprint and graph, and reruns the checks. It then recomputes currentness,
+skips nodes already current, route-smokes the remaining stale worklist, and
+issues those nodes dependency-first. Only after discrepancies are resolved does
+it reconstruct the manifest, node hash, dependencies, basis hash, and checks
 internally, sign the canonical payload, append the complete signed record, and
 verify the append before reporting success. Runtime performance and host
 availability remain outside certification. The certifier never signs a

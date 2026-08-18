@@ -163,6 +163,7 @@ def test_v6_certifier_identity_accepts_runtime_interface_owner(
                 v4_export,
                 interface_id="skill-certifier._rtx.interface.certify",
                 module_node_id=runtime_node_id,
+                version=2,
             )
         },
     )
@@ -171,7 +172,7 @@ def test_v6_certifier_identity_accepts_runtime_interface_owner(
 
     assert identity == {
         "interface": "skill-certifier._rtx.interface.certify",
-        "version": 1,
+        "version": 2,
         "node_hash": states["skill-certifier"].node_hash,
         "source_commit": commit,
     }

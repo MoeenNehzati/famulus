@@ -7,9 +7,9 @@ dependencies:
   reason: Defines the exclusive certification writer whose state this read-only module
     inspects.
   source: skill-certifier.source.gateway
-  version: 2
-description: Defines the LLM-facing rules for reading exact signed-certificate currentness
-  and canonical v5 node hashes.
+  version: 4
+description: Defines the LLM-facing rules for reading exact signed-certificate currentness,
+  stale worklists, and canonical v6 node hashes.
 gateway:
   language: Markdown
   path: SKILL.md
@@ -22,7 +22,7 @@ interfaces:
     - interface: skill-drift._rtx.interface.compute-hashes
       version: 1
     - interface: skill-drift._rtx.interface.drift-status
-      version: 1
+      version: 2
     contract:
       arguments:
         request:
@@ -88,7 +88,8 @@ interfaces:
         cardinality:
           maximum: 1
           minimum: 1
-        description: Exact certificate-currentness or canonical-hash result.
+        description: Exact certificate-currentness, stale-worklist, or canonical-hash
+          result.
         direct_io_ref: write-1
         empty: Never empty.
         id: response
@@ -101,14 +102,14 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Instructions for exact-target certificate drift and canonical node-hash
-      checks.
-    version: 1
+    description: Instructions for exact-target certificate drift, stale worklists,
+      and canonical node-hash checks.
+    version: 2
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
 - interface: skill-drift._rtx.interface.compute-hashes
   version: 1
 - interface: skill-drift._rtx.interface.drift-status
-  version: 1
-version: 2
+  version: 2
+version: 3

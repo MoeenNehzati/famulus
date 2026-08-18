@@ -7,9 +7,9 @@ dependencies:
   reason: Imports installed-source discovery from _rtx/_skill_sources/__init__.py.
   source: skill-drift._rtx.source.rtx-skill-sources-init
   version: 1
-description: Resolves exact or installed v5 modules, derives canonical node hashes
-  and certificate currentness through the shared certification view, and optionally
-  saves a Markdown report.
+description: Resolves exact or installed v6 modules, derives canonical node hashes,
+  structured drift causes, and dependency-first stale worklists through the shared
+  certification view, and optionally saves a Markdown report.
 gateway:
   language: Python
   path: _check_drift_state.py
@@ -64,7 +64,7 @@ interfaces:
         network: []
         reads:
         - access: read
-          content: selected v5 graph, node inputs, hash policy, certification basis,
+          content: selected v6 graph, node inputs, hash policy, certification basis,
             and certificate verification material
           formats:
           - yaml
@@ -154,7 +154,7 @@ interfaces:
         outputs:
         - hash-report
         - error
-      - caller_action: Correct target discovery, v5 blueprint, Git, or safe-read failures
+      - caller_action: Correct target discovery, v6 blueprint, Git, or safe-read failures
           before retrying.
         class: error
         effects: []
@@ -197,7 +197,7 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Compute canonical certification-basis and v5 node hashes for exact
+    description: Compute canonical certification-basis and v6 node hashes for exact
       or installed modules.
     process_binding:
       entry: Interface
@@ -274,7 +274,7 @@ interfaces:
         network: []
         reads:
         - access: read
-          content: selected v5 graph, node inputs, hash policy, certification basis,
+          content: selected v6 graph, node inputs, hash policy, certification basis,
             retained public keys, and certificate histories
           formats:
           - yaml
@@ -335,7 +335,9 @@ interfaces:
           - markdown
           id: write-2
           medium: stdout
-          reason: Return exact module and node currentness.
+          reason: Return exact module and node currentness, structured file and
+            direct facet-dependency causes, facet drift, and the dependency-first
+            stale worklist.
           sensitivity: derived-private
           system: agent-runtime
         - access: write
@@ -392,8 +394,8 @@ interfaces:
       interaction:
         mode: unattended
       outcomes:
-      - caller_action: Relay certificate-current or certificate-stale with exact node
-          concerns.
+      - caller_action: Relay certificate-current or certificate-stale with exact
+          file, facet, and direct-dependency causes plus the stale worklist.
         class: success
         effects:
         - markdown-report
@@ -418,8 +420,10 @@ interfaces:
         cardinality:
           maximum: 1
           minimum: 1
-        description: JSON or Markdown containing certificate currentness and exact
-          concerns for each selected module and node.
+        description: JSON or Markdown containing certificate currentness, exact
+          file/facet/direct-dependency causes for each selected module and node,
+          and the dependency-first stale worklist. Dependency deltas use an interface
+          id when present or the relation and target otherwise.
         direct_io_ref: write-2
         empty: Never empty when at least one module resolves.
         id: status-report
@@ -451,7 +455,8 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Read signed certificate currentness for exact or installed v5 modules
+    description: Read signed certificate currentness, exact structured drift causes,
+      and the dependency-first stale worklist for exact or installed v6 modules
       without writing certification state.
     process_binding:
       entry: Interface
@@ -469,7 +474,7 @@ interfaces:
         positional_patterns:
           '0': ^status$
     usage: status [target ...] [--all] [--skill-root ROOT] [--json]
-    version: 1
+    version: 2
 node_type: behavioral_source
 platform_support:
   linux: true
@@ -486,4 +491,4 @@ uses_interfaces:
   version: 1
 - interface: certification.interface.view
   version: 1
-version: 1
+version: 2

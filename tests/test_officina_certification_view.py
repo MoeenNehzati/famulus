@@ -1019,6 +1019,478 @@ def test_v6_currentness_rejects_noncanonical_facet_order(tmp_path: Path) -> None
     assert "facet-order-mismatch" in report.nodes[node_id].concerns
 
 
+def test_v6_currentness_reports_exact_structured_facet_deltas(
+    tmp_path: Path,
+) -> None:
+    (
+        graph,
+        states,
+        commit,
+        public_key_root,
+        key,
+        node_id,
+        interface_id,
+    ) = _v6_facet_fixture(tmp_path)
+    state = states[node_id]
+    interface = next(
+        facet for facet in state.facets if facet.facet_id == interface_id
+    )
+    current_manifest = (
+        {
+            "path": "skills/demo-skill/current.txt",
+            "digest": "sha256:" + "b" * 64,
+            "git_provenance": "tracked",
+        },
+        {
+            "path": "skills/demo-skill/added.txt",
+            "digest": "sha256:" + "c" * 64,
+            "git_provenance": "tracked",
+        },
+    )
+    current_dependency = {
+        "relation": "uses-export",
+        "target": "demo-skill.source.gateway",
+        "interface": "demo-skill.interface.provider",
+        "version": 1,
+        "interface_hash": "sha256:" + "d" * 64,
+    }
+    current_contract_dependency = {
+        "relation": "references-cross-owner-contract",
+        "target": "demo-skill.source.contract-owner",
+        "version": 1,
+        "node_hash": "sha256:" + "3" * 64,
+    }
+    updated_interface = replace(
+        interface,
+        local_hash="sha256:" + "e" * 64,
+        input_manifest=current_manifest,
+        dependency_hashes=(current_contract_dependency, current_dependency),
+    )
+    states[node_id] = replace(
+        state,
+        facets=tuple(
+            updated_interface if facet.facet_id == interface_id else facet
+            for facet in state.facets
+        ),
+    )
+    payload = _payload(
+        tmp_path,
+        graph,
+        states,
+        node_id,
+        commit,
+        key.key_id,
+    )
+    payload["certificate_schema_version"] = 3
+    payload["facets"] = [
+        dict(claim) for claim in certification_facet_claims(states[node_id])
+    ]
+    certified = next(
+        facet for facet in payload["facets"] if facet["id"] == interface_id
+    )
+    certified["input_manifest"] = [
+        {
+            "path": "skills/demo-skill/current.txt",
+            "digest": "sha256:" + "a" * 64,
+            "git_provenance": "tracked",
+        },
+        {
+            "path": "skills/demo-skill/removed.txt",
+            "digest": "sha256:" + "f" * 64,
+            "git_provenance": "tracked",
+        },
+    ]
+    certified["dependencies"] = [
+        {
+            **current_contract_dependency,
+            "node_hash": "sha256:" + "2" * 64,
+        },
+        {
+            **current_dependency,
+            "interface_hash": "sha256:" + "1" * 64,
+        }
+    ]
+    _write_log(graph, node_id, [sign_certificate_payload(payload, key)])
+
+    report = evaluate_certificate_currentness(
+        graph,
+        states,
+        repo_root=tmp_path,
+        public_key_root=public_key_root,
+        source_commit=commit,
+        certifier_identity=CERTIFIER,
+        checks_by_node={current_id: CHECKS for current_id in graph.nodes},
+        certification_basis_paths=(),
+        schema_root=CANONICAL_SCHEMA_ROOT,
+        allow_non_atomic=True,
+    )
+
+    drift = report.nodes[node_id].facet_drift
+    assert len(drift) == 1
+    assert drift[0].facet_id == interface_id
+    assert drift[0].facet_type == "interface"
+    assert [
+        (delta.change, delta.path)
+        for delta in drift[0].input_files
+    ] == [
+        ("added", "skills/demo-skill/added.txt"),
+        ("modified", "skills/demo-skill/current.txt"),
+        ("removed", "skills/demo-skill/removed.txt"),
+    ]
+    assert [
+        (delta.change, delta.relation, delta.target, delta.interface)
+        for delta in drift[0].dependencies
+    ] == [
+        (
+            "modified",
+            "references-cross-owner-contract",
+            "demo-skill.source.contract-owner",
+            None,
+        ),
+        (
+            "modified",
+            "uses-export",
+            "demo-skill.source.gateway",
+            "demo-skill.interface.provider",
+        ),
+    ]
+
+
+def test_v6_declaration_only_drift_names_owning_blueprint(
+    tmp_path: Path,
+) -> None:
+    (
+        graph,
+        states,
+        commit,
+        public_key_root,
+        key,
+        node_id,
+        interface_id,
+    ) = _v6_facet_fixture(tmp_path)
+    payload = _payload(
+        tmp_path,
+        graph,
+        states,
+        node_id,
+        commit,
+        key.key_id,
+    )
+    payload["certificate_schema_version"] = 3
+    payload["facets"] = [
+        dict(claim) for claim in certification_facet_claims(states[node_id])
+    ]
+    certified = next(
+        facet for facet in payload["facets"] if facet["id"] == interface_id
+    )
+    certified["local_hash"] = "sha256:" + "9" * 64
+    _write_log(graph, node_id, [sign_certificate_payload(payload, key)])
+
+    report = evaluate_certificate_currentness(
+        graph,
+        states,
+        repo_root=tmp_path,
+        public_key_root=public_key_root,
+        source_commit=commit,
+        certifier_identity=CERTIFIER,
+        checks_by_node={current_id: CHECKS for current_id in graph.nodes},
+        certification_basis_paths=(),
+        schema_root=CANONICAL_SCHEMA_ROOT,
+        allow_non_atomic=True,
+    )
+
+    drift = report.nodes[node_id].facet_drift
+    assert len(drift) == 1
+    assert drift[0].facet_id == interface_id
+    assert drift[0].local_hash_changed
+    assert drift[0].declaration_changed
+    assert drift[0].blueprint_path == (
+        graph.nodes[node_id].blueprint_path.relative_to(tmp_path).as_posix()
+    )
+    assert drift[0].input_files == ()
+    assert drift[0].dependencies == ()
+
+
+def test_stale_worklist_is_dependency_first_and_excludes_current_nodes(
+    tmp_path: Path,
+) -> None:
+    graph, states, _commit, _public_key_root, _backend, _key = _fixture(tmp_path)
+    dependency, requested = sorted(graph.nodes)[:2]
+    states[requested] = replace(
+        states[requested],
+        dependency_hashes=(
+            {
+                "relation": "contains-source",
+                "target": dependency,
+                "version": graph.nodes[dependency].version,
+                "node_hash": states[dependency].node_hash,
+            },
+        ),
+    )
+    report = CertificateCurrentnessReport(
+        nodes={
+            node_id: CertificateNodeCurrentness(
+                node_id=node_id,
+                current=node_id not in {requested, dependency},
+                concerns=("node-hash-mismatch",)
+                if node_id in {requested, dependency}
+                else (),
+                certificate=None,
+            )
+            for node_id in graph.nodes
+        }
+    )
+
+    worklist = certification_view_module.certificate_stale_worklist(
+        graph,
+        states,
+        report,
+        (requested,),
+    )
+
+    assert worklist == (dependency, requested)
+
+
+def test_stale_worklist_omits_consumer_with_only_propagated_staleness(
+    tmp_path: Path,
+) -> None:
+    graph, states, _commit, _public_key_root, _backend, _key = _fixture(tmp_path)
+    dependency, requested = sorted(graph.nodes)[:2]
+    states[requested] = replace(
+        states[requested],
+        dependency_hashes=(
+            {
+                "relation": "contains-source",
+                "target": dependency,
+                "version": graph.nodes[dependency].version,
+                "node_hash": states[dependency].node_hash,
+            },
+        ),
+    )
+    report = CertificateCurrentnessReport(
+        nodes={
+            node_id: CertificateNodeCurrentness(
+                node_id=node_id,
+                current=node_id not in {requested, dependency},
+                concerns=(
+                    (f"dependency-not-current:{dependency}",)
+                    if node_id == requested
+                    else ("checks-mismatch",)
+                    if node_id == dependency
+                    else ()
+                ),
+                certificate=None,
+            )
+            for node_id in graph.nodes
+        }
+    )
+
+    worklist = certification_view_module.certificate_stale_worklist(
+        graph,
+        states,
+        report,
+        (requested,),
+    )
+
+    assert worklist == (dependency,)
+
+
+def test_stale_worklist_keeps_consumer_with_changed_dependency_claim(
+    tmp_path: Path,
+) -> None:
+    graph, states, _commit, _public_key_root, _backend, _key = _fixture(tmp_path)
+    dependency, requested = sorted(graph.nodes)[:2]
+    states[requested] = replace(
+        states[requested],
+        dependency_hashes=(
+            {
+                "relation": "contains-source",
+                "target": dependency,
+                "version": graph.nodes[dependency].version,
+                "node_hash": states[dependency].node_hash,
+            },
+        ),
+    )
+    report = CertificateCurrentnessReport(
+        nodes={
+            node_id: CertificateNodeCurrentness(
+                node_id=node_id,
+                current=node_id not in {requested, dependency},
+                concerns=(
+                    ("dependency-mismatch", f"dependency-not-current:{dependency}")
+                    if node_id == requested
+                    else ("checks-mismatch",)
+                    if node_id == dependency
+                    else ()
+                ),
+                certificate=None,
+            )
+            for node_id in graph.nodes
+        }
+    )
+
+    worklist = certification_view_module.certificate_stale_worklist(
+        graph,
+        states,
+        report,
+        (requested,),
+    )
+
+    assert worklist == (dependency, requested)
+
+
+def test_node_level_drift_reports_input_delta_and_blueprint_cause(
+    tmp_path: Path,
+) -> None:
+    graph, states, commit, public_key_root, _backend, key = _fixture(tmp_path)
+    node_id = "demo-skill"
+    payload = _payload(
+        tmp_path,
+        graph,
+        states,
+        node_id,
+        commit,
+        key.key_id,
+    )
+    certified_entry = dict(payload["input_manifest"][0])
+    payload["input_manifest"][0] = {
+        **certified_entry,
+        "digest": "sha256:" + "9" * 64,
+    }
+    payload["node_hash"] = "sha256:" + "8" * 64
+    _write_log(graph, node_id, [sign_certificate_payload(payload, key)])
+
+    status = _evaluate(
+        tmp_path,
+        graph,
+        states,
+        commit,
+        public_key_root,
+    ).nodes[node_id]
+
+    assert [
+        (delta.change, delta.path) for delta in status.input_files
+    ] == [("modified", certified_entry["path"])]
+    assert status.local_hash_changed
+    assert not status.declaration_changed
+    assert status.blueprint_path is None
+
+    payload = _payload(
+        tmp_path,
+        graph,
+        states,
+        node_id,
+        commit,
+        key.key_id,
+    )
+    payload["node_hash"] = "sha256:" + "7" * 64
+    _write_log(graph, node_id, [sign_certificate_payload(payload, key)])
+
+    declaration_status = _evaluate(
+        tmp_path,
+        graph,
+        states,
+        commit,
+        public_key_root,
+    ).nodes[node_id]
+
+    assert declaration_status.input_files == ()
+    assert declaration_status.declaration_changed
+    assert declaration_status.blueprint_path == (
+        graph.nodes[node_id].blueprint_path.relative_to(tmp_path).as_posix()
+    )
+
+
+def test_node_level_blueprint_input_delta_is_declaration_drift(
+    tmp_path: Path,
+) -> None:
+    graph, states, commit, public_key_root, _backend, key = _fixture(tmp_path)
+    node_id = "demo-skill"
+    blueprint_path = graph.nodes[node_id].blueprint_path.relative_to(
+        tmp_path
+    ).as_posix()
+    payload = _payload(
+        tmp_path,
+        graph,
+        states,
+        node_id,
+        commit,
+        key.key_id,
+    )
+    blueprint_entry = next(
+        entry for entry in payload["input_manifest"] if entry["path"] == blueprint_path
+    )
+    blueprint_entry["digest"] = "sha256:" + "9" * 64
+    payload["node_hash"] = "sha256:" + "8" * 64
+    _write_log(graph, node_id, [sign_certificate_payload(payload, key)])
+
+    status = _evaluate(
+        tmp_path,
+        graph,
+        states,
+        commit,
+        public_key_root,
+    ).nodes[node_id]
+
+    assert [(delta.change, delta.path) for delta in status.input_files] == [
+        ("modified", blueprint_path)
+    ]
+    assert status.declaration_changed
+    assert status.blueprint_path == blueprint_path
+
+
+def test_node_interface_dependency_drift_is_not_a_declaration_change(
+    tmp_path: Path,
+) -> None:
+    graph, states, commit, public_key_root, _backend, key = _fixture(tmp_path)
+    node_id = "demo-skill"
+    current_dependency = {
+        "relation": "uses-export",
+        "target": "provider",
+        "interface": "provider.interface.run",
+        "version": 1,
+        "interface_hash": "sha256:" + "2" * 64,
+    }
+    states[node_id] = replace(
+        states[node_id],
+        dependency_hashes=(current_dependency,),
+    )
+    payload = _payload(
+        tmp_path,
+        graph,
+        states,
+        node_id,
+        commit,
+        key.key_id,
+    )
+    payload["dependencies"] = [
+        {
+            **current_dependency,
+            "interface_hash": "sha256:" + "1" * 64,
+        }
+    ]
+    payload["node_hash"] = "sha256:" + "8" * 64
+    _write_log(graph, node_id, [sign_certificate_payload(payload, key)])
+
+    status = _evaluate(
+        tmp_path,
+        graph,
+        states,
+        commit,
+        public_key_root,
+    ).nodes[node_id]
+
+    assert [
+        (delta.change, delta.relation, delta.target, delta.interface)
+        for delta in status.dependencies
+    ] == [
+        ("modified", "uses-export", "provider", "provider.interface.run")
+    ]
+    assert status.local_hash_changed
+    assert not status.declaration_changed
+    assert status.blueprint_path is None
+
+
 def test_v6_currentness_marks_pre_facet_payload_stale(tmp_path: Path) -> None:
     (
         graph,

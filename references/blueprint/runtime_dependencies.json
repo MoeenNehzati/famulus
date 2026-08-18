@@ -7080,7 +7080,7 @@
                 "macos": true,
                 "windows": true
               },
-              "reason": "Parses v5 blueprint declarations during semantic inspection."
+              "reason": "Parses v6 blueprint declarations during semantic inspection."
             },
             {
               "kind": "python-package",

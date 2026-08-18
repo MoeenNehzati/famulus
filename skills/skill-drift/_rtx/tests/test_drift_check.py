@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import sys
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -204,6 +205,352 @@ def test_exact_cli_status_and_hash_routes_are_read_only(
     assert status["skills"][0]["status"] == "certificate-current"
     assert hashes["skills"][0]["hashes"]["nodes"]
     assert writes == []
+
+
+def test_status_payload_and_text_expose_structured_drift_and_worklist(
+    tmp_path: Path,
+) -> None:
+    input_delta = checker.CertificateInputDelta(
+        change="modified",
+        path="skills/demo/worker.py",
+        certified={
+            "path": "skills/demo/worker.py",
+            "digest": "sha256:" + "a" * 64,
+            "git_provenance": "tracked",
+        },
+        current={
+            "path": "skills/demo/worker.py",
+            "digest": "sha256:" + "b" * 64,
+            "git_provenance": "tracked",
+        },
+    )
+    dependency_delta = checker.CertificateDependencyDelta(
+        change="modified",
+        relation="uses-export",
+        target="provider.source.gateway",
+        interface="provider.interface.run",
+        certified={"interface_hash": "sha256:" + "c" * 64},
+        current={"interface_hash": "sha256:" + "d" * 64},
+    )
+    contract_dependency_delta = checker.CertificateDependencyDelta(
+        change="modified",
+        relation="references-cross-owner-contract",
+        target="contract.source.owner",
+        interface=None,
+        certified={"node_hash": "sha256:" + "e" * 64},
+        current={"node_hash": "sha256:" + "f" * 64},
+    )
+    facet = checker.CertificateFacetDrift(
+        facet_id="demo.source.gateway.interface.run",
+        facet_type="interface",
+        local_hash_changed=True,
+        declaration_changed=False,
+        blueprint_path=None,
+        input_files=(input_delta,),
+        dependencies=(dependency_delta, contract_dependency_delta),
+    )
+    report = checker.ModuleDriftReport(
+        skill="demo",
+        source="path",
+        package_root=tmp_path,
+        skills_root=tmp_path / "skills",
+        nodes=(
+            checker.NodeDriftStatus(
+                node_id="demo.source.gateway",
+                current=False,
+                concerns=("interface-hash-mismatch:demo.source.gateway.interface.run",),
+                certificate_path=tmp_path / "demo.jsonl",
+                facet_drift=(facet,),
+            ),
+        ),
+        stale_worklist=("provider.source.gateway", "demo.source.gateway"),
+    )
+
+    payload = checker.build_payload((report,))
+    text = checker.render_text((report,))
+
+    node = payload["skills"][0]["nodes"][0]
+    assert node["node_id"] == "demo.source.gateway"
+    assert node["facet_drift"][0]["input_files"][0] == {
+        "change": "modified",
+        "path": "skills/demo/worker.py",
+        "certified": input_delta.certified,
+        "current": input_delta.current,
+    }
+    assert node["facet_drift"][0]["dependencies"][0][
+        "interface"
+    ] == "provider.interface.run"
+    assert node["facet_drift"][0]["dependencies"][1]["target"] == (
+        "contract.source.owner"
+    )
+    assert payload["stale_worklist"] == [
+        "provider.source.gateway",
+        "demo.source.gateway",
+    ]
+    assert payload["skills"][0]["stale_worklist"] == payload["stale_worklist"]
+    assert text.index("provider.source.gateway") < text.index("demo.source.gateway")
+    assert "modified input skills/demo/worker.py" in text
+    assert "modified interface dependency provider.interface.run" in text
+    assert (
+        "modified dependency references-cross-owner-contract "
+        "contract.source.owner"
+    ) in text
+
+
+def test_render_text_dedupes_shared_drift_in_dependency_first_order(
+    tmp_path: Path,
+) -> None:
+    provider_id = "provider.source.gateway"
+    consumer_id = "consumer.source.gateway"
+    provider = checker.NodeDriftStatus(
+        node_id=provider_id,
+        current=False,
+        concerns=("node-hash-mismatch",),
+        certificate_path=tmp_path / "provider.jsonl",
+        facet_drift=(
+            checker.CertificateFacetDrift(
+                facet_id="provider.interface.run",
+                facet_type="interface",
+                local_hash_changed=True,
+                declaration_changed=True,
+                blueprint_path="skills/provider/blueprint.yaml",
+            ),
+        ),
+    )
+    consumer = checker.NodeDriftStatus(
+        node_id=consumer_id,
+        current=False,
+        concerns=("dependency-mismatch",),
+        certificate_path=tmp_path / "consumer.jsonl",
+        facet_drift=(
+            checker.CertificateFacetDrift(
+                facet_id=consumer_id,
+                facet_type="remainder",
+                local_hash_changed=True,
+                declaration_changed=True,
+                blueprint_path="skills/consumer/blueprint.yaml",
+            ),
+        ),
+    )
+    first = checker.ModuleDriftReport(
+        skill="consumer-one",
+        source="path",
+        package_root=tmp_path,
+        skills_root=tmp_path / "skills",
+        nodes=(consumer,),
+        stale_worklist=(provider_id, consumer_id),
+        dependency_nodes=(provider,),
+    )
+    second = checker.ModuleDriftReport(
+        skill="consumer-two",
+        source="path",
+        package_root=tmp_path,
+        skills_root=tmp_path / "skills",
+        nodes=(consumer,),
+        stale_worklist=(provider_id, consumer_id),
+        dependency_nodes=(provider,),
+    )
+
+    text = checker.render_text((first, second))
+
+    provider_heading = (
+        "### provider.source.gateway / interface provider.interface.run"
+    )
+    consumer_heading = (
+        "### consumer.source.gateway / remainder consumer.source.gateway"
+    )
+    assert text.count(provider_heading) == 1
+    assert text.count(consumer_heading) == 1
+    assert text.index(provider_heading) < text.index(consumer_heading)
+
+
+def test_reports_preserve_facet_drift_and_dependency_first_worklist(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph, states, _commit, _public_key_root, _backend, _key = (
+        create_certified_fixture(tmp_path)
+    )
+    module_id = "demo-skill"
+    source_id = graph.module_sources[module_id][0]
+    external_id = graph.module_sources["skill-certifier"][0]
+    states[module_id] = replace(
+        states[module_id],
+        dependency_hashes=(
+            {
+                "relation": "uses-source",
+                "target": external_id,
+                "version": graph.nodes[external_id].version,
+                "node_hash": states[external_id].node_hash,
+            },
+        ),
+    )
+    facet = checker.CertificateFacetDrift(
+        facet_id=external_id,
+        facet_type="remainder",
+        local_hash_changed=True,
+        declaration_changed=True,
+        blueprint_path="skills/demo-skill/blueprints/gateway.yaml",
+    )
+    currentness = checker.CertificateCurrentnessReport(
+        nodes={
+            node_id: checker.CertificateNodeCurrentness(
+                node_id=node_id,
+                current=node_id not in {module_id, external_id},
+                concerns=("node-hash-mismatch",)
+                if node_id in {module_id, external_id}
+                else (),
+                certificate=None,
+                facet_drift=(facet,) if node_id == external_id else (),
+            )
+            for node_id in graph.nodes
+        }
+    )
+    derived = checker._V4DerivedState(
+        graph=graph,
+        states=states,
+        basis_hash="sha256:" + "e" * 64,
+        currentness=currentness,
+    )
+    source = checker.SkillSource(
+        source="path",
+        package_root=tmp_path,
+        skills_root=tmp_path / "skills",
+    )
+    monkeypatch.setattr(
+        checker,
+        "_derive_for_source",
+        lambda *_args, **_kwargs: derived,
+    )
+
+    reports = checker.reports_for_scopes(
+        (checker.RequestedScope(source, (module_id,)),),
+        expected_schema_version=4,
+    )
+
+    assert reports[0].stale_worklist == (external_id, module_id)
+    assert {node.node_id for node in reports[0].nodes} == {
+        module_id,
+        source_id,
+    }
+    assert [node.node_id for node in reports[0].dependency_nodes] == [external_id]
+    assert reports[0].dependency_nodes[0].facet_drift == (facet,)
+
+
+def test_reports_share_one_canonical_repository_worklist_across_modules(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph, states, _commit, _public_key_root, _backend, _key = (
+        create_certified_fixture(tmp_path)
+    )
+    module_ids = ("demo-skill", "skill-certifier")
+    provider_id = graph.module_sources["skill-certifier"][0]
+    states[module_ids[0]] = replace(
+        states[module_ids[0]],
+        dependency_hashes=(
+            *states[module_ids[0]].dependency_hashes,
+            {
+                "relation": "uses-source",
+                "target": provider_id,
+                "version": graph.nodes[provider_id].version,
+                "node_hash": states[provider_id].node_hash,
+            },
+        ),
+    )
+    stale_ids = {*module_ids, provider_id}
+    currentness = checker.CertificateCurrentnessReport(
+        nodes={
+            node_id: checker.CertificateNodeCurrentness(
+                node_id=node_id,
+                current=node_id not in stale_ids,
+                concerns=("node-hash-mismatch",) if node_id in stale_ids else (),
+                certificate=None,
+            )
+            for node_id in graph.nodes
+        }
+    )
+    derived = checker._V4DerivedState(
+        graph=graph,
+        states=states,
+        basis_hash="sha256:" + "e" * 64,
+        currentness=currentness,
+    )
+    source = checker.SkillSource(
+        source="path",
+        package_root=tmp_path,
+        skills_root=tmp_path / "skills",
+    )
+    monkeypatch.setattr(
+        checker,
+        "_derive_for_source",
+        lambda *_args, **_kwargs: derived,
+    )
+
+    reports = checker.reports_for_scopes(
+        (
+            checker.RequestedScope(
+                source,
+                tuple(reversed(module_ids)),
+            ),
+        ),
+        expected_schema_version=4,
+    )
+    expected = checker.certificate_stale_worklist(
+        graph,
+        states,
+        currentness,
+        tuple(
+            node_id
+            for module_id in module_ids
+            for node_id in (module_id, *graph.module_sources[module_id])
+        ),
+    )
+
+    assert expected == (provider_id, *sorted(module_ids))
+    assert {report.repository_stale_worklist for report in reports} == {expected}
+    assert checker.build_payload(reports)["stale_worklist"] == list(expected)
+    assert checker.render_text(reports).index(expected[0]) < (
+        checker.render_text(reports).index(expected[1])
+    )
+
+
+def test_top_level_worklist_qualifies_identical_ids_from_distinct_repositories(
+    tmp_path: Path,
+) -> None:
+    node_id = "demo.source.gateway"
+    roots = (tmp_path / "one", tmp_path / "two")
+    reports = tuple(
+        checker.ModuleDriftReport(
+            skill=f"demo-{index}",
+            source="path",
+            package_root=root,
+            skills_root=root / "skills",
+            nodes=(
+                checker.NodeDriftStatus(
+                    node_id=node_id,
+                    current=False,
+                    concerns=("node-hash-mismatch",),
+                    certificate_path=root / "certificate.jsonl",
+                    local_hash_changed=True,
+                ),
+            ),
+            stale_worklist=(node_id,),
+            repository_stale_worklist=(node_id,),
+        )
+        for index, root in enumerate(roots)
+    )
+
+    payload = checker.build_payload(reports)
+    text = checker.render_text(reports)
+
+    qualified = [f"{root.resolve().as_posix()}::{node_id}" for root in roots]
+    assert payload["stale_worklist"] == qualified
+    assert [
+        entry["package_root"] for entry in payload["repository_stale_worklists"]
+    ] == [root.resolve().as_posix() for root in roots]
+    assert all(identifier in text for identifier in qualified)
+    assert all(f"### {identifier} / node {node_id}" in text for identifier in qualified)
 
 
 def test_v4_drift_propagates_explicit_non_atomic_fallback(

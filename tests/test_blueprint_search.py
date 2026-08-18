@@ -325,7 +325,7 @@ def test_v6_search_exposes_current_skill_drift_registered_descriptions() -> None
             "values": {
                 "id": "skill-drift",
                 "description": (
-                    "Computes canonical v5 node hashes and reports whether "
+                    "Computes canonical v6 node hashes and reports whether "
                     "installed modules have current signed certificates."
                 ),
             },
@@ -337,7 +337,8 @@ def test_v6_search_exposes_current_skill_drift_registered_descriptions() -> None
                 "id": "skill-drift.source.gateway",
                 "description": (
                     "Defines the LLM-facing rules for reading exact "
-                    "signed-certificate currentness and canonical v5 node hashes."
+                    "signed-certificate currentness, stale worklists, and "
+                    "canonical v6 node hashes."
                 ),
             },
         },

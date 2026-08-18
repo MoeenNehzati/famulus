@@ -51,7 +51,7 @@ CANONICAL_NODE_HASH_POLICY = Path(
 CERTIFIER_NODE_ID = "skill-certifier"
 CERTIFIER_INTERFACE_ID = "skill-certifier.interface.certify"
 V6_CERTIFIER_INTERFACE_ID = "skill-certifier._rtx.interface.certify"
-CERTIFIER_INTERFACE_VERSION = 1
+CERTIFIER_INTERFACE_VERSION = 2
 CERTIFIER_CHECK_REGISTRY: Mapping[str, tuple[str, int]] = {
     "deterministic": ("v4-deterministic", 1),
     "route-smoke": ("route-smoke-dependencies", 1),
@@ -753,14 +753,16 @@ def derive_certifier_identity(
     if graph.schema_version == 6:
         interface_id = V6_CERTIFIER_INTERFACE_ID
         interface_owner_id = f"{CERTIFIER_NODE_ID}._rtx"
+        interface_version = CERTIFIER_INTERFACE_VERSION
     else:
         interface_id = CERTIFIER_INTERFACE_ID
         interface_owner_id = CERTIFIER_NODE_ID
+        interface_version = 1
     export = graph.exports.get(interface_id)
     if (
         export is None
         or export.module_node_id != interface_owner_id
-        or export.version != CERTIFIER_INTERFACE_VERSION
+        or export.version != interface_version
     ):
         raise CertificationHashError(
             "canonical certifier interface is absent or has the wrong version"
@@ -782,7 +784,7 @@ def derive_certifier_identity(
         raise CertificationHashError("canonical certifier source commit is unavailable")
     return {
         "interface": interface_id,
-        "version": CERTIFIER_INTERFACE_VERSION,
+        "version": interface_version,
         "node_hash": node_hash,
         "source_commit": source_commit,
     }

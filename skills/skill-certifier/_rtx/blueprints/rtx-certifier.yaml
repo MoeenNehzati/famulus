@@ -2,9 +2,9 @@ content:
 - _node_certifier\.py
 - __init__\.py
 dependencies: []
-description: Runs the public v5 certification gate and the frozen candidate-review
-  transition, derives every certificate field internally, and appends signed Ed25519
-  certificates for exact reviewed commits.
+description: Runs the public v6 certification gate and the frozen candidate-review
+  transition, derives every certificate field internally, skips current nodes,
+  and appends signed Ed25519 certificates for stale nodes at exact reviewed commits.
 gateway:
   language: Python
   path: _node_certifier.py
@@ -56,7 +56,7 @@ interfaces:
             kind: string
             sensitivity: public
         reviewed-repository:
-          description: Exact repository root whose v5 blueprints the invoking LLM
+          description: Exact repository root whose v6 blueprints the invoking LLM
             reviewed.
           direct_io_ref: read-1
           required: true
@@ -80,12 +80,11 @@ interfaces:
             kind: list
       caller_warnings:
       - external-side-effect: Runs the repository validator runner, including blueprint
-          synchronization checks, and the scoped route-smoke dependency audit before
-          signing.
+          synchronization checks, and route-smokes only stale nodes before signing.
       - external-side-effect: Creates or reuses certifier signing material and appends
-          signed records to affected node histories.
-      - external-side-effect: Regenerates each selected module's certificate-backed
-          pooled review after certificate currentness verification.
+          signed records only to stale node histories.
+      - external-side-effect: Regenerates a selected module's certificate-backed
+          pooled review only when at least one node in its closure was issued.
       - external-side-effect: Requires an explicit repository-bound reviewed commit;
           the machine path never substitutes HEAD for missing review attestation.
       - external-side-effect: --allow-non-atomic explicitly weakens per-file atomicity
@@ -109,8 +108,8 @@ interfaces:
           medium: local-filesystem
           path: $target/**
           path_match: glob
-          reason: Reconstruct exact v5 graph, hash, certifier, predecessor, and certificate-currentness
-            state.
+          reason: Reconstruct exact v6 graph, hash, certifier, predecessor, and certificate-currentness
+            state, then derive the stale issuance worklist.
           sensitivity: user-private
           system: filesystem
         - access: read
@@ -161,7 +160,8 @@ interfaces:
           - markdown
           id: write-3
           medium: stdout
-          reason: Return mechanical evidence and exact node certificate paths.
+          reason: Return mechanical evidence, exact node certificate paths, and whether
+            each node was issued or already current.
           sensitivity: derived-private
           system: agent-runtime
         - access: write
@@ -255,8 +255,8 @@ interfaces:
             safe: Concurrent appends against the same predecessor conflict instead
               of silently forking history.
           idempotency:
-            non_idempotent: A successful repeated certification appends another signed
-              history entry.
+            idempotent: Repeating against an unchanged successfully certified repository
+              performs no further certificate or pooled-review writes.
           on_uncertain_completion:
             verify_then_decide: Read certificate currentness and the append-only history
               before retrying.
@@ -275,6 +275,13 @@ interfaces:
       interaction:
         mode: unattended
       outcomes:
+      - caller_action: Treat every selected node as already current; no certificate
+          history or pooled review was written.
+        class: success
+        effects: []
+        id: current
+        outputs:
+        - certification-report
       - caller_action: Treat only the listed node histories as newly certified.
         class: success
         effects:
@@ -306,8 +313,8 @@ interfaces:
         cardinality:
           maximum: 1
           minimum: 1
-        description: JSON or Markdown containing mechanical evidence and exact certificates
-          issued for each selected module.
+        description: JSON or Markdown containing mechanical evidence, exact certificate
+          paths, and issued-versus-current status for every selected node and module.
         direct_io_ref: write-3
         empty: Never empty after the mechanical gate completes.
         id: certification-report
@@ -338,8 +345,9 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Certify exact v5 module closures by appending signed certificate
-      histories for an explicit reviewed repository commit.
+    description: Certify exact v6 module closures by skipping current nodes and appending
+      signed certificate histories for stale nodes at an explicit reviewed repository
+      commit.
     process_binding:
       entry: Interface
       kind: process
@@ -359,7 +367,7 @@ interfaces:
           '0': ^certify$
     usage: certify [target ...] --reviewed-repository ROOT --reviewed-commit COMMIT
       [--json] [--allow-non-atomic]
-    version: 1
+    version: 2
 node_type: behavioral_source
 platform_support:
   linux: true
@@ -372,7 +380,7 @@ runtime_dependencies:
     linux: true
     macos: true
     windows: true
-  reason: Parses v5 blueprint declarations during semantic inspection.
+  reason: Parses v6 blueprint declarations during semantic inspection.
   version: any
 - kind: python-package
   name: pyflakes
@@ -416,4 +424,4 @@ uses_interfaces:
   version: 1
 - interface: common.interface.repository-paths
   version: 1
-version: 1
+version: 2

@@ -58,6 +58,7 @@ from officina.blueprints.graph import (
 from officina.certification.view import (
     CertificateCurrentnessView,
     certificate_log_path,
+    certificate_requires_renewal,
     evaluate_certificate_currentness,
 )
 from officina.git.provenance import (
@@ -129,7 +130,7 @@ class CertificationResult:
 
     Intent
     ------
-    Store the source module, reviewed commit, module root, and per-node outcomes returned by the certificate writer.
+    Store newly written and already-current node IDs together with the reviewed commit returned by the certificate writer.
 
     Rationale
     ---------
@@ -137,8 +138,8 @@ class CertificationResult:
 
     Pseudocode
     ----------
-    - set result_fields = module source module_root nodes
-    - return issued_certificate_record
+    - set result_fields = written_nodes current_nodes source_commit
+    - return certification_result
 
     Wraps
     -----
@@ -147,6 +148,7 @@ class CertificationResult:
 
     node_ids: tuple[str, ...]
     source_commit: str
+    current_node_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -3335,6 +3337,7 @@ def _certify_repository(
     secret_backend: object,
     reviewed_commit: str,
     certified_at: str,
+    before_stale_issuance: object | None = None,
     before_append: object | None = None,
     after_append: object | None = None,
     allow_non_atomic: bool = False,
@@ -3347,7 +3350,7 @@ def _certify_repository(
 
     Intent
     ------
-    Freeze repository state, derive graph hashes and certifier identity, run gates, sign each target payload, and append certificate log entries.
+    Freeze repository state, derive graph hashes and certifier identity, retain reusable target certificates, and run gates and appends only for intrinsic renewal targets.
 
     Rationale
     ---------
@@ -3399,7 +3402,7 @@ def _certify_repository(
         raises: "Carries repository, evidence, gate, signing, and final-verification denials."
     .CertificationResult:
       why:
-        constructs: "Carries the written node order and reviewed commit to the public boundary."
+        constructs: "Carries written and already-current node orders with the reviewed commit to the public boundary."
     .RepositoryEvidenceLoader:
       why:
         constructs: "Produces independent initial and final evidence observations for comparison."
@@ -3423,7 +3426,10 @@ def _certify_repository(
         constructs: "Carries final current certificates into pooled-review rendering."
     officina.certification.view.evaluate_certificate_currentness:
       why:
-        constructs: "Produces the final report used to verify written nodes and reviews."
+        constructs: "Produces the final report used to verify every selected node and changed review."
+    officina.certification.view.certificate_requires_renewal:
+      why:
+        validates: "Separates intrinsic certificate drift from currentness propagated only from stale dependencies."
     officina.git.provenance.blueprint_v4_mechanical_commit:
       why:
         constructs: "Produces the optional migration baseline used by semantic replay."
@@ -3523,15 +3529,52 @@ def _certify_repository(
         )
     except CertificationHashError as exc:
         raise CertificationError(str(exc)) from exc
-    route_auditor = RouteSmokeAuditor(
+    expected_checks_by_node = {
+        node_id: expected_certifier_checks(expected_schema_version)
+        for node_id in graph.nodes
+    }
+    initial_report = evaluate_certificate_currentness(
         graph,
         states,
         repo_root=root,
-        certification_basis_paths=basis_paths,
-        certification_node_ids=order,
+        public_key_root=public_key_root,
+        source_commit=snapshot.commit,
+        certifier_identity=certifier_identity,
+        checks_by_node=expected_checks_by_node,
         schema_root=selected_schema_root,
+        certification_basis_paths=basis_paths,
+        allow_non_atomic=allow_non_atomic,
     )
-    route_auditor.require_stable_dependencies()
+    invalid_history = next(
+        (
+            node_id
+            for node_id in order
+            if "invalid-certificate-schema"
+            in initial_report.nodes[node_id].concerns
+        ),
+        None,
+    )
+    if invalid_history is not None:
+        raise CertificationError(
+            f"{invalid_history}: invalid certificate history schema"
+        )
+    renewal_order = tuple(
+        node_id
+        for node_id in order
+        if certificate_requires_renewal(initial_report.nodes[node_id])
+    )
+    if renewal_order:
+        if callable(before_stale_issuance):
+            before_stale_issuance()
+        route_auditor = RouteSmokeAuditor(
+            graph,
+            states,
+            repo_root=root,
+            certification_basis_paths=basis_paths,
+            certification_node_ids=renewal_order,
+            schema_root=selected_schema_root,
+        )
+        route_auditor.require_stable_dependencies()
 
     tracked_paths: set[Path] = {
         root / repository_relative_path(path, root)
@@ -3567,37 +3610,39 @@ def _certify_repository(
         pooled_review_relatives=pooled_review_relatives,
     )
 
-    if Path(public_key_root).resolve() == certificate_public_key_root(root):
-        key = provision_certificate_signing_material(
-            root,
-            secret_backend=secret_backend,
+    if renewal_order:
+        if Path(public_key_root).resolve() == certificate_public_key_root(root):
+            key = provision_certificate_signing_material(
+                root,
+                secret_backend=secret_backend,
+                allow_non_atomic=allow_non_atomic,
+            )
+        else:
+            key = load_or_create_certificate_signing_key(
+                public_key_root,
+                secret_backend=secret_backend,
+                allow_non_atomic=allow_non_atomic,
+            )
+        issued_batch = CertificateBatchIssuer(
+            repo_root=root,
+            graph=graph,
+            states=states,
+            node_order=renewal_order,
+            snapshot=snapshot,
+            public_key_root=public_key_root,
+            signing_key=key,
+            certifier_identity=certifier_identity,
+            reviewed_commit=reviewed_commit,
+            certified_at=certified_at,
+            expected_schema_version=expected_schema_version,
             allow_non_atomic=allow_non_atomic,
-        )
+            freeze_guard=freeze_guard,
+            before_append=before_append,
+            after_append=after_append,
+        ).issue_all()
     else:
-        key = load_or_create_certificate_signing_key(
-            public_key_root,
-            secret_backend=secret_backend,
-            allow_non_atomic=allow_non_atomic,
-        )
-    issued_batch = CertificateBatchIssuer(
-        repo_root=root,
-        graph=graph,
-        states=states,
-        node_order=order,
-        snapshot=snapshot,
-        public_key_root=public_key_root,
-        signing_key=key,
-        certifier_identity=certifier_identity,
-        reviewed_commit=reviewed_commit,
-        certified_at=certified_at,
-        expected_schema_version=expected_schema_version,
-        allow_non_atomic=allow_non_atomic,
-        freeze_guard=freeze_guard,
-        before_append=before_append,
-        after_append=after_append,
-    ).issue_all()
+        issued_batch = IssuedCertificateBatch((), {})
     written = list(issued_batch.node_ids)
-    normalized_checks = dict(issued_batch.checks_by_node)
 
     final_snapshot = capture_git_snapshot(root)
     if (
@@ -3624,23 +3669,39 @@ def _certify_repository(
         public_key_root=public_key_root,
         source_commit=final_snapshot.commit,
         certifier_identity=final_certifier_identity,
-        checks_by_node=normalized_checks,
+        checks_by_node=expected_checks_by_node,
         schema_root=selected_schema_root,
         certification_basis_paths=final_basis_paths,
         allow_non_atomic=allow_non_atomic,
     )
-    for node_id in written:
+    for node_id in order:
         if not final_report.nodes[node_id].current:
             raise CertificationError(
                 f"post-write certificate verification failed for {node_id}"
             )
     pooled_view = CertificateCurrentnessView(final_report)
-    for module_id in sorted(
-        node_id
-        for node_id in target_node_ids
-        if node_id in final_graph.nodes
-        and final_graph.nodes[node_id].node_type == "module"
-    ):
+    requested_module_ids = tuple(
+        sorted(
+            node_id
+            for node_id in target_node_ids
+            if node_id in final_graph.nodes
+            and final_graph.nodes[node_id].node_type == "module"
+        )
+    )
+    written_set = set(written)
+    review_module_ids: list[str] = []
+    for module_id in requested_module_ids:
+        module_order = certification_target_postorder(
+            final_graph,
+            final_states,
+            (
+                module_id,
+                *final_graph.module_sources.get(module_id, ()),
+            ),
+        )
+        if written_set.intersection(module_order):
+            review_module_ids.append(module_id)
+    for module_id in review_module_ids:
         module = final_graph.nodes[module_id]
         path = pooled_review_path(module.module_root)
         try:
@@ -3674,7 +3735,13 @@ def _certify_repository(
             raise CertificationError(
                 f"{module_id}: pooled review write failed: {exc}"
             ) from exc
-    return CertificationResult(tuple(written), snapshot.commit)
+    return CertificationResult(
+        tuple(written),
+        snapshot.commit,
+        current_node_ids=tuple(
+            node_id for node_id in order if node_id not in written_set
+        ),
+    )
 
 
 @dataclass(frozen=True)
@@ -3763,7 +3830,7 @@ class NodeCertificationOutcome:
 
     Intent
     ------
-    Store the certified node id and log path belonging to a module-level certification result.
+    Store a satisfied node's id, log path, and whether its certificate was issued or already current.
 
     Rationale
     ---------
@@ -3771,7 +3838,7 @@ class NodeCertificationOutcome:
 
     Pseudocode
     ----------
-    - set node_fields = node_id certificate_path
+    - set node_fields = node_id certificate_path status
     - return node_fields
 
     Wraps
@@ -3780,6 +3847,7 @@ class NodeCertificationOutcome:
     """
     node_id: str
     certificate_path: Path
+    status: str
 
     def as_payload(self) -> dict[str, str]:
         """as_payload serializes one node certification outcome.
@@ -3804,6 +3872,7 @@ class NodeCertificationOutcome:
         return {
             "node_id": self.node_id,
             "certificate_path": self.certificate_path.as_posix(),
+            "status": self.status,
         }
 
 
@@ -3813,7 +3882,7 @@ class CertificationOutcome:
 
     Intent
     ------
-    Store the module id, source name, module root, and node outcomes returned by certification.
+    Store the module id, source name, module root, aggregate status, and node outcomes returned by certification.
 
     Rationale
     ---------
@@ -3821,7 +3890,7 @@ class CertificationOutcome:
 
     Pseudocode
     ----------
-    - set outcome_fields = module source root nodes
+    - set outcome_fields = module source root nodes status
     - return outcome_fields
 
     Wraps
@@ -3832,6 +3901,7 @@ class CertificationOutcome:
     source: str
     module_root: Path
     nodes: tuple[NodeCertificationOutcome, ...]
+    status: str
 
     def as_payload(self) -> dict[str, Any]:
         """as_payload serializes a module certification outcome.
@@ -3857,7 +3927,7 @@ class CertificationOutcome:
             "module": self.module,
             "source": self.source,
             "module_root": self.module_root.as_posix(),
-            "status": "certified",
+            "status": self.status,
             "nodes": [node.as_payload() for node in self.nodes],
         }
 
@@ -4082,7 +4152,7 @@ def certify(
     ----------------------
     .CertificationError:
       why:
-        raises: "Missing reviewed inputs, incompatible graphs, private-writer failure, or incomplete issuance leave as typed API rejections."
+        raises: "Missing reviewed inputs, incompatible graphs, private-writer failure, or incomplete satisfaction leave as typed API rejections."
     .CertificationOutcome:
       why:
         constructs: "Module-level outcomes are returned to CLI rendering or JSON output."
@@ -4091,7 +4161,7 @@ def certify(
         constructs: "Node-level certificate paths are carried inside returned module outcomes."
     ._certify_repository:
       why:
-        constructs: "The private writer result determines which requested nodes were actually issued."
+        constructs: "The private writer result distinguishes newly issued requested nodes from already-current ones."
     .resolve_reviewed_repository_targets:
       why:
         transforms: "User target requests become concrete module nodes for expansion and reporting."
@@ -4137,7 +4207,7 @@ def certify(
         target_nodes_by_module[target.node_id] = node_ids
         requested_node_ids.update(node_ids)
 
-    evidence = [run_mechanical_checks(repository)]
+    evidence: list[CommandResult] = []
     result = _certify_repository(
         repository,
         target_node_ids=tuple(sorted(requested_node_ids)),
@@ -4146,6 +4216,9 @@ def certify(
         reviewed_commit=reviewed_commit,
         certified_at=timestamp
         or datetime.now().astimezone().isoformat(timespec="seconds"),
+        before_stale_issuance=lambda: evidence.append(
+            run_mechanical_checks(repository)
+        ),
         allow_non_atomic=allow_non_atomic,
         require_candidate_execution=True,
         require_migration_review=False,
@@ -4153,10 +4226,12 @@ def certify(
         schema_root=repository / "references" / "blueprint",
     )
     written = set(result.node_ids)
-    missing = requested_node_ids - written
+    current = set(result.current_node_ids)
+    satisfied = written | current
+    missing = requested_node_ids - satisfied
     if missing:
         raise CertificationError(
-            "certifier did not issue every requested certificate: "
+            "certifier did not satisfy every requested certificate: "
             + ", ".join(sorted(missing))
         )
 
@@ -4169,9 +4244,18 @@ def certify(
                 NodeCertificationOutcome(
                     node_id=node_id,
                     certificate_path=certificate_log_path(graph.nodes[node_id]),
+                    status=(
+                        "certificate-issued"
+                        if node_id in written
+                        else "certificate-current"
+                    ),
                 )
-                for node_id in result.node_ids
-                if node_id in target_nodes_by_module[target.node_id]
+                for node_id in target_nodes_by_module[target.node_id]
+            ),
+            status=(
+                "certificate-issued"
+                if written.intersection(target_nodes_by_module[target.node_id])
+                else "certificate-current"
             ),
         )
         for target in resolved
@@ -4184,7 +4268,7 @@ def render_text(outcomes: Sequence[CertificationOutcome]) -> str:
 
     Intent
     ------
-    Convert module and node outcomes into stable human-readable lines.
+    Convert module and node outcomes, including issued-versus-current status, into stable human-readable lines.
 
     Rationale
     ---------
@@ -4202,13 +4286,15 @@ def render_text(outcomes: Sequence[CertificationOutcome]) -> str:
     lines = [
         "# Certificate Report",
         "",
-        "| Source | Module | Nodes |",
-        "|---|---|---|",
+        "| Source | Module | Status | Nodes |",
+        "|---|---|---|---|",
     ]
     for outcome in outcomes:
         lines.append(
-            f"| {outcome.source} | {outcome.module} | "
-            + ", ".join(node.node_id for node in outcome.nodes)
+            f"| {outcome.source} | {outcome.module} | {outcome.status} | "
+            + ", ".join(
+                f"{node.node_id} [{node.status}]" for node in outcome.nodes
+            )
             + " |"
         )
     return "\n".join(lines) + "\n"
