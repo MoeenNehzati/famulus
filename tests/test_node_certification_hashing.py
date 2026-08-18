@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
 import subprocess
@@ -115,6 +116,7 @@ def _write_module(
     module_id: str,
     *,
     uses_export: str | None = None,
+    schema_version: int = 4,
 ) -> None:
     module = root / "skills" / module_id
     (module / "_rtx").mkdir(parents=True)
@@ -128,7 +130,7 @@ def _write_module(
     _write_yaml(
         module / "blueprints" / "gateway.yaml",
         {
-            "schema_version": 4,
+            "schema_version": schema_version,
             "node_type": "behavioral_source",
             "id": source_id,
             "version": 1,
@@ -158,7 +160,7 @@ def _write_module(
     _write_yaml(
         module / "blueprint.yaml",
         {
-            "schema_version": 4,
+            "schema_version": schema_version,
             "node_type": "module",
             "id": module_id,
             "version": 1,
@@ -180,6 +182,11 @@ def _write_module(
                     }
                 }
             },
+            **(
+                {"children": {}, "namespace_exports": {}}
+                if schema_version == 6
+                else {}
+            ),
             "exports": {
                 f"{module_id}.interface.run": {
                     "source_interface": source_interface,
@@ -236,6 +243,54 @@ def _states(
         policy_path=policy,
         certification_basis_hash="sha256:" + "b" * 64,
         certification_basis_paths=certification_basis_paths,
+    )
+
+
+def _v6_repository(tmp_path: Path) -> tuple[Path, Path]:
+    repository = GitTestRepository.initialize_existing_empty(tmp_path)
+    _write_module(tmp_path, "provider-skill", schema_version=6)
+    _write_module(
+        tmp_path,
+        "consumer-skill",
+        uses_export="provider-skill.interface.run",
+        schema_version=6,
+    )
+    (tmp_path / ".gitignore").write_text(
+        "ignored.txt\n*.log\n", encoding="utf-8"
+    )
+    policy = tmp_path / "node-hash-policy.yaml"
+    _write_yaml(
+        policy,
+        {
+            "policy_version": 1,
+            "path_syntax": "gitignore",
+            "starting_set": "git-tracked-directly-owned-regular-files",
+            "rules": [
+                {"action": "exclude", "pattern": "**/*.log"},
+                {
+                    "action": "include",
+                    "pattern": "**/ignored.txt",
+                    "require_match": True,
+                },
+            ],
+        },
+    )
+    repository.git("add", ".")
+    repository.git("commit", "-qm", "v6 fixture")
+    return tmp_path, policy
+
+
+def _v6_states(root: Path, policy: Path) -> dict[str, NodeHashState]:
+    graph = load_repository_blueprint_graph(
+        root,
+        schema_root=CANONICAL_SCHEMA_ROOT,
+        expected_schema_version=6,
+    )
+    return compute_node_hash_states(
+        graph,
+        repo_root=root,
+        policy_path=policy,
+        certification_basis_hash="sha256:" + "b" * 64,
     )
 
 
@@ -505,6 +560,84 @@ def test_dependency_change_does_not_recursively_change_consumer_local_hash(
         != first["provider-skill.source.gateway"].node_hash
     )
     assert second["provider-skill"].node_hash == first["provider-skill"].node_hash
+
+
+def test_v6_interface_dependency_hash_ignores_unrelated_provider_blueprint_fields(
+    tmp_path: Path,
+) -> None:
+    root, policy = _v6_repository(tmp_path)
+    first = _v6_states(root, policy)
+    consumer_id = "consumer-skill.source.gateway"
+    provider_id = "provider-skill.source.gateway"
+    interface_id = "provider-skill.interface.run"
+    first_dependency = next(
+        dependency
+        for dependency in first[consumer_id].dependency_hashes
+        if dependency["relation"] == "uses-export"
+    )
+
+    provider_blueprint = root / "skills/provider-skill/blueprints/gateway.yaml"
+    provider = yaml.safe_load(provider_blueprint.read_text(encoding="utf-8"))
+    source_interface_id = "provider-skill.source.gateway.interface.run"
+    provider["interfaces"][
+        "provider-skill.source.gateway.interface.other"
+    ] = deepcopy(provider["interfaces"][source_interface_id])
+    provider["interfaces"][
+        "provider-skill.source.gateway.interface.other"
+    ]["description"] = "An unrelated interface."
+    _write_yaml(provider_blueprint, provider)
+    second = _v6_states(root, policy)
+    second_dependency = next(
+        dependency
+        for dependency in second[consumer_id].dependency_hashes
+        if dependency["relation"] == "uses-export"
+    )
+
+    assert first_dependency == second_dependency
+    assert first_dependency["interface"] == interface_id
+    assert first_dependency["interface_hash"].startswith("sha256:")
+    assert "node_hash" not in first_dependency
+    assert second[provider_id].node_hash != first[provider_id].node_hash
+
+
+def test_v6_interface_dependency_hash_changes_with_used_contract(
+    tmp_path: Path,
+) -> None:
+    root, policy = _v6_repository(tmp_path)
+    graph = load_repository_blueprint_graph(
+        root,
+        schema_root=CANONICAL_SCHEMA_ROOT,
+        expected_schema_version=6,
+    )
+    interface_id = "provider-skill.interface.run"
+    extracted = certification_hashing.extract_interface_from_blueprint(
+        graph,
+        interface_id,
+        1,
+    )
+    first_hash = certification_hashing.compute_interface_hash(extracted)
+
+    provider_blueprint = root / "skills/provider-skill/blueprints/gateway.yaml"
+    provider = yaml.safe_load(provider_blueprint.read_text(encoding="utf-8"))
+    source_interface_id = "provider-skill.source.gateway.interface.run"
+    provider["interfaces"][source_interface_id]["contract"]["execution"][
+        "consistency"
+    ]["snapshot"] = "The contract changed."
+    _write_yaml(provider_blueprint, provider)
+    changed_graph = load_repository_blueprint_graph(
+        root,
+        schema_root=CANONICAL_SCHEMA_ROOT,
+        expected_schema_version=6,
+    )
+    changed = certification_hashing.extract_interface_from_blueprint(
+        changed_graph,
+        interface_id,
+        1,
+    )
+
+    assert extracted["id"] == interface_id
+    assert extracted["source_interface"] == source_interface_id
+    assert certification_hashing.compute_interface_hash(changed) != first_hash
 
 
 def test_repository_root_contract_reference_targets_exact_file_owner(

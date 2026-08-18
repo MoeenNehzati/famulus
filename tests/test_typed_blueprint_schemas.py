@@ -774,6 +774,38 @@ def test_v4_certificate_keeps_runtime_claim_audits_in_versioned_checks() -> None
     assert _errors(runtime_check, "certificate.schema.json") == []
 
 
+def test_current_certificate_accepts_explicit_interface_dependency_hash() -> None:
+    document = _valid_v4_certificate()
+    document["payload"]["certificate_schema_version"] = 2
+    document["payload"]["dependencies"] = [
+        {
+            "relation": "uses-export",
+            "target": "other-skill.source.gateway",
+            "interface": "other-skill.interface.run",
+            "version": 2,
+            "interface_hash": "sha256:" + "c" * 64,
+        }
+    ]
+
+    canonical_root = REPO_ROOT / "references" / "blueprint"
+    schema = json.loads(
+        (canonical_root / "certificate.schema.json").read_text(encoding="utf-8")
+    )
+    store = {
+        child.name: json.loads(child.read_text(encoding="utf-8"))
+        for child in canonical_root.glob("*.schema.json")
+    }
+    resolver = jsonschema.RefResolver(
+        base_uri=(canonical_root / "certificate.schema.json").resolve().as_uri(),
+        referrer=schema,
+        store=store,
+    )
+
+    assert list(
+        jsonschema.Draft7Validator(schema, resolver=resolver).iter_errors(document)
+    ) == []
+
+
 @pytest.mark.parametrize(
     "removed_field",
     [

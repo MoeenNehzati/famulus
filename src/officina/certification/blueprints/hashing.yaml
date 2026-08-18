@@ -26,9 +26,9 @@ dependencies:
   source: common.source.repository-paths
   version: 1
 description: Resolves the canonical certification basis and node inputs, computes
-  deterministic v4 node hashes and dependency-first target order, maps already observed
-  route-smoke paths to declared authority, and derives certifier identity and expected
-  checks.
+  deterministic node and interface hashes and dependency-first target order, maps
+  already observed route-smoke paths to declared authority, and derives certifier
+  identity and expected checks.
 gateway:
   language: Python
   path: hashing.py
@@ -67,6 +67,11 @@ interfaces:
             - description: Compute canonical v4 node hash states from the graph and
                 node-input policy.
               value: hash-nodes
+            - description: Extract the canonical blueprint projection of one resolved
+                interface.
+              value: extract-interface
+            - description: Hash one canonical extracted interface projection.
+              value: hash-interface
             - description: Order exact targets after their canonical certification
                 dependencies.
               value: order-certification-targets
@@ -162,8 +167,8 @@ interfaces:
           kind: string
           sensitivity: user-private
       preconditions: []
-    description: Computes canonical v4 certification state and dependency-first target
-      order, and maps already observed route-smoke paths for Python callers.
+    description: Computes canonical node and interface certification state and dependency-first
+      target order, and maps already observed route-smoke paths for Python callers.
     version: 1
 node_type: behavioral_source
 schema_version: 6

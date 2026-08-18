@@ -79,7 +79,7 @@
         "node_hash": {"$ref": "#/definitions/sha256"}
       }
     },
-    "dependencyV2": {
+    "nodeDependencyV2": {
       "type": "object",
       "required": ["relation", "target", "version", "node_hash"],
       "additionalProperties": false,
@@ -106,6 +106,30 @@
         "version": {"$ref": "common.schema.json#/definitions/interfaceVersion"},
         "node_hash": {"$ref": "#/definitions/sha256"}
       }
+    },
+    "interfaceDependencyV2": {
+      "type": "object",
+      "required": ["relation", "target", "interface", "version", "interface_hash"],
+      "additionalProperties": false,
+      "properties": {
+        "relation": {
+          "enum": ["uses-private-interface", "uses-export"]
+        },
+        "target": {
+          "$ref": "common.schema.json#/definitions/behavioralSourceId"
+        },
+        "interface": {
+          "$ref": "common.schema.json#/definitions/interfaceId"
+        },
+        "version": {"$ref": "common.schema.json#/definitions/interfaceVersion"},
+        "interface_hash": {"$ref": "#/definitions/sha256"}
+      }
+    },
+    "dependencyV2": {
+      "oneOf": [
+        {"$ref": "#/definitions/nodeDependencyV2"},
+        {"$ref": "#/definitions/interfaceDependencyV2"}
+      ]
     },
     "certifier": {
       "type": "object",
