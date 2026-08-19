@@ -602,6 +602,19 @@ def run(
     if do_codex:
         install_codex_hooks(codex_home, repo_root, dry_run, manifest)
 
+    # The milestone instruction in CLAUDE.md names `milestone` as a command, so
+    # the helpers must be on PATH wherever that instruction is delivered.
+    try:
+        from ._fs_links import default_bin_dir
+    except ImportError:  # pragma: no cover - direct-script fallback
+        from _fs_links import default_bin_dir
+    milestone_bin = default_bin_dir(home=home)
+    for script, command in (
+        ("milestone.py", "milestone"),
+        ("agent-timeline.py", "agent-timeline"),
+    ):
+        make_link(repo_root / "scripts" / script, milestone_bin / command, dry_run, manifest)
+
     assistant_logs = home / ".assistant-logs"
     if sys.platform == "win32":
         if dry_run:
