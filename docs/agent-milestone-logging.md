@@ -13,11 +13,17 @@ repository root (the same file is reachable as `AGENTS.md` and as
 `~/.claude/CLAUDE.md` through symlinks). It tells an agent to call the writer
 before each distinct piece of work and once at the end.
 
-**The writer**, `~/.local/bin/milestone`. Agents call it; it composes the log
-path, the timestamp, and the JSON record itself.
+**The writer**, `scripts/milestone.py`, on PATH as `milestone`. Agents call it;
+it composes the log path, the timestamp, and the JSON record itself.
 
-**The reader**, `~/.local/bin/agent-timeline`. It merges the milestone logs with
-the harness transcripts into one chronological timeline.
+**The reader**, `scripts/agent-timeline.py`, on PATH as `agent-timeline`. It
+merges the milestone logs with the harness transcripts into one chronological
+timeline.
+
+Both are linked into the user's bin directory by `install-assistant-tools`, and
+those links are recorded in the install manifest, so uninstall removes them.
+The instruction names `milestone` as a command, so the link must exist wherever
+the instruction is delivered.
 
 `CLAUDE.md`/`AGENTS.md` is delivered by the harness to every subagent on both
 supported hosts, so no cooperation from the spawning parent is needed. Two
@@ -106,9 +112,9 @@ useful is exactly the wasted effort the log is meant to surface.
   compensates by matching every thread id seen in the milestone logs, but a
   subagent that logged nothing cannot be found this way.
 - There is no rotation or pruning. The log directory grows without bound.
-- The writer and the reader live in `~/.local/bin` and are not version-controlled
-  or installed by the installer. A fresh machine gets the instruction from
-  `CLAUDE.md` but not the script, and `milestone` calls will simply fail.
+- A checkout whose install has not run yet has the instruction from `CLAUDE.md`
+  but no `milestone` on PATH, and the calls fail quietly — a non-zero exit inside
+  one shell call, with nothing logged to say why.
 - Compliance is best-effort. The instruction is followed by a model, not enforced
   by the harness, so a missing milestone means nothing was logged — not that
   nothing happened.
