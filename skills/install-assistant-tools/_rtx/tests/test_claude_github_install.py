@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Install test for the Claude plugin packaging sourced from real GitHub.
 
-This runs the exact commands from README's "Recommended: plugin install"
+This runs the exact commands from README's "Step 1: install the plugin"
 section (`/plugin marketplace add MoeenNehzati/famulus`, `/plugin install
 famulus@nullkit`) against the actual public GitHub repo, not a local path —
 catching packaging problems that only show up when installing what's really

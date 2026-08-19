@@ -7,12 +7,13 @@ from pathlib import Path
 README = Path("README.md")
 INTRO_SNIPPETS = (
     "Famulus is a cross-host assistant library",
-    "Famulus is a cross-llm skills library",
+    "Famulus is a personal research assistant",
 )
 REQUIRED_SNIPPETS = (
-    "Recommended: plugin install",
+    "install the plugin",
+    "run the workstation installer",
     "No promoted stable release",
-    "_phase_entry.py",
+    "https://moeennehzati.github.io/famulus/",
     "https://github.com/MoeenNehzati/famulus/issues",
     "docs/officina/installation.md",
     "Plan my day",
@@ -25,9 +26,16 @@ REQUIRED_SNIPPETS = (
     "docs/skills.md",
     "docs/contributors/README.md",
 )
+# Code-level entities belong in the installation guide and in skill
+# documentation, not in the users' entry point: the README names public
+# commands and skills, and routes anything deeper through `dispatcher`.
 FORBIDDEN_SNIPPETS = (
     "The dispatcher is the only approved route",
-    "_install_scaffold.py --repo-root <FAMULUS_DIR>",
+    "_rtx",
+    "_phase_entry.py",
+    "_install_scaffold.py",
+    "_config_bridge.py",
+    "_agent_launchers.py",
     "docs/officina/skill-blueprints.md",
     "validators/` and `skills/skill-maker/validators/",
 )

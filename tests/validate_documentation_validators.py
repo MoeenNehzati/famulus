@@ -89,11 +89,13 @@ def _seed_docs(repo_root: Path) -> None:
                 "",
                 "## Quick Start",
                 "",
-                "### Recommended: plugin install",
+                "### Step 1: install the plugin",
+                "",
+                "### Step 2: run the workstation installer",
                 "",
                 "No promoted stable release",
                 "",
-                "python3 <FAMULUS_DIR>/skills/install-assistant-tools/_rtx/_phase_entry.py",
+                "https://moeennehzati.github.io/famulus/",
                 "",
                 "https://github.com/MoeenNehzati/famulus/issues",
                 "",
@@ -260,20 +262,19 @@ def test_readme_validator_flags_missing_skill_index_link(tmp_path: Path) -> None
     assert any("docs/skills.md" in error for error in errors)
 
 
-def test_readme_validator_rejects_scaffold_only_quick_start(tmp_path: Path) -> None:
+def test_readme_validator_rejects_code_level_install_entities(tmp_path: Path) -> None:
     repo_root = _make_repo(tmp_path)
     readme = repo_root / "README.md"
     readme.write_text(
-        readme.read_text(encoding="utf-8").replace(
-            "_phase_entry.py",
-            "_install_scaffold.py --repo-root <FAMULUS_DIR>",
-        ),
+        readme.read_text(encoding="utf-8")
+        + "\npython3 <FAMULUS_DIR>/skills/install-assistant-tools/_rtx/_phase_entry.py\n",
         encoding="utf-8",
     )
 
     errors = validate_readme(repo_root)
 
-    assert any("_install_scaffold.py" in error for error in errors)
+    assert any("_phase_entry.py" in error for error in errors)
+    assert any("_rtx" in error for error in errors)
 
 
 def test_readme_validator_rejects_contributor_blueprint_doc(tmp_path: Path) -> None:
