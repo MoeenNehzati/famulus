@@ -22,6 +22,9 @@ def _write_manifest(path: Path) -> None:
                 "version": 2,
                 "skills": {
                     "example": {
+                        "maturity": "stable",
+                        "installation_tier": "core",
+                        "personal_preference": {"applies": False},
                         "interfaces": {
                             "first": {
                                 "dependencies": [

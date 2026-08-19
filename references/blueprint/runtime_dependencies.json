@@ -2,6 +2,11 @@
   "version": 2,
   "skills": {
     "bib-audit": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
       "interfaces": {
         "bib-audit._rtx.interface.scripts-bib-similarity": {
           "dependencies": [
@@ -36,6 +41,11 @@
       }
     },
     "ci-debug": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
       "interfaces": {
         "ci-debug._rtx.interface.run-ci": {
           "dependencies": []
@@ -46,6 +56,11 @@
       }
     },
     "cloud-files": {
+      "maturity": "experimental",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
       "interfaces": {
         "cloud-files._rtx.interface.ensure-oauth": {
           "dependencies": [
@@ -215,6 +230,11 @@
       }
     },
     "connect-google": {
+      "maturity": "experimental",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
       "interfaces": {
         "connect-google._rtx.interface.bind-credential-file": {
           "dependencies": [
@@ -345,6 +365,11 @@
       }
     },
     "daily-plan": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
       "interfaces": {
         "daily-plan._rtx.interface.mutate-plan": {
           "dependencies": [
@@ -977,6 +1002,11 @@
       }
     },
     "email-client": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
       "interfaces": {
         "email-client._rtx.interface.accounts-add": {
           "dependencies": [
@@ -1800,6 +1830,11 @@
       }
     },
     "email-triage": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
       "interfaces": {
         "email-triage._rtx.interface.fetch-filtered-envelopes": {
           "dependencies": [
@@ -2055,6 +2090,11 @@
       }
     },
     "find-handoff-candidates": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
       "interfaces": {
         "find-handoff-candidates._rtx.interface.calibrate": {
           "dependencies": []
@@ -2065,6 +2105,11 @@
       }
     },
     "g-calendar": {
+      "maturity": "experimental",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
       "interfaces": {
         "g-calendar._rtx.interface.ensure-oauth": {
           "dependencies": [
@@ -2132,6 +2177,11 @@
       }
     },
     "get-weather": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
       "interfaces": {
         "get-weather._rtx.interface.scripts-weather": {
           "dependencies": []
@@ -2139,6 +2189,11 @@
       }
     },
     "initialize-tdd": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
       "interfaces": {
         "initialize-tdd._rtx.interface.setup-compat-aliases": {
           "dependencies": []
@@ -2146,6 +2201,11 @@
       }
     },
     "install-assistant-tools": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
       "interfaces": {
         "install-assistant-tools._rtx.interface.scripts-dev-link": {
           "dependencies": [
@@ -2264,6 +2324,11 @@
       }
     },
     "list-manager": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
       "interfaces": {
         "list-manager._rtx.interface.beautify-list": {
           "dependencies": [
@@ -4642,6 +4707,11 @@
       }
     },
     "math-dependency-graph": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
       "interfaces": {
         "math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph": {
           "dependencies": []
@@ -4655,6 +4725,11 @@
       }
     },
     "pdf-to-markdown": {
+      "maturity": "stable",
+      "installation_tier": "optional",
+      "personal_preference": {
+        "applies": false
+      },
       "interfaces": {
         "pdf-to-markdown._rtx.interface.scripts-check-marker-models": {
           "dependencies": [
@@ -4677,6 +4752,11 @@
       }
     },
     "recurring-tasks": {
+      "maturity": "experimental",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
       "interfaces": {
         "recurring-tasks._rtx.interface.scripts-disable": {
           "dependencies": [
@@ -7038,6 +7118,11 @@
       }
     },
     "regenerate-blueprints": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
       "interfaces": {
         "regenerate-blueprints._rtx.interface.regenerate-blueprint": {
           "dependencies": [
@@ -7068,6 +7153,11 @@
       }
     },
     "skill-certifier": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
       "interfaces": {
         "skill-certifier._rtx.interface.certify": {
           "dependencies": [
@@ -7142,6 +7232,11 @@
       }
     },
     "skill-drift": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
       "interfaces": {
         "skill-drift._rtx.interface.compute-hashes": {
           "dependencies": [
@@ -7198,6 +7293,11 @@
       }
     },
     "skill-maker": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
       "interfaces": {
         "skill-maker._rtx.interface.sync-blueprints": {
           "dependencies": [

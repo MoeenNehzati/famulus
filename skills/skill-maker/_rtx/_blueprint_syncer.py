@@ -597,6 +597,39 @@ def generated_runtime_dependencies_manifest(
     skills: dict[str, Any] = {}
     all_dependencies: dict[str, set[str]] = {kind: set() for kind in RUNTIME_DEPENDENCY_KINDS}
 
+    def module_installation_metadata(
+        module_id: str,
+        data: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Project the validated v6 selection metadata for one module."""
+        if data.get("schema_version") != 6:
+            return {}
+        maturity = data.get("maturity")
+        installation_tier = data.get("installation_tier")
+        personal_preference = data.get("personal_preference")
+        if maturity not in {"stable", "experimental"}:
+            raise BlueprintError(f"{module_id}: invalid module maturity")
+        if installation_tier not in {"core", "optional"}:
+            raise BlueprintError(f"{module_id}: invalid installation tier")
+        if not isinstance(personal_preference, dict):
+            raise BlueprintError(f"{module_id}: personal preference must be a mapping")
+        applies = personal_preference.get("applies")
+        if not isinstance(applies, bool):
+            raise BlueprintError(f"{module_id}: personal preference applies must be boolean")
+        metadata: dict[str, Any] = {
+            "maturity": maturity,
+            "installation_tier": installation_tier,
+            "personal_preference": {"applies": applies},
+        }
+        if applies:
+            description = personal_preference.get("description")
+            if not isinstance(description, str) or not description.strip():
+                raise BlueprintError(
+                    f"{module_id}: applicable personal preference needs a description"
+                )
+            metadata["personal_preference"]["description"] = description
+        return metadata
+
     def reachable_runtime_dependencies(
         graph: RepositoryBlueprintGraph,
         source_node_id: str,
@@ -734,7 +767,10 @@ def generated_runtime_dependencies_manifest(
             generated_interfaces[interface_id_value] = {"dependencies": dependencies}
 
         if generated_interfaces:
-            skills[skill_name] = {"interfaces": generated_interfaces}
+            skills[skill_name] = {
+                **module_installation_metadata(skill_name, blueprint.data),
+                "interfaces": generated_interfaces,
+            }
 
     return {
         "version": 2,
