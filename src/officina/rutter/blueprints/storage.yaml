@@ -1,0 +1,304 @@
+schema_version: 6
+node_type: behavioral_source
+id: rutter.source.storage
+version: 1
+description: Encodes strict Reckonings and provides separate confined read, transaction, and atomic write contracts.
+gateway:
+  path: storage.py
+  language: Python
+content:
+- storage\.py
+dependencies:
+- source: rutter.source.model
+  version: 1
+  blueprint:
+    base: module-root
+    path: blueprints/model.yaml
+  reason: Imports Charter, Fix, Reckoning, diagnostics, and exact model errors.
+- source: common.source.atomic-files
+  version: 1
+  blueprint:
+    base: repository-root
+    path: src/officina/common/blueprints/atomic-files.yaml
+  reason: Imports confined regular-file reads, atomic create and replace, and sidecar locking.
+uses_interfaces:
+- interface: rutter.source.model.interface.python-api
+  version: 1
+- interface: common.interface.atomic-files
+  version: 1
+interfaces:
+  rutter.source.storage.interface.read:
+    version: 1
+    description: Strictly decodes one complete Reckoning without changing storage.
+    contract:
+      arguments:
+        path:
+          description: Absolute confined path ending with .reckoning.json.
+          direct_io_ref: reckoning-file
+          required: true
+          sensitivity: user-private
+          type:
+            kind: file
+            syntax: literal
+            relative_to: caller-cwd
+            must_exist: true
+            access: read
+            opaque_content: true
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings: []
+      outputs:
+      - id: reckoning
+        audience: machine
+        description: One strictly decoded complete Reckoning.
+        direct_io_ref: return-value
+        cardinality: {minimum: 1, maximum: 1}
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: Never empty on success.
+        type:
+          kind: string
+          description: Immutable Reckoning Python value.
+          sensitivity: user-private
+      outcomes:
+      - id: read
+        class: success
+        outputs: [reckoning]
+        effects: []
+        caller_action: Use the exact decoded authority.
+      - id: invalid-state
+        class: error
+        outputs: []
+        effects: []
+        caller_action: Recover a complete compatible Reckoning instead of inferring progress.
+      execution:
+        state_effect: read-only
+        lifecycle: finite
+        consistency:
+          live: Read validates the complete bytes and filesystem type observed during the call.
+        verification:
+        - method: output-schema
+          output_ref: reckoning
+      helpers: []
+      direct_io:
+        reads:
+        - id: reckoning-file
+          medium: local-filesystem
+          access: read
+          content: Strict canonical Reckoning JSON and filesystem metadata
+          formats: [json, filesystem-metadata]
+          sensitivity: user-private
+          path: <path>
+        writes:
+        - id: return-value
+          medium: local-system
+          access: write
+          content: Decoded Reckoning
+          formats: [python-object]
+          sensitivity: user-private
+        network: []
+  rutter.source.storage.interface.transaction:
+    version: 1
+    description: Appends .lock to one confined .reckoning.json path and reloads authoritative Reckoning bytes under that stable sidecar.
+    contract:
+      arguments:
+        path:
+          description: Absolute confined .reckoning.json path whose full filename receives an appended .lock sidecar.
+          direct_io_ref: reckoning-file
+          required: true
+          sensitivity: user-private
+          type:
+            kind: file
+            syntax: literal
+            relative_to: caller-cwd
+            must_exist: true
+            access: read
+            opaque_content: true
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings:
+      - external-side-effect: The cooperative sidecar lock does not govern direct external edits.
+      outputs:
+      - id: transaction
+        audience: machine
+        description: Context-managed authoritative Reckoning held under the stable sidecar lock.
+        direct_io_ref: return-value
+        cardinality: {minimum: 1, maximum: 1}
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: Never empty on success.
+        type:
+          kind: string
+          description: Python context manager yielding one immutable Reckoning.
+          sensitivity: user-private
+      outcomes:
+      - id: locked
+        class: success
+        outputs: [transaction]
+        effects: []
+        caller_action: Perform any authorized comparison/write before leaving the context.
+      - id: invalid-state
+        class: error
+        outputs: []
+        effects: []
+        caller_action: Recover the complete file or lock path before retrying.
+      execution:
+        state_effect: read-only
+        lifecycle: finite
+        consistency:
+          live: The context reloads strict bytes after acquiring the stable sidecar lock.
+        verification:
+        - method: output-schema
+          output_ref: transaction
+      helpers: []
+      direct_io:
+        reads:
+        - id: reckoning-file
+          medium: local-filesystem
+          access: read
+          content: Strict canonical Reckoning JSON and sidecar lock state
+          formats: [json, filesystem-metadata]
+          sensitivity: user-private
+          path: <path>
+        writes:
+        - id: return-value
+          medium: local-system
+          access: write
+          content: Locked authoritative transaction context
+          formats: [python-object]
+          sensitivity: user-private
+        network: []
+  rutter.source.storage.interface.write:
+    version: 1
+    description: Atomically creates or compare-and-replaces one complete Reckoning and returns no value.
+    contract:
+      arguments:
+        operation:
+          description: Reckoning mutation to perform.
+          required: true
+          sensitivity: public
+          type:
+            kind: enum
+            values:
+            - value: create
+              description: Create one complete Reckoning only when absent.
+            - value: replace
+              description: Replace one exact predecessor while its transaction is held.
+        path:
+          description: Absolute confined path ending with .reckoning.json.
+          direct_io_ref: reckoning-file
+          required: true
+          sensitivity: user-private
+          type:
+            kind: file
+            syntax: literal
+            relative_to: caller-cwd
+            must_exist: false
+            access: read-write
+            opaque_content: true
+        reckoning:
+          description: Complete creation or replacement value.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            description: Immutable Reckoning Python value.
+            sensitivity: user-private
+        expected-reckoning:
+          description: Exact predecessor required only by replace.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+            description: Immutable predecessor Reckoning Python value.
+            sensitivity: user-private
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings:
+      - external-side-effect: Create and replace change one confined file and retain no predecessor.
+      outputs: []
+      outcomes:
+      - id: created
+        class: success
+        outputs: []
+        effects: [reckoning-file-create]
+        caller_action: Continue only after the complete file is visible.
+      - id: replaced
+        class: success
+        outputs: []
+        effects: [reckoning-file-replace]
+        caller_action: Continue from the confirmed replacement authority.
+      - id: conflict
+        class: error
+        outputs: []
+        effects: []
+        caller_action: Reread the live Reckoning before deciding whether to retry.
+      - id: invalid-state
+        class: error
+        outputs: []
+        effects: []
+        caller_action: Correct confinement, schema, or predecessor authority.
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency:
+          live: Replace compares the complete expected predecessor while the caller holds the transaction.
+        effects:
+        - id: reckoning-file-create
+          direct_io_ref: reckoning-file
+          action: create
+          value_source: {kind: argument, argument_ref: reckoning}
+          may_occur_in_outcomes: [created]
+          confirmation_evidence: {kind: direct-io, direct_io_ref: reckoning-file}
+          reversibility:
+            irreversible: Storage retains no predecessor for rollback.
+        - id: reckoning-file-replace
+          direct_io_ref: reckoning-file
+          action: update
+          value_source: {kind: argument, argument_ref: reckoning}
+          may_occur_in_outcomes: [replaced]
+          confirmation_evidence: {kind: direct-io, direct_io_ref: reckoning-file}
+          reversibility:
+            irreversible: Storage retains no predecessor for rollback.
+        mutation_safety:
+          atomicity:
+            atomic: Each complete create or replacement is atomic beneath its confined root.
+          concurrent_invocations:
+            safe: Create is exclusive and replace occurs under the stable transaction lock.
+          idempotency:
+            non_idempotent: Create rejects presence and replacement changes authoritative revision bytes.
+          on_uncertain_completion:
+            verify_then_decide: Strictly reread and compare the complete live Reckoning.
+          partial_effects_on_failure:
+            possible: A late durability error may occur after the complete replacement is visible.
+          rollback_on_failure:
+            unavailable: No predecessor bytes are retained.
+        verification:
+        - method: direct-io-state
+          direct_io_ref: reckoning-file
+      helpers: []
+      direct_io:
+        reads:
+        - id: reckoning-file
+          medium: local-filesystem
+          access: read
+          content: Existing strict Reckoning JSON and filesystem metadata
+          formats: [json, filesystem-metadata]
+          sensitivity: user-private
+          path: <path>
+        writes:
+        - id: reckoning-file
+          medium: local-filesystem
+          access: read-write
+          content: Strict canonical Reckoning JSON
+          formats: [json]
+          sensitivity: user-private
+          path: <path>
+        network: []
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []

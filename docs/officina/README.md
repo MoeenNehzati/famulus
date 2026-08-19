@@ -148,7 +148,10 @@ from a dependency.
   process bindings, projections, and search
 - `certification/` — certificate hashing, records, and currentness views
 - `configuration/` — configured-schema and repository-configuration loading
-- `controller/` — shared controller data and protocol models
+- `rutter/` — immutable Charter/Fix/Reckoning values in `model.py`, direct
+  reduction in `engine.py`, strict confined persistence in `storage.py`, and
+  explicit name binding in `runtime.py`: registry `create`/`open`, then bound
+  `get_instruction`, `validate`, and `advance`
 - `credentials/` — Google credentials, OAuth JSON, and secret storage
 - `docstring/` — docstring parsing, policy, schema, and validation
 - `git/` — repository provenance and pinned Git snapshots
@@ -206,6 +209,10 @@ These skills exist to operate on the framework itself:
   or repair an Officina project on a machine
 - [`llm-wakeup`](../../skills/llm-wakeup/) — schedule and manage host sessions
   around usage resets; the instruction side of `src/officina/wakeup/`
+- [`using-compass`](../../skills/using-compass/) — the generic LLM-facing
+  Compass guide for operating a named Rutter through its public lifecycle;
+  each named Rutter owns its domain states and public guide. See
+  [Compass and Rutter](compass-rutter.md) for the architecture and vocabulary.
 
 ## Where to go next
 
@@ -224,6 +231,8 @@ Then, depending on what you need:
   lifecycle, drift evaluation, and what makes a certificate stale
 - [Skill Blueprints](skill-blueprints.md) — authoring blueprints in practice
 - [Blueprint Search](blueprint_search.md) — querying the graph
+- [Compass and Rutter](compass-rutter.md) — durable algorithms and their
+  generic LLM-facing operating protocol
 - [Blueprint Discovery Metadata](blueprint-discovery-metadata.md) — how
   discoverable modules declare when they apply
 - [Source Relocation](source-relocation.md) — safely moving a source and its

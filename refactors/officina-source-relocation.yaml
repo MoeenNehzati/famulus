@@ -287,29 +287,6 @@ exact_rewrites:
                 rule["validator"], rule["validator"]
             )
             assert (REPO_ROOT / validator).is_file(), rule_id
-- path: tests/test_controller_protocol.py
-  from: |-
-    from officina.controller.protocol import (
-        ControllerMessage,
-        InvalidControllerMessageError,
-        JsonValue,
-        UnsupportedProtocolVersionError,
-    )
-  to: |-
-    from officina.controller.model import JsonValue
-    from officina.controller.protocol import (
-        ControllerMessage,
-        InvalidControllerMessageError,
-        UnsupportedProtocolVersionError,
-    )
-- path: tests/test_controller_protocol.py
-  from: |-
-    def test_controller_protocol_uses_its_canonical_module() -> None:
-        assert ControllerMessage.__module__ == "officina.controller.protocol"
-        assert JsonValue.__module__ == "officina.controller.model"
-  to: |-
-    def test_controller_protocol_uses_its_canonical_module() -> None:
-        assert ControllerMessage.__module__ == "officina.controller.protocol"
 - path: tests/validate_cross_platform.py
   from: from officina.common import python_source_cache as cache_module
   to: import officina.common.python_source_cache as cache_module
@@ -455,12 +432,14 @@ package_catalogs:
     configured_schema.py: Builds and validates schemas whose constraints come from repository configuration.
     repository.py: Loads and validates the repository's Officina configuration.
     schema.json: Defines the accepted repository-configuration document shape.
-- path: src/officina/controller
-  summary: Controller models and invocation protocol.
-  description: This package owns controller data structures and their invocation protocol. Callers import concrete owning modules.
+- path: src/officina/rutter
+  summary: Direct Rutter definitions, durable Reckoning reduction, storage, and registration.
+  description: This package separates immutable authoring values, reduction semantics, strict persistence, and explicit registration. Callers import concrete owning modules.
   roles:
-    model.py: Defines controller request, response, identifier, and JSON value models.
-    protocol.py: Defines the lifecycle and submission protocol implemented by controllers.
+    model.py: Defines immutable Charter, Fix, Reckoning, state, effect, and validation values for direct Rutters.
+    engine.py: Binds one direct Rutter definition to durable validation, reduction, continuation, and effect-recovery semantics.
+    storage.py: Encodes strict Reckonings and provides confined atomic persistence and per-Reckoning locking.
+    runtime.py: Resolves explicit Rutter registrations and creates or opens bound voyages beneath one Reckoning root.
 - path: src/officina/credentials
   summary: Credential files, OAuth JSON, and secret storage.
   description: This package owns host-neutral credential persistence and lookup. Callers import concrete owning modules.
@@ -560,7 +539,7 @@ forbid_facade_imports:
 - officina.blueprints
 - officina.certification
 - officina.configuration
-- officina.controller
+- officina.rutter
 - officina.credentials
 - officina.docstring
 - officina.git

@@ -760,3 +760,52 @@ def test_inventory_uses_its_relocated_module() -> None:
     assert BlueprintDocument is blueprint_inventory.BlueprintDocument
     assert BlueprintInventoryResult is blueprint_inventory.BlueprintInventoryResult
     assert public_collect_blueprints is _canonical_collect_blueprints
+
+
+def test_v6_inventory_registers_exact_rutter_module_and_source_files() -> None:
+    """A missing or broadened Rutter registration would orphan executable code."""
+
+    repo_root = Path(__file__).resolve().parents[1]
+    result = collect_blueprints(repo_root, expected_schema_version=6)
+    by_id = {document.node_id: document for document in result.documents}
+
+    module = by_id["rutter"]
+    model = by_id["rutter.source.model"]
+    engine = by_id["rutter.source.engine"]
+    storage = by_id["rutter.source.storage"]
+    runtime = by_id["rutter.source.runtime"]
+
+    assert module.relative_path.as_posix() == "src/officina/rutter/blueprint.yaml"
+    assert module.declaration["content"] == [
+        r"__init__\.py",
+        r"engine\.py",
+        r"model\.py",
+        r"runtime\.py",
+        r"storage\.py",
+    ]
+    assert set(module.declaration["sources"]) == {
+        "rutter.source.engine",
+        "rutter.source.model",
+        "rutter.source.runtime",
+        "rutter.source.storage",
+    }
+    assert model.declaration["gateway"] == {
+        "path": "model.py",
+        "language": "Python",
+    }
+    assert model.declaration["content"] == [r"model\.py"]
+    assert engine.declaration["gateway"] == {
+        "path": "engine.py",
+        "language": "Python",
+    }
+    assert engine.declaration["content"] == [r"engine\.py"]
+    assert storage.declaration["gateway"] == {
+        "path": "storage.py",
+        "language": "Python",
+    }
+    assert storage.declaration["content"] == [r"storage\.py"]
+    assert runtime.declaration["gateway"] == {
+        "path": "runtime.py",
+        "language": "Python",
+    }
+    assert runtime.declaration["content"] == [r"runtime\.py"]

@@ -27,4 +27,5 @@ per-user scheduler, or local repair tooling.
 - `connect-google` — The user needs to set up or restore Google authentication for Famulus
 - `install-assistant-tools` — Install or update launchers, wiring, hooks, and environment on a machine
 - `recurring-tasks` — Manage recurring AI jobs through the host's native per-user scheduler
+- `using-compass` — A user or another skill directs the agent to use a named compass
 <!-- END AUTO-GENERATED DOCS: assistant-operations -->

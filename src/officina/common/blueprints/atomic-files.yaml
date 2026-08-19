@@ -1,9 +1,9 @@
 content:
 - atomic_files\.py
 dependencies: []
-description: Implements confined regular-file reads and secure replace, create, append,
-  and compare-and-append byte operations on POSIX and Windows, with an explicit non-atomic
-  fallback.
+description: Implements confined regular-file reads, secure replace, create, append,
+  compare-and-append, and advisory sidecar locking on POSIX and Windows, with an explicit
+  non-atomic fallback.
 gateway:
   language: Python
   path: atomic_files.py
@@ -72,6 +72,8 @@ interfaces:
               value: append
             - description: Append only when the complete predecessor bytes match.
               value: compare-and-append
+            - description: Hold one confined regular sidecar as a cooperative process lock.
+              value: exclusive-lock
         path:
           description: Destination or source file confined beneath allowed-root.
           direct_io_ref: target-file
@@ -86,7 +88,9 @@ interfaces:
             syntax: literal
       caller_warnings:
       - external-side-effect: Mutation operations create or change a local file; compare-and-append
-          may fail when another writer changes it.
+          may fail when another writer changes it. Exclusive locking serializes only callers
+          that acquire the same stable sidecar; it does not govern direct edits or external
+          systems.
       direct_io:
         network: []
         reads:
@@ -110,7 +114,8 @@ interfaces:
       execution:
         consistency:
           live: Reads and mutations operate on the file state observed during the
-            call.
+            call; an exclusive-lock operation retains its sidecar lock for the caller's
+            context-manager scope.
         effects:
         - action: update
           confirmation_evidence:
@@ -132,7 +137,8 @@ interfaces:
               is confined but non-atomic.
           concurrent_invocations:
             safe: Native create and replace and append and compare-and-append use
-              platform synchronization and final-state checks.
+              platform synchronization and final-state checks; exclusive-lock callers
+              serialize through one stable sidecar.
           idempotency:
             non_idempotent: Append operations add another frame when repeated.
           on_uncertain_completion:

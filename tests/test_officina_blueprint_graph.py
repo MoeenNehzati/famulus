@@ -1537,3 +1537,220 @@ def test_v5_managed_skill_parent_rejects_process_bound_interface(
             schema_root=V5_SCHEMA_ROOT,
             expected_schema_version=5,
         )
+
+
+def test_v6_rutter_operation_effects_are_outcome_specific() -> None:
+    """Dry-run, create, and replacement outcomes declare their exact effects."""
+
+    repo_root = Path(__file__).resolve().parents[1]
+    engine_path = repo_root / "src/officina/rutter/blueprints/engine.yaml"
+    storage_path = repo_root / "src/officina/rutter/blueprints/storage.yaml"
+    engine = yaml.safe_load(engine_path.read_text(encoding="utf-8"))
+    storage = yaml.safe_load(storage_path.read_text(encoding="utf-8"))
+    validators = {}
+    for path, document in ((engine_path, engine), (storage_path, storage)):
+        assert blueprint_graph._declaration_schema_errors(
+            path,
+            document,
+            CANONICAL_SCHEMA_ROOT,
+            validators,
+            expected_schema_version=6,
+        ) == ()
+
+    bound = engine["interfaces"][
+        "rutter.source.engine.interface.bound-operations"
+    ]["contract"]
+    bound_outcomes = {entry["id"]: entry for entry in bound["outcomes"]}
+    assert bound_outcomes["previewed"]["effects"] == []
+    assert bound_outcomes["advanced"]["effects"] == ["reckoning-update"]
+    bound_effects = {
+        entry["id"]: entry for entry in bound["execution"]["effects"]
+    }
+    assert bound_effects["reckoning-update"]["may_occur_in_outcomes"] == [
+        "advanced",
+        "faulted",
+    ]
+
+    write = storage["interfaces"][
+        "rutter.source.storage.interface.write"
+    ]["contract"]
+    write_outcomes = {entry["id"]: entry for entry in write["outcomes"]}
+    assert write_outcomes["created"]["effects"] == ["reckoning-file-create"]
+    assert write_outcomes["replaced"]["effects"] == ["reckoning-file-replace"]
+    write_effects = {entry["id"]: entry for entry in write["execution"]["effects"]}
+    assert write_effects["reckoning-file-create"]["action"] == "create"
+    assert write_effects["reckoning-file-create"]["may_occur_in_outcomes"] == [
+        "created"
+    ]
+    assert write_effects["reckoning-file-replace"]["action"] == "update"
+    assert write_effects["reckoning-file-replace"]["may_occur_in_outcomes"] == [
+        "replaced"
+    ]
+
+
+def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
+    """The four cohesive implementation files own exact imports and interfaces."""
+
+    repo_root = Path(__file__).resolve().parents[1]
+    graph = load_repository_blueprint_graph(
+        repo_root,
+        expected_schema_version=6,
+    )
+    rutter_root = repo_root / "src/officina/rutter"
+    module = yaml.safe_load((rutter_root / "blueprint.yaml").read_text(encoding="utf-8"))
+    sources = {
+        name: yaml.safe_load(
+            (rutter_root / "blueprints" / f"{name}.yaml").read_text(encoding="utf-8")
+        )
+        for name in ("model", "engine", "storage", "runtime")
+    }
+    common = yaml.safe_load(
+        (rutter_root.parent / "common" / "blueprint.yaml").read_text(encoding="utf-8")
+    )
+
+    assert module["content"] == [
+        r"__init__\.py",
+        r"engine\.py",
+        r"model\.py",
+        r"runtime\.py",
+        r"storage\.py",
+    ]
+    assert set(module["sources"]) == {
+        "rutter.source.model",
+        "rutter.source.engine",
+        "rutter.source.storage",
+        "rutter.source.runtime",
+    }
+    assert {
+        "rutter",
+        "rutter.source.model",
+        "rutter.source.engine",
+        "rutter.source.storage",
+        "rutter.source.runtime",
+    }.issubset(graph.nodes)
+    assert set(module["exports"]) == {
+        "rutter.interface.binding",
+        "rutter.interface.bound-operations",
+        "rutter.interface.model",
+    }
+    assert module["exports"]["rutter.interface.bound-operations"]["access"] == {
+        "allow_all_modules": False,
+        "allowed_callers": ["using-compass"],
+    }
+    assert module["exports"]["rutter.interface.binding"]["access"] == {
+        "allow_all_modules": False,
+        "allowed_callers": [],
+    }
+    for name, source in sources.items():
+        assert source["gateway"] == {"path": f"{name}.py", "language": "Python"}
+        assert source["content"] == [rf"{name}\.py"]
+        assert source["runtime_dependencies"] == []
+
+    assert set(sources["model"]["interfaces"]) == {
+        "rutter.source.model.interface.python-api"
+    }
+    assert set(sources["engine"]["interfaces"]) == {
+        "rutter.source.engine.interface.binding",
+        "rutter.source.engine.interface.bound-operations",
+    }
+    assert set(sources["storage"]["interfaces"]) == {
+        "rutter.source.storage.interface.read",
+        "rutter.source.storage.interface.transaction",
+        "rutter.source.storage.interface.write",
+    }
+    assert set(sources["runtime"]["interfaces"]) == {
+        "rutter.source.runtime.interface.binding"
+    }
+
+    assert sources["model"]["dependencies"] == []
+    assert sources["model"]["uses_interfaces"] == []
+    assert [entry["source"] for entry in sources["storage"]["dependencies"]] == [
+        "rutter.source.model",
+        "common.source.atomic-files",
+    ]
+    assert sources["storage"]["uses_interfaces"] == [
+        {"interface": "rutter.source.model.interface.python-api", "version": 1},
+        {"interface": "common.interface.atomic-files", "version": 1},
+    ]
+    assert [entry["source"] for entry in sources["engine"]["dependencies"]] == [
+        "rutter.source.model",
+        "rutter.source.storage",
+    ]
+    assert sources["engine"]["uses_interfaces"] == [
+        {"interface": "rutter.source.model.interface.python-api", "version": 1},
+        {"interface": "rutter.source.storage.interface.read", "version": 1},
+        {"interface": "rutter.source.storage.interface.transaction", "version": 1},
+        {"interface": "rutter.source.storage.interface.write", "version": 1},
+    ]
+    assert [entry["source"] for entry in sources["runtime"]["dependencies"]] == [
+        "rutter.source.engine",
+        "rutter.source.model",
+        "rutter.source.storage",
+    ]
+    assert sources["runtime"]["uses_interfaces"] == [
+        {"interface": "rutter.source.engine.interface.binding", "version": 1},
+        {"interface": "rutter.source.model.interface.python-api", "version": 1},
+        {"interface": "rutter.source.storage.interface.read", "version": 1},
+    ]
+
+    engine_interfaces = sources["engine"]["interfaces"]
+    binding = engine_interfaces["rutter.source.engine.interface.binding"]["contract"]
+    binding_operations = {
+        entry["value"] for entry in binding["arguments"]["operation"]["type"]["values"]
+    }
+    binding_outcomes = {entry["id"]: entry for entry in binding["outcomes"]}
+    assert binding_operations == {"create", "open"}
+    assert binding_outcomes["created"]["effects"] == ["reckoning-create"]
+    assert binding_outcomes["opened"]["effects"] == []
+
+    bound = engine_interfaces[
+        "rutter.source.engine.interface.bound-operations"
+    ]["contract"]
+    bound_operations = {
+        entry["value"] for entry in bound["arguments"]["operation"]["type"]["values"]
+    }
+    bound_outcomes = {entry["id"]: entry for entry in bound["outcomes"]}
+    assert bound_operations == {"get-instruction", "validate", "advance"}
+    assert bound_outcomes["observed"]["effects"] == []
+    assert bound_outcomes["validated"]["effects"] == []
+    assert bound_outcomes["previewed"]["effects"] == []
+    assert bound_outcomes["advanced"]["effects"] == ["reckoning-update"]
+    bound_effects = {
+        entry["id"]: entry for entry in bound["execution"]["effects"]
+    }
+    assert bound_effects["reckoning-update"]["may_occur_in_outcomes"] == [
+        "advanced",
+        "faulted",
+    ]
+
+    storage_interfaces = sources["storage"]["interfaces"]
+    read = storage_interfaces["rutter.source.storage.interface.read"]["contract"]
+    transaction = storage_interfaces[
+        "rutter.source.storage.interface.transaction"
+    ]["contract"]
+    write = storage_interfaces["rutter.source.storage.interface.write"]["contract"]
+    assert read["execution"]["state_effect"] == "read-only"
+    assert read["outputs"][0]["cardinality"] == {"minimum": 1, "maximum": 1}
+    assert read["outcomes"][0]["effects"] == []
+    assert transaction["execution"]["state_effect"] == "read-only"
+    assert transaction["outcomes"][0]["effects"] == []
+    assert write["outputs"] == []
+    write_outcomes = {entry["id"]: entry for entry in write["outcomes"]}
+    assert write_outcomes["created"]["outputs"] == []
+    assert write_outcomes["created"]["effects"] == ["reckoning-file-create"]
+    assert write_outcomes["replaced"]["outputs"] == []
+    assert write_outcomes["replaced"]["effects"] == ["reckoning-file-replace"]
+    write_effects = {entry["id"]: entry for entry in write["execution"]["effects"]}
+    assert write_effects["reckoning-file-create"]["action"] == "create"
+    assert write_effects["reckoning-file-create"]["may_occur_in_outcomes"] == [
+        "created"
+    ]
+    assert write_effects["reckoning-file-replace"]["action"] == "update"
+    assert write_effects["reckoning-file-replace"]["may_occur_in_outcomes"] == [
+        "replaced"
+    ]
+    atomic_callers = common["exports"]["common.interface.atomic-files"]["access"][
+        "allowed_callers"
+    ]
+    assert "rutter" in atomic_callers
+    assert "using-compass" not in atomic_callers

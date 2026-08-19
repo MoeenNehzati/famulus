@@ -1,0 +1,176 @@
+schema_version: 6
+node_type: behavioral_source
+id: rutter.source.runtime
+version: 1
+description: Resolves explicit Rutter registrations and binds voyages beneath one Reckoning root.
+gateway:
+  path: runtime.py
+  language: Python
+content:
+- runtime\.py
+dependencies:
+- source: rutter.source.engine
+  version: 1
+  blueprint:
+    base: module-root
+    path: blueprints/engine.yaml
+  reason: Imports the direct BaseRutter type and its create and open construction routes.
+- source: rutter.source.model
+  version: 1
+  blueprint:
+    base: module-root
+    path: blueprints/model.yaml
+  reason: Imports immutable Charter data, finite JSON types, and definition and state errors.
+- source: rutter.source.storage
+  version: 1
+  blueprint:
+    base: module-root
+    path: blueprints/storage.yaml
+  reason: Strictly reads persisted identity and confines caller paths beneath the Reckoning root.
+uses_interfaces:
+- interface: rutter.source.engine.interface.binding
+  version: 1
+- interface: rutter.source.model.interface.python-api
+  version: 1
+- interface: rutter.source.storage.interface.read
+  version: 1
+interfaces:
+  rutter.source.runtime.interface.binding:
+    version: 1
+    description: Creates a named bound Rutter or opens one from persisted Charter identity.
+    contract:
+      arguments:
+        operation:
+          description: Registry lifecycle operation to perform.
+          required: true
+          sensitivity: public
+          type:
+            kind: enum
+            values:
+            - value: registry-create
+              description: Create one named voyage from immutable Charter data.
+            - value: registry-open
+              description: Open one existing voyage from persisted identity.
+        registry:
+          description: Explicit name-to-direct-subclass mapping and Reckoning root.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            description: Validated RutterRegistry Python value.
+            sensitivity: user-private
+        reckoning-path:
+          description: Relative descendant ending with .reckoning.json; its lock appends .lock.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            description: Relative pathlib.Path value.
+            sensitivity: user-private
+        charter-data:
+          description: Finite JSON object used only when creating a voyage.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+            description: Python mapping of immutable undertaking data.
+            sensitivity: user-private
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings:
+      - external-side-effect: Creation persists one complete initial Reckoning; opening is read-only and never advances it.
+      outputs:
+      - id: result
+        audience: machine
+        description: One exact bound Rutter instance.
+        direct_io_ref: return-value
+        cardinality: {minimum: 1, maximum: 1}
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: Never empty on success.
+        type:
+          kind: string
+          description: Bound direct BaseRutter instance.
+          sensitivity: user-private
+      outcomes:
+      - id: created
+        class: success
+        outputs: [result]
+        effects: [reckoning-create]
+        caller_action: Operate only the returned bound instance.
+      - id: opened
+        class: success
+        outputs: [result]
+        effects: []
+        caller_action: Resume only from the exact persisted public authority.
+      - id: unknown-rutter
+        class: refusal
+        outputs: []
+        effects: []
+        caller_action: Select an explicitly registered name or persisted identity.
+      - id: invalid-state
+        class: error
+        outputs: []
+        effects: []
+        caller_action: Recover a compatible complete Reckoning instead of reconstructing progress.
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency:
+          live: Registration identity is frozen and every open strictly reads one complete Reckoning.
+        effects:
+        - id: reckoning-create
+          direct_io_ref: reckoning-store
+          action: create
+          value_source: {kind: argument, argument_ref: charter-data}
+          may_occur_in_outcomes: [created]
+          confirmation_evidence: {kind: direct-io, direct_io_ref: reckoning-store}
+          reversibility:
+            irreversible: Runtime does not delete a created voyage automatically.
+        mutation_safety:
+          atomicity:
+            atomic: Creation publishes one complete initial Reckoning only when absent.
+          concurrent_invocations:
+            safe: Confined storage create is exclusive and later operations use the per-Reckoning lock.
+          idempotency:
+            non_idempotent: Repeating create at the same path is rejected.
+          on_uncertain_completion:
+            verify_then_decide: Open the requested path and compare its persisted Charter identity.
+          partial_effects_on_failure:
+            possible: A late durability failure may occur after the complete creation is visible.
+          rollback_on_failure:
+            unavailable: Runtime retains no automatic deletion authority.
+        verification:
+        - method: direct-io-state
+          direct_io_ref: reckoning-store
+      helpers: []
+      direct_io:
+        reads:
+        - id: reckoning-store
+          medium: local-system
+          access: read
+          system: rutter.source.storage
+          content: Persisted Rutter identity and complete Reckoning
+          formats: [python-object]
+          sensitivity: user-private
+        writes:
+        - id: reckoning-store
+          medium: local-system
+          access: read-write
+          system: rutter.source.storage
+          content: Initial complete Reckoning
+          formats: [python-object]
+          sensitivity: user-private
+        - id: return-value
+          medium: local-system
+          access: write
+          content: Bound direct Rutter instance
+          formats: [python-object]
+          sensitivity: user-private
+        network: []
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []

@@ -1,0 +1,160 @@
+schema_version: 6
+node_type: behavioral_source
+id: using-compass.source.gateway
+version: 5
+description: Defines source-free rules for operating one authorized bound Rutter through its public reduction API.
+gateway:
+  path: SKILL.md
+  language: Markdown
+content:
+- SKILL\.md
+dependencies: []
+uses_interfaces:
+- interface: rutter.interface.bound-operations
+  version: 1
+interfaces:
+  using-compass.source.gateway.interface.default:
+    version: 5
+    description: Operate one authorized bound Rutter by classifying every public continuation result before requesting one current string instruction.
+    usage: request=<Use compass on rutter-name>; binding=<one authorized bound BaseRutter instance>
+    contract:
+      arguments:
+        request:
+          description: Literal Compass request naming the Rutter undertaking to operate.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+        binding:
+          description: Invoker-provided runtime value containing one authorized bound BaseRutter instance.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            description: Bound Python Rutter value supplied by the authorized invoker.
+            sensitivity: user-private
+      preconditions: []
+      interaction:
+        mode: unattended
+      caller_warnings:
+      - external-side-effect: Normal continuation may execute declared callable effects through the bound Rutter; external work cannot be rolled back by the caller.
+      outputs:
+      - id: response
+        audience: both
+        cardinality:
+          minimum: 1
+          maximum: 1
+        description: Current Rutter instruction evidence, terminal result, fault, uncertainty, or public-interface gap.
+        direct_io_ref: response
+        empty: Never empty.
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      outcomes:
+      - id: advanced
+        class: success
+        outputs:
+        - response
+        effects:
+        - bound-rutter-operation
+        caller_action: Classify the returned successor and public authority before making another call on the same bound Rutter instance.
+      - id: terminal
+        class: success
+        outputs:
+        - response
+        effects:
+        - bound-rutter-operation
+        caller_action: Stop and report the authoritative terminal status.
+      - id: faulted
+        class: error
+        outputs:
+        - response
+        effects:
+        - bound-rutter-operation
+        caller_action: Stop and report the authoritative fault diagnostics.
+      - id: uncertain
+        class: error
+        outputs:
+        - response
+        effects:
+        - bound-rutter-operation
+        caller_action: Stop for manual reconciliation without inventing a recovery transition.
+      - id: interface-gap
+        class: refusal
+        outputs:
+        - response
+        effects: []
+        caller_action: Repair the public Rutter interface or binding instead of searching internals.
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency:
+          live: Every operation and authority check uses the public values exposed by the same bound Rutter instance; any persistence is encapsulated by that interface.
+        effects:
+        - id: bound-rutter-operation
+          direct_io_ref: bound-rutter
+          action: execute
+          value_source:
+            kind: argument
+            argument_ref: binding
+          may_occur_in_outcomes:
+          - advanced
+          - terminal
+          - faulted
+          - uncertain
+          confirmation_evidence:
+            kind: output
+            output_ref: response
+          reversibility:
+            irreversible: The caller has no rollback authority for state or external effects encapsulated by the bound Rutter interface.
+        mutation_safety:
+          atomicity:
+            atomic: Pure continuation stages successor coordinates and commits one complete Reckoning replacement while holding the bound transaction.
+          concurrent_invocations:
+            safe: Cooperating bound Rutter callers serialize operations through the same Reckoning transaction.
+          idempotency:
+            non_idempotent: An accepted result or callable continuation can advance the Reckoning revision and state.
+          on_uncertain_completion:
+            verify_then_decide: Inspect the bound Rutter's public Fix and instruction status, then follow only the displayed authorized operation.
+          partial_effects_on_failure:
+            possible: A late durability failure may leave a whole successor visible; an interrupted external effect may leave planned or uncertain recovery authority.
+          rollback_on_failure:
+            unavailable: Reckoning replacement cannot roll back external systems.
+        verification:
+        - method: output-schema
+          output_ref: response
+      helpers: []
+      direct_io:
+        reads:
+        - id: request
+          medium: prompt
+          system: agent-runtime
+          access: read
+          content: Literal Compass request for the bound Rutter undertaking.
+          formats:
+          - text
+          sensitivity: user-private
+        writes:
+        - id: response
+          medium: prompt
+          system: agent-runtime
+          access: write
+          content: Current instruction evidence, terminal status, fault, uncertainty, or interface-gap report.
+          formats:
+          - markdown
+          sensitivity: derived-private
+        - id: bound-rutter
+          medium: local-system
+          access: execute
+          system: rutter.interface.bound-operations
+          content: Public operations on the authorized bound Rutter; state persistence and storage are encapsulated by the consumed interface.
+          formats:
+          - python-object
+          sensitivity: user-private
+        network: []

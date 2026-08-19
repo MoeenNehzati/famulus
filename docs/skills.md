@@ -73,6 +73,7 @@ This page is the complete skill inventory. For walkthroughs and examples, start 
 - `cloud-files` — Bounded read/write of plain files under a configured Google Drive root _(topics: external-integrations, storage-and-sync; activated by: user request, skill workflow)_
 - `connect-google` — The user needs to set up or restore Google authentication for Famulus _(topics: external-integrations; activated by: user request, skill workflow)_
 - `install-assistant-tools` — Install or update launchers, wiring, hooks, and environment on a machine _(topics: assistant-installation, system-maintenance; activated by: user request)_
+- `using-compass` — A user or another skill directs the agent to use a named compass _(topics: task-automation, session-management; activated by: user request, skill workflow)_
 
 ## Assistant Interaction
 

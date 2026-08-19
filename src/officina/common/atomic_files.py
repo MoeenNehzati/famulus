@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import ctypes
+from contextlib import contextmanager
 import os
 import secrets
 import stat
 from pathlib import Path
+from typing import Iterator
 
 
 _CAPABILITY_ERROR = "secure directory-relative replacement is unavailable"
@@ -478,6 +480,56 @@ def _posix_atomic_create_bytes(
         raise
     finally:
         cleanup_error = _cleanup_write(parent_fd, temp_name, temp_created)
+        if failure is None and cleanup_error is not None:
+            raise cleanup_error
+
+
+@contextmanager
+def _posix_exclusive_file_lock(
+    path: Path, *, allowed_root: Path, mode: int
+) -> Iterator[None]:
+    """Hold one confined regular sidecar as a cooperative process lock."""
+
+    parent_fd, name = _open_parent(path, allowed_root)
+    descriptor = -1
+    failure: BaseException | None = None
+    try:
+        existed = _reject_unsafe_final(parent_fd, name)
+        if not existed:
+            try:
+                descriptor = _secure_open(
+                    name,
+                    os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                    mode,
+                    dir_fd=parent_fd,
+                )
+            except FileExistsError:
+                _reject_unsafe_final(parent_fd, name)
+        if descriptor < 0:
+            descriptor = _secure_open(
+                name,
+                os.O_RDWR | os.O_NOFOLLOW,
+                mode,
+                dir_fd=parent_fd,
+            )
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise AtomicWriteError(f"lock is not a regular file: {name}")
+        _secure_fchmod(descriptor, mode)
+        try:
+            import fcntl
+        except ImportError as exc:  # pragma: no cover - required POSIX stdlib
+            raise AtomicWriteError(_CAPABILITY_ERROR) from exc
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        linked = _secure_stat(parent_fd, name)
+        if (linked.st_dev, linked.st_ino) != (metadata.st_dev, metadata.st_ino):
+            raise AtomicWriteError(f"lock changed while acquiring it: {path}")
+        yield
+    except BaseException as exc:
+        failure = exc
+        raise
+    finally:
+        cleanup_error = _cleanup_read(descriptor, parent_fd)
         if failure is None and cleanup_error is not None:
             raise cleanup_error
 
@@ -1512,6 +1564,43 @@ def _windows_unlock_handle(handle: int, overlapped: object) -> None:
         raise _windows_call_error("cannot unlock native certificate log")
 
 
+@contextmanager
+def _windows_exclusive_file_lock(
+    path: Path, *, allowed_root: Path, mode: int
+) -> Iterator[None]:
+    """Hold one confined regular sidecar as a cooperative process lock."""
+
+    del mode
+    parents, parts = _windows_open_parent(path, allowed_root)
+    parent_handle, name = parents[-1], parts[-1]
+    handle = -1
+    lock = None
+    try:
+        _windows_verify_parent_chain(parents, parts)
+        _sid_buffer, _sid, _acl, descriptor = _windows_security_material()
+        handle, _information = _windows_open_validated(
+            parent_handle,
+            name,
+            access=_WIN_MUTATE_ACCESS,
+            disposition=3,
+            options=0x2 | _WIN_FILE_OPTIONS,
+            directory=False,
+            security_descriptor=descriptor,
+        )
+        lock = _windows_lock_handle(handle)
+        _windows_verify_parent_chain(parents, parts)
+        _windows_verify_named_handle(parent_handle, name, handle)
+        _windows_set_user_restrictive_acl(handle, _acl)
+        _windows_require_restrictive_acl(handle, name)
+        yield
+    finally:
+        try:
+            if lock is not None:
+                _windows_unlock_handle(handle, lock)
+        finally:
+            _windows_close_chain(parents + ([handle] if handle >= 0 else []))
+
+
 def _windows_append_bytes(
     path: Path,
     data: bytes,
@@ -1659,6 +1748,32 @@ def atomic_replace_bytes(
             mode=mode,
             operation="replace",
         )
+
+
+@contextmanager
+def exclusive_file_lock(
+    path: Path,
+    *,
+    allowed_root: Path,
+    mode: int = 0o600,
+) -> Iterator[None]:
+    """Serialize cooperating processes through one confined sidecar file.
+
+    The lock is advisory: every reader and writer of the protected resource
+    must cooperate by acquiring this same stable sidecar.  It does not make
+    external systems or non-cooperating direct file edits transactional.
+    """
+
+    if os.name == "nt":
+        with _windows_exclusive_file_lock(
+            path, allowed_root=allowed_root, mode=mode
+        ):
+            yield
+    else:
+        with _posix_exclusive_file_lock(
+            path, allowed_root=allowed_root, mode=mode
+        ):
+            yield
 
 
 def atomic_create_bytes(

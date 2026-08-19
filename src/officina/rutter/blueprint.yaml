@@ -1,0 +1,52 @@
+schema_version: 6
+node_type: module
+id: rutter
+version: 1
+description: Direct Rutter definitions bound to immutable Charters and durably reduced Reckonings.
+gateway:
+  path: __init__.py
+  language: Python
+content:
+- __init__\.py
+- engine\.py
+- model\.py
+- runtime\.py
+- storage\.py
+authority:
+  owns_filesystem: []
+sources:
+  rutter.source.engine:
+    blueprint:
+      base: module-root
+      path: blueprints/engine.yaml
+  rutter.source.model:
+    blueprint:
+      base: module-root
+      path: blueprints/model.yaml
+  rutter.source.runtime:
+    blueprint:
+      base: module-root
+      path: blueprints/runtime.yaml
+  rutter.source.storage:
+    blueprint:
+      base: module-root
+      path: blueprints/storage.yaml
+children: {}
+namespace_exports: {}
+exports:
+  rutter.interface.binding:
+    source_interface: rutter.source.runtime.interface.binding
+    access:
+      allow_all_modules: false
+      allowed_callers: []
+  rutter.interface.bound-operations:
+    source_interface: rutter.source.engine.interface.bound-operations
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - using-compass
+  rutter.interface.model:
+    source_interface: rutter.source.model.interface.python-api
+    access:
+      allow_all_modules: false
+      allowed_callers: []
