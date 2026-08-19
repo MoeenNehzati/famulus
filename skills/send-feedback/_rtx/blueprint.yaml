@@ -1,0 +1,49 @@
+authority:
+  owns_filesystem: []
+  suggested_permissions:
+    bash:
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _github_issue.py
+      - CheckRoute
+      reason: Report which feedback delivery route is available.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _github_issue.py
+      - FileIssue
+      reason: File a reviewed feedback report as a public issue.
+    network: []
+children: {}
+content:
+- _github_issue\.py
+- tests/.*
+- __init__\.py
+description: Code module for the send-feedback skill.
+exports:
+  send-feedback._rtx.interface.check-route:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: send-feedback._rtx.source.rtx-github-issue.interface.check-route
+  send-feedback._rtx.interface.file-issue:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: send-feedback._rtx.source.rtx-github-issue.interface.file-issue
+gateway:
+  language: Python>=3.11
+  path: __init__.py
+id: send-feedback._rtx
+namespace_exports: {}
+node_type: module
+schema_version: 6
+sources:
+  send-feedback._rtx.source.rtx-github-issue:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-github-issue.yaml
+version: 1

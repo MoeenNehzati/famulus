@@ -55,7 +55,7 @@ personal-assistant workflows.
 | `recurring-tasks` | Job definitions, run status, and captured job output | Installs and removes per-user scheduled jobs; enabled jobs may invoke other skills without a new interactive prompt |
 | `install-assistant-tools` | Host configuration and the selected installation source | Installs launchers, hooks, profiles, runtime files, and the unattended `background_run` prerequisite; it does not enable jobs, and uninstall/purge remove only resources they currently own |
 | `get-weather` | A location supplied by the user or another workflow | Sends that location to Open-Meteo geocoding and forecast services; it uses no credential |
-| `send-feedback` | A reviewed, redacted diagnostic report | Sends the report by email only after preview and explicit approval |
+| `send-feedback` | A reviewed, redacted diagnostic report | Publishes the report as a public issue on the configured project, or sends it by email, only after preview and explicit approval; it refuses vulnerability reports and routes them to the private security channel |
 
 Research, writing, handoff, and document-review skills can read or write the
 local files the user places in scope. When file content is quoted, summarized,
@@ -202,7 +202,13 @@ The implemented public workflows use the following boundaries:
   on standard input. The skill must act only on the user's send request; there
   is not yet a repository-wide deterministic confirmation gate for all sends.
 - `send-feedback` requires a redacted preview and explicit approval before it
-  sends anything.
+  sends anything. Its default route publishes the report where anyone can read
+  it, so the preview names the route, the destination project, and the account
+  that would file the report. It refuses to prepare a public report for a
+  security vulnerability or for evidence that cannot be redacted, and directs
+  those to the private route in [SECURITY.md](../SECURITY.md) instead. When the
+  issue-filing command is unavailable, it only prepares a submission link and
+  nothing is published until the user submits it themselves.
 - List and plan mutations may proceed when the user requests them. `wrap-up`
   gathers proposed changes for one consolidated review before applying them.
 - A scheduled job is authorized when the user enables its recurring-task

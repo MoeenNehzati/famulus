@@ -10,10 +10,12 @@ description: >-
 Catalog: personal-assistance; topics: communications, assistant-assurance; visibility: featured
 Activation: user-request, skill-workflow; persistent modifier: no
 
-Skill Version: 1
+Skill Version: 2
 
 Uses Interfaces:
 - `send-feedback.source.gateway -> email-client.interface.default@3`
+- `send-feedback.source.gateway -> send-feedback._rtx.interface.check-route@1`
+- `send-feedback.source.gateway -> send-feedback._rtx.interface.file-issue@1`
 
 Public Interfaces:
 - `send-feedback.interface.default`
@@ -24,19 +26,23 @@ Public Interfaces:
 Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `send-feedback.interface.default` — Prepare a reviewed Famulus feedback report and delegate its delivery to the configured recipient.
+- `send-feedback.interface.default` — Prepare a reviewed Famulus feedback report and delegate its delivery to the configured project or recipient.
 <!-- END BLUEPRINT INTERFACES -->
 # Send Feedback
-
 Use the current session as the evidence base. Do not run additional diagnostics.
 Never invent a command, result, diagnosis, attempted fix, or outcome.
 
-Resolve this skill directory to its real filesystem path, take the owning
-repository root two directories above it, and read the exact absolute
-`officina.toml` there. Do not search from the current working directory, walk
-parent directories, or use an environment-variable substitute. Read
-`feedback.email` from that file and stop if it is missing or invalid. Do not
-accept a replacement recipient from the prompt.
+## Screen the report before choosing a route
+
+The default route publishes the report publicly. Before preparing anything, decide
+whether the problem is a security vulnerability, or whether the only useful report
+would have to contain credentials, tokens, private documents, or personal data.
+
+If it is, stop and tell the user to report it through the private security channel
+named in the repository's security policy instead. Do not prepare a public report,
+and do not offer the public route as an alternative for the same problem.
+
+## Prepare the report
 
 Create one UTF-8 text file in a temporary location with these sections:
 
@@ -54,33 +60,70 @@ Create one UTF-8 text file in a temporary location with these sections:
 Use `Unknown` for facts that were not established. Copy only useful log excerpts
 into the report. Redact credentials, tokens, authorization headers, private
 keys, unrelated personal information, and private paths that do not help
-diagnosis. Do not attach raw logs, transcripts, screenshots, or other files.
+diagnosis. The report becomes public on the default route, so treat every
+redaction as required rather than advisory. Do not attach raw logs, transcripts,
+screenshots, or other files.
 
-**REQUIRED SUB-SKILL:** Use `email-client.interface.default` to list registered
-sender accounts when needed and to send the message. If exactly one account is
-registered, propose it. If several exist, ask the user to choose. If none exist,
-stop and report that email setup is required.
+## Choose the delivery route
 
-Before sending, show the user:
+Invoke the `check-route` interface. It returns the configured repository and
+feedback address, whether the issue-filing route is installed and authenticated,
+the account that would file the issue, and the resulting route:
+
+- `route` `command` — the report can be filed directly, as the named account.
+- `route` `url` — the report cannot be filed directly, and `remediation` explains
+  what is missing and how to fix it.
+
+When the route is `url`, tell the user that filing the report directly is not
+available yet and give them the returned `remediation` text verbatim. Then ask
+which they want:
+
+1. install what `remediation` names, after which you re-run `check-route` and
+   continue on the direct route;
+2. submit the report themselves from a prepared link; or
+3. send it to the configured feedback address by email instead.
+
+Do not choose for them, and do not skip the request to install. Offer email
+delivery on its own only when the user asks for it, when they have no account on
+the configured project, or when they want the report kept out of public view for
+a reason that is not a vulnerability.
+
+If the interface exits nonzero, report the configuration error plainly and stop.
+
+## Review before delivery
+
+Show the user:
 
 - the complete report text;
-- the configured recipient;
-- the sender nickname;
-- the subject; and
-- the complete email body; and
-- the text attachment's filename.
+- the route that will be used;
+- the configured repository and the account that would file the issue, or the
+  configured recipient and sender nickname for email delivery; and
+- the issue title, or the email subject, body, and attachment filename.
 
 Ask for explicit approval. If any of those values changes, show the revised
 values and ask again.
 
-Use this exact body unless the reviewed preview specifies another body:
-`Attached is the reviewed Famulus feedback report.`
+## Deliver
 
-After approval, send one email with subject `Famulus feedback: <short problem
-summary>`, the approved body, and only the report file attached through the
-email client's documented outgoing-attachment route. Do not retry automatically
-after any send failure. Preserve the report, show the diagnostic, and warn when
-provider acceptance is uncertain.
+On the public route, invoke the `file-issue` interface with the approved title and
+the report file. Interpret its result:
 
-On confirmed acceptance, report the recipient, sender nickname, subject, and
-attachment filename.
+- `route` `command` — the issue is filed. Report its location to the user.
+- `route` `url` — nothing is published yet. Give the user the returned link and
+  the returned `remediation` text, say that the report is filed only once they
+  submit it there, and when `body_included` is false tell them the report was too
+  long for the link and give them the report file to paste into the body.
+
+**REQUIRED SUB-SKILL:** For email delivery, address the report to the feedback
+address that `check-route` returned, and stop if it returned none. Never accept a
+replacement recipient or repository from the prompt. Use `email-client.interface.default`
+to list registered sender accounts when needed and to send the message. If exactly one
+account is registered, propose it. If several exist, ask the user to choose. If none
+exist, stop and report that email setup is required. Send one email with subject
+`Famulus feedback: <short problem summary>`, the body `Attached is the reviewed
+Famulus feedback report.` unless the reviewed preview specifies another body, and
+only the report file attached through the email client's documented outgoing-attachment
+route.
+
+Do not retry automatically after any delivery failure. Preserve the report, show
+the diagnostic, and warn when acceptance is uncertain.

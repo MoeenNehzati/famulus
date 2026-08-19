@@ -1,8 +1,9 @@
 content:
 - SKILL\.md
 dependencies: []
-description: Coordinates session-evidence collection, redacted text-report preparation,
-  explicit review, sender selection, and delegated email delivery.
+description: Coordinates session-evidence collection, sensitivity screening, redacted
+  text-report preparation, explicit review, and delegated delivery to a public issue
+  or to the configured feedback address.
 gateway:
   language: Markdown
   path: SKILL.md
@@ -20,8 +21,9 @@ interfaces:
             kind: string
             sensitivity: user-private
       caller_warnings:
-      - external-side-effect: After explicit approval, the delegated email-client
-          interface sends the reviewed report to the configured feedback address.
+      - external-side-effect: After explicit approval, the delegated interface either
+          publishes the reviewed report as a public issue on the configured project
+          or sends it to the configured feedback address.
       direct_io:
         network: []
         reads:
@@ -34,8 +36,8 @@ interfaces:
           sensitivity: user-private
           system: agent-runtime
         - access: read
-          content: Feedback address from the exact owning repository configuration
-            resolved through this skill's real filesystem path.
+          content: Feedback repository and address from the exact owning repository
+            configuration resolved through this skill's real filesystem path.
           formats:
           - toml
           id: feedback-config
@@ -74,6 +76,7 @@ interfaces:
           may_occur_in_outcomes:
           - approval-required
           - sent
+          - submission-prepared
           - blocked
           reversibility:
             reversible: The temporary report can be removed after the workflow.
@@ -108,8 +111,8 @@ interfaces:
         mode: interactive
         unattended_outcome: approval-required
       outcomes:
-      - caller_action: Repair the missing or invalid feedback.email value in the owning
-          repository's exact officina.toml before retrying.
+      - caller_action: Repair the missing or invalid feedback configuration value in
+          the owning repository's exact officina.toml before retrying.
         class: refusal
         effects: []
         id: configuration-error
@@ -130,8 +133,23 @@ interfaces:
         id: sent
         outputs:
         - response
-      - caller_action: Preserve the report, resolve the named account or delivery
-          failure, and do not retry automatically.
+      - caller_action: Give the user the prepared submission link, tell them the report
+          is not filed until they submit it, and keep the report file for pasting.
+        class: partial
+        effects:
+        - create-report
+        id: submission-prepared
+        outputs:
+        - response
+      - caller_action: Route the report through the private security-reporting channel
+          named in the repository's security policy instead of this workflow.
+        class: refusal
+        effects: []
+        id: security-sensitive
+        outputs:
+        - response
+      - caller_action: Preserve the report, resolve the named account, submission, or
+          delivery failure, and do not retry automatically.
         class: partial
         effects:
         - create-report
@@ -158,11 +176,15 @@ interfaces:
           sensitivity: derived-private
       preconditions: []
     description: Prepare a reviewed Famulus feedback report and delegate its delivery
-      to the configured recipient.
-    version: 1
+      to the configured project or recipient.
+    version: 2
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
 - interface: email-client.interface.default
   version: 3
+- interface: send-feedback._rtx.interface.check-route
+  version: 1
+- interface: send-feedback._rtx.interface.file-issue
+  version: 1
 version: 1

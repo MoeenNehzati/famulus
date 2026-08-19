@@ -26,6 +26,7 @@ _BARE_EMAIL_PATTERN = re.compile(
     r"@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
     r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$"
 )
+_REPOSITORY_PATTERN = re.compile(r"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+")
 
 
 class RepositoryConfigurationError(ValueError):
@@ -46,6 +47,7 @@ class RepositoryConfiguration:
     repository_root: Path
     module_roots: tuple[Path, ...]
     feedback_email: str | None = None
+    feedback_github_repo: str | None = None
 
 
 def _require_no_symlink_components(path: Path, *, label: str) -> None:
@@ -112,17 +114,45 @@ def _relative_root(raw_root: object, *, repository_root: Path) -> Path:
     return root
 
 
-def _feedback_email(raw_feedback: object) -> str | None:
-    """Validate the optional feedback table and return its single bare address."""
+def _feedback_table(raw_feedback: object) -> Mapping[str, object] | None:
+    """Validate the optional feedback table's shape and key set."""
 
     if raw_feedback is None:
         return None
     if not isinstance(raw_feedback, Mapping):
         raise RepositoryConfigurationError("feedback must be a TOML table")
-    unknown = set(raw_feedback) - {"email"}
+    unknown = set(raw_feedback) - {"email", "github_repo"}
     if unknown:
         raise RepositoryConfigurationError(f"unknown feedback keys: {sorted(unknown)}")
-    raw_email = raw_feedback.get("email")
+    return raw_feedback
+
+
+def _feedback_github_repo(raw_feedback: object) -> str | None:
+    """Validate the optional feedback repository and return its `owner/name`."""
+
+    table = _feedback_table(raw_feedback)
+    if table is None or "github_repo" not in table:
+        return None
+    raw_repo = table.get("github_repo")
+    if (
+        not isinstance(raw_repo, str)
+        or _REPOSITORY_PATTERN.fullmatch(raw_repo) is None
+    ):
+        raise RepositoryConfigurationError(
+            "feedback.github_repo must be one nonempty owner/name repository"
+        )
+    return raw_repo
+
+
+def _feedback_email(raw_feedback: object) -> str | None:
+    """Validate the optional feedback table and return its single bare address."""
+
+    table = _feedback_table(raw_feedback)
+    if table is None:
+        return None
+    if "email" not in table:
+        return None
+    raw_email = table.get("email")
     if (
         not isinstance(raw_email, str)
         or _BARE_EMAIL_PATTERN.fullmatch(raw_email) is None
@@ -197,6 +227,7 @@ def load_repository_configuration(config_path: Path) -> RepositoryConfiguration:
         repository_root=repository_root,
         module_roots=module_roots,
         feedback_email=_feedback_email(payload.get("feedback")),
+        feedback_github_repo=_feedback_github_repo(payload.get("feedback")),
     )
 
 

@@ -7067,6 +7067,16 @@
         }
       }
     },
+    "send-feedback": {
+      "interfaces": {
+        "send-feedback._rtx.interface.check-route": {
+          "dependencies": []
+        },
+        "send-feedback._rtx.interface.file-issue": {
+          "dependencies": []
+        }
+      }
+    },
     "skill-certifier": {
       "interfaces": {
         "skill-certifier._rtx.interface.certify": {

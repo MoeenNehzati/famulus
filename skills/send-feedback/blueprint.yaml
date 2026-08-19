@@ -3,11 +3,13 @@ authority:
   suggested_permissions:
     bash: []
     network: []
-children: {}
+children:
+  _rtx: {}
 content:
 - SKILL\.md
-description: Prepares evidence-faithful, redacted Famulus problem reports and sends
-  them only after review to the repository-configured feedback address.
+description: Prepares evidence-faithful, redacted Famulus problem reports and delivers
+  them only after review, as a public issue on the repository-configured project or
+  to the repository-configured feedback address.
 discovery:
   mechanism: skill
   catalog:
@@ -30,7 +32,23 @@ gateway:
   language: Markdown
   path: SKILL.md
 id: send-feedback
-namespace_exports: {}
+namespace_exports:
+  _rtx:
+    version: 1
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    surface:
+      only:
+        send-feedback._rtx.interface.check-route: 1
+        send-feedback._rtx.interface.file-issue: 1
+    interface_access:
+      send-feedback._rtx.interface.check-route:
+        allow_all_modules: true
+        allowed_callers: []
+      send-feedback._rtx.interface.file-issue:
+        allow_all_modules: true
+        allowed_callers: []
 node_type: module
 schema_version: 6
 sources:
@@ -38,4 +56,4 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml
-version: 1
+version: 2
