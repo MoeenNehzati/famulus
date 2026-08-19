@@ -103,6 +103,15 @@ and the `prev:` line on the last row says what came of it. The `«` marks are
 where to look first — a long gap before a `(done)` whose `prev` reports nothing
 useful is exactly the wasted effort the log is meant to surface.
 
+## Changing The Instruction
+
+The instruction file is read once, when a session starts. Editing the
+`## Milestone logging` section has no effect on any agent in a session that was
+already running, including subagents it spawns — they inherit the snapshot taken
+at start. Test a wording change in a session started afterwards, and confirm
+delivery by asking one agent to quote the section back before concluding that
+agents are ignoring it.
+
 ## Limitations
 
 - Sessions with no available session id are all named `unknown`. The reader
