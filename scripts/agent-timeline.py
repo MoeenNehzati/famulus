@@ -20,7 +20,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-LOGS = Path(os.environ.get("ASSISTANT_LOGS", Path.home() / ".assistant-logs"))
+# Empty or relative would split writer and reader across working directories.
+LOGS = Path(os.environ.get("ASSISTANT_LOGS") or Path.home() / ".assistant-logs").expanduser().resolve()
 CLAUDE_PROJECTS = Path.home() / ".claude" / "projects"
 CODEX_SESSIONS = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")) / "sessions"
 
@@ -44,16 +45,21 @@ def iter_json(path: Path):
         for line in handle:
             if line.strip():
                 try:
-                    yield json.loads(line)
+                    rec = json.loads(line)
                 except json.JSONDecodeError:
                     continue
+                if isinstance(rec, dict):
+                    yield rec
 
 
 def at(rec: dict, key: str) -> datetime | None:
     """Timestamp or None — one malformed row must not kill the whole run."""
+    raw = rec.get(key)
+    if not isinstance(raw, str):
+        return None
     try:
-        return parse_ts(rec[key])
-    except (KeyError, TypeError, ValueError):
+        return parse_ts(raw)
+    except ValueError:
         return None
 
 
@@ -81,8 +87,8 @@ def read_milestones(session: str) -> tuple[list[dict], set[str]]:
                     "ts": ts,
                     "agent": label,
                     "kind": "milestone",
-                    "text": rec.get("doing", ""),
-                    "prev": rec.get("prev", ""),
+                    "text": oneline(rec.get("doing", ""), 200),
+                    "prev": oneline(rec.get("prev", ""), 200),
                 }
             )
     return events, agent_ids
@@ -172,7 +178,10 @@ def list_sessions() -> list[tuple[str, datetime, int]]:
         seen.setdefault(path.stem.split(".", 1)[0], []).append(path)
     rows = []
     for session, paths in seen.items():
-        newest = max(p.stat().st_mtime for p in paths)
+        try:
+            newest = max(p.stat().st_mtime for p in paths)
+        except OSError:
+            continue
         rows.append((session, datetime.fromtimestamp(newest).astimezone(), len(paths)))
     return sorted(rows, key=lambda r: r[1])
 
@@ -210,6 +219,9 @@ def main() -> int:
     ap.add_argument("--slow", type=float, default=10.0, help="flag gaps at least this long")
     args = ap.parse_args()
 
+    if not LOGS.is_dir():
+        print(f"no milestone logs under {LOGS}", file=sys.stderr)
+        return 1
     sessions = list_sessions()
     if args.list:
         for session, when, files in sessions:

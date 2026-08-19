@@ -26,7 +26,7 @@ If both `my-X` and `X` appear in the available skills list, ALWAYS invoke
 
 Log so progress can be followed live and, afterwards, where time went and what was wasted. Every session, main or subagent.
 
-Before starting each distinct piece of work, run `milestone "<what you are starting>" "<how the previous piece ended>"`, and `milestone --done "<how the last piece ended>"` when finished. Add `--role "<few words naming your task>"` on the first call. It records the timestamp and location itself, so never compose a path or a timestamp yourself.
+Before starting each distinct piece of work, run `milestone "<what you are starting>" "<how the previous piece ended>"`, and `milestone --done "<how the last piece ended>"` when finished. Pass `--role "<few words naming your task>"` on every call — agents in one session share a log, and that is what tells your lines apart. It records the timestamp and location itself, so never compose a path or a timestamp yourself.
 
 Log every few tool calls. Name the question you are answering next, not the file you are opening. Do not investigate solely to have something to report. Dead ends and wasted effort are the most valuable lines; record them rather than tidying them away.
 

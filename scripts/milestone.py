@@ -19,7 +19,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-LOGS = Path(os.environ.get("ASSISTANT_LOGS", Path.home() / ".assistant-logs"))
+# Empty or relative would split writer and reader across working directories.
+LOGS = Path(os.environ.get("ASSISTANT_LOGS") or Path.home() / ".assistant-logs").expanduser().resolve()
 
 
 def session_id() -> str:
@@ -70,7 +71,7 @@ def main() -> int:
     record = {
         "ts": datetime.now().astimezone().isoformat(timespec="seconds"),
         "role": args.role[:200],
-        "cwd": os.getcwd(),
+        "cwd": os.getcwd()[:200],
         "doing": doing[:200],
         "prev": prev[:200],
     }

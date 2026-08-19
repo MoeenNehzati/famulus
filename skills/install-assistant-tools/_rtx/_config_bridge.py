@@ -608,12 +608,19 @@ def run(
         from ._fs_links import default_bin_dir
     except ImportError:  # pragma: no cover - direct-script fallback
         from _fs_links import default_bin_dir
-    milestone_bin = default_bin_dir(home=home)
-    for script, command in (
-        ("milestone.py", "milestone"),
-        ("agent-timeline.py", "agent-timeline"),
-    ):
-        make_link(repo_root / "scripts" / script, milestone_bin / command, dry_run, manifest)
+    if sys.platform == "win32":
+        # Windows cannot execute an extension-less link; these helpers would
+        # need .bat wrappers, as the launcher installer builds for its own.
+        log("  SKIP milestone helpers (needs a Windows launcher wrapper)")
+    else:
+        milestone_bin = default_bin_dir(home=home)
+        if not dry_run:
+            milestone_bin.mkdir(parents=True, exist_ok=True)
+        for script, command in (
+            ("milestone.py", "milestone"),
+            ("agent-timeline.py", "agent-timeline"),
+        ):
+            make_link(repo_root / "scripts" / script, milestone_bin / command, dry_run, manifest)
 
     assistant_logs = home / ".assistant-logs"
     if sys.platform == "win32":
