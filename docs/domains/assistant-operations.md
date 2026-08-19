@@ -1,24 +1,8 @@
 # Assistant Operations
 
-This domain covers supporting infrastructure: bounded cloud storage, Google
-authentication, recurring automation, installation tooling, and synchronization
-repair.
-
-Google integrations and agent-driven recurring workflows are experimental in
-the first public release. Recurring jobs are not installed by the core setup;
-they require an explicit scheduling request. Review the
-[security and privacy boundary](../security-and-privacy.md) before enabling
-either surface.
-
-Example prompts:
-
-- `Set up recurring daily planning.`
-- `Connect Famulus to Google.`
-- `Check whether cloud-files OAuth is working.`
-- `Diagnose this bisync failure.`
-
-Some workflows depend on external systems such as Google Drive, a native
-per-user scheduler, or local repair tooling.
+This page lists supporting infrastructure skills. For recurring assistant jobs,
+see the [Automation Quickstart](../quickstarts/automation.md). For installation
+and repair, see the [installation guide](../officina/installation.md).
 
 <!-- BEGIN AUTO-GENERATED DOCS: assistant-operations -->
 > Generated from live blueprints. Do not edit this block by hand.

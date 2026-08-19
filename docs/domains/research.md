@@ -1,36 +1,8 @@
 # Research
 
-This domain covers math-heavy auditing, document review, bibliography checks,
-LaTeX support, and dependency-graph extraction for research projects.
-
-## Reasoning and Structure
-
-Use these workflows when you want the assistant to inspect the mathematical or
-logical structure of a document rather than merely summarize it.
-
-Example prompts:
-
-- `Build a math dependency graph for paper.tex.`
-- `Audit this proof for gaps.`
-- `Does this theorem actually apply in my setting?`
-- `Review this notation for consistency.`
-
-Public example:
-
-- Graph: <https://moeennehzati.github.io/assets/html/nehzati2026inference.html>
-- Paper: <https://arxiv.org/abs/2602.13450> — *Inference From Random Restarts*
-
-## Writing and Document Review
-
-Use these workflows when you want help polishing or checking a document's
-presentation.
-
-Example prompts:
-
-- `Review the flow of this section.`
-- `Polish this paragraph without changing the math.`
-- `Audit this bibliography for duplicates or bad metadata.`
-- `Convert this PDF into markdown I can inspect.`
+This page lists the skills in the research domain. For choosing the right
+review, editing, conversion, or build workflow, see the
+[Research Quickstart](../quickstarts/research.md).
 
 <!-- BEGIN AUTO-GENERATED DOCS: research -->
 > Generated from live blueprints. Do not edit this block by hand.

@@ -2,6 +2,10 @@
 
 This is the maintainer and skill-extension entrypoint for Famulus. Start here if you want to understand how the skill system is organized, how new skills are added, and how documentation and validation stay aligned with the live blueprints.
 
+For a compact map of which authoring, refactoring, blueprint, standards, and
+certification skill to use, start with the
+[Skill Development Quickstart](../quickstarts/skill-development.md).
+
 ## Core Structure
 
 The skill system is built around a small set of explicit authored surfaces:
@@ -66,6 +70,8 @@ These skills own assistant modules, standards, and their lifecycle.
 ### Software Development
 
 These skills support general software projects and repositories.
+For task-oriented routing, see the
+[Software Development Quickstart](../quickstarts/development.md).
 
 <!-- BEGIN AUTO-GENERATED DOCS: software-development -->
 > Generated from live blueprints. Do not edit this block by hand.

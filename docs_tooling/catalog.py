@@ -179,7 +179,7 @@ SUMMARY_OVERRIDES = {
     "tight-mode": "Rigorous, verified output mode with certainty over speed",
     "tool-applicability": "Check whether a theorem or framework achieves a target in the current setting",
     "update-standards": "Change canonical standards and keep their pinned closures aligned",
-    "wrap-up": "Review the day, record completions, and capture follow-up items",
+    "wrap-up": "Review the day, update plans and lists, and find handoff candidates via find-handoff-candidates",
 }
 
 _TRIGGER_PREFIXES = [
