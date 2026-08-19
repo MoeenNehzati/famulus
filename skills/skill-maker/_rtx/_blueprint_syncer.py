@@ -766,11 +766,10 @@ def generated_runtime_dependencies_manifest(
 
             generated_interfaces[interface_id_value] = {"dependencies": dependencies}
 
-        if generated_interfaces:
-            skills[skill_name] = {
-                **module_installation_metadata(skill_name, blueprint.data),
-                "interfaces": generated_interfaces,
-            }
+        skills[skill_name] = {
+            **module_installation_metadata(skill_name, blueprint.data),
+            "interfaces": generated_interfaces,
+        }
 
     return {
         "version": 2,

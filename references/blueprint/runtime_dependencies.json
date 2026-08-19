@@ -2104,6 +2104,14 @@
         }
       }
     },
+    "formal-prose-review": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
+      "interfaces": {}
+    },
     "g-calendar": {
       "maturity": "experimental",
       "installation_tier": "core",
@@ -2187,6 +2195,22 @@
           "dependencies": []
         }
       }
+    },
+    "git-workflow": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
+      "interfaces": {}
+    },
+    "hook-maker": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
+      "interfaces": {}
     },
     "initialize-tdd": {
       "maturity": "stable",
@@ -2322,6 +2346,14 @@
           ]
         }
       }
+    },
+    "latex-workshop": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
+      "interfaces": {}
     },
     "list-manager": {
       "maturity": "stable",
@@ -4706,6 +4738,31 @@
         }
       }
     },
+    "llm-wakeup": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
+      "interfaces": {}
+    },
+    "loose-mode": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": true,
+        "description": "Enables a user-selected breadth-first reasoning preference for the session."
+      },
+      "interfaces": {}
+    },
+    "make-tex-docstring": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
+      "interfaces": {}
+    },
     "math-dependency-graph": {
       "maturity": "stable",
       "installation_tier": "core",
@@ -4723,6 +4780,14 @@
           "dependencies": []
         }
       }
+    },
+    "notation-review": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
+      "interfaces": {}
     },
     "pdf-to-markdown": {
       "maturity": "stable",
@@ -4750,6 +4815,22 @@
           "dependencies": []
         }
       }
+    },
+    "prepare-handoff": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
+      "interfaces": {}
+    },
+    "proof-audit": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
+      "interfaces": {}
     },
     "recurring-tasks": {
       "maturity": "experimental",
@@ -7117,6 +7198,14 @@
         }
       }
     },
+    "refactor-node": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
+      "interfaces": {}
+    },
     "regenerate-blueprints": {
       "maturity": "stable",
       "installation_tier": "core",
@@ -7151,6 +7240,22 @@
           ]
         }
       }
+    },
+    "semantic-integration": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
+      "interfaces": {}
+    },
+    "send-feedback": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
+      "interfaces": {}
     },
     "skill-certifier": {
       "maturity": "stable",
@@ -7315,6 +7420,47 @@
           ]
         }
       }
+    },
+    "technical-flow-review": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
+      "interfaces": {}
+    },
+    "tight-mode": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": true,
+        "description": "Enables a user-selected rigor-first reasoning preference for the session."
+      },
+      "interfaces": {}
+    },
+    "tool-applicability": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
+      "interfaces": {}
+    },
+    "update-standards": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
+      "interfaces": {}
+    },
+    "wrap-up": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
+      "interfaces": {}
     }
   },
   "all": {
