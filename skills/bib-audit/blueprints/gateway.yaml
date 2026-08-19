@@ -117,3 +117,4 @@ uses_interfaces:
 - interface: bib-audit._rtx.interface.scripts-bib-validate-bibtex
   version: 1
 version: 1
+maturity: stable

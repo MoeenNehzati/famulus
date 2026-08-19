@@ -154,3 +154,4 @@ uses_interfaces:
 - interface: standards.interface.extractor
   version: 1
 version: 1
+maturity: stable

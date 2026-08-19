@@ -64,3 +64,4 @@ sources:
       base: module-root
       path: blueprints/rtx-syntax-checker.yaml
 version: 1
+maturity: stable

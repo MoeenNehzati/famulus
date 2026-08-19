@@ -74,3 +74,4 @@ sources:
       base: module-root
       path: blueprints/rtx-init.yaml
 version: 1
+maturity: experimental

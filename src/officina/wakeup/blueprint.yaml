@@ -71,3 +71,4 @@ sources:
       base: module-root
       path: blueprints/cli.yaml
 version: 1
+maturity: stable

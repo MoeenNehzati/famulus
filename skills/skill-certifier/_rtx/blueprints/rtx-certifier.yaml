@@ -397,3 +397,4 @@ uses_interfaces:
 - interface: common.interface.repository-paths
   version: 1
 version: 1
+maturity: stable

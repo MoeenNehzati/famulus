@@ -99,3 +99,4 @@ uses_interfaces:
 - interface: wakeup.interface.explicit-schedule
   version: 1
 version: 1
+maturity: stable

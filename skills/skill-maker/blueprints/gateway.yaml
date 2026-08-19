@@ -225,3 +225,4 @@ uses_interfaces:
 - interface: skill-maker._rtx.interface.sync-blueprints
   version: 1
 version: 5
+maturity: stable

@@ -105,3 +105,4 @@ uses_interfaces:
 - interface: skill-certifier._rtx.interface.certify
   version: 1
 version: 2
+maturity: stable

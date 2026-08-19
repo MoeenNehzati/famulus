@@ -9,6 +9,7 @@
     "node_type",
     "id",
     "version",
+    "maturity",
     "gateway",
     "content",
     "authority",
@@ -31,6 +32,10 @@
     "version": {
       "$ref": "common.schema.json#/definitions/interfaceVersion"
     },
+    "maturity": {
+      "type": "string",
+      "enum": ["stable", "experimental"]
+    },
     "description": {
       "type": "string",
       "minLength": 1
@@ -43,6 +48,13 @@
     },
     "discovery": {
       "$ref": "#/definitions/discovery"
+    },
+    "installation_tier": {
+      "type": "string",
+      "enum": ["core", "optional"]
+    },
+    "personal_preference": {
+      "$ref": "#/definitions/personalPreference"
     },
     "authority": {
       "$ref": "#/definitions/authority"
@@ -85,7 +97,28 @@
       }
     }
   },
+  "allOf": [
+    {
+      "if": {"required": ["discovery"]},
+      "then": {"required": ["installation_tier", "personal_preference"]}
+    }
+  ],
   "definitions": {
+    "personalPreference": {
+      "type": "object",
+      "required": ["applies"],
+      "additionalProperties": false,
+      "properties": {
+        "applies": {"type": "boolean"},
+        "description": {"type": "string", "minLength": 1}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"applies": {"const": true}}},
+          "then": {"required": ["description"]}
+        }
+      ]
+    },
     "authority": {
       "type": "object",
       "required": [

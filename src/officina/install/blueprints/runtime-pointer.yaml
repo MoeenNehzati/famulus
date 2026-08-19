@@ -222,3 +222,4 @@ uses_interfaces:
 - interface: common.interface.atomic-files
   version: 1
 version: 1
+maturity: stable

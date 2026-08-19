@@ -102,3 +102,4 @@ uses_interfaces:
 - interface: cloud-files._rtx.interface.write-config
   version: 1
 version: 2
+maturity: experimental

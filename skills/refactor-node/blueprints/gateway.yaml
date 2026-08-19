@@ -174,3 +174,4 @@ uses_interfaces:
 - interface: refactor-node.source.python-refactoring.interface.refactor-python
   version: 1
 version: 4
+maturity: stable

@@ -41,3 +41,4 @@ sources:
       base: module-root
       path: blueprints/rtx-host-links.yaml
 version: 1
+maturity: stable

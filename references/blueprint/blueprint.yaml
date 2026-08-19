@@ -32,3 +32,4 @@ sources:
       base: module-root
       path: blueprints/schema-annotated-draft.yaml
 version: 1
+maturity: stable

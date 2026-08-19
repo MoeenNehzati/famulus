@@ -99,3 +99,4 @@ uses_interfaces:
 - interface: regenerate-blueprints._rtx.interface.regenerate-blueprint
   version: 1
 version: 1
+maturity: stable

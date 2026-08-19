@@ -1,6 +1,7 @@
 schema_version: 6
 id: wakeup.source.scheduler
 version: 1
+maturity: stable
 node_type: behavioral_source
 description: Create, inspect, cancel, and deliver persistent wakeup jobs while suppressing
   stale wakeups.

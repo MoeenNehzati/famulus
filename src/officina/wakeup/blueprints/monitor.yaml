@@ -1,6 +1,7 @@
 schema_version: 6
 id: wakeup.source.monitor
 version: 1
+maturity: stable
 node_type: behavioral_source
 description: Acquire normalized quota observations and convert near-limit events into
   reminders or policy-controlled wakeups.

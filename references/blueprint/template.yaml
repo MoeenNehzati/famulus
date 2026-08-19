@@ -2,11 +2,15 @@ schema_version: 6
 node_type: module
 id: example-skill
 version: 1
+maturity: stable
 gateway:
   path: SKILL.md
   language: Markdown
 content:
 - SKILL\.md
+installation_tier: core
+personal_preference:
+  applies: false
 authority:
   owns_filesystem: []
 sources: {}

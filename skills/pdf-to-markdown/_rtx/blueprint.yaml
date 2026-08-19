@@ -62,3 +62,4 @@ sources:
       base: module-root
       path: blueprints/rtx-source-fetcher.yaml
 version: 1
+maturity: stable

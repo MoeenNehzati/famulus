@@ -111,3 +111,4 @@ uses_interfaces:
 - interface: email-client._rtx.interface.send-email
   version: 1
 version: 2
+maturity: stable

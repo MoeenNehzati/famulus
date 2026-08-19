@@ -29,3 +29,4 @@ uses_interfaces:
 - interface: connect-google._rtx.interface.connect-services
   version: 1
 version: 1
+maturity: stable

@@ -150,3 +150,4 @@ runtime_dependencies: []
 schema_version: 6
 uses_interfaces: []
 version: 1
+maturity: stable

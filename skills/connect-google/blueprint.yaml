@@ -100,3 +100,7 @@ sources:
       base: module-root
       path: blueprints/personal-preferences-default.yaml
 version: 2
+maturity: experimental
+installation_tier: core
+personal_preference:
+  applies: false

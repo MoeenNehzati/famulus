@@ -52,3 +52,4 @@ sources:
       base: module-root
       path: blueprints/rtx-skill-sources-init.yaml
 version: 1
+maturity: stable

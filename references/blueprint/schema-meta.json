@@ -69,7 +69,8 @@
           "properties": {
             "include": {
               "type": "boolean"
-            }
+            },
+            "example": {}
           }
         },
         "doc": {

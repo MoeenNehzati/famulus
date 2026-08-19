@@ -465,3 +465,4 @@ uses_interfaces:
 - interface: certification.interface.view
   version: 1
 version: 1
+maturity: stable

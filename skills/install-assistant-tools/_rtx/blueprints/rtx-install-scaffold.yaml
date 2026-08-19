@@ -227,3 +227,4 @@ uses_interfaces:
 - interface: install.interface.managed-runtime
   version: 1
 version: 1
+maturity: stable

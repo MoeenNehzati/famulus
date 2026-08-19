@@ -122,3 +122,4 @@ uses_interfaces:
 - interface: connect-google._rtx.interface.install-client
   version: 1
 version: 2
+maturity: experimental

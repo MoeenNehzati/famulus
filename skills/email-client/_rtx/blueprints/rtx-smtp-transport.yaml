@@ -247,3 +247,4 @@ uses_interfaces:
 - interface: credentials.interface.secret-store
   version: 1
 version: 1
+maturity: stable

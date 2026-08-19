@@ -30,3 +30,4 @@ sources:
       base: module-root
       path: blueprints/rtx-blueprint-syncer.yaml
 version: 1
+maturity: stable

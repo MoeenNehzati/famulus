@@ -9,6 +9,7 @@
     "node_type",
     "id",
     "version",
+    "maturity",
     "gateway",
     "content",
     "dependencies",
@@ -28,6 +29,10 @@
     },
     "version": {
       "$ref": "common.schema.json#/definitions/interfaceVersion"
+    },
+    "maturity": {
+      "type": "string",
+      "enum": ["stable", "experimental"]
     },
     "description": {
       "type": "string",

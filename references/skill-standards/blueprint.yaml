@@ -18,3 +18,4 @@ sources:
       base: module-root
       path: blueprints/interface-design.yaml
 version: 1
+maturity: stable

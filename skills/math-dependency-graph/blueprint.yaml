@@ -68,3 +68,7 @@ sources:
       base: module-root
       path: blueprints/instructions-extract.yaml
 version: 3
+maturity: stable
+installation_tier: core
+personal_preference:
+  applies: false

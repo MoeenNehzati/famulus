@@ -114,3 +114,4 @@ uses_interfaces:
 - interface: list-manager._rtx.interface.update-list
   version: 1
 version: 1
+maturity: stable

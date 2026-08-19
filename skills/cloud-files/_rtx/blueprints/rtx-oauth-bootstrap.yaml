@@ -241,3 +241,4 @@ uses_interfaces:
 - interface: credentials.interface.oauth
   version: 1
 version: 1
+maturity: experimental

@@ -37,3 +37,7 @@ sources:
       base: module-root
       path: blueprints/gateway.yaml
 version: 1
+maturity: stable
+installation_tier: core
+personal_preference:
+  applies: false

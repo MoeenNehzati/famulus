@@ -143,3 +143,4 @@ uses_interfaces:
 - interface: git-workflow.interface.default
   version: 1
 version: 1
+maturity: stable

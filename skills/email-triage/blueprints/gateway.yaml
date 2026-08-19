@@ -105,3 +105,4 @@ uses_interfaces:
 - interface: email-triage._rtx.interface.scripts-write-metrics
   version: 1
 version: 2
+maturity: stable

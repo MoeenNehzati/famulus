@@ -34,3 +34,4 @@ sources:
   ci-debug._rtx.source.rtx-run-targeted-tests:
     blueprint: {base: module-root, path: blueprints/rtx-run-targeted-tests.yaml}
 version: 1
+maturity: stable

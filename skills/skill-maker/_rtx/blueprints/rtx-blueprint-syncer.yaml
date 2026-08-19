@@ -233,3 +233,4 @@ uses_interfaces:
 - interface: blueprints.interface.graph
   version: 1
 version: 1
+maturity: stable

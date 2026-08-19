@@ -1,6 +1,7 @@
 schema_version: 6
 id: wakeup.source.session-data
 version: 1
+maturity: stable
 node_type: behavioral_source
 description: Discover Claude and Codex sessions and interpret their transcript state
   and reset deadlines.

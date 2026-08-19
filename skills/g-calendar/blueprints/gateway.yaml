@@ -103,3 +103,4 @@ uses_interfaces:
 - interface: g-calendar._rtx.interface.scripts-gcal
   version: 1
 version: 2
+maturity: experimental

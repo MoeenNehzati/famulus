@@ -304,3 +304,4 @@ uses_interfaces:
 - interface: initialize-tdd._rtx.interface.setup-compat-aliases
   version: 1
 version: 1
+maturity: stable

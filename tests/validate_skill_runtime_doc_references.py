@@ -40,6 +40,7 @@ def _write_module_blueprint(
         "node_type": "module",
         "id": "demo-skill",
         "version": 1,
+        "maturity": "stable",
         "gateway": {"language": "Markdown", "path": "SKILL.md"},
         "content": [r"SKILL\.md"],
         "authority": {"owns_filesystem": []},

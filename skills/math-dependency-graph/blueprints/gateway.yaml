@@ -96,3 +96,4 @@ uses_interfaces:
 - interface: math-dependency-graph._rtx.interface.scripts-serve-graph
   version: 1
 version: 2
+maturity: stable

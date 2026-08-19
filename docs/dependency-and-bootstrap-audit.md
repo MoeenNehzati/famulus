@@ -50,7 +50,7 @@ direct packages. Repeated declarations are collapsed here.
 | `pytest` | `8.3.4` in the managed core | MIT | Runs repository and skill validation inside the managed environment |
 | `pytest-xdist` | `3.8.0` in the managed core | MIT | Provides the repository validator runner's parallel worker support |
 | `rich` | Any version | MIT | Open-ended |
-| `marker-pdf` | Any version; Linux blueprint declaration | Apache-2.0 for code | Excluded from the first supported release lock and installer; its model weights have separate use terms |
+| `marker-pdf` | Any version; Linux blueprint declaration | Apache-2.0 for code | Owned by the optional `pdf-to-markdown` module rather than inferred from its package name; its model weights have separate use terms |
 
 These direct license choices are compatible with distributing Famulus under
 MIT when their own notices and terms are preserved. The reviewed release lock

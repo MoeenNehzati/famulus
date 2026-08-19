@@ -69,3 +69,4 @@ sources:
       base: module-root
       path: blueprints/process-binding.yaml
 version: 1
+maturity: stable

@@ -37,3 +37,8 @@ sources:
       base: module-root
       path: blueprints/gateway.yaml
 version: 2
+maturity: stable
+installation_tier: core
+personal_preference:
+  applies: true
+  description: Enables a user-selected breadth-first reasoning preference for the session.

@@ -36,3 +36,4 @@ sources:
       base: module-root
       path: blueprints/rtx-certifier.yaml
 version: 1
+maturity: stable

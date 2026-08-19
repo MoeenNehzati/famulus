@@ -112,3 +112,4 @@ uses_interfaces:
 - interface: pdf-to-markdown._rtx.interface.scripts-fetch-arxiv-source
   version: 1
 version: 1
+maturity: stable

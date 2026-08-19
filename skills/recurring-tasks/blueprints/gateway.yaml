@@ -106,3 +106,4 @@ uses_interfaces:
 - interface: recurring-tasks._rtx.interface.scripts-view-logs
   version: 1
 version: 1
+maturity: experimental

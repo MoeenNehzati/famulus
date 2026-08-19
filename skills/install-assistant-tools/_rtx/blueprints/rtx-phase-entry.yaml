@@ -201,3 +201,4 @@ uses_interfaces:
 - interface: install.interface.uv-bootstrap
   version: 1
 version: 1
+maturity: stable

@@ -105,3 +105,4 @@ uses_interfaces:
 - interface: skill-drift._rtx.interface.drift-status
   version: 1
 version: 2
+maturity: stable

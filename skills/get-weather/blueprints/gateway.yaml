@@ -91,3 +91,4 @@ uses_interfaces:
 - interface: get-weather._rtx.interface.scripts-weather
   version: 1
 version: 1
+maturity: stable

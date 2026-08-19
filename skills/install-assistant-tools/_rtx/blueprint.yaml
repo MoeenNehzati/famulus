@@ -124,3 +124,4 @@ sources:
       base: module-root
       path: blueprints/rtx-phase-entry.yaml
 version: 1
+maturity: stable

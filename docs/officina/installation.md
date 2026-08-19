@@ -102,11 +102,18 @@ Runs in every install, regardless of mode or which agents you want. Installs:
   lock at `references/runtime/requirements-core.lock`. That lock is generated
   from the pooled executable behavioral-source declarations in
   `references/blueprint/runtime_dependencies.json`; it is not a second
-  handwritten dependency inventory. Before creating a release, the installer
+  handwritten dependency inventory. Discoverable module blueprints declare
+  whether they are `core` or `optional`; core modules are selected by default,
+  while an optional selection includes that module's complete source and
+  runtime-dependency closure. Maturity (`stable` or `experimental`) is
+  independent of this choice. Before creating a release, the installer
   checks that the generated input matches the manifest, that the lock headers
   identify that input plus pinned `uv 0.11.29` and managed CPython `3.11.15`,
   that the complete lock body matches its recorded SHA-256 digest, and that
-  each parsed record has a concrete `==` version and a SHA-256 hash. Wildcard
+  each parsed record has a concrete `==` version and a SHA-256 hash. It computes
+  each optional selection's platform-filtered package delta dynamically from
+  resolver metadata, reporting an unavailable estimate when a package size
+  cannot be determined. Wildcard
   versions are rejected. It then installs the lock with `--require-hashes` and
   installs the locally built Officina wheel with dependency resolution
   disabled. Candidate construction verifies the wheel before activation.
@@ -193,9 +200,9 @@ before enabling recurring automation.
 By design, `_phase_entry.py` stops once scaffold, configuration bridge, and
 launcher installation finish. It does not:
 
-- Install `marker-pdf` or its OCR/ML dependency closure. That dependency is
-  excluded from the first supported release lock; `--include-optional-deps`
-  exits without installing rather than escaping the reviewed lock.
+- Select the optional `pdf-to-markdown` module or install its `marker-pdf`
+  OCR/ML dependency closure. It remains outside the default core selection;
+  optional modules are selected explicitly with their reviewed closure.
 - Connect any external account. `connect-google` prepares shared Google OAuth
   client configuration afterward; each service initiates and owns its OAuth
   exchange and credentials.
@@ -269,7 +276,7 @@ _phase_entry.py [--home DIR] [--bin-dir DIR] [--shell-rc FILE]
 | `--non-interactive` | Never prompt. Requires `--dev-mode`/`--no-dev-mode` explicitly, and `--repo-path` if dev mode is chosen. Without this flag, missing choices are prompted for interactively |
 | `--dev-mode` / `--no-dev-mode` | Explicit mode choice (mutually exclusive). Omit to be prompted |
 | `--repo-path DIR` | Repo checkout path, required if `--dev-mode` is chosen non-interactively |
-| `--include-optional-deps` | Unsupported in the first release; exits without installing. `--no-optional-deps` is accepted for compatibility and matches the only supported behavior |
+| `--include-optional-deps` | Requests explicit optional-module selection. The installer presents the affected skills, package delta, and a resolver-derived size estimate when available; otherwise it marks that estimate unavailable. |
 | `--agents LIST` | Comma-separated subset of `assistant,collab,coauthor,background_run,tw`. Omit to be prompted; empty in non-interactive mode installs no optional agents, but Phase 1 still installs required `background_run` |
 | `--default-llm {claude,codex}` | Default backend for the chosen agents. Omit to be prompted; defaults to `claude` in non-interactive mode |
 

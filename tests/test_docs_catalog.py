@@ -55,6 +55,7 @@ def _write_skill(
         "node_type": "module",
         "id": name,
         "version": 1,
+        "maturity": "stable",
         "gateway": {"path": "SKILL.md", "language": "Markdown"},
         "content": [r"SKILL\.md"],
         "discovery": {
@@ -67,6 +68,8 @@ def _write_skill(
             "activated_by": activated_by or ["user-request"],
             "persistent_modifier": persistent_modifier,
         },
+        "installation_tier": "core",
+        "personal_preference": {"applies": False},
         "authority": {"owns_filesystem": []},
         "sources": {},
         "children": {},
@@ -77,6 +80,28 @@ def _write_skill(
         yaml.safe_dump(blueprint, sort_keys=False),
         encoding="utf-8",
     )
+
+
+def test_live_blueprints_declare_maturity_and_discovery_installation_metadata() -> None:
+    """Live node readiness and discoverable-module installation are explicit."""
+
+    blueprint_paths = sorted(
+        (
+            *REPO_ROOT.joinpath("skills").glob("**/blueprint.yaml"),
+            *REPO_ROOT.joinpath("src", "officina").glob("**/blueprint.yaml"),
+        )
+    )
+
+    assert blueprint_paths
+    for path in blueprint_paths:
+        blueprint = yaml.safe_load(path.read_text(encoding="utf-8"))
+        assert blueprint["maturity"] in {"stable", "experimental"}, path
+        if blueprint["node_type"] == "module" and "discovery" in blueprint:
+            assert blueprint["installation_tier"] in {"core", "optional"}, path
+            preference = blueprint["personal_preference"]
+            assert isinstance(preference["applies"], bool), path
+            if preference["applies"]:
+                assert preference["description"].strip(), path
 
 
 def test_load_catalog_reads_configured_discovery_metadata(tmp_path: Path) -> None:

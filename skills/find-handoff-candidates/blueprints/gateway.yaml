@@ -95,3 +95,4 @@ uses_interfaces:
 - interface: find-handoff-candidates._rtx.interface.scan
   version: 1
 version: 1
+maturity: stable

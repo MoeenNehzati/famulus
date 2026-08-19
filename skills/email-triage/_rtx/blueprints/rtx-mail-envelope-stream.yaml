@@ -279,3 +279,4 @@ uses_interfaces:
 - interface: list-manager._rtx.interface.cloud-read
   version: 1
 version: 1
+maturity: stable

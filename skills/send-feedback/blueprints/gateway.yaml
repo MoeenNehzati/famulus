@@ -166,3 +166,4 @@ uses_interfaces:
 - interface: email-client.interface.default
   version: 3
 version: 1
+maturity: stable

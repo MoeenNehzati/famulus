@@ -167,3 +167,4 @@ sources:
       base: module-root
       path: blueprints/rtx-smtp-transport.yaml
 version: 1
+maturity: stable

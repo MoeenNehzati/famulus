@@ -2,6 +2,7 @@ schema_version: 6
 node_type: module
 id: unrelated
 version: 1
+maturity: stable
 gateway:
   path: SKILL.md
   language: Markdown

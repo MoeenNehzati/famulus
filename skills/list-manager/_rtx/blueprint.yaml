@@ -199,3 +199,4 @@ sources:
       base: module-root
       path: blueprints/rtx-yaml-store.yaml
 version: 1
+maturity: stable

@@ -92,3 +92,4 @@ uses_interfaces:
 - interface: list-manager.interface.default
   version: 1
 version: 2
+maturity: stable
