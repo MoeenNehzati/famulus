@@ -47,10 +47,31 @@ This is the shared router for Google OAuth-client preparation.
 1. Use `connect-google._rtx.interface.client-status` before asking the user for a file.
 2. If the stored client is valid, use `connect-google.interface.connect-services`.
 3. If no valid client is installed, ask whether the user already has a Google
-   Desktop OAuth client JSON. If status reports legacy candidates, ask before
-   importing one; when candidates differ, ask which one to use. A confirmed or
-   supplied file routes to `connect-google.interface.connect-services`; otherwise
-   route to `connect-google.interface.create-client`.
+   Desktop OAuth client JSON, naming both ways to have one: they created it in
+   their own Google Cloud project, or the Famulus maintainer added them to a
+   shared project and sent them the file. If status reports legacy candidates,
+   ask before importing one; when candidates differ, ask which one to use. A
+   confirmed or supplied file routes to
+   `connect-google.interface.connect-services`; otherwise route to
+   `connect-google.interface.create-client`.
+
+When a user without a client asks why this step cannot be automated, explain
+that Google requires every application reaching an account to be registered in
+a Cloud project, and that Famulus runs locally with no server to hold a shared
+identity. Bundling one client would put every user under a single app identity,
+where one user's misuse suspends the app for everyone. Reproduce the following
+two sentences verbatim; do not paraphrase, soften, or add specifics such as
+costs or timelines:
+
+> Drive, Calendar, and Gmail require Google's restricted scopes, and verifying
+> an app for those requires an annual third-party security assessment.
+> Until an app passes it, Google's OAuth user cap allows at most 100 manually
+> listed test users, and their refresh tokens expire after seven days, so those
+> users must authorize again.
+
+Owning a project removes that cap for its owner; joining the maintainer's
+project is subject to it. `instructions/create-client.md` repeats the second
+sentence at the configuration step; keep both copies identical.
 
 Apply the same route to initial setup and reconnect requests. Recommend Drive,
 Calendar, and Gmail while allowing the user to choose a subset. The connection

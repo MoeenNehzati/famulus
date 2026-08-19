@@ -355,6 +355,40 @@ def test_create_client_route_contract(create_client_body: str) -> None:
     assert "connect-google-rtx" not in text
 
 
+def quoted_prose(text: str) -> str:
+    """Return text with blockquote markers and line wrapping normalized away."""
+    lines = (line.strip().lstrip(">").strip() for line in text.splitlines())
+    return " ".join(" ".join(lines).split())
+
+
+CANONICAL_USER_CAP_SENTENCE = (
+    "google's oauth user cap allows at most 100 manually listed test users, "
+    "and their refresh tokens expire after seven days, so those users must "
+    "authorize again."
+)
+
+
+def test_user_cap_wording_is_identical_in_router_and_create_client(
+    skill_body: str,
+    create_client_body: str,
+) -> None:
+    """The router explains why setup is manual; create-client states the same
+    limits at the configuration step. Both must quote one sentence, so the
+    numbers cannot drift apart or be paraphrased into invented specifics."""
+    for text in (skill_body, create_client_body):
+        assert CANONICAL_USER_CAP_SENTENCE in quoted_prose(text)
+
+
+def test_router_pins_restricted_scope_rationale(skill_body: str) -> None:
+    """The cap is only informative alongside its cause, and the cost claim is
+    the one most likely to be embellished with invented figures."""
+    text = quoted_prose(skill_body)
+    assert "restricted scopes" in text
+    assert "annual third-party security assessment" in text
+    assert "verbatim" in text
+    assert "costs or timelines" in text
+
+
 def test_connect_services_route_contract(connect_services_body: str) -> None:
     text = connect_services_body
     for phrase in (

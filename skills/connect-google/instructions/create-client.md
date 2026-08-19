@@ -9,11 +9,16 @@ Guide the user through the current Google Auth Platform UI:
 1. Select an existing Google Cloud project or create one.
 2. Configure the app audience as External. If its publishing status is
    Testing, add the exact Google email address of every intended user under
-   Test users. Testing supports at most 100 manually listed test users, and
-   refresh tokens typically expire after seven days, so users may need to
-   authorize again. Publishing removes the manual test-user gate, but an
-   unverified app requesting these scopes remains subject to Google's OAuth
-   user cap; verification is the scaling path beyond that cap.
+   Test users. State the limits in these exact words, which the router also
+   uses when explaining why this setup cannot be automated; keep both copies
+   identical:
+
+   > Google's OAuth user cap allows at most 100 manually
+   > listed test users, and their refresh tokens expire after seven days, so those
+   > users must authorize again.
+
+   Publishing removes the manual test-user gate but not the cap for an
+   unverified app; verification is the scaling path beyond it.
 3. Configure Branding with an accurate app name and support email.
 4. Enable the Google Drive API when Drive is selected and the Calendar API when
    Calendar is selected. The Gmail integration uses IMAP/SMTP
