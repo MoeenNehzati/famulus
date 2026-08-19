@@ -509,7 +509,13 @@ class SetupSymlinksTests(unittest.TestCase):
                     dry_run=False,
                 )
 
-            self.assertEqual(registry_calls, [("AI", fake_winreg.REG_SZ, str(repo_root))])
+            self.assertEqual(
+                registry_calls,
+                [
+                    ("AI", fake_winreg.REG_SZ, str(repo_root)),
+                    ("ASSISTANT_LOGS", fake_winreg.REG_SZ, str(home / ".assistant-logs")),
+                ],
+            )
             self.assertEqual(rc_file.read_text(), "")
 
 

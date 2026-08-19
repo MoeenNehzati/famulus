@@ -602,9 +602,11 @@ def run(
     if do_codex:
         install_codex_hooks(codex_home, repo_root, dry_run, manifest)
 
+    assistant_logs = home / ".assistant-logs"
     if sys.platform == "win32":
         if dry_run:
             log(f"  Would set AI={repo_root}")
+            log(f"  Would set ASSISTANT_LOGS={assistant_logs}")
         else:
             import winreg
             with winreg.OpenKey(
@@ -612,14 +614,21 @@ def run(
                 winreg.KEY_READ | winreg.KEY_WRITE,
             ) as key:
                 winreg.SetValueEx(key, "AI", 0, winreg.REG_SZ, str(repo_root))
+                winreg.SetValueEx(
+                    key, "ASSISTANT_LOGS", 0, winreg.REG_SZ, str(assistant_logs)
+                )
             log(f"  Set AI={repo_root}")
+            log(f"  Set ASSISTANT_LOGS={assistant_logs}")
     else:
         if shell_rc is None:
             detected_shell = os.environ.get("SHELL", "")
             shell_rc = home / (".zshrc" if "zsh" in detected_shell else ".bashrc")
         ensure_rc_vars(
             shell_rc,
-            {"AI": f'export AI="{repo_root}"'},
+            {
+                "AI": f'export AI="{repo_root}"',
+                "ASSISTANT_LOGS": f'export ASSISTANT_LOGS="{assistant_logs}"',
+            },
             dry_run,
             manifest,
             label="user",
