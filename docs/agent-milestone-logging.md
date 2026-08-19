@@ -105,8 +105,9 @@ useful is exactly the wasted effort the log is meant to surface.
 
 ## Limitations
 
-- Sessions with no available session id all collapse into the `unknown` bucket
-  and render as one interleaved timeline.
+- Sessions with no available session id are all named `unknown`. The reader
+  keeps them apart by filename, so each renders alone, but they carry no id to
+  tie them back to a harness transcript.
 - On the second host the transcript file is named by thread id while the session
   id sits inside the file; the two coincide only for the root thread. The reader
   compensates by matching every thread id seen in the milestone logs, but a

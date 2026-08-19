@@ -78,8 +78,18 @@ relation legend color/dash. Renderer metadata such as `aggregate` and `bundle`
 describes why one visible path represents hidden or multiple edges. The optional
 `ui.edge_metadata_styles` object can tune only the bounded visual properties for
 those generic states; it cannot add predicates or redefine relationship meaning.
-The runtime applies semantic style first and metadata presentation second, then
-builds the Edge presentation legend from the same rules.
+Payloads may also declare `ui.edge_presentation.facets` to match a canonical
+scalar edge field or one-level `metadata.<key>` by equality. A matched variant
+may set only `line_pattern` (`solid`, `dashed`, or `dotted`), positive
+`stroke_width`, and `opacity` from zero to one. Facet and variant ids must be
+unique, and two facets cannot write the same style property.
+
+The runtime applies semantic type style first, payload-declared facet style
+second, and renderer-computed aggregate/bundle presentation last. A declared
+presentation signature participates in projection and bundling identity, so
+otherwise parallel edges with different matches remain distinct. Semantic
+types stay in the relationship legend; present declared variants and computed
+states are explained separately in the Edge presentation legend.
 
 Node and edge category parents are operational hierarchies. Excluding a parent
 through either facets or the legend excludes its descendants, and retained

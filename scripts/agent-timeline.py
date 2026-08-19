@@ -66,7 +66,11 @@ def at(rec: dict, key: str) -> datetime | None:
 # ── milestone logs (both harnesses) ──────────────────────────────────────────
 
 def milestone_files(session: str | None = None) -> list[Path]:
-    pattern = f"*/{_glob.escape(session)}.*.jsonl" if session else "*/*.jsonl"
+    if session is None:
+        return sorted(LOGS.glob("*/*.jsonl"))
+    escaped = _glob.escape(session)
+    # An id carrying its own agent segment (the "unknown" case) names one file.
+    pattern = f"*/{escaped}.jsonl" if "." in session else f"*/{escaped}.*.jsonl"
     return sorted(LOGS.glob(pattern))
 
 
@@ -89,6 +93,7 @@ def read_milestones(session: str) -> tuple[list[dict], set[str]]:
                     "kind": "milestone",
                     "text": oneline(rec.get("doing", ""), 200),
                     "prev": oneline(rec.get("prev", ""), 200),
+                    "cwd": rec.get("cwd", ""),
                 }
             )
     return events, agent_ids
@@ -175,7 +180,9 @@ def codex_events(ids: set[str]) -> list[dict]:
 def list_sessions() -> list[tuple[str, datetime, int]]:
     seen: dict[str, list[Path]] = {}
     for path in milestone_files():
-        seen.setdefault(path.stem.split(".", 1)[0], []).append(path)
+        session = path.stem.split(".", 1)[0]
+        # Unrelated runs share the "unknown" id, so key those by whole filename.
+        seen.setdefault(path.stem if session == "unknown" else session, []).append(path)
     rows = []
     for session, paths in seen.items():
         try:
@@ -210,6 +217,9 @@ def render(events: list[dict], slow: float) -> None:
     span = (events[-1]["ts"] - start).total_seconds()
     tools = sum(1 for e in events if e["kind"] == "tool")
     print(f"\n{len(events)} events over {span:.0f}s — {tools} tool calls, {len(events) - tools} milestones")
+    roots = sorted({e["cwd"] for e in events if e.get("cwd")})
+    if roots:
+        print("worked in: " + ", ".join(roots))
 
 
 def main() -> int:

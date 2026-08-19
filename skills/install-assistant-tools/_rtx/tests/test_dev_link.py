@@ -38,6 +38,10 @@ if __package__ and __package__.count('.') >= 1:
 else:
     from _state_record import Manifest  # noqa: E402
 from install_test_utils import can_create_symlink  # noqa: E402
+if __package__ and __package__.count('.') >= 1:
+    from .._fs_links import default_bin_dir
+else:
+    from _fs_links import default_bin_dir  # noqa: E402
 
 
 def _raw_git_config(
@@ -75,6 +79,11 @@ class SetupSymlinksTests(unittest.TestCase):
         (repo_root / "profiles").mkdir()
         (repo_root / ".githooks").mkdir()
         (repo_root / "llmhooks").mkdir()
+        (repo_root / "scripts").mkdir()
+        for helper in ("milestone.py", "agent-timeline.py"):
+            (repo_root / "scripts" / helper).write_text(
+                "#!/usr/bin/env python3\n", encoding="utf-8"
+            )
         (repo_root / "llmhooks" / "registry.py").write_text(
             "def hooks_for_host(host):\n    return []\n", encoding="utf-8"
         )
@@ -86,6 +95,42 @@ class SetupSymlinksTests(unittest.TestCase):
                 encoding="utf-8",
             )
         return repo_root
+
+    # famulus-skip: category=platform-contract; reason=Windows cannot execute extension-less links, so dev_link skips these helpers there; alternate=none needed until .bat wrappers exist
+    @unittest.skipIf(sys.platform == "win32", "milestone helpers are POSIX-only by design")
+    def test_installs_milestone_helpers_into_bin_dir(self) -> None:
+        """CLAUDE.md names `milestone` as a command, so it must reach PATH."""
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = self.make_repo_root(Path(tmp))
+            home = Path(tmp) / "home"
+            manifest = Manifest(Path(tmp) / "manifest.json")
+
+            self.capture_run(
+                repo_root=repo_root,
+                home=home,
+                claude_home=home / "claude",
+                codex_home=home / "codex",
+                dry_run=False,
+                manifest=manifest,
+            )
+
+            bin_dir = default_bin_dir(home=home)
+            expected = {
+                bin_dir / "milestone": repo_root / "scripts" / "milestone.py",
+                bin_dir / "agent-timeline": repo_root / "scripts" / "agent-timeline.py",
+            }
+            for link, target in expected.items():
+                self.assertTrue(link.is_symlink(), f"missing link: {link}")
+                self.assertEqual(Path(os.readlink(link)), target)
+
+            # Recorded so uninstall removes them with everything else.
+            recorded = {
+                entry.get("path")
+                for entry in manifest.entries
+                if entry.get("kind") == "symlink"
+            }
+            for link in expected:
+                self.assertIn(str(link), recorded)
 
     def test_creates_expected_links_in_empty_directories(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
