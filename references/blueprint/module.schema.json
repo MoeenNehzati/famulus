@@ -66,7 +66,35 @@
       "$ref": "common.schema.json#/definitions/contentPatterns"
     },
     "discovery": {
-      "$ref": "#/definitions/discovery"
+      "$ref": "#/definitions/discovery",
+      "x-famulus": {
+        "field_status": "optional",
+        "template": {
+          "include": true,
+          "example": {
+            "mechanism": "skill",
+            "catalog": {
+              "domain": "software-development",
+              "topics": [
+                "repository-workflow"
+              ],
+              "visibility": "listed"
+            },
+            "activated_by": [
+              "user-request"
+            ],
+            "persistent_modifier": false
+          }
+        },
+        "doc": {
+          "authoring": [
+            "Include discovery only for a user-discoverable module; installation metadata is then required."
+          ]
+        },
+        "related_validation_rules": [
+          "schema-shape"
+        ]
+      }
     },
     "installation_tier": {
       "type": "string",
@@ -164,6 +192,22 @@
           "installation_tier",
           "personal_preference"
         ]
+      },
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "installation_tier"
+              ]
+            },
+            {
+              "required": [
+                "personal_preference"
+              ]
+            }
+          ]
+        }
       }
     }
   ],
@@ -180,7 +224,8 @@
         },
         "description": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "pattern": ".*\\S.*"
         }
       },
       "allOf": [

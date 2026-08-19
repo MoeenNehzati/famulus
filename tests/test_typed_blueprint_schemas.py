@@ -78,6 +78,16 @@ def _valid_live_v6_module() -> dict:
         "version": 1,
         "gateway": {"path": "SKILL.md", "language": "Markdown"},
         "content": [r"SKILL\\.md"],
+        "discovery": {
+            "mechanism": "skill",
+            "catalog": {
+                "domain": "software-development",
+                "topics": ["repository-workflow"],
+                "visibility": "listed",
+            },
+            "activated_by": ["user-request"],
+            "persistent_modifier": False,
+        },
         "authority": {"owns_filesystem": []},
         "sources": {},
         "children": {},
@@ -167,6 +177,26 @@ def test_live_v6_discoverable_module_requires_installation_metadata() -> None:
     validator.validate(module)
 
 
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("installation_tier", "core"),
+        ("personal_preference", {"applies": False}),
+    ],
+)
+def test_live_v6_non_discoverable_module_rejects_installation_metadata(
+    field: str, value: object
+) -> None:
+    """Installation metadata is meaningful only for discoverable modules."""
+
+    module = _valid_live_v6_module()
+    module.pop("discovery")
+    module["maturity"] = "stable"
+    module[field] = value
+
+    assert list(_live_v6_validator("module.schema.json").iter_errors(module))
+
+
 def test_live_v6_personal_preference_requires_description_when_applicable() -> None:
     """A preference claim needs an author-facing reason when it applies."""
 
@@ -185,6 +215,21 @@ def test_live_v6_personal_preference_requires_description_when_applicable() -> N
         "Explains the user-specific workflow preference."
     )
     validator.validate(module)
+
+
+def test_live_v6_personal_preference_rejects_whitespace_description() -> None:
+    """An applicable preference needs a substantive author-facing description."""
+
+    module = _valid_live_v6_module()
+    module.update(
+        {
+            "maturity": "stable",
+            "installation_tier": "core",
+            "personal_preference": {"applies": True, "description": " \t\n "},
+        }
+    )
+
+    assert list(_live_v6_validator("module.schema.json").iter_errors(module))
 
 
 def _empty_io() -> dict:

@@ -8,6 +8,16 @@ gateway:
   language: Markdown
 content:
 - SKILL\.md
+discovery:
+  mechanism: skill
+  catalog:
+    domain: software-development
+    topics:
+    - repository-workflow
+    visibility: listed
+  activated_by:
+  - user-request
+  persistent_modifier: false
 installation_tier: core
 personal_preference:
   applies: false
