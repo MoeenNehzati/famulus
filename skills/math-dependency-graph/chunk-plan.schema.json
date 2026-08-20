@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://officina.local/math-dependency-graph/chunk-plan.schema.json",
+  "title": "Context-bounded extraction chunk manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["plan_version", "mode", "source", "target_tokens", "hard_max_tokens", "chunks"],
+  "properties": {
+    "plan_version": {"const": 1},
+    "mode": {"enum": ["inventory", "extract"]},
+    "source": {"type": "string", "minLength": 1},
+    "source_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "target_tokens": {"type": "integer", "minimum": 1},
+    "hard_max_tokens": {"type": "integer", "minimum": 1},
+    "chunks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["chunk_id", "estimated_tokens", "packet_path", "fragment_path"],
+        "properties": {
+          "chunk_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"},
+          "estimated_tokens": {"type": "integer", "minimum": 1},
+          "projected_total_tokens": {"type": "integer", "minimum": 1},
+          "packet_path": {"type": "string", "minLength": 1},
+          "fragment_path": {"type": "string", "minLength": 1},
+          "progress_path": {"type": "string", "minLength": 1},
+          "sidecar_path": {"type": "string", "minLength": 1},
+          "source_packet_path": {"type": "string", "minLength": 1},
+          "entrypoint_path": {"type": "string", "minLength": 1},
+          "packet_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "owned_bytes": {"type": "integer", "minimum": 1},
+          "anchors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["source_file", "start_line", "end_line", "environment"],
+              "properties": {
+                "source_file": {"type": "string", "minLength": 1},
+                "start_line": {"type": "integer", "minimum": 1},
+                "end_line": {"type": "integer", "minimum": 1},
+                "environment": {"type": "string", "minLength": 1},
+                "wrapper": {"type": "string", "minLength": 1}
+              }
+            }
+          },
+          "spans": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["source_file", "start_line", "end_line"],
+              "properties": {
+                "source_file": {"type": "string", "minLength": 1},
+                "start_line": {"type": "integer", "minimum": 1},
+                "end_line": {"type": "integer", "minimum": 1}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

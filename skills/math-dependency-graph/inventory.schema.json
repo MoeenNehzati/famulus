@@ -1,0 +1,256 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://officina.local/math-dependency-graph/inventory.schema.json",
+  "title": "Compact mathematical dependency discovery fragment",
+  "description": "A worker reports a recall-first set of source-grounded graph candidates, possible direct edges, and genuine gaps inline. Deterministic pooling assigns stable handles and checks source ownership and visible-environment coverage; extract resolves identities and prunes false positives.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ir_version", "chunk_id", "files", "nodes", "edges", "gaps"],
+  "properties": {
+    "ir_version": {"const": 3},
+    "chunk_id": {"type": "string", "minLength": 1, "maxLength": 120},
+    "files": {
+      "description": "Every distinct owned source path from assigned-span markers, in first-appearance order. Every location file_index must address this table.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1, "maxLength": 320}
+    },
+    "nodes": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/node"}},
+    "edges": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/edge"}},
+    "gaps": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/gap"}}
+  },
+  "$defs": {
+    "location": {
+      "description": "Compact [file_index, start_line, end_line] inclusive source span. file_index addresses the fragment files table; start_line must not exceed end_line.",
+      "type": "array",
+      "prefixItems": [
+        {"type": "integer", "minimum": 0},
+        {"type": "integer", "minimum": 1},
+        {"type": "integer", "minimum": 1}
+      ],
+      "items": false,
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "type_hint": {
+      "enum": ["assumption", "setup", "result", "exposition", "external-result"]
+    },
+    "scope_hint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["starts_at"],
+      "properties": {
+        "starts_at": {"$ref": "#/$defs/location"},
+        "ends_at": {"$ref": "#/$defs/location"}
+      }
+    },
+    "locator": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["label"],
+          "properties": {"label": {"type": "string", "minLength": 1, "maxLength": 160}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name"],
+          "properties": {"name": {"type": "string", "minLength": 1, "maxLength": 160}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["citation_key"],
+          "properties": {
+            "citation_key": {"type": "string", "minLength": 1, "maxLength": 120},
+            "theorem": {"type": "string", "minLength": 1, "maxLength": 80}
+          }
+        }
+      ]
+    },
+    "external_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "maxLength": 160},
+        "citation_key": {"type": "string", "minLength": 1, "maxLength": 120},
+        "theorem": {"type": "string", "minLength": 1, "maxLength": 80}
+      },
+      "anyOf": [{"required": ["name"]}, {"required": ["citation_key"]}]
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["local_id", "location", "provenance", "type_hint", "summary"],
+      "properties": {
+        "local_id": {"type": "string", "pattern": "^n[1-9][0-9]*$"},
+        "location": {"$ref": "#/$defs/location"},
+        "environment": {"type": "string", "minLength": 1, "maxLength": 80},
+        "labels": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "maxLength": 160}
+        },
+        "visible_title": {"type": "string", "minLength": 1, "maxLength": 160},
+        "provenance": {"enum": ["explicit", "inferred"]},
+        "type_hint": {"$ref": "#/$defs/type_hint"},
+        "kind_hint": {"enum": ["standing", "local"]},
+        "scope_hint": {"$ref": "#/$defs/scope_hint"},
+        "external_identity": {"$ref": "#/$defs/external_identity"},
+        "summary": {
+          "description": "One concise source-faithful explanation of the candidate's mathematical content and material qualifications; extract may later merge or prune it.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"type_hint": {"const": "assumption"}}, "required": ["type_hint"]},
+          "then": {"required": ["kind_hint"]},
+          "else": {"not": {"anyOf": [{"required": ["kind_hint"]}, {"required": ["scope_hint"]}]}}
+        },
+        {
+          "if": {"properties": {"kind_hint": {"const": "local"}}, "required": ["kind_hint"]},
+          "then": {"required": ["scope_hint"]}
+        },
+        {
+          "if": {"properties": {"type_hint": {"const": "external-result"}}, "required": ["type_hint"]},
+          "then": {"required": ["external_identity"]},
+          "else": {"not": {"required": ["external_identity"]}}
+        }
+      ]
+    },
+    "unresolved": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "statement", "resolution_kind", "type_hint"],
+      "properties": {
+        "title": {"type": "string", "minLength": 1, "maxLength": 100},
+        "statement": {"type": "string", "minLength": 1, "maxLength": 240},
+        "resolution_kind": {"enum": ["implicit-entity", "remote-label", "named-entity", "external-result"]},
+        "locators": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/locator"}
+        },
+        "type_hint": {"$ref": "#/$defs/type_hint"},
+        "kind_hint": {"enum": ["standing", "local"]},
+        "scope_hint": {"$ref": "#/$defs/scope_hint"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"type_hint": {"const": "assumption"}}, "required": ["type_hint"]},
+          "then": {"required": ["kind_hint"]},
+          "else": {"not": {"anyOf": [{"required": ["kind_hint"]}, {"required": ["scope_hint"]}]}}
+        },
+        {
+          "if": {"properties": {"kind_hint": {"const": "local"}}, "required": ["kind_hint"]},
+          "then": {"required": ["scope_hint"]}
+        },
+        {
+          "if": {"properties": {"resolution_kind": {"const": "implicit-entity"}}, "required": ["resolution_kind"]},
+          "then": {"not": {"required": ["locators"]}},
+          "else": {"required": ["locators"]}
+        },
+        {
+          "if": {"properties": {"resolution_kind": {"const": "external-result"}}, "required": ["resolution_kind"]},
+          "then": {"properties": {"type_hint": {"const": "external-result"}}},
+          "else": {"properties": {"type_hint": {"not": {"const": "external-result"}}}}
+        }
+      ]
+    },
+    "endpoint": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["local_node"],
+          "properties": {"local_node": {"type": "string", "pattern": "^n[1-9][0-9]*$"}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["unresolved"],
+          "properties": {"unresolved": {"$ref": "#/$defs/unresolved"}}
+        }
+      ]
+    },
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["location", "locator"],
+      "properties": {
+        "location": {"$ref": "#/$defs/location"},
+        "locator": {"$ref": "#/$defs/locator"}
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["local_id", "from", "to", "type", "basis", "assertion", "location", "description", "confidence"],
+      "properties": {
+        "local_id": {"type": "string", "pattern": "^d[1-9][0-9]*$"},
+        "from": {
+          "description": "The prerequisite, assumption, construction, example, or external result that supplies direct support.",
+          "$ref": "#/$defs/endpoint"
+        },
+        "to": {
+          "description": "The dependent claim or result that uses the support named by from.",
+          "$ref": "#/$defs/endpoint"
+        },
+        "type": {"enum": ["supports", "illustrated-by"]},
+        "basis": {"enum": ["explicit-reference", "explicit-prose", "proof-use", "mathematical-inference"]},
+        "assertion": {"enum": ["explicit", "inferred"]},
+        "location": {"$ref": "#/$defs/location"},
+        "reference": {"$ref": "#/$defs/reference"},
+        "description": {"type": "string", "minLength": 1, "maxLength": 200},
+        "confidence": {"enum": ["Verified", "High", "Medium", "Low", "Unknown"]},
+        "reason": {"type": "string", "minLength": 1, "maxLength": 160}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"basis": {"const": "explicit-reference"}}, "required": ["basis"]},
+          "then": {"required": ["reference"], "properties": {"assertion": {"const": "explicit"}}},
+          "else": {"not": {"required": ["reference"]}}
+        },
+        {
+          "if": {"properties": {"basis": {"const": "explicit-prose"}}, "required": ["basis"]},
+          "then": {"properties": {"assertion": {"const": "explicit"}}}
+        },
+        {
+          "if": {"properties": {"basis": {"const": "mathematical-inference"}}, "required": ["basis"]},
+          "then": {"properties": {"assertion": {"const": "inferred"}}}
+        },
+        {
+          "if": {"properties": {"assertion": {"const": "inferred"}}, "required": ["assertion"]},
+          "then": {"required": ["reason"]}
+        }
+      ]
+    },
+    "gap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["local_id", "category", "location", "description"],
+      "properties": {
+        "local_id": {"type": "string", "pattern": "^g[1-9][0-9]*$"},
+        "category": {"enum": ["identity", "scope", "evidence", "relationship", "reference", "coverage", "other"]},
+        "location": {"$ref": "#/$defs/location"},
+        "subject": {"$ref": "#/$defs/endpoint"},
+        "reference": {"$ref": "#/$defs/reference"},
+        "description": {"type": "string", "minLength": 1, "maxLength": 200}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"category": {"const": "reference"}}, "required": ["category"]},
+          "then": {"required": ["reference"]},
+          "else": {"not": {"required": ["reference"]}}
+        }
+      ]
+    }
+  }
+}

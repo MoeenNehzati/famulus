@@ -1,0 +1,478 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://officina.local/math-dependency-graph/run-diagnostics.schema.json",
+  "title": "Durable mathematical dependency graph run diagnostics",
+  "description": "Metrics-only evidence for one inventory-to-extract run. Failures retain stable codes, safe structure, and message hashes, never arbitrary error, source, prompt, environment, or semantic prose.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["diagnostics_version", "run", "jobs", "stages", "artifacts", "ratios", "validation_diagnostics", "counts"],
+  "properties": {
+    "diagnostics_version": {"const": 1},
+    "run": {"$ref": "#/$defs/run"},
+    "jobs": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/job"}
+    },
+    "stages": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/stage"}
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/artifact"}
+    },
+    "ratios": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/ratio"}
+    },
+    "validation_diagnostics": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/validation_issue"}
+    },
+    "counts": {"$ref": "#/$defs/aggregate_counts"}
+  },
+  "$defs": {
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,6})?Z$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "diagnostic_code": {
+      "enum": [
+        "run-failed",
+        "worker-failed",
+        "stage-failed",
+        "validation-failed",
+        "timeout",
+        "capacity",
+        "transient"
+        ,"diagnostics-write-failed"
+      ]
+    },
+    "retry_code": {
+      "enum": [
+        "worker-failed",
+        "validation-failed",
+        "timeout",
+        "capacity",
+        "transient"
+      ]
+    },
+    "schema_path_component": {
+      "anyOf": [
+        {"type": "integer", "minimum": 0},
+        {
+          "enum": [
+            "artifacts",
+            "candidate_count",
+            "candidate_ids",
+            "candidates",
+            "counts",
+            "description",
+            "diagnostics_version",
+            "entities",
+            "exclusions",
+            "gaps",
+            "inventory",
+            "jobs",
+            "ratios",
+            "relationships",
+            "run",
+            "stages",
+            "unresolved_resolutions"
+          ]
+        }
+      ]
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "category"],
+      "properties": {
+        "code": {"$ref": "#/$defs/diagnostic_code"},
+        "category": {"enum": ["run", "worker", "stage", "validation"]},
+        "exception_type": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_.-]{0,119}$"
+        },
+        "message_sha256": {"$ref": "#/$defs/sha256"},
+        "schema_keyword": {
+          "enum": [
+            "additionalProperties",
+            "anyOf",
+            "const",
+            "dependentRequired",
+            "enum",
+            "format",
+            "items",
+            "maxItems",
+            "maxLength",
+            "maximum",
+            "minItems",
+            "minLength",
+            "minimum",
+            "not",
+            "oneOf",
+            "pattern",
+            "required",
+            "type",
+            "uniqueItems"
+          ]
+        },
+        "schema_path": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/schema_path_component"}
+        }
+      }
+    },
+    "validation_issue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "path"],
+      "properties": {
+        "code": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,119}$"},
+        "path": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {"type": "integer", "minimum": 0},
+              {"type": "string", "pattern": "^[a-z_][a-z0-9_]{0,79}$"}
+            ]
+          }
+        },
+        "fields": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^[a-z_][a-z0-9_]{0,79}$"}
+        }
+      }
+    },
+    "failure_history_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["finished_at_utc", "total_ms", "diagnostic"],
+      "properties": {
+        "finished_at_utc": {"$ref": "#/$defs/timestamp"},
+        "total_ms": {"type": "integer", "minimum": 0},
+        "diagnostic": {"$ref": "#/$defs/diagnostic"}
+      }
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "entrypoint_path",
+        "entrypoint_bytes",
+        "entrypoint_sha256",
+        "started_at_utc",
+        "started_monotonic_ns",
+        "initialized_at_utc",
+        "initialization_ms",
+        "status"
+      ],
+      "properties": {
+        "id": {"type": "string", "pattern": "^run-[0-9a-f]{16}$"},
+        "entrypoint_path": {"type": "string", "minLength": 1},
+        "entrypoint_bytes": {"type": "integer", "minimum": 0},
+        "entrypoint_sha256": {"$ref": "#/$defs/sha256"},
+        "started_at_utc": {"$ref": "#/$defs/timestamp"},
+        "started_monotonic_ns": {"type": "integer", "minimum": 0},
+        "initialized_at_utc": {"$ref": "#/$defs/timestamp"},
+        "initialization_ms": {"type": "integer", "minimum": 0},
+        "finished_at_utc": {"$ref": "#/$defs/timestamp"},
+        "total_ms": {"type": "integer", "minimum": 0},
+        "status": {"enum": ["running", "success", "failure"]},
+        "diagnostic": {"$ref": "#/$defs/diagnostic"},
+        "failure_history": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/failure_history_item"}
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "running"}}},
+          "then": {
+            "not": {
+              "anyOf": [
+                {"required": ["finished_at_utc"]},
+                {"required": ["total_ms"]},
+                {"required": ["diagnostic"]}
+              ]
+            }
+          }
+        },
+        {
+          "if": {"properties": {"status": {"const": "success"}}},
+          "then": {
+            "required": ["finished_at_utc", "total_ms"],
+            "not": {"required": ["diagnostic"]}
+          }
+        },
+        {
+          "if": {"properties": {"status": {"const": "failure"}}},
+          "then": {"required": ["finished_at_utc", "total_ms", "diagnostic"]}
+        }
+      ]
+    },
+    "job": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "job_id",
+        "phase",
+        "model",
+        "retry",
+        "status",
+        "queued_at_utc",
+        "queued_monotonic_ns"
+      ],
+      "properties": {
+        "job_id": {"type": "string", "minLength": 1, "maxLength": 160},
+        "phase": {"enum": ["inventory", "extract"]},
+        "model": {"type": "string", "minLength": 1, "maxLength": 160},
+        "retry": {"type": "integer", "minimum": 0},
+        "retry_code": {"$ref": "#/$defs/retry_code"},
+        "status": {"enum": ["queued", "running", "success", "failure"]},
+        "queued_at_utc": {"$ref": "#/$defs/timestamp"},
+        "queued_monotonic_ns": {"type": "integer", "minimum": 0},
+        "started_at_utc": {"$ref": "#/$defs/timestamp"},
+        "started_monotonic_ns": {"type": "integer", "minimum": 0},
+        "finished_at_utc": {"$ref": "#/$defs/timestamp"},
+        "queue_ms": {"type": "integer", "minimum": 0},
+        "worker_ms": {"type": "integer", "minimum": 0},
+        "output_artifact": {"type": "string", "minLength": 1},
+        "diagnostic": {"$ref": "#/$defs/diagnostic"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"retry": {"minimum": 1}}},
+          "then": {"required": ["retry_code"]}
+        },
+        {
+          "if": {"properties": {"status": {"const": "queued"}}},
+          "then": {
+            "not": {
+              "anyOf": [
+                {"required": ["started_at_utc"]},
+                {"required": ["finished_at_utc"]},
+                {"required": ["diagnostic"]},
+                {"required": ["output_artifact"]}
+              ]
+            }
+          }
+        },
+        {
+          "if": {"properties": {"status": {"const": "running"}}},
+          "then": {
+            "required": ["started_at_utc", "started_monotonic_ns", "queue_ms"],
+            "not": {
+              "anyOf": [
+                {"required": ["finished_at_utc"]},
+                {"required": ["diagnostic"]},
+                {"required": ["output_artifact"]}
+              ]
+            }
+          }
+        },
+        {
+          "if": {"properties": {"status": {"const": "success"}}},
+          "then": {
+            "required": [
+              "started_at_utc",
+              "started_monotonic_ns",
+              "finished_at_utc",
+              "queue_ms",
+              "worker_ms",
+              "output_artifact"
+            ],
+            "not": {"required": ["diagnostic"]}
+          }
+        },
+        {
+          "if": {"properties": {"status": {"const": "failure"}}},
+          "then": {"required": ["finished_at_utc", "diagnostic"]}
+        }
+      ]
+    },
+    "operation": {
+      "enum": [
+        "source-preparation",
+        "planning",
+        "pooling",
+        "validation",
+        "correction-application",
+        "compilation",
+        "macro-extraction",
+        "rendering"
+      ]
+    },
+    "stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation", "category", "status", "started_at_utc"],
+      "properties": {
+        "operation": {"$ref": "#/$defs/operation"},
+        "category": {"enum": ["operation", "validation"]},
+        "status": {"enum": ["running", "success", "failure"]},
+        "started_at_utc": {"$ref": "#/$defs/timestamp"},
+        "finished_at_utc": {"$ref": "#/$defs/timestamp"},
+        "duration_ms": {"type": "integer", "minimum": 0},
+        "input_paths": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "output_paths": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "diagnostic": {"$ref": "#/$defs/diagnostic"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "running"}}},
+          "then": {
+            "not": {
+              "anyOf": [
+                {"required": ["finished_at_utc"]},
+                {"required": ["duration_ms"]},
+                {"required": ["diagnostic"]}
+              ]
+            }
+          }
+        },
+        {
+          "if": {"properties": {"status": {"const": "success"}}},
+          "then": {
+            "required": ["finished_at_utc", "duration_ms"],
+            "not": {"required": ["diagnostic"]}
+          }
+        },
+        {
+          "if": {"properties": {"status": {"const": "failure"}}},
+          "then": {"required": ["finished_at_utc", "duration_ms", "diagnostic"]}
+        }
+      ]
+    },
+    "artifact_kind": {
+      "enum": [
+        "active-source",
+        "inventory-packet",
+        "inventory-fragment",
+        "pooled-inventory",
+        "semantic-fragment",
+        "semantic-ir",
+        "renderer-json",
+        "macro-file",
+        "html"
+        ,"extract-packet"
+        ,"coordinate-sidecar"
+      ]
+    },
+    "artifact_phase": {
+      "anyOf": [
+        {"enum": ["inventory", "extract"]},
+        {"$ref": "#/$defs/operation"}
+      ]
+    },
+    "record_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "files": {"type": "integer", "minimum": 0},
+        "nodes": {"type": "integer", "minimum": 0},
+        "edges": {"type": "integer", "minimum": 0},
+        "evidence": {"type": "integer", "minimum": 0},
+        "references": {"type": "integer", "minimum": 0},
+        "candidates": {"type": "integer", "minimum": 0},
+        "unresolved_entities": {"type": "integer", "minimum": 0},
+        "relationship_hints": {"type": "integer", "minimum": 0},
+        "reference_decisions": {"type": "integer", "minimum": 0},
+        "hint_decisions": {"type": "integer", "minimum": 0},
+        "entities": {"type": "integer", "minimum": 0},
+        "relationships": {"type": "integer", "minimum": 0},
+        "exclusions": {"type": "integer", "minimum": 0},
+        "unresolved": {"type": "integer", "minimum": 0},
+        "unresolved_resolutions": {"type": "integer", "minimum": 0},
+        "gap_decisions": {"type": "integer", "minimum": 0},
+        "gaps": {"type": "integer", "minimum": 0},
+        "macros": {"type": "integer", "minimum": 0}
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "path", "phase", "bytes", "sha256"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"},
+        "kind": {"$ref": "#/$defs/artifact_kind"},
+        "path": {"type": "string", "minLength": 1},
+        "phase": {"$ref": "#/$defs/artifact_phase"},
+        "bytes": {"type": "integer", "minimum": 0},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "counts": {"$ref": "#/$defs/record_counts"}
+      }
+    },
+    "ratio": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "numerator_artifact", "denominator_artifact", "numerator_bytes", "denominator_bytes", "measurement_basis", "stage_attempt", "value"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "inventory-fragment-to-owned-packet",
+            "pooled-canonical-fragments-to-owned-packets",
+            "pooled-inventory-to-active-source",
+            "semantic-ir-to-pooled-inventory",
+            "renderer-json-to-semantic-ir"
+          ]
+        },
+        "numerator_artifact": {"type": "string", "minLength": 1},
+        "denominator_artifact": {"type": "string", "minLength": 1},
+        "job_id": {"type": "string", "minLength": 1, "maxLength": 160},
+        "numerator_bytes": {"type": "integer", "minimum": 0},
+        "denominator_bytes": {"type": "integer", "minimum": 1},
+        "measurement_basis": {
+          "enum": ["physical-artifact-bytes", "canonical-fragment-to-owned-lines", "canonical-fragments-to-owned-lines"]
+        },
+        "stage_attempt": {"type": "string", "minLength": 1, "maxLength": 160},
+        "value": {"type": "number", "minimum": 0}
+      }
+    },
+    "aggregate_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "jobs",
+        "retries",
+        "validation_errors",
+        "corrections",
+        "entities",
+        "relationships",
+        "exclusions",
+        "unresolved",
+        "unresolved_resolutions",
+        "gaps"
+      ],
+      "properties": {
+        "jobs": {"type": "integer", "minimum": 0},
+        "retries": {"type": "integer", "minimum": 0},
+        "validation_errors": {"type": "integer", "minimum": 0},
+        "corrections": {"type": "integer", "minimum": 0},
+        "entities": {"type": "integer", "minimum": 0},
+        "relationships": {"type": "integer", "minimum": 0},
+        "exclusions": {"type": "integer", "minimum": 0},
+        "unresolved": {"type": "integer", "minimum": 0},
+        "unresolved_resolutions": {"type": "integer", "minimum": 0},
+        "gaps": {"type": "integer", "minimum": 0}
+      }
+    }
+  }
+}

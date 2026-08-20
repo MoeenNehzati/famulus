@@ -1,0 +1,225 @@
+schema_version: 6
+node_type: behavioral_source
+id: math-dependency-graph._rtx.source.rtx-extraction-chunk-planner
+version: 18
+description: Plans inventory chunks with at most sixteen hidden postcheck anchors, preserving theorem-like environments declared anywhere in the active source packet, and one extract packet from pooled inventory while retaining the absolute TeX entrypoint and stable progress-sidecar paths.
+gateway:
+  language: Python
+  path: _extraction_chunk_planner.py
+content:
+- _extraction_chunk_planner\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: math-dependency-graph._rtx.source.rtx-init
+  version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-semantic-graph-compiler.yaml
+  reason: Reuses validated JSON object loading.
+  source: math-dependency-graph._rtx.source.rtx-semantic-graph-compiler
+  version: 12
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-source-packet.yaml
+  reason: Reuses visible-environment ranges for safe inventory boundaries.
+  source: math-dependency-graph._rtx.source.rtx-source-packet
+  version: 7
+uses_interfaces: []
+interfaces:
+  math-dependency-graph._rtx.source.rtx-extraction-chunk-planner.interface.scripts-plan-extraction-chunks:
+    version: 15
+    description: Plan inventory chunks with hidden sixteen-anchor postchecks and project-wide theorem-environment boundary protection, or one extract packet with stable progress-sidecar paths from pooled inventory and its retained TeX entrypoint.
+    usage: <inventory|extract> <source> --out-dir <path> [--source-packet <path>] [--entrypoint <path>] [--target-tokens <n>] [--hard-max-tokens <n>]
+    process_binding:
+      kind: process
+      entry: Interface
+      patterns:
+      - name: inventory
+        min_positionals: 2
+        max_positionals: 2
+        allow_stdin: false
+        positional_patterns:
+          '0': ^inventory$
+        allowed_flags:
+        - --out-dir
+        - --target-tokens
+        - --hard-max-tokens
+        required_flags:
+        - --out-dir
+        flag_patterns:
+          --out-dir: ^.+$
+          --target-tokens: ^[1-9][0-9]*$
+          --hard-max-tokens: ^[1-9][0-9]*$
+      - name: extract
+        min_positionals: 2
+        max_positionals: 2
+        allow_stdin: false
+        positional_patterns:
+          '0': ^extract$
+        allowed_flags:
+        - --source-packet
+        - --entrypoint
+        - --out-dir
+        - --target-tokens
+        - --hard-max-tokens
+        required_flags:
+        - --source-packet
+        - --entrypoint
+        - --out-dir
+        flag_patterns:
+          --source-packet: ^.+$
+          --entrypoint: ^.+$
+          --out-dir: ^.+$
+          --target-tokens: ^[1-9][0-9]*$
+          --hard-max-tokens: ^[1-9][0-9]*$
+    contract:
+      arguments:
+        mode:
+          description: Planning mode, exactly inventory or extract.
+          required: true
+          sensitivity: public
+          type: {kind: string, sensitivity: public}
+        source:
+          description: Active-source packet for inventory mode or pooled version-2
+            inventory IR for extract mode.
+          direct_io_ref: read-1
+          required: true
+          sensitivity: user-private
+          type:
+            access: read
+            content_type: {kind: string, sensitivity: user-private}
+            kind: file
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+        source-packet:
+          description: Immutable active-source packet required only in extract mode.
+          direct_io_ref: read-2
+          required: false
+          sensitivity: user-private
+          type:
+            access: read
+            content_type: {kind: string, sensitivity: user-private}
+            kind: file
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+        entrypoint:
+          description: Retained TeX entrypoint required only in extract mode and
+            propagated unchanged to the extract packet and job.
+          direct_io_ref: read-3
+          required: false
+          sensitivity: user-private
+          type:
+            access: read
+            content_type: {kind: string, sensitivity: user-private}
+            kind: file
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+        out-dir:
+          description: Destination directory for the mode-specific packets, sidecars,
+            fragment paths, and manifest.
+          direct_io_ref: write-1
+          required: true
+          sensitivity: user-private
+          type:
+            access: write
+            kind: dir
+            must_exist: false
+            relative_to: caller-cwd
+            syntax: literal
+        target-tokens:
+          default: 60000
+          description: Positive inventory source-token target; ignored by extract mode.
+          required: false
+          sensitivity: public
+          type: {kind: integer, minimum: 1}
+        hard-max-tokens:
+          default: 60700
+          description: Positive inventory hard ceiling that must be at least target-tokens;
+            ignored by extract mode.
+          required: false
+          sensitivity: public
+          type: {kind: integer, minimum: 1}
+      caller_warnings:
+      - external-side-effect: Atomically writes or replaces mode-specific planning artifacts beneath out-dir.
+      direct_io:
+        network: []
+        reads:
+        - {id: read-1, medium: local-filesystem, access: read, content: active-source packet or pooled version-2 inventory selected by mode, formats: [text, json], path: <source>, path_match: exact, sensitivity: user-private, system: filesystem}
+        - {id: read-2, medium: local-filesystem, access: read, content: immutable active-source packet hashed and named by extract mode, formats: [text], path: <source-packet>, path_match: exact, sensitivity: user-private, system: filesystem}
+        - {id: read-3, medium: local-filesystem, access: read, content: retained TeX entrypoint whose absolute path is propagated by extract mode, formats: [tex], path: <entrypoint>, path_match: exact, sensitivity: user-private, system: filesystem}
+        - {id: read-4, medium: local-filesystem, access: read, content: skill-owned inventory and extract chunk-plan schema, formats: [json], path: $skill/chunk-plan.schema.json, path_match: exact, sensitivity: public, system: filesystem}
+        writes:
+        - {id: write-1, medium: local-filesystem, access: write, content: "anchor-free inventory packets with hidden-anchor manifests or one pooled-inventory extract packet, coordinate sidecar, and manifest", formats: [text, json], path: <out-dir>/**, path_match: glob, sensitivity: derived-private, system: filesystem}
+        - {id: write-2, medium: stdout, access: write, content: "planning mode, chunk count, and manifest path", formats: [json], sensitivity: derived-private}
+      execution:
+        consistency:
+          snapshot: Planning derives every output from the selected source and,
+            in extract mode, the matching immutable source packet and retained entrypoint.
+        effects:
+        - id: planning-artifacts
+          action: update
+          direct_io_ref: write-1
+          confirmation_evidence: {kind: direct-io, direct_io_ref: write-1}
+          may_occur_in_outcomes: [planned]
+          reversibility: {reversible: Delete or regenerate the derived planning directory from unchanged inputs.}
+          value_source: {kind: argument, argument_ref: source}
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            per_effect_only: Each packet, sidecar, and manifest is atomically replaced;
+              one invocation publishes several separate files.
+          concurrent_invocations: {unsafe: Concurrent planners must not share one out-dir.}
+          idempotency: {idempotent: Unchanged inputs and token bounds produce equivalent ordered plans.}
+          on_uncertain_completion: {verify_then_decide: Validate the reported manifest and every named packet before retrying.}
+          partial_effects_on_failure: {possible: Earlier complete planning artifacts may remain if a later artifact fails.}
+          rollback_on_failure: {available: Delete only the fresh planning directory and regenerate it.}
+        state_effect: mutating
+        verification:
+        - {method: output-schema, output_ref: report}
+        - {method: direct-io-state, direct_io_ref: write-1}
+      helpers: []
+      interaction: {mode: unattended}
+      outcomes:
+      - id: planned
+        class: success
+        caller_action: Schedule the reported inventory jobs or the sole extract job in manifest order.
+        effects: [planning-artifacts]
+        outputs: [report]
+      - id: invalid-source
+        class: refusal
+        caller_action: Supply a schema-valid source artifact and every mode-required path.
+        effects: []
+        outputs: []
+      - id: failed
+        class: error
+        caller_action: Correct unreadable inputs or the selected output directory before retrying.
+        effects: []
+        outputs: []
+      outputs:
+      - id: report
+        audience: machine
+        cardinality: {minimum: 1, maximum: 1}
+        description: JSON naming the planning mode, exact chunk count, and absolute mode-specific manifest path whose jobs include stable progress-sidecar paths.
+        direct_io_ref: write-2
+        empty: Never empty on success.
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        type: {kind: string, sensitivity: derived-private, format: {named: json}}
+      preconditions: []
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies:
+- kind: python-package
+  name: jsonschema
+  version: '>=4,<5'
+  platforms: {linux: true, macos: true, windows: true}
+  reason: Validates generated chunk manifests against the skill-owned schema.

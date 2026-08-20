@@ -1,0 +1,215 @@
+content:
+- instructions/inventory\.md
+dependencies: []
+description: Authors one recall-first version-3 mathematical discovery fragment through
+  a single forward pass over bounded paragraphs, displays, and delimited formal blocks,
+  checking fixed discovery signals at every unit while headings supply context only.
+gateway:
+  language: Markdown
+  path: instructions/inventory.md
+id: math-dependency-graph.source.instructions-inventory
+interfaces:
+  math-dependency-graph.source.instructions-inventory.interface.inventory:
+    contract:
+      arguments:
+        request:
+          description: Exact chunk id, source assignment, inventory schema path,
+            stable progress-sidecar path, and fragment destination.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+        packet:
+          description: Chunk-specific active-source packet with owned spans and read-only
+            boundary context; the worker records source-grounded candidates liberally and
+            hidden environment anchors check recall after it returns.
+          direct_io_ref: read-1
+          required: true
+          sensitivity: user-private
+          type:
+            access: read
+            content_type:
+              kind: string
+              sensitivity: user-private
+            kind: file
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+        progress-sidecar:
+          description: Stable append-only Markdown path for validated source-cursor,
+            assigned-span completion, and cumulative-counter checkpoints across retries.
+          direct_io_ref: write-2
+          required: true
+          sensitivity: derived-private
+          type:
+            access: write
+            content_type:
+              kind: string
+              sensitivity: derived-private
+            kind: file
+            must_exist: false
+            relative_to: caller-cwd
+            syntax: literal
+      caller_warnings: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: prepared active-source TeX chunk with exact owned spans
+          formats:
+          - text
+          id: read-1
+          medium: local-filesystem
+          path: <packet>
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        - access: read
+          content: inventory scope and output-path request
+          formats:
+          - text
+          id: read-2
+          medium: prompt
+          sensitivity: user-private
+        - access: read
+          content: skill-owned version-3 inventory schema
+          formats:
+          - json
+          id: read-3
+          medium: local-filesystem
+          path: $skill/inventory.schema.json
+          path_match: exact
+          sensitivity: public
+          system: filesystem
+        writes:
+        - access: write
+          content: concise mathematical inventory fragment
+          formats:
+          - json
+          id: write-1
+          medium: local-filesystem
+          sensitivity: derived-private
+        - access: write
+          content: append-only validated inventory source cursors, assigned-span completions, and cumulative counters
+          formats:
+          - markdown
+          id: write-2
+          medium: local-filesystem
+          path: <progress-sidecar>
+          path_match: exact
+          sensitivity: derived-private
+          system: filesystem
+      execution:
+        consistency:
+          snapshot: Candidate findings derive from exactly one monotone bounded-source-unit
+            pass through every owned span; sections and Markdown headings supply context only,
+            proofs split into successive paragraphs and displays, every reading unit checks the fixed discovery-signal slots,
+            and every explicitly delimited TeX or Markdown mathematical block receives an explicit candidate-or-omission decision,
+            complete multi-paragraph nodes and every encountered direct prerequisite-to-owning-dependent
+            lead are persisted and schema-validated at bounded source-cursor checkpoints,
+            and every assigned span has an exact completion cursor before return;
+            each node summary is one sentence, each edge explanation one short clause,
+            and no later worker compaction pass occurs.
+        effects:
+        - action: create
+          confirmation_evidence:
+            kind: output
+            output_ref: inventory-fragment
+          direct_io_ref: write-1
+          id: inventory-fragment-write
+          may_occur_in_outcomes:
+          - inventoried
+          - inventoried-with-gaps
+          reversibility:
+            reversible: Delete the generated inventory fragment without changing
+              source files.
+          value_source:
+            argument_ref: packet
+            kind: argument
+        - action: update
+          confirmation_evidence:
+            kind: direct-io
+            direct_io_ref: write-2
+          direct_io_ref: write-2
+          id: progress-sidecar-append
+          may_occur_in_outcomes:
+          - inventoried
+          - inventoried-with-gaps
+          reversibility:
+            reversible: Delete the derived progress sidecar with the fresh run directory.
+          value_source:
+            argument_ref: progress-sidecar
+            kind: argument
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            per_effect_only: The schema-valid fragment is completed before return;
+              each cumulative checkpoint is schema-valid before its source-cursor progress line is appended.
+          concurrent_invocations:
+            unsafe: Concurrent inventory passes to the same destination can overwrite
+              an artifact.
+          idempotency:
+            idempotent: Inventorying the same source snapshot and assignment produces
+              an equivalent fragment.
+          on_uncertain_completion:
+            verify_then_decide: Validate the requested fragment path before retrying.
+          partial_effects_on_failure:
+            possible: An incomplete artifact may remain if writing is interrupted.
+          rollback_on_failure:
+            available: Remove only the incomplete artifact created by this invocation.
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: inventory-fragment
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Add the fragment path to the ordered inventory manifest.
+        class: success
+        effects:
+        - inventory-fragment-write
+        - progress-sidecar-append
+        id: inventoried
+        outputs:
+        - inventory-fragment
+      - caller_action: Preserve the fragment and report its source-grounded semantic
+          gaps for document-wide reconciliation.
+        class: success
+        effects:
+        - inventory-fragment-write
+        - progress-sidecar-append
+        id: inventoried-with-gaps
+        outputs:
+        - inventory-fragment
+      - caller_action: Correct the assignment or output request before retrying.
+        class: error
+        effects: []
+        id: invalid-request
+        outputs: []
+      outputs:
+      - audience: machine
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Filesystem path to one schema-valid version-3 inventory fragment
+          covering exactly the assigned source spans.
+        direct_io_ref: write-1
+        empty: Never empty on success.
+        id: inventory-fragment
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Author one concise recall-first graph inventory fragment through one bounded-unit, signal-complete, validated forward loop.
+    version: 29
+node_type: behavioral_source
+schema_version: 6
+uses_interfaces: []
+version: 29

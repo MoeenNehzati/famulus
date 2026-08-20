@@ -1,0 +1,206 @@
+schema_version: 6
+node_type: behavioral_source
+id: math-dependency-graph._rtx.source.rtx-extraction-phase-driver
+version: 26
+description: Deterministically prepares inventory, preserves retryable diagnostics after worker-local inventory rejection, routes malformed or non-object extract output to a fresh normal extract retry, returns stable per-job progress-sidecar paths through retries and corrections, retains the TeX entrypoint, applies bounded corrections, records durable run diagnostics, and renders only validated graphs.
+gateway:
+  language: Python>=3.11
+  path: _extraction_phase_driver.py
+content:
+- _extraction_phase_driver\.py
+dependencies:
+- blueprint: {base: module-root, path: blueprints/rtx-init.yaml}
+  reason: Loads Python package support.
+  source: math-dependency-graph._rtx.source.rtx-init
+  version: 1
+- blueprint: {base: module-root, path: blueprints/rtx-batch-ir-merger.yaml}
+  reason: Validates and pools ordered inventory fragments.
+  source: math-dependency-graph._rtx.source.rtx-batch-ir-merger
+  version: 22
+- blueprint: {base: module-root, path: blueprints/rtx-extraction-chunk-planner.yaml}
+  reason: Materializes phase-specific worker packets.
+  source: math-dependency-graph._rtx.source.rtx-extraction-chunk-planner
+  version: 18
+- blueprint: {base: module-root, path: blueprints/rtx-graph-builder.yaml}
+  reason: Renders the final canonical graph.
+  source: math-dependency-graph._rtx.source.rtx-graph-builder
+  version: 4
+- blueprint: {base: module-root, path: blueprints/rtx-run-diagnostics.yaml}
+  reason: Records worker-independent stage timing, artifacts, ratios, counts, and final run status.
+  source: math-dependency-graph._rtx.source.rtx-run-diagnostics
+  version: 9
+- blueprint: {base: module-root, path: blueprints/rtx-semantic-graph-compiler.yaml}
+  reason: Compiles validated semantic IR.
+  source: math-dependency-graph._rtx.source.rtx-semantic-graph-compiler
+  version: 12
+- blueprint: {base: module-root, path: blueprints/rtx-source-packet.yaml}
+  reason: Prepares the complete reachable active TeX source.
+  source: math-dependency-graph._rtx.source.rtx-source-packet
+  version: 7
+- blueprint: {base: module-root, path: blueprints/rtx-tex-macro-reader.yaml}
+  reason: Resolves project macros before rendering.
+  source: math-dependency-graph._rtx.source.rtx-tex-macro-reader
+  version: 1
+uses_interfaces: []
+interfaces:
+  math-dependency-graph._rtx.source.rtx-extraction-phase-driver.interface.scripts-advance-extraction-phases:
+    version: 23
+    description: Prepare progress-bearing inventory jobs, keep worker-local inventory rejection open for bounded retry, advance to one entrypoint-bearing extract packet, or validate extract output and return a progress-preserving fresh retry for malformed or globally invalid output or a bounded correction handoff before compilation when needed.
+    usage: <prepare|advance-inventory|finalize-extract> <entrypoint-or-fragment> --run-dir <path> [--html <path>]
+    process_binding:
+      kind: process
+      entry: Interface
+      patterns:
+      - name: prepare
+        min_positionals: 2
+        max_positionals: 2
+        allow_stdin: false
+        positional_patterns: {'0': ^prepare$}
+        allowed_flags: [--run-dir]
+        required_flags: [--run-dir]
+        flag_patterns:
+          --run-dir: ^.+$
+      - name: advance-inventory
+        min_positionals: 2
+        max_positionals: 2
+        allow_stdin: false
+        positional_patterns: {'0': ^advance-inventory$}
+        allowed_flags: [--run-dir]
+        required_flags: [--run-dir]
+        flag_patterns:
+          --run-dir: ^.+$
+      - name: finalize-extract
+        min_positionals: 2
+        max_positionals: 2
+        allow_stdin: false
+        positional_patterns: {'0': ^finalize-extract$}
+        allowed_flags: [--run-dir, --html]
+        required_flags: [--run-dir]
+        flag_patterns:
+          --run-dir: ^.+$
+          --html: ^.+$
+    contract:
+      arguments:
+        operation:
+          description: Phase operation to execute.
+          required: true
+          sensitivity: public
+          type: {kind: string, sensitivity: public}
+        input:
+          description: TeX entrypoint, ordered inventory-fragment manifest with chunk-id-keyed ownership for advance-inventory,
+            or extract/repair fragment manifest selected by the operation.
+          direct_io_ref: read-1
+          required: true
+          sensitivity: user-private
+          type:
+            kind: file
+            access: read
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+            content_type: {kind: string, sensitivity: user-private}
+        run-dir:
+          description: Fresh run directory containing deterministic state and generated packets.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+        html:
+          description: Optional final HTML destination for finalize-extract; defaults to <run-dir>/dependency-graph.html
+            when omitted.
+          direct_io_ref: write-2
+          required: false
+          sensitivity: user-private
+          type:
+            kind: file
+            access: write
+            must_exist: false
+            relative_to: caller-cwd
+            syntax: literal
+            content_type:
+              kind: string
+              sensitivity: derived-private
+      caller_warnings:
+      - external-side-effect: Writes or replaces deterministic run artifacts and, during finalize-extract, HTML.
+      direct_io:
+        network: []
+        reads:
+        - {id: read-1, medium: local-filesystem, access: read, content: "TeX entrypoint, ordered inventory-fragment manifest with chunk-id-keyed ownership for advance-inventory, or extract/repair fragment manifest selected by the operation", formats: [tex, json], path: <input>, path_match: exact, sensitivity: user-private, system: filesystem}
+        - {id: read-2, medium: local-filesystem, access: read, content: deterministic run state selected from <run-dir>, formats: [json], path: <run-dir>/run-state.json, path_match: exact, sensitivity: user-private, system: filesystem}
+        - {id: read-3, medium: local-filesystem, access: read, content: "inventory chunk manifest read from <run-dir> by advance-inventory, distinct from <input> ordered inventory-fragment manifest", formats: [json], path: <run-dir>/inventory-chunks.json, path_match: exact, sensitivity: user-private, system: filesystem}
+        - {id: read-4, medium: local-filesystem, access: read, content: durable metrics-only run diagnostics opened by advance-inventory and finalize-extract, formats: [json], path: <run-dir>/run-diagnostics.json, path_match: exact, sensitivity: derived-private, system: filesystem}
+        - {id: read-5, medium: local-filesystem, access: read, content: "validated semantic IR, compiled dependency graph, and extracted MathJax macros consumed directly by final rendering", formats: [json], path: "<run-dir>/{semantic-ir.json,dependency-graph.json,mathjax-macros.json}", path_match: glob, sensitivity: derived-private, system: filesystem}
+        - {id: read-6, medium: local-filesystem, access: read, content: persisted rejected extract used with pooled inventory for localized correction, formats: [json], path: <run-dir>/semantic-repair-base.json, path_match: exact, sensitivity: derived-private, system: filesystem}
+        writes:
+        - {id: write-1, medium: local-filesystem, access: write, content: deterministic phase artifacts, formats: [text, json], path: <run-dir>/**, path_match: glob, sensitivity: derived-private, system: filesystem}
+        - {id: write-2, medium: local-filesystem, access: write, content: rendered graph derived from validated semantic artifacts, formats: [html], path: "<html> when supplied; otherwise <run-dir>/dependency-graph.html", path_match: exact, sensitivity: derived-private, system: filesystem}
+        - {id: write-3, medium: stdout, access: write, content: phase report, formats: [json], sensitivity: derived-private}
+        - {id: write-4, medium: local-filesystem, access: write, content: atomically replaced schema-valid run diagnostics, formats: [json], path: <run-dir>/run-diagnostics.json, path_match: exact, sensitivity: derived-private, system: filesystem}
+      execution:
+        lifecycle: finite
+        state_effect: mutating
+        consistency:
+          live: Each phase consumes validated artifacts and appends events to prior durable diagnostics in the selected run directory.
+        mutation_safety:
+          atomicity:
+            per_effect_only: JSON state, correction handoff, repair base, semantic
+              output, and diagnostics artifacts each use sibling replacement before publication.
+          concurrent_invocations: {unsafe: Do not advance the same run directory concurrently.}
+          idempotency: {non_idempotent: "Each invocation appends stage, artifact, ratio, or failure-history diagnostics; prepare rejects an existing report."}
+          on_uncertain_completion: {verify_then_decide: Inspect the reported output paths and run-diagnostics.json before retrying.}
+          partial_effects_on_failure: {possible: Earlier deterministic artifacts and diagnostics events in the phase remain valid evidence.}
+          rollback_on_failure: {unavailable: Earlier phase artifacts and diagnostics are durable evidence and intentionally retained.}
+        effects:
+        - id: phase-artifacts
+          action: update
+          direct_io_ref: write-1
+          confirmation_evidence: {kind: direct-io, direct_io_ref: write-1}
+          may_occur_in_outcomes: [advanced, invalid]
+          reversibility: {reversible: The fresh run directory can be discarded and regenerated.}
+          value_source: {kind: argument, argument_ref: input}
+        - id: diagnostics-update
+          action: update
+          direct_io_ref: write-4
+          confirmation_evidence: {kind: direct-io, direct_io_ref: write-4}
+          may_occur_in_outcomes: [advanced, invalid]
+          reversibility: {reversible: The fresh run directory can be discarded and regenerated.}
+          value_source: {kind: argument, argument_ref: operation}
+        - id: rendered-html
+          action: update
+          direct_io_ref: write-2
+          confirmation_evidence: {kind: direct-io, direct_io_ref: write-2}
+          may_occur_in_outcomes: [advanced, invalid]
+          reversibility: {reversible: The caller can delete or regenerate the rendered HTML at the selected or default destination.}
+          value_source: {kind: direct-io, direct_io_ref: read-5}
+        verification:
+        - {method: output-schema, output_ref: report}
+        - {method: direct-io-state, direct_io_ref: write-4}
+      helpers: []
+      interaction: {mode: unattended}
+      outcomes:
+      - id: advanced
+        class: success
+        caller_action: Give the reported next inventory, extract, or localized-correction packet to the named interface, or use the final artifacts.
+        effects: [phase-artifacts, diagnostics-update, rendered-html]
+        outputs: [report]
+      - id: invalid
+        class: error
+        caller_action: Regenerate only the rejected semantic phase from a fresh worker.
+        effects: [phase-artifacts, diagnostics-update, rendered-html]
+        outputs: []
+      outputs:
+      - id: report
+        audience: machine
+        cardinality: {minimum: 1, maximum: 1}
+        description: JSON report naming each next packet and stable progress-sidecar path, a rejected extract's persisted repair base plus retry or bounded correction assignment, or final graph artifacts, always with durable diagnostics.
+        direct_io_ref: write-3
+        empty: Never empty.
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        type: {kind: string, sensitivity: derived-private, format: {named: json}}
+      preconditions: []
+platform_support: {linux: true, macos: true, windows: true}
+runtime_dependencies:
+- {kind: python-package, name: jsonschema, version: '>=4,<5', platforms: {linux: true, macos: true, windows: true}, reason: Validates extraction artifacts.}

@@ -1,8 +1,8 @@
 content:
 - SKILL\.md
 dependencies: []
-description: Defines the LLM workflow for extracting a notation-faithful direct mathematical
-  dependency graph and producing its canonical artifacts.
+description: Orchestrates the measured inventory, extract, compile, and render workflow
+  for one notation-faithful direct mathematical graph.
 gateway:
   language: Markdown
   path: SKILL.md
@@ -12,8 +12,8 @@ interfaces:
     contract:
       arguments:
         request:
-          description: User request and source document for extracting or rendering
-            a mathematical dependency graph.
+          description: User request, TeX entrypoint, and optional HTML destination
+            for one fresh measured mathematical graph run.
           required: true
           sensitivity: user-private
           type:
@@ -51,7 +51,8 @@ interfaces:
       interaction:
         mode: unattended
       outcomes:
-      - caller_action: Review the graph artifacts and unresolved evidence gaps.
+      - caller_action: Review the graph artifacts, durable diagnostics summary, and
+          unresolved evidence gaps.
         class: success
         effects: []
         id: completed
@@ -68,8 +69,9 @@ interfaces:
         cardinality:
           maximum: 1
           minimum: 1
-        description: Graph-analysis result and artifact locations or requested review
-          findings.
+        description: Graph artifact locations, run-diagnostics path and summary,
+          represented source scope, exact worker models and retries, timings, ratios,
+          record counts, and genuine unresolved gaps.
         direct_io_ref: write-1
         empty: Never empty on success.
         id: response
@@ -82,17 +84,17 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Primary LLM-facing skill instructions.
-    version: 2
+    description: Orchestrate a measured inventory, extract, compile, and render run.
+    version: 60
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
+- interface: math-dependency-graph.interface.inventory
+  version: 29
 - interface: math-dependency-graph.interface.extract
-  version: 1
-- interface: math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph
-  version: 1
-- interface: math-dependency-graph._rtx.interface.scripts-extract-mathjax-macros
-  version: 1
-- interface: math-dependency-graph._rtx.interface.scripts-serve-graph
-  version: 1
-version: 2
+  version: 26
+- interface: math-dependency-graph._rtx.interface.scripts-advance-extraction-phases
+  version: 23
+- interface: math-dependency-graph._rtx.interface.scripts-record-run-diagnostics
+  version: 5
+version: 66

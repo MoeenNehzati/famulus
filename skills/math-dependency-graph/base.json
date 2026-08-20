@@ -1,0 +1,65 @@
+{
+  "schema_version": 2,
+  "graph_kind": "math-dependency",
+  "categories": [
+    {"id": "assumption", "label": "Assumptions", "shape": "hexagon", "color": "#9c4f3d"},
+    {"id": "assumption:standing", "label": "Standing assumption", "parent": "assumption", "shape": "hexagon", "color": "#c0392b"},
+    {"id": "assumption:local", "label": "Local assumption", "parent": "assumption", "shape": "hexagon", "color": "#2e86c1"},
+    {"id": "setup", "label": "Setup", "shape": "rect", "color": "#2471a3"},
+    {"id": "setup:definition", "label": "Definition", "parent": "setup", "shape": "rect", "color": "#2471a3"},
+    {"id": "setup:notation", "label": "Notation", "parent": "setup", "shape": "rect", "color": "#148f77"},
+    {"id": "result", "label": "Results", "shape": "roundrect", "color": "#6c3483"},
+    {"id": "result:lemma", "label": "Lemma", "parent": "result", "shape": "roundrect", "color": "#1e8449"},
+    {"id": "result:proposition", "label": "Proposition", "parent": "result", "shape": "roundrect", "color": "#7d6608"},
+    {"id": "result:theorem", "label": "Theorem", "parent": "result", "shape": "roundrect", "color": "#6c3483"},
+    {"id": "result:corollary", "label": "Corollary", "parent": "result", "shape": "roundrect", "color": "#b7950b"},
+    {"id": "exposition", "label": "Exposition", "shape": "ellipse", "color": "#616a6b"},
+    {"id": "exposition:remark", "label": "Remark", "parent": "exposition", "shape": "ellipse", "color": "#616a6b"},
+    {"id": "exposition:example", "label": "Example", "parent": "exposition", "shape": "ellipse", "color": "#117864"},
+    {"id": "external-result", "label": "External result", "shape": "diamond", "color": "#566573"}
+  ],
+  "edge_categories": [
+    {
+      "id": "supports",
+      "label": "Supports",
+      "description": "The source entity is directly needed to understand or establish the target."
+    },
+    {
+      "id": "illustrated-by",
+      "label": "Illustrated by",
+      "description": "The target example illustrates the source mathematical object without supporting its validity."
+    }
+  ],
+  "ui": {
+    "edge_styles": {
+      "supports": {"color": "#2563eb"},
+      "illustrated-by": {"color": "#d97706"}
+    },
+    "edge_presentation": {
+      "facets": [
+        {
+          "id": "provenance",
+          "label": "Provenance",
+          "field": "implicit",
+          "variants": [
+            {
+              "id": "explicit",
+              "equals": false,
+              "label": "Explicit",
+              "description": "The dependency is asserted by the document.",
+              "style": {"line_pattern": "solid"}
+            },
+            {
+              "id": "inferred",
+              "equals": true,
+              "label": "Inferred",
+              "description": "The dependency is inferred from the mathematical argument.",
+              "style": {"line_pattern": "dashed"}
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "entities": []
+}

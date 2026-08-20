@@ -13,8 +13,8 @@ dependencies:
   reason: Imports Python source from _rtx/_tex_macro_reader.py.
   source: math-dependency-graph._rtx.source.rtx-tex-macro-reader
   version: 1
-description: Validates canonical graph JSON and writes an interactive HTML dependency
-  graph that loads ELK and MathJax from jsDelivr when opened.
+description: Validates canonical graph JSON and writes a self-contained interactive HTML
+  dependency graph with bundled ELK and MathJax assets.
 gateway:
   language: Python
   path: _graph_builder.py
@@ -84,6 +84,22 @@ interfaces:
             must_exist: true
             relative_to: caller-cwd
             syntax: literal
+        semantic-ir:
+          description: Exact semantic IR compiled into the canonical graph; its SHA-256 must match compiler provenance.
+          direct_io_ref: read-5
+          required: true
+          sensitivity: user-private
+          type:
+            access: read
+            content_type:
+              format:
+                named: json
+              kind: string
+              sensitivity: user-private
+            kind: file
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
         tex-entry:
           description: Optional TeX entrypoint used to extract MathJax macros.
           direct_io_ref: read-2
@@ -101,30 +117,8 @@ interfaces:
       caller_warnings:
       - external-side-effect: Writes standalone HTML and may refresh a MathJax macro
           JSON file.
-      - may-wait: Opening the generated HTML downloads ELK and MathJax from cdn.jsdelivr.net
-          before browser layout and typesetting are fully available.
       direct_io:
-        network:
-        - access: download
-          content: ELK browser library
-          endpoint: https://cdn.jsdelivr.net/npm/elkjs/lib/elk.bundled.js
-          formats:
-          - javascript
-          id: network-1
-          medium: network-request
-          reason: The generated HTML requests this script when opened.
-          sensitivity: public
-          system: jsdelivr-cdn
-        - access: download
-          content: MathJax browser library
-          endpoint: https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js
-          formats:
-          - javascript
-          id: network-2
-          medium: network-request
-          reason: The generated HTML requests this script when opened.
-          sensitivity: public
-          system: jsdelivr-cdn
+        network: []
         reads:
         - access: read
           content: canonical dependency graph
@@ -153,6 +147,26 @@ interfaces:
           id: read-3
           medium: local-filesystem
           path: <macro-file>
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        - access: read
+          content: skill-owned mathematical graph vocabulary and presentation base
+          formats:
+          - json
+          id: read-4
+          medium: local-filesystem
+          path: $skill/base.json
+          path_match: exact
+          sensitivity: public
+          system: filesystem
+        - access: read
+          content: resolved semantic graph used to compile the canonical JSON
+          formats:
+          - json
+          id: read-5
+          medium: local-filesystem
+          path: <semantic-ir.json>
           path_match: exact
           sensitivity: user-private
           system: filesystem
@@ -273,18 +287,22 @@ interfaces:
         - --html-out
         - --tex-entry
         - --macro-file
+        - --semantic-ir
         - --refresh-macros
         - --reduce-transitive-edges
+        required_flags:
+        - --semantic-ir
         flag_patterns:
           --html-out: ^.+$
           --macro-file: ^.+$
+          --semantic-ir: ^.+$
           --tex-entry: ^.+$
         max_positionals: 1
         min_positionals: 1
         name: owner
-    usage: <source.json> [--tex-entry <entrypoint.tex>] [--html-out <path>] [--macro-file
-      <path>] [--refresh-macros] [--reduce-transitive-edges]
-    version: 1
+    usage: <source.json> --semantic-ir <semantic-ir.json> [--tex-entry <entrypoint.tex>]
+      [--html-out <path>] [--macro-file <path>] [--refresh-macros] [--reduce-transitive-edges]
+    version: 4
 node_type: behavioral_source
 platform_support:
   linux: true
@@ -293,4 +311,4 @@ platform_support:
 runtime_dependencies: []
 schema_version: 6
 uses_interfaces: []
-version: 1
+version: 4

@@ -6,9 +6,51 @@ authority:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
+      - _extraction_phase_driver.py
+      - Interface
+      reason: Advance deterministic inventory and extract finalization boundaries.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _run_diagnostics.py
+      - Interface
+      reason: Atomically record durable worker and deterministic-stage run diagnostics.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _extraction_chunk_planner.py
+      - Interface
+      reason: Plan bounded extraction chunks and materialize exact worker packets.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _batch_ir_merger.py
+      - Interface
+      reason: Validate and merge disjoint extraction batch fragments.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
       - _graph_builder.py
       - Interface
       reason: Render math dependency graph HTML from canonical JSON.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _semantic_graph_compiler.py
+      - Interface
+      reason: Compile resolved mathematical semantic IR into canonical graph JSON.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _source_packet.py
+      - Interface
+      reason: Prepare source-ordered TeX packets for LLM semantic extraction.
     - command:
       - python3
       - -m
@@ -26,13 +68,37 @@ authority:
     network: []
 children: {}
 content:
+- _batch_ir_merger\.py
+- _extraction_chunk_planner\.py
+- _extraction_phase_driver\.py
 - _graph_builder\.py
 - _graph_server\.py
+- _run_diagnostics\.py
 - __init__\.py
+- _semantic_graph_compiler\.py
+- _source_packet\.py
 - _tex_macro_reader\.py
 - tests/.*
 description: Code module for the math-dependency-graph skill.
 exports:
+  math-dependency-graph._rtx.interface.scripts-advance-extraction-phases:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - math-dependency-graph
+    source_interface: math-dependency-graph._rtx.source.rtx-extraction-phase-driver.interface.scripts-advance-extraction-phases
+  math-dependency-graph._rtx.interface.scripts-plan-extraction-chunks:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - math-dependency-graph
+    source_interface: math-dependency-graph._rtx.source.rtx-extraction-chunk-planner.interface.scripts-plan-extraction-chunks
+  math-dependency-graph._rtx.interface.scripts-merge-batch-ir:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - math-dependency-graph
+    source_interface: math-dependency-graph._rtx.source.rtx-batch-ir-merger.interface.scripts-merge-batch-ir
   math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph:
     access:
       allow_all_modules: false
@@ -45,12 +111,30 @@ exports:
       allowed_callers:
       - math-dependency-graph
     source_interface: math-dependency-graph._rtx.source.rtx-tex-macro-reader.interface.scripts-extract-mathjax-macros
+  math-dependency-graph._rtx.interface.scripts-prepare-semantic-source:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - math-dependency-graph
+    source_interface: math-dependency-graph._rtx.source.rtx-source-packet.interface.scripts-prepare-semantic-source
+  math-dependency-graph._rtx.interface.scripts-compile-semantic-graph:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - math-dependency-graph
+    source_interface: math-dependency-graph._rtx.source.rtx-semantic-graph-compiler.interface.scripts-compile-semantic-graph
   math-dependency-graph._rtx.interface.scripts-serve-graph:
     access:
       allow_all_modules: false
       allowed_callers:
       - math-dependency-graph
     source_interface: math-dependency-graph._rtx.source.rtx-graph-server.interface.scripts-serve-graph
+  math-dependency-graph._rtx.interface.scripts-record-run-diagnostics:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - math-dependency-graph
+    source_interface: math-dependency-graph._rtx.source.rtx-run-diagnostics.interface.scripts-record-run-diagnostics
 gateway:
   language: Python>=3.11
   path: __init__.py
@@ -59,6 +143,18 @@ namespace_exports: {}
 node_type: module
 schema_version: 6
 sources:
+  math-dependency-graph._rtx.source.rtx-extraction-phase-driver:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-extraction-phase-driver.yaml
+  math-dependency-graph._rtx.source.rtx-batch-ir-merger:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-batch-ir-merger.yaml
+  math-dependency-graph._rtx.source.rtx-extraction-chunk-planner:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-extraction-chunk-planner.yaml
   math-dependency-graph._rtx.source.rtx-graph-builder:
     blueprint:
       base: module-root
@@ -71,8 +167,20 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/rtx-init.yaml
+  math-dependency-graph._rtx.source.rtx-run-diagnostics:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-run-diagnostics.yaml
+  math-dependency-graph._rtx.source.rtx-source-packet:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-source-packet.yaml
+  math-dependency-graph._rtx.source.rtx-semantic-graph-compiler:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-semantic-graph-compiler.yaml
   math-dependency-graph._rtx.source.rtx-tex-macro-reader:
     blueprint:
       base: module-root
       path: blueprints/rtx-tex-macro-reader.yaml
-version: 1
+version: 43

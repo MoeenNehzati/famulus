@@ -1,0 +1,204 @@
+schema_version: 6
+node_type: behavioral_source
+id: math-dependency-graph._rtx.source.rtx-run-diagnostics
+version: 9
+description: Atomically records metrics-only worker, stage, artifact, retry-code, structured failure, exact local and aggregate inventory ratios, and final run diagnostics without arbitrary error text.
+gateway:
+  language: Python>=3.11
+  path: _run_diagnostics.py
+content:
+- _run_diagnostics\.py
+dependencies:
+- blueprint: {base: module-root, path: blueprints/rtx-init.yaml}
+  reason: Loads Python package support and the machine-interface runtime.
+  source: math-dependency-graph._rtx.source.rtx-init
+  version: 1
+- blueprint: {base: module-root, path: blueprints/rtx-batch-ir-merger.yaml}
+  reason: Reuses the same-skill checked JSON-schema loader and atomic JSON writer.
+  source: math-dependency-graph._rtx.source.rtx-batch-ir-merger
+  version: 22
+uses_interfaces: []
+interfaces:
+  math-dependency-graph._rtx.source.rtx-run-diagnostics.interface.scripts-record-run-diagnostics:
+    version: 5
+    description: Initialize a fresh run report, record one worker lifecycle event, or finish the report with allowlisted diagnostics.
+    usage: <initialize|worker-queued|worker-started|worker-finished|finish> <run-dir> [<job-id>] [operation flags]
+    process_binding:
+      kind: process
+      entry: Interface
+      patterns:
+      - name: initialize
+        min_positionals: 2
+        max_positionals: 2
+        allow_stdin: false
+        positional_patterns: {'0': ^initialize$}
+        allowed_flags: [--entrypoint]
+        required_flags: [--entrypoint]
+        flag_patterns: {--entrypoint: ^.+$}
+      - name: worker-queued
+        min_positionals: 3
+        max_positionals: 3
+        allow_stdin: false
+        positional_patterns: {'0': ^worker-queued$}
+        allowed_flags: [--phase, --model, --retry-code]
+        required_flags: [--phase, --model]
+        flag_patterns:
+          --phase: ^(inventory|extract)$
+          --model: ^.+$
+          --retry-code: ^(worker-failed|validation-failed|timeout|capacity|transient)$
+      - name: worker-started
+        min_positionals: 3
+        max_positionals: 3
+        allow_stdin: false
+        positional_patterns: {'0': ^worker-started$}
+        allowed_flags: []
+      - name: worker-finished
+        min_positionals: 3
+        max_positionals: 3
+        allow_stdin: false
+        positional_patterns: {'0': ^worker-finished$}
+        allowed_flags: [--status, --output, --error-code]
+        required_flags: [--status]
+        flag_patterns:
+          --status: ^(success|failure)$
+          --output: ^.+$
+          --error-code: ^(worker-failed|validation-failed|timeout|capacity|transient)$
+      - name: finish
+        min_positionals: 2
+        max_positionals: 2
+        allow_stdin: false
+        positional_patterns: {'0': ^finish$}
+        allowed_flags: [--status, --error-code]
+        required_flags: [--status]
+        flag_patterns:
+          --status: ^(success|failure)$
+          --error-code: ^(run-failed|stage-failed|validation-failed|timeout|capacity|transient)$
+    contract:
+      arguments:
+        operation:
+          description: Diagnostics lifecycle operation.
+          required: true
+          sensitivity: public
+          type: {kind: string, sensitivity: public}
+        run-dir:
+          description: Fresh or existing extraction run directory selected by the operation.
+          required: true
+          sensitivity: user-private
+          type: {kind: string, sensitivity: user-private}
+        job-id:
+          description: Inventory or extract job id required by worker lifecycle operations.
+          required: false
+          sensitivity: derived-private
+          type: {kind: string, sensitivity: derived-private}
+        entrypoint:
+          description: TeX entrypoint hashed by initialize without copying its contents.
+          direct_io_ref: read-1
+          required: false
+          sensitivity: user-private
+          type:
+            kind: file
+            access: read
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+            content_type: {kind: string, sensitivity: user-private}
+        phase:
+          description: Semantic worker phase for worker-queued.
+          required: false
+          sensitivity: public
+          type: {kind: string, sensitivity: public}
+        model:
+          description: Actual worker model identifier for worker-queued.
+          required: false
+          sensitivity: derived-private
+          type: {kind: string, sensitivity: derived-private}
+        retry-code:
+          description: Stable allowlisted reason code required after the first attempt for the same job id.
+          required: false
+          sensitivity: public
+          type: {kind: string, sensitivity: public}
+        status:
+          description: Success or failure outcome for worker-finished or finish.
+          required: false
+          sensitivity: public
+          type: {kind: string, sensitivity: public}
+        output:
+          description: Worker artifact streamed for bytes and SHA-256; required when worker-finished status is success.
+          direct_io_ref: read-2
+          required: false
+          sensitivity: user-private
+          type:
+            kind: file
+            access: read
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+            content_type: {kind: string, sensitivity: user-private}
+        error-code:
+          description: Stable allowlisted failure code; arbitrary exception text is never accepted by the process interface.
+          required: false
+          sensitivity: public
+          type: {kind: string, sensitivity: public}
+      caller_warnings:
+      - external-side-effect: Every accepted event atomically replaces <run-dir>/run-diagnostics.json.
+      - external-side-effect: Initialize rejects an existing report; it never erases prior diagnostics history.
+      - external-side-effect: A retry is rejected while the same job has a queued or running attempt, and successful finish requires every worker attempt and deterministic stage to be terminal.
+      direct_io:
+        network: []
+        reads:
+        - {id: read-1, medium: local-filesystem, access: read, content: TeX entrypoint streamed in bounded chunks only for size and SHA-256, formats: [tex], path: <entrypoint>, path_match: exact, sensitivity: user-private, system: filesystem}
+        - {id: read-2, medium: local-filesystem, access: read, content: worker output streamed in bounded chunks only for size and SHA-256, formats: [json], path: <output>, path_match: exact, sensitivity: user-private, system: filesystem}
+        - {id: read-3, medium: local-filesystem, access: read, content: prior durable run diagnostics, formats: [json], path: <run-dir>/run-diagnostics.json, path_match: exact, sensitivity: derived-private, system: filesystem}
+        writes:
+        - {id: write-1, medium: local-filesystem, access: write, content: schema-valid metrics-only run diagnostics, formats: [json], path: <run-dir>/run-diagnostics.json, path_match: exact, sensitivity: derived-private, system: filesystem}
+        - {id: write-2, medium: stdout, access: write, content: diagnostics path and concise current summary, formats: [json], sensitivity: derived-private}
+      execution:
+        lifecycle: finite
+        state_effect: mutating
+        consistency:
+          live: Each event validates and replaces the complete report derived from the last durable state.
+        mutation_safety:
+          atomicity: {atomic: The complete schema-valid JSON document replaces its predecessor through an atomic sibling write.}
+          concurrent_invocations: {unsafe: Worker events for one run directory must be serialized.}
+          idempotency: {non_idempotent: Repeating a lifecycle event appends or advances diagnostics state; initialize rejects an existing report.}
+          on_uncertain_completion: {verify_then_decide: Read run-diagnostics.json and locate the intended event before retrying.}
+          partial_effects_on_failure: {impossible: Validation or atomic publication failure leaves the preceding complete report intact.}
+          rollback_on_failure: {unavailable: Earlier durable events are evidence and are intentionally preserved.}
+        effects:
+        - id: diagnostics-update
+          action: update
+          direct_io_ref: write-1
+          confirmation_evidence: {kind: direct-io, direct_io_ref: write-1}
+          may_occur_in_outcomes: [recorded]
+          reversibility: {reversible: The fresh run directory may be discarded and regenerated.}
+          value_source: {kind: argument, argument_ref: operation}
+        verification:
+        - {method: output-schema, output_ref: summary}
+        - {method: direct-io-state, direct_io_ref: write-1}
+      helpers: []
+      interaction: {mode: unattended}
+      outcomes:
+      - id: recorded
+        class: success
+        caller_action: Continue the measured run or report the finished diagnostics path.
+        effects: [diagnostics-update]
+        outputs: [summary]
+      - id: invalid
+        class: error
+        caller_action: Stop orchestration and correct the event or report state before retrying.
+        effects: []
+        outputs: []
+      outputs:
+      - id: summary
+        audience: machine
+        cardinality: {minimum: 1, maximum: 1}
+        description: JSON naming the report path, run status, job count, and latest deterministic stage status and duration.
+        direct_io_ref: write-2
+        empty: Never empty on success.
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        type: {kind: string, sensitivity: derived-private, format: {named: json}}
+      preconditions: []
+platform_support: {linux: true, macos: true, windows: true}
+runtime_dependencies: []

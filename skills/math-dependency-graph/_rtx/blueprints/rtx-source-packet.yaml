@@ -1,5 +1,5 @@
 content:
-- _tex_macro_reader\.py
+- _source_packet\.py
 dependencies:
 - blueprint:
     base: module-root
@@ -7,21 +7,25 @@ dependencies:
   reason: Loads Python package support from _rtx/__init__.py.
   source: math-dependency-graph._rtx.source.rtx-init
   version: 1
-description: Recursively reads the TeX entrypoint's project-owned source closure,
-  consults reachable TeX-distribution definitions and standard symbol slots to resolve
-  dependencies, and prints MathJax-safe project macro definitions as JSON without
-  overriding native MathJax commands.
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-tex-macro-reader.yaml
+  reason: Reuses encoding-safe TeX reads and comment handling from _rtx/_tex_macro_reader.py.
+  source: math-dependency-graph._rtx.source.rtx-tex-macro-reader
+  version: 1
+description: Resolves a TeX entrypoint's authored input/include tree, removes inactive
+  comments, and writes one source-ordered, line-addressable packet without extracting
+  mathematical semantics.
 gateway:
-  language: Python
-  path: _tex_macro_reader.py
-id: math-dependency-graph._rtx.source.rtx-tex-macro-reader
+  language: Python>=3.11
+  path: _source_packet.py
+id: math-dependency-graph._rtx.source.rtx-source-packet
 interfaces:
-  math-dependency-graph._rtx.source.rtx-tex-macro-reader.interface.scripts-extract-mathjax-macros:
+  math-dependency-graph._rtx.source.rtx-source-packet.interface.scripts-prepare-semantic-source:
     contract:
       arguments:
         entrypoint:
-          description: TeX entrypoint whose reachable project and TeX-distribution dependency
-            tree is scanned.
+          description: Root TeX document whose authored input/include tree is prepared.
           direct_io_ref: read-1
           required: true
           sensitivity: user-private
@@ -35,15 +39,13 @@ interfaces:
             relative_to: caller-cwd
             syntax: literal
         out:
-          description: Optional MathJax macro JSON destination.
+          description: Optional semantic source packet destination.
           direct_io_ref: write-1
           required: false
           sensitivity: user-private
           type:
             access: write
             content_type:
-              format:
-                named: json
               kind: string
               sensitivity: derived-private
             kind: file
@@ -51,34 +53,33 @@ interfaces:
             relative_to: caller-cwd
             syntax: literal
       caller_warnings:
-      - external-side-effect: Writes or replaces the selected macro JSON file.
+      - external-side-effect: Writes or replaces the selected semantic source packet.
       direct_io:
         network: []
         reads:
         - access: read
-          content: TeX entrypoint, reachable project sources, and consulted TeX-distribution
-            class, package, and standard symbol definitions
+          content: TeX entrypoint and reachable authored input/include files
           formats:
           - tex
           id: read-1
           medium: local-filesystem
-          path: <entrypoint.tex>, reachable source files, and active TeX-distribution definitions
+          path: <entrypoint.tex> and reachable local source files
           path_match: glob
           sensitivity: user-private
           system: filesystem
         writes:
         - access: write
-          content: extracted MathJax macro definitions
+          content: active-source TeX packet with exact file and line provenance
           formats:
-          - json
+          - text
           id: write-1
           medium: local-filesystem
-          path: <out> or <entry-dir>/_build/<entry>-mathjax-macros.json
+          path: <out> or <entry-dir>/_build/<entry>-semantic-source.txt
           path_match: exact
           sensitivity: derived-private
           system: filesystem
         - access: write
-          content: extraction report
+          content: source preparation report
           formats:
           - json
           id: write-2
@@ -86,50 +87,55 @@ interfaces:
           sensitivity: derived-private
       execution:
         consistency:
-          snapshot: Extraction uses the reachable TeX content read during this invocation.
+          snapshot: The packet preserves active authored source with original line
+            provenance in deterministic TeX expansion order.
         effects:
         - action: update
           confirmation_evidence:
             direct_io_ref: write-1
             kind: direct-io
           direct_io_ref: write-1
-          id: macro-file
+          id: source-packet
           may_occur_in_outcomes:
-          - extracted
+          - prepared
           reversibility:
-            reversible: The generated macro JSON can be deleted or regenerated.
+            reversible: Delete or regenerate the derived packet without changing
+              the TeX sources.
           value_source:
             argument_ref: entrypoint
             kind: argument
         lifecycle: finite
         mutation_safety:
           atomicity:
-            non_atomic: The JSON file is written directly after creating its parent
-              directory.
+            atomic: A temporary sibling is atomically replaced only after the complete
+              packet is written and all authored includes resolve.
           concurrent_invocations:
-            unsafe: Concurrent writers to the same path are not serialized.
+            unsafe: Concurrent writers to the same selected output are not serialized.
           idempotency:
-            idempotent: Unchanged reachable TeX sources produce equivalent sorted
-              JSON.
+            idempotent: Unchanged reachable TeX sources produce equivalent packet
+              content and discovery counts.
           on_uncertain_completion:
-            verify_then_decide: Parse the selected output JSON before retrying.
+            verify_then_decide: Inspect the report and selected packet before retrying.
           partial_effects_on_failure:
-            possible: A direct write can leave incomplete output if interrupted.
+            impossible: Missing inputs are rejected before writing and temporary
+              files are removed on write failure.
           rollback_on_failure:
-            unavailable: Prior output content is not retained.
+            available: The preexisting selected packet remains until atomic replacement.
         state_effect: mutating
         verification:
         - method: output-schema
           output_ref: report
+        - direct_io_ref: write-1
+          method: direct-io-state
       helpers: []
       interaction:
         mode: unattended
       outcomes:
-      - caller_action: Use the reported macro JSON path for graph rendering.
+      - caller_action: Supply the reported packet path to the LLM extract interface.
         class: success
         effects:
-        - macro-file
-        id: extracted
+        - source-packet
+        id: prepared
         outputs:
         - report
       - caller_action: Supply an existing TeX entrypoint.
@@ -137,7 +143,12 @@ interfaces:
         effects: []
         id: missing
         outputs: []
-      - caller_action: Correct unreadable includes or an unwritable output path.
+      - caller_action: Resolve every reported authored input before semantic extraction.
+        class: error
+        effects: []
+        id: unresolved-input
+        outputs: []
+      - caller_action: Correct unreadable sources or the selected output path.
         class: error
         effects: []
         id: failed
@@ -147,10 +158,10 @@ interfaces:
         cardinality:
           maximum: 1
           minimum: 1
-        description: JSON object containing entrypoint and output path and extracted
-          macro count.
+        description: JSON report containing entrypoint and packet paths, file, line,
+          and byte counts, unresolved inputs, cycles, and elapsed preparation time.
         direct_io_ref: write-2
-        empty: Never empty.
+        empty: Never empty on success.
         id: report
         ordering: stable
         pagination:
@@ -163,9 +174,8 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Extract MathJax-safe project macro definitions from a TeX entrypoint,
-      recursively following source dependencies and consulting the active TeX distribution
-      for aliases and symbol-slot resolution.
+    description: Prepare a complete source-ordered TeX packet with exact provenance
+      and a non-semantic visible-environment begin/end coverage checklist.
     process_binding:
       entry: Interface
       kind: process
@@ -178,7 +188,7 @@ interfaces:
         min_positionals: 1
         name: owner
     usage: <entrypoint.tex> [--out <path>]
-    version: 1
+    version: 4
 node_type: behavioral_source
 platform_support:
   linux: true
@@ -187,4 +197,4 @@ platform_support:
 runtime_dependencies: []
 schema_version: 6
 uses_interfaces: []
-version: 1
+version: 7
