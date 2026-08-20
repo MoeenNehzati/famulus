@@ -1,6 +1,6 @@
 # Math Graph Inventory Unit Iterator Implementation Plan
 
-Implement the design in [the inventory iterator specification](../specs/2026-08-20-math-graph-inventory-unit-iterator-design.md). Work test-first, preserve unrelated dirty files, and do not stage or commit unless explicitly requested.
+Implement the design in [the inventory iterator specification](2026-08-20-math-graph-inventory-unit-iterator-design.md). Work test-first, preserve unrelated dirty files, and do not stage or commit unless explicitly requested.
 
 ## 1. Establish the test surface
 
