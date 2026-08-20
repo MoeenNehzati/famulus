@@ -1,0 +1,290 @@
+content:
+- _relocate_nodes\.py
+- _relocation_closure\.py
+- _relocation_engine\.py
+- schemas/relocation\.schema\.json
+- tests/test_relocation_closure\.py
+- tests/test_relocation_engine\.py
+dependencies: []
+description: Owns manifest-driven relocation preflight and atomic application through
+  the relocate-nodes skill runtime.
+gateway:
+  language: Python>=3.11
+  path: _relocate_nodes.py
+id: relocate-nodes._rtx.source.rtx-relocate-nodes
+interfaces:
+  relocate-nodes._rtx.source.rtx-relocate-nodes.interface.relocate:
+    contract:
+      arguments:
+        root:
+          description: Existing repository root to preflight or update.
+          direct_io_ref: repository
+          required: false
+          sensitivity: user-private
+          type:
+            kind: dir
+            access: read-write
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+        manifest:
+          description: Exact relocation manifest to validate and apply.
+          direct_io_ref: manifest
+          required: true
+          sensitivity: user-private
+          type:
+            kind: file
+            access: read
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+            opaque_content: true
+        report:
+          description: Optional external-only destination for the JSON relocation
+            report.
+          direct_io_ref: report-file
+          required: false
+          sensitivity: user-private
+          type:
+            kind: file
+            access: write
+            must_exist: false
+            relative_to: caller-cwd
+            syntax: literal
+            opaque_content: true
+        apply:
+          default: false
+          description: Atomically publish the accepted relocation change set.
+          required: false
+          sensitivity: public
+          type:
+            kind: flag
+      caller_warnings:
+      - external-side-effect: --apply atomically updates the selected repository from
+          the validated change set.
+      direct_io:
+        network: []
+        reads:
+        - id: manifest
+          medium: local-filesystem
+          system: filesystem
+          access: read
+          path: <manifest>
+          path_match: exact
+          content: Exact relocation manifest.
+          formats:
+          - yaml
+          sensitivity: user-private
+        - id: repository
+          medium: local-filesystem
+          system: filesystem
+          access: read
+          path: <root>/**
+          path_match: glob
+          content: Selected repository files and metadata needed for relocation planning.
+          formats:
+          - source-code
+          - json
+          - yaml
+          - markdown
+          - text
+          - git-metadata
+          sensitivity: user-private
+        writes:
+        - id: report
+          medium: stdout
+          system: agent-runtime
+          access: write
+          content: Stable JSON relocation report.
+          formats:
+          - json
+          sensitivity: derived-private
+        - id: report-file
+          medium: local-filesystem
+          system: filesystem
+          access: write
+          path: <report>
+          path_match: exact
+          content: Optional stable JSON relocation report outside the selected repository.
+          formats:
+          - json
+          sensitivity: derived-private
+        - id: error
+          medium: stderr
+          system: agent-runtime
+          access: write
+          content: Manifest, repository, preflight, or application error.
+          formats:
+          - text
+          sensitivity: derived-private
+        - id: repository-change-set
+          medium: local-filesystem
+          system: filesystem
+          access: write
+          path: <root>/**
+          path_match: glob
+          content: Atomically published repository relocation change set.
+          formats:
+          - source-code
+          - json
+          - yaml
+          - markdown
+          - text
+          sensitivity: user-private
+      execution:
+        consistency:
+          snapshot: Application verifies every preflight input remains unchanged before
+            publishing the complete change set.
+        effects:
+        - id: repository-change-set
+          action: update
+          direct_io_ref: repository-change-set
+          may_occur_in_outcomes:
+          - applied
+          confirmation_evidence:
+            kind: output
+            output_ref: report
+          reversibility:
+            compensatable: A subsequent reviewed relocation manifest can restore intended
+              repository paths and content.
+          value_source:
+            kind: argument
+            argument_ref: manifest
+        lifecycle: finite
+        state_effect: mutating
+        mutation_safety:
+          atomicity:
+            atomic: The validated change set is staged and published only after every
+              preflight snapshot still matches.
+          concurrent_invocations:
+            unsafe: Concurrent relocation applications can invalidate each other's
+              preflight snapshots.
+          idempotency:
+            idempotent: An unchanged manifest has an empty postflight after its accepted
+              change set is applied.
+          on_uncertain_completion:
+            verify_then_decide: Rerun the same preflight and require every report
+              category to be empty before retrying.
+          partial_effects_on_failure:
+            impossible: The engine validates all planned changes before publishing
+              the complete file-level change set.
+          rollback_on_failure:
+            unavailable: Preserve the report and use a reviewed compensating manifest
+              rather than rewriting repository history.
+        verification:
+        - method: output-schema
+          output_ref: report
+        - method: direct-io-state
+          direct_io_ref: repository-change-set
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - id: preflighted
+        class: success
+        effects: []
+        outputs:
+        - report
+        caller_action: Review every nonempty report category and stop on unresolved
+          references before applying.
+      - id: applied
+        class: success
+        effects:
+        - repository-change-set
+        outputs:
+        - report
+        caller_action: Run the same preflight again and require every change category
+          to be empty.
+      - id: failed
+        class: error
+        effects: []
+        outputs:
+        - error
+        caller_action: Correct the manifest, repository path, or unresolved reference
+          before retrying.
+      outputs:
+      - id: report
+        audience: both
+        cardinality:
+          minimum: 1
+          maximum: 1
+        description: Stable JSON report of planned or applied relocation changes.
+        direct_io_ref: report
+        empty: Never empty after a successful preflight or application.
+        ordering: sorted
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      - id: error
+        audience: human
+        cardinality:
+          minimum: 0
+          maximum: 1
+        description: Manifest, repository, preflight, or application error.
+        direct_io_ref: error
+        empty: Empty on success.
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Preflight or atomically apply one manifest-driven registered-node
+      relocation.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_stdin: false
+        min_positionals: 0
+        max_positionals: 0
+        allowed_flags:
+        - --root
+        - --manifest
+        - --report
+        - --apply
+        required_flags:
+        - --manifest
+        flag_patterns:
+          --root: ^.+$
+          --manifest: ^.+$
+          --report: ^.+$
+    usage: --manifest MANIFEST [--root ROOT] [--report REPORT] [--apply]
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies:
+- kind: python-package
+  name: PyYAML
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Parses caller-selected relocation manifests in the skill-owned engine.
+  version: any
+- kind: python-package
+  name: jsonschema
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Validates caller-selected relocation manifests against the skill-owned schema.
+  version: any
+schema_version: 6
+uses_interfaces:
+- interface: blueprints.interface.graph
+  version: 1
+- interface: skill-maker._rtx.interface.sync-blueprints
+  version: 1
+version: 1
+maturity: stable

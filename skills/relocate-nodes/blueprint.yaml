@@ -4,55 +4,54 @@ children:
   _rtx: {}
 content:
 - SKILL\.md
-description: Defines the personal skill-authoring workflow and owns repository skill
-  conformance validators plus generated blueprint-contract synchronization.
+description: Owns the manifest-driven workflow for safely relocating registered Officina
+  nodes and their files.
 discovery:
   mechanism: skill
   catalog:
     domain: assistant-development
     topics:
-    - assistant-authoring
     - assistant-architecture
-    - assistant-assurance
     - repository-workflow
-    visibility: featured
+    - assistant-assurance
+    visibility: listed
   activated_by:
   - user-request
   - skill-workflow
   persistent_modifier: false
 exports:
-  skill-maker.interface.default:
+  relocate-nodes.interface.default:
     access:
       allow_all_modules: true
       allowed_callers: []
-    source_interface: skill-maker.source.gateway.interface.default
+    source_interface: relocate-nodes.source.gateway.interface.default
 gateway:
   language: Markdown
   path: SKILL.md
-id: skill-maker
+id: relocate-nodes
 namespace_exports:
   _rtx:
     version: 1
     access:
-      allow_all_modules: true
-      allowed_callers: []
+      allow_all_modules: false
+      allowed_callers:
+      - relocate-nodes
     surface:
       only:
-        skill-maker._rtx.interface.sync-blueprints: 1
+        relocate-nodes._rtx.interface.relocate: 1
     interface_access:
-      skill-maker._rtx.interface.sync-blueprints:
+      relocate-nodes._rtx.interface.relocate:
         allow_all_modules: false
         allowed_callers:
-        - skill-certifier
-        - relocate-nodes._rtx
+        - relocate-nodes
 node_type: module
 schema_version: 6
 sources:
-  skill-maker.source.gateway:
+  relocate-nodes.source.gateway:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml
-version: 5
+version: 1
 maturity: stable
 installation_tier: core
 personal_preference:

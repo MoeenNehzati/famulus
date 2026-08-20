@@ -1,0 +1,97 @@
+content:
+- SKILL\.md
+dependencies: []
+description: Directs a reviewed relocation preflight, application, and required empty
+  postflight through the private machine interface.
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: relocate-nodes.source.gateway
+interfaces:
+  relocate-nodes.source.gateway.interface.default:
+    contract:
+      arguments:
+        request:
+          description: Exact registered-node relocation request and manifest location.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+      caller_warnings:
+      - external-side-effect: Applying an accepted manifest atomically changes the
+          selected repository.
+      direct_io:
+        network: []
+        reads:
+        - id: request
+          medium: prompt
+          system: agent-runtime
+          access: read
+          content: Relocation request and exact manifest location.
+          formats:
+          - text
+          sensitivity: user-private
+        writes:
+        - id: response
+          medium: prompt
+          system: agent-runtime
+          access: write
+          content: Preflight, application, or empty-postflight result.
+          formats:
+          - markdown
+          sensitivity: derived-private
+      execution:
+        consistency:
+          snapshot: Each response reflects the exact manifest and repository state
+            observed by its delegated invocation.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: response
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - id: completed
+        class: success
+        effects: []
+        outputs:
+        - response
+        caller_action: Review the report categories and use the private route only
+          as prescribed by this workflow.
+      - id: failed
+        class: error
+        effects: []
+        outputs:
+        - response
+        caller_action: Correct the manifest or unresolved reference before retrying.
+      outputs:
+      - id: response
+        audience: human
+        cardinality:
+          minimum: 1
+          maximum: 1
+        description: Relocation workflow result and required next action.
+        direct_io_ref: response
+        empty: Never empty.
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Require reviewed preflight, accepted application, and an empty second
+      preflight.
+    version: 1
+node_type: behavioral_source
+schema_version: 6
+uses_interfaces:
+- interface: relocate-nodes._rtx.interface.relocate
+  version: 1
+version: 1
+maturity: stable
