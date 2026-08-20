@@ -35,6 +35,10 @@ Skill: llm-wakeup
 ## Route by intent
 
 - Enable, disable, or inspect automatic wakeups: invoke `auto-policy`.
+  Automatic wakeups have two levels. The default wakes a session only
+  when a usage limit actually stopped it; the forced level wakes it at
+  reset whenever usage neared the limit. Pass the forced level only when
+  the user asks to be woken regardless of whether the session was stopped.
 - Schedule after a timeout when provider, session, or reset may need discovery:
   invoke `infer-schedule`.
 - Schedule when provider, session, and reset are all explicit: invoke
@@ -49,6 +53,7 @@ and retry `auto-policy`. For `infer-schedule`, ask for the missing explicit valu
 when provider, session, and reset are all explicit, route to `explicit-schedule`.
 
 For `auto-policy`, report the resolved provider, canonical session, and policy
-state. For `infer-schedule` and `explicit-schedule`, report the resolved
-provider, canonical session, and local scheduled time. Report failures plainly
+state, including which level is in effect. For `infer-schedule` and
+`explicit-schedule`, report the resolved provider, canonical session, and local
+scheduled time. Report failures plainly
 without claiming a wakeup exists.

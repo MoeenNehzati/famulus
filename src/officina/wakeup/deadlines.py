@@ -21,9 +21,15 @@ DURATION_RE = re.compile(
 )
 DEFAULT_DELAY = timedelta(minutes=1)
 CLOCK_PATTERN = r"\d{1,2}(?::\d{2})?\s*(?:am|pm)"
+# Providers phrase the same instant differently: "try again at Aug 20th, 2026
+# 12:16 PM" and "resets Aug 6, 1am (America/New_York)" are both in use, so the
+# ordinal suffix and the explicit year are optional. A stated year suppresses
+# the next-year rollover that a bare date needs.
+RESET_TRIGGER = r"(?:resets?(?:\s+at)?|until|try\s+again\s+at)"
 CALENDAR_RESET_RE = re.compile(
-    r"(?:resets?(?:\s+at)?|until)\s+"
-    r"(?:(?P<month>[A-Za-z]{3,9})\s+(?P<day>\d{1,2}),?\s*|"
+    rf"{RESET_TRIGGER}\s+"
+    r"(?:(?P<month>[A-Za-z]{3,9})\s+(?P<day>\d{1,2})(?:st|nd|rd|th)?,?\s*"
+    r"(?:(?P<year>\d{4})[\s,]*)?|"
     r"(?P<weekday>Mon|Tue|Wed|Thu|Fri|Sat|Sun)(?:day|sday|nesday|rsday|day|urday)?\s+)"
     rf"(?P<clock>{CLOCK_PATTERN})"
     r"(?:\s*\((?P<zone>[^)]+)\))?",
@@ -100,15 +106,16 @@ def _calendar_reset(text: str, now: datetime) -> datetime | None:
                 continue
         if month is None:
             raise WakeupError(f"could not parse reset month: {month_text}")
+        stated_year = match.group("year")
         candidate = datetime(
-            local_now.year,
+            int(stated_year) if stated_year else local_now.year,
             month,
             int(match.group("day")),
             clock.hour,
             clock.minute,
             tzinfo=zone,
         )
-        if candidate <= local_now:
+        if not stated_year and candidate <= local_now:
             candidate = candidate.replace(year=candidate.year + 1)
     else:
         target = WEEKDAYS[match.group("weekday")[:3].lower()]
@@ -172,7 +179,7 @@ def parse_deadline(
         return calendar_reset
 
     reset_clock = re.search(
-        r"(?:resets?(?:\s+at)?|until)\s+"
+        rf"{RESET_TRIGGER}\s+"
         rf"(?P<clock>{CLOCK_PATTERN})"
         r"(?:\s*\((?P<zone>[^)]+)\))?",
         text,

@@ -6,6 +6,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -41,15 +42,25 @@ def test_provider_adapters_cover_discovery_progress_resume_and_limits(
             "content": "You've hit your session limit; resets 6:50pm (America/New_York)",
         },
     }
+    # Verbatim shape of a real refusal: Codex marks the limit on the
+    # task_complete record, not on a token_count percentage.
     codex_event = {
-        "timestamp": "2026-06-12T19:25:35Z",
+        "timestamp": "2026-08-19T22:00:07.132Z",
         "type": "event_msg",
         "payload": {
-            "type": "token_count",
-            "rate_limits": {
-                "primary": {"used_percent": 100.0, "resets_at": 1781297184},
-                "secondary": {"used_percent": 74.0, "resets_at": 1781359431},
+            "type": "task_complete",
+            "turn_id": "01a01c09-e0c4-7f51-a9d3-56966c738bbc",
+            "last_agent_message": None,
+            "error": {
+                "message": (
+                    "You've hit your usage limit. Visit "
+                    "https://chatgpt.com/codex/settings/usage to purchase more "
+                    "credits or try again at Aug 20th, 2026 12:16 PM."
+                ),
+                "codex_error_info": "usage_limit_exceeded",
             },
+            "started_at": 1787176804,
+            "completed_at": 1787176807,
         },
     }
 
@@ -70,7 +81,10 @@ def test_provider_adapters_cover_discovery_progress_resume_and_limits(
     ]
     codex_limit = codex.rate_limit(codex_event)
     assert codex_limit is not None
-    assert codex_limit.reset_at == datetime.fromtimestamp(1781297184, timezone.utc)
+    # 12:16 PM in the machine's local zone, stated only as English prose.
+    assert codex_limit.reset_at == datetime(
+        2026, 8, 20, 12, 16, tzinfo=ZoneInfo("America/New_York")
+    ).astimezone(timezone.utc)
     assert codex.resume_command("/bin/provider", "id", "continue") == [
         "/bin/provider",
         "--ask-for-approval",
@@ -87,7 +101,7 @@ def test_provider_adapters_cover_discovery_progress_resume_and_limits(
     ]
 
 
-def test_latest_rate_limit_understands_real_codex_token_count_shape(
+def test_latest_rate_limit_understands_real_codex_refusal_shape(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     session_id = "11111111-2222-4333-8444-555555555555"
@@ -95,8 +109,9 @@ def test_latest_rate_limit_understands_real_codex_token_count_shape(
     transcript.parent.mkdir(parents=True)
     events = [
         {"type": "session_meta", "payload": {"id": session_id, "cwd": str(tmp_path)}},
+        # A fully consumed window is not a refusal: this one ran on afterwards.
         {
-            "timestamp": "2026-06-12T19:25:35Z",
+            "timestamp": "2026-08-19T21:00:00Z",
             "type": "event_msg",
             "payload": {
                 "type": "token_count",
@@ -104,6 +119,23 @@ def test_latest_rate_limit_understands_real_codex_token_count_shape(
                     "primary": {"used_percent": 100.0, "resets_at": 1781297184},
                     "secondary": {"used_percent": 74.0, "resets_at": 1781359431},
                 },
+            },
+        },
+        {
+            "timestamp": "2026-08-19T22:00:07.132Z",
+            "type": "event_msg",
+            "payload": {
+                "type": "task_complete",
+                "last_agent_message": None,
+                "error": {
+                    "message": (
+                        "You've hit your usage limit. Visit "
+                        "https://chatgpt.com/codex/settings/usage to purchase "
+                        "more credits or try again at Aug 20th, 2026 12:16 PM."
+                    ),
+                    "codex_error_info": "usage_limit_exceeded",
+                },
+                "completed_at": 1787176807,
             },
         },
     ]
@@ -115,7 +147,9 @@ def test_latest_rate_limit_understands_real_codex_token_count_shape(
 
     assert limit.provider == "codex"
     assert limit.session_id == session_id
-    assert limit.reset_at == datetime.fromtimestamp(1781297184, timezone.utc)
+    assert limit.reset_at == datetime(
+        2026, 8, 20, 12, 16, tzinfo=ZoneInfo("America/New_York")
+    ).astimezone(timezone.utc)
 
 
 def test_default_delay_is_one_minute_and_can_be_overridden() -> None:

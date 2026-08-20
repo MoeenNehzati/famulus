@@ -124,10 +124,11 @@ When omitted, the exact default is:
 
 ### Manage automatic scheduling
 
-Automatic scheduling is opt-in per session:
+Automatic scheduling is opt-in per session, at one of two levels:
 
 ```bash
-lw auto on claude SESSION
+lw auto on claude SESSION      # only when a usage limit stopped the session
+lw auto force claude SESSION   # whenever usage nears the limit
 lw auto status claude SESSION
 lw auto off claude SESSION
 ```
@@ -137,13 +138,22 @@ unambiguous:
 
 ```bash
 lw auto on
+lw auto force
 lw auto status
 lw auto off
 ```
 
-`auto on` does not immediately schedule a job. It records policy. A later
-monitor pass schedules a guarded wakeup when that session reaches the near-limit
-threshold and a reset time is available.
+`auto on` records policy rather than scheduling a job. At this level a wakeup is
+created only once the provider has actually refused a turn for lack of quota and
+nothing has happened in that session since. A conversation that merely ended
+near its limit is left alone: resuming it hands an idle agent no task, which it
+then invents one to fill.
+
+`auto force` keeps the older behavior, scheduling at reset whenever a window is
+at or above 90% regardless of whether the session was ever stopped. Use it when
+you want the session woken either way.
+
+Policies recorded before levels existed are read as `on`, not `force`.
 
 ### Run one monitor pass
 
@@ -151,16 +161,28 @@ threshold and a reset time is available.
 llm-wakeup monitor
 ```
 
-The monitor:
+The monitor runs two independent routes.
+
+For sessions enabled at the conditional level it looks for a refusal record and
+schedules only when one is present, is still the last thing in the transcript,
+and states a reset time in the future. It stands down when the provider has
+armed its own automatic resume.
+
+For every other session it takes the older percentage route:
 
 1. Reads local Claude status snapshots, Claude exhaustion messages, and Codex
    transcript quota records.
 2. Ignores expired windows and windows below 90% usage.
 3. Groups limiting windows by provider session.
 4. Uses the latest reset across the constraining windows.
-5. Schedules reset plus one minute for an auto-enabled session.
+5. Schedules reset plus one minute for a session enabled at `force`.
 6. Otherwise prints and optionally displays a reminder to enable automation.
 7. Deduplicates the outcome across repeated minute-level passes.
+
+A conditionally scheduled job is checked against the transcript again at
+delivery. The queued snapshot alone cannot see a session that was refused,
+resumed, and refused again, nor one whose provider has since armed its own
+resume.
 
 The check is local. It does not ask either model a question and therefore does
 not consume LLM context or quota.
@@ -196,11 +218,25 @@ helper before execution, avoiding nested configuration quoting errors.
 If Claude rejects a request before providing status-line quota data, the monitor
 also recognizes transcript warnings such as a weekly limit with a dated reset.
 
+Status-line percentages describe consumption, not permission. A rejection can
+arrive while the reported utilization is well below 100, so a refusal is
+identified from the transcript row Claude writes when it happens:
+`error == "rate_limit"` with `isApiErrorMessage`, and, on recent versions, a
+`quotaLimits` object carrying the authoritative reset epoch.
+
 ## Codex usage acquisition
 
 Codex records quota windows in local session transcript `token_count` events.
 The monitor reads the newest valid record for each relevant local session. No
 Codex hook or status-line configuration is required.
+
+A refusal, however, is not a percentage. Codex marks it on the `task_complete`
+record of the refused turn, as `error.codex_error_info == "usage_limit_exceeded"`
+with a null `last_agent_message`, and by then both quota windows read `null`.
+The reset time appears only as English prose in the error message, stated in
+local time. A forked or resumed rollout replays its parent's history under fresh
+timestamps, so a copied refusal is rejected by comparing the record timestamp
+with the payload's own `completed_at`.
 
 ## Persistent systemd operation
 

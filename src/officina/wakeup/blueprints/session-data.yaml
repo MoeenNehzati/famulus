@@ -2,14 +2,15 @@ schema_version: 6
 id: wakeup.source.session-data
 version: 1
 node_type: behavioral_source
-description: Discover Claude and Codex sessions and interpret their transcript state
-  and reset deadlines.
+description: Discover Claude and Codex sessions, interpret their transcript state
+  and reset deadlines, and decide whether a usage limit stopped a session.
 gateway:
   language: Python
   path: claude_codex_sessions.py
 content:
 - providers/.*\.py
 - claude_codex_sessions\.py
+- claude_codex_cutoff\.py
 - deadlines\.py
 dependencies: []
 interfaces: {}

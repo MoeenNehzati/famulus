@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from collections.abc import Iterator
 from pathlib import Path
@@ -34,6 +35,22 @@ def json_lines(path: Path, *, strict: bool = False) -> Iterator[dict]:
     except OSError as error:
         if strict:
             raise WakeupError(f"could not read transcript {path}: {error}") from error
+
+
+TRANSCRIPT_TAIL_BYTES = 1_048_576
+
+
+def transcript_tail_lines(path: Path) -> list[str]:
+    """Read at most the configured tail while discarding a partial first line."""
+
+    with path.open("rb") as stream:
+        stream.seek(0, os.SEEK_END)
+        size = stream.tell()
+        stream.seek(max(0, size - TRANSCRIPT_TAIL_BYTES))
+        data = stream.read()
+    if size > TRANSCRIPT_TAIL_BYTES:
+        data = data.split(b"\n", 1)[-1]
+    return data.decode("utf-8", errors="replace").splitlines()
 
 
 def session_logs(provider: str) -> list[Path]:
@@ -213,5 +230,5 @@ def session_cwd(provider: str, path: Path) -> Path | None:
 
 __all__ = [
     "infer_provider", "infer_session_token", "latest_rate_limit", "latest_session",
-    "resolve_session", "session_cwd", "transcript_state",
+    "resolve_session", "session_cwd", "transcript_state", "transcript_tail_lines",
 ]

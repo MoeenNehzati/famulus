@@ -21,7 +21,7 @@ from .claude_codex_sessions import (
 from .deadlines import parse_deadline, parse_delay
 from .doctor import render_diagnostics
 from .claude_codex_monitor import NEAR_LIMIT_PERCENT, monitor_usage
-from .policies import auto_schedule_enabled, set_auto_schedule
+from .policies import FORCE, INTERRUPTED, auto_schedule_level, set_auto_schedule
 from .providers import provider_names
 from .claude_codex_usage import capture_claude_status
 
@@ -43,8 +43,16 @@ def _parser() -> argparse.ArgumentParser:
     inferred.add_argument("--message", default=DEFAULT_MESSAGE)
     inferred.add_argument("--delay", default="1 minute", help="wait after reset (default: 1 minute)")
     inferred.set_defaults(handler=_infer)
-    automatic = commands.add_parser("auto", help="manage automatic scheduling for one session")
-    automatic.add_argument("action", choices=("on", "off", "status"))
+    automatic = commands.add_parser(
+        "auto",
+        help="manage automatic scheduling for one session",
+        description=(
+            "on: wake only when the provider actually refused a turn and the "
+            "session stopped there. force: wake at reset whenever usage is "
+            "near the limit, refused or not."
+        ),
+    )
+    automatic.add_argument("action", choices=("on", "force", "off", "status"))
     automatic.add_argument("provider", nargs="?", choices=provider_names())
     automatic.add_argument("session_id", nargs="?", help="session UUID or provider alias")
     automatic.set_defaults(handler=_auto)
@@ -131,18 +139,23 @@ def _auto_target(provider: str | None, session: str | None) -> tuple[str, str]:
     return name, session_id
 
 
+_LEVEL_DESCRIPTION = {
+    INTERRUPTED: "enabled (only when a usage limit stopped the session)",
+    FORCE: "enabled (whenever usage nears the limit)",
+}
+
+
 def _auto(args: argparse.Namespace) -> None:
-    """Enable, disable, or inspect automatic scheduling for one session."""
+    """Enable at a level, disable, or inspect scheduling for one session."""
 
     provider, session_id = _auto_target(args.provider, args.session_id)
-    if args.action == "on":
-        set_auto_schedule(provider, session_id, True)
-        state = "enabled"
+    if args.action in ("on", "force"):
+        level = FORCE if args.action == "force" else INTERRUPTED
+        set_auto_schedule(provider, session_id, True, level)
     elif args.action == "off":
         set_auto_schedule(provider, session_id, False)
-        state = "disabled"
-    else:
-        state = "enabled" if auto_schedule_enabled(provider, session_id) else "disabled"
+    level = auto_schedule_level(provider, session_id)
+    state = _LEVEL_DESCRIPTION.get(level, "disabled")
     print(f"Auto-scheduling is {state} for {provider} session {session_id}")
 
 
@@ -189,10 +202,12 @@ def _capture_claude_usage(args: argparse.Namespace) -> None:
     if not usage:
         return
     near = any(item.used_percentage >= NEAR_LIMIT_PERCENT for item in snapshots)
-    automatic = auto_schedule_enabled("claude", str(payload.get("session_id") or ""))
+    level = auto_schedule_level("claude", str(payload.get("session_id") or ""))
     reminder = ""
-    if near and not automatic:
+    if near and level is None:
         reminder = " | nearing limit: lw auto on claude"
+    elif near and level == INTERRUPTED:
+        reminder = " | wakeup armed if the limit stops this session"
     elif near:
         reminder = " | automatic wakeup enabled"
     print(f"Claude usage: {usage}{reminder}")
@@ -202,9 +217,14 @@ def _monitor(args: argparse.Namespace) -> None:
     """Run one quota-monitor pass and print journald-friendly actions."""
 
     for action in monitor_usage():
+        used = (
+            "cutoff"
+            if action.used_percentage is None
+            else f"{action.used_percentage:g}"
+        )
         print(
             f"usage-{action.kind} provider={action.provider} "
-            f"session={action.session_id} used={action.used_percentage:g} "
+            f"session={action.session_id} used={used} "
             f"resets_at={action.resets_at}"
         )
 

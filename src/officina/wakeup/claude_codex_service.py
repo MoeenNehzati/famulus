@@ -10,9 +10,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import DEFAULT_MESSAGE, WakeupError
+from .claude_codex_cutoff import detect_cutoff
 from .claude_codex_sessions import resolve_session, session_cwd, transcript_state
 from .deadlines import utc_now
 from .locking import LockUnavailable, locked_file
+from .policies import INTERRUPTED
 from .providers import provider_for
 from .store import append_job, data_dir, due_jobs, update_job
 
@@ -32,12 +34,17 @@ def schedule(
     *,
     context: str = "",
     transcript_path: Path | None = None,
+    level: str | None = None,
 ) -> dict:
     """Resolve, snapshot, and persist one minute-deduplicated wakeup job.
 
     ``transcript_path`` lets trusted local integrations supply the exact path
     received from a host payload. Interactive callers continue to resolve
     ``session`` through the provider adapter.
+
+    ``level`` records why the job exists. A job created from observed evidence
+    of a refusal is re-checked against that evidence before it is delivered,
+    because the user may have resumed and finished the work in the meantime.
     """
 
     if transcript_path is None:
@@ -56,6 +63,8 @@ def schedule(
         "state": transcript_state(provider, transcript),
         "attempts": 0,
     }
+    if level is not None:
+        job["level"] = level
     working_directory = session_cwd(provider, transcript)
     if working_directory is not None:
         job["cwd"] = str(working_directory)
@@ -107,6 +116,11 @@ def _run_locked_due(now: datetime) -> None:
     Each job is first compared with its scheduled transcript snapshot. A changed
     snapshot proves that the session progressed after scheduling, so the stale
     wakeup is removed without invoking either provider.
+
+    Evidence-driven jobs are checked a second time against the transcript as it
+    stands now. The snapshot comparison alone cannot see a session that was
+    refused, resumed, and refused again, nor one whose provider has since armed
+    its own automatic resume.
     """
 
     for job in due_jobs(now.isoformat()):
@@ -119,6 +133,20 @@ def _run_locked_due(now: datetime) -> None:
             update_job(job["id"], None)
             emit("skipped", id=job["id"], provider=job["provider"], session=job["session_id"], reason="session-progressed")
             continue
+        if job.get("level") == INTERRUPTED:
+            cut = detect_cutoff(
+                job["provider"], Path(job["transcript"]), job["session_id"]
+            )
+            if cut is None or not cut.abandoned or cut.self_continuing:
+                update_job(job["id"], None)
+                emit(
+                    "skipped",
+                    id=job["id"],
+                    provider=job["provider"],
+                    session=job["session_id"],
+                    reason="no-cutoff-evidence",
+                )
+                continue
         try:
             working_directory = job.get("cwd")
             if not working_directory:

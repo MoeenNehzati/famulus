@@ -7,7 +7,11 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .base import RateLimit
+from ..deadlines import parse_deadline
+from .base import Cutoff, RateLimit
+
+
+FORK_REPLAY_TOLERANCE = 10.0
 
 
 class CodexAdapter:
@@ -66,29 +70,63 @@ class CodexAdapter:
         return matches
 
     def rate_limit(self, event: dict) -> RateLimit | None:
-        """Normalize Codex token-count rate-limit windows."""
+        """Report an enforced Codex usage limit with a recoverable reset time.
+
+        This deliberately does not key on ``used_percent >= 100``. Measured
+        over 2308 local rollouts, that condition appeared in 162 files of
+        which 136 were never cut off, and at the moment Codex is actually
+        refused both windows are ``null`` -- so the percentage both misses
+        real cut-offs and invents ones that never happened.
+        """
+
+        cut = self.cutoff(event)
+        if cut is None or cut.reset_at is None:
+            return None
+        return RateLimit(cut.reset_at, cut.observed_at, cut.context)
+
+    def cutoff(self, event: dict) -> Cutoff | None:
+        """Identify the Codex record proving a turn was refused for quota.
+
+        The record is an ordinary ``task_complete`` carrying an ``error``
+        object; the turn is distinguished from a normal one by
+        ``codex_error_info`` and by ``last_agent_message`` being null. A
+        forked or resumed rollout replays its parent's history under fresh
+        wall-clock timestamps, so a copied record is rejected by comparing the
+        line timestamp with the payload's own ``completed_at``.
+        """
 
         if event.get("type") != "event_msg":
             return None
-        payload = event.get("payload", {})
-        if not isinstance(payload, dict) or payload.get("type") != "token_count":
+        payload = event.get("payload")
+        if not isinstance(payload, dict) or payload.get("type") != "task_complete":
             return None
-        limits = payload.get("rate_limits", {})
-        if not isinstance(limits, dict):
+        error = payload.get("error")
+        if not isinstance(error, dict):
             return None
-        exhausted: list[int] = []
-        for key in ("primary", "secondary"):
-            window = limits.get(key)
-            if not isinstance(window, dict):
-                continue
-            if float(window.get("used_percent", 0)) < 100:
-                continue
-            reset = window.get("resets_at")
-            if isinstance(reset, (int, float)):
-                exhausted.append(int(reset))
-        if not exhausted:
+        if error.get("codex_error_info") != "usage_limit_exceeded":
             return None
-        reset_at = datetime.fromtimestamp(max(exhausted), timezone.utc)
+        observed = self._observed_at(event)
+        completed = payload.get("completed_at")
+        if isinstance(completed, (int, float)):
+            if abs(observed.timestamp() - float(completed)) > FORK_REPLAY_TOLERANCE:
+                return None
+        context = str(error.get("message", ""))
+        try:
+            reset_at: datetime | None = parse_deadline(
+                context, now=observed, embedded=True
+            )
+        except Exception:
+            reset_at = None
+        return Cutoff(reset_at=reset_at, observed_at=observed, context=context)
+
+    def self_continuation(self, event: dict) -> bool | None:
+        """Codex has no self-resume mechanism, so it never claims one."""
+
+        return None
+
+    def _observed_at(self, event: dict) -> datetime:
+        """Return the event timestamp, falling back to the current instant."""
+
         raw = str(event.get("timestamp", "")).replace("Z", "+00:00")
         try:
             observed = datetime.fromisoformat(raw)
@@ -96,8 +134,7 @@ class CodexAdapter:
             observed = datetime.now(timezone.utc)
         if observed.tzinfo is None:
             observed = observed.replace(tzinfo=timezone.utc)
-        context = f"structured rate limit resets {reset_at.isoformat()}"
-        return RateLimit(reset_at, observed.astimezone(timezone.utc), context)
+        return observed.astimezone(timezone.utc)
 
     def meaningful(self, event: dict) -> bool:
         """Identify Codex events that prove post-scheduling progress."""

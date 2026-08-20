@@ -17,13 +17,14 @@ from pathlib import Path
 from typing import Literal
 
 from . import WakeupError
-from .claude_codex_sessions import find_session_log, latest_session
+from .claude_codex_sessions import (
+    find_session_log,
+    latest_session,
+    transcript_tail_lines,
+)
 from .policies import auto_scheduled_sessions
 from .providers import provider_for
 from .store import data_dir
-
-
-_TRANSCRIPT_TAIL_BYTES = 1_048_576
 
 
 @dataclass(frozen=True)
@@ -102,24 +103,11 @@ def capture_claude_status(
     return snapshots
 
 
-def _transcript_tail_lines(path: Path) -> list[str]:
-    """Read at most the configured tail while discarding a partial first line."""
-
-    with path.open("rb") as stream:
-        stream.seek(0, os.SEEK_END)
-        size = stream.tell()
-        stream.seek(max(0, size - _TRANSCRIPT_TAIL_BYTES))
-        data = stream.read()
-    if size > _TRANSCRIPT_TAIL_BYTES:
-        data = data.split(b"\n", 1)[-1]
-    return data.decode("utf-8", errors="replace").splitlines()
-
-
 def read_codex_usage(path: Path, session_id: str) -> list[UsageSnapshot]:
     """Normalize the newest valid Codex quota record in one transcript."""
 
     rate_limits: dict | None = None
-    for line in reversed(_transcript_tail_lines(path)):
+    for line in reversed(transcript_tail_lines(path)):
         try:
             event = json.loads(line)
         except json.JSONDecodeError:
@@ -167,7 +155,7 @@ def read_claude_exhaustion(
     """Normalize the newest exhausted-limit event in a Claude transcript tail."""
 
     adapter = provider_for("claude")
-    for line in reversed(_transcript_tail_lines(path)):
+    for line in reversed(transcript_tail_lines(path)):
         try:
             event = json.loads(line)
         except json.JSONDecodeError:

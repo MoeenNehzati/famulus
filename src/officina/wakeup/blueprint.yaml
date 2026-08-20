@@ -9,6 +9,7 @@ content:
 - claude_codex_service\.py
 - claude_codex_sessions\.py
 - cli\.py
+- claude_codex_cutoff\.py
 - deadlines\.py
 - doctor\.py
 - linux_osx_windows\.py

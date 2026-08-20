@@ -14,7 +14,7 @@ import pytest
 from officina.wakeup.claude_codex_monitor import monitor_usage
 from officina.wakeup.claude_codex_cli import main
 from officina.wakeup.deadlines import parse_deadline
-from officina.wakeup.policies import set_auto_schedule
+from officina.wakeup.policies import FORCE, set_auto_schedule
 from officina.wakeup.claude_codex_usage import (
     capture_claude_status,
     read_claude_exhaustion,
@@ -234,7 +234,7 @@ def test_monitor_schedules_auto_claude_session_from_exhaustion_fallback(
             }
         ],
     )
-    set_auto_schedule("claude", SESSION_ID, True)
+    set_auto_schedule("claude", SESSION_ID, True, FORCE)
 
     actions = monitor_usage(
         now=datetime(2026, 8, 3, 16, tzinfo=timezone.utc),
@@ -305,7 +305,7 @@ def test_monitor_schedules_auto_session_once_and_reminds_manual_session_once(
             },
         }
     )
-    set_auto_schedule("claude", second_session, True)
+    set_auto_schedule("claude", second_session, True, FORCE)
 
     actions = monitor_usage(now=now, notifier=notices.append)
 
@@ -416,7 +416,7 @@ def test_monitor_uses_latest_reset_across_near_limit_windows(
             },
         }
     )
-    set_auto_schedule("claude", SESSION_ID, True)
+    set_auto_schedule("claude", SESSION_ID, True, FORCE)
 
     monitor_usage(
         now=datetime.fromtimestamp(RESET_EPOCH - 500, tz=timezone.utc),
@@ -515,7 +515,7 @@ def test_run_due_worker_performs_monitor_pass_before_delivery(
             },
         }
     )
-    set_auto_schedule("claude", SESSION_ID, True)
+    set_auto_schedule("claude", SESSION_ID, True, FORCE)
 
     # Two things must be pinned or this test reaches the real desktop. It
     # discovered this machine's live near-limit sessions, and it left `notifier`
@@ -617,7 +617,7 @@ def test_monitor_never_notifies_a_session_with_auto_scheduling_enabled(
     monkeypatch.setattr(
         monitor, "observable_usage_snapshots", lambda: list(visible)
     )
-    set_auto_schedule("claude", SESSION_ID, True)
+    set_auto_schedule("claude", SESSION_ID, True, FORCE)
 
     def _fail(message: str) -> None:
         pytest.fail(f"auto-enabled session must not notify: {message}")

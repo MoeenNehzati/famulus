@@ -18,6 +18,21 @@ class RateLimit:
 
 
 @dataclass(frozen=True)
+class Cutoff:
+    """One provider record proving a turn was refused for lack of quota.
+
+    ``reset_at`` is ``None`` when the provider stated no recoverable reset
+    time. That is a real case rather than a parse failure to hide: one provider
+    records the reset only as English prose, and 20 of 38 refusals observed
+    locally carry no numeric window anywhere in the transcript.
+    """
+
+    reset_at: datetime | None
+    observed_at: datetime
+    context: str
+
+
+@dataclass(frozen=True)
 class DetectedRateLimit:
     """A rate limit associated with an exact persisted session."""
 
@@ -54,6 +69,19 @@ class ProviderAdapter(Protocol):
 
     def rate_limit(self, event: dict) -> RateLimit | None:
         """Normalize a provider quota/reset event, or return ``None``."""
+        ...
+
+    def cutoff(self, event: dict) -> Cutoff | None:
+        """Identify an event proving this turn was refused for lack of quota.
+
+        Distinct from :meth:`rate_limit`, which reports that a limit exists.
+        This reports that one was enforced against a specific turn.
+        """
+        ...
+
+    def self_continuation(self, event: dict) -> bool | None:
+        """Report whether the provider armed (True) or abandoned (False) its
+        own automatic resume, or ``None`` when the event says nothing."""
         ...
 
     def meaningful(self, event: dict) -> bool:

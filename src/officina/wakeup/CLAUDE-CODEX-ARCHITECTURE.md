@@ -49,8 +49,10 @@ File: `claude_codex_service.py`.
 and stores a job. `run_due()` acquires a nonblocking worker lock and evaluates
 every due job. A job is discarded when the current transcript state differs
 from its saved state because that difference proves the user or another process
-already resumed the session. Otherwise the worker invokes the provider adapter's
-resume command in the session's recorded working directory.
+already resumed the session. A job created from refusal evidence is additionally
+re-checked against that evidence, because a session can be refused, resumed, and
+refused again without changing the state hash. Otherwise the worker invokes the
+provider adapter's resume command in the session's recorded working directory.
 
 Operational failures retain the job and move it five minutes into the future.
 Successful, stale, and unrecoverable outcomes are emitted as line-oriented
@@ -79,10 +81,30 @@ the newest valid local `token_count` record. Corrupt independent snapshots and
 unrelated transcript records are ignored rather than poisoning the whole pass.
 
 The monitor groups near-limit windows by session, ignores expired or sub-90%
-windows, and uses the latest reset among constraining windows. An auto-enabled
-session gets one wakeup at that reset plus one minute. A manual-policy session
-gets one reminder. Persistent event markers deduplicate repeated minute-level
-checks; a failed side effect removes its marker so a later pass can retry.
+windows, and uses the latest reset among constraining windows. A session enabled
+at `force` gets one wakeup at that reset plus one minute. A session with no
+policy gets one reminder. Persistent event markers deduplicate repeated
+minute-level checks; a failed side effect removes its marker so a later pass can
+retry.
+
+### Refusal evidence
+
+File: `claude_codex_cutoff.py`.
+
+A percentage says a session may soon be refused. It does not say the session was
+refused, and it does not say the session stopped. `detect_cutoff()` answers the
+narrower question: did the provider refuse a turn for lack of quota, and is that
+refusal still the last thing that happened?
+
+Each adapter identifies its own refusal record and its own self-resume notices;
+the abandonment rule is provider-neutral and positional. Position rather than
+elapsed time is what separates the cases: Claude records its refusal as an
+`assistant` row, so a timestamp comparison would read the refusal as progress
+past itself, and a session that retries and is refused again shows a
+one-second gap while a genuine post-reset resume shows a multi-hour one.
+
+A session enabled at the conditional level is scheduled from this evidence
+alone, using the reset time stated by the refusal itself.
 
 ### CLI
 
@@ -140,7 +162,7 @@ it for tests or a portable installation.
 | --- | --- |
 | `jobs.json` | Persistent wakeup queue |
 | `jobs.lock` | Queue writer lock |
-| `session-policies.json` | Per-session auto-schedule policy |
+| `session-policies.json` | Per-session auto-schedule policy and level |
 | `session-policies.lock` | Policy writer lock |
 | `usage-snapshots/` | Independent normalized Claude quota windows |
 | `monitor-events/` | Reminder/schedule deduplication markers |

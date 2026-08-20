@@ -89,14 +89,38 @@ def _locked_policies() -> Iterator[dict[str, dict]]:
         _write(path, policies)
 
 
-def set_auto_schedule(provider: str, session_id: str, enabled: bool) -> None:
-    """Enable or remove automatic scheduling for one provider conversation."""
+INTERRUPTED = "interrupted"
+FORCE = "force"
+LEVELS = (INTERRUPTED, FORCE)
 
+
+def _level_of(record: dict) -> str | None:
+    """Return the level of one stored record, or ``None`` when disabled.
+
+    Records written before levels existed carry no ``level`` key. They are read
+    as ``interrupted`` rather than ``force``, because unconditional waking is
+    the behavior levels were introduced to stop.
+    """
+
+    if record.get("auto_schedule") is not True:
+        return None
+    level = record.get("level")
+    return level if level in LEVELS else INTERRUPTED
+
+
+def set_auto_schedule(
+    provider: str, session_id: str, enabled: bool, level: str = INTERRUPTED
+) -> None:
+    """Enable at one level, or remove, automatic scheduling for a session."""
+
+    if enabled and level not in LEVELS:
+        raise WakeupError(f"unknown auto-schedule level: {level}")
     key = _policy_key(provider, session_id)
     with _locked_policies() as policies:
         if enabled:
             policies[key] = {
                 "auto_schedule": True,
+                "level": level,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }
         else:
@@ -106,23 +130,34 @@ def set_auto_schedule(provider: str, session_id: str, enabled: bool) -> None:
 def auto_schedule_enabled(provider: str, session_id: str) -> bool:
     """Return whether automatic scheduling is enabled for one conversation."""
 
-    record = _read_policies().get(_policy_key(provider, session_id), {})
-    return record.get("auto_schedule") is True
+    return auto_schedule_level(provider, session_id) is not None
 
 
-def auto_scheduled_sessions(provider: str) -> tuple[str, ...]:
-    """Return session identifiers explicitly opted into automatic wakeups."""
+def auto_schedule_level(provider: str, session_id: str) -> str | None:
+    """Return the configured level for one conversation, or ``None``."""
+
+    return _level_of(_read_policies().get(_policy_key(provider, session_id), {}))
+
+
+def auto_scheduled_sessions(provider: str, level: str | None = None) -> tuple[str, ...]:
+    """Return sessions opted into automatic wakeups, optionally by level."""
 
     prefix = f"{provider}:"
     return tuple(
         key.removeprefix(prefix)
         for key, record in _read_policies().items()
-        if key.startswith(prefix) and record.get("auto_schedule") is True
+        if key.startswith(prefix)
+        and _level_of(record) is not None
+        and (level is None or _level_of(record) == level)
     )
 
 
 __all__ = [
+    "FORCE",
+    "INTERRUPTED",
+    "LEVELS",
     "auto_schedule_enabled",
+    "auto_schedule_level",
     "auto_scheduled_sessions",
     "set_auto_schedule",
 ]
