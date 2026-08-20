@@ -34,10 +34,13 @@ and cross-platform audits. This is the sole authoritative installation plan.
   operation. Keep uninstall/purge as a separate manifest consumer.
 - Development requires an explicit existing checkout. Cloning, checkout moves,
   and Git revision management are outside installation scope.
-- Development writes beneath `<checkout>/.famulus` plus one explicitly owned,
-  checkout-local `core.hooksPath` entry in `.git/config`. It never mutates global
-  `PATH`, shell startup, Windows user environment, normal assistant homes, or
-  standard Famulus paths.
+- Development installation writes beneath `<checkout>/.famulus` plus one
+  explicitly owned, checkout-local `core.hooksPath` entry in `.git/config`. It
+  never mutates global `PATH`, shell startup, Windows user environment, normal
+  assistant homes, or standard Famulus paths.
+- Explicit later use of `recurring-tasks` may write namespaced registrations to
+  canonical host per-user scheduler locations. Those effects are recurring-
+  owned, recorded by installation ID, and removed only by `remove-context`.
 - Standard mode may persist only `FamulusPaths.user_bin` on `PATH`. It must not
   persist `AI`, `FAMULUS_REPO_ROOT`, `ASSISTANT_LOGS`, `ASSISTANT_DEFAULT`,
   `PYTHONPATH`, `PYTHONHOME`, or `VIRTUAL_ENV`.
@@ -207,13 +210,24 @@ Both modes use the same relative layout beneath their own
   "runtime_source": "<absolute immutable release directory>",
   "python_bin": "<absolute managed Python>",
   "repository_config": "<absolute validated repository config>",
-  "launcher_resources": "<absolute validated resource directory>"
+  "launcher_resources": "<absolute validated resource directory>",
+  "installation_context": "<absolute immutable context record>"
 }
 ```
 
 Standard `launcher_resources` is copied into the immutable release;
 development points to the live checkout. Consumers validate the exact path and
 need no `source_mode` branch.
+
+Each candidate release contains an immutable `installation-context.json` with
+schema version, matching release ID, mode, installation ID,
+source/development roots, and assistant homes. The atomic `current.json`
+replacement selects runtime code and that record together; readers reject a
+record outside `runtime_source` or whose release ID/runtime root does not match.
+Downstream readers reconstruct platform paths through `FamulusPaths`. This is a
+per-installation handoff, not a global clone registry; its downstream use and
+interruption tests are specified in
+`docs/plans/unified-famulus-installation-downstream-adjustments.md`.
 
 Migration order is reader-first: deploy a resolver supporting schemas 1-3,
 prove old pointers still launch, atomically activate schema 3, then install
@@ -256,7 +270,10 @@ with documented replacement commands—never silently dropped.
 Uninstall is a separate command that resolves the same context and replays its
 manifest. It removes only identity-matching owned artifacts. Ordinary uninstall
 preserves launcher configuration if modified, credentials, workers, sessions,
-jobs/data, and the development installation ID. Purge additionally removes
+recurring configuration/history, and the development installation ID. Before
+either uninstall or purge, a read-only preflight refuses if this context still
+has scheduler registrations and names the recurring-owned `remove-context`
+operation. After that teardown, purge additionally removes
 identity-matching installer-owned runtime releases, pointer, unmodified launcher
 configuration, generated profiles, and other immutable install state; it still
 does not recursively delete mutable user state or credentials.
@@ -265,30 +282,55 @@ Managed-runtime candidate creation remains transactional. Download/checksum,
 `uv`, managed-Python, unsupported-platform, or required-capability failures must
 leave the previous pointer and working installation intact.
 
+The installer exposes `install-assistant-tools.interface.diagnose`, backed by
+`install-assistant-tools._rtx.interface.scripts-doctor`. The machine route
+requires `--mode standard` or `--mode development --checkout <absolute-path>`
+and accepts `--json`; mode is never inferred from cwd. Stage 4 invokes the same
+read-only implementation. It reports pointer/context consistency,
+runtime/source/resources, launcher selection and command origins, manifest
+health, and a recurring registration summary; failures name the exact safe
+`apply`, source-restoration, or recurring `remove-context` action. Diagnosis
+never repairs or mutates state.
+
 ### Recurring-tasks downstream contract
 
 Scheduling is not an installation phase or success condition. It is a separate,
 `recurring-tasks`-owned compatibility workstream using its own skill and
 blueprint workflow.
 
-All production scheduler entry points obtain one `ScheduleContext` from a single
+One resolver-mediated recurring control entry receives an unoverrideable
+`--runtime-root` and owns setup, sync, enable, disable, status, test,
+healthcheck, log viewing, and `remove-context`. All production scheduler entry
+points obtain one `ScheduleContext` from a single
 factory fed by the active `InstallationContext` or a safe serialized descriptor;
 direct default construction is forbidden outside legacy tests. The context pins:
 
 - `installation_id` and derived scheduler namespace;
 - fixed runtime resolver and, on Windows, absolute bootstrap interpreter;
 - launcher bin, recurring config/state/log roots, and selected backend;
+- canonical native registration root and absolute validated Claude/Codex
+  backend executables;
 - deterministic context environment overrides, never a captured ambient
   environment.
 
+The descriptor is accepted only from its canonical non-symlink context path
+with user-only permissions where supported. Every authority-bearing value must
+equal the active context, pointer, `launchers.json`, or platform adapter; the
+environment must equal the derived allowlist with no extras. Swapped, stale, or
+tampered descriptors fail before any scheduler read or write.
+
 Native unit/plist/task/wrapper names include the namespace. The standard context
 reserves legacy names for migration; two development checkouts with identical
-job names must coexist across sync, status, test, disable, repair, and uninstall.
+job names must coexist across sync, status, test, disable, repair, and
+`remove-context`.
 Scheduler ownership records are also namespaced by `installation_id`; presence
-checks inspect only that namespace. The Linux healthcheck is per-context: its
-cron marker and log are namespaced, and it invokes a managed healthcheck module
-through the context resolver rather than a skill-source file. Standard legacy
-owner records and healthcheck markers receive explicit migration/removal logic.
+checks inspect only that namespace. The Linux independent healthcheck is per-
+context: its cron marker and log are namespaced, and it invokes a managed
+healthcheck module through the context resolver rather than a skill-source file.
+Standard legacy owner records and healthcheck markers receive explicit
+migration/removal logic.
+macOS and Windows provide the same on-demand managed check but explicitly report
+that an independent second-scheduler sentinel is unsupported.
 
 The scheduled executor becomes a managed module invoked as
 `resolver -m <module>` with explicit jobs/log paths. This removes direct runner-
@@ -296,6 +338,14 @@ file coupling, but it does not make installed skills independent of the active
 plugin/checkout source. Runtime upgrades and plugin-cache replacement followed
 by successful `apply` must repoint jobs safely; missing active source must yield
 a clear doctor/repair failure. Survival after source removal is not promised.
+
+Mutable recurring configuration lives at
+`FamulusPaths.recurring_config_root / "jobs.yaml"`; logs and outcome records live
+beneath `FamulusPaths.recurring_state_root`. The tracked skill supplies immutable
+default jobs only. Recurring-tasks owns atomic migration from legacy source-tree
+state, conflict reporting, and teardown. It also retires the global
+`AI_AGENT_COMMAND_TEMPLATE` environment file/manager value in favor of exact
+descriptor-rendered commands.
 
 ## Capability matrix
 
@@ -309,11 +359,13 @@ a clear doctor/repair failure. Survival after source removal is not promised.
 | launcher resources | immutable release copy | exact live checkout path |
 | launcher selection | context `launchers.json` | isolated `launchers.json` |
 | install/update/repair | idempotent common `apply` | same `apply` |
-| uninstall/purge | context manifest replay | same replay, `.famulus` containment |
+| uninstall/purge | refuse active registrations, then context manifest replay | same contract, `.famulus` containment |
 | skill/hook projection | existing plugin/host behavior | checkout-only isolated projection |
 | Git hooks | existing host/plugin behavior | identity-tracked checkout-local setting |
 | assistant authentication | existing host state | fresh isolated on-disk state; ambient credentials may be reused |
 | recurring jobs | legacy standard namespace | installation-ID namespace |
+| recurring mutable state | context config/state roots | isolated context config/state roots |
+| independent healthcheck | Linux cron; on-demand elsewhere | Linux namespaced cron; on-demand elsewhere |
 | command closure | `invoke-skill` includes `background_run` | same closure |
 | tmux bundle | selected all-or-none where supported | same bundle |
 | instruction helpers | `milestone`/`agent-timeline` when referenced | same rule |
@@ -372,8 +424,10 @@ a clear doctor/repair failure. Survival after source removal is not promised.
   `skills/install-assistant-tools/_rtx/tests/`
 
 - [ ] Test reader-first schema migration, exact `launcher_resources` validation,
-  standard immutable resources, development live resources, adversarial
-  `--runtime-root` override, and Windows bootstrap interpreter pinning.
+  atomic pointer/context selection, release-ID matching, interruption at every
+  publication boundary, standard immutable resources, development live
+  resources, adversarial `--runtime-root` override, and Windows bootstrap
+  interpreter pinning.
 - [ ] Test atomic `launchers.json` creation, preservation, explicit change,
   validation, manifest identity, modified-file uninstall behavior, and the
   process-local `ASSISTANT_DEFAULT` override.
@@ -392,6 +446,8 @@ a clear doctor/repair failure. Survival after source removal is not promised.
 - Modify: `skills/install-assistant-tools/_rtx/_install_scaffold.py`
 - Modify: `skills/install-assistant-tools/_rtx/_config_bridge.py`
 - Modify: `skills/install-assistant-tools/_rtx/_agent_launchers.py`
+- Create: `src/officina/install/doctor.py`
+- Create: `tests/test_officina_install_doctor.py`
 - Delete: `skills/install-assistant-tools/_rtx/_google_onboarding.py`
 - Modify/delete corresponding tests under
   `skills/install-assistant-tools/_rtx/tests/`
@@ -415,6 +471,10 @@ a clear doctor/repair failure. Survival after source removal is not promised.
   `tw-join`, `tw-monitor`, and `tw-help` as one selected bundle; require
   `milestone` and `agent-timeline` whenever projected instructions reference
   them, or omit the dependent instructions and report the capability unsupported.
+- [ ] Implement one read-only diagnostic route and reuse it for Stage 4. Test
+  human and schema-versioned JSON reports for healthy, absent, malformed,
+  mixed-release, missing-source, stale-command, manifest, and recurring-
+  registration states, with exact safe recovery guidance.
 
 ### Task 4: Make manifest uninstall and purge context-safe
 
@@ -429,6 +489,9 @@ a clear doctor/repair failure. Survival after source removal is not promised.
   values, shell blocks, launchers, and generated configuration.
 - [ ] Resolve the target context explicitly for uninstall; never choose a
   manifest by cwd, plugin cache, or ambient environment.
+- [ ] Refuse uninstall/purge before mutation while that context has recurring
+  registrations. Direct the user to recurring-owned `remove-context`; after it
+  succeeds, preserve recurring jobs/descriptors/history during manifest replay.
 - [ ] Test ordinary uninstall versus purge exactly as defined above, including
   modified config, retained mutable state, install ID, stable canaries,
   interruption, repeated replay, symlink/junction escape, and conflict-safe
@@ -438,6 +501,11 @@ a clear doctor/repair failure. Survival after source removal is not promised.
 
 ### Task 5: Publish, satisfy downstream scheduling, and verify
 
+Detailed consumer migrations and rollout order are specified in
+`docs/plans/unified-famulus-installation-downstream-adjustments.md`. This task
+retains the installer-side acceptance boundary; the companion plan owns the
+downstream implementation detail.
+
 > **Required ownership:** use `skill-maker` for the public installation-skill
 > change. Use `recurring-tasks` ownership and its blueprint workflow for the
 > downstream scheduler changes. Installation must remain successful before
@@ -445,7 +513,8 @@ a clear doctor/repair failure. Survival after source removal is not promised.
 
 **Installation/public files:**
 - Modify `skills/install-assistant-tools/SKILL.md`, its public/nested blueprints,
-  `docs/officina/installation.md`, and `.github/workflows/python-tests.yml`
+  `README.md`, `docs/officina/installation.md`,
+  `docs/security-and-privacy.md`, and `.github/workflows/python-tests.yml`
 - Delete the Google-onboarding blueprint
 - Keep this file as the sole installation plan; do not recreate parallel
   standard/development implementation plans
@@ -453,9 +522,10 @@ a clear doctor/repair failure. Survival after source removal is not promised.
 **Recurring-tasks-owned files:**
 - Modify `_schedule_backend/_base_backend.py` and all three platform backends
 - Modify `_setup_runner.py`, `_job_control.py`, `_healthcheck_probe.py`,
-  `_unit_writer.py`, `_job_executor.py`, and `_install_owner.py`
-- Add managed recurring executor and healthcheck modules/resources and focused
-  owner/healthcheck tests
+  `_unit_writer.py`, `_job_executor.py`, `_install_owner.py`, `_jobs_config.py`,
+  and retire `_ensure_agent_env.py` plus its global manager environment
+- Add managed recurring control, executor, and healthcheck modules/resources;
+  canonical context jobs/log roots; and focused owner/migration/healthcheck tests
 - Modify/regenerate recurring-tasks blueprints through their owner workflow
 
 - [ ] Publish exactly the five stages. Keep Stage 5 informational and explain
@@ -465,13 +535,17 @@ a clear doctor/repair failure. Survival after source removal is not promised.
   CR/LF rejection, and absence of secret-canary variables.
 - [ ] Namespace native scheduler identifiers by `installation_id`, migrate
   standard legacy names, and test two contexts across sync/status/test/disable/
-  repair/uninstall.
+  repair/remove-context.
 - [ ] Namespace install-owner records and registration-presence checks. Namespace
   Linux healthcheck markers/logs and invoke the managed healthcheck module. Test
   two contexts plus standard legacy owner/marker migration and removal.
 - [ ] Invoke the executor as a managed module with explicit jobs/log roots. Test
   runtime upgrades, cache replacement followed by `apply`, and clear doctor/
   repair failure when active source is missing.
+- [ ] Route every recurring control operation through the resolver-mediated
+  managed entrypoint; migrate mutable jobs/logs out of source, retire
+  `AI_AGENT_COMMAND_TEMPLATE`, and make installer uninstall preflight depend on
+  recurring-owned `remove-context` without deleting recurring data.
 - [ ] Regenerate every affected install, launcher, and recurring-tasks node.
 - [ ] Run focused suites, then:
 
@@ -497,6 +571,8 @@ Implementation is complete only when:
 - `launchers.json` owns backend selection without persisted `ASSISTANT_DEFAULT`;
 - repeated apply is idempotent and failed candidates preserve the active runtime;
 - uninstall and purge have distinct, identity-safe behavior;
+- active recurring registrations block installer removal until
+  recurring-owned `remove-context` clears only that context;
 - jobs coexist across contexts without captured ambient-environment or scheduler
   runner-file coupling; missing active source produces a clear doctor/repair
   failure, while scheduling remains outside installer execution;
