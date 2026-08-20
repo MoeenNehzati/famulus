@@ -2,7 +2,7 @@
 
 > Generated from live blueprints and `SKILL.md` descriptions. Do not edit by hand.
 
-This page is the complete skill inventory. For walkthroughs and examples, start from the domain guides or contributor docs linked from [README.md](../README.md).
+This page is the complete skill inventory. For workflows and examples, start from the quickstarts, domain guides, or contributor docs linked from [README.md](../README.md).
 
 ## Personal Assistance
 
@@ -15,7 +15,7 @@ This page is the complete skill inventory. For walkthroughs and examples, start 
 - `get-weather` — Fetch weather for a location, day, or date range _(topics: planning, external-integrations; activated by: user request, skill workflow)_
 - `list-manager` — Manage personal YAML lists in cloud storage _(topics: personal-organization, storage-and-sync; activated by: user request, skill workflow)_
 - `send-feedback` — Send feedback, report a problem, or describe a failed Famulus workflow to its maintainer _(topics: communications, assistant-assurance; activated by: user request, skill workflow)_
-- `wrap-up` — Review the day, record completions, and capture follow-up items _(topics: planning, personal-organization, session-management; activated by: user request, skill workflow)_
+- `wrap-up` — Review the day, update plans and lists, and find handoff candidates via find-handoff-candidates _(topics: planning, personal-organization, session-management; activated by: user request, skill workflow)_
 
 ## Research
 

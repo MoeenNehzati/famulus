@@ -109,15 +109,32 @@ def _seed_docs(repo_root: Path) -> None:
                 "Wrap up today",
                 "Build a math dependency graph",
                 "",
-                "- [docs/domains/personal-assistance.md](docs/domains/personal-assistance.md)",
+                "- [docs/quickstarts/personal-assistance.md](docs/quickstarts/personal-assistance.md)",
+                "- [docs/quickstarts/research.md](docs/quickstarts/research.md)",
+                "- [docs/quickstarts/development.md](docs/quickstarts/development.md)",
+                "- [docs/quickstarts/automation.md](docs/quickstarts/automation.md)",
+                "- [docs/quickstarts/skill-development.md](docs/quickstarts/skill-development.md)",
                 "- [docs/domains/assistant-interaction.md](docs/domains/assistant-interaction.md)",
-                "- [docs/domains/research.md](docs/domains/research.md)",
                 "- [docs/domains/assistant-operations.md](docs/domains/assistant-operations.md)",
                 "- [docs/skills.md](docs/skills.md)",
                 "- [docs/contributors/README.md](docs/contributors/README.md)",
                 "",
             ]
         ),
+    )
+    _write(
+        repo_root / "docs/quickstarts/personal-assistance.md",
+        "# Personal Assistance Quickstart\n",
+    )
+    _write(repo_root / "docs/quickstarts/research.md", "# Research Quickstart\n")
+    _write(
+        repo_root / "docs/quickstarts/development.md",
+        "# Software Development Quickstart\n",
+    )
+    _write(repo_root / "docs/quickstarts/automation.md", "# Automation Quickstart\n")
+    _write(
+        repo_root / "docs/quickstarts/skill-development.md",
+        "# Skill Development Quickstart\n",
     )
     _write(
         repo_root / "docs/domains/personal-assistance.md",

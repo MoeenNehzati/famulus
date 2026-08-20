@@ -1,29 +1,8 @@
 # Personal Assistance
 
-This domain covers day-to-day workflows that read or update personal planning
-information: daily plans, inbox triage, calendars, weather, lists, feedback,
-and end-of-day wrap-up.
-
-Google-backed workflows are experimental in the first public release. Any
-agent-driven recurring use of `daily-plan`, `email-triage`, or related skills
-is also experimental and must be enabled explicitly. See the
-[security and privacy boundary](../security-and-privacy.md) before connecting
-an account or scheduling a job.
-
-Example prompts:
-
-- `Plan my day.`
-- `Triage my inbox.`
-- `Show my todo list.`
-- `What is the weather before my afternoon meeting?`
-- `Wrap up today.`
-
-Typical flow:
-
-1. Start with `daily-plan` to combine calendar, weather, todos, and triage items.
-2. Work from that plan during the day.
-3. Finish with `wrap-up` so the plan is updated and follow-up items land in the
-   appropriate lists.
+This page lists the skills in the personal-assistance domain. For first-time
+setup, skill routing, and the typical daily workflow, see the
+[Personal Assistance Quickstart](../quickstarts/personal-assistance.md).
 
 <!-- BEGIN AUTO-GENERATED DOCS: personal-assistance -->
 > Generated from live blueprints. Do not edit this block by hand.
@@ -35,5 +14,5 @@ Typical flow:
 - `get-weather` — Fetch weather for a location, day, or date range
 - `list-manager` — Manage personal YAML lists in cloud storage
 - `send-feedback` — Send feedback, report a problem, or describe a failed Famulus workflow to its maintainer
-- `wrap-up` — Review the day, record completions, and capture follow-up items
+- `wrap-up` — Review the day, update plans and lists, and find handoff candidates via find-handoff-candidates
 <!-- END AUTO-GENERATED DOCS: personal-assistance -->

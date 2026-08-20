@@ -7,11 +7,15 @@ Famulus documentation is intentionally split between hand-written narrative and 
 The following stay hand-written:
 
 - [README.md](../../README.md)
+- [`docs/quickstarts/*.md`](../quickstarts/)
 - [`docs/domains/*.md`](../domains/)
 - [`docs/contributors/*.md`](./)
 - explanatory reference docs under [`references/`](../../references/)
 
-Those files carry the user-facing and contributor-facing explanations, walkthroughs, examples, and design rationale.
+Quickstarts carry user-facing setup and workflow guidance. Domain documents
+carry concise domain summaries around their generated inventories. The other
+hand-written files carry contributor explanations, examples, and design
+rationale.
 
 ## What Is Generated
 
