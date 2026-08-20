@@ -320,6 +320,91 @@ def _install_fake_cron_installer(monkeypatch, replacement):
     monkeypatch.setattr(_setup_runner, "install_healthcheck_cron", replacement)
 
 
+def test_sync_from_a_non_owning_checkout_is_refused_and_writes_nothing(
+    monkeypatch, tmp_path
+):
+    """The 2026-08-17 defect, at its source.
+
+    A sync run from a worktree repointed the installation at that worktree: no
+    error, exit 0. The registrations then named a directory that could be
+    deleted at any time, stranding the jobs and the sentinel together.
+    """
+    from .. import _install_owner as install_owner
+
+    unit_dir = tmp_path / "units"
+    unit_dir.mkdir()
+    (unit_dir / "ai-my-job.service").write_text("[Service]\n", encoding="utf-8")
+    install_owner.write_owner(unit_dir=unit_dir, owner=tmp_path / "canonical" / "_rtx")
+    monkeypatch.setattr(unit_writer.sys, "platform", "linux")
+    monkeypatch.setattr(unit_writer, "SKILL_DIR", tmp_path / "worktree" / "_rtx")
+
+    synced = []
+
+    class _RecordingBackend(_NullBackend):
+        def sync(self, jobs, context):
+            synced.append(context)
+
+    monkeypatch.setattr(
+        unit_writer, "platform_schedule_backend", lambda: _RecordingBackend()
+    )
+    _install_fake_cron_installer(
+        monkeypatch,
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("a non-owning checkout must not touch the crontab")
+        ),
+    )
+
+    try:
+        unit_writer.sync_units([], unit_dir, unit_writer.LOG_DIR, live=True)
+    except install_owner.NotTheOwnerError:
+        pass
+    else:
+        raise AssertionError("sync from a non-owning checkout must be refused")
+
+    assert synced == [], "the backend must not be reached at all"
+    assert install_owner.read_owner(unit_dir) == tmp_path / "canonical" / "_rtx"
+
+
+def test_adopt_flag_moves_the_installation_to_this_checkout(monkeypatch, tmp_path):
+    """The deliberate move: an operator relocating the canonical checkout."""
+    from .. import _install_owner as install_owner
+
+    unit_dir = tmp_path / "units"
+    unit_dir.mkdir()
+    (unit_dir / "ai-my-job.service").write_text("[Service]\n", encoding="utf-8")
+    install_owner.write_owner(unit_dir=unit_dir, owner=Path.home() / "old" / "_rtx")
+    new_owner = Path.home() / "relocated" / "_rtx"
+    monkeypatch.setattr(unit_writer.sys, "platform", "linux")
+    monkeypatch.setattr(unit_writer, "SKILL_DIR", new_owner)
+    monkeypatch.setattr(unit_writer, "DEFAULT_UNIT_DIR", unit_dir)
+    monkeypatch.setattr(
+        unit_writer, "platform_schedule_backend", lambda: _NullBackend()
+    )
+    _install_fake_cron_installer(monkeypatch, lambda **kwargs: None)
+    monkeypatch.setattr(unit_writer, "load_jobs", lambda _: [])
+
+    unit_writer.main(["--adopt"])
+
+    assert install_owner.read_owner(unit_dir) == new_owner
+
+
+def test_live_sync_records_this_checkout_as_the_owner(monkeypatch, tmp_path):
+    from .. import _install_owner as install_owner
+
+    monkeypatch.setattr(unit_writer.sys, "platform", "linux")
+    owner = Path.home() / "not-a-temp-checkout" / "_rtx"
+    monkeypatch.setattr(unit_writer, "SKILL_DIR", owner)
+    monkeypatch.setattr(
+        unit_writer, "platform_schedule_backend", lambda: _NullBackend()
+    )
+    _install_fake_cron_installer(monkeypatch, lambda **kwargs: None)
+    unit_dir = tmp_path / "units"
+
+    unit_writer.sync_units([], unit_dir, unit_writer.LOG_DIR, live=True)
+
+    assert install_owner.read_owner(unit_dir) == owner
+
+
 def test_sync_from_a_temporary_copy_leaves_the_real_crontab_alone(
     monkeypatch, tmp_path, capsys
 ):
@@ -330,7 +415,18 @@ def test_sync_from_a_temporary_copy_leaves_the_real_crontab_alone(
     sync there rewrote the real crontab to invoke the mirror -- which is then
     deleted, so the health check began failing every four hours by pointing at
     a path that no longer existed, and reported it as a job problem.
+
+    Covered now by ownership rather than by a temp-directory predicate: the
+    mirror is refused because it is not the recorded owner, which also covers
+    the worktree that reproduced this in 2026-08-17 and that the narrower
+    predicate missed.
     """
+    from .. import _install_owner as install_owner
+
+    unit_dir = tmp_path / "units"
+    unit_dir.mkdir()
+    (unit_dir / "ai-my-job.service").write_text("[Service]\n", encoding="utf-8")
+    install_owner.write_owner(unit_dir=unit_dir, owner=Path.home() / "checkout" / "_rtx")
     monkeypatch.setattr(unit_writer.sys, "platform", "linux")
     monkeypatch.setattr(
         unit_writer, "SKILL_DIR", Path(tempfile.gettempdir()) / "mirror" / "_rtx"
@@ -344,6 +440,9 @@ def test_sync_from_a_temporary_copy_leaves_the_real_crontab_alone(
 
     _install_fake_cron_installer(monkeypatch, _must_not_run)
 
-    unit_writer.sync_units([], tmp_path / "units", unit_writer.LOG_DIR, live=True)
-
-    assert "temporary copy" in capsys.readouterr().out
+    try:
+        unit_writer.sync_units([], unit_dir, unit_writer.LOG_DIR, live=True)
+    except install_owner.NotTheOwnerError:
+        pass
+    else:
+        raise AssertionError("a mirrored checkout must not be allowed to sync")

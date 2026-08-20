@@ -99,7 +99,13 @@ def test_disable_job_passes_custom_jobs_file_to_sync():
         f.write("jobs:\n  - name: a\n    command: 'true'\n    schedule: '0 * * * *'\n    enabled: true\n")
         path = Path(f.name)
     try:
-        with mock.patch.object(mod, "sync_units") as sync_units:
+        with mock.patch.object(mod, "sync_units") as sync_units, \
+             mock.patch.object(
+                 mod._unit_writer, "DEFAULT_UNIT_DIR", path.parent / "no-units"
+             ), \
+             mock.patch.object(
+                 mod._unit_writer, "SKILL_DIR", Path.home() / "not-a-temp-checkout" / "_rtx"
+             ):
             mod.disable_job("a", jobs_file=path, sync=True)
             sync_units.assert_called_once_with(path)
     finally:
@@ -115,6 +121,12 @@ def test_default_jobs_file_calls_sync_units_with_no_override():
     mod = _load()
     with mock.patch.object(mod, "load_jobs", return_value=[{"name": "a", "enabled": False}]), \
          mock.patch.object(mod, "save_jobs"), \
+         mock.patch.object(
+             mod._unit_writer, "DEFAULT_UNIT_DIR", Path(tempfile.gettempdir()) / "no-units"
+         ), \
+         mock.patch.object(
+             mod._unit_writer, "SKILL_DIR", Path.home() / "not-a-temp-checkout" / "_rtx"
+         ), \
          mock.patch.object(mod, "sync_units") as sync_units:
         mod.enable_job("a")
         sync_units.assert_called_once_with(None)
@@ -123,10 +135,12 @@ def test_default_jobs_file_calls_sync_units_with_no_override():
 
 # ── sync_units: backend dispatch ───────────────────────────────────────────────
 
-def test_sync_units_invokes_platform_backend():
+def test_sync_units_invokes_platform_backend(tmp_path):
     mod = _load()
     backend = mock.Mock()
     with mock.patch.object(mod, "load_jobs", return_value=[]), \
+         mock.patch.object(mod._unit_writer, "DEFAULT_UNIT_DIR", tmp_path / "units"), \
+         mock.patch.object(mod._unit_writer, "SKILL_DIR", Path.home() / "not-a-temp-checkout" / "_rtx"), \
          mock.patch.object(
              mod._unit_writer, "platform_schedule_backend", return_value=backend
          ):
@@ -137,11 +151,13 @@ def test_sync_units_invokes_platform_backend():
     print("PASS: sync_units() with no override calls the platform backend")
 
 
-def test_sync_units_passes_jobs_file_override():
+def test_sync_units_passes_jobs_file_override(tmp_path):
     mod = _load()
     custom = Path("/tmp/custom-jobs.yaml")
     backend = mock.Mock()
     with mock.patch.object(mod, "load_jobs", return_value=[]), \
+         mock.patch.object(mod._unit_writer, "DEFAULT_UNIT_DIR", tmp_path / "units"), \
+         mock.patch.object(mod._unit_writer, "SKILL_DIR", Path.home() / "not-a-temp-checkout" / "_rtx"), \
          mock.patch.object(
              mod._unit_writer, "platform_schedule_backend", return_value=backend
          ):

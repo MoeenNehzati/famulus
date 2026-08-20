@@ -9,6 +9,17 @@ gateway:
 id: math-dependency-graph.source.gateway
 interfaces:
   math-dependency-graph.source.gateway.interface.default:
+    content:
+    - SKILL\.md
+    uses_interfaces:
+    - interface: math-dependency-graph.interface.extract
+      version: 1
+    - interface: math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph
+      version: 1
+    - interface: math-dependency-graph._rtx.interface.scripts-extract-mathjax-macros
+      version: 1
+    - interface: math-dependency-graph._rtx.interface.scripts-serve-graph
+      version: 1
     contract:
       arguments:
         request:

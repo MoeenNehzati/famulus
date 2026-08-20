@@ -9,6 +9,9 @@ gateway:
 id: notation-review.source.gateway
 interfaces:
   notation-review.source.gateway.interface.default:
+    content:
+    - SKILL\.md
+    uses_interfaces: []
     contract:
       arguments:
         request:

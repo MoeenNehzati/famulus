@@ -15,6 +15,9 @@ gateway:
 id: math-dependency-graph._rtx.source.rtx-graph-server
 interfaces:
   math-dependency-graph._rtx.source.rtx-graph-server.interface.scripts-serve-graph:
+    content:
+    - _graph_server\.py
+    uses_interfaces: []
     contract:
       arguments:
         directory:

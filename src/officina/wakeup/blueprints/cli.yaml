@@ -39,6 +39,11 @@ dependencies:
   reason: Capture and inspect provider quota observations.
 interfaces:
   wakeup.source.cli.interface.auto-policy:
+    content:
+    - cli\.py
+    - claude_codex_cli\.py
+    - doctor\.py
+    uses_interfaces: []
     contract:
       arguments:
         action:
@@ -259,6 +264,11 @@ interfaces:
     usage: <on|off|status> [claude|codex] [session-id]
     version: 1
   wakeup.source.cli.interface.infer-schedule:
+    content:
+    - cli\.py
+    - claude_codex_cli\.py
+    - doctor\.py
+    uses_interfaces: []
     contract:
       arguments:
         text:
@@ -465,6 +475,11 @@ interfaces:
     usage: '[--text <timeout-or-resume-text>] [--message <message>] [--delay <duration>]'
     version: 1
   wakeup.source.cli.interface.explicit-schedule:
+    content:
+    - cli\.py
+    - claude_codex_cli\.py
+    - doctor\.py
+    uses_interfaces: []
     contract:
       arguments:
         provider:

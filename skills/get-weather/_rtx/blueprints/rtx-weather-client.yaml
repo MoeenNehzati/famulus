@@ -9,6 +9,9 @@ gateway:
 id: get-weather._rtx.source.rtx-weather-client
 interfaces:
   get-weather._rtx.source.rtx-weather-client.interface.scripts-weather:
+    content:
+    - _weather_client\.py
+    uses_interfaces: []
     contract:
       arguments:
         date:

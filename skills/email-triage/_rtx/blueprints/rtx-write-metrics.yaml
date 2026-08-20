@@ -15,6 +15,11 @@ gateway:
 id: email-triage._rtx.source.rtx-write-metrics
 interfaces:
   email-triage._rtx.source.rtx-write-metrics.interface.scripts-write-metrics:
+    content:
+    - _write_metrics\.py
+    uses_interfaces:
+    - interface: common.interface.famulus-paths
+      version: 1
     contract:
       arguments:
         accounts:

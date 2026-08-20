@@ -15,6 +15,13 @@ gateway:
 id: install-assistant-tools._rtx.source.rtx-config-bridge
 interfaces:
   install-assistant-tools._rtx.source.rtx-config-bridge.interface.scripts-dev-link:
+    content:
+    - _config_bridge\.py
+    uses_interfaces:
+    - interface: common.interface.codex-toml
+      version: 1
+    - interface: common.interface.toml-io
+      version: 1
     contract:
       arguments:
         options:

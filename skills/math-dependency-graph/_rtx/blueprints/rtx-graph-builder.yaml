@@ -21,6 +21,9 @@ gateway:
 id: math-dependency-graph._rtx.source.rtx-graph-builder
 interfaces:
   math-dependency-graph._rtx.source.rtx-graph-builder.interface.scripts-build-math-dependency-graph:
+    content:
+    - _graph_builder\.py
+    uses_interfaces: []
     contract:
       arguments:
         html-out:

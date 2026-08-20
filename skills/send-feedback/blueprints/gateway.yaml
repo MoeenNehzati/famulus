@@ -9,6 +9,11 @@ gateway:
 id: send-feedback.source.gateway
 interfaces:
   send-feedback.source.gateway.interface.default:
+    content:
+    - SKILL\.md
+    uses_interfaces:
+    - interface: email-client.interface.default
+      version: 3
     contract:
       arguments:
         request:

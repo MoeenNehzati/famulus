@@ -15,6 +15,9 @@ gateway:
 id: cloud-files._rtx.source.rtx-delete-llm-file
 interfaces:
   cloud-files._rtx.source.rtx-delete-llm-file.interface.lists-delete:
+    content:
+    - _delete_llm_file\.py
+    uses_interfaces: []
     contract:
       arguments:
         path:
@@ -142,6 +145,9 @@ interfaces:
     usage: lists/<path>
     version: 1
   cloud-files._rtx.source.rtx-delete-llm-file.interface.plans-delete:
+    content:
+    - _delete_llm_file\.py
+    uses_interfaces: []
     contract:
       arguments:
         path:

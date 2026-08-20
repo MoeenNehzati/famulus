@@ -10,6 +10,9 @@ gateway:
 id: common.source.atomic-files
 interfaces:
   common.source.atomic-files.interface.python-api:
+    content:
+    - atomic_files\.py
+    uses_interfaces: []
     contract:
       arguments:
         allow-non-atomic:

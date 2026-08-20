@@ -33,6 +33,9 @@ gateway:
 id: recurring-tasks._rtx.source.rtx-unit-writer
 interfaces:
   recurring-tasks._rtx.source.rtx-unit-writer.interface.scripts-sync:
+    content:
+    - _unit_writer\.py
+    uses_interfaces: []
     contract:
       arguments:
         jobs-file:

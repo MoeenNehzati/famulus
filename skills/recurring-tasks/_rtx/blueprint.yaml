@@ -48,6 +48,7 @@ content:
 - jobs\.yaml
 - _ensure_agent_env\.py
 - _healthcheck_probe\.py
+- _install_owner\.py
 - __init__\.py
 - _assistant_desktop_notify\.py
 - _job_control\.py

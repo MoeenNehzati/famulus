@@ -40,6 +40,9 @@ gateway:
 id: recurring-tasks._rtx.source.rtx-setup-runner
 interfaces:
   recurring-tasks._rtx.source.rtx-setup-runner.interface.scripts-setup:
+    content:
+    - _setup_runner\.py
+    uses_interfaces: []
     contract:
       arguments:
         jobs-file:

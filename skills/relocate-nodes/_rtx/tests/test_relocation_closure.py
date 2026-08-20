@@ -789,6 +789,7 @@ def _extractor_acceptance_manifest() -> RelocationManifest:
                 "src/officina/standards/blueprints/extractor.yaml",
                 r"standard_extractor\.py",
                 r"extractor\.py",
+                count=2,
             ),
             ExactRewrite(
                 "src/officina/standards/blueprints/extractor.yaml",
@@ -885,7 +886,11 @@ def _write_extractor_acceptance_fixture(tmp_path: Path) -> dict[str, bytes]:
                 "gateway": {"language": "Python", "path": "standard_extractor.py"},
                 "id": "common.source.standard-extractor",
                 "interfaces": {
-                    "common.source.standard-extractor.interface.python-api": {"version": 1}
+                    "common.source.standard-extractor.interface.python-api": {
+                        "version": 1,
+                        "content": [r"standard_extractor\.py"],
+                        "uses_interfaces": [],
+                    }
                 },
                 "node_type": "behavioral_source",
                 "maturity": "stable",

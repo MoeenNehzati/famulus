@@ -18,6 +18,11 @@ gateway:
 id: g-calendar._rtx.source.rtx-gcal-client
 interfaces:
   g-calendar._rtx.source.rtx-gcal-client.interface.scripts-gcal:
+    content:
+    - _gcal_client\.py
+    uses_interfaces:
+    - interface: credentials.interface.google
+      version: 1
     contract:
       arguments:
         command:

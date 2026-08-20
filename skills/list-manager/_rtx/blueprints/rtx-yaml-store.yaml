@@ -25,6 +25,22 @@ gateway:
 id: list-manager._rtx.source.rtx-yaml-store
 interfaces:
   list-manager._rtx.source.rtx-yaml-store.interface.cloud-create-entry:
+    content:
+    - _yaml_store\.py
+    - schemas/lists/default\.json
+    - schemas/lists/task\-list\-personal\.json
+    - schemas/lists/task\-list\.json
+    - schemas/lists/todo\.json
+    - schemas/lists/triage\.json
+    - schemas/types/action\.json
+    - schemas/types/entry\.json
+    - schemas/types/task_entry\.json
+    - schemas/types/triage_action\.json
+    uses_interfaces:
+    - interface: cloud-files._rtx.interface.lists-read
+      version: 1
+    - interface: cloud-files._rtx.interface.lists-write
+      version: 1
     contract:
       arguments:
         entries:
@@ -220,6 +236,22 @@ interfaces:
       N]
     version: 1
   list-manager._rtx.source.rtx-yaml-store.interface.cloud-delete:
+    content:
+    - _yaml_store\.py
+    - schemas/lists/default\.json
+    - schemas/lists/task\-list\-personal\.json
+    - schemas/lists/task\-list\.json
+    - schemas/lists/todo\.json
+    - schemas/lists/triage\.json
+    - schemas/types/action\.json
+    - schemas/types/entry\.json
+    - schemas/types/task_entry\.json
+    - schemas/types/triage_action\.json
+    uses_interfaces:
+    - interface: cloud-files._rtx.interface.lists-read
+      version: 1
+    - interface: cloud-files._rtx.interface.lists-write
+      version: 1
     contract:
       arguments:
         ids:
@@ -403,6 +435,22 @@ interfaces:
     usage: <name> --cloud <id> [<id>...] [--expected-revision N]
     version: 1
   list-manager._rtx.source.rtx-yaml-store.interface.cloud-init:
+    content:
+    - _yaml_store\.py
+    - schemas/lists/default\.json
+    - schemas/lists/task\-list\-personal\.json
+    - schemas/lists/task\-list\.json
+    - schemas/lists/todo\.json
+    - schemas/lists/triage\.json
+    - schemas/types/action\.json
+    - schemas/types/entry\.json
+    - schemas/types/task_entry\.json
+    - schemas/types/triage_action\.json
+    uses_interfaces:
+    - interface: cloud-files._rtx.interface.lists-read
+      version: 1
+    - interface: cloud-files._rtx.interface.lists-write
+      version: 1
     contract:
       arguments:
         display-name:
@@ -584,6 +632,22 @@ interfaces:
     usage: <name> --cloud --schema <schema>
     version: 1
   list-manager._rtx.source.rtx-yaml-store.interface.cloud-read:
+    content:
+    - _yaml_store\.py
+    - schemas/lists/default\.json
+    - schemas/lists/task\-list\-personal\.json
+    - schemas/lists/task\-list\.json
+    - schemas/lists/todo\.json
+    - schemas/lists/triage\.json
+    - schemas/types/action\.json
+    - schemas/types/entry\.json
+    - schemas/types/task_entry\.json
+    - schemas/types/triage_action\.json
+    uses_interfaces:
+    - interface: cloud-files._rtx.interface.lists-read
+      version: 1
+    - interface: cloud-files._rtx.interface.lists-write
+      version: 1
     contract:
       arguments:
         filters:
@@ -719,6 +783,22 @@ interfaces:
     usage: <name> [filters] --cloud
     version: 1
   list-manager._rtx.source.rtx-yaml-store.interface.cloud-update:
+    content:
+    - _yaml_store\.py
+    - schemas/lists/default\.json
+    - schemas/lists/task\-list\-personal\.json
+    - schemas/lists/task\-list\.json
+    - schemas/lists/todo\.json
+    - schemas/lists/triage\.json
+    - schemas/types/action\.json
+    - schemas/types/entry\.json
+    - schemas/types/task_entry\.json
+    - schemas/types/triage_action\.json
+    uses_interfaces:
+    - interface: cloud-files._rtx.interface.lists-read
+      version: 1
+    - interface: cloud-files._rtx.interface.lists-write
+      version: 1
     contract:
       arguments:
         name:
@@ -908,6 +988,22 @@ interfaces:
     usage: <name> --cloud --file /tmp/patch.yaml [--expected-revision N]
     version: 1
   list-manager._rtx.source.rtx-yaml-store.interface.create-entry:
+    content:
+    - _yaml_store\.py
+    - schemas/lists/default\.json
+    - schemas/lists/task\-list\-personal\.json
+    - schemas/lists/task\-list\.json
+    - schemas/lists/todo\.json
+    - schemas/lists/triage\.json
+    - schemas/types/action\.json
+    - schemas/types/entry\.json
+    - schemas/types/task_entry\.json
+    - schemas/types/triage_action\.json
+    uses_interfaces:
+    - interface: cloud-files._rtx.interface.lists-read
+      version: 1
+    - interface: cloud-files._rtx.interface.lists-write
+      version: 1
     contract:
       arguments:
         entries:
@@ -1118,6 +1214,22 @@ interfaces:
     usage: <file> <category/path> --entries /tmp/entry.yaml [--expected-revision N]
     version: 1
   list-manager._rtx.source.rtx-yaml-store.interface.describe-schema:
+    content:
+    - _yaml_store\.py
+    - schemas/lists/default\.json
+    - schemas/lists/task\-list\-personal\.json
+    - schemas/lists/task\-list\.json
+    - schemas/lists/todo\.json
+    - schemas/lists/triage\.json
+    - schemas/types/action\.json
+    - schemas/types/entry\.json
+    - schemas/types/task_entry\.json
+    - schemas/types/triage_action\.json
+    uses_interfaces:
+    - interface: cloud-files._rtx.interface.lists-read
+      version: 1
+    - interface: cloud-files._rtx.interface.lists-write
+      version: 1
     contract:
       arguments:
         field:
@@ -1235,6 +1347,22 @@ interfaces:
     usage: <schema> [field]
     version: 1
   list-manager._rtx.source.rtx-yaml-store.interface.generate-id:
+    content:
+    - _yaml_store\.py
+    - schemas/lists/default\.json
+    - schemas/lists/task\-list\-personal\.json
+    - schemas/lists/task\-list\.json
+    - schemas/lists/todo\.json
+    - schemas/lists/triage\.json
+    - schemas/types/action\.json
+    - schemas/types/entry\.json
+    - schemas/types/task_entry\.json
+    - schemas/types/triage_action\.json
+    uses_interfaces:
+    - interface: cloud-files._rtx.interface.lists-read
+      version: 1
+    - interface: cloud-files._rtx.interface.lists-write
+      version: 1
     contract:
       arguments:
         count:
@@ -1371,6 +1499,22 @@ interfaces:
     usage: <file> [--count N]
     version: 1
   list-manager._rtx.source.rtx-yaml-store.interface.init-list:
+    content:
+    - _yaml_store\.py
+    - schemas/lists/default\.json
+    - schemas/lists/task\-list\-personal\.json
+    - schemas/lists/task\-list\.json
+    - schemas/lists/todo\.json
+    - schemas/lists/triage\.json
+    - schemas/types/action\.json
+    - schemas/types/entry\.json
+    - schemas/types/task_entry\.json
+    - schemas/types/triage_action\.json
+    uses_interfaces:
+    - interface: cloud-files._rtx.interface.lists-read
+      version: 1
+    - interface: cloud-files._rtx.interface.lists-write
+      version: 1
     contract:
       arguments:
         file:
@@ -1550,6 +1694,22 @@ interfaces:
     usage: <file> [--schema <name>]
     version: 1
   list-manager._rtx.source.rtx-yaml-store.interface.read-list:
+    content:
+    - _yaml_store\.py
+    - schemas/lists/default\.json
+    - schemas/lists/task\-list\-personal\.json
+    - schemas/lists/task\-list\.json
+    - schemas/lists/todo\.json
+    - schemas/lists/triage\.json
+    - schemas/types/action\.json
+    - schemas/types/entry\.json
+    - schemas/types/task_entry\.json
+    - schemas/types/triage_action\.json
+    uses_interfaces:
+    - interface: cloud-files._rtx.interface.lists-read
+      version: 1
+    - interface: cloud-files._rtx.interface.lists-write
+      version: 1
     contract:
       arguments:
         file:
@@ -1701,6 +1861,22 @@ interfaces:
     usage: <file> [filters] [--sort FIELD]
     version: 1
   list-manager._rtx.source.rtx-yaml-store.interface.update-list:
+    content:
+    - _yaml_store\.py
+    - schemas/lists/default\.json
+    - schemas/lists/task\-list\-personal\.json
+    - schemas/lists/task\-list\.json
+    - schemas/lists/todo\.json
+    - schemas/lists/triage\.json
+    - schemas/types/action\.json
+    - schemas/types/entry\.json
+    - schemas/types/task_entry\.json
+    - schemas/types/triage_action\.json
+    uses_interfaces:
+    - interface: cloud-files._rtx.interface.lists-read
+      version: 1
+    - interface: cloud-files._rtx.interface.lists-write
+      version: 1
     contract:
       arguments:
         file:

@@ -2,7 +2,6 @@
 """Regenerate host scheduler entries from jobs.yaml."""
 import os
 import sys
-import tempfile
 from pathlib import Path
 from argparse import ArgumentParser
 
@@ -25,14 +24,17 @@ else:
     schedule_jobs_from_mappings,
 )
 if __package__:
-    from ._schedule_backend._linux_backend import cron_to_systemd_calendar, default_unit_dir, service_content, timer_content
+    from ._schedule_backend._linux_backend import PREFIX, cron_to_systemd_calendar, default_unit_dir, service_content, timer_content
+    from ._install_owner import require_ownership, write_owner
 else:
     from _schedule_backend._linux_backend import (  # noqa: E402
+    PREFIX,
     cron_to_systemd_calendar,
     default_unit_dir,
     service_content,
     timer_content,
 )
+    from _install_owner import require_ownership, write_owner  # noqa: E402
 
 DEFAULT_JOBS = SKILL_DIR / "jobs.yaml"
 LOG_DIR = SKILL_DIR / "logs"
@@ -46,8 +48,15 @@ def sync_units(
     live: bool = True,
     jobs_file: Path = DEFAULT_JOBS,
     backend: ScheduleBackend | None = None,
+    adopt: bool = False,
 ) -> None:
-    """Generate or update host scheduler entries to match jobs.yaml."""
+    """Generate or update host scheduler entries to match jobs.yaml.
+
+    Refuses before writing anything unless this copy owns the installation:
+    the rendered registrations embed this file's own location, so a sync from
+    another checkout silently repoints the installation at a directory that may
+    later be deleted. See _install_owner.
+    """
     context = ScheduleContext(
         skill_dir=SKILL_DIR,
         jobs_file=jobs_file,
@@ -55,10 +64,51 @@ def sync_units(
         unit_dir=unit_dir,
         live=live,
     )
+    resolved_unit_dir = ensure_owner(adopt=adopt, unit_dir=unit_dir)
     selected_backend = backend or platform_schedule_backend()
     selected_backend.sync(schedule_jobs_from_mappings(jobs), context)
     if live:
         _repair_healthcheck_cron(context)
+    # Recorded only after the writes succeed. Claiming ownership first would
+    # leave a record naming a checkout whose sync then failed partway, and the
+    # health check would read that record and report every job as drifted.
+    write_owner(unit_dir=resolved_unit_dir, owner=SKILL_DIR)
+
+
+def ensure_owner(adopt: bool = False, unit_dir: Path | None = None) -> Path:
+    """Refuse unless this copy owns the installation; return the unit directory.
+
+    Callers that mutate state of their own before syncing (enable/disable edit
+    jobs.yaml first) must call this *before* that edit, so a refused sync does
+    not leave the configuration claiming something the installation does not
+    reflect.
+
+    ``unit_dir`` is None when the caller lets the backend pick its own
+    location; the record has to land in the same place either way. Resolving it
+    here mirrors how the registration check resolves it.
+    """
+    resolved = unit_dir if unit_dir is not None else DEFAULT_UNIT_DIR
+    require_ownership(
+        unit_dir=resolved,
+        skill_dir=SKILL_DIR,
+        registrations_present=_registrations_present(resolved),
+        adopt=adopt,
+        # Only the machine's real registration directory is an installation
+        # worth protecting from a throwaway copy; an overridden one is a test's
+        # own scratch space.
+        live_install=resolved == DEFAULT_UNIT_DIR,
+    )
+    return resolved
+
+
+def _registrations_present(unit_dir: Path) -> bool:
+    """Whether this host already has scheduler entries for these jobs.
+
+    Distinguishes a genuinely fresh install, where adopting is right, from a
+    missing record over an existing installation, where adopting would let one
+    deleted file disarm the guard.
+    """
+    return any(Path(unit_dir).glob(f"{PREFIX}*"))
 
 
 def _repair_healthcheck_cron(context: ScheduleContext) -> None:
@@ -78,15 +128,10 @@ def _repair_healthcheck_cron(context: ScheduleContext) -> None:
         return
     # The rendered entry embeds this file's own location, so a sync running from
     # a copy of the repository would point the user's real crontab at that copy.
-    # The repository checks run validators from a mirror under the temp
-    # directory, which is then deleted -- leaving the health check invoking a
-    # path that no longer exists and alarming every four hours about itself.
-    if SKILL_DIR.is_relative_to(Path(tempfile.gettempdir()).resolve()):
-        print(
-            "Skipped health-check cron repair: running from a temporary copy "
-            f"of the skill tree ({SKILL_DIR})."
-        )
-        return
+    # That is now refused before any of this runs -- sync_units gates on
+    # ownership, which covers the temp-directory mirror this used to check for
+    # and the worktree it missed alike (see _install_owner).
+    #
     # Imported here, not at module scope: _setup_runner imports this module,
     # so a top-level import back would be circular.
     if __package__:
@@ -124,6 +169,12 @@ def main(argv: list[str] | None = None) -> int:
     p = ArgumentParser(description=__doc__)
     p.add_argument("--unit-dir", default=None, help="Override unit dir (testing; skips systemctl)")
     p.add_argument("--jobs-file", default=str(DEFAULT_JOBS), help="Override jobs.yaml location")
+    p.add_argument(
+        "--adopt",
+        action="store_true",
+        help="Record this checkout as the owner of the installation, taking it "
+             "over from whichever checkout owns it now.",
+    )
     args = p.parse_args(argv)
 
     live = args.unit_dir is None
@@ -131,7 +182,9 @@ def main(argv: list[str] | None = None) -> int:
 
     jobs = load_jobs(args.jobs_file)
 
-    sync_units(jobs, unit_dir, LOG_DIR, live=live, jobs_file=Path(args.jobs_file))
+    sync_units(
+        jobs, unit_dir, LOG_DIR, live=live, jobs_file=Path(args.jobs_file), adopt=args.adopt
+    )
     if live:
         print("Done.")
     return 0

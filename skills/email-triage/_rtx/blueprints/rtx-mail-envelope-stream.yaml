@@ -22,6 +22,14 @@ gateway:
 id: email-triage._rtx.source.rtx-mail-envelope-stream
 interfaces:
   email-triage._rtx.source.rtx-mail-envelope-stream.interface.fetch-filtered-envelopes:
+    content:
+    - _mail_envelope_stream\.py
+    - _rescan_filter\.py
+    uses_interfaces:
+    - interface: email-client._rtx.interface.mail-list
+      version: 1
+    - interface: list-manager._rtx.interface.cloud-read
+      version: 1
     contract:
       arguments:
         account:

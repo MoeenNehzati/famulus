@@ -9,6 +9,13 @@ gateway:
 id: ci-debug.source.instructions-repair-element
 interfaces:
   ci-debug.source.instructions-repair-element.interface.repair-element:
+    content:
+    - instructions/repair-element\.md
+    uses_interfaces:
+    - interface: ci-debug._rtx.interface.run-targeted-tests
+      version: 1
+    - interface: git-workflow.interface.default
+      version: 1
     contract:
       arguments:
         assignment:

@@ -16,6 +16,20 @@ gateway:
 id: bib-audit.source.gateway
 interfaces:
   bib-audit.source.gateway.interface.default:
+    content:
+    - SKILL\.md
+    - test/test_biblatex\.bib
+    - test/test_modification\.bib
+    - test/test_modification\.tex
+    - test/test_multifile_main\.tex
+    - test/test_multifile_section\.tex
+    - test/test_natbib\.bib
+    - test/test_natbib_commands\.tex
+    uses_interfaces:
+    - interface: bib-audit._rtx.interface.scripts-bib-similarity
+      version: 1
+    - interface: bib-audit._rtx.interface.scripts-bib-validate-bibtex
+      version: 1
     contract:
       arguments:
         request:

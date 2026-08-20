@@ -10,6 +10,10 @@ gateway:
 id: hook-maker.source.gateway
 interfaces:
   hook-maker.source.gateway.interface.default:
+    content:
+    - SKILL\.md
+    - references/cross\-host\-hook\-scaffold\.md
+    uses_interfaces: []
     contract:
       arguments:
         request:

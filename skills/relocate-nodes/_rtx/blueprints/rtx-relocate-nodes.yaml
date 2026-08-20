@@ -14,6 +14,18 @@ gateway:
 id: relocate-nodes._rtx.source.rtx-relocate-nodes
 interfaces:
   relocate-nodes._rtx.source.rtx-relocate-nodes.interface.relocate:
+    content:
+    - _relocate_nodes\.py
+    - _relocation_closure\.py
+    - _relocation_engine\.py
+    - schemas/relocation\.schema\.json
+    - tests/test_relocation_closure\.py
+    - tests/test_relocation_engine\.py
+    uses_interfaces:
+    - interface: blueprints.interface.graph
+      version: 1
+    - interface: skill-maker._rtx.interface.sync-blueprints
+      version: 1
     contract:
       arguments:
         root:

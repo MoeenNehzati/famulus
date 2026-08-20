@@ -106,7 +106,11 @@ def _source() -> dict[str, Any]:
         "dependencies": [],
         "uses_interfaces": [],
         "interfaces": {
-            "demo-skill._rtx.source.runtime.interface.execute": {"version": 3}
+            "demo-skill._rtx.source.runtime.interface.execute": {
+                "version": 3,
+                "content": [r"runtime\.py"],
+                "uses_interfaces": [],
+            }
         },
     }
 
@@ -271,7 +275,11 @@ def _write_v6_graph_fixture(repo: Path) -> None:
                 "dependencies": [],
                 "uses_interfaces": [],
                 "interfaces": {
-                    "root.beta.source.inspector.interface.inspect": {"version": 1}
+                    "root.beta.source.inspector.interface.inspect": {
+                        "version": 1,
+                        "content": [r"inspect\.py"],
+                        "uses_interfaces": [],
+                    }
                 },
             },
             sort_keys=False,
@@ -387,7 +395,11 @@ def _write_v6_graph_fixture(repo: Path) -> None:
                 "dependencies": [],
                 "uses_interfaces": [],
                 "interfaces": {
-                    "root.beta.source.inspector.interface.inspect": {"version": 1}
+                    "root.beta.source.inspector.interface.inspect": {
+                        "version": 1,
+                        "content": [r"inspect\.py"],
+                        "uses_interfaces": [],
+                    }
                 },
             },
             sort_keys=False,

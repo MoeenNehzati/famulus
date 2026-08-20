@@ -9,6 +9,11 @@ gateway:
 id: relocate-nodes.source.gateway
 interfaces:
   relocate-nodes.source.gateway.interface.default:
+    content:
+    - SKILL\.md
+    uses_interfaces:
+    - interface: relocate-nodes._rtx.interface.relocate
+      version: 1
     contract:
       arguments:
         request:

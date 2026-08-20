@@ -9,6 +9,9 @@ gateway:
 id: tight-mode.source.gateway
 interfaces:
   tight-mode.source.gateway.interface.default:
+    content:
+    - SKILL\.md
+    uses_interfaces: []
     contract:
       arguments:
         request:

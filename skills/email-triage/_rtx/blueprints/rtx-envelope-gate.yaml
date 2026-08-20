@@ -15,6 +15,11 @@ gateway:
 id: email-triage._rtx.source.rtx-envelope-gate
 interfaces:
   email-triage._rtx.source.rtx-envelope-gate.interface.scripts-filter-envelopes:
+    content:
+    - _envelope_gate\.py
+    uses_interfaces:
+    - interface: common.interface.famulus-paths
+      version: 1
     contract:
       arguments:
         account:

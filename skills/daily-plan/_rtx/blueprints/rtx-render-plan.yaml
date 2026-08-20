@@ -15,6 +15,9 @@ gateway:
 id: daily-plan._rtx.source.rtx-render-plan
 interfaces:
   daily-plan._rtx.source.rtx-render-plan.interface.render-plan:
+    content:
+    - _render_plan\.py
+    uses_interfaces: []
     contract:
       arguments:
         dir:

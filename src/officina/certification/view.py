@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 import json
 from pathlib import Path
@@ -15,6 +15,7 @@ from .hashing import (
     CANONICAL_NODE_HASH_POLICY,
     CERTIFIER_NODE_ID,
     NodeHashState,
+    certification_facet_claims,
     certification_target_postorder,
     compute_certification_basis_hash,
     compute_node_hash_states,
@@ -62,16 +63,166 @@ class CurrentCertificate:
 
 
 @dataclass(frozen=True)
+class CertificateInputDelta:
+    """Represent one exact canonical input-manifest change.
+
+    Intent
+    ------
+    Preserve the repository-relative path, change class, and both signed and
+    current manifest entries needed to explain file drift without rereading it.
+
+    Rationale
+    ---------
+    A hash mismatch says that content changed; certification consumers also
+    need to distinguish added, removed, and modified inputs deterministically.
+
+    Pseudocode
+    ----------
+    - store change, path, certified entry, and current entry
+
+    Wraps
+    -----
+    - none
+    """
+
+    change: str
+    path: str
+    certified: Mapping[str, str] | None
+    current: Mapping[str, str] | None
+
+
+@dataclass(frozen=True)
+class CertificateDependencyDelta:
+    """Represent one exact canonical dependency-claim change.
+
+    Intent
+    ------
+    Retain the canonical dependency identity and both dependency records for
+    an added, removed, or modified dependency.
+
+    Rationale
+    ---------
+    Node-wide dependency mismatch concerns cannot identify which provider or
+    used interface changed, or whether its pin appeared, disappeared, or
+    drifted.
+
+    Pseudocode
+    ----------
+    - store change, relation, target, optional interface, and both claims
+
+    Wraps
+    -----
+    - none
+    """
+
+    change: str
+    relation: str
+    target: str
+    interface: str | None
+    certified: Mapping[str, object] | None
+    current: Mapping[str, object] | None
+
+
+@dataclass(frozen=True)
+class CertificateFacetDrift:
+    """Group structured drift under one interface, remainder, or node facet.
+
+    Intent
+    ------
+    Attribute local-hash, declaration, input-file, and dependency
+    changes to the smallest canonical certification facet available.
+
+    Rationale
+    ---------
+    Facet ownership lets drift readers identify the exact audit unit while a
+    concrete blueprint path explains declaration-only hash changes.
+
+    Pseudocode
+    ----------
+    - store facet identity and local-hash/declaration flags
+    - attach exact file and dependency deltas
+
+    Wraps
+    -----
+    - none
+    """
+
+    facet_id: str
+    facet_type: str
+    local_hash_changed: bool = False
+    declaration_changed: bool = False
+    blueprint_path: str | None = None
+    input_files: tuple[CertificateInputDelta, ...] = ()
+    dependencies: tuple[CertificateDependencyDelta, ...] = ()
+
+
+@dataclass(frozen=True)
 class CertificateNodeCurrentness:
+    """Describe certificate currentness and exact drift for one node.
+
+    Intent
+    ------
+    Preserve the existing currentness verdict and concerns while exposing the
+    smallest available node- or facet-level causes of certificate drift.
+
+    Rationale
+    ---------
+    Callers need a stable compatibility surface for current/stale checks and
+    structured evidence for selective bottom-up recertification.
+
+    Pseudocode
+    ----------
+    - store the legacy verdict, concerns, and certificate record
+    - attach node-level file, declaration, and dependency changes
+    - attach facet-level drift when schema-v6 evidence is available
+
+    Wraps
+    -----
+    - none
+    """
+
     node_id: str
     current: bool
     concerns: tuple[str, ...]
     certificate: Mapping[str, object] | None
+    local_hash_changed: bool = False
+    declaration_changed: bool = False
+    blueprint_path: str | None = None
+    input_files: tuple[CertificateInputDelta, ...] = ()
+    dependencies: tuple[CertificateDependencyDelta, ...] = ()
+    facet_drift: tuple[CertificateFacetDrift, ...] = ()
 
 
 @dataclass(frozen=True)
 class CertificateCurrentnessReport:
+    """Collect scoped currentness plus its stale dependency closure.
+
+    Intent
+    ------
+    Keep requested-node results under ``nodes`` while retaining external stale
+    dependencies and their canonical dependency-first worklist.
+
+    Rationale
+    ---------
+    Drift callers must preserve exact-scope reporting and still audit stale
+    providers before consumers that depend on them.
+
+    Pseudocode
+    ----------
+    - store requested node results
+    - store the dependency-first stale worklist
+    - store external stale dependency results separately
+
+    Wraps
+    -----
+    - none
+    """
+
     nodes: Mapping[str, CertificateNodeCurrentness]
+    stale_worklist: tuple[str, ...] = ()
+    dependency_nodes: Mapping[str, CertificateNodeCurrentness] = field(
+        default_factory=dict
+    )
 
     @property
     def current(self) -> bool:
@@ -258,6 +409,359 @@ def _certifier_currentness_identity(
     }
 
 
+def _input_file_deltas(
+    certified_manifest: object,
+    current_manifest: object,
+) -> tuple[CertificateInputDelta, ...]:
+    """Compare canonical manifest entries by repository-relative path.
+
+    Intent
+    ------
+    Produce stable added, removed, and modified file records from two signed
+    manifest projections.
+
+    Rationale
+    ---------
+    Paths are the persistent input identity; digests and provenance are values
+    whose differences make an existing path modified.
+
+    Pseudocode
+    ----------
+    - index valid entries by path
+    - compare the sorted union of paths
+    - return one exact delta for every unequal entry
+
+    Wraps
+    -----
+    - none
+    """
+
+    def indexed(value: object) -> dict[str, Mapping[str, str]]:
+        if not isinstance(value, (list, tuple)):
+            return {}
+        return {
+            str(entry["path"]): dict(entry)
+            for entry in value
+            if isinstance(entry, Mapping) and isinstance(entry.get("path"), str)
+        }
+
+    certified = indexed(certified_manifest)
+    current = indexed(current_manifest)
+    deltas: list[CertificateInputDelta] = []
+    for path in sorted(certified.keys() | current.keys()):
+        before = certified.get(path)
+        after = current.get(path)
+        if before == after:
+            continue
+        change = "added" if before is None else "removed" if after is None else "modified"
+        deltas.append(
+            CertificateInputDelta(
+                change=change,
+                path=path,
+                certified=before,
+                current=after,
+            )
+        )
+    return tuple(deltas)
+
+
+def _dependency_deltas(
+    certified_dependencies: object,
+    current_dependencies: object,
+) -> tuple[CertificateDependencyDelta, ...]:
+    """Compare dependency records by canonical dependency identity.
+
+    Intent
+    ------
+    Report exact additions, removals, and modifications for both interface-
+    hash and node-hash dependency claims.
+
+    Rationale
+    ---------
+    Relation, target, and optional interface identify the logical dependency;
+    version and hash changes remain values and are reported as modifications.
+
+    Pseudocode
+    ----------
+    - index records by relation, target, and optional interface
+    - compare the sorted union of dependency identities
+    - retain both certified and current records for every delta
+
+    Wraps
+    -----
+    - none
+    """
+
+    DependencyIdentity = tuple[str, str, str | None]
+
+    def indexed(value: object) -> dict[DependencyIdentity, Mapping[str, object]]:
+        if not isinstance(value, (list, tuple)):
+            return {}
+        return {
+            (
+                str(entry["relation"]),
+                str(entry["target"]),
+                str(entry["interface"])
+                if isinstance(entry.get("interface"), str)
+                else None,
+            ): dict(entry)
+            for entry in value
+            if isinstance(entry, Mapping)
+            and isinstance(entry.get("relation"), str)
+            and isinstance(entry.get("target"), str)
+        }
+
+    certified = indexed(certified_dependencies)
+    current = indexed(current_dependencies)
+    deltas: list[CertificateDependencyDelta] = []
+    for relation, target, interface in sorted(
+        certified.keys() | current.keys(),
+        key=lambda identity: (identity[0], identity[1], identity[2] or ""),
+    ):
+        identity = (relation, target, interface)
+        before = certified.get(identity)
+        after = current.get(identity)
+        if before == after:
+            continue
+        change = "added" if before is None else "removed" if after is None else "modified"
+        deltas.append(
+            CertificateDependencyDelta(
+                change=change,
+                relation=relation,
+                target=target,
+                interface=interface,
+                certified=before,
+                current=after,
+            )
+        )
+    return tuple(deltas)
+
+
+def _facet_drift(
+    payload_facets: object,
+    state: NodeHashState,
+    *,
+    blueprint_path: str | None,
+) -> tuple[CertificateFacetDrift, ...]:
+    """Derive exact v3 facet deltas without guessing declaration changes.
+
+    Intent
+    ------
+    Compare signed and current facet claims, retaining exact file and
+    dependency changes plus confirmed declaration-only causes.
+
+    Rationale
+    ---------
+    A changed local hash with an unchanged manifest proves that the canonical
+    declaration projection changed; a simultaneous manifest change does not.
+
+    Pseudocode
+    ----------
+    - index certified and current claims by facet type and ID
+    - derive file and dependency deltas for every changed facet
+    - attach the source blueprint only when declaration drift is confirmed
+
+    Wraps
+    -----
+    - none
+    """
+
+    expected_claims = certification_facet_claims(state)
+    expected = {
+        (claim["type"], claim["id"]): claim for claim in expected_claims
+    }
+    certified_claims = payload_facets if isinstance(payload_facets, list) else []
+    certified = {
+        (claim.get("type"), claim.get("id")): claim
+        for claim in certified_claims
+        if isinstance(claim, Mapping)
+        and isinstance(claim.get("type"), str)
+        and isinstance(claim.get("id"), str)
+    }
+    drift: list[CertificateFacetDrift] = []
+    keys = sorted(
+        certified.keys() | expected.keys(),
+        key=lambda item: (item[0] != "remainder", str(item[1])),
+    )
+    for facet_type, facet_id in keys:
+        before = certified.get((facet_type, facet_id))
+        after = expected.get((facet_type, facet_id))
+        certified_manifest = before.get("input_manifest", []) if before else []
+        current_manifest = after.get("input_manifest", []) if after else []
+        certified_dependencies = before.get("dependencies", []) if before else []
+        current_dependencies = after.get("dependencies", []) if after else []
+        input_files = _input_file_deltas(certified_manifest, current_manifest)
+        dependencies = _dependency_deltas(
+            certified_dependencies,
+            current_dependencies,
+        )
+        local_hash_changed = (
+            before is None
+            or after is None
+            or before.get("local_hash") != after.get("local_hash")
+        )
+        declaration_changed = (
+            before is None
+            or after is None
+            or (
+                local_hash_changed
+                and certified_manifest == current_manifest
+            )
+        )
+        if not local_hash_changed and not input_files and not dependencies:
+            continue
+        drift.append(
+            CertificateFacetDrift(
+                facet_id=str(facet_id),
+                facet_type=str(facet_type),
+                local_hash_changed=local_hash_changed,
+                declaration_changed=declaration_changed,
+                blueprint_path=blueprint_path if declaration_changed else None,
+                input_files=input_files,
+                dependencies=dependencies,
+            )
+        )
+    return tuple(drift)
+
+
+def _facet_currentness_concerns(
+    payload_facets: object,
+    state: NodeHashState,
+) -> tuple[str, ...]:
+    """Name the exact schema-v6 certification facets that have drifted."""
+
+    expected = {
+        (claim["type"], claim["id"]): claim
+        for claim in certification_facet_claims(state)
+    }
+    if not isinstance(payload_facets, list):
+        return ("facet-set-mismatch",)
+
+    actual: dict[tuple[object, object], Mapping[str, object]] = {}
+    duplicate = False
+    for claim in payload_facets:
+        if not isinstance(claim, Mapping):
+            return ("facet-set-mismatch",)
+        key = (claim.get("type"), claim.get("id"))
+        if key in actual:
+            duplicate = True
+        actual[key] = claim
+
+    concerns: list[str] = []
+    if duplicate or actual.keys() != expected.keys():
+        concerns.append("facet-set-mismatch")
+    elif tuple(actual) != tuple(expected):
+        concerns.append("facet-order-mismatch")
+
+    fields = (
+        ("local_hash", "hash-mismatch"),
+        ("input_manifest", "input-manifest-mismatch"),
+        ("dependencies", "dependency-mismatch"),
+    )
+    for key in sorted(expected):
+        certified = actual.get(key)
+        if certified is None:
+            continue
+        facet_type, facet_id = key
+        for field, suffix in fields:
+            if certified.get(field) == expected[key][field]:
+                continue
+            if facet_type == "interface":
+                concerns.append(f"interface-{suffix}:{facet_id}")
+            else:
+                concerns.append(f"remainder-{suffix}")
+    return tuple(concerns)
+
+
+def certificate_requires_renewal(status: CertificateNodeCurrentness) -> bool:
+    """Return whether one stale status needs a new certificate entry.
+
+    Intent
+    ------
+    Distinguish a node's own stale certificate evidence from currentness that
+    is false only because a dependency's certificate is not current.
+
+    Rationale
+    ---------
+    Once an unchanged provider is renewed, a consumer whose signed inputs and
+    dependency claims still match becomes current without another log append.
+
+    Pseudocode
+    ----------
+    - reject current statuses
+    - ignore propagated ``dependency-not-current`` concerns
+    - require renewal when any node-owned concern remains
+
+    Wraps
+    -----
+    - none
+    """
+
+    return not status.current and any(
+        not concern.startswith("dependency-not-current:")
+        for concern in status.concerns
+    )
+
+
+def certificate_stale_worklist(
+    graph: RepositoryBlueprintGraph,
+    states: Mapping[str, NodeHashState],
+    report: CertificateCurrentnessReport,
+    requested: Sequence[str] | None = None,
+) -> tuple[str, ...]:
+    """Return stale requested nodes and stale dependencies in canonical postorder.
+
+    Intent
+    ------
+    Turn a currentness report and requested node set into the exact bottom-up
+    worklist required before new certificates may be issued.
+
+    Rationale
+    ---------
+    A consumer can be stale only because a provider is stale; listing the
+    provider first prevents audit and issuance from skipping its dependency.
+
+    Pseudocode
+    ----------
+    - select stale requested roots
+    - compute their canonical certification dependency postorder
+    - retain only stale nodes present in the report or dependency closure
+
+    Wraps
+    -----
+    - ``CertificationHashError`` from invalid canonical state becomes a stable
+      root-only worklist so drift reporting remains read-only and available
+
+    CallsFromRepo
+    -------------
+    ``officina.certification.hashing.certification_target_postorder``:
+      why: orders stale dependencies before their consumers
+    """
+
+    statuses = {
+        **getattr(report, "dependency_nodes", {}),
+        **report.nodes,
+    }
+    selected = tuple(sorted(set(requested or report.nodes)))
+    stale_roots = tuple(
+        node_id
+        for node_id in selected
+        if (status := statuses.get(node_id)) is not None and not status.current
+    )
+    if not stale_roots:
+        return ()
+    try:
+        ordered = certification_target_postorder(graph, states, stale_roots)
+    except CertificationHashError:
+        ordered = stale_roots
+    return tuple(
+        node_id
+        for node_id in ordered
+        if (status := statuses.get(node_id)) is not None
+        and certificate_requires_renewal(status)
+    )
+
+
 def evaluate_certificate_currentness(
     graph: RepositoryBlueprintGraph,
     states: Mapping[str, NodeHashState],
@@ -346,6 +850,12 @@ def evaluate_certificate_currentness(
 
     for node_id, node in sorted(graph.nodes.items()):
         concerns: list[str] = []
+        local_hash_changed = False
+        declaration_changed = False
+        blueprint_path: str | None = None
+        input_files: tuple[CertificateInputDelta, ...] = ()
+        dependencies: tuple[CertificateDependencyDelta, ...] = ()
+        facet_drift: tuple[CertificateFacetDrift, ...] = ()
         if not node_tracked_inputs_clean[node_id]:
             concerns.append("source-commit-input-mismatch")
         certificate: Mapping[str, object] | None = None
@@ -395,11 +905,62 @@ def evaluate_certificate_currentness(
         if not isinstance(payload, Mapping):
             concerns.append("invalid-certificate-schema")
         else:
+            current_manifest = [dict(entry) for entry in state.input_manifest]
+            current_dependencies = [dict(entry) for entry in state.dependency_hashes]
+            certified_manifest = payload.get("input_manifest", [])
+            certified_dependencies = payload.get("dependencies", [])
+            facet_capable = (
+                graph.schema_version == 6
+                and payload.get("certificate_schema_version") == 3
+                and bool(state.facets)
+            )
+            if not facet_capable:
+                input_files = _input_file_deltas(
+                    certified_manifest,
+                    current_manifest,
+                )
+                dependencies = _dependency_deltas(
+                    certified_dependencies,
+                    current_dependencies,
+                )
+                local_hash_changed = payload.get("node_hash") != state.node_hash
+                current_blueprint_path = _relative_path(
+                    node.blueprint_path,
+                    root,
+                )
+                blueprint_input_changed = any(
+                    delta.path == current_blueprint_path for delta in input_files
+                )
+                declaration_changed = (
+                    blueprint_input_changed
+                    or (
+                        local_hash_changed
+                        and certified_manifest == current_manifest
+                        and certified_dependencies == current_dependencies
+                    )
+                )
+                blueprint_path = (
+                    current_blueprint_path
+                    if declaration_changed
+                    else None
+                )
             if (
                 graph.schema_version == 5
                 and payload.get("certificate_schema_version") == 1
             ):
                 concerns.append("legacy-certificate-payload")
+            if graph.schema_version == 6:
+                if payload.get("certificate_schema_version") != 3:
+                    concerns.append("legacy-certificate-payload")
+                else:
+                    concerns.extend(
+                        _facet_currentness_concerns(payload.get("facets"), state)
+                    )
+                    facet_drift = _facet_drift(
+                        payload.get("facets"),
+                        state,
+                        blueprint_path=_relative_path(node.blueprint_path, root),
+                    )
             if payload.get("subject") != _expected_subject(node, root):
                 concerns.append("subject-mismatch")
             if payload.get("input_manifest") != [dict(entry) for entry in state.input_manifest]:
@@ -423,6 +984,12 @@ def evaluate_certificate_currentness(
             current=not concerns,
             concerns=tuple(dict.fromkeys(concerns)),
             certificate=certificate,
+            local_hash_changed=local_hash_changed,
+            declaration_changed=declaration_changed,
+            blueprint_path=blueprint_path,
+            input_files=input_files,
+            dependencies=dependencies,
+            facet_drift=facet_drift,
         )
 
     children: dict[str, set[str]] = {node_id: set() for node_id in graph.nodes}
@@ -455,13 +1022,23 @@ def evaluate_certificate_currentness(
             current=not concerns,
             concerns=tuple(dict.fromkeys(concerns)),
             certificate=status.certificate,
+            local_hash_changed=status.local_hash_changed,
+            declaration_changed=status.declaration_changed,
+            blueprint_path=status.blueprint_path,
+            input_files=status.input_files,
+            dependencies=status.dependencies,
+            facet_drift=status.facet_drift,
         )
         resolved[node_id] = result
         return result
 
     for node_id in sorted(graph.nodes):
         resolve(node_id)
-    return CertificateCurrentnessReport(nodes=resolved)
+    report = CertificateCurrentnessReport(nodes=resolved)
+    return CertificateCurrentnessReport(
+        nodes=resolved,
+        stale_worklist=certificate_stale_worklist(graph, states, report),
+    )
 
 
 class CertificateCurrentnessView:

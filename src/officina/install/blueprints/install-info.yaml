@@ -15,6 +15,9 @@ gateway:
 id: install.source.install-info
 interfaces:
   install.source.install-info.interface.python-api:
+    content:
+    - install_info\.py
+    uses_interfaces: []
     contract:
       arguments:
         base:

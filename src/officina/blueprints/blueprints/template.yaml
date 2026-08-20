@@ -10,6 +10,9 @@ gateway:
 id: blueprints.source.template
 interfaces:
   blueprints.source.template.interface.python-api:
+    content:
+    - template\.py
+    uses_interfaces: []
     contract:
       arguments:
         inputs:

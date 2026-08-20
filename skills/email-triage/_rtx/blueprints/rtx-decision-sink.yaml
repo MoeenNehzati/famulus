@@ -15,6 +15,9 @@ gateway:
 id: email-triage._rtx.source.rtx-decision-sink
 interfaces:
   email-triage._rtx.source.rtx-decision-sink.interface.scripts-log-decision:
+    content:
+    - _decision_sink\.py
+    uses_interfaces: []
     contract:
       arguments:
         account:

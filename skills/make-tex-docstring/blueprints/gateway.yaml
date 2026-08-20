@@ -9,6 +9,9 @@ gateway:
 id: make-tex-docstring.source.gateway
 interfaces:
   make-tex-docstring.source.gateway.interface.default:
+    content:
+    - SKILL\.md
+    uses_interfaces: []
     contract:
       arguments:
         request:

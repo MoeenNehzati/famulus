@@ -51,7 +51,7 @@ CANONICAL_NODE_HASH_POLICY = Path(
 CERTIFIER_NODE_ID = "skill-certifier"
 CERTIFIER_INTERFACE_ID = "skill-certifier.interface.certify"
 V6_CERTIFIER_INTERFACE_ID = "skill-certifier._rtx.interface.certify"
-CERTIFIER_INTERFACE_VERSION = 1
+CERTIFIER_INTERFACE_VERSION = 2
 CERTIFIER_CHECK_REGISTRY: Mapping[str, tuple[str, int]] = {
     "deterministic": ("v4-deterministic", 1),
     "route-smoke": ("route-smoke-dependencies", 1),
@@ -84,13 +84,52 @@ def certifier_check_registry(
 
 
 @dataclass(frozen=True)
+class CertificationFacetHashState:
+    """Canonical local and dependency hash state for one certification facet."""
+
+    facet_id: str
+    facet_type: str
+    local_hash: str
+    input_manifest: tuple[dict[str, str], ...] = ()
+    dependency_hashes: tuple[dict[str, Any], ...] = ()
+
+
+@dataclass(frozen=True)
 class NodeHashState:
-    """Canonical hash state for one v4 node."""
+    """Canonical hash state for one versioned node."""
 
     node_hash: str | None = None
     input_manifest: tuple[dict[str, str], ...] = ()
     dependency_hashes: tuple[dict[str, Any], ...] = ()
     certification_basis_hash: str | None = None
+    facets: tuple[CertificationFacetHashState, ...] = ()
+
+
+def certification_facet_claims(
+    state: NodeHashState,
+) -> tuple[dict[str, Any], ...]:
+    """Project canonical facet hash states into signed payload claims."""
+
+    if not isinstance(state, NodeHashState):
+        raise CertificationHashError(
+            "facet claim projection requires a canonical node hash state"
+        )
+    return tuple(
+        {
+            "id": facet.facet_id,
+            "type": facet.facet_type,
+            "local_hash": facet.local_hash,
+            "input_manifest": [dict(entry) for entry in facet.input_manifest],
+            "dependencies": [dict(entry) for entry in facet.dependency_hashes],
+        }
+        for facet in sorted(
+            state.facets,
+            key=lambda item: (
+                item.facet_type != "remainder",
+                item.facet_id,
+            ),
+        )
+    )
 
 
 def certification_target_postorder(
@@ -260,20 +299,29 @@ def map_route_smoke_dependencies(
     reachable: set[str] = set()
     pending = [source_node_id]
     children: dict[str, set[str]] = {node_id: set() for node_id in graph.nodes}
-    required_dependency_fields = {"relation", "target", "version", "node_hash"}
+    required_node_dependency_fields = {
+        "relation",
+        "target",
+        "version",
+        "node_hash",
+    }
+    required_interface_dependency_fields = {
+        "relation",
+        "target",
+        "interface",
+        "version",
+        "interface_hash",
+    }
     for node_id, state in validated_states.items():
         for index, dependency in enumerate(state.dependency_hashes):
-            if (
-                not isinstance(dependency, Mapping)
-                or set(dependency) != required_dependency_fields
-            ):
+            if not isinstance(dependency, Mapping):
                 raise CertificationHashError(
                     f"{node_id}: invalid dependency hash at index {index}"
                 )
+            fields = set(dependency)
             relation = dependency.get("relation")
             target_id = dependency.get("target")
             version = dependency.get("version")
-            target_hash = dependency.get("node_hash")
             target = (
                 graph.nodes.get(target_id) if isinstance(target_id, str) else None
             )
@@ -282,19 +330,63 @@ def map_route_smoke_dependencies(
                 if isinstance(target_id, str)
                 else None
             )
-            if (
-                not isinstance(relation, str)
-                or not relation
-                or target is None
-                or target_state is None
-                or not isinstance(version, int)
-                or isinstance(version, bool)
-                or version != target.version
-                or target_hash != target_state.node_hash
-            ):
+            valid = False
+            if fields == required_node_dependency_fields:
+                target_hash = dependency.get("node_hash")
+                valid = (
+                    isinstance(relation, str)
+                    and bool(relation)
+                    and target is not None
+                    and target_state is not None
+                    and isinstance(version, int)
+                    and not isinstance(version, bool)
+                    and version == target.version
+                    and target_hash == target_state.node_hash
+                )
+            elif fields == required_interface_dependency_fields:
+                interface_id = dependency.get("interface")
+                interface_hash = dependency.get("interface_hash")
+                if (
+                    relation in {"uses-private-interface", "uses-export"}
+                    and target is not None
+                    and target_state is not None
+                    and isinstance(interface_id, str)
+                    and isinstance(version, int)
+                    and not isinstance(version, bool)
+                ):
+                    try:
+                        extracted = extract_interface_from_blueprint(
+                            graph,
+                            interface_id,
+                            version,
+                        )
+                        source_interface_id = extracted.get("source_interface")
+                        source_facet = next(
+                            (
+                                facet
+                                for facet in target_state.facets
+                                if facet.facet_id == source_interface_id
+                            ),
+                            None,
+                        )
+                    except CertificationHashError:
+                        extracted = None
+                        source_facet = None
+                    valid = (
+                        extracted is not None
+                        and source_facet is not None
+                        and extracted.get("source_node") == target_id
+                        and interface_hash
+                        == compute_interface_hash(
+                            extracted,
+                            input_manifest=source_facet.input_manifest,
+                        )
+                    )
+            if not valid:
                 raise CertificationHashError(
                     f"{node_id}: invalid dependency hash at index {index}"
                 )
+            assert isinstance(target_id, str)
             children[node_id].add(target_id)
     while pending:
         current = pending.pop()
@@ -661,14 +753,16 @@ def derive_certifier_identity(
     if graph.schema_version == 6:
         interface_id = V6_CERTIFIER_INTERFACE_ID
         interface_owner_id = f"{CERTIFIER_NODE_ID}._rtx"
+        interface_version = CERTIFIER_INTERFACE_VERSION
     else:
         interface_id = CERTIFIER_INTERFACE_ID
         interface_owner_id = CERTIFIER_NODE_ID
+        interface_version = 1
     export = graph.exports.get(interface_id)
     if (
         export is None
         or export.module_node_id != interface_owner_id
-        or export.version != CERTIFIER_INTERFACE_VERSION
+        or export.version != interface_version
     ):
         raise CertificationHashError(
             "canonical certifier interface is absent or has the wrong version"
@@ -690,7 +784,7 @@ def derive_certifier_identity(
         raise CertificationHashError("canonical certifier source commit is unavailable")
     return {
         "interface": interface_id,
-        "version": CERTIFIER_INTERFACE_VERSION,
+        "version": interface_version,
         "node_hash": node_hash,
         "source_commit": source_commit,
     }
@@ -698,6 +792,126 @@ def derive_certifier_identity(
 
 def _hash_value(value: Any) -> str:
     return _hash_bytes(_canonical_bytes(value))
+
+
+def extract_interface_from_blueprint(
+    graph: RepositoryBlueprintGraph,
+    interface_id: str,
+    version: int,
+) -> dict[str, Any]:
+    """Return the canonical blueprint projection for one resolved interface.
+
+    The projection binds the requested interface identity to its implementing
+    source interface and gateway while excluding every unrelated field in the
+    provider module and behavioral-source blueprints.
+    """
+
+    if not isinstance(graph, RepositoryBlueprintGraph):
+        raise CertificationHashError(
+            "interface extraction requires a repository blueprint graph"
+        )
+    if (
+        not isinstance(interface_id, str)
+        or not interface_id
+        or not isinstance(version, int)
+        or isinstance(version, bool)
+        or version < 1
+    ):
+        raise CertificationHashError(
+            "interface extraction requires an interface id and positive version"
+        )
+
+    resolved = graph.exports.get(interface_id)
+    if resolved is None:
+        resolved = graph.source_interfaces.get(interface_id)
+    if resolved is not None:
+        declaration = resolved.declaration
+        actual_version = resolved.version
+        source_node_id = resolved.source_node_id
+        source_interface_id = resolved.source_interface_id
+    else:
+        source_node_id, marker, _local_name = interface_id.rpartition(".interface.")
+        source = graph.nodes.get(source_node_id) if marker else None
+        interfaces = (
+            source.declaration.get("interfaces")
+            if source is not None and source.node_type == "behavioral_source"
+            else None
+        )
+        declaration = (
+            interfaces.get(interface_id)
+            if isinstance(interfaces, Mapping)
+            else None
+        )
+        actual_version = (
+            declaration.get("version")
+            if isinstance(declaration, Mapping)
+            else None
+        )
+        source_interface_id = interface_id
+
+    source = (
+        graph.nodes.get(source_node_id)
+        if isinstance(source_node_id, str)
+        else None
+    )
+    gateway = (
+        source.declaration.get("gateway")
+        if source is not None and source.node_type == "behavioral_source"
+        else None
+    )
+    if (
+        not isinstance(declaration, Mapping)
+        or actual_version != version
+        or not isinstance(source_node_id, str)
+        or not isinstance(source_interface_id, str)
+        or not isinstance(gateway, Mapping)
+    ):
+        raise CertificationHashError(
+            f"unresolved interface blueprint projection: {interface_id}@{version}"
+        )
+    return {
+        "id": interface_id,
+        "version": version,
+        "source_node": source_node_id,
+        "source_interface": source_interface_id,
+        "gateway": deepcopy(dict(gateway)),
+        "declaration": deepcopy(dict(declaration)),
+        **(
+            {"export_declaration": deepcopy(dict(resolved.export_declaration))}
+            if resolved is not None
+            and isinstance(resolved.export_declaration, Mapping)
+            else {}
+        ),
+    }
+
+
+def compute_interface_hash(
+    extracted_interface: Mapping[str, Any],
+    *,
+    input_manifest: Iterable[Mapping[str, str]] = (),
+) -> str:
+    """Hash one interface's canonical local declaration and content manifest."""
+
+    if not isinstance(extracted_interface, Mapping):
+        raise CertificationHashError(
+            "interface hashing requires an extracted interface mapping"
+        )
+    projection = deepcopy(dict(extracted_interface))
+    declaration = projection.get("declaration")
+    if not isinstance(declaration, Mapping):
+        raise CertificationHashError(
+            "interface hashing requires a declaration mapping"
+        )
+    local_declaration = deepcopy(dict(declaration))
+    local_declaration.pop("uses_interfaces", None)
+    projection["declaration"] = local_declaration
+    manifest = tuple(dict(entry) for entry in input_manifest)
+    return _hash_value(
+        {
+            "interface": projection,
+            "input_manifest": manifest,
+        }
+    )
 
 
 def _reference_candidates(value: object) -> tuple[tuple[str, str], ...]:
@@ -1207,6 +1421,218 @@ def _v4_node_input_manifests(
     return manifests, contract_dependencies
 
 
+def _v6_local_facet_states(
+    graph: RepositoryBlueprintGraph,
+    manifests: Mapping[str, tuple[dict[str, str], ...]],
+    interface_contract_paths: Mapping[str, tuple[str, ...]],
+    repo_root: Path,
+) -> tuple[
+    dict[str, tuple[CertificationFacetHashState, ...]],
+    dict[str, str],
+    dict[str, str],
+]:
+    """Derive v6 source-local interface and remainder facet identities.
+
+    Dependency hashes are intentionally absent from this pass. The caller uses
+    the resulting local interface hashes to build dependency records without
+    recursively folding dependency content into local identity.
+    """
+
+    root = Path(repo_root).resolve()
+    facets_by_node: dict[str, tuple[CertificationFacetHashState, ...]] = {}
+    interface_hashes: dict[str, str] = {}
+    node_hashes: dict[str, str] = {}
+    for node_id, node in sorted(graph.nodes.items()):
+        if node.node_type != "behavioral_source":
+            continue
+        entries_by_path = {
+            str(entry["path"]): dict(entry) for entry in manifests[node_id]
+        }
+        interface_facets: list[CertificationFacetHashState] = []
+        claimed_paths: set[str] = set()
+        raw_interfaces = node.declaration.get("interfaces")
+        if not isinstance(raw_interfaces, Mapping):
+            raise CertificationHashError(
+                f"{node.blueprint_path}: interfaces must be a mapping"
+            )
+        for interface_id in sorted(raw_interfaces):
+            resolved_paths = graph.interface_content_paths.get(interface_id)
+            if resolved_paths is None:
+                raise CertificationHashError(
+                    f"{interface_id}: canonical interface content is unavailable"
+                )
+            relative_paths = {
+                repository_relative_path(path, root).as_posix()
+                for path in resolved_paths
+            }
+            relative_paths.update(interface_contract_paths.get(interface_id, ()))
+            claimed_paths.update(relative_paths)
+            interface_manifest = tuple(
+                entries_by_path[path]
+                for path in sorted(relative_paths)
+                if path in entries_by_path
+            )
+            resolved = graph.source_interfaces.get(interface_id)
+            if resolved is None:
+                raise CertificationHashError(
+                    f"{interface_id}: canonical source interface is unavailable"
+                )
+            extracted = extract_interface_from_blueprint(
+                graph,
+                interface_id,
+                resolved.version,
+            )
+            local_hash = compute_interface_hash(
+                extracted,
+                input_manifest=interface_manifest,
+            )
+            interface_hashes[interface_id] = local_hash
+            interface_facets.append(
+                CertificationFacetHashState(
+                    facet_id=interface_id,
+                    facet_type="interface",
+                    local_hash=local_hash,
+                    input_manifest=interface_manifest,
+                )
+            )
+
+        blueprint_relative = repository_relative_path(
+            node.blueprint_path,
+            root,
+        ).as_posix()
+        remainder_manifest = tuple(
+            entry
+            for path, entry in sorted(entries_by_path.items())
+            if path not in claimed_paths and path != blueprint_relative
+        )
+        core_declaration = deepcopy(node.declaration)
+        core_declaration.pop("interfaces", None)
+        core_declaration.pop("dependencies", None)
+        core_declaration.pop("uses_interfaces", None)
+        remainder_hash = _hash_value(
+            {
+                "node_id": node_id,
+                "node_type": node.node_type,
+                "version": node.version,
+                "declaration": core_declaration,
+                "input_manifest": remainder_manifest,
+            }
+        )
+        remainder = CertificationFacetHashState(
+            facet_id=node_id,
+            facet_type="remainder",
+            local_hash=remainder_hash,
+            input_manifest=remainder_manifest,
+        )
+        facets = (remainder, *interface_facets)
+        facets_by_node[node_id] = facets
+        node_hashes[node_id] = _hash_value(
+            {
+                "node_id": node_id,
+                "node_type": node.node_type,
+                "version": node.version,
+                "remainder_hash": remainder_hash,
+                "interfaces": [
+                    {
+                        "id": facet.facet_id,
+                        "version": graph.source_interfaces[facet.facet_id].version,
+                        "interface_hash": facet.local_hash,
+                    }
+                    for facet in interface_facets
+                ],
+            }
+        )
+
+    for interface_id, resolved in sorted(graph.exports.items()):
+        source_interface_id = resolved.source_interface_id
+        source_node_id = resolved.source_node_id
+        if (
+            not isinstance(source_interface_id, str)
+            or not isinstance(source_node_id, str)
+        ):
+            raise CertificationHashError(
+                f"{interface_id}: export source interface is unavailable"
+            )
+        source_facet = next(
+            (
+                facet
+                for facet in facets_by_node.get(source_node_id, ())
+                if facet.facet_id == source_interface_id
+            ),
+            None,
+        )
+        if source_facet is None:
+            raise CertificationHashError(
+                f"{interface_id}: source interface facet is unavailable"
+            )
+        extracted = extract_interface_from_blueprint(
+            graph,
+            interface_id,
+            resolved.version,
+        )
+        interface_hashes[interface_id] = compute_interface_hash(
+            extracted,
+            input_manifest=source_facet.input_manifest,
+        )
+    return facets_by_node, interface_hashes, node_hashes
+
+
+def _v6_interface_contract_attribution(
+    graph: RepositoryBlueprintGraph,
+    repo_root: Path,
+) -> tuple[dict[str, tuple[str, ...]], dict[str, tuple[str, ...]]]:
+    """Retain the originating interface for resolved contract references."""
+
+    root = Path(repo_root).resolve()
+    owners = {
+        _repository_path(Path(os.path.abspath(path)), root): owner_id
+        for path, owner_id in graph.direct_file_owners.items()
+    }
+    paths_by_interface: dict[str, tuple[str, ...]] = {}
+    dependencies_by_interface: dict[str, tuple[str, ...]] = {}
+    for node_id, node in sorted(graph.nodes.items()):
+        if node.node_type != "behavioral_source":
+            continue
+        raw_interfaces = node.declaration.get("interfaces")
+        if not isinstance(raw_interfaces, Mapping):
+            raise CertificationHashError(
+                f"{node.blueprint_path}: interfaces must be a mapping"
+            )
+        for interface_id, declaration in sorted(raw_interfaces.items()):
+            if not isinstance(interface_id, str) or not isinstance(
+                declaration,
+                Mapping,
+            ):
+                raise CertificationHashError(
+                    f"{node.blueprint_path}: invalid interface declaration"
+                )
+            local_paths: set[str] = set()
+            dependency_ids: set[str] = set()
+            for reference in _recursive_contract_references(
+                node.module_root,
+                _reference_candidates(declaration),
+            ):
+                path = _repository_path(
+                    Path(os.path.abspath(reference.path)),
+                    root,
+                )
+                owner_id = owners.get(path)
+                if owner_id is None:
+                    raise CertificationHashError(
+                        f"{node.blueprint_path}: referenced contract "
+                        f"{reference.locator!r} is not directly owned by a node"
+                    )
+                if owner_id == node_id:
+                    local_paths.add(repository_relative_path(path, root).as_posix())
+                else:
+                    dependency_ids.add(owner_id)
+            paths_by_interface[interface_id] = tuple(sorted(local_paths))
+            dependencies_by_interface[interface_id] = tuple(
+                sorted(dependency_ids)
+            )
+    return paths_by_interface, dependencies_by_interface
+
+
 def _compute_node_hash_states(
     graph: RepositoryBlueprintGraph,
     *,
@@ -1234,10 +1660,37 @@ def _compute_node_hash_states(
         )
         for node_id, node in sorted(graph.nodes.items())
     }
+    local_facets_by_node: dict[
+        str,
+        tuple[CertificationFacetHashState, ...],
+    ] = {}
+    interface_hashes: dict[str, str] = {}
+    interface_contract_dependencies: dict[str, tuple[str, ...]] = {}
+    if graph.schema_version == 6:
+        (
+            interface_contract_paths,
+            interface_contract_dependencies,
+        ) = _v6_interface_contract_attribution(graph, repo_root)
+        (
+            local_facets_by_node,
+            interface_hashes,
+            source_node_hashes,
+        ) = _v6_local_facet_states(
+            graph,
+            manifests,
+            interface_contract_paths,
+            repo_root,
+        )
+        node_hashes.update(source_node_hashes)
     dependencies_by_node: dict[str, set[tuple[str, str, int | None]]] = {
         node_id: set() for node_id in graph.nodes
     }
     for edge in graph.certification_edges:
+        if graph.schema_version == 6 and edge.relation in {
+            "uses-private-interface",
+            "uses-export",
+        }:
+            continue
         dependencies_by_node[edge.source_node_id].add(
             (edge.relation, edge.target_node_id, edge.target_version)
         )
@@ -1248,6 +1701,38 @@ def _compute_node_hash_states(
                     "references-cross-owner-contract",
                     target_id,
                     graph.nodes[target_id].version,
+                )
+            )
+
+    interface_dependencies_by_node: dict[
+        str,
+        set[tuple[str, str, str, int, str]],
+    ] = {node_id: set() for node_id in graph.nodes}
+    if graph.schema_version == 6:
+        for edge in graph.node_edges:
+            if edge.relation not in {
+                "uses-private-interface",
+                "uses-export",
+            }:
+                continue
+            extracted = extract_interface_from_blueprint(
+                graph,
+                edge.target_id,
+                edge.required_version,
+            )
+            target_id = extracted["source_node"]
+            if not isinstance(target_id, str) or target_id not in graph.nodes:
+                raise CertificationHashError(
+                    f"{edge.source_id}: interface target is unavailable: "
+                    f"{edge.target_id}"
+                )
+            interface_dependencies_by_node[edge.source_id].add(
+                (
+                    edge.relation,
+                    target_id,
+                    edge.target_id,
+                    edge.required_version,
+                    interface_hashes[edge.target_id],
                 )
             )
 
@@ -1264,8 +1749,17 @@ def _compute_node_hash_states(
         if node_id in visited:
             return
         visiting.append(node_id)
+        dependency_targets = {
+            (relation, target_id, version)
+            for relation, target_id, version in dependencies_by_node[node_id]
+        }
+        dependency_targets.update(
+            (relation, target_id, version)
+            for relation, target_id, _interface_id, version, _interface_hash
+            in interface_dependencies_by_node[node_id]
+        )
         for _relation, target_id, _version in sorted(
-            dependencies_by_node[node_id],
+            dependency_targets,
             key=lambda item: (item[0], item[1], item[2] or 0),
         ):
             reject_dependency_cycle(target_id)
@@ -1277,7 +1771,7 @@ def _compute_node_hash_states(
 
     states: dict[str, NodeHashState] = {}
     for node_id in sorted(graph.nodes):
-        dependency_hashes = tuple(
+        node_dependency_hashes = [
             {
                 "relation": relation,
                 "target": target_id,
@@ -1288,12 +1782,133 @@ def _compute_node_hash_states(
                 dependencies_by_node[node_id],
                 key=lambda item: (item[0], item[1], item[2] or 0),
             )
+        ]
+        interface_dependency_hashes = [
+            {
+                "relation": relation,
+                "target": target_id,
+                "interface": interface_id,
+                "version": version,
+                "interface_hash": interface_hash,
+            }
+            for relation, target_id, interface_id, version, interface_hash in sorted(
+                interface_dependencies_by_node[node_id],
+                key=lambda item: (item[0], item[1], item[2], item[3]),
+            )
+        ]
+        dependency_hashes = tuple(
+            sorted(
+                (*node_dependency_hashes, *interface_dependency_hashes),
+                key=lambda item: (
+                    str(item["relation"]),
+                    str(item["target"]),
+                    str(item.get("interface", "")),
+                    int(item["version"]),
+                ),
+            )
         )
+        facets: tuple[CertificationFacetHashState, ...] = ()
+        input_manifest = manifests[node_id]
+        if node_id in local_facets_by_node:
+            local_facets = local_facets_by_node[node_id]
+            claimed_interface_uses = {
+                use
+                for facet in local_facets
+                if facet.facet_type == "interface"
+                for use in graph.interface_uses.get(facet.facet_id, ())
+            }
+            claimed_contract_dependencies = {
+                target_id
+                for facet in local_facets
+                if facet.facet_type == "interface"
+                for target_id in interface_contract_dependencies.get(
+                    facet.facet_id,
+                    (),
+                )
+            }
+            populated: list[CertificationFacetHashState] = []
+            for facet in local_facets:
+                if facet.facet_type == "interface":
+                    declared_uses = set(
+                        graph.interface_uses.get(facet.facet_id, ())
+                    )
+                    facet_dependencies = tuple(
+                        sorted(
+                            (
+                                *(
+                                    dependency
+                                    for dependency in interface_dependency_hashes
+                                    if (
+                                        dependency["interface"],
+                                        dependency["version"],
+                                    )
+                                    in declared_uses
+                                ),
+                                *(
+                                    dependency
+                                    for dependency in node_dependency_hashes
+                                    if dependency["relation"]
+                                    == "references-cross-owner-contract"
+                                    and dependency["target"]
+                                    in interface_contract_dependencies.get(
+                                        facet.facet_id,
+                                        (),
+                                    )
+                                ),
+                            ),
+                            key=lambda item: (
+                                str(item["relation"]),
+                                str(item["target"]),
+                                str(item.get("interface", "")),
+                                int(item["version"]),
+                            ),
+                        )
+                    )
+                else:
+                    facet_dependencies = tuple(
+                        dependency
+                        for dependency in dependency_hashes
+                        if not (
+                            "interface" in dependency
+                            and (
+                                dependency["interface"],
+                                dependency["version"],
+                            )
+                            in claimed_interface_uses
+                        )
+                        and not (
+                            dependency["relation"]
+                            == "references-cross-owner-contract"
+                            and dependency["target"]
+                            in claimed_contract_dependencies
+                        )
+                    )
+                populated.append(
+                    CertificationFacetHashState(
+                        facet_id=facet.facet_id,
+                        facet_type=facet.facet_type,
+                        local_hash=facet.local_hash,
+                        input_manifest=facet.input_manifest,
+                        dependency_hashes=facet_dependencies,
+                    )
+                )
+            facets = tuple(populated)
+            input_manifest = tuple(
+                entry
+                for _path, entry in sorted(
+                    {
+                        str(entry["path"]): dict(entry)
+                        for facet in facets
+                        for entry in facet.input_manifest
+                    }.items()
+                )
+            )
         states[node_id] = NodeHashState(
             node_hash=node_hashes[node_id],
-            input_manifest=manifests[node_id],
+            input_manifest=input_manifest,
             dependency_hashes=dependency_hashes,
             certification_basis_hash=certification_basis_hash,
+            facets=facets,
         )
     return states
 

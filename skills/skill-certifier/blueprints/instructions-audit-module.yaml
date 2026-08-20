@@ -1,0 +1,95 @@
+content:
+- instructions/audit-module\.md
+dependencies: []
+description: Owns semantic review of one module as the composition of its exports,
+  namespace authority, directly owned content, and reviewed child nodes.
+gateway:
+  language: Markdown
+  path: instructions/audit-module.md
+id: skill-certifier.source.audit-module
+interfaces:
+  skill-certifier.source.audit-module.interface.audit:
+    content:
+    - instructions/audit-module\.md
+    uses_interfaces: []
+    contract:
+      arguments:
+        request:
+          description: Current module declaration, bounded module evidence, changes,
+            authority, and completed child-node audit results.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+      caller_warnings: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: bounded module audit request and evidence
+          formats:
+          - text
+          id: read-1
+          medium: prompt
+          sensitivity: user-private
+          system: agent-runtime
+        writes:
+        - access: write
+          content: structured module audit result
+          formats:
+          - markdown
+          id: write-1
+          medium: prompt
+          sensitivity: derived-private
+          system: agent-runtime
+      execution:
+        consistency:
+          snapshot: The result applies only to the supplied module declaration, child
+            results, and evidence snapshot.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: audit-result
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Use a passing verdict to request deterministic certification.
+        class: success
+        effects: []
+        id: audited
+        outputs:
+        - audit-result
+      - caller_action: Supply the smallest requested context and repeat the audit.
+        class: error
+        effects: []
+        id: invalid-request
+        outputs:
+        - audit-result
+      outputs:
+      - audience: both
+        cardinality:
+          minimum: 1
+          maximum: 1
+        description: Structured pass, reject, or needs-context result for one module.
+        direct_io_ref: write-1
+        empty: Never empty.
+        id: audit-result
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Audit one module and return bounded semantic evidence and a verdict.
+    version: 1
+node_type: behavioral_source
+schema_version: 6
+uses_interfaces: []
+version: 1
+maturity: stable

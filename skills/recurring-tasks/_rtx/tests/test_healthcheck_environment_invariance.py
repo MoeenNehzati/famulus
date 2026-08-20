@@ -80,6 +80,12 @@ def _empty_dir(tmp_path: Path) -> Path:
 
 
 def _context(tmp_path: Path, unit_dir: Path) -> ScheduleContext:
+    # The check stats the executor a registration invokes, so a synthetic skill
+    # tree has to actually contain the file it claims to run -- otherwise these
+    # tests exercise "the executor is gone" rather than environment invariance.
+    skill = tmp_path / "skill"
+    skill.mkdir(parents=True, exist_ok=True)
+    (skill / "_job_executor.py").touch()
     return ScheduleContext(
         skill_dir=tmp_path / "skill",
         jobs_file=tmp_path / "skill" / "jobs.yaml",

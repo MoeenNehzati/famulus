@@ -232,6 +232,27 @@ def test_live_v6_personal_preference_rejects_whitespace_description() -> None:
     assert list(_live_v6_validator("module.schema.json").iter_errors(module))
 
 
+def _canonical_errors(document: dict, name: str) -> list[str]:
+    root = REPO_ROOT / "references" / "blueprint"
+    schema = json.loads((root / name).read_text(encoding="utf-8"))
+    store = {
+        child.name: json.loads(child.read_text(encoding="utf-8"))
+        for child in root.glob("*.schema.json")
+    }
+    resolver = jsonschema.RefResolver(
+        base_uri=(root / name).resolve().as_uri(),
+        referrer=schema,
+        store=store,
+    )
+    return [
+        error.message
+        for error in jsonschema.Draft7Validator(
+            schema,
+            resolver=resolver,
+        ).iter_errors(document)
+    ]
+
+
 def _empty_io() -> dict:
     return {"reads": [], "writes": [], "network": []}
 
@@ -567,6 +588,35 @@ def test_v4_behavioral_source_owns_intrinsic_interfaces_and_generic_edges() -> N
 
     document["semantic_type"] = "instructions"
     assert _errors(document, "behavioral-source.schema.json")
+
+
+def test_current_behavioral_source_requires_explicit_interface_facets() -> None:
+    document = _valid_v4_behavioral_source()
+    document["schema_version"] = 6
+    document["maturity"] = "stable"
+    interface = document["interfaces"][
+        "demo-skill.source.gateway.interface.default"
+    ]
+    interface["content"] = [r"SKILL\.md"]
+    interface["uses_interfaces"] = []
+
+    assert _canonical_errors(document, "behavioral-source.schema.json") == []
+
+    missing_content = deepcopy(document)
+    del missing_content["interfaces"][
+        "demo-skill.source.gateway.interface.default"
+    ]["content"]
+    assert _canonical_errors(missing_content, "behavioral-source.schema.json")
+
+    missing_uses = deepcopy(document)
+    del missing_uses["interfaces"][
+        "demo-skill.source.gateway.interface.default"
+    ]["uses_interfaces"]
+    assert _canonical_errors(missing_uses, "behavioral-source.schema.json")
+
+    no_interfaces = deepcopy(document)
+    no_interfaces["interfaces"] = {}
+    assert _canonical_errors(no_interfaces, "behavioral-source.schema.json") == []
 
 
 def test_v4_structural_draft_allows_certifier_owned_semantics_to_be_absent() -> None:
@@ -964,6 +1014,60 @@ def test_v4_certificate_keeps_runtime_claim_audits_in_versioned_checks() -> None
         }
     )
     assert _errors(runtime_check, "certificate.schema.json") == []
+
+
+def test_current_certificate_accepts_explicit_interface_dependency_hash() -> None:
+    document = _valid_v4_certificate()
+    document["payload"]["certificate_schema_version"] = 2
+    document["payload"]["dependencies"] = [
+        {
+            "relation": "uses-export",
+            "target": "other-skill.source.gateway",
+            "interface": "other-skill.interface.run",
+            "version": 2,
+            "interface_hash": "sha256:" + "c" * 64,
+        }
+    ]
+
+    canonical_root = REPO_ROOT / "references" / "blueprint"
+    schema = json.loads(
+        (canonical_root / "certificate.schema.json").read_text(encoding="utf-8")
+    )
+    store = {
+        child.name: json.loads(child.read_text(encoding="utf-8"))
+        for child in canonical_root.glob("*.schema.json")
+    }
+    resolver = jsonschema.RefResolver(
+        base_uri=(canonical_root / "certificate.schema.json").resolve().as_uri(),
+        referrer=schema,
+        store=store,
+    )
+
+    assert list(
+        jsonschema.Draft7Validator(schema, resolver=resolver).iter_errors(document)
+    ) == []
+
+
+def test_current_certificate_accepts_v3_facet_claims() -> None:
+    document = _valid_v4_certificate()
+    document["payload"]["certificate_schema_version"] = 3
+    document["payload"]["facets"] = [
+        {
+            "id": "demo-skill.source.gateway.interface.run",
+            "type": "interface",
+            "local_hash": "sha256:" + "d" * 64,
+            "input_manifest": [
+                {
+                    "path": "skills/demo-skill/SKILL.md",
+                    "digest": "sha256:" + "e" * 64,
+                    "git_provenance": "tracked",
+                }
+            ],
+            "dependencies": [],
+        }
+    ]
+
+    assert _canonical_errors(document, "certificate.schema.json") == []
 
 
 @pytest.mark.parametrize(

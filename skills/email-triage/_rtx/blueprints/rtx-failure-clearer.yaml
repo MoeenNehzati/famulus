@@ -15,6 +15,11 @@ gateway:
 id: email-triage._rtx.source.rtx-failure-clearer
 interfaces:
   email-triage._rtx.source.rtx-failure-clearer.interface.scripts-clear-failure:
+    content:
+    - _failure_clearer\.py
+    uses_interfaces:
+    - interface: common.interface.famulus-paths
+      version: 1
     contract:
       arguments:
         reason:

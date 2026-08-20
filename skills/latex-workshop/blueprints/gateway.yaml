@@ -9,6 +9,9 @@ gateway:
 id: latex-workshop.source.gateway
 interfaces:
   latex-workshop.source.gateway.interface.default:
+    content:
+    - SKILL\.md
+    uses_interfaces: []
     contract:
       arguments:
         request:

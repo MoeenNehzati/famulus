@@ -9,6 +9,9 @@ gateway:
 id: bib-audit._rtx.source.rtx-reference-pairs
 interfaces:
   bib-audit._rtx.source.rtx-reference-pairs.interface.scripts-bib-similarity:
+    content:
+    - _reference_pairs\.py
+    uses_interfaces: []
     contract:
       arguments:
         bibfile:

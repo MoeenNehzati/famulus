@@ -15,6 +15,9 @@ gateway:
 id: cloud-files._rtx.source.rtx-read-llm-file
 interfaces:
   cloud-files._rtx.source.rtx-read-llm-file.interface.lists-read:
+    content:
+    - _read_llm_file\.py
+    uses_interfaces: []
     contract:
       arguments:
         path:
@@ -134,6 +137,9 @@ interfaces:
     usage: lists/<path>
     version: 1
   cloud-files._rtx.source.rtx-read-llm-file.interface.plans-read:
+    content:
+    - _read_llm_file\.py
+    uses_interfaces: []
     contract:
       arguments:
         path:

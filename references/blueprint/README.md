@@ -6,9 +6,9 @@ shape and field-level authoring rules. See
 contributor overview and [`docs/officina/certification_and_drift.md`](../../docs/officina/certification_and_drift.md)
 for the version-6 input and certificate contract.
 
-## Live version-5 contracts
+## Live version-6 contracts
 
-Version 5 is the live blueprint family. Validate each document against its
+Version 6 is the live blueprint family. Validate each document against its
 concrete schema:
 
 - `module.schema.json`: discovery, filesystem authority, contained behavioral
@@ -26,8 +26,8 @@ concrete schema:
 - `common.schema.json`: shared identifiers, locators, gateways, requirements,
   ownership, and relationship shapes
 
-`schema.json` is the live dispatcher and accepts only version-5 modules,
-behavioral sources, child topology, namespace exports, and facade routes.
+`schema.json` is the live dispatcher and accepts only version-6 modules,
+behavioral sources, child topology, namespace exports, and direct routes.
 `schema.annotated-draft.json` is the matching authoring
 entry point; it delegates field-level guidance to those same two concrete
 schemas. Earlier schema families have been retired; their conversion behavior
@@ -40,9 +40,9 @@ family directly.
 the live module root and ordinary behavioral-source blueprints under
 `blueprints/`; `generated_outputs` names the derived `SKILL.md` blocks.
 
-## Version-5 authoring contract
+## Version-6 authoring contract
 
-Every module or behavioral source uses `schema_version: 5` and its exact
+Every module or behavioral source uses `schema_version: 6` and its exact
 `node_type`. A gateway is one whole existing file described by `path`,
 `language`, and optional alternative `machines`. Language and machine
 requirements use a name, an exact version, or a comma-separated intersection,
@@ -83,8 +83,12 @@ A behavioral source owns:
 - exact-version uses of sibling private interfaces or module exports; and
 - intrinsic interfaces keyed by full source-interface ID.
 
-Each intrinsic interface defines its own version, description, semantic
-`contract`, and optional `process_binding`. Contracts define arguments,
+Each intrinsic interface defines its own version, `content` and
+`uses_interfaces` subsets, description, semantic `contract`, and optional
+`process_binding`. Interface content must remain within the source content
+envelope and include the source gateway. Interface uses must remain within the
+source use envelope; source content and uses not claimed by an explicit
+interface remain source-level certification state. Contracts define arguments,
 preconditions, interaction, warnings, outputs, outcomes, execution, helpers,
 and direct I/O. They do not contain argv/stdin bindings, output channels,
 signals, cancellation transport, or stop mechanics; those belong to

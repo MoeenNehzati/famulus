@@ -26,6 +26,10 @@ gateway:
 id: install.source.launcher-entry
 interfaces:
   install.source.launcher-entry.interface.cli:
+    content:
+    - launcher_entry\.py
+    - resolvers/launch\.py
+    uses_interfaces: []
     contract:
       arguments:
         argv:

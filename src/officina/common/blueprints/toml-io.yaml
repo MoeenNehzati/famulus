@@ -10,6 +10,9 @@ gateway:
 id: common.source.toml-io
 interfaces:
   common.source.toml-io.interface.python-api:
+    content:
+    - toml_io\.py
+    uses_interfaces: []
     contract:
       arguments:
         base-or-path:

@@ -15,6 +15,13 @@ gateway:
 id: list-manager._rtx.source.rtx-category-cache
 interfaces:
   list-manager._rtx.source.rtx-category-cache.interface.cloud-list-categories:
+    content:
+    - _category_cache\.py
+    uses_interfaces:
+    - interface: cloud-files._rtx.interface.lists-read
+      version: 1
+    - interface: cloud-files._rtx.interface.lists-write
+      version: 1
     contract:
       arguments:
         name:

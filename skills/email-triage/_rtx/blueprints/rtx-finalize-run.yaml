@@ -30,6 +30,11 @@ gateway:
 id: email-triage._rtx.source.rtx-finalize-run
 interfaces:
   email-triage._rtx.source.rtx-finalize-run.interface.scripts-finalize-triage:
+    content:
+    - _finalize_run\.py
+    uses_interfaces:
+    - interface: common.interface.famulus-paths
+      version: 1
     contract:
       arguments:
         run-id:

@@ -1,108 +1,25 @@
 content:
 - SKILL\.md
 dependencies: []
-description: Owns the LLM review rules that require exact behavior-backed blueprints
-  before invoking commit-aware certification and that keep v4 semantic review separate
-  from protected mechanical facts.
+description: Owns the drift-selected, dependency-first certification algorithm and
+  delegates each semantic judgment to the audit interface for that node kind.
 gateway:
   language: Markdown
   path: SKILL.md
 id: skill-certifier.source.gateway
-interfaces:
-  skill-certifier.source.gateway.interface.default:
-    contract:
-      arguments:
-        request:
-          description: Request to certify selected module names, exact module-root
-            paths, or every observed blueprint-backed installed skill.
-          required: true
-          sensitivity: user-private
-          type:
-            kind: string
-            sensitivity: user-private
-      caller_warnings:
-      - external-side-effect: Successful delegated certification may create Ed25519
-          signing material and append signed certificate logs.
-      direct_io:
-        network: []
-        reads:
-        - access: read
-          content: certification request and semantic attestation
-          formats:
-          - text
-          id: read-1
-          medium: prompt
-          sensitivity: user-private
-          system: agent-runtime
-        writes:
-        - access: write
-          content: certification result
-          formats:
-          - markdown
-          id: write-1
-          medium: prompt
-          sensitivity: derived-private
-          system: agent-runtime
-      execution:
-        consistency:
-          live: The response reflects semantic review and signed certificate state
-            for the exact reviewed commit.
-        lifecycle: finite
-        state_effect: read-only
-        verification:
-        - method: output-schema
-          output_ref: response
-      helpers: []
-      interaction:
-        channel: tty
-        mode: interactive
-        unattended_outcome: review-required
-      outcomes:
-      - caller_action: Treat only targets with listed signed certificate entries as
-          certified.
-        class: success
-        effects: []
-        id: completed
-        outputs:
-        - response
-      - caller_action: Review the exact blueprint closure against its bound behavior
-          before certification.
-        class: refusal
-        effects: []
-        id: review-required
-        outputs:
-        - response
-      - caller_action: Report the affected target and do not claim certification.
-        class: error
-        effects: []
-        id: failed
-        outputs:
-        - response
-      outputs:
-      - audience: both
-        cardinality:
-          maximum: 1
-          minimum: 1
-        description: Per-target certificate result and any mechanical, semantic-review,
-          signing, or post-write verification failure.
-        direct_io_ref: write-1
-        empty: Never empty.
-        id: response
-        ordering: stable
-        pagination:
-          kind: none
-        truncation:
-          kind: none
-        type:
-          kind: string
-          sensitivity: derived-private
-      preconditions: []
-    description: Certify exact target closures and report signed certificate outcomes.
-    version: 1
+interfaces: {}
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
-- interface: skill-certifier._rtx.interface.certify
+- interface: skill-drift._rtx.interface.drift-status
+  version: 2
+- interface: skill-certifier.source.audit-behavioral-source.interface.audit
   version: 1
-version: 2
+- interface: skill-certifier.source.audit-interface.interface.audit
+  version: 1
+- interface: skill-certifier.source.audit-module.interface.audit
+  version: 1
+- interface: skill-certifier._rtx.interface.certify
+  version: 2
+version: 4
 maturity: stable

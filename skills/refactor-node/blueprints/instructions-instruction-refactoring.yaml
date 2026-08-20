@@ -9,6 +9,9 @@ gateway:
 id: refactor-node.source.instruction-refactoring
 interfaces:
   refactor-node.source.instruction-refactoring.interface.refactor-instructions:
+    content:
+    - instructions/instruction\-refactoring\.md
+    uses_interfaces: []
     contract:
       arguments:
         request:

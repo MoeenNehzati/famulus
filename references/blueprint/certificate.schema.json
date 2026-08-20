@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "certificate.schema.json",
   "title": "Project Node Certificate",
-  "description": "A signed historical payload-v1 or current payload-v2 module or behavioral-source certificate. The signature covers the canonical encoding of payload and no field outside payload.",
+  "description": "A signed historical payload-v1/v2 or current payload-v3 module or behavioral-source certificate. The signature covers the canonical encoding of payload and no field outside payload.",
   "type": "object",
   "required": ["payload", "signature"],
   "additionalProperties": false,
@@ -79,7 +79,7 @@
         "node_hash": {"$ref": "#/definitions/sha256"}
       }
     },
-    "dependencyV2": {
+    "nodeDependencyV2": {
       "type": "object",
       "required": ["relation", "target", "version", "node_hash"],
       "additionalProperties": false,
@@ -105,6 +105,50 @@
         },
         "version": {"$ref": "common.schema.json#/definitions/interfaceVersion"},
         "node_hash": {"$ref": "#/definitions/sha256"}
+      }
+    },
+    "interfaceDependencyV2": {
+      "type": "object",
+      "required": ["relation", "target", "interface", "version", "interface_hash"],
+      "additionalProperties": false,
+      "properties": {
+        "relation": {
+          "enum": ["uses-private-interface", "uses-export"]
+        },
+        "target": {
+          "$ref": "common.schema.json#/definitions/behavioralSourceId"
+        },
+        "interface": {
+          "$ref": "common.schema.json#/definitions/interfaceId"
+        },
+        "version": {"$ref": "common.schema.json#/definitions/interfaceVersion"},
+        "interface_hash": {"$ref": "#/definitions/sha256"}
+      }
+    },
+    "dependencyV2": {
+      "oneOf": [
+        {"$ref": "#/definitions/nodeDependencyV2"},
+        {"$ref": "#/definitions/interfaceDependencyV2"}
+      ]
+    },
+    "facet": {
+      "type": "object",
+      "required": ["id", "type", "local_hash", "input_manifest", "dependencies"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "type": {"enum": ["remainder", "interface"]},
+        "local_hash": {"$ref": "#/definitions/sha256"},
+        "input_manifest": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/definitions/manifestEntry"}
+        },
+        "dependencies": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/definitions/dependencyV2"}
+        }
       }
     },
     "certifier": {
@@ -147,7 +191,7 @@
       ],
       "additionalProperties": false,
       "properties": {
-        "certificate_schema_version": {"enum": [1, 2]},
+        "certificate_schema_version": {"enum": [1, 2, 3]},
         "subject": {"$ref": "#/definitions/subject"},
         "node_hash": {"$ref": "#/definitions/sha256"},
         "source_commit": {"$ref": "#/definitions/gitCommit"},
@@ -160,6 +204,11 @@
         "dependencies": {
           "type": "array",
           "uniqueItems": true
+        },
+        "facets": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/definitions/facet"}
         },
         "certification_basis_hash": {"$ref": "#/definitions/sha256"},
         "certifier": {"$ref": "#/definitions/certifier"},
@@ -194,6 +243,19 @@
             "properties": {"certificate_schema_version": {"const": 2}}
           },
           "then": {
+            "properties": {
+              "dependencies": {
+                "items": {"$ref": "#/definitions/dependencyV2"}
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {"certificate_schema_version": {"const": 3}}
+          },
+          "then": {
+            "required": ["facets"],
             "properties": {
               "dependencies": {
                 "items": {"$ref": "#/definitions/dependencyV2"}
