@@ -22,6 +22,7 @@ import secrets
 import shutil
 import subprocess
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import officina.common.atomic_files as atomic_files
@@ -65,17 +66,20 @@ def _package_spec(name: str, version: str | None) -> str:
     return f"{name}=={version}"
 
 
-# Packages declared in runtime_dependencies.json that are large and needed by
-# only a single feature skill, not by officina/dispatcher or core skill
-# functionality generally. marker-pdf (pdf-to-markdown's OCR models) pulls in
-# the full torch/transformers/CUDA stack -- several GB -- for a capability
-# most installs never touch. This is a pure installer-policy decision (what
-# to install by default), not a property of the manifest itself, so it's kept
-# here rather than as a new field on the schema-validated manifest.
-_OPTIONAL_HEAVY_PACKAGE_NAMES = frozenset({"marker-pdf"})
+def _selected_modules(
+    manifest_path: Path, *, optional_module_ids: tuple[str, ...] = ()
+) -> tuple[str, ...]:
+    try:
+        return runtime_lock.selected_runtime_module_ids(
+            manifest_path, optional_module_ids=optional_module_ids
+        )
+    except runtime_lock.RuntimeLockError as exc:
+        raise ManagedRuntimeError(str(exc)) from exc
 
 
-def _iter_declared_dependencies(manifest_path: Path, *, platform: str):
+def _iter_declared_dependencies(
+    manifest_path: Path, *, platform: str, optional_module_ids: tuple[str, ...] = ()
+):
     """Yield ``(name, version)`` for every python-package dependency declared
     for ``platform`` in a supported runtime_dependencies.json manifest,
     before dedup/spec-building. Shared by ``declared_python_packages`` and
@@ -90,7 +94,10 @@ def _iter_declared_dependencies(manifest_path: Path, *, platform: str):
     if not isinstance(skills, dict):
         raise ManagedRuntimeError("runtime_dependencies.json 'skills' must be an object")
 
-    for skill in skills.values():
+    selected = set(_selected_modules(manifest_path, optional_module_ids=optional_module_ids))
+    for module_id, skill in skills.items():
+        if module_id not in selected:
+            continue
         interfaces = skill.get("interfaces", {}) if isinstance(skill, dict) else {}
         if not isinstance(interfaces, dict):
             continue
@@ -111,7 +118,7 @@ def _iter_declared_dependencies(manifest_path: Path, *, platform: str):
 
 
 def declared_python_packages(
-    manifest_path: Path, *, platform: str, include_optional: bool = True
+    manifest_path: Path, *, platform: str, selected_module_ids: tuple[str, ...] = ()
 ) -> tuple[str, ...]:
     """Return the deduplicated, sorted pip install specs for every
     python-package dependency declared for ``platform`` in a supported
@@ -121,30 +128,100 @@ def declared_python_packages(
     wins; later, less-specific ("any") duplicates for the same package are
     ignored.
 
-    ``include_optional=False`` excludes ``_OPTIONAL_HEAVY_PACKAGE_NAMES``
-    (see that constant) -- the "core" set installed by default; pass
-    ``include_optional=True`` (the default, matching historical behavior) to
-    get the full set instead.
+    With no selected optional module IDs this is the core dependency set.
+    Optional dependencies are added only through the owning module IDs.
     """
     seen: dict[str, str] = {}
-    for name, version in _iter_declared_dependencies(manifest_path, platform=platform):
+    for name, version in _iter_declared_dependencies(
+        manifest_path, platform=platform, optional_module_ids=selected_module_ids
+    ):
         key = name.casefold()
-        if not include_optional and key in _OPTIONAL_HEAVY_PACKAGE_NAMES:
-            continue
         seen.setdefault(key, _package_spec(name, version))
 
     return tuple(sorted(seen.values(), key=str.casefold))
 
 
-def optional_python_packages(manifest_path: Path, *, platform: str) -> tuple[str, ...]:
-    """Return just the declared pip install specs considered optional/heavy
-    (see ``_OPTIONAL_HEAVY_PACKAGE_NAMES``) -- the packages the "core" set
-    excludes. Lets a caller tell the user what's being deferred before
-    deciding whether to include them.
+def optional_runtime_modules(manifest_path: Path, *, platform: str) -> tuple[dict[str, object], ...]:
+    """Describe each optional module's package delta over the core selection."""
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ManagedRuntimeError(f"could not read runtime dependency manifest: {exc}") from exc
+    skills = payload.get("skills")
+    if not isinstance(skills, dict):
+        raise ManagedRuntimeError("runtime_dependencies.json 'skills' must be an object")
+    core = set(declared_python_packages(manifest_path, platform=platform))
+    result: list[dict[str, object]] = []
+    for module_id, module in sorted(skills.items()):
+        if not isinstance(module, dict) or module.get("installation_tier") != "optional":
+            continue
+        packages = set(declared_python_packages(
+            manifest_path, platform=platform, selected_module_ids=(module_id,)
+        ))
+        result.append({"id": module_id, "packages": tuple(sorted(packages - core, key=str.casefold))})
+    return tuple(result)
+
+
+@dataclass(frozen=True)
+class PackageSizeEstimate:
+    """Package-index artifact size or an explicit unavailable estimate."""
+
+    package: str
+    bytes: int | None
+
+
+def _package_name_from_spec(spec: str) -> str:
+    return re.split(r"(?:===|==|!=|~=|>=|<=|>|<|@)", spec.split("[", 1)[0], maxsplit=1)[0]
+
+
+def load_cached_package_index_metadata(
+    packages: tuple[str, ...], *, cache_dir: Path | None = None
+) -> dict[str, object]:
+    """Load per-package index records from the installer metadata cache.
+
+    The cache contains one JSON response per normalized package name.  This
+    function deliberately does not perform network I/O: the optional prompt
+    remains usable offline, and callers get an explicit unavailable estimate
+    for records that are absent or malformed.
     """
-    full = set(declared_python_packages(manifest_path, platform=platform, include_optional=True))
-    core = set(declared_python_packages(manifest_path, platform=platform, include_optional=False))
-    return tuple(sorted(full - core, key=str.casefold))
+    root = cache_dir or Path(
+        os.environ.get(
+            "FAMULUS_PACKAGE_INDEX_CACHE",
+            Path.home() / ".cache" / "famulus" / "package-index",
+        )
+    )
+    metadata: dict[str, object] = {}
+    for spec in packages:
+        name = _package_name_from_spec(spec)
+        try:
+            payload = json.loads((root / f"{name.casefold()}.json").read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        if isinstance(payload, dict):
+            metadata[name.casefold()] = payload
+    return metadata
+
+
+def package_size_estimates(
+    packages: tuple[str, ...], *, package_index_metadata: dict[str, object] | None = None
+) -> tuple[PackageSizeEstimate, ...]:
+    """Read wheel/sdist sizes from the package-index metadata cache boundary.
+
+    The caller supplies already-cached package-index JSON.  A missing record,
+    malformed metadata, or an index response without a usable wheel/sdist
+    size is represented by ``bytes=None`` rather than an invented estimate.
+    """
+    metadata = package_index_metadata or {}
+    estimates: list[PackageSizeEstimate] = []
+    for package in packages:
+        name = _package_name_from_spec(package)
+        record = metadata.get(name.casefold())
+        urls = record.get("urls") if isinstance(record, dict) else None
+        sizes = [url.get("size") for url in urls or [] if isinstance(url, dict)
+                 and url.get("packagetype") in {"bdist_wheel", "sdist"}
+                 and isinstance(url.get("size"), int) and url["size"] >= 0]
+        estimates.append(PackageSizeEstimate(package=name, bytes=max(sizes) if sizes else None))
+    return tuple(estimates)
 
 
 def _run_uv(argv: list[str], *, timeout: float | None = None) -> subprocess.CompletedProcess:
@@ -593,7 +670,7 @@ def build_candidate_release(
     uv_version: str,
     python_version: str,
     repo_root: Path | None = None,
-    include_optional_dependencies: bool = False,
+    optional_module_ids: tuple[str, ...] = (),
 ) -> RuntimePointer:
     """Create a new release directory, provision its managed interpreter,
     install its locked Python dependencies, install Officina, verify the
@@ -609,9 +686,9 @@ def build_candidate_release(
     compatibility path retains the target branch's direct package-copy
     behavior for low-level callers.
 
-    The first supported release excludes optional heavy dependencies. A caller
-    that requests them is rejected instead of silently escaping the verified
-    lock.
+    Core-only candidates use the checked-in universal lock.  A requested
+    optional module selection is compiled into a release-local hash-checked
+    lock, leaving the checked-in core lock untouched.
 
     On any failure (bad manifest, failed venv creation, failed batch
     install, failed Officina build or validation, failed self-install, or
@@ -620,20 +697,23 @@ def build_candidate_release(
     resolver and its trust sidecar are deployed *before* activation for exactly
     this reason: a deployment failure must prevent activation, not follow it.
     """
-    if include_optional_dependencies:
-        raise ManagedRuntimeError(
-            "optional heavy dependencies are excluded from the first supported release"
-        )
+    selected_module_ids = tuple(sorted(set(optional_module_ids)))
+    selected_lock_input_path = lock_input_path
+    selected_lock_path = lock_path
     try:
-        lock_metadata = runtime_lock.validate_runtime_lock(
-            manifest_path=manifest_path,
-            input_path=lock_input_path,
-            lock_path=lock_path,
-            expected_uv_version=uv_version,
-            expected_python_version=python_version,
+        runtime_lock.selected_runtime_module_ids(
+            manifest_path, optional_module_ids=selected_module_ids
         )
+        if not selected_module_ids:
+            lock_metadata = runtime_lock.validate_runtime_lock(
+                manifest_path=manifest_path,
+                input_path=lock_input_path,
+                lock_path=lock_path,
+                expected_uv_version=uv_version,
+                expected_python_version=python_version,
+            )
     except runtime_lock.RuntimeLockError as exc:
-        raise ManagedRuntimeError(f"invalid runtime lock: {exc}") from exc
+        raise ManagedRuntimeError(f"invalid runtime lock or optional module selection: {exc}") from exc
 
     explicit_repo_root = repo_root is not None
     if repo_root is None:
@@ -646,11 +726,27 @@ def build_candidate_release(
     venv_dir = release_dir / "venv"
     python_bin = _venv_python_bin(venv_dir, platform=platform)
 
+    try:
+        if selected_module_ids:
+            selected_lock_input_path = release_dir / "runtime-lock" / "requirements-selected.in"
+            selected_lock_path = release_dir / "runtime-lock" / "requirements-selected.lock"
+            lock_metadata = runtime_lock.generate_runtime_lock(
+                manifest_path=manifest_path,
+                input_path=selected_lock_input_path,
+                lock_path=selected_lock_path,
+                uv_bin=uv_bin,
+                expected_uv_version=uv_version,
+                python_version=python_version,
+                selected_module_ids=selected_module_ids,
+            )
+    except runtime_lock.RuntimeLockError as exc:
+        raise ManagedRuntimeError(f"invalid runtime lock: {exc}") from exc
+
     _create_release_venv(uv_bin=uv_bin, venv_dir=venv_dir, python_version=python_version)
     _run_locked_dependency_install(
         uv_bin=uv_bin,
         python_bin=python_bin,
-        lock_path=lock_path,
+        lock_path=selected_lock_path,
     )
     if explicit_repo_root:
         try:
@@ -682,16 +778,17 @@ def build_candidate_release(
             release_dir / "artifact.json",
             json.dumps(
                 {
-                    "schema_version": 2,
+                    "schema_version": 3,
                     "wheel": wheel.name,
                     "wheel_sha256": wheel_sha256,
                     "source_revision": source_revision,
                     "runtime_lock": {
-                        "path": str(lock_path),
+                        "path": str(selected_lock_path),
                         "sha256": lock_metadata.lock_sha256,
                         "input_sha256": lock_metadata.input_sha256,
                         "uv_version": lock_metadata.uv_version,
                     },
+                    "selected_module_ids": list(selected_module_ids),
                     "python": python_identity,
                 },
                 indent=2,

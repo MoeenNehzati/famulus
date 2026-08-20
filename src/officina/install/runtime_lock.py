@@ -17,8 +17,6 @@ _PLATFORM_MARKERS = {
     "macos": "sys_platform == 'darwin'",
     "windows": "sys_platform == 'win32'",
 }
-_EXCLUDED_PACKAGE_NAMES = frozenset({"marker-pdf"})
-
 # Installer-owned packages required before the first-party wheel can be built.
 # Skill-owned dependencies remain authoritative in the generated blueprint
 # manifest; these two requirements are the managed-runtime bootstrap policy.
@@ -66,7 +64,44 @@ def _platform_marker(platforms: object) -> str:
     return " or ".join(_PLATFORM_MARKERS[platform] for platform in enabled)
 
 
-def render_runtime_requirements(manifest_path: Path) -> str:
+def selected_runtime_module_ids(
+    manifest_path: Path, *, optional_module_ids: tuple[str, ...] = ()
+) -> tuple[str, ...]:
+    """Return core modules plus the explicitly selected optional modules.
+
+    The generated manifest is the selection authority.  Version-one manifests
+    predate installation tiers and are therefore treated as all-core for the
+    compatibility readers that still accept them.
+    """
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeLockError(f"could not read runtime dependency manifest: {exc}") from exc
+    if payload.get("version") not in _SUPPORTED_MANIFEST_VERSIONS:
+        raise RuntimeLockError(
+            f"unsupported runtime dependency manifest version: {payload.get('version')!r}"
+        )
+    skills = payload.get("skills")
+    if not isinstance(skills, dict):
+        raise RuntimeLockError("runtime dependency manifest 'skills' must be an object")
+
+    selected: set[str] = set()
+    for module_id, module in skills.items():
+        if not isinstance(module_id, str) or not isinstance(module, dict):
+            raise RuntimeLockError("runtime dependency manifest has an invalid module record")
+        if payload["version"] == 1 or module.get("installation_tier", "core") == "core":
+            selected.add(module_id)
+    for module_id in optional_module_ids:
+        module = skills.get(module_id)
+        if not isinstance(module, dict) or module.get("installation_tier") != "optional":
+            raise RuntimeLockError(f"unknown optional module: {module_id}")
+        selected.add(module_id)
+    return tuple(sorted(selected))
+
+
+def render_runtime_requirements(
+    manifest_path: Path, *, selected_module_ids: tuple[str, ...] = ()
+) -> str:
     """Pool every distinct core blueprint requirement into canonical input.
 
     Distinct constraints for the same normalized name are intentionally kept:
@@ -87,8 +122,13 @@ def render_runtime_requirements(manifest_path: Path) -> str:
     if not isinstance(skills, dict):
         raise RuntimeLockError("runtime dependency manifest 'skills' must be an object")
 
+    selected = set(selected_runtime_module_ids(
+        manifest_path, optional_module_ids=selected_module_ids
+    ))
     requirements = set(BOOTSTRAP_REQUIREMENTS)
-    for skill in skills.values():
+    for module_id, skill in skills.items():
+        if module_id not in selected:
+            continue
         interfaces = skill.get("interfaces", {}) if isinstance(skill, dict) else {}
         if not isinstance(interfaces, dict):
             continue
@@ -102,8 +142,6 @@ def render_runtime_requirements(manifest_path: Path) -> str:
                 name = dependency.get("name")
                 if not isinstance(name, str) or not name.strip():
                     raise RuntimeLockError("python-package dependency has no valid name")
-                if name.casefold() in _EXCLUDED_PACKAGE_NAMES:
-                    continue
                 requirement = _package_spec(name, dependency.get("version"))
                 marker = _platform_marker(dependency.get("platforms"))
                 requirements.add(f"{requirement} ; {marker}" if marker else requirement)
@@ -161,10 +199,13 @@ def validate_runtime_lock(
     lock_path: Path,
     expected_uv_version: str,
     expected_python_version: str,
+    selected_module_ids: tuple[str, ...] = (),
 ) -> RuntimeLockMetadata:
     """Validate generated-input drift, lock provenance, exact pins and hashes."""
 
-    canonical_input = render_runtime_requirements(manifest_path)
+    canonical_input = render_runtime_requirements(
+        manifest_path, selected_module_ids=selected_module_ids
+    )
     try:
         actual_input = input_path.read_text(encoding="utf-8")
     except OSError as exc:
@@ -235,6 +276,7 @@ def generate_runtime_lock(
     uv_bin: Path,
     expected_uv_version: str,
     python_version: str,
+    selected_module_ids: tuple[str, ...] = (),
 ) -> RuntimeLockMetadata:
     """Render canonical input and compile it with the exact pinned uv."""
 
@@ -246,7 +288,9 @@ def generate_runtime_lock(
             f"expected uv {expected_uv_version}, got {actual_uv_version or 'an unusable uv binary'}"
         )
 
-    canonical_input = render_runtime_requirements(manifest_path)
+    canonical_input = render_runtime_requirements(
+        manifest_path, selected_module_ids=selected_module_ids
+    )
     input_path.parent.mkdir(parents=True, exist_ok=True)
     input_tmp = Path(str(input_path) + ".tmp")
     lock_tmp = Path(str(lock_path) + ".tmp")
@@ -302,6 +346,7 @@ def generate_runtime_lock(
             lock_path=lock_tmp,
             expected_uv_version=expected_uv_version,
             expected_python_version=python_version,
+            selected_module_ids=selected_module_ids,
         )
         os.replace(input_tmp, input_path)
         os.replace(lock_tmp, lock_path)
@@ -317,6 +362,7 @@ def generate_runtime_lock(
         lock_path=lock_path,
         expected_uv_version=expected_uv_version,
         expected_python_version=python_version,
+        selected_module_ids=selected_module_ids,
     )
 
 
@@ -326,5 +372,6 @@ __all__ = [
     "RuntimeLockMetadata",
     "generate_runtime_lock",
     "render_runtime_requirements",
+    "selected_runtime_module_ids",
     "validate_runtime_lock",
 ]

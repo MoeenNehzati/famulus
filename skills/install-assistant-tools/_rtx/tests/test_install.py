@@ -174,13 +174,13 @@ def test_non_interactive_install_uses_checked_in_core_lock(tmp_path, monkeypatch
         dev_mode=False, agents=[], default_llm="claude",
     )
 
-    assert calls[0]["include_optional_dependencies"] is False
+    assert calls[0]["optional_module_ids"] == ()
     assert calls[0]["lock_input_path"].name == "requirements-core.in"
     assert calls[0]["lock_path"].name == "requirements-core.lock"
     assert calls[0]["uv_version"] == "0.11.29"
 
 
-def test_non_interactive_install_rejects_explicit_include_optional_deps(tmp_path, monkeypatch):
+def test_non_interactive_install_rejects_optional_selection(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(install.scaffold, "run", lambda **kw: None)
     monkeypatch.setattr(install.launchers, "run", lambda **kw: None)
@@ -193,14 +193,14 @@ def test_non_interactive_install_rejects_explicit_include_optional_deps(tmp_path
     status = install.run(
         home=tmp_path, dry_run=False, non_interactive=True,
         dev_mode=False, agents=[], default_llm="claude",
-        include_optional_dependencies=True,
+        optional_modules=["pdf-to-markdown"],
     )
 
     assert status != 0
     assert calls == []
 
 
-def test_interactive_install_does_not_prompt_for_excluded_optional_dependencies(
+def test_interactive_install_prompts_for_optional_modules(
     tmp_path, monkeypatch
 ):
     calls = []
@@ -211,11 +211,7 @@ def test_interactive_install_does_not_prompt_for_excluded_optional_dependencies(
         "build_candidate_release",
         lambda **kwargs: calls.append(kwargs),
     )
-    monkeypatch.setattr(
-        install,
-        "_prompt_yes_no",
-        lambda *a, **kw: (_ for _ in ()).throw(AssertionError("unexpected prompt")),
-    )
+    monkeypatch.setattr(install, "_prompt_optional_modules", lambda **kwargs: ["pdf-to-markdown"])
 
     status = install.run(
         home=tmp_path,
@@ -227,7 +223,35 @@ def test_interactive_install_does_not_prompt_for_excluded_optional_dependencies(
     )
 
     assert status == 0
-    assert calls[0]["include_optional_dependencies"] is False
+    assert calls[0]["optional_module_ids"] == ("pdf-to-markdown",)
+
+
+def test_optional_module_prompt_names_packages_and_unavailable_estimates(monkeypatch, capsys):
+    manifest = Path(install.__file__).resolve().parents[3] / "references" / "blueprint" / "runtime_dependencies.json"
+    monkeypatch.setattr("builtins.input", lambda _: "")
+
+    assert install._prompt_optional_modules(manifest_path=manifest, platform_name="linux") == []
+
+    output = capsys.readouterr().out
+    assert "pdf-to-markdown" in output
+    assert "marker-pdf" in output
+    assert "estimate unavailable" in output
+
+
+def test_optional_module_prompt_reports_rough_known_total(monkeypatch, capsys):
+    manifest = Path(install.__file__).resolve().parents[3] / "references" / "blueprint" / "runtime_dependencies.json"
+    monkeypatch.setattr("builtins.input", lambda _: "")
+    monkeypatch.setattr(
+        install.managed_runtime,
+        "package_size_estimates",
+        lambda packages, **kwargs: (
+            install.managed_runtime.PackageSizeEstimate("marker-pdf", 120),
+        ),
+    )
+
+    install._prompt_optional_modules(manifest_path=manifest, platform_name="linux")
+
+    assert "rough download estimate: 120 bytes" in capsys.readouterr().out
 
 
 def test_phase_entry_builds_candidate_before_scaffold(tmp_path, monkeypatch):
