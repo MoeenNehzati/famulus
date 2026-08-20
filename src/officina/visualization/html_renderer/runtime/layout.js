@@ -408,6 +408,11 @@
       arrowEl.style.opacity = pathEl.style.opacity;
       arrowEl.style.filter = pathEl.style.filter;
       arrowEl.setAttribute("fill", pathEl.dataset.edgeArrowColor || pathEl.style.stroke || pathEl.getAttribute("stroke") || "#111111");
+      if (pathEl.dataset.edgeArrowOpacity) {
+        arrowEl.setAttribute("fill-opacity", pathEl.dataset.edgeArrowOpacity);
+      } else {
+        arrowEl.removeAttribute("fill-opacity");
+      }
       arrowEl.dataset.sourceNodeId = pathEl.dataset.sourceNodeId;
       arrowEl.dataset.targetNodeId = pathEl.dataset.targetNodeId;
       arrowEl.dataset.derived = pathEl.dataset.derived;

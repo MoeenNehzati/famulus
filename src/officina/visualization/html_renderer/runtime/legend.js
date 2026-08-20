@@ -450,6 +450,34 @@
       edgePresentationLegendColumn.replaceChildren();
       edgePresentationLegendColumn.hidden = false;
       edgePresentationLegendColumn.appendChild(createLegendGroupTitle("Edge presentation"));
+      edgePresentationFacets.forEach(facet => {
+        const presentVariants = new Map();
+        edgeLayer.querySelectorAll(".edge-path").forEach(path => {
+          if (path.style.display === "none" || !path.__edgeMeta) return;
+          matchedEdgePresentationVariants(path.__edgeMeta)
+            .filter(match => match.facet.id === facet.id)
+            .forEach(match => presentVariants.set(match.variant.id, match.variant));
+        });
+        if (!presentVariants.size) return;
+        edgePresentationLegendColumn.appendChild(createLegendGroupTitle(facet.label));
+        facet.variants.forEach(variant => {
+          if (!presentVariants.has(variant.id)) return;
+          const row = document.createElement("div");
+          row.className = "legend-row legend-explanation-row";
+          row.tabIndex = 0;
+          row.setAttribute("role", "note");
+          row.setAttribute("aria-label", `${variant.label}: ${variant.description}`);
+          row.dataset.legendKind = "edge-presentation-variant";
+          row.dataset.facet = facet.id;
+          row.dataset.type = variant.id;
+          row.appendChild(createDeclaredEdgePresentationLegendIcon(variant));
+          const label = document.createElement("div");
+          label.textContent = variant.label;
+          row.appendChild(label);
+          bindLegendTooltip(row, variant.label, variant.description);
+          edgePresentationLegendColumn.appendChild(row);
+        });
+      });
       Array.from(edgeMetadataStyleCatalog)
         .forEach(([stateId, rule]) => {
           const present = presentStateIds.has(stateId);

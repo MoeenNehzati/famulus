@@ -277,11 +277,67 @@
         }
       }
     },
+    "edgePresentationStyle": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "line_pattern": {
+          "type": "string",
+          "enum": ["solid", "dashed", "dotted"]
+        },
+        "stroke_width": {"type": "number", "exclusiveMinimum": 0},
+        "opacity": {"type": "number", "minimum": 0, "maximum": 1}
+      }
+    },
+    "edgePresentationVariant": {
+      "type": "object",
+      "required": ["id", "equals", "label", "description", "style"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "equals": {"type": ["string", "number", "boolean", "null"]},
+        "label": {"type": "string", "minLength": 1},
+        "description": {"type": "string", "minLength": 1},
+        "style": {"$ref": "#/definitions/edgePresentationStyle"}
+      }
+    },
+    "edgePresentationFacet": {
+      "type": "object",
+      "required": ["id", "label", "field", "variants"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "label": {"type": "string", "minLength": 1},
+        "field": {
+          "type": "string",
+          "pattern": "^(type|implicit|confidence|phase|weight|source|projection_target|metadata\\.[A-Za-z0-9_-]+)$"
+        },
+        "variants": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/definitions/edgePresentationVariant"}
+        }
+      }
+    },
     "uiConfig": {
       "type": "object",
       "description": "Optional renderer-level preferences. Missing fields fall back to renderer defaults.",
       "additionalProperties": true,
       "properties": {
+        "edge_presentation": {
+          "type": "object",
+          "required": ["facets"],
+          "additionalProperties": false,
+          "properties": {
+            "facets": {
+              "type": "array",
+              "minItems": 1,
+              "items": {"$ref": "#/definitions/edgePresentationFacet"}
+            }
+          },
+          "description": "Payload-declared scalar-equality facets that add bounded presentation styles without changing edge semantics."
+        },
         "presentation_node_controls": {
           "type": "array",
           "items": {"$ref": "#/definitions/presentationNodeControl"}

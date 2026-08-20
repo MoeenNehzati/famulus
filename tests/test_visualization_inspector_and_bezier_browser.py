@@ -102,6 +102,74 @@ def _payload(edge_type: str = "link") -> dict:
     }
 
 
+def test_declared_edge_presentation_controls_stroke_and_legend() -> None:
+    payload = {
+        "schema_version": 2,
+        "graph_id": "declared-edge-presentation",
+        "categories": [{"id": "node", "label": "Node"}],
+        "edge_categories": [{"id": "supports", "label": "Supports"}],
+        "ui": {
+            "edge_styles": {"supports": {"color": "#2563eb"}},
+            "edge_presentation": {
+                "facets": [
+                    {
+                        "id": "provenance",
+                        "label": "Provenance",
+                        "field": "implicit",
+                        "variants": [
+                            {
+                                "id": "explicit",
+                                "equals": False,
+                                "label": "Explicit",
+                                "description": "Asserted by the source.",
+                                "style": {"line_pattern": "solid", "opacity": 0.65},
+                            },
+                            {
+                                "id": "inferred",
+                                "equals": True,
+                                "label": "Inferred",
+                                "description": "Inferred from the source.",
+                                "style": {"line_pattern": "dashed", "opacity": 0.45},
+                            },
+                        ],
+                    }
+                ]
+            },
+        },
+        "entities": [
+            {"id": "a", "type": "node", "category": "node", "short_title": "A", "position": 0, "connects_to": [{"to": "b", "type": "supports", "implicit": False}, {"to": "b", "type": "supports", "implicit": True}]},
+            {"id": "b", "type": "node", "category": "node", "short_title": "B", "position": 1, "connects_to": []},
+        ],
+    }
+    _run_browser_case(
+        "declared-edge-presentation",
+        payload,
+        """
+        const paths = Array.from(edgeLayer.querySelectorAll(".edge-path"));
+        const explicitPath = paths.find(path => path.__edgeMeta?.implicit === false);
+        const inferredPath = paths.find(path => path.__edgeMeta?.implicit === true);
+        if (!explicitPath || !inferredPath) throw new Error("provenance edges are missing");
+        if (paths.length !== 2 || paths.some(path => path.__edgeMeta?.bundle)) {
+          throw new Error("edges with different presentation signatures were bundled");
+        }
+        if (explicitPath.hasAttribute("stroke-dasharray")) throw new Error("explicit edge is not solid");
+        if (inferredPath.getAttribute("stroke-dasharray") !== "9 5") throw new Error("inferred edge is not dashed");
+        if (explicitPath.style.strokeOpacity !== "0.65" || inferredPath.style.strokeOpacity !== "0.45") {
+          throw new Error("declared edge opacity was not applied");
+        }
+        if (arrowForPath(explicitPath)?.getAttribute("fill-opacity") !== "0.65"
+            || arrowForPath(inferredPath)?.getAttribute("fill-opacity") !== "0.45") {
+          throw new Error("declared arrow opacity was not applied");
+        }
+        const rows = Array.from(document.querySelectorAll('[data-legend-kind="edge-presentation-variant"][data-facet="provenance"]'));
+        if (rows.length !== 2) throw new Error("provenance legend does not show its present variants");
+        if (rows.map(row => row.dataset.type).sort().join(",") !== "explicit,inferred") {
+          throw new Error("provenance legend variants are incorrect");
+        }
+        """,
+    )
+
+
 def test_mathjax_typesets_dynamic_tooltip_and_inspector_content() -> None:
     payload = _payload()
     payload["renderer_dependencies"] = [
@@ -139,6 +207,35 @@ def test_mathjax_typesets_dynamic_tooltip_and_inspector_content() -> None:
         """,
         virtual_time_budget=12000,
         wait_for_load=False,
+    )
+
+
+def test_structured_inspector_reuses_entity_description_when_summary_is_omitted() -> None:
+    payload = _payload()
+    payload["entities"][0]["description"] = "Canonical statement appears once."
+    payload["entities"][0]["details"] = {
+        "sections": [
+            {
+                "title": "Source",
+                "fields": [{"label": "Location", "value": "main.tex:4", "format": "path"}],
+            }
+        ]
+    }
+
+    _run_browser_case(
+        "structured-description-fallback",
+        payload,
+        """
+        const alpha = nodeElement("alpha");
+        if (!alpha) throw new Error("graph node did not render");
+        alpha.dispatchEvent(new MouseEvent("click", {bubbles: true}));
+        await delay(350);
+        const detailText = document.getElementById("details").textContent;
+        if (!detailText.includes("Canonical statement appears once.")) {
+          throw new Error("structured inspector did not reuse entity description");
+        }
+        if (!detailText.includes("main.tex:4")) throw new Error("source section is missing");
+        """,
     )
 
 

@@ -44,6 +44,14 @@
       },
     };
     const configuredEdgeMetadataStyles = (docData.ui && docData.ui.edge_metadata_styles) || {};
+    const edgePresentationFacets = (
+      (docData.ui && docData.ui.edge_presentation && docData.ui.edge_presentation.facets) || []
+    ).map(facet => ({
+      ...facet,
+      id: String(facet.id),
+      field: String(facet.field),
+      variants: (facet.variants || []).map(variant => ({...variant, id: String(variant.id)})),
+    }));
     const edgeMetadataStyleCatalog = new Map(
       Object.entries(defaultEdgeMetadataStyles).map(([stateId, defaults]) => {
         const configured = configuredEdgeMetadataStyles[stateId] || {};

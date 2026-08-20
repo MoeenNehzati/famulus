@@ -6,11 +6,110 @@ from copy import deepcopy
 import json
 
 import pytest
+from jsonschema.exceptions import ValidationError
 
 from officina.visualization.from_docstring.visualizer import render_module_artifacts
 from officina.visualization.base_renderer import BaseRenderer
 from officina.visualization.base_visualizer import BaseVisualizer, GraphSourceKind
 from officina.visualization.graph import Graph
+
+
+def _edge_presentation_payload() -> dict[str, object]:
+    """Return the smallest graph exercising declarative edge presentation."""
+    return {
+        "schema_version": 2,
+        "ui": {
+            "edge_presentation": {
+                "facets": [
+                    {
+                        "id": "provenance",
+                        "label": "Provenance",
+                        "field": "implicit",
+                        "variants": [
+                            {
+                                "id": "explicit",
+                                "equals": False,
+                                "label": "Explicit",
+                                "description": "Asserted by the source.",
+                                "style": {"line_pattern": "solid"},
+                            },
+                            {
+                                "id": "inferred",
+                                "equals": True,
+                                "label": "Inferred",
+                                "description": "Inferred from the source.",
+                                "style": {"line_pattern": "dashed"},
+                            },
+                        ],
+                    }
+                ]
+            }
+        },
+        "entities": [
+            {
+                "id": "a",
+                "type": "item",
+                "short_title": "A",
+                "position": 0,
+                "connects_to": [
+                    {"to": "b", "type": "supports", "implicit": True}
+                ],
+            },
+            {
+                "id": "b",
+                "type": "item",
+                "short_title": "B",
+                "position": 1,
+                "connects_to": [],
+            },
+        ],
+    }
+
+
+def test_graph_validation_accepts_declarative_edge_presentation() -> None:
+    BaseRenderer().validate(_edge_presentation_payload())
+
+
+def test_schema_rejects_unsupported_edge_presentation_style() -> None:
+    payload = _edge_presentation_payload()
+    payload["ui"]["edge_presentation"]["facets"][0]["variants"][1]["style"] = {
+        "line_pattern": "waves"
+    }
+
+    with pytest.raises(ValidationError, match="waves"):
+        BaseRenderer().validate(payload)
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("duplicate-facet", "duplicate edge presentation facet id"),
+        ("duplicate-variant", "duplicate edge presentation variant id"),
+        ("unsupported-field", "unsupported edge presentation field"),
+        ("style-conflict", "edge presentation style property.*written by multiple facets"),
+    ],
+)
+def test_graph_validation_rejects_invalid_edge_presentation_rules(
+    mutation: str, message: str
+) -> None:
+    payload = _edge_presentation_payload()
+    facets = payload["ui"]["edge_presentation"]["facets"]
+    if mutation == "duplicate-facet":
+        facets.append(deepcopy(facets[0]))
+    elif mutation == "duplicate-variant":
+        facets[0]["variants"].append(deepcopy(facets[0]["variants"][0]))
+    elif mutation == "unsupported-field":
+        facets[0]["field"] = "details.provenance"
+    elif mutation == "style-conflict":
+        second = deepcopy(facets[0])
+        second["id"] = "confidence"
+        second["field"] = "confidence"
+        for variant in second["variants"]:
+            variant["id"] = f"confidence-{variant['id']}"
+        facets.append(second)
+
+    with pytest.raises(ValueError, match=message):
+        Graph().validate_graph(payload)
 
 
 def _presentation_node_payload() -> dict[str, object]:

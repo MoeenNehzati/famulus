@@ -53,6 +53,9 @@ fields:
   operational filter hierarchy and never imply semantic substitutability.
 - `edge.type` selects edge color/dash styling and provides an edge filter.
 - `ui.edge_styles` optionally overrides semantic relation colors and dashes.
+- `ui.edge_presentation.facets` optionally maps scalar edge-field values to
+  bounded line pattern, width, and opacity presentation without creating new
+  semantic relationship types.
 - `ui.edge_metadata_styles` optionally labels and tunes the bounded generic
   presentations for hidden-detail summaries, same-type multiplicity, and
   mixed-type edges. It cannot define arbitrary metadata predicates.
@@ -132,9 +135,11 @@ An edge has three deliberately separate layers:
 
 1. Its semantic relation type states what the dependency means. The relation
    catalog and `ui.edge_styles` determine the ordinary color and dash.
-2. Renderer-computed metadata states explain why one visible path represents
+2. Payload-declared presentation facets explain bounded distinctions such as
+   explicit versus inferred provenance.
+3. Renderer-computed metadata states explain why one visible path represents
    additional edges or hidden structure.
-3. A resolved style turns those two inputs into SVG paint without changing the
+4. A resolved style turns those inputs into SVG paint without changing the
    underlying relation records.
 
 The generic metadata states are mutually interpretable rather than mutually
@@ -151,6 +156,48 @@ removal explicitly deletes its resources. User-space gradients are synchronized
 after every route change, and hover emphasis stores/restores the resolved base
 width and filter. The Edge presentation legend calls the same resolver and icon
 builder, so it documents actual paint behavior rather than a parallel convention.
+
+Declared presentation facets use scalar equality only. `field` names a
+canonical scalar edge property such as `implicit` or a one-level metadata key
+such as `metadata.provenance`. Each matching variant may set
+`line_pattern`, `stroke_width`, or `opacity`; arbitrary CSS and expressions are
+not accepted. Semantic style is applied first, declared variants second, and
+computed aggregate/bundle overlays last. Matched facet identities are included
+in projection and bundling keys so visually distinct edges cannot be merged.
+Only variants present on visible edges appear under their facet in the Edge
+presentation legend.
+
+Example declared facet:
+
+```json
+{
+  "ui": {
+    "edge_presentation": {
+      "facets": [{
+        "id": "provenance",
+        "label": "Provenance",
+        "field": "implicit",
+        "variants": [
+          {
+            "id": "explicit",
+            "equals": false,
+            "label": "Explicit",
+            "description": "Asserted by the source.",
+            "style": {"line_pattern": "solid"}
+          },
+          {
+            "id": "inferred",
+            "equals": true,
+            "label": "Inferred",
+            "description": "Inferred from the source.",
+            "style": {"line_pattern": "dashed"}
+          }
+        ]
+      }]
+    }
+  }
+}
+```
 
 Example override:
 

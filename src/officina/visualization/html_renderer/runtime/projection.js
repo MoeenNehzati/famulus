@@ -67,7 +67,7 @@
     function bundleRenderedEdges(edges) {
       const groups = new Map();
       edges.forEach(edge => {
-        const key = JSON.stringify([edge.source, edge.target]);
+        const key = JSON.stringify([edge.source, edge.target, edgePresentationSignature(edge)]);
         if (!groups.has(key)) groups.set(key, []);
         groups.get(key).push(edge);
       });
@@ -110,7 +110,7 @@
       const rendered = new Map();
       function addRendered(edge) {
         const key = edge.aggregate
-          ? `aggregate::${edge.source}->${edge.target}::${edge.type || "unknown"}`
+          ? `aggregate::${edge.source}->${edge.target}::${edge.type || "unknown"}::${edgePresentationSignature(edge)}`
           : String(edge.edge_id);
         const existing = rendered.get(key);
         if (!existing) { rendered.set(key, edge); return; }
@@ -276,12 +276,16 @@
       const projected = Array.from(rendered.values()).filter(edge => !isHiddenEdgeType(edge));
       const byEndpoints = new Map();
       projected.forEach(edge => {
-        const key = JSON.stringify([edge.source, edge.target]);
+        const key = JSON.stringify([edge.source, edge.target, edgePresentationSignature(edge)]);
         if (!byEndpoints.has(key)) byEndpoints.set(key, []);
         byEndpoints.get(key).push(edge);
       });
       const retained = projected.filter(edge => {
-        const peers = byEndpoints.get(JSON.stringify([edge.source, edge.target])) || [];
+        const peers = byEndpoints.get(JSON.stringify([
+          edge.source,
+          edge.target,
+          edgePresentationSignature(edge),
+        ])) || [];
         const fidelityRank = candidate => candidate.derived && candidate.metadata?.projection?.fidelity === "degraded" ? 0 : 1;
         const dominator = peers.find(peer => {
           if (peer === edge) return false;

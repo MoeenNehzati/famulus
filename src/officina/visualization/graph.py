@@ -660,6 +660,82 @@ class Graph:
         selected = (ui.get("focus", {}) or {}).get("selected_node_id")
         if selected is not None and str(selected) not in entity_ids:
             raise ValueError(f"ui.focus.selected_node_id references unknown id {selected!r}.")
+        self._validate_edge_presentation(ui.get("edge_presentation", {}) or {})
+
+    def _validate_edge_presentation(self, presentation: GraphPayload) -> None:
+        """Validate identities and field paths for declarative edge facets.
+
+        Intent
+        ------
+        Reject ambiguous facet catalogs that JSON Schema cannot compare across
+        array entries.
+
+        Rationale
+        ---------
+        Stable facet and variant identities are used by renderer composition,
+        bundling, and legend rows. Field access is deliberately limited to
+        canonical scalar edge properties and one metadata level.
+
+        Pseudocode
+        ----------
+        - set facet ids = unique declared facet identities
+        - set variant ids = unique within each facet
+        - validate each field against the bounded edge-field grammar
+        - return validated presentation catalog
+
+        Wraps
+        -----
+        - none
+        """
+        facets = presentation.get("facets", [])
+        seen_facets: set[str] = set()
+        canonical_fields = {
+            "type",
+            "implicit",
+            "confidence",
+            "phase",
+            "weight",
+            "source",
+            "projection_target",
+        }
+        style_property_owner: dict[str, str] = {}
+        for facet in facets:
+            facet_id = str(facet.get("id", ""))
+            if facet_id in seen_facets:
+                raise ValueError(
+                    f"duplicate edge presentation facet id: {facet_id}"
+                )
+            seen_facets.add(facet_id)
+            field = str(facet.get("field", ""))
+            metadata_key = field.removeprefix("metadata.")
+            metadata_field = (
+                field.startswith("metadata.")
+                and metadata_key
+                and "." not in metadata_key
+                and all(character.isalnum() or character in "_-" for character in metadata_key)
+            )
+            if field not in canonical_fields and not metadata_field:
+                raise ValueError(f"unsupported edge presentation field: {field!r}")
+            seen_variants: set[str] = set()
+            facet_style_properties: set[str] = set()
+            for variant in facet.get("variants", []):
+                variant_id = str(variant.get("id", ""))
+                if variant_id in seen_variants:
+                    raise ValueError(
+                        "duplicate edge presentation variant id "
+                        f"{variant_id!r} in facet {facet_id!r}"
+                    )
+                seen_variants.add(variant_id)
+                facet_style_properties.update((variant.get("style") or {}).keys())
+            for property_name in facet_style_properties:
+                owner = style_property_owner.get(property_name)
+                if owner is not None:
+                    raise ValueError(
+                        "edge presentation style property "
+                        f"{property_name!r} is written by multiple facets: "
+                        f"{owner!r} and {facet_id!r}"
+                    )
+                style_property_owner[property_name] = facet_id
 
     def _validate_detail_references(
         self, entities: list[GraphPayload], entity_ids: set[str]

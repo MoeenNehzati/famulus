@@ -75,6 +75,7 @@
 
     function formatStructuredEntity(entity) {
       const detailsPayload = entity.details || {};
+      const summary = detailsPayload.summary || entity.description || "";
       const category = (docData.categories || []).find(item => item.id === entity.category);
       const roleLabel = category?.label || `${entity.type}${entity.kind ? `: ${entity.kind}` : ""}`;
       const sections = (detailsPayload.sections || []).map(section => `
@@ -88,7 +89,7 @@
           <div><h2>${escapeHtml(entity.label || entity.short_title)}</h2><div class="small">${escapeHtml(roleLabel)}</div></div>
           <button class="deselect-btn" type="button" title="Deselect (Esc)">✕</button>
         </div>
-        ${detailsPayload.summary ? `<p class="detail-summary">${escapeHtml(detailsPayload.summary)}</p>` : ""}
+        ${summary ? `<p class="detail-summary">${escapeHtml(summary)}</p>` : ""}
         ${sections}
         ${formatRelationshipSection(entity, "outgoing")}
         ${formatRelationshipSection(entity, "incoming")}

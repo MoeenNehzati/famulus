@@ -20,6 +20,42 @@
  * calls removeEdgePresentationResources to avoid accumulating transient defs.
  */
 
+    function edgePresentationFieldValue(edge, field) {
+      if (field.startsWith("metadata.")) {
+        return edge?.metadata?.[field.slice("metadata.".length)];
+      }
+      return edge?.[field];
+    }
+
+    /** Return ordered payload-declared variants whose scalar match is active. */
+    function matchedEdgePresentationVariants(edge) {
+      return edgePresentationFacets.flatMap(facet => {
+        const actual = edgePresentationFieldValue(edge, facet.field);
+        const variant = facet.variants.find(candidate => Object.is(candidate.equals, actual));
+        return variant ? [{facet, variant}] : [];
+      });
+    }
+
+    /** Stable identity used to keep visually different edges out of one bundle. */
+    function edgePresentationSignature(edge) {
+      return matchedEdgePresentationVariants(edge)
+        .map(({facet, variant}) => `${facet.id}:${variant.id}`)
+        .join("|");
+    }
+
+    function declaredEdgePresentationStyle(edge) {
+      const style = {};
+      matchedEdgePresentationVariants(edge).forEach(({variant}) => Object.assign(style, variant.style || {}));
+      return style;
+    }
+
+    function dashForLinePattern(linePattern) {
+      if (linePattern === "dashed") return "9 5";
+      if (linePattern === "dotted") return "2 4";
+      if (linePattern === "solid") return null;
+      return undefined;
+    }
+
     function edgeMetadataPresentationIds(edge) {
       const states = [];
       if (edge && edge.aggregate) states.push("aggregate");
@@ -190,9 +226,12 @@
     function applyEdgeMetadataPresentation(path, edge, semanticStyle, fallbackStroke) {
       removeEdgePresentationResources(path);
       const presentation = resolveEdgeMetadataPresentation(edge);
+      const declaredStyle = declaredEdgePresentationStyle(edge);
       const resourceIds = [];
       let stroke = (semanticStyle && (semanticStyle.stroke || semanticStyle.color)) || fallbackStroke;
       let dash = semanticStyle?.dash;
+      const declaredDash = dashForLinePattern(declaredStyle.line_pattern);
+      if (declaredDash !== undefined) dash = declaredDash;
       if (presentation.style.mixed_gradient) {
         const gradientId = createEdgePresentationGradient(path, edge, presentation.style);
         resourceIds.push(gradientId);
@@ -204,15 +243,39 @@
       path.setAttribute("stroke", stroke);
       if (dash) path.setAttribute("stroke-dasharray", dash);
       else path.removeAttribute("stroke-dasharray");
-      path.style.strokeWidth = presentation.style.stroke_width != null
-        ? String(presentation.style.stroke_width)
+      const strokeWidth = presentation.style.stroke_width ?? declaredStyle.stroke_width;
+      path.style.strokeWidth = strokeWidth != null
+        ? String(strokeWidth)
+        : "";
+      path.style.strokeOpacity = declaredStyle.opacity != null
+        ? String(declaredStyle.opacity)
+        : "";
+      path.dataset.edgeArrowOpacity = declaredStyle.opacity != null
+        ? String(declaredStyle.opacity)
         : "";
       path.style.filter = filterId ? `url(#${filterId})` : "";
       path.__edgeBaseStrokeWidth = path.style.strokeWidth;
       path.__edgeBaseFilter = path.style.filter;
       path.dataset.edgePresentationResources = resourceIds.join(" ");
       path.dataset.edgePresentations = presentation.stateIds.join(" ");
+      path.dataset.edgePresentationSignature = edgePresentationSignature(edge);
       return presentation;
+    }
+
+    function createDeclaredEdgePresentationLegendIcon(variant) {
+      const sampleType = legendEdgeTypes[0]?.edgeType;
+      const semanticStyle = sampleType ? edgeStyleForType(sampleType) : {stroke: "#2563eb"};
+      const icon = createEdgeLegendIcon("edge-presentation", semanticStyle);
+      const line = icon.querySelector("path");
+      const style = variant.style || {};
+      const dash = dashForLinePattern(style.line_pattern);
+      if (line && dash) line.setAttribute("stroke-dasharray", dash);
+      else if (line && dash === null) line.removeAttribute("stroke-dasharray");
+      if (line && style.stroke_width != null) line.style.strokeWidth = String(style.stroke_width);
+      if (line && style.opacity != null) line.setAttribute("stroke-opacity", String(style.opacity));
+      const arrow = icon.querySelector("polygon");
+      if (arrow && style.opacity != null) arrow.setAttribute("fill-opacity", String(style.opacity));
+      return icon;
     }
 
     /* Legend samples use identical widths, colors, transitions, and outlines. */
