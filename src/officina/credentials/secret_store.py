@@ -51,9 +51,9 @@ def lookup(namespace: str, key: str, backend: SecretBackend | None = None) -> st
 
 
 def require(namespace: str, key: str, backend: SecretBackend | None = None) -> str:
-    """Look up a secret and raise if it is missing."""
+    """Look up a secret and raise if it is missing or empty."""
     secret = lookup(namespace, key, backend=backend)
-    if secret is None:
+    if not secret:
         raise SecretNotFoundError(f"no secret stored for {namespace}:{key}")
     return secret
 
@@ -141,11 +141,14 @@ class KeyringSecretBackend:
             raise SecretStoreUnavailable(f"no usable keyring backend: {backend}")
 
     def _keyring_error_classes(self) -> tuple[type[Exception], ...]:
-        try:
-            import keyring.errors
-        except ModuleNotFoundError:
-            return (Exception,)
-        return (keyring.errors.KeyringError,)
+        # Backends reach their store over a transport of their own choosing, so
+        # failures arrive as more than keyring.errors.KeyringError: the
+        # SecretService backend raises jeepney's DBusErrorResponse, and a
+        # corrupt reply surfaces as UnicodeDecodeError. Neither subclasses
+        # KeyringError, and both must still reach callers as SecretStoreError.
+        # Backend selection failures raise SecretStoreUnavailable before the
+        # call sites enter their try blocks, so they stay distinguishable.
+        return (Exception,)
 
     def _password_delete_error_class(self) -> type[Exception]:
         try:

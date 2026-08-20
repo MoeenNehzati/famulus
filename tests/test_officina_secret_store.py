@@ -130,6 +130,17 @@ def test_require_raises_for_missing_secret() -> None:
         secret_store.require("namespace", "key", backend=MemoryBackend())
 
 
+def test_require_rejects_empty_secret_read_back_from_backend() -> None:
+    # store() rejects empty secrets, so an empty read-back is a corrupt backend
+    # response rather than a stored value. A contended SecretService daemon
+    # returns one, and callers would otherwise receive an empty credential.
+    backend = MemoryBackend()
+    backend.values[("namespace", "key")] = ""
+
+    with pytest.raises(secret_store.SecretNotFoundError):
+        secret_store.require("namespace", "key", backend=backend)
+
+
 def test_target_name_has_project_prefix() -> None:
     assert secret_store.target_name("email-client", "personal:imap") == "Famulus:email-client:personal:imap"
 
@@ -145,6 +156,22 @@ def test_keyring_backend_uses_canonical_service_and_key(monkeypatch: pytest.Monk
     assert secret_store.clear("email-client", "personal:imap")
     assert secret_store.lookup("email-client", "personal:imap") is None
     assert fake.calls[0] == ("set", "Famulus:email-client", "personal:imap")
+
+
+def test_keyring_transport_errors_are_normalized(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The SecretService backend reaches the daemon over D-Bus, whose errors
+    # (jeepney's DBusErrorResponse, decode failures on corrupt replies) are not
+    # KeyringError subclasses and would otherwise escape this module raw.
+    fake = FakeKeyring()
+    install_fake_keyring(monkeypatch, fake)
+
+    def fail_get_password(service: str, username: str) -> str | None:
+        raise UnicodeDecodeError("utf-8", b"\xdb", 0, 1, "invalid continuation byte")
+
+    sys.modules["keyring"].get_password = fail_get_password
+
+    with pytest.raises(secret_store.SecretStoreError, match="could not read secret"):
+        secret_store.lookup("email-client", "personal:imap")
 
 
 def test_keyring_backend_reports_missing_package(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -176,6 +203,11 @@ def test_keyring_errors_are_normalized(monkeypatch: pytest.MonkeyPatch) -> None:
         secret_store.store("email-client", "personal:imap", "s3cret")
 
 
+# famulus-skip: category=live-smoke-opt-in; reason=this roundtrip mutates the host keyring and the SecretService daemon corrupts concurrent sessions; alternate=fake keyring backend tests cover the shared contract in every pooled run
+@pytest.mark.skipif(
+    os.environ.get("FAMULUS_REQUIRE_NATIVE_KEYRING") != "1",
+    reason="native keyring roundtrip is opt-in; set FAMULUS_REQUIRE_NATIVE_KEYRING=1",
+)
 def test_default_backend_native_roundtrip_when_available() -> None:
     namespace = "officina-test"
     key = f"native:{uuid.uuid4()}"
