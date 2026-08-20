@@ -55,3 +55,5 @@ skills/list-manager/*.yaml
 skills/list-manager/_rtx/tmp/
 
 *.code-workspace
+.superpowers/**
+docs/superpowers/**
