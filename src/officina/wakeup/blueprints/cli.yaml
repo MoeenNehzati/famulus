@@ -41,18 +41,24 @@ interfaces:
     contract:
       arguments:
         action:
-          description: Enable, disable, or inspect automatic scheduling for one session.
+          description: Enable at a level, disable, or inspect automatic scheduling
+            for one session.
           required: true
           sensitivity: public
           type:
             kind: enum
             values:
             - value: 'on'
-              description: Enable automatic near-limit wakeup scheduling.
+              description: Wake the session only when the provider refused a turn
+                for lack of quota and the session stopped there.
+            - value: force
+              description: Wake the session at reset whenever usage nears the limit,
+                whether or not it was ever refused.
             - value: 'off'
-              description: Disable automatic near-limit wakeup scheduling.
+              description: Remove automatic wakeup scheduling for the session.
             - value: status
-              description: Report whether automatic scheduling is enabled.
+              description: Report whether automatic scheduling is enabled and at
+                which level.
         provider:
           description: Optional provider; omit only when the newest local session
             is unambiguous.
@@ -73,7 +79,7 @@ interfaces:
             kind: string
             sensitivity: user-private
       caller_warnings:
-      - external-side-effect: The on and off actions atomically update persistent
+      - external-side-effect: The on, force, and off actions atomically update persistent
           per-session policy.
       direct_io:
         network: []
@@ -136,7 +142,7 @@ interfaces:
             kind: output
             output_ref: result
           reversibility:
-            reversible: A later on or off invocation restores the opposite policy
+            reversible: A later on, force, or off invocation replaces the policy
               state.
           may_occur_in_outcomes:
           - policy-updated
@@ -151,7 +157,7 @@ interfaces:
               state and output.
           on_uncertain_completion:
             verify_then_decide: Invoke status for the same resolved session before
-              retrying on or off.
+              retrying on, force, or off.
           partial_effects_on_failure:
             possible: Policy replacement can complete before stdout is emitted.
           rollback_on_failure:

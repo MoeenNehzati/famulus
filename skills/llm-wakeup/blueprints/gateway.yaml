@@ -14,7 +14,8 @@ interfaces:
       arguments:
         request:
           description: User request to schedule a wakeup, infer one from a usage-limit
-            event, or manage automatic scheduling for a provider session.
+            event, or manage automatic scheduling and its level for a provider
+            session.
           required: true
           sensitivity: user-private
           type:
@@ -55,7 +56,7 @@ interfaces:
         mode: unattended
       outcomes:
       - caller_action: Present the resolved provider, canonical session, scheduled
-          local time, or automatic policy state.
+          local time, or automatic policy state and level.
         class: success
         effects: []
         id: completed

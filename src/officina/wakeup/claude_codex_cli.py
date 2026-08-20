@@ -205,7 +205,7 @@ def _capture_claude_usage(args: argparse.Namespace) -> None:
     level = auto_schedule_level("claude", str(payload.get("session_id") or ""))
     reminder = ""
     if near and level is None:
-        reminder = " | nearing limit: lw auto on claude"
+        reminder = " | nearing limit: lw auto on claude (or force)"
     elif near and level == INTERRUPTED:
         reminder = " | wakeup armed if the limit stops this session"
     elif near:

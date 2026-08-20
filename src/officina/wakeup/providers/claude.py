@@ -71,11 +71,17 @@ class ClaudeAdapter:
     def cutoff(self, event: dict) -> Cutoff | None:
         """Identify Claude's synthetic 429 rejection row.
 
-        ``error == "rate_limit"`` is set from the HTTP status alone, so it
-        separates quota rejections from ``server_error``/``overloaded``/
-        ``authentication_failed`` without inspecting prose. Every real
-        rejection also carries ``model: "<synthetic>"``, meaning the CLI
-        fabricated the row locally rather than receiving it from the model.
+        ``error == "rate_limit"`` is the preferred test: it is set from the
+        HTTP status alone, so it separates quota rejections from
+        ``server_error``/``overloaded``/``authentication_failed`` without
+        inspecting prose. Builds that omit the field fall back to an API-error
+        row whose text says the user hit a limit, which is why the match is an
+        ``or`` rather than a single condition.
+
+        Observed rejections also carry ``message.model == "<synthetic>"``,
+        marking a row the CLI fabricated locally rather than one the model
+        returned. That is not used as a predicate, because it holds for every
+        synthetic error rather than for quota rejections specifically.
 
         ``quotaLimits.resetsAt`` is authoritative but recent (CLI 2.1.235+);
         older transcripts state the reset only in the message text.

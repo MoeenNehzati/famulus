@@ -21,10 +21,13 @@ class RateLimit:
 class Cutoff:
     """One provider record proving a turn was refused for lack of quota.
 
+    Distinct from the session-level ``Cutoff`` the detector builds, which pairs
+    a refusal with the session it belongs to and with what followed it.
+
     ``reset_at`` is ``None`` when the provider stated no recoverable reset
     time. That is a real case rather than a parse failure to hide: one provider
-    records the reset only as English prose, and 20 of 38 refusals observed
-    locally carry no numeric window anywhere in the transcript.
+    records the reset only as English prose, and in a local survey 20 of that
+    provider's 38 refusals carried no numeric window anywhere in the transcript.
     """
 
     reset_at: datetime | None

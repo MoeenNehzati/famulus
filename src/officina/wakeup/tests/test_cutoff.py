@@ -5,6 +5,10 @@ invented one. The percentage-based fixtures that used to stand in for a
 usage limit described a state that does not coincide with being stopped: over
 2308 local Codex rollouts, ``used_percent: 100`` appeared in 162 files of
 which 136 were never refused a turn.
+
+Counts cited here and in the modules under test come from one local corpus
+surveyed on 2026-08-19. They record what the providers did then; they are not
+invariants, and a provider is free to change its format.
 """
 
 from __future__ import annotations
@@ -420,3 +424,31 @@ def test_delivery_drops_a_conditional_job_whose_evidence_no_longer_holds(
     run_due()
 
     assert json.loads((tmp_path / "state" / "jobs.json").read_text()) == []
+
+
+def test_a_forced_session_is_woken_by_evidence_as_well_as_by_percentage(
+    tmp_path: Path,
+) -> None:
+    """`force` is a superset, not a different trigger.
+
+    A rejection can arrive while reported utilization is well below the
+    near-limit threshold, and Claude instruments that case explicitly. A forced
+    session that is refused without ever crossing 90% must still be woken.
+    """
+
+    _write(
+        tmp_path / "claude" / "p" / f"{CLAUDE_SESSION}.jsonl",
+        [_claude_turn("do the work", role="user"), _claude_refusal()],
+    )
+    set_auto_schedule("claude", CLAUDE_SESSION, True, FORCE)
+
+    actions = monitor_usage(
+        now=datetime(2026, 8, 19, 18, 30, tzinfo=timezone.utc),
+        notifier=lambda _message: None,
+    )
+
+    assert [(action.kind, action.session_id) for action in actions] == [
+        ("scheduled", CLAUDE_SESSION)
+    ]
+    jobs = json.loads((tmp_path / "state" / "jobs.json").read_text())
+    assert [job["level"] for job in jobs] == [FORCE]

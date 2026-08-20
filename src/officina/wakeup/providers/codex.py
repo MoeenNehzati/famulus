@@ -11,6 +11,8 @@ from ..deadlines import parse_deadline
 from .base import Cutoff, RateLimit
 
 
+# Seconds. A live refusal writes its line within a second of its own
+# ``completed_at``; a replayed one is off by the age of the fork.
 FORK_REPLAY_TOLERANCE = 10.0
 
 
@@ -72,11 +74,12 @@ class CodexAdapter:
     def rate_limit(self, event: dict) -> RateLimit | None:
         """Report an enforced Codex usage limit with a recoverable reset time.
 
-        This deliberately does not key on ``used_percent >= 100``. Measured
-        over 2308 local rollouts, that condition appeared in 162 files of
-        which 136 were never cut off, and at the moment Codex is actually
-        refused both windows are ``null`` -- so the percentage both misses
-        real cut-offs and invents ones that never happened.
+        This deliberately does not key on ``used_percent >= 100``. In a survey
+        of 2308 local rollouts (2026-08-19, a one-time measurement rather than
+        a guarantee), that condition appeared in 162 files of which 136 were
+        never refused a turn, and in all 38 refusals in that corpus both
+        windows read ``null`` at the moment of refusal -- so the percentage
+        both missed real refusals and invented ones that never happened.
         """
 
         cut = self.cutoff(event)
@@ -88,11 +91,13 @@ class CodexAdapter:
         """Identify the Codex record proving a turn was refused for quota.
 
         The record is an ordinary ``task_complete`` carrying an ``error``
-        object; the turn is distinguished from a normal one by
-        ``codex_error_info`` and by ``last_agent_message`` being null. A
-        forked or resumed rollout replays its parent's history under fresh
-        wall-clock timestamps, so a copied record is rejected by comparing the
-        line timestamp with the payload's own ``completed_at``.
+        object, and ``codex_error_info`` is what distinguishes it from a
+        normal completion. Observed refusals also have a null
+        ``last_agent_message``; that is not required here, because the error
+        code alone was unambiguous across every local record. A forked or
+        resumed rollout replays its parent's history under fresh wall-clock
+        timestamps, so a copied record is rejected by comparing the line
+        timestamp with the payload's own ``completed_at``.
         """
 
         if event.get("type") != "event_msg":

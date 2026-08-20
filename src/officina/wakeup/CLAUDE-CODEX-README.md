@@ -149,9 +149,10 @@ nothing has happened in that session since. A conversation that merely ended
 near its limit is left alone: resuming it hands an idle agent no task, which it
 then invents one to fill.
 
-`auto force` keeps the older behavior, scheduling at reset whenever a window is
-at or above 90% regardless of whether the session was ever stopped. Use it when
-you want the session woken either way.
+`auto force` adds the older behavior on top: it also schedules at reset whenever
+a window is at or above 90%, regardless of whether the session was ever stopped.
+It is a superset of `on`, not a different trigger, so a forced session refused
+without ever crossing 90% is still woken.
 
 Policies recorded before levels existed are read as `on`, not `force`.
 
@@ -163,20 +164,26 @@ llm-wakeup monitor
 
 The monitor runs two independent routes.
 
-For sessions enabled at the conditional level it looks for a refusal record and
+For every enabled session, at either level, it looks for a refusal record and
 schedules only when one is present, is still the last thing in the transcript,
 and states a reset time in the future. It stands down when the provider has
 armed its own automatic resume.
 
-For every other session it takes the older percentage route:
+If the refusal states no reset time the parser recognizes, no wakeup is created
+and no reminder is printed: a conditional session is left alone. Use `lw auto
+force`, or schedule explicitly, when a provider's prose is not understood.
+
+Sessions enabled at `force`, and sessions with no policy at all, then also take
+the older percentage route:
 
 1. Reads local Claude status snapshots, Claude exhaustion messages, and Codex
    transcript quota records.
 2. Ignores expired windows and windows below 90% usage.
 3. Groups limiting windows by provider session.
 4. Uses the latest reset across the constraining windows.
-5. Schedules reset plus one minute for a session enabled at `force`.
-6. Otherwise prints and optionally displays a reminder to enable automation.
+5. Schedules reset plus one minute for a session enabled at `force`, unless the
+   evidence route already scheduled that session in this pass.
+6. Otherwise prints and optionally displays a reminder naming both levels.
 7. Deduplicates the outcome across repeated minute-level passes.
 
 A conditionally scheduled job is checked against the transcript again at
@@ -221,8 +228,9 @@ also recognizes transcript warnings such as a weekly limit with a dated reset.
 Status-line percentages describe consumption, not permission. A rejection can
 arrive while the reported utilization is well below 100, so a refusal is
 identified from the transcript row Claude writes when it happens:
-`error == "rate_limit"` with `isApiErrorMessage`, and, on recent versions, a
-`quotaLimits` object carrying the authoritative reset epoch.
+`error == "rate_limit"`, or, on builds that omit that field, an
+`isApiErrorMessage` row whose text says the user hit a limit. Recent versions
+add a `quotaLimits` object carrying the authoritative reset epoch.
 
 ## Codex usage acquisition
 
@@ -231,10 +239,11 @@ The monitor reads the newest valid record for each relevant local session. No
 Codex hook or status-line configuration is required.
 
 A refusal, however, is not a percentage. Codex marks it on the `task_complete`
-record of the refused turn, as `error.codex_error_info == "usage_limit_exceeded"`
-with a null `last_agent_message`, and by then both quota windows read `null`.
-The reset time appears only as English prose in the error message, stated in
-local time. A forked or resumed rollout replays its parent's history under fresh
+record of the refused turn, as `error.codex_error_info == "usage_limit_exceeded"`,
+and by then both quota windows read `null`. Observed refusals also carry a null
+`last_agent_message`, which the detector does not require. The reset time
+appears only as English prose in the error message, carrying no timezone, so it
+is read in the machine's own local zone. A forked or resumed rollout replays its parent's history under fresh
 timestamps, so a copied refusal is rejected by comparing the record timestamp
 with the payload's own `completed_at`.
 
@@ -274,12 +283,16 @@ Worker and monitor output is line-oriented for journald. Common outcomes include
 | --- | --- |
 | `usage-reminded` | Near-limit session requires manual opt-in |
 | `usage-scheduled` | Monitor created an automatic wakeup |
-| `wakeup-delivered` | Provider resume command completed successfully |
-| `wakeup-skipped-progress` | Transcript changed; stale job removed |
+| `sent` | Provider resume command completed successfully |
+| `skipped … reason=session-progressed` | Transcript changed; stale job removed |
+| `skipped … reason=no-cutoff-evidence` | Conditional job dropped at delivery: the refusal no longer stands, because the session resumed or the provider armed its own resume |
 | `transcript-error` | Transcript could not be checked; retry scheduled |
-| `provider-error` | Provider command failed; retry scheduled |
-| `worker-busy` | Another process already owns the worker lock |
+| `delivery-error` | Provider command failed; retry scheduled |
+| `scanner-busy` | Another process already owns the worker lock |
 | `usage-monitor-error` | Monitor failed; due-job processing continued |
+
+A wakeup created from refusal evidence prints `used=cutoff` rather than a
+number, because no percentage was measured.
 
 Desktop notification uses `notify-send` when available. It is best-effort;
 journald output is the authoritative operational record.

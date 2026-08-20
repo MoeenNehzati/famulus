@@ -24,7 +24,11 @@ from .providers import provider_for
 
 @dataclass(frozen=True)
 class Cutoff:
-    """One session's refusal, and what happened in the transcript after it."""
+    """One session's refusal, and what happened in the transcript after it.
+
+    Distinct from the ``Cutoff`` in ``providers.base``, which is the single
+    provider record without the session or the aftermath.
+    """
 
     provider: str
     session_id: str
@@ -47,6 +51,10 @@ def detect_cutoff(
     provider: str, transcript_path: Path, session_id: str
 ) -> Cutoff | None:
     """Return the newest quota refusal in one transcript, or ``None``.
+
+    Only the transcript tail is read, so a refusal that has scrolled out of it
+    is reported as no refusal at all; a queued job then lapses at delivery as
+    ``no-cutoff-evidence`` rather than resuming a session on stale grounds.
 
     ``abandoned`` compares positions rather than timestamps. Claude records its
     refusal as an ``assistant`` row, so the refusal is itself a "meaningful"

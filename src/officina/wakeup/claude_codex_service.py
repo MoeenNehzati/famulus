@@ -118,9 +118,11 @@ def _run_locked_due(now: datetime) -> None:
     wakeup is removed without invoking either provider.
 
     Evidence-driven jobs are checked a second time against the transcript as it
-    stands now. The snapshot comparison alone cannot see a session that was
-    refused, resumed, and refused again, nor one whose provider has since armed
-    its own automatic resume.
+    stands now. The case this catches is a provider that armed its own resume
+    after the job was queued: that notice is a ``system`` row, which is not a
+    meaningful event, so the snapshot comparison passes it straight through to
+    a double resume. Anything that appends a meaningful event -- including a
+    second refusal -- already changes the snapshot and is dropped above.
     """
 
     for job in due_jobs(now.isoformat()):

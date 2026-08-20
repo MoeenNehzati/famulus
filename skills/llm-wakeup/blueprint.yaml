@@ -4,7 +4,7 @@ children: {}
 content:
 - SKILL\.md
 description: Routes assistant requests to guarded supported-session wakeup scheduling
-  and per-session automatic scheduling policy.
+  and per-session automatic scheduling policy at a refusal-gated or forced level.
 discovery:
   mechanism: skill
   catalog:

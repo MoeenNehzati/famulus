@@ -24,7 +24,8 @@ The design is deliberately dependency-light:
 
 ### Session data
 
-Files: `providers/`, `claude_codex_sessions.py`, and `deadlines.py`.
+Files: `providers/`, `claude_codex_sessions.py`, `claude_codex_cutoff.py`, and
+`deadlines.py`.
 
 Provider adapters normalize filesystem and transcript differences behind
 `ProviderAdapter`. The session layer discovers logs, resolves UUIDs and aliases,
@@ -83,13 +84,14 @@ unrelated transcript records are ignored rather than poisoning the whole pass.
 The monitor groups near-limit windows by session, ignores expired or sub-90%
 windows, and uses the latest reset among constraining windows. A session enabled
 at `force` gets one wakeup at that reset plus one minute. A session with no
-policy gets one reminder. Persistent event markers deduplicate repeated
+policy gets one reminder. A session enabled at `interrupted` takes no part in
+this route at all: it gets neither a schedule nor a reminder from percentages. Persistent event markers deduplicate repeated
 minute-level checks; a failed side effect removes its marker so a later pass can
 retry.
 
-### Refusal evidence
+#### Refusal evidence
 
-File: `claude_codex_cutoff.py`.
+File: `claude_codex_cutoff.py`, part of the session-data source.
 
 A percentage says a session may soon be refused. It does not say the session was
 refused, and it does not say the session stopped. `detect_cutoff()` answers the
@@ -103,8 +105,9 @@ elapsed time is what separates the cases: Claude records its refusal as an
 past itself, and a session that retries and is refused again shows a
 one-second gap while a genuine post-reset resume shows a multi-hour one.
 
-A session enabled at the conditional level is scheduled from this evidence
-alone, using the reset time stated by the refusal itself.
+Every enabled session is scheduled from this evidence, using the reset time
+stated by the refusal itself. `force` adds the percentage route on top rather
+than replacing this one, so it is a superset of `interrupted`.
 
 ### CLI
 
@@ -136,13 +139,18 @@ tracebacks.
    sleep or reboot.
 6. Compare the current transcript hash with the scheduled hash.
 7. Remove a stale job without invoking the provider when progress is detected.
-8. Otherwise resume the exact session and remove the successfully delivered job.
-9. On a transient operational failure, emit an event and retry in five minutes.
+8. For a job recorded at the `interrupted` level, re-detect the refusal in the
+   transcript as it stands now and drop the job when it no longer holds.
+9. Otherwise resume the exact session and remove the successfully delivered job.
+10. On a transient operational failure, emit an event and retry in five minutes.
 
 ## Safety invariants
 
 - A wakeup targets a canonical existing session, never a newly created chat.
 - Transcript progress suppresses delivery.
+- A conditional wakeup is delivered only while the refusal that created it is
+  still the last thing in the transcript and the provider has not armed its own
+  resume.
 - Session aliases must resolve unambiguously.
 - Duplicate commands in the same timer minute produce one persisted job.
 - Only one due-job worker processes the queue at a time.
@@ -160,12 +168,12 @@ it for tests or a portable installation.
 
 | Path | Purpose |
 | --- | --- |
-| `jobs.json` | Persistent wakeup queue |
+| `jobs.json` | Persistent wakeup queue; each job records the level that created it |
 | `jobs.lock` | Queue writer lock |
 | `session-policies.json` | Per-session auto-schedule policy and level |
 | `session-policies.lock` | Policy writer lock |
 | `usage-snapshots/` | Independent normalized Claude quota windows |
-| `monitor-events/` | Reminder/schedule deduplication markers |
+| `monitor-events/` | Deduplication markers, keyed `reminded:`, `scheduled:`, or `cutoff:` by provider, session, and reset |
 
 Provider transcripts remain in provider-owned directories and are never copied
 into this state root.
@@ -195,6 +203,9 @@ queueing, progress guards, retries, and monitoring remain provider-neutral.
 
 - Unit tests cover deadline formats, adapters, queue coalescing, locks, policy
   mutation, progress suppression, retries, monitoring, and CLI behavior.
+- Refusal-evidence tests use record shapes copied from provider transcripts,
+  including a forked rollout replaying its parent's refusal, and cover level
+  migration, level precedence, and the delivery-time re-check.
 - Synthetic transcript tests cover malformed and evolving provider records.
 - Opt-in client integration tests invoke installed Claude and Codex clients and
   verify that their current local output remains parseable.

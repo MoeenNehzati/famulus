@@ -125,35 +125,50 @@ def _reminder(group: list[UsageSnapshot], percentage: float) -> str:
     first = group[0]
     return (
         f"{first.provider} session {first.session_id} is at {percentage:g}% usage; "
-        f"run lw auto on {first.provider} {first.session_id} to schedule its wakeup."
+        f"run lw auto on {first.provider} {first.session_id} to wake it if the "
+        f"limit stops it, or lw auto force {first.provider} {first.session_id} to "
+        "wake it at reset either way."
     )
 
 
-def observable_cutoffs() -> list[Cutoff]:
-    """Return the newest quota refusal for each conditionally enabled session."""
+def observable_cutoffs() -> list[tuple[Cutoff, str]]:
+    """Return the newest quota refusal for each enabled session, with its level.
 
-    found: list[Cutoff] = []
+    Both levels are scanned. Refusal evidence is the stronger signal of the
+    two, and a rejection can arrive while reported utilization is well below
+    the near-limit threshold, so restricting this to the conditional level
+    would leave a forced session unwoken in exactly the case it most wants.
+    """
+
+    found: list[tuple[Cutoff, str]] = []
     for provider in ("claude", "codex"):
-        for session_id in auto_scheduled_sessions(provider, INTERRUPTED):
-            transcript = find_session_log(provider, session_id)
-            if transcript is None:
-                continue
-            cut = detect_cutoff(provider, transcript, session_id)
-            if cut is not None:
-                found.append(cut)
+        for level in (INTERRUPTED, FORCE):
+            for session_id in auto_scheduled_sessions(provider, level):
+                transcript = find_session_log(provider, session_id)
+                if transcript is None:
+                    continue
+                cut = detect_cutoff(provider, transcript, session_id)
+                if cut is not None:
+                    found.append((cut, level))
     return found
 
 
-def _schedule_cutoffs(current: datetime) -> list[MonitorAction]:
-    """Schedule one wakeup per session whose refusal is still unanswered."""
+def _schedule_cutoffs(current: datetime) -> tuple[list[MonitorAction], set[tuple[str, str]]]:
+    """Schedule one wakeup per session whose refusal is still unanswered.
+
+    Also returns the sessions handled here, so the percentage route does not
+    queue a second job for the same session in the same pass.
+    """
 
     actions: list[MonitorAction] = []
-    for cut in observable_cutoffs():
+    handled: set[tuple[str, str]] = set()
+    for cut, level in observable_cutoffs():
         if not cut.wakeable or cut.reset_at <= current:
             continue
         reset = int(cut.reset_at.timestamp())
         marker = _claim_event(f"cutoff:{cut.provider}:{cut.session_id}:{reset}")
         if marker is None:
+            handled.add((cut.provider, cut.session_id))
             continue
         try:
             schedule(
@@ -162,11 +177,12 @@ def _schedule_cutoffs(current: datetime) -> list[MonitorAction]:
                 cut.reset_at + DEFAULT_WAKEUP_DELAY,
                 None,
                 transcript_path=cut.transcript_path,
-                level=INTERRUPTED,
+                level=level,
             )
         except Exception:
             marker.unlink(missing_ok=True)
             raise
+        handled.add((cut.provider, cut.session_id))
         actions.append(
             MonitorAction(
                 kind="scheduled",
@@ -175,7 +191,7 @@ def _schedule_cutoffs(current: datetime) -> list[MonitorAction]:
                 resets_at=reset,
             )
         )
-    return actions
+    return actions, handled
 
 
 def monitor_usage(
@@ -185,12 +201,13 @@ def monitor_usage(
 ) -> list[MonitorAction]:
     """Evaluate all local observations and perform each new outcome once.
 
-    Two independent routes reach a wakeup. A session enabled at the
-    ``interrupted`` level is scheduled only once the provider has actually
-    refused a turn and nothing has happened since; its reset comes from the
-    refusal itself. A session enabled at ``force`` keeps the older
-    near-limit-percentage route, which fires whether or not the session was
-    stopped. Sessions with no policy are only ever reminded.
+    Two routes reach a wakeup. Refusal evidence is checked first, for every
+    enabled session: the wakeup is scheduled only once the provider has
+    actually refused a turn and nothing has happened since, and its reset comes
+    from the refusal itself. A session enabled at ``force`` then also takes the
+    older near-limit-percentage route, which fires whether or not the session
+    was stopped; a session enabled at ``interrupted`` does not. Sessions with no
+    policy are only ever reminded.
 
     If a side effect fails, its marker is removed so the next systemd pass can
     retry.
@@ -198,14 +215,14 @@ def monitor_usage(
 
     current = (now or _utc_now()).astimezone(timezone.utc)
     notify = notifier or _default_notifier
-    actions: list[MonitorAction] = _schedule_cutoffs(current)
+    actions, handled = _schedule_cutoffs(current)
     for group in _near_limit_groups(observable_usage_snapshots(), current):
         first = group[0]
         reset = max(item.resets_at for item in group)
         percentage = max(item.used_percentage for item in group)
         level = auto_schedule_level(first.provider, first.session_id)
-        if level == INTERRUPTED:
-            # Handled above, on evidence rather than on a percentage.
+        if level == INTERRUPTED or (first.provider, first.session_id) in handled:
+            # Decided above, on evidence rather than on a percentage.
             continue
         kind = "scheduled" if level == FORCE else "reminded"
         marker = _claim_event(_event_key(group, kind))

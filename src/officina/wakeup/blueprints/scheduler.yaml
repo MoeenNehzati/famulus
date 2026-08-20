@@ -15,7 +15,8 @@ dependencies:
     path: blueprints/session-data.yaml
   source: wakeup.source.session-data
   version: 1
-  reason: Resolve sessions and determine whether they progressed after scheduling.
+  reason: Resolve sessions, determine whether they progressed after scheduling, and
+    re-check refusal evidence before delivering a conditional job.
 - blueprint:
     base: module-root
     path: blueprints/persistence.yaml
