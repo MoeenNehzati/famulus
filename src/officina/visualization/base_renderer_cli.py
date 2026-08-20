@@ -13,61 +13,16 @@ from .elk_html_renderer import ElkHtmlRenderer, build_html_with_elk
 
 _DEFAULT_RENDERER = ElkHtmlRenderer()
 
-MATH_DEPENDENCY_TYPE_STYLES = {
-    "standing-assumption": {"shape": "hexagon", "color": "#c0392b"},
-    "local-assumption": {"shape": "diamond", "color": "#d35400"},
-    "definition": {"shape": "roundrect", "color": "#2471a3"},
-    "notation": {"shape": "parallelogram", "color": "#148f77"},
-    "lemma": {"shape": "ellipse", "color": "#1e8449"},
-    "proposition": {"shape": "rect", "color": "#7d6608"},
-    "theorem": {"shape": "rect", "color": "#6c3483"},
-    "corollary": {"shape": "ellipse", "color": "#b7950b"},
-    "remark": {"shape": "rect", "color": "#616a6b"},
-}
-
-
 def prepare_render_payload(doc: dict, *, profile: str | None = None) -> dict:
-    """Apply an optional presentation profile before generic validation."""
+    """Copy a payload without applying domain-specific presentation policy.
+
+    The profile argument remains accepted for CLI compatibility. Domain skills
+    now provide resolved catalogs in canonical JSON, keeping this renderer
+    generic across extractors and machines.
+    """
     prepared = dict(doc)
     entities = [dict(entity) for entity in prepared.get("entities", [])]
     prepared["entities"] = entities
-    if profile != "math-dependency":
-        return prepared
-
-    has_category_catalog = bool(prepared.get("categories"))
-    entity_types = list(
-        dict.fromkeys(str(entity.get("type", "unknown")) for entity in entities)
-    )
-    if not has_category_catalog:
-        prepared["categories"] = [
-            {
-                "id": entity_type,
-                "label": entity_type.replace("-", " ").title(),
-                **MATH_DEPENDENCY_TYPE_STYLES.get(entity_type, {}),
-            }
-            for entity_type in entity_types
-        ]
-        for entity in entities:
-            entity.setdefault("category", str(entity.get("type", "unknown")))
-
-    relation_types = list(
-        dict.fromkeys(
-            str(edge.get("type", "dependency"))
-            for entity in entities
-            for edge in entity.get("connects_to", [])
-        )
-    )
-    if relation_types and not prepared.get("edge_categories"):
-        prepared["edge_categories"] = [
-            {
-                "id": relation_type,
-                "label": relation_type.replace("-", " ").title(),
-                "description": (
-                    "A direct mathematical dependency classified by the LLM extractor."
-                ),
-            }
-            for relation_type in relation_types
-        ]
     return prepared
 
 
