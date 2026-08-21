@@ -34,7 +34,7 @@
       "maxItems": 3
     },
     "type_hint": {
-      "enum": ["assumption", "setup", "result", "exposition", "external-result"]
+      "enum": ["assumption", "setup", "result", "exposition", "external-result", "proof"]
     },
     "scope_hint": {
       "type": "object",
@@ -203,7 +203,7 @@
           "description": "The dependent claim or result that uses the support named by from.",
           "$ref": "#/$defs/endpoint"
         },
-        "type": {"enum": ["supports", "illustrated-by"]},
+        "type": {"enum": ["supports", "illustrated-by", "proves"]},
         "basis": {"enum": ["explicit-reference", "explicit-prose", "proof-use", "mathematical-inference"]},
         "assertion": {"enum": ["explicit", "inferred"]},
         "location": {"$ref": "#/$defs/location"},

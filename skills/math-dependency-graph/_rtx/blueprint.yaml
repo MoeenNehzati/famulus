@@ -55,6 +55,13 @@ authority:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
+      - _proof_normalizer.py
+      - Interface
+      reason: Normalize transitional proof entities into proof-free semantic IR.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
       - _source_packet.py
       - Interface
       reason: Prepare source-ordered TeX packets for LLM semantic extraction.
@@ -81,6 +88,7 @@ content:
 - _graph_builder\.py
 - _graph_server\.py
 - _inventory_unit_iterator\.py
+- _proof_normalizer\.py
 - _run_diagnostics\.py
 - __init__\.py
 - _semantic_graph_compiler\.py
@@ -155,6 +163,12 @@ exports:
       allowed_callers:
       - math-dependency-graph
     source_interface: math-dependency-graph._rtx.source.rtx-run-diagnostics.interface.scripts-record-run-diagnostics
+  math-dependency-graph._rtx.interface.scripts-normalize-proofs:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - math-dependency-graph
+    source_interface: math-dependency-graph._rtx.source.rtx-proof-normalizer.interface.scripts-normalize-proofs
 gateway:
   language: Python>=3.11
   path: __init__.py
@@ -203,9 +217,13 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/rtx-semantic-graph-compiler.yaml
+  math-dependency-graph._rtx.source.rtx-proof-normalizer:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-proof-normalizer.yaml
   math-dependency-graph._rtx.source.rtx-tex-macro-reader:
     blueprint:
       base: module-root
       path: blueprints/rtx-tex-macro-reader.yaml
-version: 49
+version: 50
 maturity: stable

@@ -3,7 +3,7 @@ authority:
 children:
   _rtx: {}
 content:
-- (?:SKILL\.md|base\.json|inventory\.schema\.json|chunk-plan\.schema\.json|run-diagnostics\.schema\.json|semantic-(?:graph|repair)\.schema\.json|instructions/(?:inventory|extract)\.md|references/(?:experimental-improvement|gold-standard-extraction)\.md)
+- (?:SKILL\.md|base\.json|inventory\.schema\.json|chunk-plan\.schema\.json|run-diagnostics\.schema\.json|semantic-(?:graph|repair)\.schema\.json|proof-normalization\.schema\.json|instructions/(?:inventory|extract)\.md|references/(?:experimental-improvement|gold-standard-extraction)\.md)
 description: Extracts a direct dependency graph from mathematical LaTeX, renders canonical
   graph JSON as interactive HTML, and serves the result locally for inspection.
 discovery:
@@ -43,7 +43,7 @@ gateway:
 id: math-dependency-graph
 namespace_exports:
   _rtx:
-    version: 49
+    version: 50
     access:
       allow_all_modules: true
       allowed_callers: []
@@ -59,6 +59,7 @@ namespace_exports:
         math-dependency-graph._rtx.interface.scripts-record-run-diagnostics: 7
         math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator: 5
         math-dependency-graph._rtx.interface.scripts-next-inventory-unit: 3
+        math-dependency-graph._rtx.interface.scripts-normalize-proofs: 1
         math-dependency-graph._rtx.interface.scripts-serve-graph: 1
     interface_access:
       math-dependency-graph._rtx.interface.scripts-advance-extraction-phases:
@@ -91,6 +92,9 @@ namespace_exports:
       math-dependency-graph._rtx.interface.scripts-next-inventory-unit:
         allow_all_modules: false
         allowed_callers: []
+      math-dependency-graph._rtx.interface.scripts-normalize-proofs:
+        allow_all_modules: false
+        allowed_callers: []
       math-dependency-graph._rtx.interface.scripts-serve-graph:
         allow_all_modules: false
         allowed_callers: []
@@ -109,7 +113,7 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/instructions-inventory.yaml
-version: 76
+version: 77
 maturity: stable
 installation_tier: core
 personal_preference:

@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://officina.local/math-dependency-graph/proof-normalization.schema.json",
+  "title": "Proof normalization decisions and provenance report",
+  "description": "Strict deterministic handoff between proof reconciliation and proof-free semantic IR.",
+  "oneOf": [
+    {"$ref": "#/$defs/decisions_document"},
+    {"$ref": "#/$defs/report_document"}
+  ],
+  "$defs": {
+    "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"},
+    "qualified_evidence_id": {"type": "string", "pattern": "^[^:]+::e[1-9][0-9]*$"},
+    "qualified_hint_id": {"type": "string", "pattern": "^[^:]+::h[1-9][0-9]*$"},
+    "qualified_reference_id": {"type": "string", "pattern": "^[^:]+::r[1-9][0-9]*$"},
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["proof_id", "disposition", "reason"],
+      "properties": {
+        "proof_id": {"$ref": "#/$defs/identifier"},
+        "disposition": {"enum": ["accepted", "excluded"]},
+        "bundle_id": {"$ref": "#/$defs/identifier"},
+        "target_id": {"$ref": "#/$defs/identifier"},
+        "reason": {"type": "string", "minLength": 1}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"disposition": {"const": "accepted"}}, "required": ["disposition"]},
+          "then": {"required": ["bundle_id", "target_id"]},
+          "else": {"not": {"anyOf": [{"required": ["bundle_id"]}, {"required": ["target_id"]}]}}
+        }
+      ]
+    },
+    "decisions_document": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["document_kind", "ir_version", "decisions"],
+      "properties": {
+        "document_kind": {"const": "proof-normalization-decisions"},
+        "ir_version": {"const": 1},
+        "decisions": {"type": "array", "items": {"$ref": "#/$defs/decision"}}
+      }
+    },
+    "relationship_snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to", "type", "description", "hint_ids", "evidence_ids", "implicit"],
+      "properties": {
+        "from": {"$ref": "#/$defs/identifier"},
+        "to": {"$ref": "#/$defs/identifier"},
+        "type": {"enum": ["supports", "illustrated-by", "proves"]},
+        "description": {"type": "string", "minLength": 1},
+        "hint_ids": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/qualified_hint_id"}},
+        "evidence_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/qualified_evidence_id"}},
+        "reference_ids": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/qualified_reference_id"}},
+        "implicit": {"type": "boolean"},
+        "confidence": {"enum": ["Verified", "High", "Medium", "Low", "Likely", "Unknown"]}
+      }
+    },
+    "bundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bundle_id", "target_id", "proof_ids"],
+      "properties": {
+        "bundle_id": {"$ref": "#/$defs/identifier"},
+        "target_id": {"$ref": "#/$defs/identifier"},
+        "proof_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/identifier"}},
+        "proves_relationships": {"type": "array", "items": {"$ref": "#/$defs/relationship_snapshot"}}
+      }
+    },
+    "relationship_report": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to", "type", "proof_ids", "bundle_ids", "source_relationships"],
+      "properties": {
+        "from": {"$ref": "#/$defs/identifier"},
+        "to": {"$ref": "#/$defs/identifier"},
+        "type": {"enum": ["supports", "illustrated-by"]},
+        "proof_ids": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/identifier"}},
+        "bundle_ids": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/identifier"}},
+        "source_relationships": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/relationship_route"}}
+      }
+    },
+    "relationship_route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relationship"],
+      "properties": {
+        "relationship": {"$ref": "#/$defs/relationship_snapshot"},
+        "proof_id": {"$ref": "#/$defs/identifier"},
+        "bundle_id": {"$ref": "#/$defs/identifier"}
+      }
+    },
+    "exclusion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["proof_id", "reason", "incident_relationships"],
+      "properties": {
+        "proof_id": {"$ref": "#/$defs/identifier"},
+        "reason": {"type": "string", "minLength": 1},
+        "incident_relationships": {"type": "array", "items": {"$ref": "#/$defs/relationship_snapshot"}}
+      }
+    },
+    "report_document": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["document_kind", "ir_version", "bundles", "relationships", "exclusions"],
+      "properties": {
+        "document_kind": {"const": "proof-normalization-report"},
+        "ir_version": {"const": 1},
+        "bundles": {"type": "array", "items": {"$ref": "#/$defs/bundle"}},
+        "relationships": {"type": "array", "items": {"$ref": "#/$defs/relationship_report"}},
+        "exclusions": {"type": "array", "items": {"$ref": "#/$defs/exclusion"}}
+      }
+    }
+  }
+}

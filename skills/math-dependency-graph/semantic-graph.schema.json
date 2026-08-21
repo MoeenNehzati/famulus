@@ -128,7 +128,16 @@
         "description": {"type": "string", "minLength": 1},
         "source": {"enum": ["explicit", "inferred"]},
         "ref": {"type": "string", "minLength": 1}
-      }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"type": {"const": "proof"}}, "required": ["type"]},
+          "then": {
+            "required": ["kind"],
+            "properties": {"kind": {"enum": ["formal", "informal", "sketch"]}}
+          }
+        }
+      ]
     },
     "exclusion": {
       "type": "object",
@@ -175,7 +184,7 @@
       "properties": {
         "from": {"type": "string", "minLength": 1},
         "to": {"type": "string", "minLength": 1},
-        "type": {"enum": ["supports", "illustrated-by"]},
+        "type": {"enum": ["supports", "illustrated-by", "proves"]},
         "description": {"type": "string", "minLength": 1},
         "hint_ids": {
           "description": "Accepted pooled relationship hints. Empty means the extract worker established a new direct edge from registered evidence.",

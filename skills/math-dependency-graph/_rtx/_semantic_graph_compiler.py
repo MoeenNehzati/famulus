@@ -23,9 +23,11 @@ from officina.visualization.base_renderer import BaseRenderer
 try:
     from ._graph_builder import BASE_PAYLOAD_PATH, validate_math_payload
     from ._batch_ir_merger import validate_extract_reconciliation
+    from ._proof_normalizer import validate_normalized_semantic_profile
 except ImportError:  # pragma: no cover - supports direct script execution
     from _graph_builder import BASE_PAYLOAD_PATH, validate_math_payload
     from _batch_ir_merger import validate_extract_reconciliation
+    from _proof_normalizer import validate_normalized_semantic_profile
 
 
 EXTENSION_COLORS = (
@@ -137,6 +139,7 @@ def validate_semantic_payload(payload: dict, inventory: dict | None = None) -> N
     artifact from the same run.
     """
 
+    validate_normalized_semantic_profile(payload)
     if inventory is None:
         raise ValueError("pooled inventory is required for semantic validation")
     validate_extract_reconciliation(payload, inventory)

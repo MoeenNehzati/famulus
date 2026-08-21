@@ -4880,6 +4880,9 @@
             }
           ]
         },
+        "math-dependency-graph._rtx.interface.scripts-normalize-proofs": {
+          "dependencies": []
+        },
         "math-dependency-graph._rtx.interface.scripts-plan-extraction-chunks": {
           "dependencies": [
             {
