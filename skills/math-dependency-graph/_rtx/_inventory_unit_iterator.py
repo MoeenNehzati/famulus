@@ -23,15 +23,23 @@ from typing import Callable, Iterable
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 try:
-    from ._batch_ir_merger import canonical_json_bytes, validate_inventory_fragment
+    from ._batch_ir_merger import (
+        _check_owned_locations,
+        canonical_json_bytes,
+        validate_inventory_fragment,
+    )
 except ImportError:  # pragma: no cover - supports direct script execution
-    from _batch_ir_merger import canonical_json_bytes, validate_inventory_fragment
+    from _batch_ir_merger import (
+        _check_owned_locations,
+        canonical_json_bytes,
+        validate_inventory_fragment,
+    )
 
 
 SCANNER_VERSION = 1
 SCHEMA_VERSION = 3
-SETUP_INTERFACE_VERSION = 4
-NEXT_INTERFACE_VERSION = 2
+SETUP_INTERFACE_VERSION = 5
+NEXT_INTERFACE_VERSION = 3
 _SOURCE_MARKER_RE = re.compile(r"^@@ source: (?P<source>.+)$")
 _SOURCE_LINE_RE = re.compile(r"^(?P<line>[0-9]+) \| ?(?P<text>.*)$")
 _BEGIN_RE = re.compile(r"\\begin\{(?P<name>[A-Za-z@][A-Za-z0-9@*:-]*)\}")
@@ -1395,7 +1403,61 @@ def _owned_sources(connection: sqlite3.Connection, first: int, last: int) -> lis
     return sources
 
 
-def _inventory_snapshot(path: Path, worker_index: int, owned_sources: list[str]) -> dict:
+def _owned_spans(connection: sqlite3.Connection, first: int, last: int) -> list[dict]:
+    """Coalesce one assignment's durable coordinates into inclusive source spans.
+
+    Intent
+    ------
+    Build the same source-line ownership boundary used by deterministic pooling.
+
+    Rationale
+    ---------
+    Acknowledgement must reject out-of-assignment locations while the worker's
+    current lease is still recoverable.
+
+    Pseudocode
+    ----------
+    - load assigned unit metadata in ordinal order
+    - merge adjacent coordinates from the same source
+    - return inclusive source spans
+
+    Wraps
+    -----
+    - none
+    """
+
+    rows = connection.execute(
+        "SELECT metadata_json FROM units WHERE ordinal BETWEEN ? AND ? ORDER BY ordinal",
+        (first, last),
+    ).fetchall()
+    spans: list[dict] = []
+    for (metadata_json,) in rows:
+        for coordinate in json.loads(metadata_json)["coordinates"]:
+            source_file = coordinate["source"]
+            line_number = coordinate["line"]
+            if (
+                spans
+                and spans[-1]["source_file"] == source_file
+                and spans[-1]["end_line"] + 1 == line_number
+            ):
+                spans[-1]["end_line"] = line_number
+            else:
+                spans.append(
+                    {
+                        "source_file": source_file,
+                        "start_line": line_number,
+                        "end_line": line_number,
+                    }
+                )
+    return spans
+
+
+def _inventory_snapshot(
+    path: Path,
+    worker_index: int,
+    owned_sources: list[str],
+    owned_spans: list[dict],
+) -> dict:
     """Validate and fingerprint one worker inventory fragment.
 
     Intent
@@ -1434,6 +1496,7 @@ def _inventory_snapshot(path: Path, worker_index: int, owned_sources: list[str])
         raise ValueError("worker inventory file ownership does not match assignment")
     try:
         validate_inventory_fragment(payload)
+        _check_owned_locations(payload, {"spans": owned_spans})
     except Exception as error:
         raise ValueError("worker inventory does not satisfy the inventory schema") from error
     counts = {
@@ -1523,10 +1586,17 @@ def verify_completed_inventories(state_dir: Path) -> dict:
                     int(ordinals[first_unit_id]),
                     int(ordinals[last_unit_id]),
                 )
+                spans = _owned_spans(
+                    connection,
+                    int(ordinals[first_unit_id]),
+                    int(ordinals[last_unit_id]),
+                )
                 inventory_path = (
                     state_dir / "workers" / f"worker-{worker_index}" / "inventory.json"
                 )
-                snapshot = _inventory_snapshot(inventory_path, worker_index, sources)
+                snapshot = _inventory_snapshot(
+                    inventory_path, worker_index, sources, spans
+                )
                 acknowledgement = connection.execute(
                     "SELECT content_sha256, semantic_counts_json "
                     "FROM acknowledgements WHERE worker_index = ? AND unit_id = ?",
@@ -1707,7 +1777,12 @@ def _open_or_close_sequence(
     )
 
 
-def _lease_before_snapshot(path: Path, worker_index: int, owned_sources: list[str]) -> tuple[str | None, str | None]:
+def _lease_before_snapshot(
+    path: Path,
+    worker_index: int,
+    owned_sources: list[str],
+    owned_spans: list[dict],
+) -> tuple[str | None, str | None]:
     """Capture optional inventory evidence before issuing a lease.
 
     Intent
@@ -1736,7 +1811,9 @@ def _lease_before_snapshot(path: Path, worker_index: int, owned_sources: list[st
         constructs: "Builds validated pre-lease inventory evidence when a worker artifact is available."
     """
     try:
-        snapshot = _inventory_snapshot(path, worker_index, owned_sources)
+        snapshot = _inventory_snapshot(
+            path, worker_index, owned_sources, owned_spans
+        )
     except ValueError:
         return None, None
     return snapshot["sha256"], json.dumps(snapshot["counts"], sort_keys=True)
@@ -1981,6 +2058,7 @@ def _next_inventory_unit_core(
                         "SELECT ordinal FROM units WHERE id = ?", (last_unit_id,)
                     ).fetchone()[0]
                     sources = _owned_sources(connection, first_ordinal, last_ordinal)
+                    spans = _owned_spans(connection, first_ordinal, last_ordinal)
                     inventory_path = (
                         state_dir
                         / "workers"
@@ -2017,7 +2095,7 @@ def _next_inventory_unit_core(
                             )
                         )
                     before_sha256, before_counts = _lease_before_snapshot(
-                        inventory_path, worker_index, sources
+                        inventory_path, worker_index, sources, spans
                     )
                     connection.execute(
                         "INSERT INTO leases "
@@ -2060,7 +2138,7 @@ def _next_inventory_unit_core(
             try:
                 with _timed_iterator_call_part(timings, "validation", clock_ns):
                     snapshot = _inventory_snapshot(
-                        inventory_path, worker_index, sources
+                        inventory_path, worker_index, sources, spans
                     )
             except ValueError as error:
                 return commit_response(_failure("invalid-inventory", str(error)))
@@ -2096,7 +2174,7 @@ def _next_inventory_unit_core(
             else:
                 unit = _unit_for_ordinal(connection, next_ordinal)
                 before_sha256, before_counts = _lease_before_snapshot(
-                    inventory_path, worker_index, sources
+                    inventory_path, worker_index, sources, spans
                 )
                 connection.execute(
                     "INSERT INTO leases "

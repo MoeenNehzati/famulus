@@ -1,7 +1,7 @@
 schema_version: 6
 node_type: behavioral_source
 id: math-dependency-graph._rtx.source.rtx-inventory-unit-iterator
-version: 4
+version: 5
 maturity: experimental
 description: Sets up durable, source-ordered inventory units once and advances one
   worker cursor atomically without making mathematical graph decisions.
@@ -20,13 +20,14 @@ dependencies:
 - blueprint:
     base: module-root
     path: blueprints/rtx-batch-ir-merger.yaml
-  reason: Reuses inventory JSON canonicalization and schema validation.
+  reason: Reuses inventory JSON canonicalization, schema validation, and canonical
+    source-span ownership validation.
   source: math-dependency-graph._rtx.source.rtx-batch-ir-merger
   version: 22
 uses_interfaces: []
 interfaces:
   math-dependency-graph._rtx.source.rtx-inventory-unit-iterator.interface.scripts-setup-inventory-iterator:
-    version: 4
+    version: 5
     description: Create or verify one durable source-unit iterator state directory and
       publish its effective worker assignments atomically.
     usage: <source-packet> <state-dir> --workers <positive-int> --window-chars <positive-int>
@@ -209,9 +210,10 @@ interfaces:
           sensitivity: derived-private
       preconditions: []
   math-dependency-graph._rtx.source.rtx-inventory-unit-iterator.interface.scripts-next-inventory-unit:
-    version: 2
-    description: Atomically lease one worker's next source unit or acknowledge its
-      outstanding unit before returning the next unit or complete state.
+    version: 3
+    description: Atomically lease one worker's next source unit or validate schema
+      and source-span ownership before acknowledging its outstanding unit and returning
+      the next unit or complete state.
     usage: <state-dir> <worker-index> [--ack <unit-id>] [--wrap]
     content:
     - _inventory_unit_iterator\.py

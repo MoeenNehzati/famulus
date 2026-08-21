@@ -200,8 +200,8 @@ def test_iterator_cli_setup_and_next_emit_structured_atomic_responses(
         "iterator_version": 1,
         "scanner_version": 1,
         "inventory_schema_version": 3,
-        "setup_interface_version": 4,
-        "next_interface_version": 2,
+        "setup_interface_version": 5,
+        "next_interface_version": 3,
         "requested_workers": 1,
         "effective_workers": 1,
         "window_chars": 80,
@@ -953,8 +953,8 @@ def test_setup_reuses_only_an_exact_matching_configuration(
         setup_inventory_iterator(
             packet, state_dir, requested_workers=1, window_chars=20
         )
-    assert first["configuration"]["setup_interface_version"] == 4
-    assert first["configuration"]["next_interface_version"] == 2
+    assert first["configuration"]["setup_interface_version"] == 5
+    assert first["configuration"]["next_interface_version"] == 3
     assert load_iterator_summary(state_dir) == first
     assert json.loads((state_dir / "inventory-assignments.json").read_text(encoding="utf-8"))[
         "requested_workers"
@@ -1156,6 +1156,43 @@ def test_next_validates_schema_before_advancing_the_lease(tmp_path: Path) -> Non
     assert rejected["state"] == "failure"
     assert next_inventory_unit(state_dir, 1)["unit"]["id"] == leased["unit"]["id"]
     assert _ack_rows(state_dir) == []
+
+
+def test_next_rejects_schema_valid_inventory_outside_owned_source_span(
+    tmp_path: Path,
+) -> None:
+    """Pooling ownership failures must remain recoverable at acknowledgement time."""
+
+    state_dir = _iterator_with_units(tmp_path)
+    leased = next_inventory_unit(state_dir, 1)
+    inventory = _valid_inventory(state_dir, 1)
+    inventory["nodes"] = [
+        {
+            "local_id": "n1",
+            "location": [0, 999, 999],
+            "provenance": "explicit",
+            "type_hint": "result",
+            "summary": "A schema-valid candidate outside the assigned source span.",
+        }
+    ]
+    inventory_path = _inventory_path(state_dir, 1)
+    inventory_path.write_text(json.dumps(inventory), encoding="utf-8")
+
+    rejected = next_inventory_unit(state_dir, 1, ack=leased["unit"]["id"])
+
+    assert rejected["state"] == "failure"
+    assert rejected["error"]["code"] == "invalid-inventory"
+    assert next_inventory_unit(state_dir, 1)["unit"]["id"] == leased["unit"]["id"]
+    assert _ack_rows(state_dir) == []
+
+    inventory["nodes"][0]["location"] = [0, 1, 1]
+    inventory_path.write_text(json.dumps(inventory), encoding="utf-8")
+
+    advanced = next_inventory_unit(state_dir, 1, ack=leased["unit"]["id"])
+
+    assert advanced["state"] == "unit"
+    assert advanced["unit"]["id"] == "u000002"
+    assert _ack_rows(state_dir) == [(1, leased["unit"]["id"], 0)]
 
 
 @pytest.mark.parametrize("breakage", ["missing", "invalid-json", "wrong-worker"])

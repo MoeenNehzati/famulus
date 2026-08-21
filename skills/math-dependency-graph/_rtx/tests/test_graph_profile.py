@@ -32,12 +32,12 @@ def test_inventory_instruction_contract_uses_only_public_iterator_source_deliver
         "math-dependency-graph.source.instructions-inventory.interface.inventory"
     ]
 
-    assert inventory["version"] == 32
-    assert interface["version"] == 32
+    assert inventory["version"] == 33
+    assert interface["version"] == 33
     assert inventory["uses_interfaces"] == [
         {
             "interface": "math-dependency-graph._rtx.interface.scripts-next-inventory-unit",
-            "version": 2,
+            "version": 3,
         }
     ]
     assert interface["uses_interfaces"] == inventory["uses_interfaces"]
@@ -89,13 +89,13 @@ def test_gateway_contract_routes_inventory_through_iterator_and_measured_diagnos
         item["interface"]: item["version"] for item in gateway["uses_interfaces"]
     }
 
-    assert uses["math-dependency-graph.interface.inventory"] == 32
+    assert uses["math-dependency-graph.interface.inventory"] == 33
     assert uses[
         "math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator"
-    ] == 4
+    ] == 5
     assert uses[
         "math-dependency-graph._rtx.interface.scripts-next-inventory-unit"
-    ] == 2
+    ] == 3
     assert uses[
         "math-dependency-graph._rtx.interface.scripts-record-run-diagnostics"
     ] == 7
@@ -111,7 +111,7 @@ def test_gateway_contract_routes_inventory_through_iterator_and_measured_diagnos
     setup = iterator["interfaces"][
         "math-dependency-graph._rtx.source.rtx-inventory-unit-iterator.interface.scripts-setup-inventory-iterator"
     ]
-    assert setup["version"] == 4
+    assert setup["version"] == 5
     report_description = setup["contract"]["outputs"][0]["description"]
     assert "ordered assignable and structural-only coordinates" in report_description
     assert "no source text or controller-only paths" in report_description

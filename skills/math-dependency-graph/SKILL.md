@@ -10,16 +10,16 @@ description: >-
 Catalog: research; topics: mathematical-reasoning, visualization, scholarly-documents; visibility: featured
 Activation: user-request, skill-workflow; persistent modifier: no
 
-Skill Version: 74
+Skill Version: 75
 
 Uses Interfaces:
 - `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-advance-extraction-phases@24`
-- `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-next-inventory-unit@2`
+- `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-next-inventory-unit@3`
 - `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-record-run-diagnostics@7`
-- `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator@4`
+- `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator@5`
 - `math-dependency-graph.source.gateway -> math-dependency-graph.interface.extract@26`
-- `math-dependency-graph.source.gateway -> math-dependency-graph.interface.inventory@32`
-- `math-dependency-graph.source.instructions-inventory -> math-dependency-graph._rtx.interface.scripts-next-inventory-unit@2`
+- `math-dependency-graph.source.gateway -> math-dependency-graph.interface.inventory@33`
+- `math-dependency-graph.source.instructions-inventory -> math-dependency-graph._rtx.interface.scripts-next-inventory-unit@3`
 
 Public Interfaces:
 - `math-dependency-graph.interface.default`
