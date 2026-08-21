@@ -232,8 +232,6 @@ def _validate_proof_ownership(
     for proof_id, decision in decisions.items():
         edges = outgoing[proof_id]
         if decision["disposition"] == "excluded":
-            if edges:
-                raise ValueError(f"excluded proof has proves relationship: {proof_id}")
             continue
         if len(edges) != 1:
             raise ValueError(f"accepted proof must have exactly one proves target: {proof_id}")
@@ -307,6 +305,31 @@ def _validate_provenance_report(report: object) -> None:
     for name in ("proof_entities", "bundles", "relationships", "exclusions"):
         if not isinstance(record[name], list):
             raise ValueError(f"proof-normalization report {name} must be an array")
+    for index, entity in enumerate(record["proof_entities"]):
+        item = _require_keys(
+            entity,
+            {"candidate_ids", "id", "type", "kind", "short_title", "description", "source"},
+            {
+                "candidate_ids", "id", "type", "kind", "category_label", "short_title",
+                "title", "description", "source", "ref",
+            },
+            f"proof report entity {index}",
+        )
+        if item["type"] != "proof" or item["kind"] not in {"formal", "informal", "sketch"}:
+            raise ValueError(f"proof report entity {index} has invalid proof identity")
+        _require_identifier(item["id"], f"proof report entity {index}.id")
+        if not isinstance(item["candidate_ids"], list) or len(item["candidate_ids"]) != len(set(item["candidate_ids"])):
+            raise ValueError(f"proof report entity {index}.candidate_ids is malformed")
+        for candidate_id in item["candidate_ids"]:
+            _require_identifier(candidate_id, f"proof report entity {index}.candidate_id")
+        for name in ("short_title", "description"):
+            if not isinstance(item[name], str) or not item[name]:
+                raise ValueError(f"proof report entity {index}.{name} must be nonempty")
+        if item["source"] not in {"explicit", "inferred"}:
+            raise ValueError(f"proof report entity {index}.source is invalid")
+        for name in ("category_label", "title", "ref"):
+            if name in item and (not isinstance(item[name], str) or not item[name]):
+                raise ValueError(f"proof report entity {index}.{name} must be nonempty")
     for index, bundle in enumerate(record["bundles"]):
         item = _require_keys(bundle, {"bundle_id", "target_id", "proof_ids", "proves_relationships"}, {"bundle_id", "target_id", "proof_ids", "proves_relationships"}, f"proof report bundle {index}")
         _require_identifier(item["bundle_id"], f"proof report bundle {index}.bundle_id")
@@ -341,6 +364,24 @@ def _validate_provenance_report(report: object) -> None:
             raise ValueError(f"proof report exclusion {index}.incident_relationships must be an array")
         for relationship in item["incident_relationships"]:
             _validate_relationship(relationship, f"proof report exclusion {index} relationship")
+    if "compiler_inventory" in record:
+        compiler_inventory = _require_keys(
+            record["compiler_inventory"],
+            {"removed_proof_candidate_ids", "removed_proof_hint_ids", "projected_candidate_ids"},
+            {"removed_proof_candidate_ids", "removed_proof_hint_ids", "projected_candidate_ids"},
+            "proof report compiler inventory",
+        )
+        for name in ("removed_proof_candidate_ids", "projected_candidate_ids"):
+            values = compiler_inventory[name]
+            if not isinstance(values, list) or len(values) != len(set(values)):
+                raise ValueError(f"proof report compiler inventory {name} must be a unique array")
+            for value in values:
+                _require_identifier(value, f"proof report compiler inventory {name}")
+        _require_handle_list(
+            compiler_inventory["removed_proof_hint_ids"],
+            "hint",
+            "proof report compiler inventory removed_proof_hint_ids",
+        )
 
 
 def normalize_proof_entities(semantic_ir: object, decisions: object) -> tuple[dict, dict]:
@@ -391,6 +432,16 @@ def normalize_proof_entities(semantic_ir: object, decisions: object) -> tuple[di
     normalized = deepcopy(semantic_ir)
     normalized["entities"] = [entity for entity in entities if entity["id"] not in proof_ids]
     normalized["relationships"] = normalized_relationships
+    if (
+        len(normalized["entities"]) > 1
+        and not normalized_relationships
+        and excluded_incident
+        and "edgeless_justification" not in normalized
+    ):
+        normalized["edgeless_justification"] = (
+            "All transitional relationships were incident to proof entities excluded "
+            "during proof reconciliation."
+        )
     validate_normalized_semantic_profile(normalized)
     _validate_semantic_ir(normalized)
 
@@ -458,38 +509,78 @@ def normalize_with_inventory(semantic_ir: object, decisions: object, inventory: 
         for proof_id in decision_by_proof
         for candidate_id in entities[proof_id]["candidate_ids"]
     }
-    target_candidates: dict[str, str] = {}
+    target_endpoints: dict[str, dict] = {}
     for proof_id, decision in decision_by_proof.items():
         if decision["disposition"] != "accepted":
             continue
         target = entities[decision["target_id"]]
         if target["type"] != "result":
             raise ValueError(f"proof target is not an eligible result: {target['id']}")
-        if not target["candidate_ids"]:
-            raise ValueError(f"proof target has no compiler-facing candidate: {target['id']}")
-        target_candidates[proof_id] = target["candidate_ids"][0]
+        if target["candidate_ids"]:
+            target_endpoints[proof_id] = {"candidate_id": target["candidate_ids"][0]}
+            continue
+        created = next(
+            (item for item in semantic_ir["unresolved_resolutions"]
+             if item.get("disposition") == "created" and item.get("entity_id") == target["id"]),
+            None,
+        )
+        known_unresolved = {item.get("key") for item in inventory.get("unresolved_entities", [])}
+        if created is None or created.get("unresolved_id") not in known_unresolved:
+            raise ValueError(f"proof target has no compiler-facing candidate or created unresolved handle: {target['id']}")
+        target_endpoints[proof_id] = {"unresolved_key": created["unresolved_id"]}
     projected = deepcopy(inventory)
     projected["candidates"] = [item for item in projected["candidates"] if item["id"] not in proof_candidates]
-    projected["relationship_hints"] = [
-        item for item in projected["relationship_hints"]
-        if item["id"] not in {
-            hint_id for relationship in semantic_ir["relationships"]
-            if relationship["type"] == "proves" for hint_id in relationship["hint_ids"]
+    proof_by_candidate = {
+        candidate_id: proof_id
+        for proof_id in decision_by_proof
+        for candidate_id in entities[proof_id]["candidate_ids"]
+    }
+    proves_hint_ids = {
+        hint_id
+        for relationship in semantic_ir["relationships"]
+        if relationship["type"] == "proves"
+        for hint_id in relationship["hint_ids"]
+    }
+    excluded_proofs = {
+        proof_id
+        for proof_id, decision in decision_by_proof.items()
+        if decision["disposition"] == "excluded"
+    }
+    retained_hints: list[dict] = []
+    removed_hint_ids: list[str] = []
+    for hint in projected["relationship_hints"]:
+        incident_proofs = {
+            proof_by_candidate[candidate_id]
+            for endpoint in (hint.get("from"), hint.get("to"))
+            if isinstance(endpoint, dict)
+            for candidate_id in [endpoint.get("candidate_id")]
+            if candidate_id in proof_by_candidate
         }
+        if hint["id"] in proves_hint_ids or incident_proofs & excluded_proofs:
+            removed_hint_ids.append(hint["id"])
+            continue
+        retained_hints.append(hint)
+    projected["relationship_hints"] = retained_hints
+    removed_hint_id_set = set(removed_hint_ids)
+    normalized["hint_decisions"] = [
+        item for item in normalized["hint_decisions"]
+        if item["hint_id"] not in removed_hint_id_set
     ]
     for hint in projected["relationship_hints"]:
         target = hint.get("to", {})
         candidate_id = target.get("candidate_id") if isinstance(target, dict) else None
-        for proof_id, replacement in target_candidates.items():
+        for proof_id, replacement in target_endpoints.items():
             if candidate_id in entities[proof_id]["candidate_ids"]:
-                hint["to"] = {"candidate_id": replacement}
+                hint["to"] = replacement
     normalized["inventory"]["candidate_ids"] = [item["id"] for item in projected["candidates"]]
     normalized["inventory"]["candidate_count"] = len(projected["candidates"])
     validate_extract_reconciliation(normalized, projected)
     report["compiler_inventory"] = {
         "removed_proof_candidate_ids": sorted(proof_candidates),
+        "removed_proof_hint_ids": removed_hint_ids,
         "projected_candidate_ids": normalized["inventory"]["candidate_ids"],
     }
+    _validate_provenance_report(report)
     return normalized, report, projected
 
 
@@ -509,25 +600,34 @@ def write_normalized_outputs_atomic(
     report: dict,
     normalized_path: Path,
     provenance_path: Path,
+    inventory: dict | None = None,
+    inventory_path: Path | None = None,
 ) -> None:
-    """Stage both validated outputs and restore prior destinations on replacement failure."""
+    """Stage three validated outputs and restore prior destinations on replacement failure."""
 
     normalized_path = normalized_path.resolve()
     provenance_path = provenance_path.resolve()
-    if normalized_path == provenance_path:
-        raise ValueError("normalized IR and provenance destinations must differ")
+    destinations = [normalized_path, provenance_path]
+    if (inventory is None) != (inventory_path is None):
+        raise ValueError("inventory payload and destination must be supplied together")
+    if inventory_path is not None:
+        inventory_path = inventory_path.resolve()
+        destinations.append(inventory_path)
+    if len(set(destinations)) != len(destinations):
+        raise ValueError("normalized IR, provenance, and inventory destinations must differ")
     temporary_normalized = _write_temp_json(normalized, normalized_path)
     temporary_provenance = _write_temp_json(report, provenance_path)
-    originals = {
-        normalized_path: normalized_path.read_bytes() if normalized_path.exists() else None,
-        provenance_path: provenance_path.read_bytes() if provenance_path.exists() else None,
-    }
+    temporary_inventory = _write_temp_json(inventory, inventory_path) if inventory_path else None
+    originals = {path: path.read_bytes() if path.exists() else None for path in destinations}
     replaced: list[Path] = []
     try:
         os.replace(temporary_normalized, normalized_path)
         replaced.append(normalized_path)
         os.replace(temporary_provenance, provenance_path)
         replaced.append(provenance_path)
+        if temporary_inventory is not None:
+            os.replace(temporary_inventory, inventory_path)
+            replaced.append(inventory_path)
     except Exception:
         for destination in reversed(replaced):
             original = originals[destination]
@@ -549,6 +649,8 @@ def write_normalized_outputs_atomic(
     finally:
         temporary_normalized.unlink(missing_ok=True)
         temporary_provenance.unlink(missing_ok=True)
+        if temporary_inventory is not None:
+            temporary_inventory.unlink(missing_ok=True)
 
 
 def _load_json_object(path: Path, label: str) -> dict:
@@ -563,25 +665,18 @@ def normalize_files(
     decisions_path: Path,
     normalized_path: Path,
     provenance_path: Path,
-    inventory_path: Path | None = None,
-    inventory_out_path: Path | None = None,
+    inventory_path: Path,
+    inventory_out_path: Path,
 ) -> dict:
-    """Normalize two JSON inputs and publish both outputs only after validation."""
+    """Normalize two JSON inputs and publish all three outputs only after validation."""
 
     semantic = _load_json_object(semantic_path, "transitional semantic IR")
     decisions = _load_json_object(decisions_path, "proof-normalization decisions")
-    if (inventory_path is None) != (inventory_out_path is None):
-        raise ValueError("compiler-facing inventory input and output must be supplied together")
-    if inventory_path is None:
-        normalized, report = normalize_proof_entities(semantic, decisions)
-        projected = None
-    else:
-        normalized, report, projected = normalize_with_inventory(
-            semantic, decisions, _load_json_object(inventory_path, "pooled inventory")
-        )
-    write_normalized_outputs_atomic(normalized, report, normalized_path, provenance_path)
-    if projected is not None:
-        _write_temp_json(projected, inventory_out_path).replace(inventory_out_path)
+    normalize_proof_entities(semantic, decisions)
+    normalized, report, projected = normalize_with_inventory(
+        semantic, decisions, _load_json_object(inventory_path, "pooled inventory")
+    )
+    write_normalized_outputs_atomic(normalized, report, normalized_path, provenance_path, projected, inventory_out_path)
     return {
         "semantic_ir": str(semantic_path.resolve()),
         "decisions": str(decisions_path.resolve()),
