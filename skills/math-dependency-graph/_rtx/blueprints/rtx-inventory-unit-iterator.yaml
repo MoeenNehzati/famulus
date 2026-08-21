@@ -1,7 +1,7 @@
 schema_version: 6
 node_type: behavioral_source
 id: math-dependency-graph._rtx.source.rtx-inventory-unit-iterator
-version: 1
+version: 2
 maturity: experimental
 description: Sets up durable, source-ordered inventory units once and advances one
   worker cursor atomically without making mathematical graph decisions.
@@ -26,7 +26,7 @@ dependencies:
 uses_interfaces: []
 interfaces:
   math-dependency-graph._rtx.source.rtx-inventory-unit-iterator.interface.scripts-setup-inventory-iterator:
-    version: 1
+    version: 2
     description: Create or verify one durable source-unit iterator state directory and
       publish its effective worker assignments atomically.
     usage: <source-packet> <state-dir> --workers <positive-int> --window-chars <positive-int>
@@ -188,7 +188,8 @@ interfaces:
         cardinality:
           minimum: 1
           maximum: 1
-        description: JSON setup report with state directory, effective workers, and unit count.
+        description: JSON setup report with state directory, effective worker and unit
+          counts, and each worker's public inventory and progress paths.
         direct_io_ref: write-2
         empty: Never empty on success.
         ordering: stable

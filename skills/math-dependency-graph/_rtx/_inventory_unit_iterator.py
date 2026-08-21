@@ -2262,6 +2262,13 @@ def main(argv: Iterable[str] | None = None) -> int:
             "state_dir": str(Path(args.state_dir).resolve()),
             "effective_workers": summary["effective_workers"],
             "units": len(summary["units"]),
+            "assignments": [
+                {
+                    key: assignment[key]
+                    for key in ("worker_index", "inventory_path", "progress_path")
+                }
+                for assignment in summary["assignments"]
+            ],
         }
     else:
         if args.wrap and args.ack is None:

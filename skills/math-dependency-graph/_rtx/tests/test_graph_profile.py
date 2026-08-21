@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 
 RUNTIME_DIR = Path(__file__).resolve().parents[1]
@@ -17,6 +18,57 @@ sys.path.insert(0, str(RUNTIME_DIR))
 
 from _graph_builder import load_base_payload, validate_math_payload  # noqa: E402
 from officina.visualization.base_renderer import BaseRenderer  # noqa: E402
+
+
+def test_inventory_instruction_contract_uses_only_public_iterator_source_delivery() -> None:
+    """Reintroducing packet input would bypass the durable next/ack traversal contract."""
+
+    inventory = yaml.safe_load(
+        (RUNTIME_DIR.parent / "blueprints" / "instructions-inventory.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    interface = inventory["interfaces"][
+        "math-dependency-graph.source.instructions-inventory.interface.inventory"
+    ]
+
+    assert inventory["uses_interfaces"] == [
+        {
+            "interface": "math-dependency-graph._rtx.interface.scripts-next-inventory-unit",
+            "version": 1,
+        }
+    ]
+    assert interface["uses_interfaces"] == inventory["uses_interfaces"]
+    assert "packet" not in interface["contract"]["arguments"]
+    assert {
+        item.get("path")
+        for item in interface["contract"]["direct_io"]["reads"]
+        if item.get("medium") == "local-filesystem"
+    } == {"$skill/inventory.schema.json"}
+
+
+def test_gateway_contract_routes_inventory_through_iterator_and_measured_diagnostics() -> None:
+    """Dropping one facade dependency makes the documented control path uncallable."""
+
+    gateway = yaml.safe_load(
+        (RUNTIME_DIR.parent / "blueprints" / "gateway.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    uses = {
+        item["interface"]: item["version"] for item in gateway["uses_interfaces"]
+    }
+
+    assert uses["math-dependency-graph.interface.inventory"] == 30
+    assert uses[
+        "math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator"
+    ] == 2
+    assert uses[
+        "math-dependency-graph._rtx.interface.scripts-next-inventory-unit"
+    ] == 1
+    assert uses[
+        "math-dependency-graph._rtx.interface.scripts-record-run-diagnostics"
+    ] == 6
 
 
 def test_base_payload_defines_the_complete_shared_math_vocabulary() -> None:

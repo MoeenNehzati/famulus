@@ -23,6 +23,11 @@ sys.path.insert(0, str(SKILL_DIR / "_rtx"))
 
 import _run_diagnostics as diagnostics  # noqa: E402
 from _run_diagnostics import RunDiagnostics  # noqa: E402
+from officina.blueprints.graph import BlueprintNode, InterfaceExport  # noqa: E402
+from officina.blueprints.process_binding import (  # noqa: E402
+    compile_gateway_invocation,
+    parse_caller_invocation,
+)
 
 
 class FakeClock:
@@ -61,6 +66,162 @@ def _clock() -> FakeClock:
     """Return a fresh deterministic test clock."""
 
     return FakeClock(utc="2026-08-19T12:00:00Z", monotonic_ns=1_000_000_000)
+
+
+def _minimal_iterator_summary() -> dict:
+    """Return prose-free iterator aggregates accepted by durable diagnostics."""
+
+    timing = {"samples": 0, "total": 0, "maximum": 0}
+    return {
+        "setup": {
+            "unit_count": 1,
+            "worker_count": 1,
+            "assigned_characters": 12,
+            "internal_timings_ms": {
+                "scan": 0,
+                "unitization": 0,
+                "partition": 0,
+                "database": 0,
+                "validation": 0,
+                "total": 0,
+            },
+        },
+        "next": {
+            "calls": 1,
+            "acknowledgements": 1,
+            "wraps": 1,
+            "retries": 0,
+            "failures": 0,
+            "open_sequence": {
+                "count": 0,
+                "unit_count": 0,
+                "character_count": 0,
+                "maximum_elapsed_ms": 0,
+            },
+            "internal_timings_ms": {
+                name: dict(timing)
+                for name in (
+                    "validation",
+                    "transaction",
+                    "lookup",
+                    "serialization",
+                    "total",
+                )
+            },
+        },
+    }
+
+
+def _diagnostics_process_interface() -> tuple[BlueprintNode, InterfaceExport]:
+    """Load the authored diagnostics process surface for invocation compilation."""
+
+    blueprint_path = SKILL_DIR / "_rtx" / "blueprints" / "rtx-run-diagnostics.yaml"
+    blueprint = yaml.safe_load(blueprint_path.read_text(encoding="utf-8"))
+    source = BlueprintNode(
+        node_id=blueprint["id"],
+        node_type=blueprint["node_type"],
+        version=blueprint["version"],
+        module_root=SKILL_DIR / "_rtx",
+        blueprint_path=blueprint_path,
+        gateway_path=SKILL_DIR / "_rtx" / blueprint["gateway"]["path"],
+        declaration=blueprint,
+    )
+    interface_id = (
+        f"{blueprint['id']}.interface.scripts-record-run-diagnostics"
+    )
+    declaration = blueprint["interfaces"][interface_id]
+    return source, InterfaceExport(
+        interface_id=interface_id,
+        version=declaration["version"],
+        local_name="scripts-record-run-diagnostics",
+        module_node_id="math-dependency-graph._rtx",
+        declaration=declaration,
+        source_node_id=source.node_id,
+        source_interface_id=interface_id,
+    )
+
+
+def test_diagnostics_interface_compiles_iterator_controller_timing_operation() -> None:
+    """Dropping timing flags from the public process contract makes calls unusable."""
+
+    source, interface = _diagnostics_process_interface()
+    invocation = compile_gateway_invocation(
+        source,
+        interface,
+        parse_caller_invocation(
+            interface,
+            [
+                "iterator-controller-timing",
+                "run-dir",
+                "setup",
+                "--process-startup-ms",
+                "6",
+                "--publication-ms",
+                "2",
+                "--total-ms",
+                "23",
+            ],
+            stdin_requested=False,
+        ),
+    )
+
+    assert invocation.argv == (
+        "iterator-controller-timing",
+        "run-dir",
+        "setup",
+        "--process-startup-ms",
+        "6",
+        "--publication-ms",
+        "2",
+        "--total-ms",
+        "23",
+    )
+
+
+def test_controller_timing_process_operation_records_each_iterator_call(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Removing the process-facing timing operation leaves gateway calls unmeasured."""
+
+    report = RunDiagnostics.initialize(tmp_path, entrypoint=_entrypoint(tmp_path))
+    report.record_iterator_summary(_minimal_iterator_summary())
+
+    diagnostics.main(
+        [
+            "iterator-controller-timing",
+            str(tmp_path),
+            "setup",
+            "--process-startup-ms",
+            "6",
+            "--publication-ms",
+            "2",
+            "--total-ms",
+            "23",
+        ]
+    )
+    diagnostics.main(
+        [
+            "iterator-controller-timing",
+            str(tmp_path),
+            "next",
+            "--process-startup-ms",
+            "7",
+            "--total-ms",
+            "12",
+        ]
+    )
+    capsys.readouterr()
+
+    persisted = json.loads(report.path.read_text(encoding="utf-8"))
+    assert persisted["iterator"]["setup"]["controller_timings_ms"] == {
+        "process_startup": {"samples": 1, "total": 6, "maximum": 6},
+        "publication": {"samples": 1, "total": 2, "maximum": 2},
+        "total": {"samples": 1, "total": 23, "maximum": 23},
+    }
+    assert persisted["iterator"]["next"]["controller_timings_ms"] == {
+        "process_startup": {"samples": 1, "total": 7, "maximum": 7},
+        "total": {"samples": 1, "total": 12, "maximum": 12},
+    }
 
 
 def test_worker_lifecycle_records_queue_and_worker_durations(tmp_path: Path) -> None:
@@ -943,10 +1104,13 @@ def test_authored_blueprints_register_diagnostics_and_propagate_versions() -> No
         "worker-queued",
         "worker-started",
         "worker-finished",
+        "iterator-controller-timing-setup",
+        "iterator-controller-timing-next",
         "finish",
     }
     assert interface["usage"] == (
-        "<initialize|worker-queued|worker-started|worker-finished|finish> "
+        "<initialize|worker-queued|worker-started|worker-finished|"
+        "iterator-controller-timing|finish> "
         "<run-dir> [<job-id>] [operation flags]"
     )
     assert diagnostics_blueprint["runtime_dependencies"] == []

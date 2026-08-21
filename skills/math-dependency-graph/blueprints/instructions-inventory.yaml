@@ -1,210 +1,208 @@
-content:
-- instructions/inventory\.md
-dependencies: []
-description: Authors one recall-first version-3 mathematical discovery fragment through
-  a single forward pass over bounded paragraphs, displays, and delimited formal blocks,
-  checking fixed discovery signals at every unit while headings supply context only.
+schema_version: 6
+node_type: behavioral_source
+id: math-dependency-graph.source.instructions-inventory
+version: 30
+maturity: stable
+description: Authors one recall-first mathematical discovery fragment by consuming
+  a durable source-unit iterator in order and validating before every acknowledgement.
 gateway:
   language: Markdown
   path: instructions/inventory.md
-id: math-dependency-graph.source.instructions-inventory
+content:
+- instructions/inventory\.md
+dependencies: []
+uses_interfaces:
+- interface: math-dependency-graph._rtx.interface.scripts-next-inventory-unit
+  version: 1
 interfaces:
   math-dependency-graph.source.instructions-inventory.interface.inventory:
+    version: 30
+    description: Author one concise recall-first graph inventory fragment through
+      a validated iterator acknowledgement loop.
     content:
     - instructions/inventory\.md
-    uses_interfaces: []
+    uses_interfaces:
+    - interface: math-dependency-graph._rtx.interface.scripts-next-inventory-unit
+      version: 1
     contract:
       arguments:
         request:
-          description: Exact chunk id, source assignment, inventory schema path, stable
-            progress-sidecar path, and fragment destination.
+          description: Existing iterator state directory, assigned worker index,
+            inventory schema path, stable progress path, and fragment destination.
           required: true
           sensitivity: user-private
           type:
             kind: string
             sensitivity: user-private
-        packet:
-          description: Chunk-specific active-source packet with owned spans and read-only
-            boundary context; the worker records source-grounded candidates liberally
-            and hidden environment anchors check recall after it returns.
-          direct_io_ref: read-1
-          required: true
-          sensitivity: user-private
-          type:
-            access: read
-            content_type:
-              kind: string
-              sensitivity: user-private
-            kind: file
-            must_exist: true
-            relative_to: caller-cwd
-            syntax: literal
         progress-sidecar:
-          description: Stable append-only Markdown path for validated source-cursor,
-            assigned-span completion, and cumulative-counter checkpoints across retries.
+          description: Worker-owned progress path for concise validated advancement
+            and completion evidence.
           direct_io_ref: write-2
           required: true
           sensitivity: derived-private
           type:
+            kind: file
             access: write
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
             content_type:
               kind: string
               sensitivity: derived-private
+        inventory-fragment:
+          description: Worker-owned initialized version-3 inventory fragment updated
+            and validated before every acknowledgement.
+          direct_io_ref: write-1
+          required: true
+          sensitivity: derived-private
+          type:
             kind: file
-            must_exist: false
+            access: write
+            must_exist: true
             relative_to: caller-cwd
             syntax: literal
+            content_type:
+              kind: string
+              sensitivity: derived-private
       caller_warnings: []
       direct_io:
         network: []
         reads:
-        - access: read
-          content: prepared active-source TeX chunk with exact owned spans
-          formats:
-          - text
-          id: read-1
-          medium: local-filesystem
-          path: <packet>
-          path_match: exact
-          sensitivity: user-private
-          system: filesystem
-        - access: read
-          content: inventory scope and output-path request
-          formats:
-          - text
-          id: read-2
+        - id: read-1
           medium: prompt
+          access: read
+          content: iterator assignment and output-path request
+          formats:
+          - text
           sensitivity: user-private
-        - access: read
+        - id: read-2
+          medium: local-filesystem
+          access: read
           content: skill-owned version-3 inventory schema
           formats:
           - json
-          id: read-3
-          medium: local-filesystem
           path: $skill/inventory.schema.json
           path_match: exact
           sensitivity: public
           system: filesystem
         writes:
-        - access: write
+        - id: write-1
+          medium: local-filesystem
+          access: write
           content: concise mathematical inventory fragment
           formats:
           - json
-          id: write-1
-          medium: local-filesystem
+          path: <inventory-fragment>
+          path_match: exact
           sensitivity: derived-private
-        - access: write
-          content: append-only validated inventory source cursors, assigned-span completions,
-            and cumulative counters
+          system: filesystem
+        - id: write-2
+          medium: local-filesystem
+          access: write
+          content: concise validated iterator advancement and completion evidence
           formats:
           - markdown
-          id: write-2
-          medium: local-filesystem
           path: <progress-sidecar>
           path_match: exact
           sensitivity: derived-private
           system: filesystem
       execution:
         consistency:
-          snapshot: Candidate findings derive from exactly one monotone bounded-source-unit
-            pass through every owned span; sections and Markdown headings supply context
-            only, proofs split into successive paragraphs and displays, every reading
-            unit checks the fixed discovery-signal slots, and every explicitly delimited
-            TeX or Markdown mathematical block receives an explicit candidate-or-omission
-            decision, complete multi-paragraph nodes and every encountered direct
-            prerequisite-to-owning-dependent lead are persisted and schema-validated
-            at bounded source-cursor checkpoints, and every assigned span has an exact
-            completion cursor before return; each node summary is one sentence, each
-            edge explanation one short clause, and no later worker compaction pass
-            occurs.
+          snapshot: The worker consumes only source units returned in order by its
+            assigned iterator index, retains cross-unit ownership context, records
+            recall-first graph candidates and direct dependency leads, validates
+            its cumulative fragment before acknowledging every unit, closes each
+            attention sequence with wrap, measures every actual next call at its
+            caller boundary, and finishes only when acknowledgement returns complete.
         effects:
-        - action: create
-          confirmation_evidence:
-            kind: output
-            output_ref: inventory-fragment
+        - id: inventory-fragment-write
+          action: update
           direct_io_ref: write-1
-          id: inventory-fragment-write
           may_occur_in_outcomes:
           - inventoried
           - inventoried-with-gaps
-          reversibility:
-            reversible: Delete the generated inventory fragment without changing source
-              files.
           value_source:
-            argument_ref: packet
             kind: argument
-        - action: update
+            argument_ref: inventory-fragment
+          confirmation_evidence:
+            kind: output
+            output_ref: inventory-fragment-output
+          reversibility:
+            reversible: Delete the generated inventory fragment without changing source files.
+        - id: progress-sidecar-append
+          action: update
+          direct_io_ref: write-2
+          may_occur_in_outcomes:
+          - inventoried
+          - inventoried-with-gaps
+          value_source:
+            kind: argument
+            argument_ref: progress-sidecar
           confirmation_evidence:
             kind: direct-io
             direct_io_ref: write-2
-          direct_io_ref: write-2
-          id: progress-sidecar-append
-          may_occur_in_outcomes:
-          - inventoried
-          - inventoried-with-gaps
           reversibility:
             reversible: Delete the derived progress sidecar with the fresh run directory.
-          value_source:
-            argument_ref: progress-sidecar
-            kind: argument
         lifecycle: finite
         mutation_safety:
           atomicity:
-            per_effect_only: The schema-valid fragment is completed before return;
-              each cumulative checkpoint is schema-valid before its source-cursor
-              progress line is appended.
+            per_effect_only: Each iterator acknowledgement validates the complete
+              current fragment before atomically advancing durable iterator state.
           concurrent_invocations:
-            unsafe: Concurrent inventory passes to the same destination can overwrite
-              an artifact.
+            unsafe: Concurrent workers using the same worker index or destination
+              can conflict.
           idempotency:
-            idempotent: Inventorying the same source snapshot and assignment produces
-              an equivalent fragment.
+            idempotent: Retrying the same acknowledgement with unchanged validated
+              inventory and wrap intent returns the same durable response.
           on_uncertain_completion:
-            verify_then_decide: Validate the requested fragment path before retrying.
+            verify_then_decide: Invoke next without acknowledgement to recover the
+              outstanding unit or complete state before retrying.
           partial_effects_on_failure:
-            possible: An incomplete artifact may remain if writing is interrupted.
+            possible: The worker fragment may contain validated work for already
+              acknowledged units.
           rollback_on_failure:
-            available: Remove only the incomplete artifact created by this invocation.
+            available: Resume from the durable outstanding iterator lease and repair
+              only the worker-owned fragment.
         state_effect: mutating
         verification:
         - method: output-schema
-          output_ref: inventory-fragment
+          output_ref: inventory-fragment-output
       helpers: []
       interaction:
         mode: unattended
       outcomes:
-      - caller_action: Add the fragment path to the ordered inventory manifest.
+      - id: inventoried
         class: success
+        caller_action: Retain the completed worker fragment for authenticated pooling.
         effects:
         - inventory-fragment-write
         - progress-sidecar-append
-        id: inventoried
         outputs:
-        - inventory-fragment
-      - caller_action: Preserve the fragment and report its source-grounded semantic
-          gaps for document-wide reconciliation.
+        - inventory-fragment-output
+      - id: inventoried-with-gaps
         class: success
+        caller_action: Retain the fragment and its source-grounded gaps for extraction reconciliation.
         effects:
         - inventory-fragment-write
         - progress-sidecar-append
-        id: inventoried-with-gaps
         outputs:
-        - inventory-fragment
-      - caller_action: Correct the assignment or output request before retrying.
+        - inventory-fragment-output
+      - id: invalid-request
         class: error
+        caller_action: Correct the assignment or worker-owned paths before retrying.
         effects: []
-        id: invalid-request
         outputs: []
       outputs:
-      - audience: machine
+      - id: inventory-fragment-output
+        audience: machine
         cardinality:
-          maximum: 1
           minimum: 1
-        description: Filesystem path to one schema-valid version-3 inventory fragment
-          covering exactly the assigned source spans.
+          maximum: 1
+        description: Supplied filesystem path to one schema-valid completed version-3
+          inventory fragment plus bounded numeric process-startup and total measurements
+          for every actual next call.
         direct_io_ref: write-1
         empty: Never empty on success.
-        id: inventory-fragment
         ordering: stable
         pagination:
           kind: none
@@ -214,11 +212,3 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Author one concise recall-first graph inventory fragment through
-      one bounded-unit, signal-complete, validated forward loop.
-    version: 29
-node_type: behavioral_source
-schema_version: 6
-uses_interfaces: []
-version: 29
-maturity: stable

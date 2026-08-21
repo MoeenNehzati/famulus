@@ -43,20 +43,22 @@ gateway:
 id: math-dependency-graph
 namespace_exports:
   _rtx:
-    version: 43
+    version: 44
     access:
       allow_all_modules: true
       allowed_callers: []
     surface:
       only:
-        math-dependency-graph._rtx.interface.scripts-advance-extraction-phases: 23
+        math-dependency-graph._rtx.interface.scripts-advance-extraction-phases: 24
         math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph: 4
         math-dependency-graph._rtx.interface.scripts-compile-semantic-graph: 6
         math-dependency-graph._rtx.interface.scripts-extract-mathjax-macros: 1
         math-dependency-graph._rtx.interface.scripts-merge-batch-ir: 20
         math-dependency-graph._rtx.interface.scripts-plan-extraction-chunks: 15
         math-dependency-graph._rtx.interface.scripts-prepare-semantic-source: 4
-        math-dependency-graph._rtx.interface.scripts-record-run-diagnostics: 5
+        math-dependency-graph._rtx.interface.scripts-record-run-diagnostics: 6
+        math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator: 2
+        math-dependency-graph._rtx.interface.scripts-next-inventory-unit: 1
         math-dependency-graph._rtx.interface.scripts-serve-graph: 1
     interface_access:
       math-dependency-graph._rtx.interface.scripts-advance-extraction-phases:
@@ -83,6 +85,12 @@ namespace_exports:
       math-dependency-graph._rtx.interface.scripts-record-run-diagnostics:
         allow_all_modules: false
         allowed_callers: []
+      math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator:
+        allow_all_modules: false
+        allowed_callers: []
+      math-dependency-graph._rtx.interface.scripts-next-inventory-unit:
+        allow_all_modules: false
+        allowed_callers: []
       math-dependency-graph._rtx.interface.scripts-serve-graph:
         allow_all_modules: false
         allowed_callers: []
@@ -101,7 +109,7 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/instructions-inventory.yaml
-version: 69
+version: 70
 maturity: stable
 installation_tier: core
 personal_preference:

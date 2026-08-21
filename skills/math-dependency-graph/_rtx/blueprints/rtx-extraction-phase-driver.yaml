@@ -1,7 +1,7 @@
 schema_version: 6
 node_type: behavioral_source
 id: math-dependency-graph._rtx.source.rtx-extraction-phase-driver
-version: 26
+version: 27
 description: Deterministically prepares inventory, preserves retryable diagnostics
   after worker-local inventory rejection, routes malformed or non-object extract output
   to a fresh normal extract retry, returns stable per-job progress-sidecar paths through
@@ -43,7 +43,7 @@ dependencies:
   reason: Records worker-independent stage timing, artifacts, ratios, counts, and
     final run status.
   source: math-dependency-graph._rtx.source.rtx-run-diagnostics
-  version: 9
+  version: 10
 - blueprint:
     base: module-root
     path: blueprints/rtx-semantic-graph-compiler.yaml
@@ -68,13 +68,13 @@ interfaces:
     content:
     - _extraction_phase_driver\.py
     uses_interfaces: []
-    version: 23
-    description: Prepare progress-bearing inventory jobs, keep worker-local inventory
-      rejection open for bounded retry, advance to one entrypoint-bearing extract
+    version: 24
+    description: Prepare one iterator setup assignment, keep worker-local inventory
+      rejection open for durable retry, advance completed iterator state to one entrypoint-bearing extract
       packet, or validate extract output and return a progress-preserving fresh retry
       for malformed or globally invalid output or a bounded correction handoff before
       compilation when needed.
-    usage: <prepare|advance-inventory|finalize-extract> <entrypoint-or-fragment> --run-dir
+    usage: <prepare|advance-inventory|finalize-extract> <entrypoint-or-state-or-fragment> --run-dir
       <path> [--html <path>]
     process_binding:
       kind: process
@@ -128,21 +128,18 @@ interfaces:
             kind: string
             sensitivity: public
         input:
-          description: TeX entrypoint, ordered inventory-fragment manifest with chunk-id-keyed
-            ownership for advance-inventory, or extract/repair fragment manifest selected
-            by the operation.
+          description: TeX entrypoint, completed inventory iterator state directory
+            for advance-inventory, or extract/repair fragment manifest selected by
+            the operation.
           direct_io_ref: read-1
           required: true
           sensitivity: user-private
           type:
-            kind: file
+            kind: path
             access: read
             must_exist: true
             relative_to: caller-cwd
             syntax: literal
-            content_type:
-              kind: string
-              sensitivity: user-private
         run-dir:
           description: Fresh run directory containing deterministic state and generated
             packets.
@@ -175,12 +172,12 @@ interfaces:
         - id: read-1
           medium: local-filesystem
           access: read
-          content: TeX entrypoint, ordered inventory-fragment manifest with chunk-id-keyed
-            ownership for advance-inventory, or extract/repair fragment manifest selected
-            by the operation
+          content: TeX entrypoint, completed inventory iterator state directory for
+            advance-inventory, or extract/repair fragment manifest selected by the operation
           formats:
           - tex
           - json
+          - sqlite
           path: <input>
           path_match: exact
           sensitivity: user-private
@@ -198,12 +195,13 @@ interfaces:
         - id: read-3
           medium: local-filesystem
           access: read
-          content: inventory chunk manifest read from <run-dir> by advance-inventory,
-            distinct from <input> ordered inventory-fragment manifest
+          content: durable iterator assignments, acknowledgements, worker inventories,
+            and controller-owned authentication data read from <input> by advance-inventory
           formats:
           - json
-          path: <run-dir>/inventory-chunks.json
-          path_match: exact
+          - sqlite
+          path: <input>/**
+          path_match: glob
           sensitivity: user-private
           system: filesystem
         - id: read-4

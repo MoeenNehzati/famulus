@@ -196,6 +196,17 @@ def test_iterator_cli_setup_and_next_emit_structured_atomic_responses(
         "state_dir": str(state_dir.resolve()),
         "effective_workers": 1,
         "units": 1,
+        "assignments": [
+            {
+                "worker_index": 1,
+                "inventory_path": str(
+                    (state_dir / "workers" / "worker-1" / "inventory.json").resolve()
+                ),
+                "progress_path": str(
+                    (state_dir / "workers" / "worker-1" / "progress.md").resolve()
+                ),
+            }
+        ],
     }
     assert next_response["state"] == "unit"
     assert next_response["unit"]["id"] == "u000001"

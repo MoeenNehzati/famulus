@@ -195,7 +195,8 @@ def test_authored_runtime_blueprints_follow_live_extraction_routes() -> None:
         )
         assert dependency["version"] == dependency_blueprint["version"]
     assert next(iter(driver["interfaces"].values()))["usage"] == (
-        "<prepare|advance-inventory|finalize-extract> <entrypoint-or-fragment> "
+        "<prepare|advance-inventory|finalize-extract> "
+        "<entrypoint-or-state-or-fragment> "
         "--run-dir <path> [--html <path>]"
     )
     driver_interface = next(iter(driver["interfaces"].values()))
@@ -219,17 +220,17 @@ def test_authored_runtime_blueprints_follow_live_extraction_routes() -> None:
     ]
     assert driver_patterns["finalize-extract"]["required_flags"] == ["--run-dir"]
     driver_input = driver_interface["contract"]["arguments"]["input"]
-    assert "ordered inventory-fragment manifest" in driver_input["description"]
+    assert "inventory iterator state directory" in driver_input["description"]
     assert "inventory-chunks" not in driver_input["description"]
     driver_reads = {
         item["id"]: item for item in driver_interface["contract"]["direct_io"]["reads"]
     }
     assert driver_reads["read-1"]["path"] == "<input>"
     assert driver_reads["read-1"]["path_match"] == "exact"
-    assert "ordered inventory-fragment manifest" in driver_reads["read-1"]["content"]
-    inventory_chunks_read = driver_reads["read-3"]
-    assert inventory_chunks_read["path"] == "<run-dir>/inventory-chunks.json"
-    assert "distinct from <input>" in inventory_chunks_read["content"]
+    assert "inventory iterator state directory" in driver_reads["read-1"]["content"]
+    iterator_state_read = driver_reads["read-3"]
+    assert iterator_state_read["path"] == "<input>/**"
+    assert "controller-owned authentication data" in iterator_state_read["content"]
 
     gateway_versions = {
         interface["interface"]: interface["version"]
@@ -243,6 +244,8 @@ def test_authored_runtime_blueprints_follow_live_extraction_routes() -> None:
         "math-dependency-graph.interface.extract",
         driver_export,
         "math-dependency-graph._rtx.interface.scripts-record-run-diagnostics",
+        "math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator",
+        "math-dependency-graph._rtx.interface.scripts-next-inventory-unit",
     }
 
 

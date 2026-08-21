@@ -1100,6 +1100,15 @@ def main(argv: Iterable[str] | None = None) -> dict:
     finished_parser.add_argument("--output")
     finished_parser.add_argument("--error-code", choices=sorted(_WORKER_ERROR_CODES))
 
+    iterator_timing_parser = subparsers.add_parser("iterator-controller-timing")
+    iterator_timing_parser.add_argument("run_dir")
+    iterator_timing_parser.add_argument("iterator_operation", choices=("setup", "next"))
+    iterator_timing_parser.add_argument(
+        "--process-startup-ms", required=True, type=int
+    )
+    iterator_timing_parser.add_argument("--publication-ms", type=int)
+    iterator_timing_parser.add_argument("--total-ms", required=True, type=int)
+
     finish_parser = subparsers.add_parser("finish")
     finish_parser.add_argument("run_dir")
     finish_parser.add_argument("--status", choices=("success", "failure"), required=True)
@@ -1127,6 +1136,13 @@ def main(argv: Iterable[str] | None = None) -> dict:
                 status=args.status,
                 output=Path(args.output) if args.output else None,
                 error_code=args.error_code or "worker-failed",
+            )
+        elif args.operation == "iterator-controller-timing":
+            report.record_iterator_controller_timing(
+                args.iterator_operation,
+                process_startup_ms=args.process_startup_ms,
+                publication_ms=args.publication_ms,
+                total_ms=args.total_ms,
             )
         else:
             report.finish(
