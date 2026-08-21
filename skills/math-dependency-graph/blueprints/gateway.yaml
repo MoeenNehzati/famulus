@@ -13,7 +13,7 @@ interfaces:
     - SKILL\.md
     uses_interfaces:
     - interface: math-dependency-graph.interface.inventory
-      version: 31
+      version: 32
     - interface: math-dependency-graph.interface.extract
       version: 26
     - interface: math-dependency-graph._rtx.interface.scripts-advance-extraction-phases
@@ -101,12 +101,12 @@ interfaces:
           sensitivity: derived-private
       preconditions: []
     description: Orchestrate a measured inventory, extract, compile, and render run.
-    version: 62
+    version: 63
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
 - interface: math-dependency-graph.interface.inventory
-  version: 31
+  version: 32
 - interface: math-dependency-graph.interface.extract
   version: 26
 - interface: math-dependency-graph._rtx.interface.scripts-advance-extraction-phases
@@ -117,5 +117,5 @@ uses_interfaces:
   version: 3
 - interface: math-dependency-graph._rtx.interface.scripts-next-inventory-unit
   version: 2
-version: 68
+version: 69
 maturity: stable

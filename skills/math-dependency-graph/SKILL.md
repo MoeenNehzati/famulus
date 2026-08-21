@@ -10,7 +10,7 @@ description: >-
 Catalog: research; topics: mathematical-reasoning, visualization, scholarly-documents; visibility: featured
 Activation: user-request, skill-workflow; persistent modifier: no
 
-Skill Version: 71
+Skill Version: 72
 
 Uses Interfaces:
 - `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-advance-extraction-phases@24`
@@ -18,7 +18,7 @@ Uses Interfaces:
 - `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-record-run-diagnostics@7`
 - `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator@3`
 - `math-dependency-graph.source.gateway -> math-dependency-graph.interface.extract@26`
-- `math-dependency-graph.source.gateway -> math-dependency-graph.interface.inventory@31`
+- `math-dependency-graph.source.gateway -> math-dependency-graph.interface.inventory@32`
 - `math-dependency-graph.source.instructions-inventory -> math-dependency-graph._rtx.interface.scripts-next-inventory-unit@2`
 
 Public Interfaces:

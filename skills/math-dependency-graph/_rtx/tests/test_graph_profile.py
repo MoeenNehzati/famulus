@@ -32,6 +32,8 @@ def test_inventory_instruction_contract_uses_only_public_iterator_source_deliver
         "math-dependency-graph.source.instructions-inventory.interface.inventory"
     ]
 
+    assert inventory["version"] == 32
+    assert interface["version"] == 32
     assert inventory["uses_interfaces"] == [
         {
             "interface": "math-dependency-graph._rtx.interface.scripts-next-inventory-unit",
@@ -70,6 +72,9 @@ def test_inventory_instruction_contract_uses_only_public_iterator_source_deliver
     ).read_text(encoding="utf-8")
     assert "`<state-dir> <worker-index> [--ack <unit-id>] [--wrap]`" in instruction_text
     assert "Those paths are your file responsibilities, never arguments to `next`." in instruction_text
+    snapshot = interface["contract"]["execution"]["consistency"]["snapshot"]
+    assert "retains the controlled-child timing returned by every actual next call" in snapshot
+    assert "caller boundary" not in snapshot
 
 
 def test_gateway_contract_routes_inventory_through_iterator_and_measured_diagnostics() -> None:
@@ -84,7 +89,7 @@ def test_gateway_contract_routes_inventory_through_iterator_and_measured_diagnos
         item["interface"]: item["version"] for item in gateway["uses_interfaces"]
     }
 
-    assert uses["math-dependency-graph.interface.inventory"] == 31
+    assert uses["math-dependency-graph.interface.inventory"] == 32
     assert uses[
         "math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator"
     ] == 3

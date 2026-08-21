@@ -1,7 +1,7 @@
 schema_version: 6
 node_type: behavioral_source
 id: math-dependency-graph.source.instructions-inventory
-version: 31
+version: 32
 maturity: stable
 description: Authors one recall-first mathematical discovery fragment by consuming
   a durable source-unit iterator in order and validating before every acknowledgement.
@@ -16,7 +16,7 @@ uses_interfaces:
   version: 2
 interfaces:
   math-dependency-graph.source.instructions-inventory.interface.inventory:
-    version: 31
+    version: 32
     description: Author one concise recall-first graph inventory fragment through
       a validated iterator acknowledgement loop.
     content:
@@ -115,8 +115,9 @@ interfaces:
             assigned iterator index, retains cross-unit ownership context, records
             recall-first graph candidates and direct dependency leads, validates
             its cumulative fragment before acknowledging every unit, closes each
-            attention sequence with wrap, measures every actual next call at its
-            caller boundary, and finishes only when acknowledgement returns complete.
+            attention sequence with wrap, retains the controlled-child timing
+            returned by every actual next call, and finishes only when acknowledgement
+            returns complete.
         effects:
         - id: inventory-fragment-write
           action: update
