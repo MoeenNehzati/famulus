@@ -25,6 +25,8 @@ Officina is and routes to everything below.
 - [Dependency and Bootstrap Audit](./dependency-and-bootstrap-audit.md)
 - [Launchers](./launchers.md)
 - [Agent Milestone Logging](./agent-milestone-logging.md)
+- [Repository Testing](./testing.md)
+- [Continuous Integration Handbook](./ci-handbook.md)
 - [Skill Index](./skills.md)
 - [Contributors](./contributors/README.md)
 

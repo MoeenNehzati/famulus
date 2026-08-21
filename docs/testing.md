@@ -3,6 +3,10 @@
 This is the canonical maintainer guide to the repository's Python tests,
 validators, local hook, CI jobs, and benchmark interfaces.
 
+For pipeline architecture, exact-SHA debugging, platform-specific pitfalls,
+historical failure lessons, and performance baselines, see the
+[Continuous Integration Handbook](./ci-handbook.md).
+
 ## Commands
 
 Run the staged local gate used by the pre-commit hook:
@@ -70,8 +74,9 @@ Chrome-backed modules in a later separate single-worker invocation. Prior
 repository load invalidates the calibrated performance thresholds, while
 Chrome's virtual-time completion is unreliable under pooled repository load.
 
-No suite uses pytest fail-fast. A failure does not cancel already queued items
-or later declared phases.
+No suite uses global pytest fail-fast. A failure does not cancel already queued
+items or later declared phases. The isolated browser task uses `--maxfail=1`
+because later Chrome cases are not useful evidence after its first failure.
 
 ## Repository views
 
