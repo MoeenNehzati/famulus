@@ -290,7 +290,7 @@ def render_skill_index(repo_root: Path) -> str:
         "",
         "> Generated from live blueprints and `SKILL.md` descriptions. Do not edit by hand.",
         "",
-        "This page is the complete skill inventory. For walkthroughs and examples, start from the domain guides or contributor docs linked from [README.md](../README.md).",
+        "This page is the complete skill inventory. For workflows and examples, start from the quickstarts, domain guides, or contributor docs linked from [README.md](../README.md).",
         "",
     ]
     for domain in configured_domains(repo_root, catalog):

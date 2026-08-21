@@ -9,6 +9,9 @@ gateway:
 id: common.source.repository-paths
 interfaces:
   common.source.repository-paths.interface.python-api:
+    content:
+    - repository_paths\.py
+    uses_interfaces: []
     contract:
       arguments:
         operation:
@@ -115,3 +118,4 @@ node_type: behavioral_source
 schema_version: 6
 uses_interfaces: []
 version: 1
+maturity: stable

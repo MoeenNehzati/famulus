@@ -47,3 +47,4 @@ sources:
       base: module-root
       path: blueprints/rtx-github-issue.yaml
 version: 1
+maturity: stable

@@ -15,6 +15,9 @@ gateway:
 id: list-manager._rtx.source.rtx-legacy-importer
 interfaces:
   list-manager._rtx.source.rtx-legacy-importer.interface.migrate-markdown:
+    content:
+    - _legacy_importer\.py
+    uses_interfaces: []
     contract:
       arguments:
         destination:
@@ -263,3 +266,4 @@ runtime_dependencies:
 schema_version: 6
 uses_interfaces: []
 version: 1
+maturity: stable

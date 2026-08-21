@@ -9,6 +9,9 @@ gateway:
 id: bib-audit._rtx.source.rtx-syntax-checker
 interfaces:
   bib-audit._rtx.source.rtx-syntax-checker.interface.scripts-bib-validate-bibtex:
+    content:
+    - _syntax_checker\.py
+    uses_interfaces: []
     contract:
       arguments:
         bibfile:
@@ -122,3 +125,4 @@ runtime_dependencies:
 schema_version: 6
 uses_interfaces: []
 version: 1
+maturity: stable

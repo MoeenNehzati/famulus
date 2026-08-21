@@ -24,6 +24,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import pytest
+
+# Routed to the tests:github task, never a pooled phase: this reaches GitHub and
+# reports on the published default branch rather than on the working tree.
+pytestmark = pytest.mark.github_install
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 

@@ -26,3 +26,4 @@ uses_interfaces:
 - interface: common.interface.famulus-paths
   version: 1
 version: 1
+maturity: experimental

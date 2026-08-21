@@ -2,7 +2,8 @@ schema_version: 6
 node_type: module
 id: rutter
 version: 1
-description: Direct Rutter definitions bound to immutable Charters and durably reduced Reckonings.
+description: Direct Rutter definitions bound to immutable Charters and durably reduced
+  Reckonings.
 gateway:
   path: __init__.py
   language: Python
@@ -50,3 +51,4 @@ exports:
     access:
       allow_all_modules: false
       allowed_callers: []
+maturity: experimental

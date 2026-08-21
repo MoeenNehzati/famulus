@@ -27,6 +27,13 @@ gateway:
 id: list-manager._rtx.source.rtx-render-bridge
 interfaces:
   list-manager._rtx.source.rtx-render-bridge.interface.cloud-read-beautify:
+    content:
+    - _render_bridge\.py
+    uses_interfaces:
+    - interface: cloud-files._rtx.interface.lists-read
+      version: 1
+    - interface: cloud-files._rtx.interface.lists-write
+      version: 1
     contract:
       arguments:
         filters:
@@ -233,6 +240,13 @@ interfaces:
     usage: <name> [filters] --cloud [-o FILE]
     version: 1
   list-manager._rtx.source.rtx-render-bridge.interface.read-beautify:
+    content:
+    - _render_bridge\.py
+    uses_interfaces:
+    - interface: cloud-files._rtx.interface.lists-read
+      version: 1
+    - interface: cloud-files._rtx.interface.lists-write
+      version: 1
     contract:
       arguments:
         file:
@@ -487,3 +501,4 @@ uses_interfaces:
 - interface: cloud-files._rtx.interface.lists-write
   version: 1
 version: 1
+maturity: stable

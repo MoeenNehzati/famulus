@@ -18,7 +18,9 @@ from officina.install.managed_runtime import (
     _venv_site_packages,
     build_candidate_release as _build_candidate_release,
     declared_python_packages,
-    optional_python_packages,
+    optional_runtime_modules,
+    package_size_estimates,
+    load_cached_package_index_metadata,
 )
 from officina.install.runtime_lock import render_runtime_requirements
 from test_support.git_repository import GitTestRepository
@@ -284,7 +286,7 @@ def test_packaged_source_revision_rejects_symlinks_even_in_bytecode_paths(
         _source_revision(repo_root)
 
 
-def test_declared_python_packages_matches_today_baseline():
+def test_declared_python_packages_defaults_to_core_module_selection():
     packages = declared_python_packages(REAL_MANIFEST, platform="linux")
     assert packages == (
         "bibtexparser",
@@ -292,7 +294,6 @@ def test_declared_python_packages_matches_today_baseline():
         "dateparser",
         "jsonschema>=4",
         "keyring",
-        "marker-pdf",
         "pyflakes==3.2.0",
         "pytest-xdist==3.8.0",
         "pytest==8.3.4",
@@ -328,35 +329,43 @@ def test_declared_python_packages_rejects_unsupported_schema_version(tmp_path):
         declared_python_packages(manifest, platform="linux")
 
 
-def test_declared_python_packages_include_optional_false_excludes_marker_pdf():
-    """marker-pdf pulls in the full torch/transformers/CUDA stack (several
-    GB) for pdf-to-markdown's OCR models alone -- the "core" set (what a
-    fresh install gets by default) excludes it; every other real declared
-    package stays."""
-    core = declared_python_packages(REAL_MANIFEST, platform="linux", include_optional=False)
-    assert "marker-pdf" not in core
-    assert core == (
-        "bibtexparser",
-        "cryptography>=44.0.1",
-        "dateparser",
-        "jsonschema>=4",
-        "keyring",
-        "pyflakes==3.2.0",
-        "pytest-xdist==3.8.0",
-        "pytest==8.3.4",
-        "PyYAML>=6",
-        "rich",
+def test_selected_optional_module_adds_its_platform_dependency_without_package_policy():
+    packages = declared_python_packages(
+        REAL_MANIFEST, platform="linux", selected_module_ids=("pdf-to-markdown",)
+    )
+    assert "marker-pdf" in packages
+
+
+def test_optional_runtime_modules_describes_pdf_to_markdown():
+    modules = optional_runtime_modules(REAL_MANIFEST, platform="linux")
+    assert modules == ({"id": "pdf-to-markdown", "packages": ("marker-pdf",)},)
+
+
+def test_package_size_estimates_use_wheel_or_sdist_metadata_or_report_unavailable():
+    estimates = package_size_estimates(
+        ("known", "unknown"),
+        package_index_metadata={
+            "known": {
+                "urls": [
+                    {"packagetype": "bdist_wheel", "size": 17},
+                    {"packagetype": "sdist", "size": 23},
+                ]
+            }
+        },
     )
 
+    assert [(estimate.package, estimate.bytes) for estimate in estimates] == [
+        ("known", 23),
+        ("unknown", None),
+    ]
 
-def test_declared_python_packages_include_optional_true_is_the_default():
-    assert declared_python_packages(REAL_MANIFEST, platform="linux") == declared_python_packages(
-        REAL_MANIFEST, platform="linux", include_optional=True
-    )
 
+def test_load_cached_package_index_metadata_is_offline_and_normalizes_specs(tmp_path):
+    (tmp_path / "known.json").write_text('{"urls": []}', encoding="utf-8")
 
-def test_optional_python_packages_returns_just_the_deferred_set():
-    assert optional_python_packages(REAL_MANIFEST, platform="linux") == ("marker-pdf",)
+    assert load_cached_package_index_metadata(
+        ("Known[extra]>=1", "missing"), cache_dir=tmp_path
+    ) == {"known": {"urls": []}}
 
 
 def test_venv_python_bin_posix_is_bin_python():
@@ -440,7 +449,7 @@ def test_build_candidate_release_creates_venv_then_one_batch_pip_install(monkeyp
     assert pointer.python_bin.exists()
 
 
-def test_build_candidate_release_include_optional_dependencies_false_excludes_marker_pdf(monkeypatch, tmp_path):
+def test_build_candidate_release_core_lock_does_not_include_optional_module(monkeypatch, tmp_path):
     calls: list = []
     monkeypatch.setattr(
         "subprocess.run", fake_uv_subprocess_run(calls, trusted_python_dir=tmp_path / "uv-python-store")
@@ -452,13 +461,47 @@ def test_build_candidate_release_include_optional_dependencies_false_excludes_ma
         platform="linux",
         uv_bin=FAKE_UV_BIN,
         python_version="3.11",
-        include_optional_dependencies=False,
     )
 
     pip_call = calls[1]
     assert "marker-pdf" not in pip_call
     assert "--require-hashes" in pip_call
     assert "marker-pdf" not in Path(pip_call[-1]).read_text(encoding="utf-8")
+
+
+def test_optional_candidate_generates_hash_checked_selection_lock_and_records_it(monkeypatch, tmp_path):
+    calls: list = []
+    monkeypatch.setattr(
+        "subprocess.run", fake_uv_subprocess_run(calls, trusted_python_dir=tmp_path / "uv-python-store")
+    )
+    generated: dict[str, object] = {}
+
+    def generate(**kwargs):
+        generated.update(kwargs)
+        lock_path = kwargs["lock_path"]
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        lock_path.write_text("marker-pdf==1 --hash=sha256:" + "a" * 64 + "\n", encoding="utf-8")
+        from officina.install.runtime_lock import RuntimeLockMetadata
+        return RuntimeLockMetadata("i" * 64, PINNED_UV_VERSION, PINNED_PYTHON_VERSION, "l" * 64)
+
+    monkeypatch.setattr("officina.install.managed_runtime.runtime_lock.generate_runtime_lock", generate)
+    pointer = build_candidate_release(
+        runtime_root=tmp_path / "runtime",
+        manifest_path=REAL_MANIFEST,
+        platform="linux",
+        uv_bin=FAKE_UV_BIN,
+        python_version="3.11",
+        repo_root=REPO_ROOT,
+        optional_module_ids=("pdf-to-markdown",),
+    )
+
+    assert generated["selected_module_ids"] == ("pdf-to-markdown",)
+    lock_install = next(call for call in calls if "--require-hashes" in call)
+    assert lock_install[-1].endswith("requirements-selected.lock")
+    artifact = json.loads((pointer.runtime_source / "artifact.json").read_text(encoding="utf-8"))
+    assert artifact["selected_module_ids"] == ["pdf-to-markdown"]
+    assert artifact["runtime_lock"]["input_sha256"] == "i" * 64
+    assert artifact["runtime_lock"]["sha256"] == "l" * 64
 
 
 def test_build_candidate_release_provisions_venv_before_installing_packages(monkeypatch, tmp_path):
@@ -657,7 +700,7 @@ def test_repo_candidate_installs_verified_officina_wheel_before_activation(monke
     assert metadata["wheel"] == "famulus_officina-0.1.0-py3-none-any.whl"
     assert len(metadata["wheel_sha256"]) == 64
     assert metadata["source_revision"] == "a" * 40
-    assert metadata["schema_version"] == 2
+    assert metadata["schema_version"] == 3
     assert len(metadata["runtime_lock"]["sha256"]) == 64
     assert metadata["runtime_lock"]["uv_version"] == PINNED_UV_VERSION
     assert metadata["python"]["version"] == PINNED_PYTHON_VERSION

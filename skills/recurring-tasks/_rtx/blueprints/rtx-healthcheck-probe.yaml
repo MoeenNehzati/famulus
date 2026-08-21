@@ -33,6 +33,9 @@ gateway:
 id: recurring-tasks._rtx.source.rtx-healthcheck-probe
 interfaces:
   recurring-tasks._rtx.source.rtx-healthcheck-probe.interface.scripts-healthcheck:
+    content:
+    - _healthcheck_probe\.py
+    uses_interfaces: []
     contract:
       arguments: {}
       caller_warnings:
@@ -289,3 +292,4 @@ runtime_dependencies:
 schema_version: 6
 uses_interfaces: []
 version: 1
+maturity: experimental

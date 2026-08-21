@@ -1,0 +1,97 @@
+content:
+- instructions/audit-interface\.md
+dependencies: []
+description: Owns semantic review of one source interface against its contract, selected
+  content, binding, dependencies, and observed behavior.
+gateway:
+  language: Markdown
+  path: instructions/audit-interface.md
+id: skill-certifier.source.audit-interface
+interfaces:
+  skill-certifier.source.audit-interface.interface.audit:
+    content:
+    - instructions/audit-interface\.md
+    uses_interfaces: []
+    contract:
+      arguments:
+        request:
+          description: Current interface declaration and the bounded content, behavior,
+            change, dependency, and prior-evidence material to audit.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+      caller_warnings: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: bounded interface audit request and evidence
+          formats:
+          - text
+          id: read-1
+          medium: prompt
+          sensitivity: user-private
+          system: agent-runtime
+        writes:
+        - access: write
+          content: structured interface audit result
+          formats:
+          - markdown
+          id: write-1
+          medium: prompt
+          sensitivity: derived-private
+          system: agent-runtime
+      execution:
+        consistency:
+          snapshot: The result applies only to the supplied interface declaration
+            and evidence snapshot.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: audit-result
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Use the verdict and evidence in the containing behavioral-source
+          audit.
+        class: success
+        effects: []
+        id: audited
+        outputs:
+        - audit-result
+      - caller_action: Supply the smallest requested context and repeat the audit.
+        class: error
+        effects: []
+        id: invalid-request
+        outputs:
+        - audit-result
+      outputs:
+      - audience: both
+        cardinality:
+          minimum: 1
+          maximum: 1
+        description: Structured pass, reject, or needs-context result for one interface.
+        direct_io_ref: write-1
+        empty: Never empty.
+        id: audit-result
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Audit one source interface and return bounded semantic evidence and
+      a verdict.
+    version: 1
+node_type: behavioral_source
+schema_version: 6
+uses_interfaces: []
+version: 1
+maturity: stable

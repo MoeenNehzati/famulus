@@ -15,6 +15,11 @@ gateway:
 id: email-triage._rtx.source.rtx-watermark-writer
 interfaces:
   email-triage._rtx.source.rtx-watermark-writer.interface.scripts-update-watermark:
+    content:
+    - _watermark_writer\.py
+    uses_interfaces:
+    - interface: common.interface.famulus-paths
+      version: 1
     contract:
       arguments: {}
       caller_warnings:
@@ -197,3 +202,4 @@ uses_interfaces:
 - interface: common.interface.famulus-paths
   version: 1
 version: 1
+maturity: stable

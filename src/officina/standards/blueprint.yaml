@@ -37,3 +37,4 @@ sources:
       base: module-root
       path: blueprints/query.yaml
 version: 1
+maturity: stable

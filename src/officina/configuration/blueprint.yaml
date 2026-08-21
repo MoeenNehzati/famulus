@@ -26,3 +26,4 @@ sources:
       base: module-root
       path: blueprints/repository.yaml
 version: 1
+maturity: stable

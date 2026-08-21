@@ -2,6 +2,10 @@
 
 This is the maintainer and skill-extension entrypoint for Famulus. Start here if you want to understand how the skill system is organized, how new skills are added, and how documentation and validation stay aligned with the live blueprints.
 
+For a compact map of which authoring, refactoring, blueprint, standards, and
+certification skill to use, start with the
+[Skill Development Quickstart](../quickstarts/skill-development.md).
+
 ## Core Structure
 
 The skill system is built around a small set of explicit authored surfaces:
@@ -57,6 +61,7 @@ These skills own assistant modules, standards, and their lifecycle.
 - `hook-maker` — Design cross-host assistant hooks with one purpose and per-host bindings
 - `refactor-node` — Refactor whole repository nodes or owned sub-scopes by gateway language
 - `regenerate-blueprints` — An existing skill blueprint needs regeneration, whether requested directly or required by another skill
+- `relocate-nodes` — Registered Officina nodes or their owned files must be moved while mechanically updating blueprint ownership, references, generated artifacts, and callers
 - `skill-certifier` — Fresh certificates are requested for one or more Officina nodes
 - `skill-drift` — Whether Officina node certificates are current or stale, or asks for canonical node hashes
 - `skill-maker` — Author new skills that conform to the repo's skill-writing guideline
@@ -66,6 +71,8 @@ These skills own assistant modules, standards, and their lifecycle.
 ### Software Development
 
 These skills support general software projects and repositories.
+For task-oriented routing, see the
+[Software Development Quickstart](../quickstarts/development.md).
 
 <!-- BEGIN AUTO-GENERATED DOCS: software-development -->
 > Generated from live blueprints. Do not edit this block by hand.

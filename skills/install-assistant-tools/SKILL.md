@@ -63,6 +63,16 @@ still ensure the required baseline command declared by its interface contract.
 On an unfamiliar machine, invoke its documented dry-run mode first and show the
 resulting plan.
 
+If the blueprint catalog contains optional modules, the installer
+lists each module, its affected Python packages, and package-index size
+estimates when reliable wheel or source-archive metadata is available. Missing
+metadata is shown as unavailable; it is never guessed. Select module IDs at
+that prompt to install their complete dependency closure. Leaving the
+selection blank installs only core modules. Experimental maturity and optional
+installation tier are independent: experimental modules may be core, and
+stable modules may be optional. Estimates use cached package-index records
+when present and do not require network access merely to display the prompt.
+
 The interface runs these phases in order:
 
 1. universal scaffold, in every mode;

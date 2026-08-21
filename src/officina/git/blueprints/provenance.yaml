@@ -22,6 +22,9 @@ gateway:
 id: git.source.provenance
 interfaces:
   git.source.provenance.interface.python-api:
+    content:
+    - provenance\.py
+    uses_interfaces: []
     contract:
       arguments:
         destination:
@@ -275,3 +278,4 @@ node_type: behavioral_source
 schema_version: 6
 uses_interfaces: []
 version: 1
+maturity: stable

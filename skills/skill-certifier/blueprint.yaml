@@ -14,9 +14,9 @@ authority:
 children:
   _rtx: {}
 content:
-- SKILL\.md
-description: Certifies exact v5 module targets after mechanical checks and semantic
-  review, then issues append-only Ed25519 certificates for the exact reviewed commit.
+- (?:SKILL\.md|instructions/audit-(?:behavioral-source|interface|module)\.md)
+description: Orchestrates drift-selected interface, behavioral-source, and module
+  semantic audits, then issues append-only certificates for exact reviewed targets.
 discovery:
   mechanism: skill
   catalog:
@@ -29,25 +29,20 @@ discovery:
   - user-request
   - skill-workflow
   persistent_modifier: false
-exports:
-  skill-certifier.interface.default:
-    access:
-      allow_all_modules: true
-      allowed_callers: []
-    source_interface: skill-certifier.source.gateway.interface.default
+exports: {}
 gateway:
   language: Markdown
   path: SKILL.md
 id: skill-certifier
 namespace_exports:
   _rtx:
-    version: 1
+    version: 2
     access:
       allow_all_modules: true
       allowed_callers: []
     surface:
       only:
-        skill-certifier._rtx.interface.certify: 1
+        skill-certifier._rtx.interface.certify: 2
     interface_access:
       skill-certifier._rtx.interface.certify:
         allow_all_modules: false
@@ -55,8 +50,24 @@ namespace_exports:
 node_type: module
 schema_version: 6
 sources:
+  skill-certifier.source.audit-behavioral-source:
+    blueprint:
+      base: module-root
+      path: blueprints/instructions-audit-behavioral-source.yaml
+  skill-certifier.source.audit-interface:
+    blueprint:
+      base: module-root
+      path: blueprints/instructions-audit-interface.yaml
+  skill-certifier.source.audit-module:
+    blueprint:
+      base: module-root
+      path: blueprints/instructions-audit-module.yaml
   skill-certifier.source.gateway:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml
-version: 2
+version: 4
+maturity: stable
+installation_tier: core
+personal_preference:
+  applies: false

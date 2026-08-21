@@ -208,3 +208,4 @@ sources:
       base: module-root
       path: blueprints/rtx-write-metrics.yaml
 version: 1
+maturity: stable

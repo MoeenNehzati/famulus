@@ -2,7 +2,8 @@ schema_version: 6
 node_type: behavioral_source
 id: rutter.source.engine
 version: 1
-description: Binds direct Rutter definitions and owns bound validation, reduction, continuation, and effect recovery.
+description: Binds direct Rutter definitions and owns bound validation, reduction,
+  continuation, and effect recovery.
 gateway:
   path: engine.py
   language: Python
@@ -32,8 +33,20 @@ uses_interfaces:
   version: 1
 interfaces:
   rutter.source.engine.interface.binding:
+    content:
+    - engine\.py
+    uses_interfaces:
+    - interface: rutter.source.model.interface.python-api
+      version: 1
+    - interface: rutter.source.storage.interface.read
+      version: 1
+    - interface: rutter.source.storage.interface.transaction
+      version: 1
+    - interface: rutter.source.storage.interface.write
+      version: 1
     version: 1
-    description: Creates or opens one direct Rutter binding without granting registry discovery.
+    description: Creates or opens one direct Rutter binding without granting registry
+      discovery.
     contract:
       arguments:
         operation:
@@ -56,7 +69,8 @@ interfaces:
             description: Python Rutter definition class.
             sensitivity: user-private
         reckoning-path:
-          description: Absolute confined path ending with .reckoning.json; its lock appends .lock.
+          description: Absolute confined path ending with .reckoning.json; its lock
+            appends .lock.
           direct_io_ref: reckoning-store
           required: true
           sensitivity: user-private
@@ -76,18 +90,24 @@ interfaces:
             description: Charter Python value.
             sensitivity: user-private
       preconditions: []
-      interaction: {mode: unattended}
+      interaction:
+        mode: unattended
       caller_warnings:
-      - external-side-effect: Create atomically publishes one initial Reckoning; open is read-only.
+      - external-side-effect: Create atomically publishes one initial Reckoning; open
+          is read-only.
       outputs:
       - id: bound-rutter
         audience: machine
         description: One exact bound direct Rutter instance.
         direct_io_ref: return-value
-        cardinality: {minimum: 1, maximum: 1}
+        cardinality:
+          minimum: 1
+          maximum: 1
         ordering: stable
-        pagination: {kind: none}
-        truncation: {kind: none}
+        pagination:
+          kind: none
+        truncation:
+          kind: none
         empty: Never empty on success.
         type:
           kind: string
@@ -96,12 +116,15 @@ interfaces:
       outcomes:
       - id: created
         class: success
-        outputs: [bound-rutter]
-        effects: [reckoning-create]
+        outputs:
+        - bound-rutter
+        effects:
+        - reckoning-create
         caller_action: Operate only the returned bound instance.
       - id: opened
         class: success
-        outputs: [bound-rutter]
+        outputs:
+        - bound-rutter
         effects: []
         caller_action: Resume only from the exact persisted authority.
       - id: invalid-state
@@ -113,14 +136,20 @@ interfaces:
         state_effect: mutating
         lifecycle: finite
         consistency:
-          live: Create checks absence atomically and open strictly reloads complete bytes.
+          live: Create checks absence atomically and open strictly reloads complete
+            bytes.
         effects:
         - id: reckoning-create
           direct_io_ref: reckoning-store
           action: create
-          value_source: {kind: argument, argument_ref: charter}
-          may_occur_in_outcomes: [created]
-          confirmation_evidence: {kind: direct-io, direct_io_ref: reckoning-store}
+          value_source:
+            kind: argument
+            argument_ref: charter
+          may_occur_in_outcomes:
+          - created
+          confirmation_evidence:
+            kind: direct-io
+            direct_io_ref: reckoning-store
           reversibility:
             irreversible: Binding retains no automatic deletion authority.
         mutation_safety:
@@ -147,7 +176,8 @@ interfaces:
           access: read
           system: rutter.source.storage
           content: Complete persisted Reckoning
-          formats: [python-object]
+          formats:
+          - python-object
           sensitivity: user-private
         writes:
         - id: reckoning-store
@@ -155,18 +185,32 @@ interfaces:
           access: read-write
           system: rutter.source.storage
           content: Initial complete Reckoning
-          formats: [python-object]
+          formats:
+          - python-object
           sensitivity: user-private
         - id: return-value
           medium: local-system
           access: write
           content: Bound direct Rutter
-          formats: [python-object]
+          formats:
+          - python-object
           sensitivity: user-private
         network: []
   rutter.source.engine.interface.bound-operations:
+    content:
+    - engine\.py
+    uses_interfaces:
+    - interface: rutter.source.model.interface.python-api
+      version: 1
+    - interface: rutter.source.storage.interface.read
+      version: 1
+    - interface: rutter.source.storage.interface.transaction
+      version: 1
+    - interface: rutter.source.storage.interface.write
+      version: 1
     version: 1
-    description: Observes, validates, and advances one invoker-supplied bound Rutter without construction authority.
+    description: Observes, validates, and advances one invoker-supplied bound Rutter
+      without construction authority.
     contract:
       arguments:
         operation:
@@ -191,7 +235,8 @@ interfaces:
             description: Bound direct Rutter Python value.
             sensitivity: user-private
         input:
-          description: Exact revision, outcome, and evidence envelope for validate or advance.
+          description: Exact revision, outcome, and evidence envelope for validate
+            or advance.
           required: false
           sensitivity: user-private
           type:
@@ -203,26 +248,35 @@ interfaces:
           required: false
           default: true
           sensitivity: public
-          type: {kind: boolean}
+          type:
+            kind: boolean
         dry-run:
           description: Whether advance previews one supplied edge without mutation.
           required: false
           default: false
           sensitivity: public
-          type: {kind: boolean}
+          type:
+            kind: boolean
       preconditions: []
-      interaction: {mode: unattended}
+      interaction:
+        mode: unattended
       caller_warnings:
-      - external-side-effect: Advance may invoke a durably planned callable effect that cannot be rolled back.
+      - external-side-effect: Advance may invoke a durably planned callable effect
+          that cannot be rolled back.
       outputs:
       - id: result
         audience: machine
-        description: Current instruction or status, ValidationReport, or successor state ID.
+        description: Current instruction or status, ValidationReport, or successor
+          state ID.
         direct_io_ref: return-value
-        cardinality: {minimum: 1, maximum: 1}
+        cardinality:
+          minimum: 1
+          maximum: 1
         ordering: stable
-        pagination: {kind: none}
-        truncation: {kind: none}
+        pagination:
+          kind: none
+        truncation:
+          kind: none
         empty: Never empty on success.
         type:
           kind: string
@@ -231,59 +285,81 @@ interfaces:
       outcomes:
       - id: observed
         class: success
-        outputs: [result]
+        outputs:
+        - result
         effects: []
-        caller_action: Classify the public instruction or status without inferring a transition.
+        caller_action: Classify the public instruction or status without inferring
+          a transition.
       - id: validated
         class: success
-        outputs: [result]
+        outputs:
+        - result
         effects: []
         caller_action: Advance only when the returned report is valid.
       - id: previewed
         class: success
-        outputs: [result]
+        outputs:
+        - result
         effects: []
-        caller_action: Inspect the dry-run successor without treating it as persisted authority.
+        caller_action: Inspect the dry-run successor without treating it as persisted
+          authority.
       - id: advanced
         class: success
-        outputs: [result]
-        effects: [reckoning-update]
+        outputs:
+        - result
+        effects:
+        - reckoning-update
         caller_action: Classify the successor and public Fix before another operation.
       - id: faulted
         class: error
-        outputs: [result]
-        effects: [reckoning-update]
+        outputs:
+        - result
+        effects:
+        - reckoning-update
         caller_action: Stop and report public diagnostics.
       - id: invalid-input
         class: refusal
         outputs: []
         effects: []
-        caller_action: Correct only from the validation report and current public authority.
+        caller_action: Correct only from the validation report and current public
+          authority.
       execution:
         state_effect: mutating
         lifecycle: finite
         consistency:
-          live: Every Fix-dependent operation locks and reloads the complete authoritative Reckoning.
+          live: Every Fix-dependent operation locks and reloads the complete authoritative
+            Reckoning.
         effects:
         - id: reckoning-update
           direct_io_ref: reckoning-store
           action: update
-          value_source: {kind: direct-io, direct_io_ref: reckoning-store}
-          may_occur_in_outcomes: [advanced, faulted]
-          confirmation_evidence: {kind: direct-io, direct_io_ref: reckoning-store}
+          value_source:
+            kind: direct-io
+            direct_io_ref: reckoning-store
+          may_occur_in_outcomes:
+          - advanced
+          - faulted
+          confirmation_evidence:
+            kind: direct-io
+            direct_io_ref: reckoning-store
           reversibility:
-            irreversible: The engine retains no predecessor and cannot roll back external work.
+            irreversible: The engine retains no predecessor and cannot roll back external
+              work.
         mutation_safety:
           atomicity:
-            per_effect_only: Pure chains publish one replacement; effectful calls retain planned and completed phases.
+            per_effect_only: Pure chains publish one replacement; effectful calls
+              retain planned and completed phases.
           concurrent_invocations:
             safe: The storage owner serializes cooperating operations per Reckoning.
           idempotency:
-            non_idempotent: Accepted evidence advances revision and callable effects may change external state.
+            non_idempotent: Accepted evidence advances revision and callable effects
+              may change external state.
           on_uncertain_completion:
-            verify_then_decide: Inspect the public Fix and follow only displayed recovery authority.
+            verify_then_decide: Inspect the public Fix and follow only displayed recovery
+              authority.
           partial_effects_on_failure:
-            possible: External work may complete before post-effect validation or persistence.
+            possible: External work may complete before post-effect validation or
+              persistence.
           rollback_on_failure:
             unavailable: Reckoning replacement does not roll back external effects.
         verification:
@@ -296,14 +372,16 @@ interfaces:
           medium: local-system
           access: execute
           content: Invoker-provided bound Rutter public operations
-          formats: [python-object]
+          formats:
+          - python-object
           sensitivity: user-private
         - id: reckoning-store
           medium: local-system
           access: read
           system: rutter.source.storage
           content: Authoritative complete Reckoning
-          formats: [python-object]
+          formats:
+          - python-object
           sensitivity: user-private
         writes:
         - id: reckoning-store
@@ -311,13 +389,15 @@ interfaces:
           access: read-write
           system: rutter.source.storage
           content: Authoritative complete Reckoning
-          formats: [python-object]
+          formats:
+          - python-object
           sensitivity: user-private
         - id: return-value
           medium: local-system
           access: write
           content: Public bound-Rutter operation result
-          formats: [python-object]
+          formats:
+          - python-object
           sensitivity: user-private
         network: []
 platform_support:
@@ -325,3 +405,4 @@ platform_support:
   macos: true
   windows: true
 runtime_dependencies: []
+maturity: stable

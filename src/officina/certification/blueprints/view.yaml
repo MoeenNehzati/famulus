@@ -52,6 +52,9 @@ gateway:
 id: certification.source.view
 interfaces:
   certification.source.view.interface.python-api:
+    content:
+    - view\.py
+    uses_interfaces: []
     contract:
       arguments:
         graph:
@@ -194,3 +197,4 @@ node_type: behavioral_source
 schema_version: 6
 uses_interfaces: []
 version: 1
+maturity: stable

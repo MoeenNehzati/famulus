@@ -2,7 +2,7 @@
 
 > Generated from live blueprints and `SKILL.md` descriptions. Do not edit by hand.
 
-This page is the complete skill inventory. For walkthroughs and examples, start from the domain guides or contributor docs linked from [README.md](../README.md).
+This page is the complete skill inventory. For workflows and examples, start from the quickstarts, domain guides, or contributor docs linked from [README.md](../README.md).
 
 ## Personal Assistance
 
@@ -15,7 +15,7 @@ This page is the complete skill inventory. For walkthroughs and examples, start 
 - `get-weather` — Fetch weather for a location, day, or date range _(topics: planning, external-integrations; activated by: user request, skill workflow)_
 - `list-manager` — Manage personal YAML lists in cloud storage _(topics: personal-organization, storage-and-sync; activated by: user request, skill workflow)_
 - `send-feedback` — Send feedback, report a problem, or describe a failed Famulus workflow to its maintainer _(topics: communications, assistant-assurance; activated by: user request, skill workflow)_
-- `wrap-up` — Review the day, record completions, and capture follow-up items _(topics: planning, personal-organization, session-management; activated by: user request, skill workflow)_
+- `wrap-up` — Review the day, update plans and lists, and find handoff candidates via find-handoff-candidates _(topics: planning, personal-organization, session-management; activated by: user request, skill workflow)_
 
 ## Research
 
@@ -58,6 +58,7 @@ This page is the complete skill inventory. For walkthroughs and examples, start 
 
 - `hook-maker` — Design cross-host assistant hooks with one purpose and per-host bindings _(topics: assistant-authoring, assistant-architecture; activated by: user request, skill workflow)_
 - `regenerate-blueprints` — An existing skill blueprint needs regeneration, whether requested directly or required by another skill _(topics: assistant-authoring, assistant-architecture; activated by: user request, skill workflow)_
+- `relocate-nodes` — Registered Officina nodes or their owned files must be moved while mechanically updating blueprint ownership, references, generated artifacts, and callers _(topics: assistant-architecture, repository-workflow, assistant-assurance; activated by: user request, skill workflow)_
 - `skill-certifier` — Fresh certificates are requested for one or more Officina nodes _(topics: assistant-assurance, assistant-architecture; activated by: user request, skill workflow)_
 - `skill-drift` — Whether Officina node certificates are current or stale, or asks for canonical node hashes _(topics: assistant-assurance, assistant-architecture; activated by: user request, skill workflow)_
 - `update-standards` — Change canonical standards and keep their pinned closures aligned _(topics: assistant-authoring, assistant-architecture, assistant-assurance; activated by: user request, skill workflow)_

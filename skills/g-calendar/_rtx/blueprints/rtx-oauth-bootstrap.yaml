@@ -15,6 +15,11 @@ gateway:
 id: g-calendar._rtx.source.rtx-oauth-bootstrap
 interfaces:
   g-calendar._rtx.source.rtx-oauth-bootstrap.interface.setup-oauth:
+    content:
+    - _oauth_bootstrap\.py
+    uses_interfaces:
+    - interface: credentials.interface.oauth
+      version: 1
     contract:
       arguments:
         client-id:
@@ -256,3 +261,4 @@ uses_interfaces:
 - interface: credentials.interface.oauth
   version: 1
 version: 1
+maturity: experimental

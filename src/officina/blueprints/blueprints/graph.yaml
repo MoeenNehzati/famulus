@@ -25,6 +25,9 @@ gateway:
 id: blueprints.source.graph
 interfaces:
   blueprints.source.graph.interface.python-api:
+    content:
+    - authorization\.py
+    - graph\.py
     contract:
       arguments:
         operation:
@@ -154,8 +157,10 @@ interfaces:
           sensitivity: user-private
       preconditions: []
     description: Loads and validates repository blueprint graphs for Python callers.
+    uses_interfaces: []
     version: 1
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces: []
 version: 1
+maturity: stable

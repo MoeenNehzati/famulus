@@ -21,6 +21,9 @@ gateway:
 id: recurring-tasks._rtx.source.rtx-ensure-agent-env
 interfaces:
   recurring-tasks._rtx.source.rtx-ensure-agent-env.interface.scripts-ensure-agent-env:
+    content:
+    - _ensure_agent_env\.py
+    uses_interfaces: []
     contract:
       arguments:
         bin-dir:
@@ -227,3 +230,4 @@ runtime_dependencies:
 schema_version: 6
 uses_interfaces: []
 version: 1
+maturity: experimental

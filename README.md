@@ -73,6 +73,22 @@ Once the tools are installed, later repairs and targeted reinstalls route throug
 routes, and the verification steps are all in
 [docs/officina/installation.md](docs/officina/installation.md).
 
+### Choose a workflow
+
+Once Famulus is installed, start with the quickstart closest to what you want
+to do:
+
+- [Personal Assistance](docs/quickstarts/personal-assistance.md) — plan the day, manage lists, triage email, and wrap up
+- [Research](docs/quickstarts/research.md) — choose the right research review, editing, conversion, or build skill
+- [Software Development](docs/quickstarts/development.md) — work safely with repositories, CI, TDD, integration, and handoffs
+- [Skill Development](docs/quickstarts/skill-development.md) — create, refactor, maintain, and certify Famulus skills
+- [Automation](docs/quickstarts/automation.md) — schedule, inspect, change, or disable recurring assistant jobs
+
+See [Security and Privacy](docs/security-and-privacy.md) before connecting an
+account or enabling unattended work. The [Installation Guide](docs/officina/installation.md)
+covers setup and repair, while the [Skill Index](docs/skills.md) lists every
+available skill.
+
 ### Update or remove
 
 Refresh the host plugin first:
@@ -232,9 +248,12 @@ Usage details and documentation for the launchers are in [docs/launchers.md](doc
 - [docs/security-and-privacy.md](docs/security-and-privacy.md) — permissions, credentials, model data, destructive actions, and removal
 - [docs/dependency-and-bootstrap-audit.md](docs/dependency-and-bootstrap-audit.md) — release dependency, bootstrap, and vendored-asset audit
 - [SECURITY.md](SECURITY.md) — private vulnerability reporting
-- [docs/domains/personal-assistance.md](docs/domains/personal-assistance.md) — planning, wrap-up, inbox, lists, calendar, and weather workflows
+- [docs/quickstarts/personal-assistance.md](docs/quickstarts/personal-assistance.md) — get started with planning, inbox triage, lists, calendar, weather, and wrap-up
+- [docs/quickstarts/research.md](docs/quickstarts/research.md) — choose the right research review, editing, conversion, or build workflow
+- [docs/quickstarts/development.md](docs/quickstarts/development.md) — choose the right repository, CI, TDD, integration, or handoff workflow
+- [docs/quickstarts/automation.md](docs/quickstarts/automation.md) — enable, verify, inspect, and disable recurring assistant jobs
+- [docs/quickstarts/skill-development.md](docs/quickstarts/skill-development.md) — choose the right skill-development and assurance workflow
 - [docs/domains/assistant-interaction.md](docs/domains/assistant-interaction.md) — reasoning modes, session continuity, handoffs, and wakeups
-- [docs/domains/research.md](docs/domains/research.md) — research and writing workflows, including dependency graphs
 - [docs/domains/assistant-operations.md](docs/domains/assistant-operations.md) — storage, authentication, automation, installation, and repair utilities
 - [docs/launchers.md](docs/launchers.md) — agent launchers, backend selection, and the `tw` tmux wrapper
 - [docs/skills.md](docs/skills.md) — generated full skill index

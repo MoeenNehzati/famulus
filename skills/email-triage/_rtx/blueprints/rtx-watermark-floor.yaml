@@ -15,6 +15,11 @@ gateway:
 id: email-triage._rtx.source.rtx-watermark-floor
 interfaces:
   email-triage._rtx.source.rtx-watermark-floor.interface.scripts-get-cutoff:
+    content:
+    - _watermark_floor\.py
+    uses_interfaces:
+    - interface: common.interface.famulus-paths
+      version: 1
     contract:
       arguments:
         days:
@@ -182,3 +187,4 @@ uses_interfaces:
 - interface: common.interface.famulus-paths
   version: 1
 version: 1
+maturity: stable

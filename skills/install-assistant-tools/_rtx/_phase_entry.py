@@ -141,7 +141,7 @@ def _ensure_managed_uv(*, info, paths, platform_name: str) -> int:
 
 
 def _build_managed_runtime_candidate(
-    *, repo_root: Path, home: Path, include_optional_dependencies: bool
+    *, repo_root: Path, home: Path, optional_module_ids: tuple[str, ...]
 ) -> int:
     """Build and activate a managed-runtime candidate release before scaffold
     runs, so the dispatcher/invoke-skill launchers scaffold.run installs have
@@ -186,12 +186,54 @@ def _build_managed_runtime_candidate(
             uv_version=info.uv_version,
             python_version=info.managed_python,
             repo_root=repo_root,
-            include_optional_dependencies=include_optional_dependencies,
+            optional_module_ids=optional_module_ids,
         )
     except (managed_runtime.ManagedRuntimeError, runtime_pointer.RuntimePointerError) as exc:
         log(f"Managed-runtime candidate build failed: {exc}")
         return 1
     return 0
+
+
+def _prompt_optional_modules(*, manifest_path: Path, platform_name: str) -> list[str]:
+    """Present manifest-owned optional modules and return approved module IDs.
+
+    Package-index metadata is optional at prompt time.  If the resolver cache
+    has no wheel/sdist record, the prompt says so rather than guessing a size.
+    """
+    modules = managed_runtime.optional_runtime_modules(manifest_path, platform=platform_name)
+    if not modules:
+        return []
+    log("Optional modules (their dependencies are installed only if selected):")
+    for module in modules:
+        packages = module["packages"]
+        assert isinstance(packages, tuple)
+        estimates = managed_runtime.package_size_estimates(
+            packages,
+            package_index_metadata=managed_runtime.load_cached_package_index_metadata(packages),
+        )
+        size_text = ", ".join(
+            f"{estimate.package}: {estimate.bytes} bytes" if estimate.bytes is not None
+            else f"{estimate.package}: estimate unavailable"
+            for estimate in estimates
+        ) or "no additional Python packages"
+        log(f"- {module['id']}: {', '.join(packages) or 'no additional Python packages'} ({size_text})")
+        known_total = sum(
+            estimate.bytes for estimate in estimates if estimate.bytes is not None
+        )
+        unavailable_count = sum(estimate.bytes is None for estimate in estimates)
+        if estimates:
+            suffix = f"; {unavailable_count} package size(s) unavailable" if unavailable_count else ""
+            log(f"  rough download estimate: {known_total} bytes{suffix}")
+    reply = input("Optional module IDs to install (comma-separated, blank for core only): ").strip()
+    if not reply:
+        return []
+    requested = [module_id.strip() for module_id in reply.split(",") if module_id.strip()]
+    available = {module["id"] for module in modules}
+    unknown = sorted(set(requested) - available)
+    if unknown:
+        log(f"Unknown optional module(s): {', '.join(unknown)}. Installing core only.")
+        return []
+    return sorted(set(requested))
 
 
 def _run_google_onboarding_step(
@@ -263,17 +305,12 @@ def run(
     default_llm: str | None = None,
     google_services: list[str] | None = None,
     gmail_nickname: str | None = None,
-    include_optional_dependencies: bool | None = None,
+    optional_modules: list[str] | None = None,
 ) -> int:
     home = home or Path.home()
-
-    if include_optional_dependencies:
-        log(
-            "Optional heavy dependencies are excluded from the first supported "
-            "release; --include-optional-deps is not supported."
-        )
+    if non_interactive and optional_modules:
+        log("Optional module selection requires an interactive confirmation.")
         return 2
-    include_optional_dependencies = False
 
     if dev_mode is None:
         if non_interactive:
@@ -297,11 +334,19 @@ def run(
         # pre-redesign behavior. <repo>/skills/install-assistant-tools/_rtx/_phase_entry.py
         repo_root = Path(__file__).resolve().parents[3]
 
+    platform_name = scaffold._platform_name()
+    if optional_modules is None:
+        optional_modules = [] if non_interactive or platform_name is None else _prompt_optional_modules(
+            manifest_path=repo_root / scaffold.RUNTIME_DEPENDENCIES_MANIFEST,
+            platform_name=platform_name,
+        )
+    optional_module_ids = tuple(sorted(set(optional_modules)))
+
     if dry_run:
         log("(dry-run) Would build and activate a managed-runtime candidate release.")
     else:
         candidate_status = _build_managed_runtime_candidate(
-            repo_root=repo_root, home=home, include_optional_dependencies=include_optional_dependencies
+            repo_root=repo_root, home=home, optional_module_ids=optional_module_ids
         )
         if candidate_status:
             log()
@@ -398,14 +443,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     mode.add_argument("--dev-mode", dest="dev_mode", action="store_true", default=None)
     mode.add_argument("--no-dev-mode", dest="dev_mode", action="store_false")
     parser.add_argument("--repo-path", metavar="DIR")
-    optional_deps = parser.add_mutually_exclusive_group()
-    optional_deps.add_argument(
-        "--include-optional-deps", dest="include_optional_dependencies",
-        action="store_true", default=None,
-        help="Unsupported in the first release; exits without installing.",
-    )
-    optional_deps.add_argument(
-        "--no-optional-deps", dest="include_optional_dependencies", action="store_false",
+    parser.add_argument(
+        "--optional-modules", metavar="LIST",
+        help="Comma-separated optional module IDs; requires interactive confirmation.",
     )
     parser.add_argument("--agents", metavar="LIST",
         help="Comma-separated subset of: " + ",".join(ALL_AGENTS))
@@ -444,7 +484,10 @@ def main(argv: list[str] | None = None) -> int:
         default_llm=args.default_llm,
         google_services=google_services,
         gmail_nickname=args.gmail_nickname,
-        include_optional_dependencies=args.include_optional_dependencies,
+        optional_modules=(
+            [module_id.strip() for module_id in args.optional_modules.split(",") if module_id.strip()]
+            if args.optional_modules is not None else None
+        ),
     )
 
 

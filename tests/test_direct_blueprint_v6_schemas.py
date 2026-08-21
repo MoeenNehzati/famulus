@@ -43,6 +43,7 @@ def _parent() -> dict[str, Any]:
         "node_type": "module",
         "id": "demo-skill",
         "version": 1,
+        "maturity": "stable",
         "gateway": {"path": "SKILL.md", "language": "Markdown"},
         "content": [r"SKILL\.md"],
         "authority": {"owns_filesystem": []},
@@ -65,6 +66,7 @@ def _child() -> dict[str, Any]:
         "node_type": "module",
         "id": "demo-skill._rtx",
         "version": 1,
+        "maturity": "stable",
         "gateway": {"path": "__init__.py", "language": "Python"},
         "content": [r"__init__\.py"],
         "authority": {"owns_filesystem": []},
@@ -98,12 +100,17 @@ def _source() -> dict[str, Any]:
         "node_type": "behavioral_source",
         "id": "demo-skill._rtx.source.runtime",
         "version": 1,
+        "maturity": "stable",
         "gateway": {"path": "runtime.py", "language": "Python>=3.11"},
         "content": [r"runtime\.py"],
         "dependencies": [],
         "uses_interfaces": [],
         "interfaces": {
-            "demo-skill._rtx.source.runtime.interface.execute": {"version": 3}
+            "demo-skill._rtx.source.runtime.interface.execute": {
+                "version": 3,
+                "content": [r"runtime\.py"],
+                "uses_interfaces": [],
+            }
         },
     }
 
@@ -262,12 +269,17 @@ def _write_v6_graph_fixture(repo: Path) -> None:
                 "node_type": "behavioral_source",
                 "id": "root.beta.source.inspector",
                 "version": 1,
+                "maturity": "stable",
                 "gateway": {"path": "inspect.py", "language": "Python>=3.11"},
                 "content": [r"inspect\.py"],
                 "dependencies": [],
                 "uses_interfaces": [],
                 "interfaces": {
-                    "root.beta.source.inspector.interface.inspect": {"version": 1}
+                    "root.beta.source.inspector.interface.inspect": {
+                        "version": 1,
+                        "content": [r"inspect\.py"],
+                        "uses_interfaces": [],
+                    }
                 },
             },
             sort_keys=False,
@@ -377,12 +389,17 @@ def _write_v6_graph_fixture(repo: Path) -> None:
                 "node_type": "behavioral_source",
                 "id": "root.beta.source.inspector",
                 "version": 1,
+                "maturity": "stable",
                 "gateway": {"path": "inspect.py", "language": "Python>=3.11"},
                 "content": [r"inspect\.py"],
                 "dependencies": [],
                 "uses_interfaces": [],
                 "interfaces": {
-                    "root.beta.source.inspector.interface.inspect": {"version": 1}
+                    "root.beta.source.inspector.interface.inspect": {
+                        "version": 1,
+                        "content": [r"inspect\.py"],
+                        "uses_interfaces": [],
+                    }
                 },
             },
             sort_keys=False,

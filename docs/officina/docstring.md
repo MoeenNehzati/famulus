@@ -63,7 +63,7 @@ InstantiationsFromRepo:
       constructs: "Constructs typed rows describing legacy skill interface claims."
 
 Dispatches:
-  skills.skill-certifier.interface.default:
+  skills.skill-certifier.source.audit-interface.interface.audit:
     why:
       dispatches: "Dispatches CLI invocation to the interface entrypoint."
 ```
@@ -101,7 +101,7 @@ Path validity is explicit:
 
 - Relative dependency paths must start with `.`.
 - Absolute dependency paths/ids must start with a root in `config.allowed_abs`.
-- Bare paths such as `_node_certifier.foo`, `common.foo`, or `skill-certifier.interface.default` are invalid.
+- Bare paths such as `_node_certifier.foo`, `common.foo`, or `skill-certifier.source.audit-interface.interface.audit` are invalid.
 
 With the repo default config, the allowed absolute roots are `officina` and
 `skills`. The checker code for this portability rule is
@@ -157,7 +157,7 @@ Dispatch declarations are grounded behaviorally:
 The validator treats `skill.interface.default` and
 `skills.skill.interface.default` as equivalent logical spellings, but the
 portable docstring form should use the allowed root, e.g.
-`skills.skill-certifier.interface.default`.
+`skills.skill-certifier.source.audit-interface.interface.audit`.
 
 ## 1c) Resource and dataflow sections
 
@@ -217,7 +217,7 @@ Pseudocode
   - if authority is missing:
     - result = CertificationResult(status=`fail_closed`)
     - continue
-  - review = #skill-certifier.interface.default(node)
+  - review = #skill-certifier.source.audit-interface.interface.audit(node)
 - return result
 ```
 

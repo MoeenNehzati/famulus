@@ -31,3 +31,4 @@ sources:
       base: module-root
       path: blueprints/rtx-blueprint-regenerator.yaml
 version: 1
+maturity: stable

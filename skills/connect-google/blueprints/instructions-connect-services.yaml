@@ -17,6 +17,17 @@ gateway:
 id: connect-google.source.instructions-connect-services
 interfaces:
   connect-google.source.instructions-connect-services.interface.connect-services:
+    content:
+    - instructions/connect\-services\.md
+    uses_interfaces:
+    - interface: connect-google._rtx.interface.bind-credential-file
+      version: 1
+    - interface: connect-google._rtx.interface.client-status
+      version: 1
+    - interface: connect-google._rtx.interface.connect-services
+      version: 1
+    - interface: connect-google._rtx.interface.install-client
+      version: 1
     contract:
       arguments:
         client-json-path:
@@ -134,3 +145,4 @@ uses_interfaces:
 - interface: connect-google._rtx.interface.install-client
   version: 1
 version: 3
+maturity: experimental

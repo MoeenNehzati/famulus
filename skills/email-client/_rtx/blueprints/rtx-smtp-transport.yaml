@@ -21,6 +21,11 @@ gateway:
 id: email-client._rtx.source.rtx-smtp-transport
 interfaces:
   email-client._rtx.source.rtx-smtp-transport.interface.send-email:
+    content:
+    - _smtp_transport\.py
+    uses_interfaces:
+    - interface: credentials.interface.secret-store
+      version: 1
     contract:
       arguments:
         attachments:
@@ -247,3 +252,4 @@ uses_interfaces:
 - interface: credentials.interface.secret-store
   version: 1
 version: 1
+maturity: stable

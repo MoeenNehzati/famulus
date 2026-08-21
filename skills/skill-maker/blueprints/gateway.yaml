@@ -10,6 +10,13 @@ gateway:
 id: skill-maker.source.gateway
 interfaces:
   skill-maker.source.gateway.interface.default:
+    content:
+    - SKILL\.md
+    uses_interfaces:
+    - interface: standards.interface.query-standard
+      version: 1
+    - interface: skill-maker._rtx.interface.sync-blueprints
+      version: 1
     contract:
       arguments:
         request:
@@ -225,3 +232,4 @@ uses_interfaces:
 - interface: skill-maker._rtx.interface.sync-blueprints
   version: 1
 version: 5
+maturity: stable

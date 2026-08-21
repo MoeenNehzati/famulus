@@ -16,18 +16,23 @@ dependencies:
 - blueprint:
     base: module-root
     path: blueprints/rtx-batch-ir-merger.yaml
-  reason: Reuses exact pooled-inventory reconciliation validation and atomic JSON writing.
+  reason: Reuses exact pooled-inventory reconciliation validation and atomic JSON
+    writing.
   source: math-dependency-graph._rtx.source.rtx-batch-ir-merger
   version: 22
 description: Validates resolved mathematical semantic IR against its exact pooled
-  inventory and compiles it into canonical visualization JSON, deterministically
-  preserving source-visible candidate labels and titles without reading TeX or making semantic decisions.
+  inventory and compiles it into canonical visualization JSON, deterministically preserving
+  source-visible candidate labels and titles without reading TeX or making semantic
+  decisions.
 gateway:
   language: Python>=3.11
   path: _semantic_graph_compiler.py
 id: math-dependency-graph._rtx.source.rtx-semantic-graph-compiler
 interfaces:
   math-dependency-graph._rtx.source.rtx-semantic-graph-compiler.interface.scripts-compile-semantic-graph:
+    content:
+    - _semantic_graph_compiler\.py
+    uses_interfaces: []
     contract:
       arguments:
         base:
@@ -63,8 +68,8 @@ interfaces:
             relative_to: caller-cwd
             syntax: literal
         inventory:
-          description: Authoritative pooled version-2 inventory whose qualified
-            handles and source coordinates the semantic IR reconciles.
+          description: Authoritative pooled version-2 inventory whose qualified handles
+            and source coordinates the semantic IR reconciles.
           direct_io_ref: read-4
           required: true
           sensitivity: derived-private
@@ -96,7 +101,8 @@ interfaces:
             relative_to: caller-cwd
             syntax: literal
       caller_warnings:
-      - external-side-effect: Atomically writes or replaces the selected canonical graph JSON.
+      - external-side-effect: Atomically writes or replaces the selected canonical
+          graph JSON.
       direct_io:
         network: []
         reads:
@@ -131,7 +137,8 @@ interfaces:
           sensitivity: public
           system: filesystem
         - access: read
-          content: pooled version-2 inventory used for exact reconciliation and source-coordinate derivation
+          content: pooled version-2 inventory used for exact reconciliation and source-coordinate
+            derivation
           formats:
           - json
           id: read-4
@@ -173,18 +180,21 @@ interfaces:
           may_occur_in_outcomes:
           - compiled
           reversibility:
-            reversible: Delete or regenerate the canonical graph from unchanged semantic IR.
+            reversible: Delete or regenerate the canonical graph from unchanged semantic
+              IR.
           value_source:
             argument_ref: semantic-ir
             kind: argument
         lifecycle: finite
         mutation_safety:
           atomicity:
-            atomic: The canonical artifact replaces its destination only after complete validation.
+            atomic: The canonical artifact replaces its destination only after complete
+              validation.
           concurrent_invocations:
             unsafe: Concurrent writers to the same destination are not serialized.
           idempotency:
-            idempotent: Unchanged semantic IR and base produce equivalent canonical JSON.
+            idempotent: Unchanged semantic IR and base produce equivalent canonical
+              JSON.
           on_uncertain_completion:
             verify_then_decide: Validate the destination before retrying compilation.
           partial_effects_on_failure:
@@ -223,8 +233,8 @@ interfaces:
         cardinality:
           maximum: 1
           minimum: 1
-        description: JSON report containing semantic IR, base, canonical output,
-          pooled inventory, entity count, and edge count.
+        description: JSON report containing semantic IR, base, canonical output, pooled
+          inventory, entity count, and edge count.
         direct_io_ref: write-2
         empty: Never empty on success.
         id: report
@@ -258,7 +268,8 @@ interfaces:
         max_positionals: 1
         min_positionals: 1
         name: owner
-    usage: <semantic-ir.json> --inventory <inventory-ir.json> --out <canonical.json> [--base <base.json>]
+    usage: <semantic-ir.json> --inventory <inventory-ir.json> --out <canonical.json>
+      [--base <base.json>]
     version: 6
 node_type: behavioral_source
 platform_support:
@@ -277,3 +288,4 @@ runtime_dependencies:
 schema_version: 6
 uses_interfaces: []
 version: 12
+maturity: stable

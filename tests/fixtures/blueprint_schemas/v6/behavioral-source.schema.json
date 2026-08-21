@@ -9,6 +9,7 @@
     "node_type",
     "id",
     "version",
+    "maturity",
     "gateway",
     "content",
     "dependencies",
@@ -28,6 +29,10 @@
     },
     "version": {
       "$ref": "common.schema.json#/definitions/interfaceVersion"
+    },
+    "maturity": {
+      "type": "string",
+      "enum": ["stable", "experimental"]
     },
     "description": {
       "type": "string",
@@ -84,7 +89,9 @@
     "interface": {
       "type": "object",
       "required": [
-        "version"
+        "version",
+        "content",
+        "uses_interfaces"
       ],
       "additionalProperties": false,
       "properties": {
@@ -97,6 +104,12 @@
         },
         "usage": {
           "type": "string"
+        },
+        "content": {
+          "$ref": "common.schema.json#/definitions/contentPatterns"
+        },
+        "uses_interfaces": {
+          "$ref": "common.schema.json#/definitions/interfaceUseList"
         },
         "contract": {
           "$ref": "caller-contract.schema.json#/definitions/v4Contract"

@@ -1,6 +1,7 @@
 schema_version: 6
 id: wakeup.source.persistence
 version: 1
+maturity: stable
 node_type: behavioral_source
 description: Persist wakeup jobs, per-session policies, monitor markers, and cross-platform
   state with locking.

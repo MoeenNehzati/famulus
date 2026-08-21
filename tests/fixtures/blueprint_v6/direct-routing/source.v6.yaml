@@ -2,6 +2,7 @@ schema_version: 6
 node_type: behavioral_source
 id: root.alpha.leaf.source.runtime
 version: 1
+maturity: stable
 gateway:
   path: runtime.py
   language: Python>=3.11
@@ -13,3 +14,6 @@ interfaces:
   root.alpha.leaf.source.runtime.interface.execute:
     version: 3
     description: Execute the direct-routing fixture.
+    content:
+    - runtime\.py
+    uses_interfaces: []

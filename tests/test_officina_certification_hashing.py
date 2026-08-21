@@ -42,12 +42,13 @@ def test_hash_owner_does_not_expose_legacy_health_authority() -> None:
         assert not hasattr(certification_hashing, name)
 
 
-def test_node_hash_state_contains_only_v4_certificate_inputs() -> None:
+def test_node_hash_state_carries_canonical_facet_claims() -> None:
     assert {field.name for field in fields(NodeHashState)} == {
         "node_hash",
         "input_manifest",
         "dependency_hashes",
         "certification_basis_hash",
+        "facets",
     }
 
 
@@ -162,6 +163,7 @@ def test_v6_certifier_identity_accepts_runtime_interface_owner(
                 v4_export,
                 interface_id="skill-certifier._rtx.interface.certify",
                 module_node_id=runtime_node_id,
+                version=2,
             )
         },
     )
@@ -170,7 +172,7 @@ def test_v6_certifier_identity_accepts_runtime_interface_owner(
 
     assert identity == {
         "interface": "skill-certifier._rtx.interface.certify",
-        "version": 1,
+        "version": 2,
         "node_hash": states["skill-certifier"].node_hash,
         "source_commit": commit,
     }

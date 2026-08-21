@@ -39,6 +39,17 @@ gateway:
 id: install-assistant-tools._rtx.source.rtx-phase-entry
 interfaces:
   install-assistant-tools._rtx.source.rtx-phase-entry.interface.scripts-install:
+    content:
+    - _phase_entry\.py
+    uses_interfaces:
+    - interface: common.interface.famulus-paths
+      version: 1
+    - interface: install.interface.install-info
+      version: 1
+    - interface: install.interface.managed-runtime
+      version: 1
+    - interface: install.interface.uv-bootstrap
+      version: 1
     contract:
       arguments:
         options:
@@ -201,3 +212,4 @@ uses_interfaces:
 - interface: install.interface.uv-bootstrap
   version: 1
 version: 1
+maturity: stable

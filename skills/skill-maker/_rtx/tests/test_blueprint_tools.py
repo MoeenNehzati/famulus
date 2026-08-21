@@ -305,7 +305,14 @@ def test_runtime_dependency_manifest_uses_export_source_closure(syncer) -> None:
         "demo-skill": syncer.ModuleBlueprint(
             "demo-skill",
             Path("skills/demo-skill/blueprint.yaml"),
-            {"schema_version": 4, "node_type": "module", "id": "demo-skill"},
+            {
+                "schema_version": 6,
+                "node_type": "module",
+                "id": "demo-skill",
+                "maturity": "stable",
+                "installation_tier": "core",
+                "personal_preference": {"applies": False},
+            },
             graph,
         )
     }
@@ -313,10 +320,49 @@ def test_runtime_dependency_manifest_uses_export_source_closure(syncer) -> None:
     manifest = syncer.generated_runtime_dependencies_manifest(blueprints)
 
     assert manifest["version"] == 2
-    assert manifest["skills"]["demo-skill"]["interfaces"]["demo-skill.interface.run"] == {
+    module = manifest["skills"]["demo-skill"]
+    assert module["maturity"] == "stable"
+    assert module["installation_tier"] == "core"
+    assert module["personal_preference"] == {"applies": False}
+    assert module["interfaces"]["demo-skill.interface.run"] == {
         "dependencies": [dependency],
     }
     assert manifest["all"]["python-package"] == ["PyYAML"]
+
+
+def test_runtime_dependency_manifest_keeps_module_without_executable_interfaces(
+    syncer,
+) -> None:
+    graph = SimpleNamespace(exports={}, nodes={}, node_edges=())
+    blueprints = {
+        "metadata-only": syncer.ModuleBlueprint(
+            "metadata-only",
+            Path("skills/metadata-only/blueprint.yaml"),
+            {
+                "schema_version": 6,
+                "node_type": "module",
+                "id": "metadata-only",
+                "maturity": "experimental",
+                "installation_tier": "optional",
+                "personal_preference": {"applies": False},
+            },
+            graph,
+        )
+    }
+
+    manifest = syncer.generated_runtime_dependencies_manifest(blueprints)
+
+    assert manifest["skills"] == {
+        "metadata-only": {
+            "maturity": "experimental",
+            "installation_tier": "optional",
+            "personal_preference": {"applies": False},
+            "interfaces": {},
+        }
+    }
+    assert manifest["all"] == {
+        kind: [] for kind in syncer.RUNTIME_DEPENDENCY_KINDS
+    }
 
 
 def test_runtime_dependency_manifest_v2_keeps_all_descendant_interface_ids(syncer) -> None:
@@ -362,13 +408,31 @@ def test_runtime_dependency_manifest_v2_keeps_all_descendant_interface_ids(synce
     blueprints = {
         "demo": syncer.ModuleBlueprint(
             "demo", Path("skills/demo/blueprint.yaml"),
-            {"schema_version": 6, "node_type": "module", "id": "demo"}, graph,
+            {
+                "schema_version": 6,
+                "node_type": "module",
+                "id": "demo",
+                "maturity": "stable",
+                "installation_tier": "optional",
+                "personal_preference": {
+                    "applies": True,
+                    "description": "The user selected this optional workflow.",
+                },
+            },
+            graph,
         )
     }
 
     manifest = syncer.generated_runtime_dependencies_manifest(blueprints)
 
-    interfaces = manifest["skills"]["demo"]["interfaces"]
+    module = manifest["skills"]["demo"]
+    assert module["maturity"] == "stable"
+    assert module["installation_tier"] == "optional"
+    assert module["personal_preference"] == {
+        "applies": True,
+        "description": "The user selected this optional workflow.",
+    }
+    interfaces = module["interfaces"]
     assert set(interfaces) == {
         "demo._rtx.interface.run",
         "demo.worker.interface.run",

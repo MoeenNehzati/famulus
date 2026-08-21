@@ -24,6 +24,10 @@ gateway:
 id: install.source.managed-runtime
 interfaces:
   install.source.managed-runtime.interface.python-api:
+    content:
+    - managed_runtime\.py
+    - runtime_lock\.py
+    uses_interfaces: []
     contract:
       arguments:
         operation:
@@ -338,3 +342,4 @@ node_type: behavioral_source
 schema_version: 6
 uses_interfaces: []
 version: 1
+maturity: stable

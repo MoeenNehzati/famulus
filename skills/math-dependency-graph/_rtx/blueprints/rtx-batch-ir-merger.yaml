@@ -7,15 +7,19 @@ dependencies:
   reason: Loads Python package support from _rtx/__init__.py.
   source: math-dependency-graph._rtx.source.rtx-init
   version: 1
-description: Safely rejects malformed worker artifacts, validates version-3 discovery fragments, checks hidden environment-anchor
-  coverage, and deterministically normalizes inline nodes, edges, endpoints, and gaps into
-  one qualified version-2 pooled inventory IR while authenticating source ownership; size remains a controller-facing diagnostic.
+description: Safely rejects malformed worker artifacts, validates version-3 discovery
+  fragments, checks hidden environment-anchor coverage, and deterministically normalizes
+  inline nodes, edges, endpoints, and gaps into one qualified version-2 pooled inventory
+  IR while authenticating source ownership; size remains a controller-facing diagnostic.
 gateway:
   language: Python>=3.11
   path: _batch_ir_merger.py
 id: math-dependency-graph._rtx.source.rtx-batch-ir-merger
 interfaces:
   math-dependency-graph._rtx.source.rtx-batch-ir-merger.interface.scripts-merge-batch-ir:
+    content:
+    - _batch_ir_merger\.py
+    uses_interfaces: []
     contract:
       arguments:
         chunk-manifest:
@@ -67,7 +71,8 @@ interfaces:
             relative_to: caller-cwd
             syntax: literal
       caller_warnings:
-      - external-side-effect: Atomically writes or replaces the merged extraction artifact.
+      - external-side-effect: Atomically writes or replaces the merged extraction
+          artifact.
       direct_io:
         network: []
         reads:
@@ -204,7 +209,8 @@ interfaces:
         cardinality:
           maximum: 1
           minimum: 1
-        description: JSON report containing fragment count and pooled inventory output path.
+        description: JSON report containing fragment count and pooled inventory output
+          path.
         direct_io_ref: write-2
         empty: Never empty on success.
         id: report
@@ -236,7 +242,8 @@ interfaces:
         max_positionals: 1
         min_positionals: 1
         name: owner
-    usage: <fragment-manifest.json> --chunk-manifest <inventory-chunks.json> --out <inventory-ir.json>
+    usage: <fragment-manifest.json> --chunk-manifest <inventory-chunks.json> --out
+      <inventory-ir.json>
     version: 20
 node_type: behavioral_source
 platform_support:
@@ -255,3 +262,4 @@ runtime_dependencies:
 schema_version: 6
 uses_interfaces: []
 version: 22
+maturity: stable

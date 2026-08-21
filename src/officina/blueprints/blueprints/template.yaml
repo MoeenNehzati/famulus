@@ -10,6 +10,9 @@ gateway:
 id: blueprints.source.template
 interfaces:
   blueprints.source.template.interface.python-api:
+    content:
+    - template\.py
+    uses_interfaces: []
     contract:
       arguments:
         inputs:
@@ -194,3 +197,4 @@ node_type: behavioral_source
 schema_version: 6
 uses_interfaces: []
 version: 1
+maturity: stable

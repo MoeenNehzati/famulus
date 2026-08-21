@@ -9,6 +9,9 @@ gateway:
 id: common.source.dates
 interfaces:
   common.source.dates.interface.python-api:
+    content:
+    - dates\.py
+    uses_interfaces: []
     contract:
       arguments:
         operation:
@@ -104,3 +107,4 @@ node_type: behavioral_source
 schema_version: 6
 uses_interfaces: []
 version: 1
+maturity: stable

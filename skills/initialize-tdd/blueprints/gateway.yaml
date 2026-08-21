@@ -26,6 +26,27 @@ gateway:
 id: initialize-tdd.source.gateway
 interfaces:
   initialize-tdd.source.gateway.interface.default:
+    content:
+    - SKILL\.md
+    - assets/common/\.gitignore
+    - assets/common/AGENTS\.md
+    - assets/common/README\.md
+    - assets/python/\.gitignore
+    - assets/python/AGENTS\.md
+    - assets/python/README\.md
+    - assets/python/install\.sh
+    - assets/python/logs/\.gitkeep
+    - assets/python/pyproject\.toml
+    - assets/python/requirements\.txt
+    - assets/python/src/project/__init__\.py
+    - assets/python/src/project/config\.py
+    - assets/python/src/project/logger\.py
+    - assets/python/tests/__init__\.py
+    - assets/python/tests/conftest\.py
+    - assets/python/tests/test_logger\.py
+    uses_interfaces:
+    - interface: initialize-tdd._rtx.interface.setup-compat-aliases
+      version: 1
     contract:
       arguments:
         request:
@@ -304,3 +325,4 @@ uses_interfaces:
 - interface: initialize-tdd._rtx.interface.setup-compat-aliases
   version: 1
 version: 1
+maturity: stable

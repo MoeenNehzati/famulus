@@ -35,6 +35,8 @@ gateway:
 id: certification.source.hashing
 interfaces:
   certification.source.hashing.interface.python-api:
+    content:
+    - hashing\.py
     contract:
       arguments:
         inputs:
@@ -46,7 +48,7 @@ interfaces:
             description: Operation-specific Python values supplied by the caller.
             kind: string
         operation:
-          description: Canonical v4 hashing operation to perform.
+          description: Canonical versioned hashing operation to perform.
           required: true
           sensitivity: public
           type:
@@ -61,11 +63,11 @@ interfaces:
               value: hash-certification-basis
             - description: Return the exact versioned checks owned by the certifier.
               value: expected-checks
-            - description: Derive certifier identity from the v4 graph, node state,
+            - description: Derive certifier identity from the graph, node state,
                 and source commit.
               value: derive-certifier-identity
-            - description: Compute canonical v4 node hash states from the graph and
-                node-input policy.
+            - description: Compute canonical node and interface-facet hash states
+                from the graph and node-input policy.
               value: hash-nodes
             - description: Extract the canonical blueprint projection of one resolved
                 interface.
@@ -169,8 +171,10 @@ interfaces:
       preconditions: []
     description: Computes canonical node and interface certification state and dependency-first
       target order, and maps already observed route-smoke paths for Python callers.
+    uses_interfaces: []
     version: 1
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces: []
 version: 1
+maturity: stable

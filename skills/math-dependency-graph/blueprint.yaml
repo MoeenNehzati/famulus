@@ -102,3 +102,7 @@ sources:
       base: module-root
       path: blueprints/instructions-inventory.yaml
 version: 69
+maturity: stable
+installation_tier: core
+personal_preference:
+  applies: false

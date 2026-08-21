@@ -15,6 +15,11 @@ gateway:
 id: connect-google._rtx.source.rtx-client-config
 interfaces:
   connect-google._rtx.source.rtx-client-config.interface.client-status:
+    content:
+    - _client_config\.py
+    uses_interfaces:
+    - interface: credentials.interface.google
+      version: 1
     contract:
       arguments:
         home:
@@ -133,6 +138,11 @@ interfaces:
     usage: '[--home <dir>]'
     version: 1
   connect-google._rtx.source.rtx-client-config.interface.install-client:
+    content:
+    - _client_config\.py
+    uses_interfaces:
+    - interface: credentials.interface.google
+      version: 1
     contract:
       arguments:
         from-json:
@@ -319,3 +329,4 @@ uses_interfaces:
 - interface: credentials.interface.google
   version: 1
 version: 1
+maturity: experimental

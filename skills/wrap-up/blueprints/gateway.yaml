@@ -9,6 +9,17 @@ gateway:
 id: wrap-up.source.gateway
 interfaces:
   wrap-up.source.gateway.interface.default:
+    content:
+    - SKILL\.md
+    uses_interfaces:
+    - interface: daily-plan.interface.default
+      version: 1
+    - interface: find-handoff-candidates._rtx.interface.scan
+      version: 1
+    - interface: list-manager.interface.default
+      version: 1
+    - interface: prepare-handoff.interface.default
+      version: 1
     contract:
       arguments:
         request:
@@ -121,3 +132,4 @@ uses_interfaces:
 - interface: prepare-handoff.interface.default
   version: 1
 version: 1
+maturity: stable

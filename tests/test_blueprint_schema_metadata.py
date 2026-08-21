@@ -54,6 +54,34 @@ def _load_v5(name: str) -> dict:
     return json.loads((V5_SCHEMA_ROOT / name).read_text(encoding="utf-8"))
 
 
+def _load_live_v6(name: str) -> dict:
+    return json.loads((LIVE_SCHEMA_ROOT / name).read_text(encoding="utf-8"))
+
+
+def test_live_v6_maturity_metadata_supports_authoring_templates() -> None:
+    """Live metadata must provide examples for generated authoring templates."""
+
+    protocol = _load_live_v6("schema-meta.json")
+    metadata_validator = jsonschema.Draft7Validator(
+        protocol["definitions"]["fieldMetadata"]
+    )
+
+    for name, fields in {
+        "module.schema.json": {
+            "maturity": "stable",
+            "installation_tier": "core",
+            "personal_preference": {"applies": False},
+        },
+        "behavioral-source.schema.json": {"maturity": "stable"},
+    }.items():
+        properties = _load_live_v6(name)["properties"]
+        for field, expected_example in fields.items():
+            metadata = properties[field]["x-famulus"]
+            metadata_validator.validate(metadata)
+            assert metadata["template"]["include"] is True
+            assert metadata["template"]["example"] == expected_example
+
+
 def test_v4_schema_fields_contain_complete_authoring_metadata() -> None:
     protocol = _load("schema-meta.json")
     catalog = protocol["x-famulus"]["validation_rule_catalog"]

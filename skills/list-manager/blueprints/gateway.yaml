@@ -9,6 +9,41 @@ gateway:
 id: list-manager.source.gateway
 interfaces:
   list-manager.source.gateway.interface.default:
+    content:
+    - SKILL\.md
+    uses_interfaces:
+    - interface: list-manager._rtx.interface.beautify-list
+      version: 1
+    - interface: list-manager._rtx.interface.cloud-create-entry
+      version: 1
+    - interface: list-manager._rtx.interface.cloud-delete
+      version: 1
+    - interface: list-manager._rtx.interface.cloud-init
+      version: 1
+    - interface: list-manager._rtx.interface.cloud-list-categories
+      version: 1
+    - interface: list-manager._rtx.interface.cloud-read
+      version: 1
+    - interface: list-manager._rtx.interface.cloud-read-beautify
+      version: 1
+    - interface: list-manager._rtx.interface.cloud-update
+      version: 1
+    - interface: list-manager._rtx.interface.create-entry
+      version: 1
+    - interface: list-manager._rtx.interface.describe-schema
+      version: 1
+    - interface: list-manager._rtx.interface.generate-id
+      version: 1
+    - interface: list-manager._rtx.interface.init-list
+      version: 1
+    - interface: list-manager._rtx.interface.migrate-markdown
+      version: 1
+    - interface: list-manager._rtx.interface.read-beautify
+      version: 1
+    - interface: list-manager._rtx.interface.read-list
+      version: 1
+    - interface: list-manager._rtx.interface.update-list
+      version: 1
     contract:
       arguments: {}
       caller_warnings: []
@@ -114,3 +149,4 @@ uses_interfaces:
 - interface: list-manager._rtx.interface.update-list
   version: 1
 version: 1
+maturity: stable

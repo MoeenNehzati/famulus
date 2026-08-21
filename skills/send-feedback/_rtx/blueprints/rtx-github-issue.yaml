@@ -9,6 +9,9 @@ gateway:
 id: send-feedback._rtx.source.rtx-github-issue
 interfaces:
   send-feedback._rtx.source.rtx-github-issue.interface.check-route:
+    content:
+    - _github_issue\.py
+    uses_interfaces: []
     contract:
       arguments: {}
       caller_warnings: []
@@ -26,8 +29,8 @@ interfaces:
           path_match: exact
           sensitivity: user-private
         - access: read
-          content: Local availability and authentication state of the configured
-            issue-filing command.
+          content: Local availability and authentication state of the configured issue-filing
+            command.
           formats:
           - text
           id: route-probe
@@ -61,16 +64,16 @@ interfaces:
       interaction:
         mode: unattended
       outcomes:
-      - caller_action: Present the resolved repository and route in the delivery
-          preview, and relay the remediation text when the direct route is
-          unavailable, before requesting approval.
+      - caller_action: Present the resolved repository and route in the delivery preview,
+          and relay the remediation text when the direct route is unavailable, before
+          requesting approval.
         class: success
         effects: []
         id: completed
         outputs:
         - route
-      - caller_action: Repair the missing or invalid feedback repository value in the
-          owning repository's exact configuration before retrying.
+      - caller_action: Repair the missing or invalid feedback repository value in
+          the owning repository's exact configuration before retrying.
         class: error
         effects: []
         id: configuration-error
@@ -83,8 +86,8 @@ interfaces:
           minimum: 0
         description: One JSON object naming the configured repository and feedback
           address, whether the issue-filing command is installed and authenticated,
-          the authenticated account when known, the resulting route, and the
-          remediation text to relay when the direct route is unavailable.
+          the authenticated account when known, the resulting route, and the remediation
+          text to relay when the direct route is unavailable.
         direct_io_ref: route-report
         empty: Empty when the configured repository cannot be resolved.
         id: route
@@ -129,6 +132,9 @@ interfaces:
     usage: ''
     version: 1
   send-feedback._rtx.source.rtx-github-issue.interface.file-issue:
+    content:
+    - _github_issue\.py
+    uses_interfaces: []
     contract:
       arguments:
         body-file:
@@ -193,8 +199,7 @@ interfaces:
           medium: stderr
           sensitivity: derived-private
         - access: send
-          content: Reviewed report published as a public issue on the configured
-            repository.
+          content: Reviewed report published as a public issue on the configured repository.
           formats:
           - text
           id: published-issue
@@ -214,8 +219,7 @@ interfaces:
           may_occur_in_outcomes:
           - filed
           reversibility:
-            irreversible: A published public issue cannot be recalled by this
-              interface.
+            irreversible: A published public issue cannot be recalled by this interface.
           value_source:
             argument_ref: body-file
             kind: argument
@@ -229,8 +233,7 @@ interfaces:
           idempotency:
             non_idempotent: Repeating a successful invocation files another issue.
           on_uncertain_completion:
-            stop: Do not retry when the command fails or the issue location is
-              unconfirmed.
+            stop: Do not retry when the command fails or the issue location is unconfirmed.
           partial_effects_on_failure:
             impossible: A failed invocation publishes nothing.
           rollback_on_failure:
@@ -250,17 +253,17 @@ interfaces:
         id: filed
         outputs:
         - result
-      - caller_action: Relay the remediation text so the user can install or sign in
-          to the issue-filing command, then give the prepared submission URL to review
-          and submit, saying when the body did not fit so they paste the retained
+      - caller_action: Relay the remediation text so the user can install or sign
+          in to the issue-filing command, then give the prepared submission URL to
+          review and submit, saying when the body did not fit so they paste the retained
           report.
         class: partial
         effects: []
         id: submission-prepared
         outputs:
         - result
-      - caller_action: Preserve the report, resolve the configuration or filing
-          failure, and do not retry automatically.
+      - caller_action: Preserve the report, resolve the configuration or filing failure,
+          and do not retry automatically.
         class: error
         effects: []
         id: filing-failed
@@ -272,9 +275,9 @@ interfaces:
           maximum: 1
           minimum: 0
         description: One JSON object naming the route taken, the repository, the filed
-          issue or prepared submission URL, whether the body was included, the
-          authenticated account when known, and the remediation text to relay when
-          the direct route is unavailable.
+          issue or prepared submission URL, whether the body was included, the authenticated
+          account when known, and the remediation text to relay when the direct route
+          is unavailable.
         direct_io_ref: issue-result
         empty: Empty when configuration resolution or filing fails.
         id: result
@@ -314,8 +317,8 @@ interfaces:
         description: The report file exists and holds the text the user approved.
         id: report-readable
         unmet_outcome: filing-failed
-    description: File a reviewed report as a public issue, or return a prepared
-      submission URL when the issue-filing command is unavailable.
+    description: File a reviewed report as a public issue, or return a prepared submission
+      URL when the issue-filing command is unavailable.
     process_binding:
       entry: FileIssue
       kind: process
@@ -340,3 +343,4 @@ runtime_dependencies: []
 schema_version: 6
 uses_interfaces: []
 version: 1
+maturity: stable

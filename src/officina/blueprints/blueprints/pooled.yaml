@@ -21,6 +21,9 @@ gateway:
 id: blueprints.source.pooled
 interfaces:
   blueprints.source.pooled.interface.python-api:
+    content:
+    - pooled\.py
+    uses_interfaces: []
     contract:
       arguments:
         inputs:
@@ -109,3 +112,4 @@ node_type: behavioral_source
 schema_version: 6
 uses_interfaces: []
 version: 1
+maturity: stable

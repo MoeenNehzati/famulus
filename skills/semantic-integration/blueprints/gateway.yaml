@@ -11,6 +11,12 @@ gateway:
 id: semantic-integration.source.gateway
 interfaces:
   semantic-integration.source.gateway.interface.default:
+    content:
+    - SKILL\.md
+    - references/git/run\-ledger\-template\.md
+    uses_interfaces:
+    - interface: git-workflow.interface.default
+      version: 1
     contract:
       arguments:
         request:
@@ -184,3 +190,4 @@ uses_interfaces:
 - interface: git-workflow.interface.default
   version: 1
 version: 1
+maturity: stable

@@ -59,3 +59,4 @@ sources:
       base: module-root
       path: blueprints/view.yaml
 version: 1
+maturity: stable

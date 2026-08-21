@@ -101,3 +101,4 @@ sources:
       base: module-root
       path: blueprints/toml-io.yaml
 version: 5
+maturity: stable

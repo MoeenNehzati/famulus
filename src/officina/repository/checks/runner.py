@@ -52,6 +52,13 @@ DOCSTRING_TESTS = {
     "tests/test_docstrings_validator.py",
 }
 PERFORMANCE_TESTS = {"tests/test_dispatcher_performance.py"}
+# These install what is published on GitHub's default branch, so they report on
+# the remote's health rather than on the working tree under test. Pooled phases
+# would inherit a network dependency that says nothing about the local diff.
+# Selection goes through a marker rather than filenames: the files are named for
+# the assistant hosts they install, and this module stays host-neutral.
+GITHUB_INSTALL_MARKER = "github_install"
+GITHUB_INSTALL_TEST_ROOT = "skills/install-assistant-tools/_rtx/tests"
 NATIVE_KEYRING_TESTS = {
     "tests/test_officina_secret_store.py::"
     "test_default_backend_native_roundtrip_when_available"
@@ -1292,6 +1299,7 @@ SELECTABLE_TEST_TASKS = {
     "native:keyring": tuple(sorted(NATIVE_KEYRING_TESTS)),
     "native:scheduler": tuple(sorted(NATIVE_SCHEDULER_TESTS)),
     "tests:shared": None,
+    "tests:github": (GITHUB_INSTALL_TEST_ROOT,),
     "tests:install": tuple(sorted(INSTALLATION_TESTS)),
     "tests:browser": tuple(sorted(CHROME_TESTS)),
     "tests:docstrings": tuple(sorted(DOCSTRING_TESTS)),
@@ -1947,6 +1955,7 @@ def _pytest_phase_command(
         if profile == "full":
             for test in sorted(PERFORMANCE_TESTS):
                 pytest_args.extend(["--deselect", test])
+        pytest_args.extend(["-m", f"not {GITHUB_INSTALL_MARKER}"])
         targets = list(PORTABILITY_TESTS) if profile == "portability" else []
     elif task_id == "validators":
         pytest_args = _pytest_args(verbose=verbose, jobs=jobs)
@@ -1957,6 +1966,10 @@ def _pytest_phase_command(
     elif task_id == "tests:browser":
         pytest_args = _pytest_args(verbose=verbose, jobs=1)
         targets = sorted(CHROME_TESTS)
+    elif task_id == "tests:github":
+        pytest_args = _pytest_args(verbose=verbose, jobs=jobs)
+        pytest_args.extend(["-m", GITHUB_INSTALL_MARKER])
+        targets = [GITHUB_INSTALL_TEST_ROOT]
     elif task_id == "tests:install":
         pytest_args = _pytest_args(verbose=verbose, jobs=jobs)
         targets = sorted(INSTALLATION_TESTS)

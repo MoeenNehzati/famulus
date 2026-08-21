@@ -18,3 +18,4 @@ uses_interfaces:
 - interface: cloud-files._rtx.interface.lists-write
   version: 1
 version: 1
+maturity: stable

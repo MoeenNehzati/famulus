@@ -160,7 +160,6 @@ from a dependency.
 - `visualization/` — graph extraction, projection, rendering, and browser assets
 - `common/` — small cross-cutting primitives such as atomic file operations,
   repository paths, TOML handling, dates, and Python-source caching
-- `refactor/` — generic manifest-driven source relocation mechanics
 - `install/` — installing an Officina project onto a machine: managed runtime,
   launcher entries, resolvers, runtime pointer, uv bootstrap, and the
   ownership-aware install manifest that makes uninstall exact
@@ -202,6 +201,8 @@ These skills exist to operate on the framework itself:
   existing blueprint
 - [`refactor-node`](../../skills/refactor-node/) — audit or refactor a node
   against the standards
+- [`relocate-nodes`](../../skills/relocate-nodes/) — preflight and atomically
+  apply exact node-relocation manifests through skill-owned runtime behavior
 - [`update-standards`](../../skills/update-standards/) — change a canonical
   standard together with its pinned dependents, generated views, and
   enforcement artifacts

@@ -16,6 +16,11 @@ gateway:
 id: regenerate-blueprints._rtx.source.rtx-blueprint-regenerator
 interfaces:
   regenerate-blueprints._rtx.source.rtx-blueprint-regenerator.interface.regenerate-blueprint:
+    content:
+    - _blueprint_regenerator\.py
+    uses_interfaces:
+    - interface: blueprints.interface.template
+      version: 1
     contract:
       arguments:
         skill-name:
@@ -229,3 +234,4 @@ uses_interfaces:
 - interface: blueprints.interface.template
   version: 1
 version: 1
+maturity: stable

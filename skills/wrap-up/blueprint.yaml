@@ -7,7 +7,8 @@ children: {}
 content:
 - SKILL\.md
 description: Orchestrates an interactive end-of-day review that updates completed
-  plan and list work and queues deduplicated sessions needing handoff attention.
+  plan and list work and queues deduplicated handoff candidates via
+  find-handoff-candidates.
 discovery:
   mechanism: skill
   catalog:
@@ -40,3 +41,7 @@ sources:
       base: module-root
       path: blueprints/gateway.yaml
 version: 2
+maturity: stable
+installation_tier: core
+personal_preference:
+  applies: false

@@ -9,6 +9,9 @@ gateway:
 id: pdf-to-markdown._rtx.source.rtx-marker-probe
 interfaces:
   pdf-to-markdown._rtx.source.rtx-marker-probe.interface.scripts-check-marker-models:
+    content:
+    - _marker_probe\.py
+    uses_interfaces: []
     contract:
       arguments: {}
       caller_warnings: []
@@ -132,3 +135,4 @@ runtime_dependencies:
 schema_version: 6
 uses_interfaces: []
 version: 1
+maturity: stable

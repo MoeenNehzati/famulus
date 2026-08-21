@@ -2,6 +2,7 @@ schema_version: 6
 node_type: module
 id: root.alpha.leaf
 version: 1
+maturity: stable
 gateway:
   path: __init__.py
   language: Python

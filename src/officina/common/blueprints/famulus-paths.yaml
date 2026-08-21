@@ -10,6 +10,9 @@ gateway:
 id: common.source.famulus-paths
 interfaces:
   common.source.famulus-paths.interface.python-api:
+    content:
+    - famulus_paths/__init__\.py
+    uses_interfaces: []
     contract:
       arguments:
         platform:
@@ -148,3 +151,4 @@ node_type: behavioral_source
 schema_version: 6
 uses_interfaces: []
 version: 1
+maturity: stable

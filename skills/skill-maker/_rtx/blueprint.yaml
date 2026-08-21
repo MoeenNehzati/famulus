@@ -16,6 +16,7 @@ exports:
       allowed_callers:
       - skill-certifier
       - skill-maker
+      - relocate-nodes._rtx
     source_interface: skill-maker._rtx.source.rtx-blueprint-syncer.interface.sync-blueprints
 gateway:
   language: Python>=3.11
@@ -30,3 +31,4 @@ sources:
       base: module-root
       path: blueprints/rtx-blueprint-syncer.yaml
 version: 1
+maturity: stable

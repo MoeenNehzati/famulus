@@ -22,6 +22,9 @@ gateway:
 id: certification.source.records
 interfaces:
   certification.source.records.interface.python-api:
+    content:
+    - records\.py
+    uses_interfaces: []
     contract:
       arguments:
         key-root:
@@ -267,3 +270,4 @@ runtime_dependencies:
 schema_version: 6
 uses_interfaces: []
 version: 1
+maturity: stable

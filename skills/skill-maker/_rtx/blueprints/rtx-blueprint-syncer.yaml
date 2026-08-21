@@ -11,6 +11,14 @@ gateway:
 id: skill-maker._rtx.source.rtx-blueprint-syncer
 interfaces:
   skill-maker._rtx.source.rtx-blueprint-syncer.interface.sync-blueprints:
+    content:
+    - _blueprint_syncer\.py
+    - tests/test_blueprint_tools\.py
+    uses_interfaces:
+    - interface: common.interface.atomic-files
+      version: 1
+    - interface: blueprints.interface.graph
+      version: 1
     contract:
       arguments:
         check:
@@ -233,3 +241,4 @@ uses_interfaces:
 - interface: blueprints.interface.graph
   version: 1
 version: 1
+maturity: stable

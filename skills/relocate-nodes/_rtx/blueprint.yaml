@@ -1,0 +1,43 @@
+authority:
+  owns_filesystem: []
+  suggested_permissions:
+    bash:
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _relocate_nodes.py
+      - Interface
+      reason: Preflight or atomically apply one exact relocation manifest.
+    network: []
+children: {}
+content:
+- __init__\.py
+- _relocate_nodes\.py
+- _relocation_closure\.py
+- _relocation_engine\.py
+- schemas/relocation\.schema\.json
+- tests/test_relocation_closure\.py
+- tests/test_relocation_engine\.py
+description: Private Python runtime for manifest-driven registered-node relocation.
+exports:
+  relocate-nodes._rtx.interface.relocate:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - relocate-nodes
+    source_interface: relocate-nodes._rtx.source.rtx-relocate-nodes.interface.relocate
+gateway:
+  language: Python>=3.11
+  path: __init__.py
+id: relocate-nodes._rtx
+namespace_exports: {}
+node_type: module
+schema_version: 6
+sources:
+  relocate-nodes._rtx.source.rtx-relocate-nodes:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-relocate-nodes.yaml
+version: 1
+maturity: stable

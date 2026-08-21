@@ -21,6 +21,11 @@ gateway:
 id: g-calendar._rtx.source.rtx-ensure-oauth
 interfaces:
   g-calendar._rtx.source.rtx-ensure-oauth.interface.ensure-oauth:
+    content:
+    - _ensure_oauth\.py
+    uses_interfaces:
+    - interface: credentials.interface.google
+      version: 1
     contract:
       arguments:
         dry-run:
@@ -268,6 +273,11 @@ interfaces:
     usage: --home <dir> [--dry-run]
     version: 1
   g-calendar._rtx.source.rtx-ensure-oauth.interface.use-google-credential-file:
+    content:
+    - _ensure_oauth\.py
+    uses_interfaces:
+    - interface: credentials.interface.google
+      version: 1
     contract:
       arguments:
         credential-file:
@@ -450,6 +460,11 @@ interfaces:
     usage: --credential-file <path> --home <dir> [--allow-account-change]
     version: 1
   g-calendar._rtx.source.rtx-ensure-oauth.interface.use-google-credential:
+    content:
+    - _ensure_oauth\.py
+    uses_interfaces:
+    - interface: credentials.interface.google
+      version: 1
     contract:
       arguments:
         credential-id:
@@ -585,3 +600,4 @@ uses_interfaces:
 - interface: credentials.interface.google
   version: 1
 version: 1
+maturity: experimental

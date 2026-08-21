@@ -9,6 +9,9 @@ gateway:
 id: math-dependency-graph.source.instructions-extract
 interfaces:
   math-dependency-graph.source.instructions-extract.interface.extract:
+    content:
+    - instructions/extract\.md
+    uses_interfaces: []
     contract:
       arguments:
         request:
@@ -342,3 +345,4 @@ node_type: behavioral_source
 schema_version: 6
 uses_interfaces: []
 version: 26
+maturity: stable

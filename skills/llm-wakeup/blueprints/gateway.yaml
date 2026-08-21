@@ -10,6 +10,15 @@ gateway:
 id: llm-wakeup.source.gateway
 interfaces:
   llm-wakeup.source.gateway.interface.default:
+    content:
+    - SKILL\.md
+    uses_interfaces:
+    - interface: wakeup.interface.auto-policy
+      version: 1
+    - interface: wakeup.interface.infer-schedule
+      version: 1
+    - interface: wakeup.interface.explicit-schedule
+      version: 1
     contract:
       arguments:
         request:
@@ -100,3 +109,4 @@ uses_interfaces:
 - interface: wakeup.interface.explicit-schedule
   version: 1
 version: 1
+maturity: stable

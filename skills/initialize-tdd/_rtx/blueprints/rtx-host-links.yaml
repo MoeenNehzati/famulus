@@ -10,6 +10,10 @@ gateway:
 id: initialize-tdd._rtx.source.rtx-host-links
 interfaces:
   initialize-tdd._rtx.source.rtx-host-links.interface.setup-compat-aliases:
+    content:
+    - _claude_compat_symlink\.py
+    - _host_links\.py
+    uses_interfaces: []
     contract:
       arguments:
         project-dir:
@@ -156,3 +160,4 @@ runtime_dependencies: []
 schema_version: 6
 uses_interfaces: []
 version: 1
+maturity: stable

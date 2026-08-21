@@ -44,6 +44,7 @@ namespace_exports:
         allow_all_modules: false
         allowed_callers:
         - skill-certifier
+        - relocate-nodes._rtx
 node_type: module
 schema_version: 6
 sources:
@@ -52,3 +53,7 @@ sources:
       base: module-root
       path: blueprints/gateway.yaml
 version: 5
+maturity: stable
+installation_tier: core
+personal_preference:
+  applies: false

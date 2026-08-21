@@ -9,6 +9,35 @@ gateway:
 id: email-client.source.gateway
 interfaces:
   email-client.source.gateway.interface.default:
+    content:
+    - SKILL\.md
+    uses_interfaces:
+    - interface: connect-google.interface.default
+      version: 1
+    - interface: email-client._rtx.interface.accounts-add
+      version: 1
+    - interface: email-client._rtx.interface.accounts-list
+      version: 1
+    - interface: email-client._rtx.interface.accounts-remove
+      version: 1
+    - interface: email-client._rtx.interface.accounts-set-password
+      version: 1
+    - interface: email-client._rtx.interface.accounts-update
+      version: 1
+    - interface: email-client._rtx.interface.live-smoke
+      version: 1
+    - interface: email-client._rtx.interface.mail-attachments
+      version: 1
+    - interface: email-client._rtx.interface.mail-folders
+      version: 1
+    - interface: email-client._rtx.interface.mail-list
+      version: 1
+    - interface: email-client._rtx.interface.mail-read
+      version: 1
+    - interface: email-client._rtx.interface.mail-save-attachments
+      version: 1
+    - interface: email-client._rtx.interface.send-email
+      version: 1
     contract:
       arguments: {}
       caller_warnings:
@@ -111,3 +140,4 @@ uses_interfaces:
 - interface: email-client._rtx.interface.send-email
   version: 1
 version: 2
+maturity: stable

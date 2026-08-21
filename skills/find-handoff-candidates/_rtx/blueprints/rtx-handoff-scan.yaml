@@ -15,6 +15,9 @@ gateway:
 id: find-handoff-candidates._rtx.source.rtx-handoff-scan
 interfaces:
   find-handoff-candidates._rtx.source.rtx-handoff-scan.interface.scan:
+    content:
+    - _handoff_scan\.py
+    uses_interfaces: []
     contract:
       arguments:
         date:
@@ -162,3 +165,4 @@ runtime_dependencies: []
 schema_version: 6
 uses_interfaces: []
 version: 1
+maturity: stable

@@ -10,6 +10,32 @@ gateway:
 id: email-triage.source.gateway
 interfaces:
   email-triage.source.gateway.interface.default:
+    content:
+    - SKILL\.md
+    - tests/test_llm_routing\.py
+    uses_interfaces:
+    - interface: email-triage.source.instructions-triage.interface.triage
+      version: 2
+    - interface: email-triage._rtx.interface.fetch-filtered-envelopes
+      version: 1
+    - interface: email-triage._rtx.interface.scripts-clear-failure
+      version: 1
+    - interface: email-triage._rtx.interface.scripts-filter-envelopes
+      version: 1
+    - interface: email-triage._rtx.interface.scripts-finalize-triage
+      version: 1
+    - interface: email-triage._rtx.interface.scripts-get-cutoff
+      version: 1
+    - interface: email-triage._rtx.interface.scripts-log-decision
+      version: 1
+    - interface: email-triage._rtx.interface.scripts-mark-failure
+      version: 1
+    - interface: email-triage._rtx.interface.scripts-prune-log
+      version: 1
+    - interface: email-triage._rtx.interface.scripts-update-watermark
+      version: 1
+    - interface: email-triage._rtx.interface.scripts-write-metrics
+      version: 1
     contract:
       arguments:
         request:
@@ -105,3 +131,4 @@ uses_interfaces:
 - interface: email-triage._rtx.interface.scripts-write-metrics
   version: 1
 version: 2
+maturity: stable

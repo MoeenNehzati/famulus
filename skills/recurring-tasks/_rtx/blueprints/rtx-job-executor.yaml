@@ -37,6 +37,9 @@ gateway:
 id: recurring-tasks._rtx.source.rtx-job-executor
 interfaces:
   recurring-tasks._rtx.source.rtx-job-executor.interface.execute-job:
+    content:
+    - _job_executor\.py
+    uses_interfaces: []
     contract:
       arguments:
         job:
@@ -320,3 +323,4 @@ runtime_dependencies:
 schema_version: 6
 uses_interfaces: []
 version: 1
+maturity: experimental

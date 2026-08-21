@@ -29,6 +29,21 @@ gateway:
 id: install-assistant-tools._rtx.source.rtx-agent-launchers
 interfaces:
   install-assistant-tools._rtx.source.rtx-agent-launchers.interface.scripts-launchers:
+    content:
+    - _agent_launchers\.py
+    - assets/bin/_agent_launch\.py
+    - assets/bin/assistant
+    - assets/bin/assistant\.bat
+    - assets/bin/coauthor
+    - assets/bin/coauthor\.bat
+    - assets/bin/collab
+    - assets/bin/collab\.bat
+    - assets/bin/tmux\-workspace
+    uses_interfaces:
+    - interface: common.interface.toml-io
+      version: 1
+    - interface: common.interface.famulus-paths
+      version: 1
     contract:
       arguments:
         agents:
@@ -234,3 +249,4 @@ uses_interfaces:
 - interface: common.interface.famulus-paths
   version: 1
 version: 1
+maturity: stable

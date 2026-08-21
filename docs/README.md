@@ -28,11 +28,19 @@ Officina is and routes to everything below.
 - [Skill Index](./skills.md)
 - [Contributors](./contributors/README.md)
 
+## Quickstarts
+
+- [Personal Assistance](./quickstarts/personal-assistance.md)
+- [Research](./quickstarts/research.md)
+- [Software Development](./quickstarts/development.md)
+- [Skill Development](./quickstarts/skill-development.md)
+- [Automation](./quickstarts/automation.md)
+
 ## Skill Domains
 
-- [Personal Assistance](./domains/personal-assistance.md)
+- [Personal Assistance inventory](./domains/personal-assistance.md)
 - [Assistant Interaction](./domains/assistant-interaction.md)
-- [Research](./domains/research.md)
+- [Research inventory](./domains/research.md)
 - [Assistant Operations](./domains/assistant-operations.md)
 - [Software Development](./contributors/README.md#software-development)
 - [Assistant Development](./contributors/README.md#assistant-development)

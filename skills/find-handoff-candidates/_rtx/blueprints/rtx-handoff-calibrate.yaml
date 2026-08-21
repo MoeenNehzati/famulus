@@ -21,6 +21,9 @@ gateway:
 id: find-handoff-candidates._rtx.source.rtx-handoff-calibrate
 interfaces:
   find-handoff-candidates._rtx.source.rtx-handoff-calibrate.interface.calibrate:
+    content:
+    - _handoff_calibrate\.py
+    uses_interfaces: []
     contract:
       arguments:
         days:
@@ -140,3 +143,4 @@ runtime_dependencies: []
 schema_version: 6
 uses_interfaces: []
 version: 1
+maturity: stable

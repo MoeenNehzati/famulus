@@ -245,6 +245,7 @@ def write_repository_managed_skill_blueprints(
         "node_type": "module",
         "id": skill_name,
         "version": 1,
+        **({"maturity": "stable"} if schema_version == 6 else {}),
         "gateway": {"path": "SKILL.md", "language": "Markdown"},
         "content": [r"SKILL\.md"],
         "discovery": {
@@ -257,6 +258,14 @@ def write_repository_managed_skill_blueprints(
             "activated_by": list(activated_by),
             "persistent_modifier": persistent_modifier,
         },
+        **(
+            {
+                "installation_tier": "core",
+                "personal_preference": {"applies": False},
+            }
+            if schema_version == 6
+            else {}
+        ),
         "authority": {"owns_filesystem": []},
         "sources": {},
         "children": (
@@ -281,6 +290,7 @@ def write_repository_managed_skill_blueprints(
         "node_type": "module",
         "id": child_id,
         "version": 1,
+        **({"maturity": "stable"} if schema_version == 6 else {}),
         "gateway": {
             "path": "__init__.py",
             "language": "Python>=3.11",

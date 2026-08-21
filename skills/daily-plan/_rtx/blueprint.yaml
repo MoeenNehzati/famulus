@@ -78,3 +78,4 @@ sources:
       base: module-root
       path: blueprints/rtx-state-patch.yaml
 version: 1
+maturity: stable

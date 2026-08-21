@@ -96,3 +96,4 @@ sources:
       base: module-root
       path: blueprints/rtx-oauth-bootstrap.yaml
 version: 1
+maturity: experimental

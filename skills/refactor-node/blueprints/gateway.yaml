@@ -9,6 +9,15 @@ gateway:
 id: refactor-node.source.gateway
 interfaces:
   refactor-node.source.gateway.interface.default:
+    content:
+    - SKILL\.md
+    uses_interfaces:
+    - interface: standards.interface.query-standard
+      version: 1
+    - interface: refactor-node.source.instruction-refactoring.interface.refactor-instructions
+      version: 1
+    - interface: refactor-node.source.python-refactoring.interface.refactor-python
+      version: 1
     contract:
       arguments:
         request:
@@ -174,3 +183,4 @@ uses_interfaces:
 - interface: refactor-node.source.python-refactoring.interface.refactor-python
   version: 1
 version: 4
+maturity: stable

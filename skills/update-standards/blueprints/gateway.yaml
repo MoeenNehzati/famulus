@@ -9,6 +9,9 @@ gateway:
 id: update-standards.source.gateway
 interfaces:
   update-standards.source.gateway.interface.default:
+    content:
+    - SKILL\.md
+    uses_interfaces: []
     contract:
       arguments:
         request:
@@ -216,3 +219,4 @@ node_type: behavioral_source
 schema_version: 6
 uses_interfaces: []
 version: 1
+maturity: stable

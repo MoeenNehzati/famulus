@@ -63,3 +63,7 @@ sources:
       base: module-root
       path: blueprints/instructions-repair-element.yaml
 version: 1
+maturity: stable
+installation_tier: core
+personal_preference:
+  applies: false

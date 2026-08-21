@@ -9,6 +9,25 @@ gateway:
 id: cloud-files.source.gateway
 interfaces:
   cloud-files.source.gateway.interface.default:
+    content:
+    - SKILL\.md
+    uses_interfaces:
+    - interface: connect-google.interface.default
+      version: 1
+    - interface: cloud-files._rtx.interface.lists-delete
+      version: 1
+    - interface: cloud-files._rtx.interface.lists-read
+      version: 1
+    - interface: cloud-files._rtx.interface.lists-write
+      version: 1
+    - interface: cloud-files._rtx.interface.plans-delete
+      version: 1
+    - interface: cloud-files._rtx.interface.plans-read
+      version: 1
+    - interface: cloud-files._rtx.interface.plans-write
+      version: 1
+    - interface: cloud-files._rtx.interface.write-config
+      version: 1
     contract:
       arguments:
         request:
@@ -102,3 +121,4 @@ uses_interfaces:
 - interface: cloud-files._rtx.interface.write-config
   version: 1
 version: 2
+maturity: experimental

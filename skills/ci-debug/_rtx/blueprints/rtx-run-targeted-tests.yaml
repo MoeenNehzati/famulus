@@ -10,6 +10,9 @@ gateway: {language: Python>=3.11, path: _run_targeted_tests.py}
 id: ci-debug._rtx.source.rtx-run-targeted-tests
 interfaces:
   ci-debug._rtx.source.rtx-run-targeted-tests.interface.run-targeted-tests:
+    content:
+    - _run_targeted_tests\.py
+    uses_interfaces: []
     contract:
       arguments:
         repo-root: {description: Repository containing the public check runner., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
@@ -99,3 +102,4 @@ runtime_dependencies: []
 schema_version: 6
 uses_interfaces: []
 version: 1
+maturity: stable

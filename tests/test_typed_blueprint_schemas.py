@@ -13,6 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_ROOT = (
     REPO_ROOT / "tests" / "fixtures" / "blueprint_schemas" / "v4"
 )
+LIVE_V6_SCHEMA_ROOT = REPO_ROOT / "references" / "blueprint"
 CERTIFICATION_ROOT = REPO_ROOT / "references" / "certification"
 
 
@@ -45,6 +46,211 @@ def _validator(name: str = "schema.json") -> jsonschema.Draft7Validator:
 
 def _errors(document: dict, name: str = "schema.json") -> list[str]:
     return [error.message for error in _validator(name).iter_errors(document)]
+
+
+def _live_v6_validator(name: str) -> jsonschema.Draft7Validator:
+    """Build a validator for one live v6 schema and its local references."""
+
+    schema = json.loads((LIVE_V6_SCHEMA_ROOT / name).read_text(encoding="utf-8"))
+    store = {
+        child.name: json.loads(child.read_text(encoding="utf-8"))
+        for child in LIVE_V6_SCHEMA_ROOT.glob("*.json")
+    }
+    store.update(
+        {
+            (LIVE_V6_SCHEMA_ROOT / key).resolve().as_uri(): value
+            for key, value in store.items()
+        }
+    )
+    resolver = jsonschema.RefResolver(
+        base_uri=(LIVE_V6_SCHEMA_ROOT / name).resolve().as_uri(),
+        referrer=schema,
+        store=store,
+    )
+    return jsonschema.Draft7Validator(schema, resolver=resolver)
+
+
+def _valid_live_v6_module() -> dict:
+    return {
+        "schema_version": 6,
+        "node_type": "module",
+        "id": "demo-skill",
+        "version": 1,
+        "gateway": {"path": "SKILL.md", "language": "Markdown"},
+        "content": [r"SKILL\\.md"],
+        "discovery": {
+            "mechanism": "skill",
+            "catalog": {
+                "domain": "software-development",
+                "topics": ["repository-workflow"],
+                "visibility": "listed",
+            },
+            "activated_by": ["user-request"],
+            "persistent_modifier": False,
+        },
+        "authority": {"owns_filesystem": []},
+        "sources": {},
+        "children": {},
+        "namespace_exports": {},
+        "exports": {},
+    }
+
+
+def _valid_live_v6_behavioral_source() -> dict:
+    return {
+        "schema_version": 6,
+        "node_type": "behavioral_source",
+        "id": "demo-skill.source.gateway",
+        "version": 1,
+        "gateway": {"path": "SKILL.md", "language": "Markdown"},
+        "content": [r"SKILL\\.md"],
+        "dependencies": [],
+        "uses_interfaces": [],
+        "interfaces": {},
+    }
+
+
+def test_live_v6_maturity_accepts_only_stable_or_experimental() -> None:
+    """A typo must not silently publish a node with an unknown maturity."""
+
+    module = _valid_live_v6_module()
+    source = _valid_live_v6_behavioral_source()
+    module_validator = _live_v6_validator("module.schema.json")
+    source_validator = _live_v6_validator("behavioral-source.schema.json")
+
+    for document, validator in ((module, module_validator), (source, source_validator)):
+        for maturity in ("stable", "experimental"):
+            candidate = deepcopy(document)
+            candidate["maturity"] = maturity
+            if candidate["node_type"] == "module":
+                candidate["installation_tier"] = "core"
+                candidate["personal_preference"] = {"applies": False}
+            validator.validate(candidate)
+
+        candidate = deepcopy(document)
+        candidate["maturity"] = "preview"
+        assert list(validator.iter_errors(candidate))
+
+
+def test_live_v6_installation_metadata_is_module_only() -> None:
+    """Installation selection belongs to discoverable modules, never sources."""
+
+    module = _valid_live_v6_module()
+    module.update(
+        {
+            "maturity": "stable",
+            "installation_tier": "optional",
+            "personal_preference": {"applies": False},
+        }
+    )
+    _live_v6_validator("module.schema.json").validate(module)
+
+    source = _valid_live_v6_behavioral_source()
+    source.update({"maturity": "experimental", "installation_tier": "optional"})
+    assert list(_live_v6_validator("behavioral-source.schema.json").iter_errors(source))
+
+
+def test_live_v6_discoverable_module_requires_installation_metadata() -> None:
+    """Discoverable modules cannot omit the installation-selection record."""
+
+    module = _valid_live_v6_module()
+    module.update(
+        {
+            "maturity": "stable",
+            "discovery": {
+                "mechanism": "skill",
+                "catalog": {
+                    "domain": "software-development",
+                    "topics": ["repository-workflow"],
+                    "visibility": "listed",
+                },
+                "activated_by": ["user-request"],
+                "persistent_modifier": False,
+            },
+        }
+    )
+    validator = _live_v6_validator("module.schema.json")
+
+    assert list(validator.iter_errors(module))
+    module["installation_tier"] = "core"
+    module["personal_preference"] = {"applies": False}
+    validator.validate(module)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("installation_tier", "core"),
+        ("personal_preference", {"applies": False}),
+    ],
+)
+def test_live_v6_non_discoverable_module_rejects_installation_metadata(
+    field: str, value: object
+) -> None:
+    """Installation metadata is meaningful only for discoverable modules."""
+
+    module = _valid_live_v6_module()
+    module.pop("discovery")
+    module["maturity"] = "stable"
+    module[field] = value
+
+    assert list(_live_v6_validator("module.schema.json").iter_errors(module))
+
+
+def test_live_v6_personal_preference_requires_description_when_applicable() -> None:
+    """A preference claim needs an author-facing reason when it applies."""
+
+    module = _valid_live_v6_module()
+    module.update(
+        {
+            "maturity": "stable",
+            "installation_tier": "core",
+            "personal_preference": {"applies": True},
+        }
+    )
+    validator = _live_v6_validator("module.schema.json")
+
+    assert list(validator.iter_errors(module))
+    module["personal_preference"]["description"] = (
+        "Explains the user-specific workflow preference."
+    )
+    validator.validate(module)
+
+
+def test_live_v6_personal_preference_rejects_whitespace_description() -> None:
+    """An applicable preference needs a substantive author-facing description."""
+
+    module = _valid_live_v6_module()
+    module.update(
+        {
+            "maturity": "stable",
+            "installation_tier": "core",
+            "personal_preference": {"applies": True, "description": " \t\n "},
+        }
+    )
+
+    assert list(_live_v6_validator("module.schema.json").iter_errors(module))
+
+
+def _canonical_errors(document: dict, name: str) -> list[str]:
+    root = REPO_ROOT / "references" / "blueprint"
+    schema = json.loads((root / name).read_text(encoding="utf-8"))
+    store = {
+        child.name: json.loads(child.read_text(encoding="utf-8"))
+        for child in root.glob("*.schema.json")
+    }
+    resolver = jsonschema.RefResolver(
+        base_uri=(root / name).resolve().as_uri(),
+        referrer=schema,
+        store=store,
+    )
+    return [
+        error.message
+        for error in jsonschema.Draft7Validator(
+            schema,
+            resolver=resolver,
+        ).iter_errors(document)
+    ]
 
 
 def _empty_io() -> dict:
@@ -384,6 +590,35 @@ def test_v4_behavioral_source_owns_intrinsic_interfaces_and_generic_edges() -> N
     assert _errors(document, "behavioral-source.schema.json")
 
 
+def test_current_behavioral_source_requires_explicit_interface_facets() -> None:
+    document = _valid_v4_behavioral_source()
+    document["schema_version"] = 6
+    document["maturity"] = "stable"
+    interface = document["interfaces"][
+        "demo-skill.source.gateway.interface.default"
+    ]
+    interface["content"] = [r"SKILL\.md"]
+    interface["uses_interfaces"] = []
+
+    assert _canonical_errors(document, "behavioral-source.schema.json") == []
+
+    missing_content = deepcopy(document)
+    del missing_content["interfaces"][
+        "demo-skill.source.gateway.interface.default"
+    ]["content"]
+    assert _canonical_errors(missing_content, "behavioral-source.schema.json")
+
+    missing_uses = deepcopy(document)
+    del missing_uses["interfaces"][
+        "demo-skill.source.gateway.interface.default"
+    ]["uses_interfaces"]
+    assert _canonical_errors(missing_uses, "behavioral-source.schema.json")
+
+    no_interfaces = deepcopy(document)
+    no_interfaces["interfaces"] = {}
+    assert _canonical_errors(no_interfaces, "behavioral-source.schema.json") == []
+
+
 def test_v4_structural_draft_allows_certifier_owned_semantics_to_be_absent() -> None:
     module = _valid_v4_module()
     source = _valid_v4_behavioral_source()
@@ -600,6 +835,13 @@ def test_dispatch_schema_accepts_live_v5_blueprints() -> None:
             encoding="utf-8"
         )
     )
+    document.update(
+        {
+            "maturity": "stable",
+            "installation_tier": "core",
+            "personal_preference": {"applies": False},
+        }
+    )
 
     canonical_root = REPO_ROOT / "references" / "blueprint"
     schema = json.loads(
@@ -804,6 +1046,28 @@ def test_current_certificate_accepts_explicit_interface_dependency_hash() -> Non
     assert list(
         jsonschema.Draft7Validator(schema, resolver=resolver).iter_errors(document)
     ) == []
+
+
+def test_current_certificate_accepts_v3_facet_claims() -> None:
+    document = _valid_v4_certificate()
+    document["payload"]["certificate_schema_version"] = 3
+    document["payload"]["facets"] = [
+        {
+            "id": "demo-skill.source.gateway.interface.run",
+            "type": "interface",
+            "local_hash": "sha256:" + "d" * 64,
+            "input_manifest": [
+                {
+                    "path": "skills/demo-skill/SKILL.md",
+                    "digest": "sha256:" + "e" * 64,
+                    "git_provenance": "tracked",
+                }
+            ],
+            "dependencies": [],
+        }
+    ]
+
+    assert _canonical_errors(document, "certificate.schema.json") == []
 
 
 @pytest.mark.parametrize(

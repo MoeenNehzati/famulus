@@ -15,6 +15,11 @@ gateway:
 id: install.source.runtime-pointer
 interfaces:
   install.source.runtime-pointer.interface.python-api:
+    content:
+    - runtime_pointer\.py
+    uses_interfaces:
+    - interface: common.interface.atomic-files
+      version: 1
     contract:
       arguments:
         operation:
@@ -222,3 +227,4 @@ uses_interfaces:
 - interface: common.interface.atomic-files
   version: 1
 version: 1
+maturity: stable

@@ -9,6 +9,13 @@ gateway:
 id: g-calendar.source.gateway
 interfaces:
   g-calendar.source.gateway.interface.default:
+    content:
+    - SKILL\.md
+    uses_interfaces:
+    - interface: connect-google.interface.default
+      version: 1
+    - interface: g-calendar._rtx.interface.scripts-gcal
+      version: 1
     contract:
       arguments:
         request:
@@ -103,3 +110,4 @@ uses_interfaces:
 - interface: g-calendar._rtx.interface.scripts-gcal
   version: 1
 version: 2
+maturity: experimental

@@ -19,3 +19,4 @@ sources:
       base: module-root
       path: blueprints/standards.yaml
 version: 1
+maturity: stable

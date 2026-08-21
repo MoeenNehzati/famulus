@@ -16,6 +16,11 @@ gateway:
 id: recurring-tasks._rtx.source.rtx-run-record
 interfaces:
   recurring-tasks._rtx.source.rtx-run-record.interface.python-api:
+    content:
+    - _run_record\.py
+    uses_interfaces:
+    - interface: common.interface.atomic-files
+      version: 1
     contract:
       arguments:
         operation:
@@ -211,3 +216,4 @@ uses_interfaces:
 - interface: common.interface.atomic-files
   version: 1
 version: 1
+maturity: experimental

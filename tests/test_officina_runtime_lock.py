@@ -22,6 +22,9 @@ def _write_manifest(path: Path) -> None:
                 "version": 2,
                 "skills": {
                     "example": {
+                        "maturity": "stable",
+                        "installation_tier": "core",
+                        "personal_preference": {"applies": False},
                         "interfaces": {
                             "first": {
                                 "dependencies": [
@@ -38,12 +41,6 @@ def _write_manifest(path: Path) -> None:
                                     {
                                         "kind": "python-package",
                                         "name": "linux-only",
-                                        "version": "any",
-                                        "platforms": {"linux": True},
-                                    },
-                                    {
-                                        "kind": "python-package",
-                                        "name": "marker-pdf",
                                         "version": "any",
                                         "platforms": {"linux": True},
                                     },
@@ -70,7 +67,24 @@ def _write_manifest(path: Path) -> None:
                                 ]
                             },
                         }
-                    }
+                    },
+                    "pdf-to-markdown": {
+                        "maturity": "stable",
+                        "installation_tier": "optional",
+                        "personal_preference": {"applies": False},
+                        "interfaces": {
+                            "convert": {
+                                "dependencies": [
+                                    {
+                                        "kind": "python-package",
+                                        "name": "marker-pdf",
+                                        "version": "any",
+                                        "platforms": {"linux": True},
+                                    }
+                                ]
+                            }
+                        },
+                    },
                 },
             }
         ),
@@ -106,6 +120,24 @@ def test_render_runtime_requirements_pools_constraints_and_platforms(tmp_path: P
         "PyYAML==6.0.2\n"
         "setuptools==80.9.0\n"
     )
+
+
+def test_selected_optional_module_extends_the_core_dependency_pool(tmp_path: Path) -> None:
+    """The optional module ID, rather than a package name, selects marker-pdf."""
+    manifest = tmp_path / "runtime_dependencies.json"
+    _write_manifest(manifest)
+
+    assert "marker-pdf ; sys_platform == 'linux'\n" in render_runtime_requirements(
+        manifest, selected_module_ids=("pdf-to-markdown",)
+    )
+
+
+def test_selected_runtime_requirements_reject_unknown_module_ids(tmp_path: Path) -> None:
+    manifest = tmp_path / "runtime_dependencies.json"
+    _write_manifest(manifest)
+
+    with pytest.raises(RuntimeLockError, match="unknown optional module"):
+        render_runtime_requirements(manifest, selected_module_ids=("not-a-module",))
 
 
 def test_validate_runtime_lock_accepts_exact_hashed_records(tmp_path: Path) -> None:

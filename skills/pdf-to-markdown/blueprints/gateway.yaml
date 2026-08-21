@@ -9,6 +9,13 @@ gateway:
 id: pdf-to-markdown.source.gateway
 interfaces:
   pdf-to-markdown.source.gateway.interface.default:
+    content:
+    - SKILL\.md
+    uses_interfaces:
+    - interface: pdf-to-markdown._rtx.interface.scripts-check-marker-models
+      version: 1
+    - interface: pdf-to-markdown._rtx.interface.scripts-fetch-arxiv-source
+      version: 1
     contract:
       arguments:
         request:
@@ -112,3 +119,4 @@ uses_interfaces:
 - interface: pdf-to-markdown._rtx.interface.scripts-fetch-arxiv-source
   version: 1
 version: 1
+maturity: stable

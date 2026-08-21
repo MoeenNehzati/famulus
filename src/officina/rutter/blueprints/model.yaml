@@ -12,8 +12,12 @@ dependencies: []
 uses_interfaces: []
 interfaces:
   rutter.source.model.interface.python-api:
+    content:
+    - model\.py
+    uses_interfaces: []
     version: 1
-    description: Constructs Charter, Fix, Reckoning, state, effect-policy, and validation values.
+    description: Constructs Charter, Fix, Reckoning, state, effect-policy, and validation
+      values.
     contract:
       arguments:
         operation:
@@ -28,7 +32,8 @@ interfaces:
             - value: fix
               description: Construct one machine coordinate and recovery record.
             - value: reckoning
-              description: Pair one Charter with one Fix under the current storage version.
+              description: Pair one Charter with one Fix under the current storage
+                version.
             - value: state
               description: Construct a nonterminal or terminal authored state.
             - value: validation
@@ -54,8 +59,10 @@ interfaces:
           minimum: 1
           maximum: 1
         ordering: stable
-        pagination: {kind: none}
-        truncation: {kind: none}
+        pagination:
+          kind: none
+        truncation:
+          kind: none
         empty: Never empty on success.
         type:
           kind: string
@@ -64,7 +71,8 @@ interfaces:
       outcomes:
       - id: completed
         class: success
-        outputs: [result]
+        outputs:
+        - result
         effects: []
         caller_action: Use the immutable value without inferring transition authority.
       - id: invalid-definition
@@ -88,7 +96,8 @@ interfaces:
           medium: local-system
           access: write
           content: Immutable Python Rutter value
-          formats: [python-object]
+          formats:
+          - python-object
           sensitivity: user-private
         network: []
 platform_support:
@@ -96,3 +105,4 @@ platform_support:
   macos: true
   windows: true
 runtime_dependencies: []
+maturity: stable

@@ -34,3 +34,4 @@ sources:
       base: module-root
       path: blueprints/rtx-weather-client.yaml
 version: 1
+maturity: stable

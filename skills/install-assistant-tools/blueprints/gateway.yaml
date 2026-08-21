@@ -9,6 +9,17 @@ gateway:
 id: install-assistant-tools.source.gateway
 interfaces:
   install-assistant-tools.source.gateway.interface.default:
+    content:
+    - SKILL\.md
+    uses_interfaces:
+    - interface: install-assistant-tools._rtx.interface.scripts-dev-link
+      version: 2
+    - interface: install-assistant-tools._rtx.interface.scripts-install
+      version: 2
+    - interface: install-assistant-tools._rtx.interface.scripts-launchers
+      version: 3
+    - interface: install-assistant-tools._rtx.interface.scripts-scaffold
+      version: 2
     contract:
       arguments:
         request:
@@ -105,3 +116,4 @@ uses_interfaces:
 - interface: install-assistant-tools._rtx.interface.scripts-scaffold
   version: 2
 version: 1
+maturity: stable

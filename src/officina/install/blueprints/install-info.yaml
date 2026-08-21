@@ -15,6 +15,9 @@ gateway:
 id: install.source.install-info
 interfaces:
   install.source.install-info.interface.python-api:
+    content:
+    - install_info\.py
+    uses_interfaces: []
     contract:
       arguments:
         base:
@@ -122,3 +125,4 @@ node_type: behavioral_source
 schema_version: 6
 uses_interfaces: []
 version: 1
+maturity: stable

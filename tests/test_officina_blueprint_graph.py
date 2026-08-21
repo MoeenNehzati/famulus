@@ -59,6 +59,223 @@ def _write_yaml(path: Path, value: object) -> None:
     path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
 
 
+def _write_v6_interface_facet_fixture(root: Path) -> Path:
+    module = root / "skills" / "demo-skill"
+    for relative in ("worker.py", "helper.py", "provider.py"):
+        path = module / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"# {relative}\n", encoding="utf-8")
+    _write_yaml(
+        module / "blueprint.yaml",
+        {
+            "schema_version": 6,
+            "node_type": "module",
+            "id": "demo-skill",
+            "version": 1,
+            "maturity": "stable",
+            "gateway": {"path": "worker.py", "language": "Python>=3.11"},
+            "content": [r"(?:worker|helper|provider)\.py"],
+            "authority": {"owns_filesystem": []},
+            "sources": {
+                "demo-skill.source.worker": {
+                    "blueprint": {
+                        "base": "module-root",
+                        "path": "blueprints/worker.yaml",
+                    }
+                },
+                "demo-skill.source.provider": {
+                    "blueprint": {
+                        "base": "module-root",
+                        "path": "blueprints/provider.yaml",
+                    }
+                },
+            },
+            "children": {},
+            "namespace_exports": {},
+            "exports": {},
+        },
+    )
+    provider_interface = "demo-skill.source.provider.interface.read"
+    _write_yaml(
+        module / "blueprints" / "provider.yaml",
+        {
+            "schema_version": 6,
+            "node_type": "behavioral_source",
+            "id": "demo-skill.source.provider",
+            "version": 1,
+            "maturity": "stable",
+            "gateway": {"path": "provider.py", "language": "Python>=3.11"},
+            "content": [r"provider\.py"],
+            "dependencies": [],
+            "uses_interfaces": [],
+            "interfaces": {
+                provider_interface: {
+                    "version": 1,
+                    "content": [r"provider\.py"],
+                    "uses_interfaces": [],
+                }
+            },
+        },
+    )
+    worker_path = module / "blueprints" / "worker.yaml"
+    _write_yaml(
+        worker_path,
+        {
+            "schema_version": 6,
+            "node_type": "behavioral_source",
+            "id": "demo-skill.source.worker",
+            "version": 1,
+            "maturity": "stable",
+            "gateway": {"path": "worker.py", "language": "Python>=3.11"},
+            "content": [r"(?:worker|helper)\.py"],
+            "dependencies": [],
+            "uses_interfaces": [
+                {"interface": provider_interface, "version": 1}
+            ],
+            "interfaces": {
+                "demo-skill.source.worker.interface.run": {
+                    "version": 1,
+                    "content": [r"(?:worker|helper)\.py"],
+                    "uses_interfaces": [
+                        {"interface": provider_interface, "version": 1}
+                    ],
+                },
+                "demo-skill.source.worker.interface.inspect": {
+                    "version": 1,
+                    "content": [r"worker\.py"],
+                    "uses_interfaces": [],
+                },
+            },
+        },
+    )
+    return worker_path
+
+
+def test_v6_graph_resolves_overlapping_interface_content_and_use_subsets(
+    tmp_path: Path,
+) -> None:
+    _write_v6_interface_facet_fixture(tmp_path)
+
+    graph = load_repository_blueprint_graph(
+        tmp_path,
+        expected_schema_version=6,
+        schema_root=CANONICAL_SCHEMA_ROOT,
+    )
+
+    run_id = "demo-skill.source.worker.interface.run"
+    inspect_id = "demo-skill.source.worker.interface.inspect"
+    provider_id = "demo-skill.source.provider.interface.read"
+    assert graph.interface_content_paths[run_id] == (
+        tmp_path / "skills/demo-skill/helper.py",
+        tmp_path / "skills/demo-skill/worker.py",
+    )
+    assert graph.interface_content_paths[inspect_id] == (
+        tmp_path / "skills/demo-skill/worker.py",
+    )
+    assert graph.interface_uses[run_id] == ((provider_id, 1),)
+    assert graph.interface_uses[inspect_id] == ()
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("outside-content", "content must be a non-empty subset"),
+        ("missing-gateway", "gateway must be included in content"),
+        ("outside-use", "uses_interfaces must be a subset"),
+    ],
+)
+def test_v6_graph_rejects_interface_facets_outside_source_envelope(
+    tmp_path: Path,
+    mutation: str,
+    message: str,
+) -> None:
+    worker_path = _write_v6_interface_facet_fixture(tmp_path)
+    worker = yaml.safe_load(worker_path.read_text(encoding="utf-8"))
+    interface = worker["interfaces"][
+        "demo-skill.source.worker.interface.run"
+    ]
+    if mutation == "outside-content":
+        outside = worker_path.parents[1] / "outside.py"
+        outside.write_text("# outside\n", encoding="utf-8")
+        interface["content"] = [r"(?:worker|outside)\.py"]
+    elif mutation == "missing-gateway":
+        interface["content"] = [r"helper\.py"]
+    else:
+        interface["uses_interfaces"] = [
+            {"interface": "missing-skill.interface.read", "version": 1}
+        ]
+    _write_yaml(worker_path, worker)
+
+    with pytest.raises(BlueprintGraphError, match=message):
+        load_repository_blueprint_graph(
+            tmp_path,
+            expected_schema_version=6,
+            schema_root=CANONICAL_SCHEMA_ROOT,
+        )
+
+
+def test_v6_graph_allows_source_without_interfaces(tmp_path: Path) -> None:
+    worker_path = _write_v6_interface_facet_fixture(tmp_path)
+    worker = yaml.safe_load(worker_path.read_text(encoding="utf-8"))
+    worker["interfaces"] = {}
+    _write_yaml(worker_path, worker)
+
+    graph = load_repository_blueprint_graph(
+        tmp_path,
+        expected_schema_version=6,
+        schema_root=CANONICAL_SCHEMA_ROOT,
+    )
+
+    assert not any(
+        interface_id.startswith("demo-skill.source.worker.interface.")
+        for interface_id in graph.interface_content_paths
+    )
+    assert not any(
+        interface_id.startswith("demo-skill.source.worker.interface.")
+        for interface_id in graph.interface_uses
+    )
+
+
+def test_v6_graph_rejects_unresolved_interface_use(tmp_path: Path) -> None:
+    worker_path = _write_v6_interface_facet_fixture(tmp_path)
+    worker = yaml.safe_load(worker_path.read_text(encoding="utf-8"))
+    unresolved = {"interface": "missing.interface.read", "version": 1}
+    worker["uses_interfaces"] = [unresolved]
+    worker["interfaces"]["demo-skill.source.worker.interface.run"][
+        "uses_interfaces"
+    ] = [unresolved]
+    _write_yaml(worker_path, worker)
+
+    with pytest.raises(BlueprintGraphError, match="unresolved interface"):
+        load_repository_blueprint_graph(
+            tmp_path,
+            expected_schema_version=6,
+            schema_root=CANONICAL_SCHEMA_ROOT,
+        )
+
+
+def test_v6_graph_rejects_cyclic_interface_uses(tmp_path: Path) -> None:
+    _write_v6_interface_facet_fixture(tmp_path)
+    provider_path = (
+        tmp_path / "skills/demo-skill/blueprints/provider.yaml"
+    )
+    provider = yaml.safe_load(provider_path.read_text(encoding="utf-8"))
+    worker_interface = "demo-skill.source.worker.interface.run"
+    use = {"interface": worker_interface, "version": 1}
+    provider["uses_interfaces"] = [use]
+    provider["interfaces"]["demo-skill.source.provider.interface.read"][
+        "uses_interfaces"
+    ] = [use]
+    _write_yaml(provider_path, provider)
+
+    with pytest.raises(BlueprintGraphError, match="certification dependency cycle"):
+        load_repository_blueprint_graph(
+            tmp_path,
+            expected_schema_version=6,
+            schema_root=CANONICAL_SCHEMA_ROOT,
+        )
+
+
 def _copy_v5_authorization_fixture(tmp_path: Path) -> Path:
     return copy_v5_fixture_tree(
         V5_AUTHORIZATION_FIXTURE,
@@ -1754,3 +1971,20 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
     ]
     assert "rutter" in atomic_callers
     assert "using-compass" not in atomic_callers
+
+
+def test_send_feedback_default_facet_owns_every_delivery_dependency() -> None:
+    """Selective drift attributes both public-issue routes to the default workflow."""
+
+    graph = load_repository_blueprint_graph(
+        Path(__file__).resolve().parents[1],
+        expected_schema_version=6,
+    )
+
+    assert graph.interface_uses[
+        "send-feedback.source.gateway.interface.default"
+    ] == (
+        ("email-client.interface.default", 3),
+        ("send-feedback._rtx.interface.check-route", 1),
+        ("send-feedback._rtx.interface.file-issue", 1),
+    )

@@ -22,6 +22,9 @@ gateway:
 id: math-dependency-graph._rtx.source.rtx-source-packet
 interfaces:
   math-dependency-graph._rtx.source.rtx-source-packet.interface.scripts-prepare-semantic-source:
+    content:
+    - _source_packet\.py
+    uses_interfaces: []
     contract:
       arguments:
         entrypoint:
@@ -99,8 +102,8 @@ interfaces:
           may_occur_in_outcomes:
           - prepared
           reversibility:
-            reversible: Delete or regenerate the derived packet without changing
-              the TeX sources.
+            reversible: Delete or regenerate the derived packet without changing the
+              TeX sources.
           value_source:
             argument_ref: entrypoint
             kind: argument
@@ -117,8 +120,8 @@ interfaces:
           on_uncertain_completion:
             verify_then_decide: Inspect the report and selected packet before retrying.
           partial_effects_on_failure:
-            impossible: Missing inputs are rejected before writing and temporary
-              files are removed on write failure.
+            impossible: Missing inputs are rejected before writing and temporary files
+              are removed on write failure.
           rollback_on_failure:
             available: The preexisting selected packet remains until atomic replacement.
         state_effect: mutating
@@ -198,3 +201,4 @@ runtime_dependencies: []
 schema_version: 6
 uses_interfaces: []
 version: 7
+maturity: stable

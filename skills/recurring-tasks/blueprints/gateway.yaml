@@ -9,6 +9,29 @@ gateway:
 id: recurring-tasks.source.gateway
 interfaces:
   recurring-tasks.source.gateway.interface.default:
+    content:
+    - SKILL\.md
+    uses_interfaces:
+    - interface: install-assistant-tools.interface.default
+      version: 2
+    - interface: recurring-tasks._rtx.interface.scripts-disable
+      version: 1
+    - interface: recurring-tasks._rtx.interface.scripts-enable
+      version: 1
+    - interface: recurring-tasks._rtx.interface.scripts-ensure-agent-env
+      version: 1
+    - interface: recurring-tasks._rtx.interface.scripts-healthcheck
+      version: 1
+    - interface: recurring-tasks._rtx.interface.scripts-setup
+      version: 1
+    - interface: recurring-tasks._rtx.interface.scripts-status
+      version: 1
+    - interface: recurring-tasks._rtx.interface.scripts-sync
+      version: 1
+    - interface: recurring-tasks._rtx.interface.scripts-test
+      version: 1
+    - interface: recurring-tasks._rtx.interface.scripts-view-logs
+      version: 1
     contract:
       arguments:
         request:
@@ -106,3 +129,4 @@ uses_interfaces:
 - interface: recurring-tasks._rtx.interface.scripts-view-logs
   version: 1
 version: 1
+maturity: experimental

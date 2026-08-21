@@ -9,6 +9,7 @@
     "node_type",
     "id",
     "version",
+    "maturity",
     "gateway",
     "content",
     "dependencies",
@@ -28,6 +29,29 @@
     },
     "version": {
       "$ref": "common.schema.json#/definitions/interfaceVersion"
+    },
+    "maturity": {
+      "type": "string",
+      "enum": [
+        "stable",
+        "experimental"
+      ],
+      "description": "The node's current readiness for use: stable or experimental.",
+      "x-famulus": {
+        "field_status": "required",
+        "template": {
+          "include": true,
+          "example": "stable"
+        },
+        "doc": {
+          "authoring": [
+            "Choose stable for a ready node or experimental for a node still being evaluated."
+          ]
+        },
+        "related_validation_rules": [
+          "schema-shape"
+        ]
+      }
     },
     "description": {
       "type": "string",
@@ -84,7 +108,9 @@
     "interface": {
       "type": "object",
       "required": [
-        "version"
+        "version",
+        "content",
+        "uses_interfaces"
       ],
       "additionalProperties": false,
       "properties": {
@@ -97,6 +123,12 @@
         },
         "usage": {
           "type": "string"
+        },
+        "content": {
+          "$ref": "common.schema.json#/definitions/contentPatterns"
+        },
+        "uses_interfaces": {
+          "$ref": "common.schema.json#/definitions/interfaceUseList"
         },
         "contract": {
           "$ref": "caller-contract.schema.json#/definitions/v4Contract"

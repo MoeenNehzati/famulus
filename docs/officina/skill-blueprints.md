@@ -17,6 +17,27 @@ Every node has content, one whole-file gateway, and one blueprint. The gateway
 is its operational face; the blueprint is its descriptive face. Certification
 checks that they agree.
 
+## Readiness, installation, and preferences
+
+Every module and behavioral source declares `maturity: stable` or
+`maturity: experimental`. `stable` identifies a ready node; `experimental`
+identifies a node still being evaluated. This is readiness metadata, not an
+installation decision: either maturity may be `core` or `optional`.
+
+Every discoverable skill module also declares `installation_tier: core` or
+`installation_tier: optional`. Core modules are selected by default. Optional
+modules are selected as complete module units: their contained behavioral
+sources and runtime-dependency closure are included together. A module may
+also declare `personal_preference.applies`. When true, its nonempty
+`personal_preference.description` records the user-specific workflow choice;
+when false, no description is needed.
+
+Installation computes package changes from the selected modules' resolved,
+platform-applicable runtime dependencies. It reports package names and a
+resolver-provided download/install-size estimate when available; an unavailable
+estimate remains explicitly unavailable. Blueprints do not carry a copied cost
+field or infer a tier from dependency names.
+
 An interface is owned by a behavioral source. It is private to the containing
 module unless the module exports it. An export adds a public ID and access
 policy but does not copy the interface contract or version.
@@ -74,11 +95,14 @@ schema_version: 6
 node_type: module
 id: example-skill
 version: 2
+maturity: stable
 description: Example module.
 gateway: {path: SKILL.md, language: Markdown}
 content: [SKILL\.md]
 authority: {owns_filesystem: []}
 discovery: {mechanism: skill}
+installation_tier: core
+personal_preference: {applies: false}
 children:
   _rtx: {}
 sources:
@@ -120,6 +144,7 @@ schema_version: 6
 node_type: behavioral_source
 id: example-skill._rtx.source.runner
 version: 1
+maturity: stable
 description: Implements the run operation.
 gateway: {path: runner.py, language: Python>=3.11}
 content: [runner\.py]

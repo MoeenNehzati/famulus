@@ -9,6 +9,17 @@ gateway:
 id: math-dependency-graph.source.gateway
 interfaces:
   math-dependency-graph.source.gateway.interface.default:
+    content:
+    - SKILL\.md
+    uses_interfaces:
+    - interface: math-dependency-graph.interface.inventory
+      version: 29
+    - interface: math-dependency-graph.interface.extract
+      version: 26
+    - interface: math-dependency-graph._rtx.interface.scripts-advance-extraction-phases
+      version: 23
+    - interface: math-dependency-graph._rtx.interface.scripts-record-run-diagnostics
+      version: 5
     contract:
       arguments:
         request:
@@ -98,3 +109,4 @@ uses_interfaces:
 - interface: math-dependency-graph._rtx.interface.scripts-record-run-diagnostics
   version: 5
 version: 66
+maturity: stable

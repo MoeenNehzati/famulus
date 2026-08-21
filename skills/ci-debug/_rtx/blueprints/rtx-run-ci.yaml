@@ -11,6 +11,10 @@ gateway: {language: Python>=3.11, path: _run_ci.py}
 id: ci-debug._rtx.source.rtx-run-ci
 interfaces:
   ci-debug._rtx.source.rtx-run-ci.interface.run-ci:
+    content:
+    - _run_ci\.py
+    - tests/test_runner_interfaces\.py
+    uses_interfaces: []
     contract:
       arguments:
         repo-root: {description: Repository containing the public check runner., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
@@ -74,3 +78,4 @@ runtime_dependencies: []
 schema_version: 6
 uses_interfaces: []
 version: 1
+maturity: stable

@@ -497,13 +497,17 @@ def test_dispatch_tree_section_parses_ids_and_why(
     Dispatches
     ----------
     skills.skill-certifier:
-      interface:
-        default:
-          why: "Dispatches CLI invocation to the certification entrypoint."
+      source:
+        audit-interface:
+          interface:
+            audit:
+              why: "Invokes bounded semantic review for one interface."
     """
     spec = parse_graph_block(doc)
-    assert spec.dispatch_ids() == ["skills.skill-certifier.interface.default"]
-    assert spec.dispatches[0].why.startswith("Dispatches CLI")
+    assert spec.dispatch_ids() == [
+        "skills.skill-certifier.source.audit-interface.interface.audit"
+    ]
+    assert spec.dispatches[0].why.startswith("Invokes bounded semantic review")
 
 
 def test_dependency_path_rule_accepts_allowed_absolute_and_relative(
@@ -537,7 +541,7 @@ def test_dependency_path_rule_accepts_allowed_absolute_and_relative(
 
     Dispatches
     ----------
-    skills.skill-certifier.interface.default:
+    skills.skill-certifier.source.audit-interface.interface.audit:
       why: "Uses an allowed skill interface root."
     """
     issues = check_graph_docstring(doc)
@@ -575,7 +579,7 @@ def test_dependency_path_rule_rejects_bare_and_unknown_roots(
 
     Dispatches
     ----------
-    skill-certifier.interface.default:
+    skill-certifier.source.audit-interface.interface.audit:
       why: "Missing the skills root."
     """
     issues = check_graph_docstring(doc)
@@ -1298,7 +1302,7 @@ def test_strict_pseudocode_parses_typed_compact_steps(
       - if authority is missing:
         - result = CertificationResult(status=`fail_closed`)
         - continue
-      - review = #skill-certifier.interface.default(node)
+      - review = #skill-certifier.source.audit-interface.interface.audit(node)
     - return result
 
     CallsFromRepo
@@ -1315,7 +1319,7 @@ def test_strict_pseudocode_parses_typed_compact_steps(
 
     Dispatches
     ----------
-    skills.skill-certifier.interface.default:
+    skills.skill-certifier.source.audit-interface.interface.audit:
       why: "Runs semantic review."
     """
     spec = parse_graph_block(doc)
@@ -1335,7 +1339,10 @@ def test_strict_pseudocode_parses_typed_compact_steps(
     assert spec.pseudocode_steps[1].loop_iterable == "graph.nodes"
     assert spec.pseudocode_steps[3].condition == "authority is missing"
     assert spec.pseudocode_steps[4].ref == "CertificationResult"
-    assert spec.pseudocode_steps[6].ref == "skill-certifier.interface.default"
+    assert (
+        spec.pseudocode_steps[6].ref
+        == "skill-certifier.source.audit-interface.interface.audit"
+    )
     assert not any(issue.code == "docstring.invalid-pseudocode" for issue in check_graph_docstring(doc))
 
 
