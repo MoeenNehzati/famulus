@@ -43,7 +43,7 @@ gateway:
 id: math-dependency-graph
 namespace_exports:
   _rtx:
-    version: 46
+    version: 47
     access:
       allow_all_modules: true
       allowed_callers: []
@@ -57,7 +57,7 @@ namespace_exports:
         math-dependency-graph._rtx.interface.scripts-plan-extraction-chunks: 15
         math-dependency-graph._rtx.interface.scripts-prepare-semantic-source: 4
         math-dependency-graph._rtx.interface.scripts-record-run-diagnostics: 7
-        math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator: 3
+        math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator: 4
         math-dependency-graph._rtx.interface.scripts-next-inventory-unit: 2
         math-dependency-graph._rtx.interface.scripts-serve-graph: 1
     interface_access:
@@ -109,7 +109,7 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/instructions-inventory.yaml
-version: 73
+version: 74
 maturity: stable
 installation_tier: core
 personal_preference:

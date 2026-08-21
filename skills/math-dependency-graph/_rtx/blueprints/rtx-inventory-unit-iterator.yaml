@@ -1,7 +1,7 @@
 schema_version: 6
 node_type: behavioral_source
 id: math-dependency-graph._rtx.source.rtx-inventory-unit-iterator
-version: 3
+version: 4
 maturity: experimental
 description: Sets up durable, source-ordered inventory units once and advances one
   worker cursor atomically without making mathematical graph decisions.
@@ -26,7 +26,7 @@ dependencies:
 uses_interfaces: []
 interfaces:
   math-dependency-graph._rtx.source.rtx-inventory-unit-iterator.interface.scripts-setup-inventory-iterator:
-    version: 3
+    version: 4
     description: Create or verify one durable source-unit iterator state directory and
       publish its effective worker assignments atomically.
     usage: <source-packet> <state-dir> --workers <positive-int> --window-chars <positive-int>
@@ -120,7 +120,9 @@ interfaces:
         - id: write-2
           medium: stdout
           access: write
-          content: JSON setup report naming the state directory and effective worker and unit counts.
+          content: JSON setup report naming the state directory, durable configuration
+            identity and internal timings, bounded worker assignments, and prose-free
+            coordinate coverage.
           formats:
           - json
           sensitivity: derived-private
@@ -188,9 +190,11 @@ interfaces:
         cardinality:
           minimum: 1
           maximum: 1
-        description: JSON setup report with state directory, effective worker and unit
-          counts, worker paths, measured child dispatch/total timing, and publication
-          timing only when atomic replacement occurred.
+        description: JSON setup report with durable input and version identity, requested
+          and effective configuration, persisted internal timings, assignment boundaries
+          and worker-owned paths, ordered assignable and structural-only coordinates,
+          measured child dispatch/total timing, and publication timing only when atomic
+          replacement occurred; it contains no source text or controller-only paths.
         direct_io_ref: write-2
         empty: Never empty on success.
         ordering: stable

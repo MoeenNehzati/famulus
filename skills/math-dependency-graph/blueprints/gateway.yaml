@@ -21,7 +21,7 @@ interfaces:
     - interface: math-dependency-graph._rtx.interface.scripts-record-run-diagnostics
       version: 7
     - interface: math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator
-      version: 3
+      version: 4
     - interface: math-dependency-graph._rtx.interface.scripts-next-inventory-unit
       version: 2
     contract:
@@ -101,7 +101,7 @@ interfaces:
           sensitivity: derived-private
       preconditions: []
     description: Orchestrate a measured inventory, extract, compile, and render run.
-    version: 63
+    version: 64
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
@@ -114,8 +114,8 @@ uses_interfaces:
 - interface: math-dependency-graph._rtx.interface.scripts-record-run-diagnostics
   version: 7
 - interface: math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator
-  version: 3
+  version: 4
 - interface: math-dependency-graph._rtx.interface.scripts-next-inventory-unit
   version: 2
-version: 69
+version: 70
 maturity: stable

@@ -10,13 +10,13 @@ description: >-
 Catalog: research; topics: mathematical-reasoning, visualization, scholarly-documents; visibility: featured
 Activation: user-request, skill-workflow; persistent modifier: no
 
-Skill Version: 73
+Skill Version: 74
 
 Uses Interfaces:
 - `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-advance-extraction-phases@24`
 - `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-next-inventory-unit@2`
 - `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-record-run-diagnostics@7`
-- `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator@3`
+- `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator@4`
 - `math-dependency-graph.source.gateway -> math-dependency-graph.interface.extract@26`
 - `math-dependency-graph.source.gateway -> math-dependency-graph.interface.inventory@32`
 - `math-dependency-graph.source.instructions-inventory -> math-dependency-graph._rtx.interface.scripts-next-inventory-unit@2`
@@ -48,7 +48,7 @@ Use a fresh empty run directory and never reuse an earlier inventory, semantic I
 
 1. **Prepare.** Resolve the TeX entrypoint and invoke `math-dependency-graph._rtx.interface.scripts-advance-extraction-phases prepare <entrypoint> --run-dir <run-dir>`. This prepares the complete reachable source, returns one controller-owned iterator setup assignment, and performs the required diagnostics `initialize` event. Require an absolute diagnostics path and retain it for the whole run. Do not issue a second `initialize` event.
 
-2. **Set up and inventory.** Invoke `math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator` once with the returned prepared iterator input and state directory, the selected positive worker limit, and the selected positive source-unit window. The setup response is authoritative: launch exactly its effective assignments and pass each worker only its state directory, worker index, inventory schema, and returned inventory/progress paths through `math-dependency-graph.interface.inventory`. Never pass prepared input, a controller-owned artifact, a source path, an assignment manifest, or iterator storage to a worker.
+2. **Set up and inventory.** Invoke `math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator` once with the returned prepared iterator input and state directory, the selected positive worker limit, and the selected positive source-unit window. The setup response is authoritative: retain its durable identity, internal timings, assignment boundaries, and ordered coordinate coverage; launch exactly its effective assignments and pass each worker only its state directory, worker index, inventory schema, and returned inventory/progress paths through `math-dependency-graph.interface.inventory`. Never pass prepared input, a controller-owned artifact, a source path, an assignment manifest, or iterator storage to a worker.
 
    Each worker obtains source content only by invoking `math-dependency-graph._rtx.interface.scripts-next-inventory-unit` for its assigned index. It validates its own complete inventory before acknowledging every returned unit through the next call, uses `--wrap` when closing the consecutive units considered together, and finishes only when an acknowledgement returns `complete`. Mathematical candidate identification and dependency judgment remain worker-owned; the iterator owns only traversal, durable acknowledgement, validation, and measurement. Theorem-like environments and small titled mathematical Markdown or LaTeX blocks are strong candidate signals, while extraction may later merge or reject them. Do not dispatch a later compaction or wording-rewrite job.
 

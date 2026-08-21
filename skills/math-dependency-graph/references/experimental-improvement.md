@@ -16,7 +16,7 @@ Before a pass, record:
 - the canonical schema and validator used for final output;
 - the acceptance metrics and the single question tested by this pass.
 
-Obtain these identities from public contracts and returned reports. If an iterator identity, coverage count, or timing boundary required by the hypothesis is not publicly observable, record a contract gap and stop the pass; do not recover it by inspecting private iterator storage or inventing a field.
+Obtain these identities from public contracts and returned reports. The setup response supplies the durable iterator identity, persisted internal timings, assignment boundaries, and complete prose-free coordinate universe. If another timing boundary required by the hypothesis is not publicly observable, record a contract gap and stop the pass; do not recover it by inspecting private iterator storage or inventing a field.
 
 Use a fresh run directory. Preserve every input, worker artifact, progress sidecar, diagnostic report, canonical JSON file, discrepancy ledger, score, and adjudication. Never overwrite an earlier pass.
 

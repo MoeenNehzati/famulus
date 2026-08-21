@@ -30,6 +30,8 @@ except ImportError:  # pragma: no cover - supports direct script execution
 
 SCANNER_VERSION = 1
 SCHEMA_VERSION = 3
+SETUP_INTERFACE_VERSION = 4
+NEXT_INTERFACE_VERSION = 2
 _SOURCE_MARKER_RE = re.compile(r"^@@ source: (?P<source>.+)$")
 _SOURCE_LINE_RE = re.compile(r"^(?P<line>[0-9]+) \| ?(?P<text>.*)$")
 _BEGIN_RE = re.compile(r"\\begin\{(?P<name>[A-Za-z@][A-Za-z0-9@*:-]*)\}")
@@ -1157,6 +1159,8 @@ def setup_inventory_iterator(
         "window_chars": window_chars,
         "scanner_version": SCANNER_VERSION,
         "schema_version": SCHEMA_VERSION,
+        "setup_interface_version": SETUP_INTERFACE_VERSION,
+        "next_interface_version": NEXT_INTERFACE_VERSION,
     }
     if state_dir.exists():
         existing = _read_manifest(state_dir)
@@ -2225,6 +2229,96 @@ def _positive_integer(value: str) -> int:
     return result
 
 
+def _public_setup_response(state_dir: Path, summary: dict) -> dict:
+    """Return bounded durable setup metadata without source text or private paths.
+
+    Intent
+    ------
+    Expose the exact configuration and coordinate universe needed to audit one
+    setup through its public response.
+
+    Rationale
+    ---------
+    A controller cannot reproduce an iterator experiment from worker counts
+    alone, while source text and controller-only paths must remain private.
+
+    Pseudocode
+    ----------
+    - set public_identity = persisted versions, source hash, and configuration
+    - set public_assignments = worker boundaries, counts, and worker-owned paths
+    - set public_coverage = ordered prose-free source coordinates
+    - return the bounded response
+
+    Wraps
+    -----
+    - none
+
+    """
+
+    assignable_coordinates = [
+        {
+            "packet_index": coordinate["packet_index"],
+            "source": coordinate["source"],
+            "line": coordinate["line"],
+        }
+        for unit in summary["units"]
+        for coordinate in unit["coordinates"]
+    ]
+    structural_context = [
+        {
+            "packet_index": coordinate["packet_index"],
+            "source": coordinate["source"],
+            "line": coordinate["line"],
+        }
+        for coordinate in summary["structural_context"]
+    ]
+    all_packet_indices = [
+        coordinate["packet_index"]
+        for coordinate in (*assignable_coordinates, *structural_context)
+    ]
+    configuration = summary["configuration"]
+    return {
+        "state": "setup",
+        "state_dir": str(state_dir.resolve()),
+        "identity": {
+            "prepared_input_sha256": configuration["source_sha256"],
+            "iterator_version": summary["iterator_version"],
+            "scanner_version": configuration["scanner_version"],
+            "inventory_schema_version": configuration["schema_version"],
+            "setup_interface_version": configuration["setup_interface_version"],
+            "next_interface_version": configuration["next_interface_version"],
+            "requested_workers": summary["requested_workers"],
+            "effective_workers": summary["effective_workers"],
+            "window_chars": summary["window_chars"],
+        },
+        "effective_workers": summary["effective_workers"],
+        "units": len(summary["units"]),
+        "internal_timings_ms": dict(summary["timings_ms"]),
+        "assignments": [
+            {
+                key: assignment[key]
+                for key in (
+                    "worker_index",
+                    "first_unit_id",
+                    "last_unit_id",
+                    "unit_count",
+                    "character_count",
+                    "inventory_path",
+                    "progress_path",
+                )
+            }
+            for assignment in summary["assignments"]
+        ],
+        "coverage": {
+            "coordinate_count": len(all_packet_indices),
+            "maximum_packet_index": max(all_packet_indices, default=0),
+            "assignable_coordinate_count": len(assignable_coordinates),
+            "assignable_coordinates": assignable_coordinates,
+            "structural_context": structural_context,
+        },
+    }
+
+
 def main(
     argv: Iterable[str] | None = None,
     *,
@@ -2283,19 +2377,7 @@ def main(
             window_chars=args.window_chars,
             process_observations=process_observations,
         )
-        response = {
-            "state": "setup",
-            "state_dir": str(Path(args.state_dir).resolve()),
-            "effective_workers": summary["effective_workers"],
-            "units": len(summary["units"]),
-            "assignments": [
-                {
-                    key: assignment[key]
-                    for key in ("worker_index", "inventory_path", "progress_path")
-                }
-                for assignment in summary["assignments"]
-            ],
-        }
+        response = _public_setup_response(Path(args.state_dir), summary)
     else:
         if args.wrap and args.ack is None:
             parser.error("next --wrap requires --ack")

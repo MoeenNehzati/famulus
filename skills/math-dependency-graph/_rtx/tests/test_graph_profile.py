@@ -92,13 +92,29 @@ def test_gateway_contract_routes_inventory_through_iterator_and_measured_diagnos
     assert uses["math-dependency-graph.interface.inventory"] == 32
     assert uses[
         "math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator"
-    ] == 3
+    ] == 4
     assert uses[
         "math-dependency-graph._rtx.interface.scripts-next-inventory-unit"
     ] == 2
     assert uses[
         "math-dependency-graph._rtx.interface.scripts-record-run-diagnostics"
     ] == 7
+    skill_text = (RUNTIME_DIR.parent / "SKILL.md").read_text(encoding="utf-8")
+    assert "retain its durable identity, internal timings, assignment boundaries" in skill_text
+    assert "ordered coordinate coverage" in skill_text
+
+    iterator = yaml.safe_load(
+        (RUNTIME_DIR / "blueprints" / "rtx-inventory-unit-iterator.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    setup = iterator["interfaces"][
+        "math-dependency-graph._rtx.source.rtx-inventory-unit-iterator.interface.scripts-setup-inventory-iterator"
+    ]
+    assert setup["version"] == 4
+    report_description = setup["contract"]["outputs"][0]["description"]
+    assert "ordered assignable and structural-only coordinates" in report_description
+    assert "no source text or controller-only paths" in report_description
 
 
 def test_experimental_improvement_records_complete_iterator_conditions() -> None:

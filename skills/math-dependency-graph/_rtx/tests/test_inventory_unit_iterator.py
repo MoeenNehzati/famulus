@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import subprocess
@@ -192,25 +193,103 @@ def test_iterator_cli_setup_and_next_emit_structured_atomic_responses(
     iterator.main(["next", str(state_dir), "1"])
     next_response = json.loads(capsys.readouterr().out)
 
-    assert setup_response == {
-        "state": "setup",
-        "state_dir": str(state_dir.resolve()),
+    assert setup_response["state"] == "setup"
+    assert setup_response["state_dir"] == str(state_dir.resolve())
+    assert setup_response["identity"] == {
+        "prepared_input_sha256": hashlib.sha256(packet.read_bytes()).hexdigest(),
+        "iterator_version": 1,
+        "scanner_version": 1,
+        "inventory_schema_version": 3,
+        "setup_interface_version": 4,
+        "next_interface_version": 2,
+        "requested_workers": 1,
         "effective_workers": 1,
-        "units": 1,
-        "assignments": [
-            {
-                "worker_index": 1,
-                "inventory_path": str(
-                    (state_dir / "workers" / "worker-1" / "inventory.json").resolve()
-                ),
-                "progress_path": str(
-                    (state_dir / "workers" / "worker-1" / "progress.md").resolve()
-                ),
-            }
-        ],
+        "window_chars": 80,
     }
+    assert setup_response["internal_timings_ms"].keys() == {
+        "scan",
+        "unitization",
+        "partition",
+        "database",
+        "validation",
+        "total",
+    }
+    assert setup_response["assignments"] == [
+        {
+            "worker_index": 1,
+            "first_unit_id": "u000001",
+            "last_unit_id": "u000001",
+            "unit_count": 1,
+            "character_count": len("A single source unit."),
+            "inventory_path": str(
+                (state_dir / "workers" / "worker-1" / "inventory.json").resolve()
+            ),
+            "progress_path": str(
+                (state_dir / "workers" / "worker-1" / "progress.md").resolve()
+            ),
+        }
+    ]
+    assert setup_response["coverage"] == {
+        "coordinate_count": 1,
+        "maximum_packet_index": 1,
+        "assignable_coordinate_count": 1,
+        "assignable_coordinates": [
+            {"packet_index": 1, "source": "paper.md", "line": 1}
+        ],
+        "structural_context": [],
+    }
+    assert setup_response["units"] == 1
     assert next_response["state"] == "unit"
     assert next_response["unit"]["id"] == "u000001"
+
+
+def test_public_setup_metadata_is_durable_bounded_and_identical_on_reuse(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A controller must reproduce coverage without source text or private paths."""
+
+    packet = _write_packet(
+        tmp_path / "prepared-input.txt",
+        "@@ source: paper.tex\n"
+        "0001 | \\section{Results}\n"
+        "0002 | First statement.\n"
+        "0003 | Second statement.\n",
+    )
+    state_dir = tmp_path / "iterator"
+    argv = [
+        "setup",
+        str(packet),
+        str(state_dir),
+        "--workers",
+        "1",
+        "--window-chars",
+        "80",
+    ]
+
+    iterator.main(argv)
+    fresh = json.loads(capsys.readouterr().out)
+    iterator.main(argv)
+    reused = json.loads(capsys.readouterr().out)
+
+    assert fresh == reused
+    assert fresh["coverage"] == {
+        "coordinate_count": 3,
+        "maximum_packet_index": 3,
+        "assignable_coordinate_count": 2,
+        "assignable_coordinates": [
+            {"packet_index": 2, "source": "paper.tex", "line": 2},
+            {"packet_index": 3, "source": "paper.tex", "line": 3},
+        ],
+        "structural_context": [
+            {"packet_index": 1, "source": "paper.tex", "line": 1}
+        ],
+    }
+    serialized = json.dumps(fresh)
+    assert "\\\\section{Results}" not in serialized
+    assert str(packet.resolve()) not in serialized
+    assert "controller_packet_path" not in serialized
+    assert "source_packet_path" not in serialized
+    assert "iterator.sqlite3" not in serialized
 
 
 def test_measured_public_wrapper_reports_exact_child_and_parent_boundaries() -> None:
@@ -372,6 +451,19 @@ def test_public_interface_measures_fresh_reuse_next_ack_and_retry_without_changi
     reused = json.loads(capsys.readouterr().out)
     assert reused["publication_observed"] is False
     assert "publication" not in reused["process_timings_ms"]
+    durable_fields = (
+        "state",
+        "state_dir",
+        "identity",
+        "effective_workers",
+        "units",
+        "internal_timings_ms",
+        "assignments",
+        "coverage",
+    )
+    assert {key: fresh[key] for key in durable_fields} == {
+        key: reused[key] for key in durable_fields
+    }
 
     assert interface.run(["next", str(state_dir), "1"]) == 0
     leased = json.loads(capsys.readouterr().out)
@@ -837,6 +929,32 @@ def test_setup_reuses_only_an_exact_matching_configuration(
         setup_inventory_iterator(
             packet, state_dir, requested_workers=1, window_chars=20
         )
+    monkeypatch.setattr(iterator, "SCHEMA_VERSION", iterator.SCHEMA_VERSION - 1)
+    monkeypatch.setattr(
+        iterator,
+        "SETUP_INTERFACE_VERSION",
+        iterator.SETUP_INTERFACE_VERSION + 1,
+    )
+    with pytest.raises(ValueError, match="existing iterator state does not match"):
+        setup_inventory_iterator(
+            packet, state_dir, requested_workers=1, window_chars=20
+        )
+    monkeypatch.setattr(
+        iterator,
+        "SETUP_INTERFACE_VERSION",
+        iterator.SETUP_INTERFACE_VERSION - 1,
+    )
+    monkeypatch.setattr(
+        iterator,
+        "NEXT_INTERFACE_VERSION",
+        iterator.NEXT_INTERFACE_VERSION + 1,
+    )
+    with pytest.raises(ValueError, match="existing iterator state does not match"):
+        setup_inventory_iterator(
+            packet, state_dir, requested_workers=1, window_chars=20
+        )
+    assert first["configuration"]["setup_interface_version"] == 4
+    assert first["configuration"]["next_interface_version"] == 2
     assert load_iterator_summary(state_dir) == first
     assert json.loads((state_dir / "inventory-assignments.json").read_text(encoding="utf-8"))[
         "requested_workers"
