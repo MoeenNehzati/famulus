@@ -6,6 +6,7 @@ EXPECTED_MATRIX = (
     ("windows-latest", "validators"),
     ("windows-latest", "tests:shared"),
     ("windows-latest", "tests:performance"),
+    ("windows-latest", "tests:browser"),
 )
 
 WINDOWS_RUNNER = "windows-latest"

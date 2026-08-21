@@ -109,6 +109,12 @@ class FakeGh:
                         "url": "https://github.example/jobs/6",
                     },
                     {
+                        "name": "test (windows-latest, tests:browser)",
+                        "status": "completed",
+                        "conclusion": "success",
+                        "url": "https://github.example/jobs/7",
+                    },
+                    {
                         "name": f"probe ({self.probe_os}, {self.probe_task})",
                         "status": "completed",
                         "conclusion": self.conclusion,
@@ -185,6 +191,7 @@ def test_remote_matrix_dispatches_collects_and_reports_every_job(
         ("windows-latest", "validators"),
         ("windows-latest", "tests:shared"),
         ("windows-latest", "tests:performance"),
+        ("windows-latest", "tests:browser"),
     ]
     assert report["elements"][3]["failed_selectors"] == [
         "tests/test_broken.py"

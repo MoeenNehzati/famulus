@@ -108,7 +108,9 @@ the simplified route is certified on Linux, macOS, and Windows.
 
 Maintainers may repeat `--validator ID` or `--exclude-validator ID` for suites
 that contain validators. The private stable phase identifiers used by the
-benchmark harness are `validators`, `tests:shared`, and `tests:performance`.
+benchmark harness are `validators`, `tests:shared`, `tests:performance`, and
+`tests:browser`. CI gives the Windows browser phase its own one-worker shard so
+the shared shard can stay parallel without dropping cross-platform coverage.
 
 `--timing-output PATH` writes schema-version-1 JSON containing task wall time
 and pytest's per-file setup, call, and teardown totals. These totals do not

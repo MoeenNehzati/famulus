@@ -950,8 +950,10 @@ def test_ci_shards_windows_repository_checks_for_parallel_diagnostics() -> None:
 
     assert "task: validators" in workflow
     assert "task: 'tests:shared'" in workflow
+    assert "task: 'tests:browser'" in workflow
     assert "task: 'tests:performance'" in workflow
     assert workflow.count("jobs: 4") == 3
+    assert "artifact: windows-tests-browser" in workflow
     assert 'if: matrix.task == \'combined\'' in workflow
     assert 'if: matrix.task != \'combined\'' in workflow
     assert (

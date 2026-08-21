@@ -91,6 +91,10 @@ jobs:
             task: 'tests:performance'
             jobs: 4
             artifact: windows-tests-performance
+          - os: windows-latest
+            task: 'tests:browser'
+            jobs: 1
+            artifact: windows-tests-browser
     runs-on: ${{ matrix.os }}
     # The latency budgets are calibrated against these hosted runners, so the
     # gates assert only where that calibration holds.
