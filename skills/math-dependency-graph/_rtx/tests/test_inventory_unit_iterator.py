@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -19,6 +21,7 @@ sys.path.insert(0, str(SKILL_DIR))
 import _inventory_unit_iterator as iterator  # noqa: E402
 from _inventory_unit_iterator import (  # noqa: E402
     load_iterator_summary,
+    next_inventory_unit,
     setup_inventory_iterator,
 )
 
@@ -30,6 +33,56 @@ def _write_packet(path: Path, body: str) -> Path:
 
 def _units(state_dir: Path) -> list[dict]:
     return load_iterator_summary(state_dir)["units"]
+
+
+def _iterator_with_units(tmp_path: Path, *, workers: int = 1, units: int = 3) -> Path:
+    packet = _write_packet(
+        tmp_path / "source-packet.txt",
+        "@@ source: paper.md\n"
+        + "\n".join(
+            f"{line:04d} | unit {ordinal}\n{line + 1:04d} | "
+            for ordinal, line in enumerate(range(1, units * 2, 2), start=1)
+        ),
+    )
+    state_dir = tmp_path / "iterator"
+    setup_inventory_iterator(packet, state_dir, requested_workers=workers, window_chars=6)
+    return state_dir
+
+
+def _inventory_path(state_dir: Path, worker_index: int) -> Path:
+    return state_dir / "workers" / f"worker-{worker_index}" / "inventory.json"
+
+
+def _valid_inventory(state_dir: Path, worker_index: int) -> dict:
+    return {
+        "ir_version": 3,
+        "chunk_id": f"iterator-worker-{worker_index:03d}",
+        "files": ["paper.md"],
+        "nodes": [],
+        "edges": [],
+        "gaps": [],
+    }
+
+
+def _write_valid_inventory(state_dir: Path, worker_index: int) -> None:
+    _inventory_path(state_dir, worker_index).write_text(
+        json.dumps(_valid_inventory(state_dir, worker_index)), encoding="utf-8"
+    )
+
+
+def _ack_rows(state_dir: Path) -> list[tuple]:
+    with sqlite3.connect(state_dir / "iterator.sqlite3") as connection:
+        return connection.execute(
+            "SELECT worker_index, unit_id, wrapped FROM acknowledgements ORDER BY id"
+        ).fetchall()
+
+
+def _sequence_rows(state_dir: Path) -> list[tuple]:
+    with sqlite3.connect(state_dir / "iterator.sqlite3") as connection:
+        return connection.execute(
+            "SELECT worker_index, first_unit_id, last_unit_id, closure_reason "
+            "FROM attention_sequences ORDER BY id"
+        ).fetchall()
 
 
 def _covered_coordinates(summary: dict) -> list[tuple[int, str, int]]:
@@ -456,3 +509,156 @@ def test_setup_records_each_substage_time_with_the_injected_clock(tmp_path: Path
     assert summary["timings_ms"]["database"] == 1
     assert summary["timings_ms"]["validation"] == 1
     assert "publication" not in summary["timings_ms"]
+
+
+def test_next_leases_first_unit_and_replays_it_until_acknowledged(tmp_path: Path) -> None:
+    state_dir = _iterator_with_units(tmp_path)
+
+    first = next_inventory_unit(state_dir, 1)
+    replay = next_inventory_unit(state_dir, 1)
+
+    assert first["state"] == replay["state"] == "unit"
+    assert first["unit"]["id"] == replay["unit"]["id"] == "u000001"
+
+
+def test_next_uses_independent_worker_cursors(tmp_path: Path) -> None:
+    state_dir = _iterator_with_units(tmp_path, workers=2, units=4)
+
+    worker_one = next_inventory_unit(state_dir, 1)
+    worker_two = next_inventory_unit(state_dir, 2)
+    _write_valid_inventory(state_dir, 1)
+    worker_one_next = next_inventory_unit(state_dir, 1, ack=worker_one["unit"]["id"])
+
+    assert worker_one["unit"]["id"] == "u000001"
+    assert worker_two["unit"]["id"] == "u000003"
+    assert worker_one_next["unit"]["id"] == "u000002"
+    assert next_inventory_unit(state_dir, 2)["unit"]["id"] == "u000003"
+
+
+def test_next_validates_schema_before_advancing_the_lease(tmp_path: Path) -> None:
+    state_dir = _iterator_with_units(tmp_path)
+    leased = next_inventory_unit(state_dir, 1)
+    _inventory_path(state_dir, 1).write_text("{}", encoding="utf-8")
+
+    rejected = next_inventory_unit(state_dir, 1, ack=leased["unit"]["id"])
+
+    assert rejected["state"] == "failure"
+    assert next_inventory_unit(state_dir, 1)["unit"]["id"] == leased["unit"]["id"]
+    assert _ack_rows(state_dir) == []
+
+
+@pytest.mark.parametrize("breakage", ["missing", "invalid-json", "wrong-worker"])
+def test_next_rolls_back_when_owned_inventory_cannot_be_validated(
+    tmp_path: Path, breakage: str
+) -> None:
+    state_dir = _iterator_with_units(tmp_path)
+    leased = next_inventory_unit(state_dir, 1)
+    inventory_path = _inventory_path(state_dir, 1)
+    if breakage == "missing":
+        inventory_path.unlink()
+    elif breakage == "invalid-json":
+        inventory_path.write_text("{", encoding="utf-8")
+    else:
+        inventory_path.write_text(
+            json.dumps({**_valid_inventory(state_dir, 1), "chunk_id": "iterator-worker-002"}),
+            encoding="utf-8",
+        )
+
+    rejected = next_inventory_unit(state_dir, 1, ack=leased["unit"]["id"])
+
+    assert rejected["state"] == "failure"
+    assert next_inventory_unit(state_dir, 1)["unit"]["id"] == leased["unit"]["id"]
+    assert _ack_rows(state_dir) == []
+
+
+@pytest.mark.parametrize("ack_kind", ["stale", "future", "cross-worker"])
+def test_next_rejects_acknowledgements_that_do_not_match_the_outstanding_lease(
+    tmp_path: Path, ack_kind: str
+) -> None:
+    state_dir = _iterator_with_units(tmp_path, workers=2, units=4)
+    leased = next_inventory_unit(state_dir, 1)
+    _write_valid_inventory(state_dir, 1)
+    if ack_kind == "stale":
+        next_unit = next_inventory_unit(state_dir, 1, ack=leased["unit"]["id"])
+        _write_valid_inventory(state_dir, 1)
+        next_inventory_unit(state_dir, 1, ack=next_unit["unit"]["id"])
+        invalid_ack = leased["unit"]["id"]
+    elif ack_kind == "future":
+        invalid_ack = "u000002"
+    else:
+        invalid_ack = "u000003"
+
+    rejected = next_inventory_unit(state_dir, 1, ack=invalid_ack)
+
+    assert rejected["state"] == "failure"
+    if ack_kind == "stale":
+        assert next_inventory_unit(state_dir, 1)["state"] == "complete"
+    else:
+        assert next_inventory_unit(state_dir, 1)["unit"]["id"] == leased["unit"]["id"]
+
+
+def test_next_replays_the_most_recent_matching_acknowledgement_idempotently(
+    tmp_path: Path,
+) -> None:
+    state_dir = _iterator_with_units(tmp_path)
+    leased = next_inventory_unit(state_dir, 1)
+    _write_valid_inventory(state_dir, 1)
+
+    advanced = next_inventory_unit(state_dir, 1, ack=leased["unit"]["id"])
+    retried = next_inventory_unit(state_dir, 1, ack=leased["unit"]["id"])
+
+    assert advanced == retried
+    assert advanced["unit"]["id"] == "u000002"
+    assert _ack_rows(state_dir) == [(1, "u000001", 0)]
+
+
+def test_next_rejects_idempotent_retry_when_wrap_intent_differs(tmp_path: Path) -> None:
+    state_dir = _iterator_with_units(tmp_path)
+    leased = next_inventory_unit(state_dir, 1)
+    _write_valid_inventory(state_dir, 1)
+    next_inventory_unit(state_dir, 1, ack=leased["unit"]["id"])
+
+    rejected = next_inventory_unit(state_dir, 1, ack=leased["unit"]["id"], wrap=True)
+
+    assert rejected["state"] == "failure"
+    assert _ack_rows(state_dir) == [(1, "u000001", 0)]
+    assert next_inventory_unit(state_dir, 1)["unit"]["id"] == "u000002"
+
+
+def test_next_closes_an_attention_sequence_when_acknowledgement_wraps(tmp_path: Path) -> None:
+    state_dir = _iterator_with_units(tmp_path)
+    first = next_inventory_unit(state_dir, 1)
+    _write_valid_inventory(state_dir, 1)
+    second = next_inventory_unit(state_dir, 1, ack=first["unit"]["id"])
+    _write_valid_inventory(state_dir, 1)
+
+    next_inventory_unit(state_dir, 1, ack=second["unit"]["id"], wrap=True)
+
+    assert _sequence_rows(state_dir) == [
+        (1, "u000001", "u000002", "worker-wrap"),
+    ]
+
+
+def test_next_closes_the_final_open_attention_sequence_automatically(tmp_path: Path) -> None:
+    state_dir = _iterator_with_units(tmp_path, units=2)
+    first = next_inventory_unit(state_dir, 1)
+    _write_valid_inventory(state_dir, 1)
+    second = next_inventory_unit(state_dir, 1, ack=first["unit"]["id"])
+    _write_valid_inventory(state_dir, 1)
+
+    complete = next_inventory_unit(state_dir, 1, ack=second["unit"]["id"])
+
+    assert complete["state"] == "complete"
+    assert _sequence_rows(state_dir) == [
+        (1, "u000001", "u000002", "end-of-source"),
+    ]
+
+
+def test_next_concurrently_leases_separate_worker_indices_with_real_sqlite(tmp_path: Path) -> None:
+    state_dir = _iterator_with_units(tmp_path, workers=2, units=4)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(lambda worker: next_inventory_unit(state_dir, worker), (1, 2)))
+
+    assert [result["state"] for result in results] == ["unit", "unit"]
+    assert [result["unit"]["id"] for result in results] == ["u000001", "u000003"]
