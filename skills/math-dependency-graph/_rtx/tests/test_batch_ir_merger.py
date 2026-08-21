@@ -94,9 +94,10 @@ def _manifest(
 
     source_files = files or ["a.tex", "b.tex"]
     source_packet = tmp_path / "source-packet.txt"
-    source_packet.write_text(
-        _source_packet(source_files, line_count=line_count, line_width=line_width),
-        encoding="utf-8",
+    source_packet.write_bytes(
+        _source_packet(
+            source_files, line_count=line_count, line_width=line_width
+        ).encode("utf-8")
     )
     payload = {
         "plan_version": 1,
