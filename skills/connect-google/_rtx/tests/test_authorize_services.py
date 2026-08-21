@@ -628,7 +628,13 @@ def test_oversized_callback_is_ignored_before_valid_callback(
         ):
             with socket.create_connection(("127.0.0.1", port), timeout=1) as client:
                 client.sendall(request)
-                client.recv(4096)
+                try:
+                    client.recv(4096)
+                except ConnectionResetError:
+                    # Windows may reset an intentionally oversized request
+                    # when the server closes it; the valid callback must still
+                    # be sent on the next connection.
+                    pass
 
     background_thread(send_callbacks)
     result = authorize_services_module._wait_for_callback(
