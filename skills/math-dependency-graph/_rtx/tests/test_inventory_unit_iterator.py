@@ -724,6 +724,33 @@ def test_next_records_bounded_internal_timings_and_iterator_status_counts(
     )
 
 
+def test_next_surfaces_diagnostics_write_failure_and_remains_retryable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Swallowing a lost timing record makes the durable summary untrustworthy."""
+
+    state_dir = _iterator_with_units(tmp_path, units=2)
+    leased = next_inventory_unit(state_dir, 1)
+    _write_valid_inventory(state_dir, 1)
+    real_record = iterator._record_iterator_call
+
+    def fail_record(*_args, **_kwargs) -> None:
+        raise sqlite3.OperationalError("injected iterator diagnostics failure")
+
+    monkeypatch.setattr(iterator, "_record_iterator_call", fail_record)
+    with pytest.raises(sqlite3.OperationalError, match="diagnostics failure"):
+        next_inventory_unit(state_dir, 1, ack=leased["unit"]["id"])
+    monkeypatch.setattr(iterator, "_record_iterator_call", real_record)
+
+    retried = next_inventory_unit(state_dir, 1, ack=leased["unit"]["id"])
+
+    assert retried["state"] == "unit"
+    summary = load_iterator_diagnostics(state_dir)
+    assert summary["next"]["calls"] == 2
+    assert summary["next"]["acknowledgements"] == 1
+    assert summary["next"]["retries"] == 1
+
+
 def test_next_leases_first_unit_and_replays_it_until_acknowledged(tmp_path: Path) -> None:
     state_dir = _iterator_with_units(tmp_path)
 

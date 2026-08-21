@@ -2060,10 +2060,7 @@ def next_inventory_unit(
     timings["total"] = elapsed_ns // 1_000_000
     database = state_dir.resolve() / "iterator.sqlite3"
     if database.is_file():
-        try:
-            _record_iterator_call(database, worker_index, response, details, timings)
-        except sqlite3.Error:
-            pass
+        _record_iterator_call(database, worker_index, response, details, timings)
     return response
 
 
