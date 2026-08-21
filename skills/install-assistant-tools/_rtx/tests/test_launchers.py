@@ -340,13 +340,13 @@ def test_verify_install_reports_fail_for_missing_launcher(tmp_path, capsys):
     assert f"FAIL: {bin_dir / launcher_name} not found" in capsys.readouterr().out
 
 
-def test_verify_install_uses_windows_background_run_wrapper(tmp_path, monkeypatch):
-    """Windows verifies the runnable batch wrapper, not the POSIX companion."""
+def test_verify_install_uses_windows_wrapper_for_every_agent(tmp_path, monkeypatch):
+    """Windows verifies every agent through its runnable batch wrapper."""
 
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    (bin_dir / "background_run").write_text("#!/bin/sh\n")
-    (bin_dir / "background_run.bat").write_text("@echo off\r\nexit /b 0\r\n")
+    (bin_dir / "future_agent").write_text("#!/bin/sh\n")
+    (bin_dir / "future_agent.bat").write_text("@echo off\r\nexit /b 0\r\n")
     calls = []
 
     def run(argv, **_kwargs):
@@ -356,8 +356,18 @@ def test_verify_install_uses_windows_background_run_wrapper(tmp_path, monkeypatc
     monkeypatch.setattr(sys, "platform", "win32")
     monkeypatch.setattr(launchers.subprocess, "run", run)
 
-    assert launchers.verify_install(bin_dir, ["background_run"])
-    assert calls == [[str(bin_dir / "background_run.bat"), "--help"]]
+    assert launchers.verify_install(bin_dir, ["future_agent"])
+    assert calls == [[str(bin_dir / "future_agent.bat"), "--help"]]
+
+
+def test_every_windows_capable_agent_has_a_batch_wrapper() -> None:
+    source_bin = Path(launchers.__file__).resolve().parent / "assets" / "bin"
+
+    assert {
+        agent for agent in launchers.ALL_AGENTS if agent != "tw"
+    } == {
+        path.stem for path in source_bin.glob("*.bat") if path.stem != "dispatcher"
+    }
 
 
 def test_tw_agent_links_both_tmux_workspace_and_tw_alias(tmp_path):

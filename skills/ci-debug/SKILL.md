@@ -13,6 +13,7 @@ Skill Version: 1
 
 Uses Interfaces:
 - `ci-debug.source.gateway -> ci-debug._rtx.interface.run-ci@1`
+- `ci-debug.source.gateway -> ci-debug._rtx.interface.run-targeted-tests@1`
 - `ci-debug.source.gateway -> ci-debug.source.instructions-repair-element.interface.repair-element@1`
 - `ci-debug.source.gateway -> git-workflow.interface.default@1`
 - `ci-debug.source.instructions-repair-element -> ci-debug._rtx.interface.run-targeted-tests@1`
@@ -44,6 +45,14 @@ state outside the machine-owned context; do not extend its schema ad hoc.
 
 Use `ci-debug._rtx.interface.run-ci` for the exact pushed candidate.
 
+Retire superseded runs before dispatching replacement work through the
+already-authorized CI control surface. If cancellation authority is
+unavailable, record the capacity blocker and do not duplicate the full run.
+While a matrix remains active, consume completed matrix-element reports and
+logs as soon as an already-authorized CI surface exposes them. Do not wait for
+the enclosing matrix before diagnosing a completed failure or routing a stalled
+element into the failure ledger.
+
 While its report is red:
 
 1. Group failures by matrix element. Give each repair subagent one element, the
@@ -56,8 +65,14 @@ While its report is red:
    are unavailable.
 3. Review returned commits, diffs, and targeted-test evidence. Integrate accepted
    patches sequentially under `git-workflow.interface.default`.
-4. Push the integrated candidate, record its exact SHA, and use
-   `ci-debug._rtx.interface.run-ci` again.
+4. Push the integrated candidate and record its exact SHA.
+5. Before the next complete matrix, use
+   `ci-debug._rtx.interface.run-targeted-tests` on the exact integrated
+   candidate for every affected matrix element. Start with the smallest
+   selectors needed to detect integration interactions, then run each whole
+   affected element. Return new failures to the ledger.
+6. Only after every affected matrix element is green, use
+   `ci-debug._rtx.interface.run-ci` again for the complete matrix.
 
 Stop only when the full report is green or a repair element returns a concrete
 blocked reason. Targeted tests and whole-element tests never establish overall

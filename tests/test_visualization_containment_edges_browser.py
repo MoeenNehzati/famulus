@@ -1,22 +1,15 @@
 """Browser regression coverage for edges whose endpoints contain one another."""
 
-from pathlib import Path
-import shutil
-import subprocess
-import tempfile
-
 import pytest
 pytestmark = pytest.mark.xdist_group("browser")
 
 from officina.visualization.elk_html_renderer import build_html_with_elk
+from test_support.browser import require_chrome, run_html
 
 
-def test_containment_edges_reach_both_endpoint_boundaries(tmp_path: Path) -> None:
+def test_containment_edges_reach_both_endpoint_boundaries() -> None:
     """Keep parent-child edges visible while unrelated nodes and text occlude them."""
-    chrome = shutil.which("google-chrome")
-    if chrome is None:
-        # famulus-skip: category=capability-unavailable; reason=Google Chrome is not installed; alternate=renderer contract tests cover generated edge and node structures
-        pytest.skip("google-chrome unavailable")
+    chrome = require_chrome()
     payload = {
         "schema_version": 2,
         "graph_id": "containment-edge-layering",
@@ -149,37 +142,17 @@ def test_containment_edges_reach_both_endpoint_boundaries(tmp_path: Path) -> Non
         }, 150));
         </script></body>""",
     )
-    path = tmp_path / "officina-containment-edge-browser.html"
-    path.write_text(html, encoding="utf-8")
-    with tempfile.TemporaryDirectory() as profile:
-        result = subprocess.run(
-            [
-                chrome,
-                "--headless",
-                "--no-sandbox",
-                "--disable-gpu",
-                "--disable-dev-shm-usage",
-                "--disable-crash-reporter",
-                f"--user-data-dir={profile}",
-                "--virtual-time-budget=12000",
-                "--dump-dom",
-                path.as_uri(),
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
+    result = run_html(
+        chrome,
+        html,
+        virtual_time_budget=12000,
+    )
     assert 'data-test-status="PASS"' in result.stdout, result.stdout[-1000:]
 
 
-def test_edge_occlusion_geometry_scales_with_local_intersections(
-    tmp_path: Path,
-) -> None:
+def test_edge_occlusion_geometry_scales_with_local_intersections() -> None:
     """Avoid multiplying every edge mask by every node in the graph."""
-    chrome = shutil.which("google-chrome")
-    if chrome is None:
-        # famulus-skip: category=capability-unavailable; reason=Google Chrome is not installed; alternate=renderer contract tests cover generated edge and node structures
-        pytest.skip("google-chrome unavailable")
+    chrome = require_chrome()
     node_count = 72
     entities = []
     for index in range(node_count):
@@ -224,24 +197,9 @@ def test_edge_occlusion_geometry_scales_with_local_intersections(
         }, 150));
         </script></body>""",
     )
-    path = tmp_path / "officina-edge-occlusion-scale-browser.html"
-    path.write_text(html, encoding="utf-8")
-    with tempfile.TemporaryDirectory() as profile:
-        result = subprocess.run(
-            [
-                chrome,
-                "--headless",
-                "--no-sandbox",
-                "--disable-gpu",
-                "--disable-dev-shm-usage",
-                "--disable-crash-reporter",
-                f"--user-data-dir={profile}",
-                "--virtual-time-budget=4000",
-                "--dump-dom",
-                path.as_uri(),
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
+    result = run_html(
+        chrome,
+        html,
+        virtual_time_budget=4000,
+    )
     assert 'data-test-status="PASS"' in result.stdout, result.stdout[-1000:]

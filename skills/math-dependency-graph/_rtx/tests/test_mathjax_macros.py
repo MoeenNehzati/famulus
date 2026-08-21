@@ -72,18 +72,22 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
             self.assertNotIn("dotsi", macros)
             self.assertNotIn("vdots", macros)
 
-    def test_resolves_bold_declared_symbol_by_font_slot(self) -> None:
+    def test_resolves_standard_declared_symbols_without_a_tex_install(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "custom.cls").write_text(
                 "\\DeclareSymbolFont{bsymbols}{OMS}{cmsy}{b}{n}\n"
-                "\\DeclareMathSymbol{\\BoldNabla}{\\mathord}{bsymbols}{\"72}\n",
+                "\\DeclareSymbolFont{bletters}{OML}{cmm}{b}{it}\n"
+                "\\DeclareSymbolFont{boperators}{OT1}{cmr}{b}{n}\n"
+                "\\DeclareMathSymbol{\\BoldNabla}{\\mathord}{bsymbols}{\"72}\n"
+                "\\DeclareMathSymbol{\\BoldAlpha}{\\mathord}{bletters}{\"0B}\n"
+                "\\DeclareMathSymbol{\\BoldGamma}{\\mathord}{boperators}{\"00}\n",
                 encoding="utf-8",
             )
             entrypoint = root / "main.tex"
             entrypoint.write_text(
                 "\\documentclass{custom}\n"
-                "The gradient is $\\BoldNabla f$.\n",
+                "The gradient is $\\BoldNabla f + \\BoldAlpha + \\BoldGamma$.\n",
                 encoding="utf-8",
             )
 
@@ -95,6 +99,8 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
                 macros = extract_macros(entrypoint)
 
             self.assertEqual(macros["BoldNabla"], "\\boldsymbol{\\nabla}")
+            self.assertEqual(macros["BoldAlpha"], "\\boldsymbol{\\alpha}")
+            self.assertEqual(macros["BoldGamma"], "\\boldsymbol{\\Gamma}")
 
     def test_does_not_treat_class_implementation_math_as_document_usage(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

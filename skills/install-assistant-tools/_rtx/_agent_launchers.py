@@ -248,9 +248,12 @@ def verify_install(bin_dir: Path, agents: list[str]) -> bool:
     fixed VERIFY_CMDS list) — installing a subset shouldn't report FAIL for
     agents that were never asked for.
 
-    On Windows, tmux-workspace is skipped (tmux is not available) and .bat
-    wrappers are used for assistant/collab/coauthor because extension-less
-    scripts cannot be executed directly by Windows.
+    On Windows, tmux-workspace is skipped (tmux is not available) and every
+    supported agent is verified through its runnable ``.bat`` wrapper.
+
+    Verification remains advisory because installation is intentionally
+    non-transactional; callers receive exact failed targets without implying
+    that earlier filesystem and profile writes were rolled back.
     """
     log("")
     log("Verifying installation...")
@@ -263,12 +266,7 @@ def verify_install(bin_dir: Path, agents: list[str]) -> bool:
             log("  SKIP: tw (tmux not available on Windows)")
             continue
 
-        if is_windows and name in (
-            "assistant",
-            "background_run",
-            "collab",
-            "coauthor",
-        ):
+        if is_windows:
             dst = bin_dir / f"{name}.bat"
         else:
             dst = bin_dir / name

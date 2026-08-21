@@ -39,14 +39,15 @@ INSTALLATION_TESTS = {
     "tests/test_officina_runtime_pointer.py",
     "tests/test_officina_uv_bootstrap.py",
 }
-CHROME_TESTS = {
-    "tests/test_visualization_browser.py",
-    "tests/test_visualization_containment_edges_browser.py",
-    "tests/test_visualization_inspector_and_bezier_browser.py",
-    "tests/test_visualization_node_readability_browser.py",
-    "tests/test_visualization_projection_arrangements_browser.py",
-    "tests/test_visualization_projection_browser.py",
-}
+def discover_browser_tests(repo_root: Path) -> set[str]:
+    """Return browser modules selected by the repository naming convention."""
+    return {
+        path.relative_to(repo_root).as_posix()
+        for path in (repo_root / "tests").rglob("test_*_browser.py")
+    }
+
+
+CHROME_TESTS = discover_browser_tests(REPO_ROOT)
 DOCSTRING_TESTS = {
     "tests/test_docstring_schema_dynamic_sections.py",
     "tests/test_docstrings_validator.py",
@@ -1280,7 +1281,7 @@ def run_validators_with_pytest(
 
 SUITE_PHASES = {
     "validators": ("validators",),
-    "tests": ("tests:shared", "tests:performance"),
+    "tests": ("tests:shared", "tests:performance", "tests:browser"),
     "precommit": ("validators", "tests:shared"),
     "pre-push": ("validators", "tests:shared", "tests:browser"),
     "portability": ("tests:shared",),
@@ -1968,6 +1969,7 @@ def _pytest_phase_command(
         targets = sorted(PERFORMANCE_TESTS)
     elif task_id == "tests:browser":
         pytest_args = _pytest_args(verbose=verbose, jobs=1)
+        pytest_args.append("--maxfail=1")
         targets = sorted(CHROME_TESTS)
     elif task_id == "tests:github":
         pytest_args = _pytest_args(verbose=verbose, jobs=jobs)

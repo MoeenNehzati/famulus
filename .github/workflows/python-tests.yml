@@ -68,7 +68,7 @@ jobs:
   test:
     if: github.event_name != 'workflow_dispatch' || inputs.mode == 'matrix'
     name: test (${{ matrix.os }}, ${{ matrix.task }})
-    timeout-minutes: 60
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -96,10 +96,11 @@ jobs:
             jobs: 1
             artifact: windows-tests-browser
     runs-on: ${{ matrix.os }}
-    # The latency budgets are calibrated against these hosted runners, so the
-    # gates assert only where that calibration holds.
+    # Browser jobs must execute browser assertions rather than pass by skipping
+    # them. Wall-clock benchmarks stay opt-in because hosted-runner load is not
+    # a stable regression signal; structural performance invariants still run.
     env:
-      FAMULUS_RUN_PERFORMANCE_GATES: '1'
+      FAMULUS_REQUIRE_BROWSER: '1'
 
     steps:
       - uses: actions/checkout@v4
@@ -192,12 +193,12 @@ jobs:
   probe:
     if: github.event_name == 'workflow_dispatch' && inputs.mode == 'probe'
     name: probe (${{ inputs.os }}, ${{ inputs.task }})
-    timeout-minutes: 60
+    timeout-minutes: 10
     runs-on: ${{ inputs.os }}
-    # The latency budgets are calibrated against these hosted runners, so the
-    # gates assert only where that calibration holds.
+    # A browser probe promises real browser coverage. Wall-clock benchmarks
+    # remain an explicit diagnostic rather than a hosted-runner gate.
     env:
-      FAMULUS_RUN_PERFORMANCE_GATES: '1'
+      FAMULUS_REQUIRE_BROWSER: '1'
 
     steps:
       - uses: actions/checkout@v4
@@ -270,7 +271,11 @@ jobs:
           if task != "combined":
               command.extend(["--task", task])
           raw_selectors = os.environ.get("REPO_CHECKS_SELECTOR", "")
-          selectors = json.loads(os.environ["REPO_CHECKS_SELECTOR"]) if raw_selectors else []
+          selectors = (
+              json.loads(raw_selectors)
+              if raw_selectors.startswith("[")
+              else [raw_selectors] if raw_selectors else []
+          )
           if not isinstance(selectors, list) or not all(isinstance(item, str) for item in selectors):
               raise SystemExit("invalid selector list")
           for selector in selectors:

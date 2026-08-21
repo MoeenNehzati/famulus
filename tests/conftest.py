@@ -6,6 +6,8 @@ import time
 
 import pytest
 
+from test_support.browser import require_chrome
+
 
 @pytest.fixture(autouse=True)
 def serialize_browser_tests(request, tmp_path_factory):
@@ -23,6 +25,7 @@ def serialize_browser_tests(request, tmp_path_factory):
         yield
         return
 
+    require_chrome()
     lock = tmp_path_factory.getbasetemp().parent / "chrome-tests.lock"
     deadline = time.monotonic() + 120
     while True:

@@ -46,7 +46,7 @@ def test_named_suites_resolve_to_ordered_native_phases() -> None:
     """Catch reintroduction of a task graph or split runner routes."""
     assert runner.SUITE_PHASES == {
         "validators": ("validators",),
-        "tests": ("tests:shared", "tests:performance"),
+        "tests": ("tests:shared", "tests:performance", "tests:browser"),
         "precommit": ("validators", "tests:shared"),
         "pre-push": ("validators", "tests:shared", "tests:browser"),
         "portability": ("tests:shared",),
@@ -610,6 +610,7 @@ def test_browser_phase_is_serial_and_uses_only_browser_modules(tmp_path: Path) -
     )
 
     assert "-n" not in command
+    assert "--maxfail=1" in command
     assert command[-len(runner.CHROME_TESTS) :] == sorted(runner.CHROME_TESTS)
 
 
@@ -650,7 +651,7 @@ def test_each_pytest_task_receives_an_isolated_cache_directory(
         next(argument for argument in command if argument.startswith("cache_dir="))
         for command in commands
     ]
-    assert len(set(cache_options)) == 2
+    assert len(set(cache_options)) == len(runner.SUITE_PHASES["tests"])
 
 
 def test_phase_runner_writes_per_file_timing_report(
@@ -954,13 +955,16 @@ def test_ci_shards_windows_repository_checks_for_parallel_diagnostics() -> None:
     assert "task: 'tests:performance'" in workflow
     assert workflow.count("jobs: 4") == 3
     assert "artifact: windows-tests-browser" in workflow
+    assert workflow.count("FAMULUS_REQUIRE_BROWSER: '1'") == 2
+    assert "FAMULUS_RUN_PERFORMANCE_GATES: '1'" not in workflow
     assert 'if: matrix.task == \'combined\'' in workflow
     assert 'if: matrix.task != \'combined\'' in workflow
     assert (
         'python3 repo_checks.py --suite full --task-id "${{ matrix.task }}" '
         '--verbose --jobs "${{ matrix.jobs }}"'
     ) in workflow
-    assert "timeout-minutes: 60" in workflow
+    assert workflow.count("timeout-minutes: 20") == 1
+    assert workflow.count("timeout-minutes: 10") == 1
 
 
 def test_ci_workflow_dispatches_a_full_matrix_or_one_safe_probe() -> None:
@@ -994,7 +998,9 @@ def test_ci_workflow_dispatches_a_full_matrix_or_one_safe_probe() -> None:
     assert "REPO_CHECKS_EXPECTED_SHA: ${{ inputs.expected_sha }}" in workflow
     assert "REPO_CHECKS_TASK: ${{ inputs.task }}" in workflow
     assert "REPO_CHECKS_SELECTOR: ${{ inputs.selector }}" in workflow
-    assert 'json.loads(os.environ["REPO_CHECKS_SELECTOR"])' in workflow
+    assert "json.loads(raw_selectors)" in workflow
+    assert 'if raw_selectors.startswith("[")' in workflow
+    assert "else [raw_selectors] if raw_selectors else []" in workflow
     assert 'command.extend(["--selector", selector])' in workflow
     assert 'if task != "combined":' in workflow
     assert "inputs.selector == '[]'" in workflow

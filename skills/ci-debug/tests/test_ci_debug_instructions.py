@@ -48,6 +48,28 @@ def test_gateway_contains_only_the_outer_loop() -> None:
     assert "replace the failure set" not in text
 
 
+def test_gateway_probes_integrated_candidate_before_full_matrix() -> None:
+    text = " ".join(
+        (SKILL / "SKILL.md").read_text(encoding="utf-8").lower().split()
+    )
+
+    assert "exact integrated candidate" in text
+    assert "before the next complete matrix" in text
+    assert "use `ci-debug._rtx.interface.run-targeted-tests`" in text
+    assert "only after every affected matrix element is green" in text
+
+
+def test_gateway_retires_obsolete_runs_and_recovers_completed_job_evidence() -> None:
+    text = " ".join(
+        (SKILL / "SKILL.md").read_text(encoding="utf-8").lower().split()
+    )
+
+    assert "retire superseded runs before dispatching replacement work" in text
+    assert "completed matrix-element reports and logs" in text
+    assert "as soon as an already-authorized ci surface exposes them" in text
+    assert "do not wait for the enclosing matrix" in text
+
+
 def test_repair_route_contains_the_targeted_inner_loop() -> None:
     text = " ".join(
         (SKILL / "instructions" / "repair-element.md")
@@ -72,6 +94,20 @@ def test_repair_route_contains_the_targeted_inner_loop() -> None:
     assert "overall ci green" in text
 
 
+def test_repair_route_treats_stalls_as_bounded_failure_classes() -> None:
+    text = " ".join(
+        (SKILL / "instructions" / "repair-element.md")
+        .read_text(encoding="utf-8")
+        .lower()
+        .split()
+    )
+
+    assert "treat a stall as a failure class" in text
+    assert "explicit wall-clock bound" in text
+    assert "process tree" in text
+    assert "smallest runnable selector" in text
+
+
 def test_instruction_sources_use_only_the_interface_they_need() -> None:
     gateway = yaml.safe_load(
         (SKILL / "blueprints" / "gateway.yaml").read_text(encoding="utf-8")
@@ -83,6 +119,7 @@ def test_instruction_sources_use_only_the_interface_they_need() -> None:
     )
     assert gateway["uses_interfaces"] == [
         {"interface": "ci-debug._rtx.interface.run-ci", "version": 1},
+        {"interface": "ci-debug._rtx.interface.run-targeted-tests", "version": 1},
         {
             "interface": "ci-debug.source.instructions-repair-element.interface.repair-element",
             "version": 1,

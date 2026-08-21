@@ -41,6 +41,8 @@ content:
 - assets/bin/_agent_launch\.py
 - assets/bin/assistant
 - assets/bin/assistant\.bat
+- assets/bin/background_run
+- assets/bin/background_run\.bat
 - assets/bin/coauthor
 - assets/bin/coauthor\.bat
 - assets/bin/collab

@@ -141,7 +141,9 @@ def test_advance_inventory_writes_pooled_ir_and_one_extract_job(tmp_path: Path) 
     assert Path(report["next_job"]["instruction"]) == (
         SKILL_DIR / "instructions" / "extract.md"
     ).resolve()
-    assert report["next_job"]["schema"].endswith("semantic-graph.schema.json")
+    assert Path(report["next_job"]["schema"]) == (
+        SKILL_DIR / "semantic-graph.schema.json"
+    ).resolve()
     assert report["next_job"]["source_packet"] == str(source_path.resolve())
     assert report["next_job"]["entrypoint"] == str(entrypoint.resolve())
     assert report["next_job"]["progress_path"] == str(

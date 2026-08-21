@@ -96,11 +96,57 @@ MATHJAX_COMMAND_ARITIES = {
     "mathrm": 1,
 }
 
-# Stable Computer Modern symbol slots needed when no TeX distribution is
-# installed. A live distribution remains authoritative when available.
-PORTABLE_MATH_SYMBOLS = {
-    ("OMS", "cmsy", 0x72): "nabla",
+# Named symbols from LaTeX's standard Computer Modern font table. Keeping the
+# four complete families compactly here makes no-TeX behavior deterministic;
+# a live distribution remains authoritative when available.
+_PORTABLE_MATH_SYMBOL_SLOTS = {
+    ("OML", "cmm"): (
+        "0b=alpha 0c=beta 0d=gamma 0e=delta 0f=epsilon 10=zeta 11=eta "
+        "12=theta 13=iota 14=kappa 15=lambda 16=mu 17=nu 18=xi 19=pi 1a=rho "
+        "1b=sigma 1c=tau 1d=upsilon 1e=phi 1f=chi 20=psi 21=omega "
+        "22=varepsilon 23=vartheta 24=varpi 25=varrho 26=varsigma 27=varphi "
+        "28=leftharpoonup 29=leftharpoondown 2a=rightharpoonup "
+        "2b=rightharpoondown 2c=lhook 2d=rhook 2e=triangleright "
+        "2f=triangleleft 3a=ldotp 3f=star 40=partial 5b=flat 5c=natural "
+        "5d=sharp 5e=smile 5f=frown 60=ell 7b=imath 7c=jmath 7d=wp"
+    ),
+    ("OMS", "cmsy"): (
+        "01=cdot 02=times 03=ast 04=div 05=diamond 06=pm 07=mp 08=oplus "
+        "09=ominus 0a=otimes 0b=oslash 0c=odot 0d=bigcirc 0e=circ "
+        "0f=bullet 10=asymp 11=equiv 12=subseteq 13=supseteq 14=leq 15=geq "
+        "16=preceq 17=succeq 18=sim 19=approx 1a=subset 1b=supset 1c=ll "
+        "1d=gg 1e=prec 1f=succ 20=leftarrow 21=rightarrow "
+        "24=leftrightarrow 25=nearrow 26=searrow 27=simeq 28=Leftarrow "
+        "29=Rightarrow 2c=Leftrightarrow 2d=nwarrow 2e=swarrow 2f=propto "
+        "30=prime 31=infty 32=in 33=ni 34=triangle 35=bigtriangledown "
+        "36=not 37=mapstochar 38=forall 39=exists 3a=neg 3b=emptyset 3c=Re "
+        "3d=Im 3e=top 3f=bot 40=aleph 5b=cup 5c=cap 5d=uplus 5e=wedge "
+        "5f=vee 60=vdash 61=dashv 6a=mid 6b=parallel 6e=setminus 6f=wr "
+        "71=amalg 72=nabla 73=smallint 74=sqcup 75=sqcap 76=sqsubseteq "
+        "77=sqsupseteq 78=mathsection 79=dagger 7a=ddagger "
+        "7b=mathparagraph 7c=clubsuit 7d=diamondsuit 7e=heartsuit 7f=spadesuit"
+    ),
+    ("OMX", "cmex"): (
+        "46=bigsqcup 48=ointop 4a=bigodot 4c=bigoplus 4e=bigotimes "
+        "50=sum 51=prod 52=intop 53=bigcup 54=bigcap 55=biguplus "
+        "56=bigwedge 57=bigvee 60=coprod 7a=braceld 7b=bracerd "
+        "7c=bracelu 7d=braceru"
+    ),
+    ("OT1", "cmr"): (
+        "00=Gamma 01=Delta 02=Theta 03=Lambda 04=Xi 05=Pi 06=Sigma "
+        "07=Upsilon 08=Phi 09=Psi 0a=Omega 24=mathdollar 3a=colon"
+    ),
 }
+
+
+def portable_math_symbols() -> dict[tuple[str, str, int], str]:
+    """Expand the compact standard Computer Modern symbol table."""
+    return {
+        (encoding, family, int(slot, 16)): name
+        for (encoding, family), entries in _PORTABLE_MATH_SYMBOL_SLOTS.items()
+        for entry in entries.split()
+        for slot, name in (entry.split("=", 1),)
+    }
 
 
 LOCAL_INCLUDE_RE = re.compile(
@@ -473,7 +519,7 @@ def canonical_math_symbols() -> dict[tuple[str, str, int], str]:
     """
     source = tex_distribution_path("fontmath.ltx")
     if source is None:
-        return dict(PORTABLE_MATH_SYMBOLS)
+        return portable_math_symbols()
     text = strip_comments(read_tex_text(source))
     fonts = collect_symbol_fonts(text)
     symbols: dict[tuple[str, str, int], str] = {}

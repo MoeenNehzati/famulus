@@ -1,18 +1,12 @@
 """Disposable browser matrix for graph node-removal projection behavior."""
 
 import json
-from pathlib import Path
-import shutil
-import subprocess
-import tempfile
 
 import pytest
 pytestmark = pytest.mark.xdist_group("browser")
 
 from officina.visualization.elk_html_renderer import build_html_with_elk
-
-
-CHROME = shutil.which("google-chrome")
+from test_support.browser import require_chrome, run_html
 
 
 def entity(identifier, position, edges=(), *, container=None, node_type="source"):
@@ -101,9 +95,7 @@ def payload(entities):
 
 
 def run_case(name, entities, assertions, *, readiness_delays=None):
-    if CHROME is None:
-        # famulus-skip: category=capability-unavailable; reason=Google Chrome is not installed; alternate=projection policy tests cover transformation semantics without a browser
-        pytest.skip("google-chrome unavailable")
+    chrome = require_chrome()
     # Optional gates make a missing-readiness wait fail deterministically without
     # extending the browser deadline used by the real assertion helper.
     helpers = (
@@ -169,15 +161,11 @@ def run_case(name, entities, assertions, *, readiness_delays=None):
     }}, 100));
     </script></body>'''
     html = build_html_with_elk(payload(entities)).replace("</body>", script)
-    path = Path(f"/tmp/officina-projection-{name}.html")
-    path.write_text(html, encoding="utf-8")
-    with tempfile.TemporaryDirectory() as profile:
-        result = subprocess.run([
-            CHROME, "--headless", "--no-sandbox", "--disable-gpu",
-            "--disable-dev-shm-usage", "--disable-crash-reporter",
-            f"--user-data-dir={profile}", "--virtual-time-budget=3500",
-            "--dump-dom", path.as_uri(),
-        ], check=True, capture_output=True, text=True)
+    result = run_html(
+        chrome,
+        html,
+        virtual_time_budget=3500,
+    )
     marker = 'data-test-status="'
     start = result.stdout.find(marker)
     status = result.stdout[start + len(marker):result.stdout.find('"', start + len(marker))] if start >= 0 else "FAIL:status missing"

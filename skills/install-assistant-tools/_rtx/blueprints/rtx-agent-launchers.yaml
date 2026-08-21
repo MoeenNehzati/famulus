@@ -3,6 +3,8 @@ content:
 - assets/bin/_agent_launch\.py
 - assets/bin/assistant
 - assets/bin/assistant\.bat
+- assets/bin/background_run
+- assets/bin/background_run\.bat
 - assets/bin/coauthor
 - assets/bin/coauthor\.bat
 - assets/bin/collab
@@ -34,6 +36,8 @@ interfaces:
     - assets/bin/_agent_launch\.py
     - assets/bin/assistant
     - assets/bin/assistant\.bat
+    - assets/bin/background_run
+    - assets/bin/background_run\.bat
     - assets/bin/coauthor
     - assets/bin/coauthor\.bat
     - assets/bin/collab
@@ -47,7 +51,7 @@ interfaces:
     contract:
       arguments:
         agents:
-          description: Comma-separated assistant and collab and coauthor selection.
+          description: Comma-separated selection from the supported launcher agents.
             Only the listed agents are installed by direct invocation of this interface;
             the phase-entry orchestrator additionally forces assistant into every
             installation it runs regardless of this selection, because assistant is

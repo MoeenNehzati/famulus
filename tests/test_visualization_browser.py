@@ -1,20 +1,12 @@
-from pathlib import Path
-import os
-import shutil
-import subprocess
-import tempfile
-
 import pytest
 pytestmark = pytest.mark.xdist_group("browser")
 
 from officina.visualization.elk_html_renderer import build_html_with_elk
+from test_support.browser import require_chrome, run_html
 
 
 def test_filter_interactions_keep_layout_and_explain_projection():
-    chrome = shutil.which("google-chrome")
-    if chrome is None:
-        # famulus-skip: category=capability-unavailable; reason=Google Chrome is not installed; alternate=renderer contract tests cover payload and HTML generation
-        pytest.skip("google-chrome unavailable")
+    chrome = require_chrome()
     doc = {
         "schema_version": 2,
         "graph_id": "temporary-filter-smoke",
@@ -671,27 +663,12 @@ def test_filter_interactions_keep_layout_and_explain_projection():
         }, 100));
         </script></body>""",
     )
-    path = Path("/tmp/officina-filter-smoke.html")
-    path.write_text(html, encoding="utf-8")
-    if os.environ.get("BUILD_ONLY") == "1":
-        return
-    with tempfile.TemporaryDirectory() as profile:
-        result = subprocess.run(
-            [
-                chrome,
-                "--headless",
-                "--no-sandbox",
-                "--disable-gpu",
-                "--disable-dev-shm-usage",
-                "--disable-crash-reporter",
-                f"--user-data-dir={profile}",
-                "--virtual-time-budget=7000",
-                "--window-size=1440,900",
-                "--dump-dom",
-                path.as_uri(),
-            ],
-            check=True, capture_output=True, text=True,
-        )
+    result = run_html(
+        chrome,
+        html,
+        virtual_time_budget=7000,
+        window_size="1440,900",
+    )
     status_marker = 'data-test-status="'
     status_start = result.stdout.find(status_marker)
     status = (
@@ -725,25 +702,12 @@ def test_filter_interactions_keep_layout_and_explain_projection():
         }, 250));
         </script></body>""",
     )
-    mobile_path = Path("/tmp/officina-filter-mobile-smoke.html")
-    mobile_path.write_text(mobile_html, encoding="utf-8")
-    with tempfile.TemporaryDirectory() as profile:
-        mobile_result = subprocess.run(
-            [
-                chrome,
-                "--headless",
-                "--no-sandbox",
-                "--disable-gpu",
-                "--disable-dev-shm-usage",
-                "--disable-crash-reporter",
-                f"--user-data-dir={profile}",
-                "--virtual-time-budget=3000",
-                "--window-size=390,844",
-                "--dump-dom",
-                mobile_path.as_uri(),
-            ],
-            check=True, capture_output=True, text=True,
-        )
+    mobile_result = run_html(
+        chrome,
+        mobile_html,
+        virtual_time_budget=3000,
+        window_size="390,844",
+    )
     mobile_start = mobile_result.stdout.find(status_marker)
     mobile_status = (
         mobile_result.stdout[mobile_start + len(status_marker):].split('"', 1)[0]
