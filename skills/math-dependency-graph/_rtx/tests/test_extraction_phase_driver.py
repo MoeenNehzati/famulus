@@ -1278,6 +1278,76 @@ def test_finalize_extract_corrects_invalid_proof_ownership_before_reconciliation
     assert not (tmp_path / "proof-reconciliation-packet.json").exists()
 
 
+@pytest.mark.parametrize("ownership", ["missing", "multiple", "invalid-target"])
+def test_semantic_repair_fails_closed_on_invalid_proof_ownership(
+    tmp_path: Path, ownership: str
+) -> None:
+    """A correction response cannot bypass proof ownership before reconciliation."""
+
+    manifest, _inventory_path, fragment_path = _install_proof_run(tmp_path)
+    state_path = tmp_path / "run-state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["semantic_repair_base"] = str(fragment_path)
+    _write_json(state_path, state)
+    repair = {
+        "repair_version": 2,
+        "remove_entity_ids": [],
+        "upsert_entities": [],
+        "remove_exclusion_candidate_ids": [],
+        "upsert_exclusions": [],
+        "remove_unresolved_ids": [],
+        "upsert_unresolved_resolutions": [],
+        "remove_relationships": [],
+        "upsert_relationships": [],
+        "remove_hint_ids": [],
+        "upsert_hint_decisions": [],
+        "remove_reference_ids": [],
+        "upsert_reference_decisions": [],
+        "remove_gap_ids": [],
+        "upsert_gaps": [],
+        "remove_inventory_gap_ids": [],
+        "upsert_gap_decisions": [],
+    }
+    proves_key = {"from": "proof-sketch", "to": "result-r", "type": "proves"}
+    if ownership in {"missing", "invalid-target"}:
+        repair["remove_relationships"] = [proves_key]
+        repair["upsert_hint_decisions"] = [
+            {
+                "hint_id": "pool::h4",
+                "decision": "rejected",
+                "reason": "The correction failed to retain a valid ownership edge.",
+            }
+        ]
+    if ownership in {"multiple", "invalid-target"}:
+        repair["upsert_relationships"] = [
+            {
+                "from": "proof-sketch",
+                "to": "assumption-a",
+                "type": "proves",
+                "description": "The malformed correction targets an ineligible entity.",
+                "hint_ids": [],
+                "evidence_ids": ["pool::e4"],
+                "implicit": False,
+                "confidence": "Verified",
+            }
+        ]
+    repair_path = tmp_path / "extract-fragments" / "extract-001-correction-001.json"
+    _write_json(repair_path, repair)
+    repair_manifest = tmp_path / "repair-fragments.json"
+    _write_json(repair_manifest, {"fragments": [str(repair_path)]})
+
+    with pytest.raises(driver.ValidationReportError, match="proof ownership"):
+        driver.finalize_extract(repair_manifest, tmp_path, None)
+
+    diagnostics = RunDiagnostics.open(tmp_path).payload
+    assert diagnostics["run"]["status"] == "failure"
+    assert any(
+        item["code"] == "proof-ownership"
+        for item in diagnostics["validation_diagnostics"]
+    )
+    assert not (tmp_path / "proof-reconciliation-packet.json").exists()
+
+
 def test_finalize_proofs_normalizes_then_compiles_once_and_finishes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1418,25 +1488,41 @@ def test_finalize_proofs_rejects_mutated_original_inputs(
         driver.finalize_proofs(decision_manifest, tmp_path, None)
 
 
-def test_finalize_proofs_rejects_replayed_decision_identity(tmp_path: Path) -> None:
-    """Decisions from another immutable packet must not be accepted or retried."""
+@pytest.mark.parametrize("identity_case", ["missing", "replayed"])
+def test_decision_identity_uses_one_retry_then_fails_closed(
+    tmp_path: Path, identity_case: str
+) -> None:
+    """Worker identity defects get one immutable retry; a second defect exhausts it."""
 
     from test_proof_normalizer import _decisions
 
     manifest, _inventory_path, _fragment = _install_proof_run(tmp_path)
     first = driver.finalize_extract(manifest, tmp_path, None)
     decisions = _decisions()
-    decisions["input_identity"] = {
-        **first["next_job"]["input_identity"],
-        "packet_payload_sha256": "f" * 64,
-    }
+    if identity_case == "missing":
+        del decisions["input_identity"]
+    else:
+        decisions["input_identity"] = {
+            **first["next_job"]["input_identity"],
+            "packet_payload_sha256": "f" * 64,
+        }
     decision_path = Path(first["next_job"]["output"])
     _write_json(decision_path, decisions)
     decision_manifest = tmp_path / "proof-decisions-manifest.json"
     _write_json(decision_manifest, {"fragments": [str(decision_path)]})
 
-    with pytest.raises(ValueError, match="decision input identity"):
-        driver.finalize_proofs(decision_manifest, tmp_path, None)
+    retry = driver.finalize_proofs(decision_manifest, tmp_path, None)
+
+    assert retry["status"] == "proof-reconciliation-retry-required"
+    assert retry["next_job"]["input_identity"] == first["next_job"]["input_identity"]
+    retry_decision_path = Path(retry["next_job"]["output"])
+    _write_json(retry_decision_path, decisions)
+    retry_manifest = tmp_path / "proof-decisions-retry-manifest.json"
+    _write_json(retry_manifest, {"fragments": [str(retry_decision_path)]})
+
+    with pytest.raises(ValueError, match="exhausted its bounded retry"):
+        driver.finalize_proofs(retry_manifest, tmp_path, None)
+    assert RunDiagnostics.open(tmp_path).payload["run"]["status"] == "failure"
 
 
 def test_finalize_proofs_rejects_replayed_stored_artifact_path(tmp_path: Path) -> None:

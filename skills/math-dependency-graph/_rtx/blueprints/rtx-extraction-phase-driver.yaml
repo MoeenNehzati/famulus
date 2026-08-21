@@ -1,7 +1,7 @@
 schema_version: 6
 node_type: behavioral_source
 id: math-dependency-graph._rtx.source.rtx-extraction-phase-driver
-version: 30
+version: 31
 description: Deterministically prepares inventory, preserves retryable diagnostics
   after worker-local inventory rejection, routes malformed or non-object extract output
   to a fresh normal extract retry, returns stable per-job progress-sidecar paths through
@@ -74,7 +74,7 @@ interfaces:
     content:
     - _extraction_phase_driver\.py
     uses_interfaces: []
-    version: 26
+    version: 27
     description: Prepare one iterator setup assignment, keep worker-local inventory
       rejection open for durable retry, advance completed iterator state to one entrypoint-bearing extract
       packet, or validate extract output and return a progress-preserving fresh retry

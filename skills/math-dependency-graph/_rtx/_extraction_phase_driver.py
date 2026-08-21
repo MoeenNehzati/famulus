@@ -141,6 +141,20 @@ def _proof_entities(semantic: dict) -> list[dict]:
     return [item for item in semantic["entities"] if item.get("type") == "proof"]
 
 
+def _validate_extract_proof_ownership(semantic: dict) -> None:
+    """Translate proof ownership defects into record-local extract diagnostics."""
+
+    try:
+        validate_transitional_proof_ownership(semantic)
+    except ValueError as error:
+        raise ValidationReportError(
+            "extract proof ownership failed",
+            [{"code": "proof-ownership", "path": ["relationships"]}],
+            repairable=True,
+            display_messages=[str(error)],
+        ) from error
+
+
 def _registered_source_evidence(
     source_packet_path: Path, files: list[str], evidence: list[dict]
 ) -> list[dict]:
@@ -842,18 +856,23 @@ def finalize_extract(
             ).resolve()
             if not repair_base_path.is_file():
                 raise ValueError("semantic correction requires a persisted repair base")
-            with diagnostics.stage(
-                "correction-application",
-                inputs=[repair_base_path, fragment_path, inventory_path],
-                outputs=[semantic_path],
-                validation=True,
-            ):
-                semantic = apply_semantic_repair(
-                    _read_json(repair_base_path),
-                    fragment,
-                    inventory,
-                )
-                write_json_atomic(semantic, semantic_path)
+            try:
+                with diagnostics.stage(
+                    "correction-application",
+                    inputs=[repair_base_path, fragment_path, inventory_path],
+                    outputs=[semantic_path],
+                    validation=True,
+                ):
+                    semantic = apply_semantic_repair(
+                        _read_json(repair_base_path),
+                        fragment,
+                        inventory,
+                    )
+                    _validate_extract_proof_ownership(semantic)
+                    write_json_atomic(semantic, semantic_path)
+            except ValidationReportError as error:
+                diagnostics.record_validation_diagnostics(error.diagnostics)
+                raise
         else:
             semantic = fragment
             try:
@@ -863,15 +882,7 @@ def finalize_extract(
                     outputs=[semantic_path],
                     validation=True,
                 ):
-                    try:
-                        validate_transitional_proof_ownership(semantic)
-                    except ValueError as error:
-                        raise ValidationReportError(
-                            "extract proof ownership failed",
-                            [{"code": "proof-ownership", "path": ["relationships"]}],
-                            repairable=True,
-                            display_messages=[str(error)],
-                        ) from error
+                    _validate_extract_proof_ownership(semantic)
                     validate_extract_reconciliation(semantic, inventory)
                     write_json_atomic(semantic, semantic_path)
             except ValidationReportError as error:
@@ -1050,8 +1061,6 @@ def finalize_proofs(
             raise ValueError("proof finalization requires exactly one decisions fragment")
         decision_path = Path(manifest["fragments"][0]).resolve()
         decisions = fragments[0]
-        if decisions.get("input_identity") != original["input_identity"]:
-            raise ValueError("proof reconciliation decision input identity does not match original")
         try:
             with diagnostics.stage(
                 "proof-normalization",
@@ -1059,6 +1068,10 @@ def finalize_proofs(
                 outputs=[normalized_path, provenance_path, projected_inventory_path],
                 validation=True,
             ):
+                if decisions.get("input_identity") != original["input_identity"]:
+                    raise ValueError(
+                        "proof reconciliation decision input identity does not match original"
+                    )
                 normalize_files(
                     semantic_path,
                     decision_path,

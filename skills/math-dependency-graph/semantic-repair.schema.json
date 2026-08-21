@@ -118,7 +118,7 @@
       "properties": {
         "from": {"type": "string", "minLength": 1},
         "to": {"type": "string", "minLength": 1},
-        "type": {"enum": ["supports", "illustrated-by"]}
+        "type": {"enum": ["supports", "illustrated-by", "proves"]}
       }
     },
     "relationship": {
@@ -128,7 +128,7 @@
       "properties": {
         "from": {"type": "string", "minLength": 1},
         "to": {"type": "string", "minLength": 1},
-        "type": {"enum": ["supports", "illustrated-by"]},
+        "type": {"enum": ["supports", "illustrated-by", "proves"]},
         "description": {"type": "string", "minLength": 1},
         "hint_ids": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/hint_id"}},
         "evidence_ids": {"$ref": "#/$defs/evidence_ids"},
