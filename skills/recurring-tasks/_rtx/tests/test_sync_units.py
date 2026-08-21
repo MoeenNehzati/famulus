@@ -317,6 +317,9 @@ def _install_fake_cron_installer(monkeypatch, replacement):
     """Point _repair_healthcheck_cron's function-local import at a double."""
     from .. import _setup_runner
 
+    # These tests deliberately simulate the Linux-only cron path even when the
+    # suite itself runs on Windows, where os.getuid is not defined.
+    monkeypatch.setattr(unit_writer.os, "getuid", lambda: 1000, raising=False)
     monkeypatch.setattr(_setup_runner, "install_healthcheck_cron", replacement)
 
 
