@@ -263,7 +263,12 @@ def verify_install(bin_dir: Path, agents: list[str]) -> bool:
             log("  SKIP: tw (tmux not available on Windows)")
             continue
 
-        if is_windows and name in ("assistant", "collab", "coauthor"):
+        if is_windows and name in (
+            "assistant",
+            "background_run",
+            "collab",
+            "coauthor",
+        ):
             dst = bin_dir / f"{name}.bat"
         else:
             dst = bin_dir / name
