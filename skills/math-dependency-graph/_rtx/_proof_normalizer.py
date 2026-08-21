@@ -220,6 +220,8 @@ def _validate_proof_ownership(
                 raise ValueError(f"proof target is absent: {target}")
             if target in proof_ids:
                 raise ValueError(f"proof target is transitional proof: {target}")
+            if entities[target]["type"] != "result":
+                raise ValueError(f"proof target is not an eligible result: {target}")
             if source == target:
                 raise ValueError(f"proof has self-target: {source}")
             outgoing[source].append(relationship)
@@ -296,13 +298,13 @@ def _merge_relationships(routes: list[dict]) -> tuple[list[dict], list[dict]]:
 def _validate_provenance_report(report: object) -> None:
     record = _require_keys(
         report,
-        {"document_kind", "ir_version", "bundles", "relationships", "exclusions"},
-        {"document_kind", "ir_version", "bundles", "relationships", "exclusions"},
+        {"document_kind", "ir_version", "proof_entities", "bundles", "relationships", "exclusions"},
+        {"document_kind", "ir_version", "proof_entities", "bundles", "relationships", "exclusions", "compiler_inventory"},
         "proof-normalization report",
     )
     if record["document_kind"] != "proof-normalization-report" or record["ir_version"] != 1:
         raise ValueError("proof-normalization report has unsupported identity")
-    for name in ("bundles", "relationships", "exclusions"):
+    for name in ("proof_entities", "bundles", "relationships", "exclusions"):
         if not isinstance(record[name], list):
             raise ValueError(f"proof-normalization report {name} must be an array")
     for index, bundle in enumerate(record["bundles"]):
@@ -413,6 +415,7 @@ def normalize_proof_entities(semantic_ir: object, decisions: object) -> tuple[di
     report = {
         "document_kind": "proof-normalization-report",
         "ir_version": 1,
+        "proof_entities": [deepcopy(entity) for entity in entities if entity["id"] in proof_ids],
         "bundles": [
             {
                 "bundle_id": bundle_id,
@@ -435,6 +438,59 @@ def normalize_proof_entities(semantic_ir: object, decisions: object) -> tuple[di
     }
     _validate_provenance_report(report)
     return normalized, report
+
+
+def normalize_with_inventory(semantic_ir: object, decisions: object, inventory: object) -> tuple[dict, dict, dict]:
+    """Normalize proof IR and its exact compiler-facing pooled-inventory projection."""
+
+    try:
+        from ._batch_ir_merger import validate_extract_reconciliation
+    except ImportError:  # pragma: no cover
+        from _batch_ir_merger import validate_extract_reconciliation
+    if not isinstance(semantic_ir, dict) or not isinstance(inventory, dict):
+        raise ValueError("normalization requires semantic IR and pooled inventory objects")
+    validate_extract_reconciliation(semantic_ir, inventory)
+    normalized, report = normalize_proof_entities(semantic_ir, decisions)
+    decision_by_proof = {item["proof_id"]: item for item in decisions["decisions"]}
+    entities = {item["id"]: item for item in semantic_ir["entities"]}
+    proof_candidates = {
+        candidate_id
+        for proof_id in decision_by_proof
+        for candidate_id in entities[proof_id]["candidate_ids"]
+    }
+    target_candidates: dict[str, str] = {}
+    for proof_id, decision in decision_by_proof.items():
+        if decision["disposition"] != "accepted":
+            continue
+        target = entities[decision["target_id"]]
+        if target["type"] != "result":
+            raise ValueError(f"proof target is not an eligible result: {target['id']}")
+        if not target["candidate_ids"]:
+            raise ValueError(f"proof target has no compiler-facing candidate: {target['id']}")
+        target_candidates[proof_id] = target["candidate_ids"][0]
+    projected = deepcopy(inventory)
+    projected["candidates"] = [item for item in projected["candidates"] if item["id"] not in proof_candidates]
+    projected["relationship_hints"] = [
+        item for item in projected["relationship_hints"]
+        if item["id"] not in {
+            hint_id for relationship in semantic_ir["relationships"]
+            if relationship["type"] == "proves" for hint_id in relationship["hint_ids"]
+        }
+    ]
+    for hint in projected["relationship_hints"]:
+        target = hint.get("to", {})
+        candidate_id = target.get("candidate_id") if isinstance(target, dict) else None
+        for proof_id, replacement in target_candidates.items():
+            if candidate_id in entities[proof_id]["candidate_ids"]:
+                hint["to"] = {"candidate_id": replacement}
+    normalized["inventory"]["candidate_ids"] = [item["id"] for item in projected["candidates"]]
+    normalized["inventory"]["candidate_count"] = len(projected["candidates"])
+    validate_extract_reconciliation(normalized, projected)
+    report["compiler_inventory"] = {
+        "removed_proof_candidate_ids": sorted(proof_candidates),
+        "projected_candidate_ids": normalized["inventory"]["candidate_ids"],
+    }
+    return normalized, report, projected
 
 
 def _write_temp_json(payload: dict, destination: Path) -> Path:
@@ -507,14 +563,25 @@ def normalize_files(
     decisions_path: Path,
     normalized_path: Path,
     provenance_path: Path,
+    inventory_path: Path | None = None,
+    inventory_out_path: Path | None = None,
 ) -> dict:
     """Normalize two JSON inputs and publish both outputs only after validation."""
 
-    normalized, report = normalize_proof_entities(
-        _load_json_object(semantic_path, "transitional semantic IR"),
-        _load_json_object(decisions_path, "proof-normalization decisions"),
-    )
+    semantic = _load_json_object(semantic_path, "transitional semantic IR")
+    decisions = _load_json_object(decisions_path, "proof-normalization decisions")
+    if (inventory_path is None) != (inventory_out_path is None):
+        raise ValueError("compiler-facing inventory input and output must be supplied together")
+    if inventory_path is None:
+        normalized, report = normalize_proof_entities(semantic, decisions)
+        projected = None
+    else:
+        normalized, report, projected = normalize_with_inventory(
+            semantic, decisions, _load_json_object(inventory_path, "pooled inventory")
+        )
     write_normalized_outputs_atomic(normalized, report, normalized_path, provenance_path)
+    if projected is not None:
+        _write_temp_json(projected, inventory_out_path).replace(inventory_out_path)
     return {
         "semantic_ir": str(semantic_path.resolve()),
         "decisions": str(decisions_path.resolve()),
@@ -531,9 +598,12 @@ def main(argv: Iterable[str] | None = None) -> None:
     parser.add_argument("--decisions", required=True, help="Proof-normalization decisions JSON")
     parser.add_argument("--out", required=True, help="Normalized semantic-graph IR destination")
     parser.add_argument("--provenance-out", required=True, help="Proof-normalization provenance destination")
+    parser.add_argument("--inventory", required=True, help="Pooled inventory for compiler-facing projection")
+    parser.add_argument("--inventory-out", required=True, help="Projected pooled inventory destination")
     args = parser.parse_args(list(argv) if argv is not None else None)
     report = normalize_files(
-        Path(args.semantic_ir), Path(args.decisions), Path(args.out), Path(args.provenance_out)
+        Path(args.semantic_ir), Path(args.decisions), Path(args.out), Path(args.provenance_out),
+        Path(args.inventory), Path(args.inventory_out)
     )
     print(json.dumps(report, indent=2))
 

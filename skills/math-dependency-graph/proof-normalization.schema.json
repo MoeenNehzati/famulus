@@ -60,7 +60,7 @@
     "bundle": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["bundle_id", "target_id", "proof_ids"],
+      "required": ["bundle_id", "target_id", "proof_ids", "proves_relationships"],
       "properties": {
         "bundle_id": {"$ref": "#/$defs/identifier"},
         "target_id": {"$ref": "#/$defs/identifier"},
@@ -104,10 +104,11 @@
     "report_document": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["document_kind", "ir_version", "bundles", "relationships", "exclusions"],
+      "required": ["document_kind", "ir_version", "proof_entities", "bundles", "relationships", "exclusions"],
       "properties": {
         "document_kind": {"const": "proof-normalization-report"},
         "ir_version": {"const": 1},
+        "proof_entities": {"type": "array", "items": {"type": "object"}},
         "bundles": {"type": "array", "items": {"$ref": "#/$defs/bundle"}},
         "relationships": {"type": "array", "items": {"$ref": "#/$defs/relationship_report"}},
         "exclusions": {"type": "array", "items": {"$ref": "#/$defs/exclusion"}}

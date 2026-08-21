@@ -21,6 +21,30 @@ interfaces:
     uses_interfaces: []
     contract:
       arguments:
+        inventory:
+          description: Authoritative pooled inventory projected for proof-free compilation.
+          direct_io_ref: read-4
+          required: true
+          sensitivity: derived-private
+          type:
+            access: read
+            content_type: {format: {named: json}, kind: string, sensitivity: derived-private}
+            kind: file
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+        inventory-out:
+          description: Required compiler-facing pooled inventory projection destination.
+          direct_io_ref: write-3
+          required: true
+          sensitivity: derived-private
+          type:
+            access: write
+            content_type: {format: {named: json}, kind: string, sensitivity: derived-private}
+            kind: file
+            must_exist: false
+            relative_to: caller-cwd
+            syntax: literal
         decisions:
           description: Complete proof-normalization decisions for the selected transitional IR.
           direct_io_ref: read-2
@@ -120,6 +144,16 @@ interfaces:
           path_match: glob
           sensitivity: public
           system: filesystem
+        - access: read
+          content: authoritative pooled inventory for compiler-facing projection
+          formats:
+          - json
+          id: read-4
+          medium: local-filesystem
+          path: <inventory>
+          path_match: exact
+          sensitivity: derived-private
+          system: filesystem
         writes:
         - access: write
           content: normalized proof-free semantic IR
@@ -142,10 +176,20 @@ interfaces:
           sensitivity: derived-private
           system: filesystem
         - access: write
-          content: proof-normalization report
+          content: compiler-facing proof-free pooled inventory projection
           formats:
           - json
           id: write-3
+          medium: local-filesystem
+          path: <inventory-out>
+          path_match: exact
+          sensitivity: derived-private
+          system: filesystem
+        - access: write
+          content: proof-normalization report
+          formats:
+          - json
+          id: write-4
           medium: stdout
           sensitivity: derived-private
       execution:
@@ -230,7 +274,7 @@ interfaces:
           maximum: 1
           minimum: 1
         description: JSON report containing input and output paths plus normalized entity and relationship counts.
-        direct_io_ref: write-3
+        direct_io_ref: write-4
         empty: Never empty on success.
         id: report
         ordering: stable
@@ -251,20 +295,26 @@ interfaces:
       patterns:
       - allowed_flags:
         - --decisions
+        - --inventory
+        - --inventory-out
         - --out
         - --provenance-out
         required_flags:
         - --decisions
+        - --inventory
+        - --inventory-out
         - --out
         - --provenance-out
         flag_patterns:
           --decisions: ^.+$
+          --inventory: ^.+$
+          --inventory-out: ^.+$
           --out: ^.+$
           --provenance-out: ^.+$
         max_positionals: 1
         min_positionals: 1
         name: owner
-    usage: <semantic-ir.json> --decisions <decisions.json> --out <normalized.json> --provenance-out <provenance.json>
+    usage: <semantic-ir.json> --decisions <decisions.json> --inventory <pooled.json> --out <normalized.json> --provenance-out <provenance.json> --inventory-out <projected.json>
     version: 1
 node_type: behavioral_source
 platform_support:

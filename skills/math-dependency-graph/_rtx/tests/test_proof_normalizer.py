@@ -17,6 +17,7 @@ SKILL_DIR = RUNTIME_DIR.parent
 REPO_SRC = RUNTIME_DIR.parents[2] / "src"
 sys.path.insert(0, str(REPO_SRC))
 sys.path.insert(0, str(RUNTIME_DIR))
+sys.path.insert(0, str(Path(__file__).parent))
 
 
 def _semantic_validator() -> Draft202012Validator:
@@ -316,3 +317,73 @@ def test_normalizer_rejects_self_edges_before_writing_outputs() -> None:
 
     with pytest.raises(ValueError, match="self-edge"):
         normalize_proof_entities(payload, _decisions())
+
+
+def test_normalized_inventory_projection_compiles_proof_free_ir() -> None:
+    """Leaving proof candidates and hint endpoints in compiler inventory breaks compilation."""
+
+    from _proof_normalizer import normalize_with_inventory
+    from _semantic_graph_compiler import compile_semantic_graph
+    from _graph_builder import load_base_payload
+    from test_semantic_graph_compiler import pooled_inventory, semantic_graph
+
+    inventory = pooled_inventory()
+    inventory["candidates"].append(
+        {
+            "id": "candidate-proof",
+            "location": [2, 82, 84],
+            "environment": "proof",
+            "provenance": "explicit",
+            "type_hint": "proof",
+            "evidence_ids": ["inventory-001::e3"],
+            "summary": "A proof of existence.",
+        }
+    )
+    inventory["relationship_hints"][0]["to"] = {"candidate_id": "candidate-proof"}
+    inventory["relationship_hints"].append(
+        {
+            "id": "inventory-001::h2",
+            "from": {"candidate_id": "candidate-proof"},
+            "to": {"candidate_id": "candidate-theorem"},
+            "type": "proves",
+            "basis": "explicit-prose",
+            "assertion": "explicit",
+            "evidence_ids": ["inventory-001::e3"],
+            "confidence": "Verified",
+        }
+    )
+    semantic = semantic_graph()
+    semantic["inventory"]["candidate_ids"].append("candidate-proof")
+    semantic["inventory"]["candidate_count"] += 1
+    semantic["entities"].append(
+        {
+            "candidate_ids": ["candidate-proof"], "id": "proof-existence",
+            "type": "proof", "kind": "formal", "short_title": "Proof",
+            "description": "A proof of existence.", "source": "explicit",
+        }
+    )
+    semantic["relationships"] = [
+        {**semantic["relationships"][0], "to": "proof-existence"},
+        {"from": "proof-existence", "to": "existence", "type": "proves",
+         "description": "The proof proves existence.", "hint_ids": ["inventory-001::h2"],
+         "evidence_ids": ["inventory-001::e3"], "implicit": False, "confidence": "Verified"},
+    ]
+    decisions = {"document_kind": "proof-normalization-decisions", "ir_version": 1,
+                 "decisions": [{"proof_id": "proof-existence", "disposition": "accepted",
+                 "bundle_id": "bundle-existence", "target_id": "existence", "reason": "One proof."}]}
+
+    normalized, _, projected = normalize_with_inventory(semantic, decisions, inventory)
+
+    assert "candidate-proof" not in {item["id"] for item in projected["candidates"]}
+    assert compile_semantic_graph(normalized, load_base_payload(), projected)["entities"]
+
+
+def test_normalizer_rejects_nonresult_proof_target() -> None:
+    """Treating assumptions or setup as proved results would violate target eligibility."""
+    from _proof_normalizer import normalize_proof_entities
+    payload = _semantic_ir()
+    payload["relationships"][2]["to"] = "assumption-a"
+    decisions = _decisions()
+    decisions["decisions"][0]["target_id"] = "assumption-a"
+    with pytest.raises(ValueError, match="eligible result"):
+        normalize_proof_entities(payload, decisions)
