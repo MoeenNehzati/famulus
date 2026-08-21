@@ -1352,8 +1352,15 @@ def test_node_level_drift_reports_input_delta_and_blueprint_cause(
         commit,
         key.key_id,
     )
-    certified_entry = dict(payload["input_manifest"][0])
-    payload["input_manifest"][0] = {
+    blueprint_path = graph.nodes[node_id].blueprint_path.relative_to(
+        tmp_path
+    ).as_posix()
+    entry_index, certified_entry = next(
+        (index, dict(entry))
+        for index, entry in enumerate(payload["input_manifest"])
+        if entry["path"] != blueprint_path
+    )
+    payload["input_manifest"][entry_index] = {
         **certified_entry,
         "digest": "sha256:" + "9" * 64,
     }
