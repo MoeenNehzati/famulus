@@ -96,6 +96,12 @@ MATHJAX_COMMAND_ARITIES = {
     "mathrm": 1,
 }
 
+# Stable Computer Modern symbol slots needed when no TeX distribution is
+# installed. A live distribution remains authoritative when available.
+PORTABLE_MATH_SYMBOLS = {
+    ("OMS", "cmsy", 0x72): "nabla",
+}
+
 
 LOCAL_INCLUDE_RE = re.compile(
     r"\\(?P<cmd>input|include|usepackage|RequirePackage(?:WithOptions)?|"
@@ -467,7 +473,7 @@ def canonical_math_symbols() -> dict[tuple[str, str, int], str]:
     """
     source = tex_distribution_path("fontmath.ltx")
     if source is None:
-        return {}
+        return dict(PORTABLE_MATH_SYMBOLS)
     text = strip_comments(read_tex_text(source))
     fonts = collect_symbol_fonts(text)
     symbols: dict[tuple[str, str, int], str] = {}
