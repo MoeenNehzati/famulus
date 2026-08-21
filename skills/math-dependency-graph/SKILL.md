@@ -10,21 +10,22 @@ description: >-
 Catalog: research; topics: mathematical-reasoning, visualization, scholarly-documents; visibility: featured
 Activation: user-request, skill-workflow; persistent modifier: no
 
-Skill Version: 77
+Skill Version: 78
 
 Uses Interfaces:
 - `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-advance-extraction-phases@24`
 - `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-next-inventory-unit@3`
 - `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-record-run-diagnostics@7`
 - `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator@5`
-- `math-dependency-graph.source.gateway -> math-dependency-graph.interface.extract@26`
-- `math-dependency-graph.source.gateway -> math-dependency-graph.interface.inventory@33`
+- `math-dependency-graph.source.gateway -> math-dependency-graph.interface.extract@27`
+- `math-dependency-graph.source.gateway -> math-dependency-graph.interface.inventory@34`
 - `math-dependency-graph.source.instructions-inventory -> math-dependency-graph._rtx.interface.scripts-next-inventory-unit@3`
 
 Public Interfaces:
 - `math-dependency-graph.interface.default`
 - `math-dependency-graph.interface.extract`
 - `math-dependency-graph.interface.inventory`
+- `math-dependency-graph.interface.proof-reconciliation`
 <!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->
@@ -34,8 +35,9 @@ Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
 - `math-dependency-graph.interface.default` — Orchestrate a measured inventory, extract, compile, and render run.
-- `math-dependency-graph.interface.extract` — Reconcile pooled inventory and the retained entrypoint into final notation-faithful entities and direct relationships, or author one returned narrow repair.
+- `math-dependency-graph.interface.extract` — Reconcile pooled inventory and the retained entrypoint into transitional notation-faithful entities, proof ownership, and direct relationships, or author one returned narrow repair.
 - `math-dependency-graph.interface.inventory` — Author one concise recall-first graph inventory fragment through a validated iterator acknowledgement loop.
+- `math-dependency-graph.interface.proof-reconciliation` — Group complementary proof fragments, preserve alternative proofs, resolve source-grounded targets, and exhaustively decide every registered proof.
 <!-- END BLUEPRINT INTERFACES -->
 
 # Mathematical Dependency Graph

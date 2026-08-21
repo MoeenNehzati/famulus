@@ -13,9 +13,9 @@ interfaces:
     - SKILL\.md
     uses_interfaces:
     - interface: math-dependency-graph.interface.inventory
-      version: 33
+      version: 34
     - interface: math-dependency-graph.interface.extract
-      version: 26
+      version: 27
     - interface: math-dependency-graph._rtx.interface.scripts-advance-extraction-phases
       version: 24
     - interface: math-dependency-graph._rtx.interface.scripts-record-run-diagnostics
@@ -106,9 +106,9 @@ node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
 - interface: math-dependency-graph.interface.inventory
-  version: 33
+  version: 34
 - interface: math-dependency-graph.interface.extract
-  version: 26
+  version: 27
 - interface: math-dependency-graph._rtx.interface.scripts-advance-extraction-phases
   version: 24
 - interface: math-dependency-graph._rtx.interface.scripts-record-run-diagnostics
@@ -117,5 +117,5 @@ uses_interfaces:
   version: 5
 - interface: math-dependency-graph._rtx.interface.scripts-next-inventory-unit
   version: 3
-version: 71
+version: 72
 maturity: stable

@@ -2,7 +2,8 @@ content:
 - instructions/extract\.md
 dependencies: []
 description: Reconciles pooled version-2 inventory and its retained absolute TeX entrypoint
-  into final source-grounded entities, direct relationships, and exact dispositions.
+  into transitional source-grounded entities, proof ownership, direct relationships,
+  and exact dispositions.
 gateway:
   language: Markdown
   path: instructions/extract.md
@@ -209,7 +210,7 @@ interfaces:
           system: filesystem
         writes:
         - access: write
-          content: resolved whole-document mathematical semantic IR or localized semantic repair object
+          content: resolved transitional whole-document mathematical semantic IR or localized semantic repair object
           formats:
           - json
           id: write-1
@@ -230,6 +231,8 @@ interfaces:
           snapshot: Every final disposition uses one pooled inventory, its matching hashed
             source snapshot and retained entrypoint; a correction additionally uses the
             exact rejected repair base and validator diagnostic returned by the phase driver.
+            Normal extraction retains qualifying proof entities, their single ownership
+            edges, and incoming proof-use dependencies for separate reconciliation.
         effects:
         - action: create
           confirmation_evidence:
@@ -338,11 +341,11 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Reconcile pooled inventory and the retained entrypoint into final
-      notation-faithful entities and direct relationships, or author one returned narrow repair.
-    version: 26
+    description: Reconcile pooled inventory and the retained entrypoint into transitional
+      notation-faithful entities, proof ownership, and direct relationships, or author one returned narrow repair.
+    version: 27
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces: []
-version: 26
+version: 27
 maturity: stable

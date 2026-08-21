@@ -32,8 +32,8 @@ def test_inventory_instruction_contract_uses_only_public_iterator_source_deliver
         "math-dependency-graph.source.instructions-inventory.interface.inventory"
     ]
 
-    assert inventory["version"] == 33
-    assert interface["version"] == 33
+    assert inventory["version"] == 34
+    assert interface["version"] == 34
     assert inventory["uses_interfaces"] == [
         {
             "interface": "math-dependency-graph._rtx.interface.scripts-next-inventory-unit",
@@ -77,6 +77,108 @@ def test_inventory_instruction_contract_uses_only_public_iterator_source_deliver
     assert "caller boundary" not in snapshot
 
 
+def test_proof_entity_instruction_contracts_preserve_ownership_until_reconciliation() -> None:
+    """Proof uses must stay attached to owned proof entities until the dedicated judgment pass."""
+
+    skill_root = RUNTIME_DIR.parent
+    inventory_text = (skill_root / "instructions" / "inventory.md").read_text(
+        encoding="utf-8"
+    )
+    extract_text = (skill_root / "instructions" / "extract.md").read_text(
+        encoding="utf-8"
+    )
+    reconciliation_text = (
+        skill_root / "instructions" / "proof-reconciliation.md"
+    ).read_text(encoding="utf-8")
+
+    for required in (
+        '`type_hint: "proof"`',
+        '`formal`, `informal`, or `sketch`',
+        "proof entity --proves--> proved result",
+        "prerequisite --supports--> proof entity",
+        "exactly one `proves`",
+        "motivation, navigation, restatement, local algebra",
+        "smallest exact proof-use span",
+        "unresolved ownership",
+    ):
+        assert required in inventory_text
+
+    for required in (
+        '`type: "proof"`',
+        '`formal`, `informal`, or `sketch`',
+        "exactly one outgoing `proves`",
+        "incoming `supports` relationships",
+        "Do not merge a retained proof into its target",
+        "does not decide proof bundles",
+        "motivation, navigation, restatement, or proof-local algebra",
+    ):
+        assert required in extract_text
+
+    for required in (
+        "bounded proof-centered packet",
+        "same target is necessary but not sufficient",
+        "complementary informal and formal",
+        "alternative proof bundles",
+        "registered proof candidates and incident relationships",
+        "may not create mathematical entities or dependencies",
+        "every proof entity exactly once",
+        "accepted or excluded",
+        "proof-normalization-decisions",
+        "ambiguous ownership",
+        "motivation, restatement, navigation, and local algebra",
+    ):
+        assert required in reconciliation_text
+
+
+def test_proof_reconciliation_is_a_registered_parent_instruction_interface() -> None:
+    """The LLM judgment boundary must be source-owned and exported without copied contracts."""
+
+    skill_root = RUNTIME_DIR.parent
+    source = yaml.safe_load(
+        (skill_root / "blueprints" / "instructions-proof-reconciliation.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    parent = yaml.safe_load((skill_root / "blueprint.yaml").read_text(encoding="utf-8"))
+
+    source_interface = (
+        "math-dependency-graph.source.instructions-proof-reconciliation."
+        "interface.proof-reconciliation"
+    )
+    public_interface = "math-dependency-graph.interface.proof-reconciliation"
+
+    assert source["schema_version"] == 6
+    assert source["node_type"] == "behavioral_source"
+    assert source["version"] == 1
+    assert source["interfaces"][source_interface]["version"] == 1
+    contract = source["interfaces"][source_interface]["contract"]
+    assert {
+        "packet",
+        "semantic-ir",
+        "normalization-schema",
+        "progress-sidecar",
+    } <= set(contract["arguments"])
+    assert contract["direct_io"]["network"] == []
+    assert contract["interaction"]["mode"] == "unattended"
+
+    assert parent["sources"][
+        "math-dependency-graph.source.instructions-proof-reconciliation"
+    ]["blueprint"] == {
+        "base": "module-root",
+        "path": "blueprints/instructions-proof-reconciliation.yaml",
+    }
+    assert parent["exports"][public_interface] == {
+        "access": {
+            "allow_all_modules": False,
+            "allowed_callers": ["math-dependency-graph"],
+        },
+        "source_interface": source_interface,
+    }
+    assert "instructions/(?:inventory|extract|proof-reconciliation)\\.md" in parent[
+        "content"
+    ][0]
+
+
 def test_gateway_contract_routes_inventory_through_iterator_and_measured_diagnostics() -> None:
     """Dropping one facade dependency makes the documented control path uncallable."""
 
@@ -89,7 +191,8 @@ def test_gateway_contract_routes_inventory_through_iterator_and_measured_diagnos
         item["interface"]: item["version"] for item in gateway["uses_interfaces"]
     }
 
-    assert uses["math-dependency-graph.interface.inventory"] == 33
+    assert uses["math-dependency-graph.interface.inventory"] == 34
+    assert uses["math-dependency-graph.interface.extract"] == 27
     assert uses[
         "math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator"
     ] == 5
