@@ -4865,6 +4865,21 @@
             }
           ]
         },
+        "math-dependency-graph._rtx.interface.scripts-next-inventory-unit": {
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "jsonschema",
+              "version": ">=4,<5",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Validates batch fragments against skill-owned JSON schemas."
+            }
+          ]
+        },
         "math-dependency-graph._rtx.interface.scripts-plan-extraction-chunks": {
           "dependencies": [
             {
@@ -4922,6 +4937,21 @@
         },
         "math-dependency-graph._rtx.interface.scripts-serve-graph": {
           "dependencies": []
+        },
+        "math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator": {
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "jsonschema",
+              "version": ">=4,<5",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Validates batch fragments against skill-owned JSON schemas."
+            }
+          ]
         }
       }
     },

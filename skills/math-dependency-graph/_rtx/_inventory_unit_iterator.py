@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -13,9 +14,14 @@ import shutil
 import sqlite3
 import tempfile
 import time
-from typing import Callable
+from typing import Callable, Iterable
 
-from _batch_ir_merger import canonical_json_bytes, validate_inventory_fragment
+from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+
+try:
+    from ._batch_ir_merger import canonical_json_bytes, validate_inventory_fragment
+except ImportError:  # pragma: no cover - supports direct script execution
+    from _batch_ir_merger import canonical_json_bytes, validate_inventory_fragment
 
 
 SCANNER_VERSION = 1
@@ -29,17 +35,79 @@ _DISPLAY_MATH_RE = re.compile(r"^\s*(?:\$\$|\\\[)")
 
 
 def _utc_now() -> datetime:
+    """Return the current timezone-aware UTC timestamp.
+
+    Intent
+    ------
+    Supply the default clock for durable iterator timestamps.
+
+    Rationale
+    ---------
+    Setup and acknowledgement records need one unambiguous UTC representation
+    so retries and independently created state remain comparable.
+
+    Pseudocode
+    ----------
+    - return the current UTC datetime
+
+    Wraps
+    -----
+    - none
+
+    """
     return datetime.now(timezone.utc)
 
 
 def _timestamp(value: datetime) -> str:
+    """Encode one aware datetime as a canonical UTC string.
+
+    Intent
+    ------
+    Reject naive clocks and serialize aware instants with a stable suffix.
+
+    Rationale
+    ---------
+    Durable records must not silently mix local and UTC times because their
+    ordering and retry diagnostics depend on a common time basis.
+
+    Pseudocode
+    ----------
+    - set timestamp_validation = aware UTC requirement
+    - return its normalized UTC ISO text
+
+    Wraps
+    -----
+    - none
+
+    """
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError("iterator UTC clock must return a timezone-aware datetime")
     return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _source_rows(packet_text: str) -> list[dict]:
-    """Parse only numbered source rows in their already-expanded packet order."""
+    """Parse numbered source rows in their packet order.
+
+    Intent
+    ------
+    Convert source markers and numbered packet lines into coordinate-bearing rows.
+
+    Rationale
+    ---------
+    Unit construction needs preserved source identities and line coordinates so
+    workers can receive contiguous author-visible material without reparsing.
+
+    Pseudocode
+    ----------
+    - set source_marker = current source identity
+    - set parsed_rows = numbered packet records
+    - set source_validation = nonempty row requirement
+
+    Wraps
+    -----
+    - none
+
+    """
 
     source: str | None = None
     rows: list[dict] = []
@@ -67,10 +135,50 @@ def _source_rows(packet_text: str) -> list[dict]:
 
 
 def _is_heading(row: dict) -> bool:
+    """Identify whether one source row begins a document heading.
+
+    Intent
+    ------
+    Recognize Markdown and LaTex section markers that establish structural context.
+
+    Rationale
+    ---------
+    Headings must be retained as context rather than assigned as ordinary work
+    so worker units preserve the source document's visible structure.
+
+    Pseudocode
+    ----------
+    - set heading_match = supported heading pattern
+    - return whether a heading marker was found
+
+    Wraps
+    -----
+    - none
+    """
     return bool(_HEADING_RE.match(row["text"]))
 
 
 def _coordinates(rows: list[dict]) -> list[dict]:
+    """Extract stable source coordinates from a row sequence.
+
+    Intent
+    ------
+    Produce the packet index, source, and line fields carried by each unit.
+
+    Rationale
+    ---------
+    Downstream inventory work needs exact provenance while avoiding repeated
+    copies of source text in each coordinate record.
+
+    Pseudocode
+    ----------
+    - set coordinate_records = row coordinate projection
+    - return the ordered coordinate list
+
+    Wraps
+    -----
+    - none
+    """
     return [
         {"packet_index": row["packet_index"], "source": row["source"], "line": row["line"]}
         for row in rows
@@ -78,15 +186,75 @@ def _coordinates(rows: list[dict]) -> list[dict]:
 
 
 def _text(rows: list[dict]) -> str:
+    """Join source-row text into one unit payload.
+
+    Intent
+    ------
+    Preserve line ordering while presenting an assigned unit as plain text.
+
+    Rationale
+    ---------
+    Workers need a readable payload, and newline joining retains the original
+    line boundaries that guide their inventory decisions.
+
+    Pseudocode
+    ----------
+    - set unit_text = ordered row text
+    - return the newline-joined payload
+
+    Wraps
+    -----
+    - none
+    """
     return "\n".join(row["text"] for row in rows)
 
 
 def _character_count(rows: list[dict]) -> int:
+    """Count characters across an ordered row sequence.
+
+    Intent
+    ------
+    Measure candidate units without adding separator characters not in source rows.
+
+    Rationale
+    ---------
+    Partitioning and oversize decisions require a stable workload measure that
+    is independent of formatting introduced for display.
+
+    Pseudocode
+    ----------
+    - set character_total = row text lengths
+    - return the total
+
+    Wraps
+    -----
+    - none
+    """
     return sum(len(row["text"]) for row in rows)
 
 
 def _environment_ranges(rows: list[dict]) -> dict[int, tuple[int, str]]:
-    """Return matching begin/end indices, nesting conservatively by literal name."""
+    """Find complete LaTex environment ranges by literal nesting.
+
+    Intent
+    ------
+    Map each matching begin row to its inclusive end row and environment name.
+
+    Rationale
+    ---------
+    Unit boundaries cannot split a complete environment because its meaning and
+    syntax depend on retaining both delimiters in the same assignment.
+
+    Pseudocode
+    ----------
+    - set environment_stack = literal begin markers
+    - set completed_ranges = compatible end markers
+    - return completed begin-to-end ranges
+
+    Wraps
+    -----
+    - none
+    """
 
     stack: list[tuple[int, str]] = []
     result: dict[int, tuple[int, str]] = {}
@@ -105,7 +273,26 @@ def _environment_ranges(rows: list[dict]) -> dict[int, tuple[int, str]]:
 
 
 def _display_math_range(rows: list[dict], start: int) -> int | None:
-    """Return the inclusive end of one complete display-math block."""
+    """Find the inclusive end of one display-math block.
+
+    Intent
+    ------
+    Recognize bracketed and double-dollar display math beginning at one row.
+
+    Rationale
+    ---------
+    Display equations are structural blocks and must not be divided by the
+    iterator merely because their text crosses a preferred window size.
+
+    Pseudocode
+    ----------
+    - set opening_delimiter = supported display math marker
+    - set closing_position = matching closing delimiter
+
+    Wraps
+    -----
+    - none
+    """
 
     text = rows[start]["text"].strip()
     if text.startswith("\\["):
@@ -125,7 +312,42 @@ def _display_math_range(rows: list[dict], start: int) -> int | None:
 
 
 def _parts_for_oversize(rows: list[dict], window_chars: int) -> list[list[dict]]:
-    """Split only after paragraphs, complete nested environments, or display math."""
+    """Split oversized rows only at safe structural boundaries.
+
+    Intent
+    ------
+    Form the largest feasible row parts without breaking paragraphs or complete blocks.
+
+    Rationale
+    ---------
+    Large author-visible regions still need bounded work units, but arbitrary
+    splits would separate syntax and meaning that must be reviewed together.
+
+    Pseudocode
+    ----------
+    - set safe_boundaries = paragraphs and completed blocks
+    - set selected_boundary = largest feasible window boundary
+    - return contiguous nonempty parts
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._character_count:
+      why:
+        computes: "Measures each candidate row range so safe boundaries remain within the requested character window."
+    ._environment_ranges:
+      why:
+        computes: "Finds completed LaTex environments that contribute structural-safe split boundaries."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._display_math_range:
+      why:
+        constructs: "Builds each complete display-math range carried into the safe-boundary selection."
+    """
 
     boundaries = {len(rows)}
     for index, row in enumerate(rows, start=1):
@@ -166,6 +388,39 @@ def _unit_record(
     oversize: bool,
     heading: str | None,
 ) -> dict:
+    """Build one serializable inventory unit record.
+
+    Intent
+    ------
+    Combine a contiguous row payload with provenance and structural metadata.
+
+    Rationale
+    ---------
+    Assignment, persistence, and worker rendering need one stable record shape
+    so they can share unit data without rederiving source information.
+
+    Pseudocode
+    ----------
+    - set unit_payload = row-derived content and coordinates
+    - set unit_metadata = supplied structural fields
+    - return the complete unit record
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._character_count:
+      why:
+        constructs: "Builds the workload measure stored in each serializable unit record."
+    ._coordinates:
+      why:
+        constructs: "Builds the source-coordinate records stored with the unit payload."
+    ._text:
+      why:
+        constructs: "Builds the ordered textual payload stored with the unit record."
+    """
     return {
         "text": _text(rows),
         "coordinates": _coordinates(rows),
@@ -179,6 +434,57 @@ def _unit_record(
 
 
 def _scan_units(packet_text: str, window_chars: int) -> tuple[list[dict], list[dict]]:
+    """Scan source packet text into ordered units and structural context.
+
+    Intent
+    ------
+    Preserve exact source coverage while assigning safe document regions to units.
+
+    Rationale
+    ---------
+    Iterator setup needs deterministic, contiguous work units that retain
+    environments, display math, and headings as source structure demands.
+
+    Pseudocode
+    ----------
+    - set source_rows = parsed packet rows
+    - set scanned_units = structural-safe unit records
+    - set unit_ordinals = final source ordering
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._character_count:
+      why:
+        computes: "Measures candidate blocks while the scanner decides whether a structural range is oversized."
+    ._is_heading:
+      why:
+        computes: "Recognizes heading rows so the scanner carries document structure separately from assignable text."
+    ._parts_for_oversize:
+      why:
+        computes: "Splits oversized structural blocks only at the scanner's safe source boundaries."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._display_math_range:
+      why:
+        constructs: "Builds each display-math range evaluated as a standalone structural work block."
+    ._environment_ranges:
+      why:
+        constructs: "Builds the completed environment map used to select whole LaTex blocks."
+    ._parts_for_oversize:
+      why:
+        constructs: "Builds the contiguous parts emitted for each oversized structural block."
+    ._source_rows:
+      why:
+        constructs: "Builds the coordinate-bearing source rows scanned into iterator units."
+    ._unit_record:
+      why:
+        constructs: "Builds each public unit record emitted in source order."
+    """
     if window_chars < 1:
         raise ValueError("window_chars must be positive")
     rows = _source_rows(packet_text)
@@ -190,6 +496,39 @@ def _scan_units(packet_text: str, window_chars: int) -> tuple[list[dict], list[d
     outside: list[dict] = []
 
     def flush_outside() -> None:
+        """Emit buffered non-structural rows as bounded paragraph groups.
+
+        Intent
+        ------
+        Convert outside rows into contiguous units before a structure boundary.
+
+        Rationale
+        ---------
+        Buffering permits paragraph-aware grouping while ensuring heading and
+        environment transitions cannot accidentally merge unrelated material.
+
+        Pseudocode
+        ----------
+        - set paragraph_groups = blank-line-separated rows
+        - set emitted_units = character-bounded groups
+        - set outside_buffer = empty
+
+        Wraps
+        -----
+        - none
+
+        CallsFromRepo
+        -------------
+        ._character_count:
+          why:
+            computes: "Measures buffered paragraph groups while this local flusher chooses bounded unit breaks."
+
+        InstantiationsFromRepo
+        ----------------------
+        ._unit_record:
+          why:
+            constructs: "Builds each non-structural unit emitted from the buffered paragraph groups."
+        """
         nonlocal outside
         if not outside:
             return
@@ -315,6 +654,28 @@ def _scan_units(packet_text: str, window_chars: int) -> tuple[list[dict], list[d
 
 
 def _partition_units(units: list[dict], requested_workers: int) -> list[list[dict]]:
+    """Partition ordered units into balanced contiguous worker assignments.
+
+    Intent
+    ------
+    Divide all units among at most the requested number of nonempty workers.
+
+    Rationale
+    ---------
+    Workers need deterministic contiguous ownership while character-weighted
+    balancing keeps their initial source workload reasonably comparable.
+
+    Pseudocode
+    ----------
+    - set worker_count = bounded requested workers
+    - set contiguous_partitions = target-weight prefixes
+    - set partition_validation = exact nonempty coverage
+
+    Wraps
+    -----
+    - none
+
+    """
     if requested_workers < 1:
         raise ValueError("requested_workers must be positive")
     if not units:
@@ -342,11 +703,53 @@ def _partition_units(units: list[dict], requested_workers: int) -> list[list[dic
 
 
 def _write_json(path: Path, payload: dict) -> None:
+    """Write one JSON payload with stable readable formatting.
+
+    Intent
+    ------
+    Materialize a durable state artifact and create its parent directory.
+
+    Rationale
+    ---------
+    Setup creates several independently inspected artifacts, so each needs a
+    consistent UTF-8 representation at its declared durable location.
+
+    Pseudocode
+    ----------
+    - set destination_parent = created path parent
+    - set serialized_payload = indented UTF-8 JSON
+    - set written_payload = serialized payload at destination
+
+    Wraps
+    -----
+    - none
+
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def _create_schema(connection: sqlite3.Connection) -> None:
+    """Create the iterator's durable SQLite tables.
+
+    Intent
+    ------
+    Install metadata, units, assignments, leases, acknowledgements, and sequence tables.
+
+    Rationale
+    ---------
+    Atomic leasing requires durable coordination state that survives worker
+    retries and records the provenance of each acknowledgement transition.
+
+    Pseudocode
+    ----------
+    - set schema_installation = complete iterator table definition
+    - return after SQLite has created its tables
+
+    Wraps
+    -----
+    - none
+    """
     connection.executescript(
         """
         CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -408,6 +811,27 @@ def _create_schema(connection: sqlite3.Connection) -> None:
 
 
 def _validate_state(summary: dict, state_dir: Path) -> None:
+    """Validate exact source coverage and required setup artifacts.
+
+    Intent
+    ------
+    Reject published iterator state that omits, overlaps, or fails to materialize data.
+
+    Rationale
+    ---------
+    A durable iterator is trustworthy only when every source coordinate and
+    assignment is exact and each worker artifact exists before publication.
+
+    Pseudocode
+    ----------
+    - set coordinate_validation = exact source coverage
+    - set assignment_validation = contiguous unit coverage
+    - set artifact_validation = required durable files
+
+    Wraps
+    -----
+    - none
+    """
     unit_ids = [unit["id"] for unit in summary["units"]]
     covered = [
         coordinate["packet_index"]
@@ -441,6 +865,27 @@ def _validate_state(summary: dict, state_dir: Path) -> None:
 
 
 def _read_manifest(state_dir: Path) -> dict:
+    """Read and validate the published iterator assignments manifest.
+
+    Intent
+    ------
+    Load setup metadata from its durable state directory without reconstructing it.
+
+    Rationale
+    ---------
+    Idempotent setup and summary loading need one authoritative manifest with a
+    clear failure when the requested iterator state is absent or malformed.
+
+    Pseudocode
+    ----------
+    - set manifest_text = assignments JSON from the state directory
+    - set manifest_mapping = decoded mapping payload
+    - return the manifest mapping
+
+    Wraps
+    -----
+    - none
+    """
     path = state_dir / "inventory-assignments.json"
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -452,7 +897,33 @@ def _read_manifest(state_dir: Path) -> dict:
 
 
 def load_iterator_summary(state_dir: Path) -> dict:
-    """Load setup metadata and units without reparsing the source packet."""
+    """Load persisted setup metadata and units without reparsing source text.
+
+    Intent
+    ------
+    Reconstruct the public iterator summary from its manifest and SQLite state.
+
+    Rationale
+    ---------
+    Reuse and acknowledgement paths need the original units and setup metadata
+    while avoiding non-deterministic rescanning of the source packet.
+
+    Pseudocode
+    ----------
+    - set resolved_state_dir = durable iterator directory
+    - set stored_units = ordered SQLite rows
+    - set iterator_summary = manifest plus reconstructed units
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._read_manifest:
+      why:
+        constructs: "Builds the persisted setup metadata merged with reconstructed unit records."
+    """
 
     state_dir = state_dir.resolve()
     manifest = _read_manifest(state_dir)
@@ -478,7 +949,57 @@ def setup_inventory_iterator(
     clock_ns: Callable[[], int] = time.monotonic_ns,
     utc_now: Callable[[], datetime] = _utc_now,
 ) -> dict:
-    """Scan, validate, and atomically publish exactly one reusable iterator state."""
+    """Scan, validate, and atomically publish reusable iterator state.
+
+    Intent
+    ------
+    Create idempotent worker assignments and durable unit records for one source packet.
+
+    Rationale
+    ---------
+    Parallel inventory needs a single validated publication boundary so workers
+    share exact units and retries cannot expose partial setup artifacts.
+
+    Pseudocode
+    ----------
+    - set setup_validation = input and idempotency checks
+    - set temporary_summary = scanned and partitioned source units
+    - set publication_result = validated atomic state replacement
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._create_schema:
+      why:
+        computes: "Installs the durable SQLite tables before setup writes iterator coordination records."
+    ._validate_state:
+      why:
+        computes: "Checks exact coverage and artifact existence before temporary setup state is published."
+    ._write_json:
+      why:
+        computes: "Materializes worker and manifest JSON artifacts in the temporary durable state directory."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._partition_units:
+      why:
+        constructs: "Builds contiguous worker partitions from the scanned source units."
+    ._read_manifest:
+      why:
+        constructs: "Builds the existing manifest used to verify idempotent setup configuration."
+    ._scan_units:
+      why:
+        constructs: "Builds ordered source units and structural context for durable iterator state."
+    ._timestamp:
+      why:
+        constructs: "Builds the canonical creation timestamp recorded in setup metadata."
+    .load_iterator_summary:
+      why:
+        constructs: "Builds the public summary returned after existing or newly published setup state."
+    """
 
     source_packet_path = source_packet_path.resolve()
     state_dir = state_dir.resolve()
@@ -625,10 +1146,51 @@ def setup_inventory_iterator(
 
 
 def _failure(code: str, message: str) -> dict:
+    """Construct one structured iterator failure response.
+
+    Intent
+    ------
+    Return machine-readable failure state without raising expected operation errors.
+
+    Rationale
+    ---------
+    The next-unit facade must distinguish invalid worker input and durable-state
+    failures using stable codes that callers can handle deterministically.
+
+    Pseudocode
+    ----------
+    - set failure_payload = code and message error object
+    - return the failure response mapping
+
+    Wraps
+    -----
+    - none
+    """
     return {"state": "failure", "error": {"code": code, "message": message}}
 
 
 def _unit_for_ordinal(connection: sqlite3.Connection, ordinal: int) -> dict | None:
+    """Load one persisted unit by its ordinal position.
+
+    Intent
+    ------
+    Reconstruct the public unit record needed for a lease response.
+
+    Rationale
+    ---------
+    Lease progression tracks ordinals in SQLite, while callers need the full
+    text and metadata record identified by the selected ordinal.
+
+    Pseudocode
+    ----------
+    - set unit_row = ordered SQLite record
+    - return no record when it is absent
+    - set reconstructed_unit = metadata identity and text
+
+    Wraps
+    -----
+    - none
+    """
     row = connection.execute(
         "SELECT id, ordinal, text, metadata_json FROM units WHERE ordinal = ?", (ordinal,)
     ).fetchone()
@@ -640,6 +1202,27 @@ def _unit_for_ordinal(connection: sqlite3.Connection, ordinal: int) -> dict | No
 
 
 def _owned_sources(connection: sqlite3.Connection, first: int, last: int) -> list[str]:
+    """List unique source identities owned by an ordinal assignment range.
+
+    Intent
+    ------
+    Derive the ordered file ownership expected in one worker inventory fragment.
+
+    Rationale
+    ---------
+    Before acknowledgement, the iterator must verify that a worker did not
+    inventory files outside the source coordinates assigned to that worker.
+
+    Pseudocode
+    ----------
+    - set assigned_metadata = ordinal-range rows
+    - set source_identities = first-seen coordinate sources
+    - return the ordered unique source identities
+
+    Wraps
+    -----
+    - none
+    """
     rows = connection.execute(
         "SELECT metadata_json FROM units WHERE ordinal BETWEEN ? AND ? ORDER BY ordinal",
         (first, last),
@@ -654,6 +1237,27 @@ def _owned_sources(connection: sqlite3.Connection, first: int, last: int) -> lis
 
 
 def _inventory_snapshot(path: Path, worker_index: int, owned_sources: list[str]) -> dict:
+    """Validate and fingerprint one worker inventory fragment.
+
+    Intent
+    ------
+    Confirm inventory ownership and return canonical content and count evidence.
+
+    Rationale
+    ---------
+    Acknowledgement is valid only for schema-conformant inventory content that
+    belongs to the leasing worker and its assigned source identities.
+
+    Pseudocode
+    ----------
+    - set inventory_payload = decoded worker JSON object
+    - set inventory_validation = ownership file and schema checks
+    - return canonical hash and semantic item counts
+
+    Wraps
+    -----
+    - none
+    """
     try:
         raw = path.read_bytes()
     except FileNotFoundError as error:
@@ -685,12 +1289,53 @@ def _inventory_snapshot(path: Path, worker_index: int, owned_sources: list[str])
 
 
 def _lease_response(unit: dict) -> dict:
+    """Construct the standard successful unit-lease response.
+
+    Intent
+    ------
+    Present a loaded unit under the stable machine response state.
+
+    Rationale
+    ---------
+    New leases and retry leases need the same compact public representation so
+    clients do not depend on the internal SQLite transition path.
+
+    Pseudocode
+    ----------
+    - set lease_payload = successful state and unit
+    - return the response mapping
+
+    Wraps
+    -----
+    - none
+    """
     return {"state": "unit", "unit": unit}
 
 
 def _sequence_totals(
     connection: sqlite3.Connection, first_unit_id: str, last_unit_id: str
 ) -> tuple[int, int]:
+    """Compute unit and character totals for one attention sequence.
+
+    Intent
+    ------
+    Measure the inclusive ordinal span between a sequence's first and last units.
+
+    Rationale
+    ---------
+    Closed attention sequences need durable workload totals for review without
+    retaining a redundant copy of every unit text in the sequence record.
+
+    Pseudocode
+    ----------
+    - set sequence_bounds = first and last ordinals
+    - set sequence_aggregate = inclusive count and text length
+    - return the two sequence totals
+
+    Wraps
+    -----
+    - none
+    """
     row = connection.execute(
         "SELECT first.ordinal, last.ordinal "
         "FROM units AS first JOIN units AS last "
@@ -719,6 +1364,33 @@ def _open_or_close_sequence(
     closure_reason: str | None,
     now: str,
 ) -> None:
+    """Open or close the current durable attention sequence.
+
+    Intent
+    ------
+    Record a sequence start on acknowledgement and persist its totals at closure.
+
+    Rationale
+    ---------
+    Worker wraps and source endings define attention boundaries that must remain
+    recoverable across retries without creating duplicate sequence records.
+
+    Pseudocode
+    ----------
+    - set open_sequence = worker sequence start when absent
+    - set retained_sequence = open state without closure
+    - set closed_sequence = persisted aggregate at closure
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._sequence_totals:
+      why:
+        constructs: "Builds the measured unit span persisted when an open attention sequence closes."
+    """
     open_row = connection.execute(
         "SELECT first_unit_id, opened_at, before_sha256, before_counts_json "
         "FROM open_attention_sequences WHERE worker_index = ?",
@@ -763,6 +1435,33 @@ def _open_or_close_sequence(
 
 
 def _lease_before_snapshot(path: Path, worker_index: int, owned_sources: list[str]) -> tuple[str | None, str | None]:
+    """Capture optional inventory evidence before issuing a lease.
+
+    Intent
+    ------
+    Preserve a valid pre-lease hash and counts without blocking an empty inventory.
+
+    Rationale
+    ---------
+    A worker may begin with no valid inventory fragment, yet later acknowledgement
+    auditing still benefits from before-and-after evidence when it exists.
+
+    Pseudocode
+    ----------
+    - set before_snapshot = validated worker inventory when available
+    - set absent_evidence = empty result after invalid inventory
+    - set before_evidence = snapshot hash and serialized counts
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._inventory_snapshot:
+      why:
+        constructs: "Builds validated pre-lease inventory evidence when a worker artifact is available."
+    """
     try:
         snapshot = _inventory_snapshot(path, worker_index, owned_sources)
     except ValueError:
@@ -779,7 +1478,60 @@ def next_inventory_unit(
     clock_ns: Callable[[], int] = time.monotonic_ns,
     utc_now: Callable[[], datetime] = _utc_now,
 ) -> dict:
-    """Atomically lease, validate, acknowledge, and advance one worker's units."""
+    """Atomically lease, validate, acknowledge, and advance worker units.
+
+    Intent
+    ------
+    Implement idempotent next-unit leasing and acknowledgement for one assigned worker.
+
+    Rationale
+    ---------
+    Concurrent workers and retries require serialized state transitions that
+    reject invalid inventory while preserving recoverable lease and sequence data.
+
+    Pseudocode
+    ----------
+    - set operation_validation = worker and transaction checks
+    - set lease_response = durable existing or issued unit
+    - set acknowledgement_result = validated atomic cursor advance
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._open_or_close_sequence:
+      why:
+        computes: "Records the durable attention transition created by a valid acknowledgement."
+    ._unit_for_ordinal:
+      why:
+        computes: "Loads the assigned ordinal as a lease response or validates cursor progression."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._failure:
+      why:
+        constructs: "Builds machine-readable failure responses for rejected worker operations and retries."
+    ._inventory_snapshot:
+      why:
+        constructs: "Builds validated acknowledgement evidence from the worker inventory artifact."
+    ._lease_before_snapshot:
+      why:
+        constructs: "Builds optional pre-lease evidence carried into the next durable lease row."
+    ._lease_response:
+      why:
+        constructs: "Builds the successful unit response returned for existing and newly issued leases."
+    ._owned_sources:
+      why:
+        constructs: "Builds the ordered source ownership checked against the worker inventory fragment."
+    ._timestamp:
+      why:
+        constructs: "Builds the canonical acknowledgement timestamp stored in the transaction records."
+    ._unit_for_ordinal:
+      why:
+        constructs: "Builds the full unit payload returned after a cursor lookup or acknowledgement advance."
+    """
 
     del clock_ns
     state_dir = state_dir.resolve()
@@ -922,3 +1674,159 @@ def next_inventory_unit(
             return response
     except sqlite3.Error as error:
         return _failure("database-error", str(error))
+
+
+def _positive_integer(value: str) -> int:
+    """Parse one strictly positive command-line integer.
+
+    Intent
+    ------
+    Convert numeric interface arguments while rejecting zero and negative values.
+
+    Rationale
+    ---------
+    Worker indexes and setup sizes are positive by contract, and argparse should
+    report invalid values before the runtime changes durable iterator state.
+
+    Pseudocode
+    ----------
+    - set parsed_integer = numeric command-line text
+    - set positive_validation = values above zero
+    - return the positive result
+
+    Wraps
+    -----
+    - none
+
+    """
+
+    try:
+        result = int(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("must be a positive integer") from error
+    if result < 1:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return result
+
+
+def main(argv: Iterable[str] | None = None) -> int:
+    """Run one atomic iterator operation, print JSON, and return success.
+
+    Intent
+    ------
+    Dispatch setup and next CLI arguments to the matching durable runtime operation.
+
+    Rationale
+    ---------
+    Behavioral-source interfaces need narrow process-facing calls while setup
+    and acknowledgement retain their separate validation and state transitions.
+
+    Pseudocode
+    ----------
+    - set parsed_operation = setup or next arguments
+    - set wrap_validation = acknowledgement requirement
+    - set printed_response = selected runtime JSON and success status
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .next_inventory_unit:
+      why:
+        constructs: "Builds the serialized next-unit response selected by the parsed command operation."
+    .setup_inventory_iterator:
+      why:
+        constructs: "Builds the serialized setup response selected by the parsed command operation."
+    """
+
+    parser = argparse.ArgumentParser(description="Set up or advance inventory source units.")
+    operations = parser.add_subparsers(dest="operation", required=True)
+    setup = operations.add_parser("setup")
+    setup.add_argument("source_packet")
+    setup.add_argument("state_dir")
+    setup.add_argument("--workers", required=True, type=_positive_integer)
+    setup.add_argument("--window-chars", required=True, type=_positive_integer)
+    next_unit = operations.add_parser("next")
+    next_unit.add_argument("state_dir")
+    next_unit.add_argument("worker_index", type=_positive_integer)
+    next_unit.add_argument("--ack")
+    next_unit.add_argument("--wrap", action="store_true")
+    args = parser.parse_args(list(argv) if argv is not None else None)
+
+    if args.operation == "setup":
+        summary = setup_inventory_iterator(
+            Path(args.source_packet),
+            Path(args.state_dir),
+            requested_workers=args.workers,
+            window_chars=args.window_chars,
+        )
+        response = {
+            "state": "setup",
+            "state_dir": str(Path(args.state_dir).resolve()),
+            "effective_workers": summary["effective_workers"],
+            "units": len(summary["units"]),
+        }
+    else:
+        if args.wrap and args.ack is None:
+            parser.error("next --wrap requires --ack")
+        response = next_inventory_unit(
+            Path(args.state_dir), args.worker_index, ack=args.ack, wrap=args.wrap
+        )
+    print(json.dumps(response, indent=2))
+    return 0
+
+
+class Interface(PythonArgvMachineInterface):
+    """Expose setup and next iterator operations through the machine protocol.
+
+    Intent
+    ------
+    Provide the runtime adapter required by behavioral-source process invocation.
+
+    Rationale
+    ---------
+    The process runner expects a small argv interface class, keeping blueprint
+    interface definitions independent from iterator state-management details.
+
+    Pseudocode
+    ----------
+    - set machine_arguments = received process argv
+    - set interface_result = delegated CLI operation
+    - return a successful process status
+
+    Wraps
+    -----
+    - none
+    """
+
+    prog = "inventory_unit_iterator.py"
+
+    def run(self, argv: list[str]) -> int:
+        """Run one machine-protocol iterator invocation.
+
+        Intent
+        ------
+        Delegate received process arguments to the shared iterator CLI dispatcher.
+
+        Rationale
+        ---------
+        The machine runner requires this method boundary so source interfaces
+        can invoke setup and next operations through a common executable entry.
+
+        Pseudocode
+        ----------
+        - set interface_arguments = received argv sequence
+        - return the successful process status code
+
+        Wraps
+        -----
+        - main -> preprocess: passes received machine argv unchanged; postprocess: returns the successful process status; fixed_arguments: none
+
+        """
+        return main(argv)
+
+
+if __name__ == "__main__":
+    main()

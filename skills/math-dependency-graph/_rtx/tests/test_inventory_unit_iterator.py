@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
+import yaml
 
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
@@ -18,6 +19,11 @@ REPO_SRC = SKILL_DIR.parents[2] / "src"
 sys.path.insert(0, str(REPO_SRC))
 sys.path.insert(0, str(SKILL_DIR))
 
+from officina.blueprints.graph import BlueprintNode, InterfaceExport  # noqa: E402
+from officina.blueprints.process_binding import (  # noqa: E402
+    compile_gateway_invocation,
+    parse_caller_invocation,
+)
 import _inventory_unit_iterator as iterator  # noqa: E402
 from _inventory_unit_iterator import (  # noqa: E402
     load_iterator_summary,
@@ -83,6 +89,135 @@ def _sequence_rows(state_dir: Path) -> list[tuple]:
             "SELECT worker_index, first_unit_id, last_unit_id, closure_reason "
             "FROM attention_sequences ORDER BY id"
         ).fetchall()
+
+
+def _iterator_process_interface(name: str) -> tuple[BlueprintNode, InterfaceExport]:
+    """Load one authored iterator process surface without its parent registration."""
+
+    blueprint_path = SKILL_DIR / "blueprints" / "rtx-inventory-unit-iterator.yaml"
+    blueprint = yaml.safe_load(blueprint_path.read_text(encoding="utf-8"))
+    source = BlueprintNode(
+        node_id=blueprint["id"],
+        node_type=blueprint["node_type"],
+        version=blueprint["version"],
+        module_root=SKILL_DIR,
+        blueprint_path=blueprint_path,
+        gateway_path=SKILL_DIR / blueprint["gateway"]["path"],
+        declaration=blueprint,
+    )
+    interface_id = f"{blueprint['id']}.interface.{name}"
+    declaration = blueprint["interfaces"][interface_id]
+    return source, InterfaceExport(
+        interface_id=interface_id,
+        version=declaration["version"],
+        local_name=name,
+        module_node_id="math-dependency-graph._rtx",
+        declaration=declaration,
+        source_node_id=source.node_id,
+        source_interface_id=interface_id,
+    )
+
+
+def test_iterator_process_interfaces_compile_public_calls_in_runtime_argument_order() -> None:
+    """Dropping either hidden operation prefix must route a public facade incorrectly."""
+
+    setup_source, setup_interface = _iterator_process_interface(
+        "scripts-setup-inventory-iterator"
+    )
+    setup = compile_gateway_invocation(
+        setup_source,
+        setup_interface,
+        parse_caller_invocation(
+            setup_interface,
+            ["source-packet.txt", "iterator-state", "--workers", "2", "--window-chars", "80"],
+            stdin_requested=False,
+        ),
+    )
+    next_source, next_interface = _iterator_process_interface("scripts-next-inventory-unit")
+    next_unit = compile_gateway_invocation(
+        next_source,
+        next_interface,
+        parse_caller_invocation(
+            next_interface,
+            ["iterator-state", "1", "--ack", "u000001", "--wrap"],
+            stdin_requested=False,
+        ),
+    )
+
+    assert setup.entry == next_unit.entry == "Interface"
+    assert setup.argv == (
+        "setup",
+        "source-packet.txt",
+        "iterator-state",
+        "--workers",
+        "2",
+        "--window-chars",
+        "80",
+    )
+    assert next_unit.argv == (
+        "next",
+        "iterator-state",
+        "1",
+        "--ack",
+        "u000001",
+        "--wrap",
+    )
+
+
+def test_iterator_cli_setup_and_next_emit_structured_atomic_responses(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Replacing JSON process responses with summaries or prose would break callers."""
+
+    packet = _write_packet(
+        tmp_path / "source-packet.txt",
+        "@@ source: paper.md\n0001 | A single source unit.\n",
+    )
+    state_dir = tmp_path / "iterator"
+
+    iterator.main(
+        [
+            "setup",
+            str(packet),
+            str(state_dir),
+            "--workers",
+            "1",
+            "--window-chars",
+            "80",
+        ]
+    )
+    setup_response = json.loads(capsys.readouterr().out)
+    iterator.main(["next", str(state_dir), "1"])
+    next_response = json.loads(capsys.readouterr().out)
+
+    assert setup_response == {
+        "state": "setup",
+        "state_dir": str(state_dir.resolve()),
+        "effective_workers": 1,
+        "units": 1,
+    }
+    assert next_response["state"] == "unit"
+    assert next_response["unit"]["id"] == "u000001"
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["setup", "packet.txt", "state", "--workers", "0", "--window-chars", "80"],
+        ["setup", "packet.txt", "state", "--workers", "1", "--window-chars", "0"],
+        ["next", "state", "0"],
+        ["next", "state", "1", "--wrap"],
+    ],
+)
+def test_iterator_cli_rejects_nonpositive_values_and_wrap_without_ack(
+    argv: list[str],
+) -> None:
+    """Accepting zero or a bare wrap would violate the public atomic-call contract."""
+
+    with pytest.raises(SystemExit) as failure:
+        iterator.main(argv)
+
+    assert failure.value.code == 2
 
 
 def _covered_coordinates(summary: dict) -> list[tuple[int, str, int]]:

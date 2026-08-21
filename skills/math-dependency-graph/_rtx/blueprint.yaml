@@ -6,6 +6,13 @@ authority:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
+      - _inventory_unit_iterator.py
+      - Interface
+      reason: Set up or atomically advance durable inventory source units.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
       - _extraction_phase_driver.py
       - Interface
       reason: Advance deterministic inventory and extract finalization boundaries.
@@ -73,6 +80,7 @@ content:
 - _extraction_phase_driver\.py
 - _graph_builder\.py
 - _graph_server\.py
+- _inventory_unit_iterator\.py
 - _run_diagnostics\.py
 - __init__\.py
 - _semantic_graph_compiler\.py
@@ -81,6 +89,18 @@ content:
 - tests/.*
 description: Code module for the math-dependency-graph skill.
 exports:
+  math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - math-dependency-graph
+    source_interface: math-dependency-graph._rtx.source.rtx-inventory-unit-iterator.interface.scripts-setup-inventory-iterator
+  math-dependency-graph._rtx.interface.scripts-next-inventory-unit:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - math-dependency-graph
+    source_interface: math-dependency-graph._rtx.source.rtx-inventory-unit-iterator.interface.scripts-next-inventory-unit
   math-dependency-graph._rtx.interface.scripts-advance-extraction-phases:
     access:
       allow_all_modules: false
@@ -143,6 +163,10 @@ namespace_exports: {}
 node_type: module
 schema_version: 6
 sources:
+  math-dependency-graph._rtx.source.rtx-inventory-unit-iterator:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-inventory-unit-iterator.yaml
   math-dependency-graph._rtx.source.rtx-extraction-phase-driver:
     blueprint:
       base: module-root
