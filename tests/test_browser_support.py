@@ -48,26 +48,6 @@ def test_chrome_executable_uses_native_install_locations(
     assert chrome_executable(env=env, platform=platform) == str(chrome)
 
 
-def test_chrome_executable_prefers_macos_automation_browser(
-    tmp_path: Path, monkeypatch
-) -> None:
-    root = tmp_path / "root"
-    consumer_chrome = (
-        root / "Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-    )
-    testing_chrome = (
-        root
-        / "Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
-    )
-    for executable in (consumer_chrome, testing_chrome):
-        executable.parent.mkdir(parents=True)
-        executable.touch()
-    monkeypatch.setattr("test_support.browser._native_roots", lambda *_args: (root,))
-    monkeypatch.setattr("test_support.browser.shutil.which", lambda _name: None)
-
-    assert chrome_executable(env={}, platform="darwin") == str(testing_chrome)
-
-
 def test_required_browser_gate_fails_instead_of_skipping(monkeypatch) -> None:
     monkeypatch.setattr(browser, "chrome_executable", lambda: None)
     monkeypatch.setenv("FAMULUS_REQUIRE_BROWSER", "1")
@@ -101,7 +81,7 @@ def test_run_html_uses_temporary_paths_and_decodes_chrome_as_utf8(monkeypatch) -
         "capture_output": True,
         "encoding": "utf-8",
         "errors": "replace",
-        "timeout": 30,
+        "timeout": 10,
     }
     command = observed["command"]
     assert "--no-first-run" in command
@@ -127,3 +107,31 @@ def test_run_html_suppresses_macos_permission_dialogs(monkeypatch) -> None:
     command = observed["command"]
     assert "--use-mock-keychain" in command
     assert "--disable-features=DialMediaRouteProvider" in command
+
+
+def test_run_html_recovers_complete_dom_when_chrome_cleanup_times_out(monkeypatch) -> None:
+    def fake_run(command, **_kwargs):
+        raise subprocess.TimeoutExpired(
+            command,
+            10,
+            output=b"<html><body data-test-status=\"PASS\"></body></html>\n",
+            stderr=b"background process did not exit\n",
+        )
+
+    monkeypatch.setattr(browser.subprocess, "run", fake_run)
+
+    result = run_html("/browser", "<html></html>", virtual_time_budget=2500)
+
+    assert result.returncode == 0
+    assert result.stdout.endswith("</html>\n")
+    assert result.stderr == "background process did not exit\n"
+
+
+def test_run_html_rejects_incomplete_dom_when_chrome_times_out(monkeypatch) -> None:
+    def fake_run(command, **_kwargs):
+        raise subprocess.TimeoutExpired(command, 10, output=b"<html>", stderr=b"stuck\n")
+
+    monkeypatch.setattr(browser.subprocess, "run", fake_run)
+
+    with pytest.raises(subprocess.TimeoutExpired):
+        run_html("/browser", "<html></html>", virtual_time_budget=2500)

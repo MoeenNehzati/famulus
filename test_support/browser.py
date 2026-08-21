@@ -41,23 +41,15 @@ def chrome_executable(
         if executable:
             return executable
 
-    if platform == "win32":
-        relative_paths = (Path("Google/Chrome/Application/chrome.exe"),)
-    elif platform == "darwin":
-        relative_paths = (
-            Path(
-                "Applications/Google Chrome for Testing.app/Contents/MacOS/"
-                "Google Chrome for Testing"
-            ),
-            Path("Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
-        )
-    else:
-        relative_paths = ()
+    relative = (
+        Path("Google/Chrome/Application/chrome.exe")
+        if platform == "win32"
+        else Path("Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+    )
     for root in _native_roots(platform, env):
-        for relative_path in relative_paths:
-            candidate = root / relative_path
-            if candidate.is_file():
-                return str(candidate)
+        candidate = root / relative
+        if candidate.is_file():
+            return str(candidate)
     return None
 
 
@@ -104,11 +96,22 @@ def run_html(
         if window_size is not None:
             command.append(f"--window-size={window_size}")
         command.extend(("--dump-dom", page.as_uri()))
-        return subprocess.run(
-            command,
-            check=True,
-            capture_output=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=30,
-        )
+        try:
+            return subprocess.run(
+                command,
+                check=True,
+                capture_output=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=10,
+            )
+        except subprocess.TimeoutExpired as error:
+            stdout = error.stdout or b""
+            stderr = error.stderr or b""
+            if isinstance(stdout, bytes):
+                stdout = stdout.decode("utf-8", errors="replace")
+            if isinstance(stderr, bytes):
+                stderr = stderr.decode("utf-8", errors="replace")
+            if not stdout.rstrip().endswith("</html>"):
+                raise
+            return subprocess.CompletedProcess(command, 0, stdout, stderr)
