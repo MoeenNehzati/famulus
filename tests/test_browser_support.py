@@ -90,3 +90,20 @@ def test_run_html_uses_temporary_paths_and_decodes_chrome_as_utf8(monkeypatch) -
     assert "--virtual-time-budget=2500" in command
     assert "--window-size=800,600" in command
     assert not observed["page"].exists()
+
+
+def test_run_html_suppresses_macos_permission_dialogs(monkeypatch) -> None:
+    observed: dict[str, object] = {}
+
+    def fake_run(command, **kwargs):
+        observed.update(command=command, kwargs=kwargs)
+        return subprocess.CompletedProcess(command, 0, stdout="rendered", stderr="")
+
+    monkeypatch.setattr(browser.subprocess, "run", fake_run)
+    monkeypatch.setattr(browser.sys, "platform", "darwin")
+
+    run_html("/browser", "<html></html>", virtual_time_budget=2500)
+
+    command = observed["command"]
+    assert "--use-mock-keychain" in command
+    assert "--disable-features=DialMediaRouteProvider" in command

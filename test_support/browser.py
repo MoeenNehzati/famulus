@@ -89,6 +89,10 @@ def run_html(
             f"--user-data-dir={root / 'profile'}",
             f"--virtual-time-budget={virtual_time_budget}",
         ]
+        if sys.platform == "darwin":
+            command.extend(
+                ("--use-mock-keychain", "--disable-features=DialMediaRouteProvider")
+            )
         if window_size is not None:
             command.append(f"--window-size={window_size}")
         command.extend(("--dump-dom", page.as_uri()))
