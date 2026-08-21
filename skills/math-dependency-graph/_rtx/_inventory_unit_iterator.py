@@ -13,6 +13,7 @@ from pathlib import Path
 import re
 import shutil
 import sqlite3
+import sys
 import tempfile
 import time
 from typing import Callable, Iterable
@@ -1735,34 +1736,101 @@ def _timed_iterator_call_part(
 
 
 def _record_iterator_call(
-    database: Path,
+    connection: sqlite3.Connection,
     worker_index: int,
     response: dict,
     details: dict[str, bool],
     timings: dict[str, int],
 ) -> None:
-    """Persist one prose-free timing and status record after an iterator call."""
+    """Insert one prose-free call record in the active state transaction."""
 
-    with sqlite3.connect(database, timeout=10) as connection:
-        connection.execute(
-            "INSERT INTO iterator_calls "
-            "(worker_index, state, acknowledged, wrapped, retry, failure, "
-            "validation_ms, transaction_ms, lookup_ms, serialization_ms, total_ms) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                worker_index,
-                response.get("state", "failure"),
-                int(details["acknowledged"]),
-                int(details["wrapped"]),
-                int(details["retry"]),
-                int(response.get("state") == "failure"),
-                timings["validation"],
-                timings["transaction"],
-                timings["lookup"],
-                timings["serialization"],
-                timings["total"],
-            ),
-        )
+    connection.execute(
+        "INSERT INTO iterator_calls "
+        "(worker_index, state, acknowledged, wrapped, retry, failure, "
+        "validation_ms, transaction_ms, lookup_ms, serialization_ms, total_ms) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            worker_index,
+            response.get("state", "failure"),
+            int(details["acknowledged"]),
+            int(details["wrapped"]),
+            int(details["retry"]),
+            int(response.get("state") == "failure"),
+            timings["validation"],
+            timings["transaction"],
+            timings["lookup"],
+            timings["serialization"],
+            timings["total"],
+        ),
+    )
+
+
+class _IteratorCallResponse(dict):
+    """Retain exact process JSON on a dict-compatible logical response."""
+
+    def __init__(self, *, payload: dict, serialized: str) -> None:
+        super().__init__(payload)
+        self.serialized = serialized
+
+    @property
+    def payload(self) -> dict:
+        """Expose the dict-compatible logical payload explicitly."""
+
+        return self
+
+
+def _prepare_iterator_response(
+    response: dict,
+    *,
+    timings: dict[str, int],
+    clock_ns: Callable[[], int],
+    total_start: int,
+) -> _IteratorCallResponse:
+    """Serialize once and finalize internal timing through that response boundary."""
+
+    with _timed_iterator_call_part(timings, "serialization", clock_ns):
+        serialized = json.dumps(response, ensure_ascii=False, indent=2) + "\n"
+    finished_ns = clock_ns()
+    if finished_ns < total_start:
+        raise ValueError("iterator monotonic clock moved backwards")
+    timings["total"] = (finished_ns - total_start) // 1_000_000
+    return _IteratorCallResponse(payload=response, serialized=serialized)
+
+
+def _commit_iterator_response(
+    connection: sqlite3.Connection,
+    worker_index: int,
+    response: dict,
+    details: dict[str, bool],
+    timings: dict[str, int],
+    *,
+    clock_ns: Callable[[], int],
+    total_start: int,
+    transaction_start: int,
+) -> _IteratorCallResponse:
+    """Serialize, record metrics, and commit one iterator transition atomically."""
+
+    boundary = _prepare_iterator_response(
+        response,
+        timings=timings,
+        clock_ns=clock_ns,
+        total_start=total_start,
+    )
+    transaction_finished_ns = clock_ns()
+    if transaction_finished_ns < transaction_start:
+        raise ValueError("iterator monotonic clock moved backwards")
+    timings["transaction"] += (
+        transaction_finished_ns - transaction_start
+    ) // 1_000_000
+    _record_iterator_call(
+        connection,
+        worker_index,
+        response,
+        details,
+        timings,
+    )
+    connection.commit()
+    return boundary
 
 
 def _next_inventory_unit_core(
@@ -1775,7 +1843,8 @@ def _next_inventory_unit_core(
     utc_now: Callable[[], datetime],
     timings: dict[str, int],
     details: dict[str, bool],
-) -> dict:
+    total_start: int,
+) -> _IteratorCallResponse:
     """Atomically lease, validate, acknowledge, and advance worker units.
 
     Intent
@@ -1832,30 +1901,53 @@ def _next_inventory_unit_core(
     """
 
     state_dir = state_dir.resolve()
+    database = state_dir / "iterator.sqlite3"
+    precondition_failure: dict | None = None
     with _timed_iterator_call_part(timings, "validation", clock_ns):
         if worker_index < 1:
-            return _failure("invalid-worker", "worker index must be positive")
-        if wrap and ack is None:
-            return _failure(
+            precondition_failure = _failure(
+                "invalid-worker", "worker index must be positive"
+            )
+        elif wrap and ack is None:
+            precondition_failure = _failure(
                 "wrap-requires-ack", "wrap is valid only with an acknowledgement"
             )
-        database = state_dir / "iterator.sqlite3"
-        if not database.is_file():
-            return _failure("missing-state", "iterator database is missing")
+        elif not database.is_file():
+            precondition_failure = _failure(
+                "missing-state", "iterator database is missing"
+            )
+    if precondition_failure is not None:
+        return _prepare_iterator_response(
+            precondition_failure,
+            timings=timings,
+            clock_ns=clock_ns,
+            total_start=total_start,
+        )
     now = _timestamp(utc_now())
-    with _timed_iterator_call_part(timings, "transaction", clock_ns):
-        try:
-            with sqlite3.connect(database, timeout=10) as connection:
-                connection.execute("BEGIN IMMEDIATE")
-                with _timed_iterator_call_part(timings, "lookup", clock_ns):
-                    assignment = connection.execute(
-                        "SELECT first_unit_id, last_unit_id, next_ordinal, complete "
-                        "FROM assignments WHERE worker_index = ?",
-                        (worker_index,),
-                    ).fetchone()
-                    if assignment is None:
-                        connection.rollback()
-                        return _failure("unknown-worker", "worker index is not assigned")
+    transaction_start = clock_ns()
+    try:
+        with sqlite3.connect(database, timeout=10) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+
+            def commit_response(response: dict) -> _IteratorCallResponse:
+                return _commit_iterator_response(
+                    connection,
+                    worker_index,
+                    response,
+                    details,
+                    timings,
+                    clock_ns=clock_ns,
+                    total_start=total_start,
+                    transaction_start=transaction_start,
+                )
+
+            with _timed_iterator_call_part(timings, "lookup", clock_ns):
+                assignment = connection.execute(
+                    "SELECT first_unit_id, last_unit_id, next_ordinal, complete "
+                    "FROM assignments WHERE worker_index = ?",
+                    (worker_index,),
+                ).fetchone()
+                if assignment is not None:
                     first_unit_id, last_unit_id, next_ordinal, complete = assignment
                     first_ordinal = connection.execute(
                         "SELECT ordinal FROM units WHERE id = ?", (first_unit_id,)
@@ -1875,109 +1967,30 @@ def _next_inventory_unit_core(
                         "FROM leases WHERE worker_index = ?",
                         (worker_index,),
                     ).fetchone()
+            if assignment is None:
+                return commit_response(
+                    _failure("unknown-worker", "worker index is not assigned")
+                )
 
-                if ack is None:
-                    if lease is not None:
-                        unit = connection.execute(
-                            "SELECT ordinal FROM units WHERE id = ?", (lease[0],)
-                        ).fetchone()
-                        response = _lease_response(
-                            _unit_for_ordinal(connection, unit[0])
-                        )
-                    elif complete:
-                        response = {"state": "complete"}
-                    else:
-                        unit = _unit_for_ordinal(connection, next_ordinal)
-                        if unit is None or next_ordinal > last_ordinal:
-                            connection.rollback()
-                            return _failure(
+            if ack is None:
+                if lease is not None:
+                    unit = connection.execute(
+                        "SELECT ordinal FROM units WHERE id = ?", (lease[0],)
+                    ).fetchone()
+                    response = _lease_response(
+                        _unit_for_ordinal(connection, unit[0])
+                    )
+                elif complete:
+                    response = {"state": "complete"}
+                else:
+                    unit = _unit_for_ordinal(connection, next_ordinal)
+                    if unit is None or next_ordinal > last_ordinal:
+                        return commit_response(
+                            _failure(
                                 "invalid-cursor",
                                 "worker cursor is outside its assignment",
                             )
-                        before_sha256, before_counts = _lease_before_snapshot(
-                            inventory_path, worker_index, sources
                         )
-                        connection.execute(
-                            "INSERT INTO leases "
-                            "(worker_index, unit_id, leased_at, before_sha256, "
-                            "before_counts_json) VALUES (?, ?, ?, ?, ?)",
-                            (
-                                worker_index,
-                                unit["id"],
-                                now,
-                                before_sha256,
-                                before_counts,
-                            ),
-                        )
-                        response = _lease_response(unit)
-                    connection.commit()
-                    return response
-
-                latest_ack = connection.execute(
-                    "SELECT unit_id, wrapped, response_json FROM acknowledgements "
-                    "WHERE worker_index = ? ORDER BY id DESC LIMIT 1",
-                    (worker_index,),
-                ).fetchone()
-                if latest_ack is not None and latest_ack[0] == ack:
-                    if bool(latest_ack[1]) != wrap:
-                        connection.rollback()
-                        return _failure(
-                            "conflicting-retry",
-                            "retry wrap intent differs from acknowledgement",
-                        )
-                    details["retry"] = True
-                    connection.commit()
-                    return json.loads(latest_ack[2])
-                if lease is None or lease[0] != ack:
-                    connection.rollback()
-                    return _failure(
-                        "unexpected-ack",
-                        "acknowledgement does not match the outstanding lease",
-                    )
-
-                try:
-                    with _timed_iterator_call_part(
-                        timings, "validation", clock_ns
-                    ):
-                        snapshot = _inventory_snapshot(
-                            inventory_path, worker_index, sources
-                        )
-                except ValueError as error:
-                    connection.rollback()
-                    return _failure("invalid-inventory", str(error))
-
-                unit_ordinal = connection.execute(
-                    "SELECT ordinal FROM units WHERE id = ?", (ack,)
-                ).fetchone()[0]
-                final = unit_ordinal == last_ordinal
-                _open_or_close_sequence(
-                    connection,
-                    worker_index=worker_index,
-                    unit_id=ack,
-                    lease_before_sha256=lease[1],
-                    lease_before_counts=lease[2],
-                    snapshot=snapshot,
-                    closure_reason=(
-                        "end-of-source"
-                        if final
-                        else ("worker-wrap" if wrap else None)
-                    ),
-                    now=now,
-                )
-
-                next_ordinal = unit_ordinal + 1
-                connection.execute(
-                    "DELETE FROM leases WHERE worker_index = ?", (worker_index,)
-                )
-                if final:
-                    response = {"state": "complete"}
-                    connection.execute(
-                        "UPDATE assignments SET next_ordinal = ?, complete = 1 "
-                        "WHERE worker_index = ?",
-                        (next_ordinal, worker_index),
-                    )
-                else:
-                    unit = _unit_for_ordinal(connection, next_ordinal)
                     before_sha256, before_counts = _lease_before_snapshot(
                         inventory_path, worker_index, sources
                     )
@@ -1993,33 +2006,148 @@ def _next_inventory_unit_core(
                             before_counts,
                         ),
                     )
-                    connection.execute(
-                        "UPDATE assignments SET next_ordinal = ? "
-                        "WHERE worker_index = ?",
-                        (next_ordinal, worker_index),
-                    )
                     response = _lease_response(unit)
+                return commit_response(response)
+
+            latest_ack = connection.execute(
+                "SELECT unit_id, wrapped, response_json FROM acknowledgements "
+                "WHERE worker_index = ? ORDER BY id DESC LIMIT 1",
+                (worker_index,),
+            ).fetchone()
+            if latest_ack is not None and latest_ack[0] == ack:
+                if bool(latest_ack[1]) != wrap:
+                    return commit_response(
+                        _failure(
+                            "conflicting-retry",
+                            "retry wrap intent differs from acknowledgement",
+                        )
+                    )
+                details["retry"] = True
+                return commit_response(json.loads(latest_ack[2]))
+            if lease is None or lease[0] != ack:
+                return commit_response(
+                    _failure(
+                        "unexpected-ack",
+                        "acknowledgement does not match the outstanding lease",
+                    )
+                )
+
+            try:
+                with _timed_iterator_call_part(timings, "validation", clock_ns):
+                    snapshot = _inventory_snapshot(
+                        inventory_path, worker_index, sources
+                    )
+            except ValueError as error:
+                return commit_response(_failure("invalid-inventory", str(error)))
+
+            unit_ordinal = connection.execute(
+                "SELECT ordinal FROM units WHERE id = ?", (ack,)
+            ).fetchone()[0]
+            final = unit_ordinal == last_ordinal
+            _open_or_close_sequence(
+                connection,
+                worker_index=worker_index,
+                unit_id=ack,
+                lease_before_sha256=lease[1],
+                lease_before_counts=lease[2],
+                snapshot=snapshot,
+                closure_reason=(
+                    "end-of-source" if final else ("worker-wrap" if wrap else None)
+                ),
+                now=now,
+            )
+
+            next_ordinal = unit_ordinal + 1
+            connection.execute(
+                "DELETE FROM leases WHERE worker_index = ?", (worker_index,)
+            )
+            if final:
+                response = {"state": "complete"}
                 connection.execute(
-                    "INSERT INTO acknowledgements "
-                    "(worker_index, unit_id, wrapped, content_sha256, "
-                    "semantic_counts_json, acknowledged_at, response_json) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "UPDATE assignments SET next_ordinal = ?, complete = 1 "
+                    "WHERE worker_index = ?",
+                    (next_ordinal, worker_index),
+                )
+            else:
+                unit = _unit_for_ordinal(connection, next_ordinal)
+                before_sha256, before_counts = _lease_before_snapshot(
+                    inventory_path, worker_index, sources
+                )
+                connection.execute(
+                    "INSERT INTO leases "
+                    "(worker_index, unit_id, leased_at, before_sha256, "
+                    "before_counts_json) VALUES (?, ?, ?, ?, ?)",
                     (
                         worker_index,
-                        ack,
-                        int(wrap),
-                        snapshot["sha256"],
-                        json.dumps(snapshot["counts"], sort_keys=True),
+                        unit["id"],
                         now,
-                        json.dumps(response, ensure_ascii=False, sort_keys=True),
+                        before_sha256,
+                        before_counts,
                     ),
                 )
-                details["acknowledged"] = True
-                details["wrapped"] = wrap
-                connection.commit()
-                return response
-        except sqlite3.Error as error:
-            return _failure("database-error", str(error))
+                connection.execute(
+                    "UPDATE assignments SET next_ordinal = ? WHERE worker_index = ?",
+                    (next_ordinal, worker_index),
+                )
+                response = _lease_response(unit)
+            connection.execute(
+                "INSERT INTO acknowledgements "
+                "(worker_index, unit_id, wrapped, content_sha256, "
+                "semantic_counts_json, acknowledged_at, response_json) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    worker_index,
+                    ack,
+                    int(wrap),
+                    snapshot["sha256"],
+                    json.dumps(snapshot["counts"], sort_keys=True),
+                    now,
+                    json.dumps(response, ensure_ascii=False, sort_keys=True),
+                ),
+            )
+            details["acknowledged"] = True
+            details["wrapped"] = wrap
+            return commit_response(response)
+    except sqlite3.Error as error:
+        return _prepare_iterator_response(
+            _failure("database-error", str(error)),
+            timings=timings,
+            clock_ns=clock_ns,
+            total_start=total_start,
+        )
+
+
+def _next_inventory_unit_response(
+    state_dir: Path,
+    worker_index: int,
+    *,
+    ack: str | None = None,
+    wrap: bool = False,
+    clock_ns: Callable[[], int] = time.monotonic_ns,
+    utc_now: Callable[[], datetime] = _utc_now,
+) -> _IteratorCallResponse:
+    """Produce one atomic logical and serialized iterator response."""
+
+    total_start = clock_ns()
+    timings = {
+        "validation": 0,
+        "transaction": 0,
+        "lookup": 0,
+        "serialization": 0,
+        "total": 0,
+    }
+    details = {"acknowledged": False, "wrapped": False, "retry": False}
+    return _next_inventory_unit_core(
+        state_dir,
+        worker_index,
+        ack=ack,
+        wrap=wrap,
+        clock_ns=clock_ns,
+        utc_now=utc_now,
+        timings=timings,
+        details=details,
+        total_start=total_start,
+    )
 
 
 def next_inventory_unit(
@@ -2031,37 +2159,16 @@ def next_inventory_unit(
     clock_ns: Callable[[], int] = time.monotonic_ns,
     utc_now: Callable[[], datetime] = _utc_now,
 ) -> dict:
-    """Return one iterator response and retain fixed-shape internal call metrics."""
+    """Return the logical iterator response while retaining atomic call metrics."""
 
-    total_start = clock_ns()
-    timings = {
-        "validation": 0,
-        "transaction": 0,
-        "lookup": 0,
-        "serialization": 0,
-        "total": 0,
-    }
-    details = {"acknowledged": False, "wrapped": False, "retry": False}
-    response = _next_inventory_unit_core(
+    return _next_inventory_unit_response(
         state_dir,
         worker_index,
         ack=ack,
         wrap=wrap,
         clock_ns=clock_ns,
         utc_now=utc_now,
-        timings=timings,
-        details=details,
     )
-    with _timed_iterator_call_part(timings, "serialization", clock_ns):
-        json.dumps(response, ensure_ascii=False, sort_keys=True)
-    elapsed_ns = clock_ns() - total_start
-    if elapsed_ns < 0:
-        raise ValueError("iterator monotonic clock moved backwards")
-    timings["total"] = elapsed_ns // 1_000_000
-    database = state_dir.resolve() / "iterator.sqlite3"
-    if database.is_file():
-        _record_iterator_call(database, worker_index, response, details, timings)
-    return response
 
 
 def _positive_integer(value: str) -> int:
@@ -2159,9 +2266,11 @@ def main(argv: Iterable[str] | None = None) -> int:
     else:
         if args.wrap and args.ack is None:
             parser.error("next --wrap requires --ack")
-        response = next_inventory_unit(
+        boundary = _next_inventory_unit_response(
             Path(args.state_dir), args.worker_index, ack=args.ack, wrap=args.wrap
         )
+        sys.stdout.write(boundary.serialized)
+        return 0
     print(json.dumps(response, indent=2))
     return 0
 

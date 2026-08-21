@@ -201,6 +201,33 @@ def test_iterator_cli_setup_and_next_emit_structured_atomic_responses(
     assert next_response["unit"]["id"] == "u000001"
 
 
+def test_iterator_cli_emits_the_prepared_response_without_reserializing(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Serializing again in the CLI makes the recorded serialization timing false."""
+
+    serialized = '{\n  "state": "complete"\n}\n'
+    boundary = iterator._IteratorCallResponse(
+        payload={"state": "complete"}, serialized=serialized
+    )
+    monkeypatch.setattr(
+        iterator,
+        "_next_inventory_unit_response",
+        lambda *_args, **_kwargs: boundary,
+    )
+
+    def reject_second_serialization(*_args, **_kwargs):
+        raise AssertionError("CLI serialized the prepared response again")
+
+    monkeypatch.setattr(iterator.json, "dumps", reject_second_serialization)
+
+    iterator.main(["next", str(tmp_path / "iterator"), "1"])
+
+    assert capsys.readouterr().out == serialized
+
+
 @pytest.mark.parametrize(
     "argv",
     [
@@ -724,10 +751,10 @@ def test_next_records_bounded_internal_timings_and_iterator_status_counts(
     )
 
 
-def test_next_surfaces_diagnostics_write_failure_and_remains_retryable(
+def test_next_rolls_back_transition_when_atomic_diagnostics_insert_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Swallowing a lost timing record makes the durable summary untrustworthy."""
+    """Committing a lease transition without its timing record breaks atomicity."""
 
     state_dir = _iterator_with_units(tmp_path, units=2)
     leased = next_inventory_unit(state_dir, 1)
@@ -738,8 +765,21 @@ def test_next_surfaces_diagnostics_write_failure_and_remains_retryable(
         raise sqlite3.OperationalError("injected iterator diagnostics failure")
 
     monkeypatch.setattr(iterator, "_record_iterator_call", fail_record)
-    with pytest.raises(sqlite3.OperationalError, match="diagnostics failure"):
-        next_inventory_unit(state_dir, 1, ack=leased["unit"]["id"])
+    failed = next_inventory_unit(state_dir, 1, ack=leased["unit"]["id"])
+
+    assert failed["state"] == "failure"
+    assert failed["error"]["code"] == "database-error"
+    assert _ack_rows(state_dir) == []
+    with sqlite3.connect(state_dir / "iterator.sqlite3") as connection:
+        assert connection.execute(
+            "SELECT unit_id FROM leases WHERE worker_index = 1"
+        ).fetchone() == (leased["unit"]["id"],)
+        assert connection.execute(
+            "SELECT next_ordinal FROM assignments WHERE worker_index = 1"
+        ).fetchone() == (1,)
+        assert connection.execute("SELECT COUNT(*) FROM iterator_calls").fetchone() == (
+            1,
+        )
     monkeypatch.setattr(iterator, "_record_iterator_call", real_record)
 
     retried = next_inventory_unit(state_dir, 1, ack=leased["unit"]["id"])
@@ -748,7 +788,29 @@ def test_next_surfaces_diagnostics_write_failure_and_remains_retryable(
     summary = load_iterator_diagnostics(state_dir)
     assert summary["next"]["calls"] == 2
     assert summary["next"]["acknowledgements"] == 1
-    assert summary["next"]["retries"] == 1
+    assert summary["next"]["retries"] == 0
+
+
+def test_next_times_and_retains_the_same_serialized_response_boundary(
+    tmp_path: Path,
+) -> None:
+    """Timing bytes other than the retained process response is synthetic work."""
+
+    state_dir = _iterator_with_units(tmp_path, units=1)
+    ticks = iter(range(0, 100_000_000, 1_000_000))
+
+    boundary = iterator._next_inventory_unit_response(
+        state_dir,
+        1,
+        clock_ns=lambda: next(ticks),
+    )
+
+    assert json.loads(boundary.serialized) == boundary.payload
+    assert boundary.serialized.endswith("\n")
+    with sqlite3.connect(state_dir / "iterator.sqlite3") as connection:
+        assert connection.execute(
+            "SELECT serialization_ms FROM iterator_calls"
+        ).fetchone() == (1,)
 
 
 def test_next_leases_first_unit_and_replays_it_until_acknowledged(tmp_path: Path) -> None:
