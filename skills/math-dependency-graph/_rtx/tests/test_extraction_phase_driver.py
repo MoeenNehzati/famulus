@@ -212,6 +212,46 @@ def test_completed_iterator_pools_private_controller_packets_and_worker_inventor
     )
 
 
+def test_advance_inventory_rejects_valid_content_changed_after_final_ack(
+    tmp_path: Path,
+) -> None:
+    """Unacknowledged post-completion inventory content cannot enter pooling."""
+
+    run_dir, summary = _setup_prepared_run(tmp_path)
+    state_dir = Path(summary["assignments"][0]["inventory_path"]).parents[2]
+    for assignment in summary["assignments"]:
+        _complete_worker(state_dir, assignment["worker_index"])
+    first_assignment = summary["assignments"][0]
+    first_unit = next(
+        unit for unit in summary["units"]
+        if unit["id"] == first_assignment["first_unit_id"]
+    )
+    coordinate = first_unit["coordinates"][0]
+    inventory_path = Path(first_assignment["inventory_path"])
+    changed = json.loads(inventory_path.read_text(encoding="utf-8"))
+    changed["nodes"] = [
+        {
+            "local_id": "n1",
+            "location": [
+                changed["files"].index(coordinate["source"]),
+                coordinate["line"],
+                coordinate["line"],
+            ],
+            "provenance": "explicit",
+            "type_hint": "setup",
+            "summary": "A valid but unacknowledged post-completion candidate.",
+        }
+    ]
+    _write_json(inventory_path, changed)
+
+    with pytest.raises(ValueError, match="does not match its final acknowledgement"):
+        driver.advance_inventory(state_dir, run_dir)
+
+    assert not (run_dir / "inventory-ir.json").exists()
+    diagnostics = RunDiagnostics.open(run_dir).payload
+    assert all(stage["operation"] != "pooling" for stage in diagnostics["stages"])
+
+
 def test_advance_inventory_resumes_after_crash_from_same_durable_units(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

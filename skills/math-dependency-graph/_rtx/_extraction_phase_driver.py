@@ -12,7 +12,6 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
-import sqlite3
 from typing import Iterable
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
@@ -29,7 +28,10 @@ try:
     )
     from ._extraction_chunk_planner import plan_extract_packet
     from ._graph_builder import main as render_graph
-    from ._inventory_unit_iterator import load_iterator_summary
+    from ._inventory_unit_iterator import (
+        load_iterator_summary,
+        verify_completed_inventories,
+    )
     from ._run_diagnostics import RunDiagnostics, _measure_file
     from ._semantic_graph_compiler import compile_semantic_graph, validate_semantic_payload
     from ._source_packet import collect_source_packet, write_source_packet
@@ -46,7 +48,10 @@ except ImportError:  # pragma: no cover - direct script execution
     )
     from _extraction_chunk_planner import plan_extract_packet
     from _graph_builder import main as render_graph
-    from _inventory_unit_iterator import load_iterator_summary
+    from _inventory_unit_iterator import (
+        load_iterator_summary,
+        verify_completed_inventories,
+    )
     from _run_diagnostics import RunDiagnostics, _measure_file
     from _semantic_graph_compiler import compile_semantic_graph, validate_semantic_payload
     from _source_packet import collect_source_packet, write_source_packet
@@ -187,23 +192,6 @@ def _owned_spans(units: list[dict]) -> list[dict]:
     return spans
 
 
-def _completed_worker_indexes(state_dir: Path) -> tuple[list[int], list[int]]:
-    """Read effective and complete worker indices from the durable cursor table."""
-
-    try:
-        with sqlite3.connect(state_dir / "iterator.sqlite3") as connection:
-            rows = connection.execute(
-                "SELECT worker_index, complete FROM assignments ORDER BY worker_index"
-            ).fetchall()
-    except sqlite3.Error as error:
-        raise ValueError("iterator completion state is unavailable") from error
-    if not rows or any(complete not in (0, 1) for _worker, complete in rows):
-        raise ValueError("iterator completion state is invalid")
-    workers = [int(worker) for worker, _complete in rows]
-    incomplete = [int(worker) for worker, complete in rows if not complete]
-    return workers, incomplete
-
-
 def _iterator_pool_inputs(state_dir: Path, expected_source: Path) -> tuple[dict, list[dict]]:
     """Build pooler ownership from private controller packets and durable units."""
 
@@ -213,19 +201,26 @@ def _iterator_pool_inputs(state_dir: Path, expected_source: Path) -> tuple[dict,
     assignments = summary.get("assignments")
     if not isinstance(assignments, list) or not assignments:
         raise ValueError("iterator state requires effective worker assignments")
-    workers, incomplete = _completed_worker_indexes(state_dir)
+    verification = verify_completed_inventories(state_dir)
+    workers = verification["worker_indices"]
+    incomplete = verification["incomplete_workers"]
     expected_workers = [assignment.get("worker_index") for assignment in assignments]
     if workers != expected_workers or summary.get("effective_workers") != len(workers):
         raise ValueError("iterator assignment state does not match durable worker cursors")
     if incomplete:
         raise InventoryIncompleteError(f"inventory workers are incomplete: {incomplete!r}")
+    authenticated_fragments = verification["fragments"]
+    if len(authenticated_fragments) != len(assignments):
+        raise ValueError("authenticated inventories do not match worker assignments")
 
     source_sha256 = summary.get("configuration", {}).get("source_sha256")
     if not isinstance(source_sha256, str) or len(source_sha256) != 64:
         raise ValueError("iterator state requires a durable source identity")
     chunks: list[dict] = []
     fragments: list[dict] = []
-    for assignment in assignments:
+    for assignment, fragment in zip(
+        assignments, authenticated_fragments, strict=True
+    ):
         worker_index = assignment["worker_index"]
         chunk_id = f"iterator-worker-{worker_index:03d}"
         units = _assignment_units(summary, assignment)
@@ -240,7 +235,6 @@ def _iterator_pool_inputs(state_dir: Path, expected_source: Path) -> tuple[dict,
         }:
             raise ValueError(f"controller packet does not match worker {worker_index}")
         fragment_path = Path(assignment["inventory_path"]).resolve()
-        fragment = _read_json(fragment_path)
         if fragment.get("chunk_id") != chunk_id:
             raise ValueError(f"inventory fragment does not match worker {worker_index}")
         controller_bytes = controller_path.read_bytes()

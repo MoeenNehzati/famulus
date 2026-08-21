@@ -805,6 +805,57 @@ def test_next_closes_the_final_open_attention_sequence_automatically(tmp_path: P
     ]
 
 
+def test_completed_inventory_verification_returns_acknowledged_fragment(
+    tmp_path: Path,
+) -> None:
+    """Unchanged final inventory content is authenticated for downstream pooling."""
+
+    state_dir = _iterator_with_units(tmp_path, units=1)
+    leased = next_inventory_unit(state_dir, 1)
+    acknowledged = _valid_inventory(state_dir, 1)
+    _inventory_path(state_dir, 1).write_text(
+        json.dumps(acknowledged), encoding="utf-8"
+    )
+    assert next_inventory_unit(
+        state_dir, 1, ack=leased["unit"]["id"]
+    ) == {"state": "complete"}
+
+    verification = iterator.verify_completed_inventories(state_dir)
+
+    assert verification == {
+        "worker_indices": [1],
+        "incomplete_workers": [],
+        "fragments": [acknowledged],
+    }
+
+
+def test_completed_inventory_verification_rejects_valid_post_ack_change(
+    tmp_path: Path,
+) -> None:
+    """Schema-valid content written after the final ack is not authenticated."""
+
+    state_dir = _iterator_with_units(tmp_path, units=1)
+    leased = next_inventory_unit(state_dir, 1)
+    _write_valid_inventory(state_dir, 1)
+    assert next_inventory_unit(
+        state_dir, 1, ack=leased["unit"]["id"]
+    ) == {"state": "complete"}
+    changed = _valid_inventory(state_dir, 1)
+    changed["nodes"] = [
+        {
+            "local_id": "n1",
+            "location": [0, 1, 1],
+            "provenance": "explicit",
+            "type_hint": "setup",
+            "summary": "A valid but unacknowledged post-completion candidate.",
+        }
+    ]
+    _inventory_path(state_dir, 1).write_text(json.dumps(changed), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="does not match its final acknowledgement"):
+        iterator.verify_completed_inventories(state_dir)
+
+
 def test_next_concurrently_leases_separate_worker_indices_with_real_sqlite(tmp_path: Path) -> None:
     state_dir = _iterator_with_units(tmp_path, workers=2, units=4)
 

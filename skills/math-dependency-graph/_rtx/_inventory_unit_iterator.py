@@ -1285,6 +1285,120 @@ def _inventory_snapshot(path: Path, worker_index: int, owned_sources: list[str])
     return {
         "sha256": hashlib.sha256(canonical_json_bytes(payload)).hexdigest(),
         "counts": counts,
+        "payload": payload,
+    }
+
+
+def verify_completed_inventories(state_dir: Path) -> dict:
+    """Authenticate completed worker fragments against their final acknowledgements.
+
+    Intent
+    ------
+    Return current completed-worker inventory payloads only when they exactly
+    match the canonical content and bounded counts acknowledged for the final
+    unit in each worker assignment.
+
+    Rationale
+    ---------
+    Completion alone does not authenticate a mutable inventory file.  Pooling
+    must consume the same validated content recorded by the durable final
+    acknowledgement, without duplicating iterator ownership logic or rereading
+    the file after verification.
+
+    Pseudocode
+    ----------
+    - set assignment_state = ordered durable worker assignments
+    - set incomplete_workers = assignments not yet complete
+    - set authenticated_fragments = current validated snapshots matching final acks
+    - return worker indices, incomplete workers, and authenticated fragments
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._inventory_snapshot:
+      why:
+        computes: "Validates ownership and returns canonical hash, counts, and the exact payload to pool."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._owned_sources:
+      why:
+        constructs: "Builds the source ownership boundary used to validate each completed fragment."
+    """
+
+    state_dir = state_dir.resolve()
+    database = state_dir / "iterator.sqlite3"
+    if not database.is_file():
+        raise ValueError("iterator completion state is unavailable")
+    try:
+        with sqlite3.connect(database) as connection:
+            rows = connection.execute(
+                "SELECT worker_index, first_unit_id, last_unit_id, complete "
+                "FROM assignments ORDER BY worker_index"
+            ).fetchall()
+            if not rows or any(row[3] not in (0, 1) for row in rows):
+                raise ValueError("iterator completion state is invalid")
+
+            worker_indices: list[int] = []
+            incomplete_workers: list[int] = []
+            fragments: list[dict] = []
+            for worker_index, first_unit_id, last_unit_id, complete in rows:
+                worker_index = int(worker_index)
+                worker_indices.append(worker_index)
+                if not complete:
+                    incomplete_workers.append(worker_index)
+                    continue
+
+                ordinal_rows = connection.execute(
+                    "SELECT id, ordinal FROM units WHERE id IN (?, ?)",
+                    (first_unit_id, last_unit_id),
+                ).fetchall()
+                ordinals = {unit_id: ordinal for unit_id, ordinal in ordinal_rows}
+                if first_unit_id not in ordinals or last_unit_id not in ordinals:
+                    raise ValueError("iterator assignment names an unknown durable unit")
+                sources = _owned_sources(
+                    connection,
+                    int(ordinals[first_unit_id]),
+                    int(ordinals[last_unit_id]),
+                )
+                inventory_path = (
+                    state_dir / "workers" / f"worker-{worker_index}" / "inventory.json"
+                )
+                snapshot = _inventory_snapshot(inventory_path, worker_index, sources)
+                acknowledgement = connection.execute(
+                    "SELECT content_sha256, semantic_counts_json "
+                    "FROM acknowledgements WHERE worker_index = ? AND unit_id = ?",
+                    (worker_index, last_unit_id),
+                ).fetchone()
+                if acknowledgement is None:
+                    raise ValueError(
+                        f"worker inventory has no final acknowledgement: {worker_index}"
+                    )
+                try:
+                    acknowledged_counts = json.loads(acknowledgement[1])
+                except (TypeError, json.JSONDecodeError) as error:
+                    raise ValueError(
+                        f"worker final acknowledgement is invalid: {worker_index}"
+                    ) from error
+                if (
+                    snapshot["sha256"] != acknowledgement[0]
+                    or snapshot["counts"] != acknowledged_counts
+                ):
+                    raise ValueError(
+                        "worker inventory does not match its final acknowledgement: "
+                        f"{worker_index}"
+                    )
+                fragments.append(snapshot["payload"])
+    except sqlite3.Error as error:
+        raise ValueError("iterator completion state is unavailable") from error
+
+    return {
+        "worker_indices": worker_indices,
+        "incomplete_workers": incomplete_workers,
+        "fragments": fragments,
     }
 
 
