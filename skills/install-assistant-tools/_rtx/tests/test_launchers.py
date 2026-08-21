@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -335,6 +336,26 @@ def test_verify_install_reports_fail_for_missing_launcher(tmp_path, capsys):
     assert ok is False
     launcher_name = "assistant.bat" if sys.platform == "win32" else "assistant"
     assert f"FAIL: {bin_dir / launcher_name} not found" in capsys.readouterr().out
+
+
+def test_verify_install_uses_windows_background_run_wrapper(tmp_path, monkeypatch):
+    """Windows verifies the runnable batch wrapper, not the POSIX companion."""
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "background_run").write_text("#!/bin/sh\n")
+    (bin_dir / "background_run.bat").write_text("@echo off\r\nexit /b 0\r\n")
+    calls = []
+
+    def run(argv, **_kwargs):
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(launchers.subprocess, "run", run)
+
+    assert launchers.verify_install(bin_dir, ["background_run"])
+    assert calls == [[str(bin_dir / "background_run.bat"), "--help"]]
 
 
 def test_tw_agent_links_both_tmux_workspace_and_tw_alias(tmp_path):
