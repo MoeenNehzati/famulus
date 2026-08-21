@@ -38,6 +38,13 @@ _SCHEDULER_ENV = {
     # pathlib uses USERPROFILE rather than HOME to locate a Windows user's
     # state directory. A real scheduled process retains this host identity.
     "USERPROFILE": os.environ.get("USERPROFILE", str(Path.home())),
+    # Famulus state paths use the native Windows data root. Task Scheduler
+    # retains it alongside USERPROFILE.
+    **(
+        {"LOCALAPPDATA": os.environ["LOCALAPPDATA"]}
+        if sys.platform == "win32"
+        else {}
+    ),
     "PATH": "/usr/bin:/bin",
     # Spawning the real entrypoints would otherwise leave __pycache__ trees in
     # the skill directory, written by whichever interpreter ran. Tests should
