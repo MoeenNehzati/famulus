@@ -58,6 +58,7 @@ def _installed_resolver() -> Path | None:
 def _write_jobs_file(tmp_path: Path) -> Path:
     """Write a jobs file whose one job is a harmless command."""
     jobs_file = tmp_path / "jobs.yaml"
+    harmless_command = f'"{sys.executable}" -c "print(\'hello\')"'
     jobs_file.write_text(
         yaml.safe_dump(
             {
@@ -65,7 +66,7 @@ def _write_jobs_file(tmp_path: Path) -> Path:
                     {
                         "name": "email-triage",
                         "description": "harmless stand-in for the real triage job",
-                        "command": "/bin/echo hello",
+                        "command": harmless_command,
                         "schedule": "0 * * * *",
                         "enabled": True,
                     }

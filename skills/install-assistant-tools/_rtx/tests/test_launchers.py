@@ -13,7 +13,7 @@ if __package__ and __package__.count('.') >= 1:
     from .. import _agent_launchers as launchers
 else:
     import _agent_launchers as launchers
-from install_test_utils import assert_default_bin_dir_matches_famulus_paths
+from .install_test_utils import assert_default_bin_dir_matches_famulus_paths
 
 
 def _make_repo(tmp_path: Path) -> Path:
@@ -24,7 +24,8 @@ def _make_repo(tmp_path: Path) -> Path:
     for name in ["assistant", "collab", "coauthor", "background_run", "tmux-workspace",
                  "_agent_launch.py", "assistant.bat", "collab.bat", "coauthor.bat",
                  "background_run.bat"]:
-        (source_bin / name).write_text("#!/bin/sh\necho stub\n")
+        content = "@echo off\r\nexit /b 0\r\n" if name.endswith(".bat") else "#!/bin/sh\necho stub\n"
+        (source_bin / name).write_text(content)
         (source_bin / name).chmod(0o755)
     profiles_dir = repo_root / "profiles"
     profiles_dir.mkdir()
