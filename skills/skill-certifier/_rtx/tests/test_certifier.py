@@ -1211,7 +1211,9 @@ def test_batched_readiness_preserves_unusual_tracked_filename(
     tmp_path: Path,
 ) -> None:
     materialize_repository_fixture(tmp_path)
-    relative_path = "skills/demo-skill/literal[edge]*?.txt"
+    # Square brackets exercise Git pathspec quoting while remaining a valid
+    # filename on every supported platform (unlike `*` and `?` on Windows).
+    relative_path = "skills/demo-skill/literal[edge].txt"
     path = tmp_path / relative_path
     path.write_text("unusual but valid\n", encoding="utf-8")
     repository = GitTestRepository(tmp_path)
