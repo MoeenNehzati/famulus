@@ -83,6 +83,7 @@ def run_html(
             "--disable-gpu",
             "--disable-dev-shm-usage",
             "--disable-crash-reporter",
+            "--timeout=20000",
             f"--user-data-dir={root / 'profile'}",
             f"--virtual-time-budget={virtual_time_budget}",
         ]

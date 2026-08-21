@@ -85,5 +85,6 @@ def test_run_html_uses_temporary_paths_and_decodes_chrome_as_utf8(monkeypatch) -
     }
     command = observed["command"]
     assert "--virtual-time-budget=2500" in command
+    assert "--timeout=20000" in command
     assert "--window-size=800,600" in command
     assert not observed["page"].exists()
