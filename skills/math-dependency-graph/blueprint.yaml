@@ -43,7 +43,7 @@ gateway:
 id: math-dependency-graph
 namespace_exports:
   _rtx:
-    version: 48
+    version: 49
     access:
       allow_all_modules: true
       allowed_callers: []
@@ -109,7 +109,7 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/instructions-inventory.yaml
-version: 75
+version: 76
 maturity: stable
 installation_tier: core
 personal_preference:

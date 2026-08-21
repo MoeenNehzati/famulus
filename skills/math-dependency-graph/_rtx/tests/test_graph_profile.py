@@ -142,6 +142,11 @@ def test_experimental_improvement_records_complete_iterator_conditions() -> None
         "rather than inspecting private state",
         "exact requested worker and window arguments",
         "report returned by the single setup call",
+        "controller-owned invocation recorder",
+        "atomically preserves the complete public response",
+        "before releasing it to a worker",
+        "must not transcribe, summarize, or truncate",
+        "capture fails, stop the pass",
     )
 
     missing = [item for item in required_contract if item not in reference]
