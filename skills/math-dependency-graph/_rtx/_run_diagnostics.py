@@ -432,12 +432,25 @@ class RunDiagnostics:
             "gaps",
             "macros",
             "proof_entities",
+            "accepted_proofs",
             "proof_bundles",
+            "alternative_bundles",
             "proof_targets",
             "proof_exclusions",
             "redirected_relationships",
+            "total_redirected_relationships",
         }
         return {key: int(value) for key, value in counts.items() if key in allowed}
+
+    def record_proof_metrics(self, metrics: dict) -> None:
+        """Persist schema-checked proof-normalization coverage and provenance."""
+
+        def mutate(payload: dict) -> None:
+            if "proof_metrics" in payload:
+                raise ValueError("proof metrics are already recorded")
+            payload["proof_metrics"] = deepcopy(metrics)
+
+        self._update(mutate)
 
     def worker_queued(
         self,

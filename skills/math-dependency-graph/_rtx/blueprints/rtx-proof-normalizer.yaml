@@ -315,7 +315,7 @@ interfaces:
         min_positionals: 1
         name: owner
     usage: <semantic-ir.json> --decisions <decisions.json> --inventory <pooled.json> --out <normalized.json> --provenance-out <provenance.json> --inventory-out <projected.json>
-    version: 1
+    version: 2
 node_type: behavioral_source
 platform_support:
   linux: true
@@ -324,5 +324,5 @@ platform_support:
 runtime_dependencies: []
 schema_version: 6
 uses_interfaces: []
-version: 1
+version: 2
 maturity: stable

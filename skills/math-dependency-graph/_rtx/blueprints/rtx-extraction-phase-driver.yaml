@@ -1,7 +1,7 @@
 schema_version: 6
 node_type: behavioral_source
 id: math-dependency-graph._rtx.source.rtx-extraction-phase-driver
-version: 29
+version: 30
 description: Deterministically prepares inventory, preserves retryable diagnostics
   after worker-local inventory rejection, routes malformed or non-object extract output
   to a fresh normal extract retry, returns stable per-job progress-sidecar paths through
@@ -43,7 +43,7 @@ dependencies:
   reason: Records worker-independent stage timing, artifacts, ratios, counts, and
     final run status.
   source: math-dependency-graph._rtx.source.rtx-run-diagnostics
-  version: 12
+  version: 13
 - blueprint:
     base: module-root
     path: blueprints/rtx-semantic-graph-compiler.yaml
@@ -55,7 +55,7 @@ dependencies:
     path: blueprints/rtx-proof-normalizer.yaml
   reason: Applies exhaustive proof decisions and projects compiler-facing inventory.
   source: math-dependency-graph._rtx.source.rtx-proof-normalizer
-  version: 1
+  version: 2
 - blueprint:
     base: module-root
     path: blueprints/rtx-source-packet.yaml
@@ -74,7 +74,7 @@ interfaces:
     content:
     - _extraction_phase_driver\.py
     uses_interfaces: []
-    version: 25
+    version: 26
     description: Prepare one iterator setup assignment, keep worker-local inventory
       rejection open for durable retry, advance completed iterator state to one entrypoint-bearing extract
       packet, or validate extract output and return a progress-preserving fresh retry

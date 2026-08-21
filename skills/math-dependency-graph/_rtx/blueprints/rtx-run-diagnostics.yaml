@@ -1,7 +1,7 @@
 schema_version: 6
 node_type: behavioral_source
 id: math-dependency-graph._rtx.source.rtx-run-diagnostics
-version: 12
+version: 13
 description: Atomically records metrics-only worker, stage, artifact, retry-code,
   structured failure, exact local and aggregate inventory ratios, and final run diagnostics
   without arbitrary error text.

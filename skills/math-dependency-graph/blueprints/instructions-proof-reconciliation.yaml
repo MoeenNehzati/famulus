@@ -1,7 +1,7 @@
 schema_version: 6
 node_type: behavioral_source
 id: math-dependency-graph.source.instructions-proof-reconciliation
-version: 2
+version: 3
 maturity: experimental
 description: Reconciles registered proof-centered evidence into exhaustive semantic
   decisions for deterministic proof normalization.
@@ -14,7 +14,7 @@ dependencies: []
 uses_interfaces: []
 interfaces:
   math-dependency-graph.source.instructions-proof-reconciliation.interface.proof-reconciliation:
-    version: 2
+    version: 3
     description: Group complementary proof fragments, preserve alternative proofs,
       resolve source-grounded targets, and exhaustively decide every registered proof.
     content:
@@ -138,8 +138,8 @@ interfaces:
           system: filesystem
       execution:
         consistency:
-          snapshot: Every decision uses one bounded proof-centered packet carrying the
-            controller-recorded semantic IR identity; no unregistered source range, entity, dependency,
+          snapshot: Every decision echoes the bounded packet's controller-recorded semantic IR,
+            pooled inventory, immutable source, and packet-payload identity; no unregistered source range, entity, dependency,
             or target enters the judgment boundary.
         effects:
         - id: decisions-write

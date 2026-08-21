@@ -36,7 +36,7 @@ try:
         verify_completed_inventories,
     )
     from ._run_diagnostics import RunDiagnostics, _measure_file
-    from ._proof_normalizer import normalize_files
+    from ._proof_normalizer import normalize_files, validate_transitional_proof_ownership
     from ._semantic_graph_compiler import compile_semantic_graph, validate_semantic_payload
     from ._source_packet import collect_source_packet, write_source_packet
     from ._tex_macro_reader import extract_macros, write_macros
@@ -59,7 +59,7 @@ except ImportError:  # pragma: no cover - direct script execution
         verify_completed_inventories,
     )
     from _run_diagnostics import RunDiagnostics, _measure_file
-    from _proof_normalizer import normalize_files
+    from _proof_normalizer import normalize_files, validate_transitional_proof_ownership
     from _semantic_graph_compiler import compile_semantic_graph, validate_semantic_payload
     from _source_packet import collect_source_packet, write_source_packet
     from _tex_macro_reader import extract_macros, write_macros
@@ -232,12 +232,7 @@ def _proof_packet(
         for evidence_id in candidate.get("evidence_ids", [])
     )
     evidence = [item for item in inventory["evidence"] if item["id"] in evidence_ids]
-    return {
-        "document_kind": "proof-reconciliation-packet",
-        "ir_version": 1,
-        "semantic_ir_sha256": semantic_sha256,
-        "inventory_sha256": inventory_sha256,
-        "source_sha256": source_sha256,
+    payload = {
         "proof_entities": proofs,
         "target_entities": targets,
         "neighboring_entities": neighbors,
@@ -250,6 +245,18 @@ def _proof_packet(
         ),
         "references": [item for item in inventory["references"] if item["id"] in reference_ids],
     }
+    input_identity = {
+        "semantic_ir_sha256": semantic_sha256,
+        "inventory_sha256": inventory_sha256,
+        "source_sha256": source_sha256,
+        "packet_payload_sha256": hashlib.sha256(canonical_json_bytes(payload)).hexdigest(),
+    }
+    return {
+        "document_kind": "proof-reconciliation-packet",
+        "ir_version": 1,
+        "input_identity": input_identity,
+        **payload,
+    }
 
 
 def _proof_reconciliation_job(
@@ -260,24 +267,70 @@ def _proof_reconciliation_job(
 ) -> dict:
     """Return one immutable bounded proof-reconciliation assignment."""
 
-    extract_manifest = _read_json(Path(state["extract_manifest"]))
-    chunks = extract_manifest.get("chunks")
-    if not isinstance(chunks, list) or len(chunks) != 1:
-        raise ValueError("proof reconciliation requires exactly one saved extract chunk")
-    chunk = chunks[0]
+    original = state.get("proof_reconciliation_original")
+    if not isinstance(original, dict):
+        raise ValueError("proof reconciliation requires persisted original identity")
     return {
         "chunk_id": "proof-reconciliation-001",
         "instruction": str(SKILL_DIR / "instructions" / "proof-reconciliation.md"),
         "schema": str(SKILL_DIR / "proof-normalization.schema.json"),
-        "packet": str((run_dir / "proof-reconciliation-packet.json").resolve()),
-        "semantic_ir_sha256": _measure_file(run_dir / "semantic-ir.json")[1],
-        "inventory_sha256": _measure_file(Path(state["inventory_ir"]))[1],
-        "source_sha256": _measure_file(Path(chunk["source_packet_path"]))[1],
+        "packet": original["artifacts"]["packet"]["path"],
+        "input_identity": original["input_identity"],
         "progress_path": str(
             (run_dir / "progress" / "proof-reconciliation-001.progress.md").resolve()
         ),
         "output": str(output_path.resolve()),
     }
+
+
+def _verify_proof_reconciliation_original(
+    state: dict,
+    *,
+    semantic_path: Path,
+    inventory_path: Path,
+    source_path: Path,
+    packet_path: Path,
+) -> dict:
+    """Verify every persisted proof input against its first assigned identity."""
+
+    original = state.get("proof_reconciliation_original")
+    if not isinstance(original, dict):
+        raise ValueError("proof reconciliation original identity is absent")
+    input_identity = original.get("input_identity")
+    artifacts = original.get("artifacts")
+    if not isinstance(input_identity, dict) or not isinstance(artifacts, dict):
+        raise ValueError("proof reconciliation original identity is malformed")
+    expected_names = {"semantic_ir", "inventory", "source", "packet"}
+    if set(artifacts) != expected_names:
+        raise ValueError("proof reconciliation original artifact identity is malformed")
+    expected_paths = {
+        "semantic_ir": semantic_path.resolve(),
+        "inventory": inventory_path.resolve(),
+        "source": source_path.resolve(),
+        "packet": packet_path.resolve(),
+    }
+    for name in sorted(expected_names):
+        record = artifacts[name]
+        if not isinstance(record, dict) or set(record) != {"path", "sha256"}:
+            raise ValueError(f"proof reconciliation {name} identity is malformed")
+        path = Path(record["path"]).resolve()
+        if path != expected_paths[name]:
+            raise ValueError(f"proof reconciliation {name} artifact path identity changed")
+        if not path.is_file() or _measure_file(path)[1] != record["sha256"]:
+            raise ValueError(f"proof reconciliation {name} identity changed")
+    packet = _read_json(Path(artifacts["packet"]["path"]))
+    if packet.get("input_identity") != input_identity:
+        raise ValueError("proof reconciliation packet identity changed")
+    packet_payload = {
+        key: value
+        for key, value in packet.items()
+        if key not in {"document_kind", "ir_version", "input_identity"}
+    }
+    if hashlib.sha256(canonical_json_bytes(packet_payload)).hexdigest() != input_identity.get(
+        "packet_payload_sha256"
+    ):
+        raise ValueError("proof reconciliation packet payload identity changed")
+    return original
 
 
 def _read_json(path: Path) -> dict:
@@ -486,6 +539,51 @@ def _structured_record_counts(payload: dict) -> dict:
             if isinstance(item, dict) and isinstance(item.get("connects_to", []), list)
         )
     return counts
+
+
+def _proof_metrics(provenance: dict) -> dict:
+    """Derive durable coverage metrics from complete normalization provenance."""
+
+    bundles_by_target: dict[str, set[str]] = {}
+    accepted_proof_ids: set[str] = set()
+    for bundle in provenance["bundles"]:
+        bundles_by_target.setdefault(bundle["target_id"], set()).add(bundle["bundle_id"])
+        accepted_proof_ids.update(bundle["proof_ids"])
+    alternative_bundle_ids = {
+        bundle_id
+        for bundle_ids in bundles_by_target.values()
+        if len(bundle_ids) > 1
+        for bundle_id in bundle_ids
+    }
+    redirected: list[dict] = []
+    for relationship in provenance["relationships"]:
+        if not relationship["proof_ids"]:
+            continue
+        routes = [
+            {
+                "proof_id": route["proof_id"],
+                "bundle_id": route["bundle_id"],
+                "evidence_ids": route["relationship"]["evidence_ids"],
+            }
+            for route in relationship["source_relationships"]
+            if "proof_id" in route
+        ]
+        redirected.append(
+            {
+                "from": relationship["from"],
+                "to": relationship["to"],
+                "type": relationship["type"],
+                "proof_ids": relationship["proof_ids"],
+                "bundle_ids": relationship["bundle_ids"],
+                "routes": routes,
+            }
+        )
+    return {
+        "accepted_proofs": len(accepted_proof_ids),
+        "alternative_bundles": len(alternative_bundle_ids),
+        "total_redirected_relationships": len(redirected),
+        "redirected_relationships": redirected,
+    }
 
 
 def _open_phase_diagnostics(run_dir: Path) -> RunDiagnostics:
@@ -765,6 +863,15 @@ def finalize_extract(
                     outputs=[semantic_path],
                     validation=True,
                 ):
+                    try:
+                        validate_transitional_proof_ownership(semantic)
+                    except ValueError as error:
+                        raise ValidationReportError(
+                            "extract proof ownership failed",
+                            [{"code": "proof-ownership", "path": ["relationships"]}],
+                            repairable=True,
+                            display_messages=[str(error)],
+                        ) from error
                     validate_extract_reconciliation(semantic, inventory)
                     write_json_atomic(semantic, semantic_path)
             except ValidationReportError as error:
@@ -808,17 +915,6 @@ def finalize_extract(
             output_path = run_dir / "proof-reconciliation-001.json"
             report_path = run_dir / "proof-reconciliation-required.json"
             state_path = run_dir / "run-state.json"
-            next_job = _proof_reconciliation_job(
-                run_dir=run_dir,
-                state=state,
-                output_path=output_path,
-            )
-            report = {
-                "status": "proof-reconciliation-required",
-                "semantic_ir": str(semantic_path.resolve()),
-                "next_job": next_job,
-                "diagnostics": str(diagnostics.path),
-            }
             with diagnostics.stage(
                 "proof-reconciliation-planning",
                 inputs=[semantic_path, inventory_path],
@@ -828,17 +924,48 @@ def finalize_extract(
                 _, inventory_sha256 = _measure_file(inventory_path)
                 source_packet_path = Path(state["source_packet"]).resolve()
                 _, source_sha256 = _measure_file(source_packet_path)
-                write_json_atomic(
-                    _proof_packet(
-                        semantic,
-                        inventory,
-                        semantic_sha256=semantic_sha256,
-                        inventory_sha256=inventory_sha256,
-                        source_sha256=source_sha256,
-                        source_packet_path=source_packet_path,
-                    ),
-                    packet_path,
+                packet = _proof_packet(
+                    semantic,
+                    inventory,
+                    semantic_sha256=semantic_sha256,
+                    inventory_sha256=inventory_sha256,
+                    source_sha256=source_sha256,
+                    source_packet_path=source_packet_path,
                 )
+                write_json_atomic(packet, packet_path)
+                _, packet_sha256 = _measure_file(packet_path)
+                state["proof_reconciliation_original"] = {
+                    "input_identity": packet["input_identity"],
+                    "artifacts": {
+                        "semantic_ir": {
+                            "path": str(semantic_path.resolve()),
+                            "sha256": semantic_sha256,
+                        },
+                        "inventory": {
+                            "path": str(inventory_path.resolve()),
+                            "sha256": inventory_sha256,
+                        },
+                        "source": {
+                            "path": str(source_packet_path),
+                            "sha256": source_sha256,
+                        },
+                        "packet": {
+                            "path": str(packet_path.resolve()),
+                            "sha256": packet_sha256,
+                        },
+                    },
+                }
+                next_job = _proof_reconciliation_job(
+                    run_dir=run_dir,
+                    state=state,
+                    output_path=output_path,
+                )
+                report = {
+                    "status": "proof-reconciliation-required",
+                    "semantic_ir": str(semantic_path.resolve()),
+                    "next_job": next_job,
+                    "diagnostics": str(diagnostics.path),
+                }
                 write_json_atomic(report, report_path)
                 state["proof_reconciliation_report"] = str(report_path.resolve())
                 state["proof_reconciliation_attempts"] = 0
@@ -886,6 +1013,13 @@ def finalize_proofs(
     try:
         if not semantic_path.is_file() or not inventory_path.is_file() or not packet_path.is_file():
             raise ValueError("proof finalization requires immutable semantic, inventory, and proof packet inputs")
+        original = _verify_proof_reconciliation_original(
+            state,
+            semantic_path=semantic_path,
+            inventory_path=inventory_path,
+            source_path=Path(state.get("source_packet", "")),
+            packet_path=packet_path,
+        )
         try:
             manifest, fragments = _load_fragment_manifest(
                 fragment_manifest_path.resolve()
@@ -915,6 +1049,9 @@ def finalize_proofs(
         if len(fragments) != 1:
             raise ValueError("proof finalization requires exactly one decisions fragment")
         decision_path = Path(manifest["fragments"][0]).resolve()
+        decisions = fragments[0]
+        if decisions.get("input_identity") != original["input_identity"]:
+            raise ValueError("proof reconciliation decision input identity does not match original")
         try:
             with diagnostics.stage(
                 "proof-normalization",
@@ -956,13 +1093,17 @@ def finalize_proofs(
             phase="proof-reconciliation",
         )
         provenance = _read_json(provenance_path)
+        proof_metrics = _proof_metrics(provenance)
+        diagnostics.record_proof_metrics(proof_metrics)
         diagnostics.record_artifact(
             provenance_path,
             kind="proof-provenance",
             phase="proof-normalization",
             counts={
                 "proof_entities": len(provenance["proof_entities"]),
+                "accepted_proofs": proof_metrics["accepted_proofs"],
                 "proof_bundles": len(provenance["bundles"]),
+                "alternative_bundles": proof_metrics["alternative_bundles"],
                 "proof_targets": len(
                     {item["target_id"] for item in provenance["bundles"]}
                 ),
@@ -971,6 +1112,9 @@ def finalize_proofs(
                     bool(item["proof_ids"])
                     for item in provenance["relationships"]
                 ),
+                "total_redirected_relationships": proof_metrics[
+                    "total_redirected_relationships"
+                ],
             },
         )
         diagnostics.record_artifact(

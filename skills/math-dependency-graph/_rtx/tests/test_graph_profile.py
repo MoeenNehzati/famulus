@@ -149,8 +149,8 @@ def test_proof_reconciliation_is_a_registered_parent_instruction_interface() -> 
 
     assert source["schema_version"] == 6
     assert source["node_type"] == "behavioral_source"
-    assert source["version"] == 2
-    assert source["interfaces"][source_interface]["version"] == 2
+    assert source["version"] == 3
+    assert source["interfaces"][source_interface]["version"] == 3
     contract = source["interfaces"][source_interface]["contract"]
     assert {
         "packet",
@@ -193,7 +193,7 @@ def test_gateway_contract_routes_inventory_through_iterator_and_measured_diagnos
 
     assert uses["math-dependency-graph.interface.inventory"] == 34
     assert uses["math-dependency-graph.interface.extract"] == 27
-    assert uses["math-dependency-graph.interface.proof-reconciliation"] == 2
+    assert uses["math-dependency-graph.interface.proof-reconciliation"] == 3
     assert uses[
         "math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator"
     ] == 5

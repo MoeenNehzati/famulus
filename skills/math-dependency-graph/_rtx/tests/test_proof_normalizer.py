@@ -32,6 +32,15 @@ def _inventory_validator() -> Draft202012Validator:
     return Draft202012Validator(schema)
 
 
+def _input_identity() -> dict:
+    return {
+        "semantic_ir_sha256": "0" * 64,
+        "inventory_sha256": "1" * 64,
+        "source_sha256": "2" * 64,
+        "packet_payload_sha256": "3" * 64,
+    }
+
+
 def _semantic_ir() -> dict:
     return {
         "ir_version": 2,
@@ -139,6 +148,7 @@ def _decisions() -> dict:
     return {
         "document_kind": "proof-normalization-decisions",
         "ir_version": 1,
+        "input_identity": _input_identity(),
         "decisions": [
             {
                 "proof_id": "proof-formal",
@@ -244,6 +254,7 @@ def _compiler_proof_fixture(*, target_from_unresolved: bool = False) -> tuple[di
     decisions = {
         "document_kind": "proof-normalization-decisions",
         "ir_version": 1,
+        "input_identity": _input_identity(),
         "decisions": [
             {
                 "proof_id": "proof-existence",
@@ -473,6 +484,7 @@ def test_normalized_inventory_projection_compiles_proof_free_ir() -> None:
          "evidence_ids": ["inventory-001::e3"], "implicit": False, "confidence": "Verified"},
     ]
     decisions = {"document_kind": "proof-normalization-decisions", "ir_version": 1,
+                 "input_identity": _input_identity(),
                  "decisions": [{"proof_id": "proof-existence", "disposition": "accepted",
                  "bundle_id": "bundle-existence", "target_id": "existence", "reason": "One proof."}]}
 
@@ -501,6 +513,40 @@ def test_normalizer_allows_excluded_proof_with_proves_in_sidecar() -> None:
     normalized, report = normalize_proof_entities(payload, decisions)
     assert "proof-sketch" not in {item["id"] for item in normalized["entities"]}
     assert report["exclusions"][0]["incident_relationships"]
+
+
+@pytest.mark.parametrize("ownership", ["missing", "multiple"])
+def test_normalizer_rejects_invalid_ownership_even_for_excluded_proof(
+    ownership: str,
+) -> None:
+    """Exclusion cannot launder a proof entity that extraction failed to target."""
+
+    from _proof_normalizer import normalize_proof_entities
+
+    payload = _semantic_ir()
+    decisions = _decisions()
+    decisions["decisions"][1] = {
+        "proof_id": "proof-sketch",
+        "disposition": "excluded",
+        "reason": "The passage is not a retained proof.",
+    }
+    if ownership == "missing":
+        payload["relationships"] = [
+            item
+            for item in payload["relationships"]
+            if not (item["from"] == "proof-sketch" and item["type"] == "proves")
+        ]
+    else:
+        payload["relationships"].append(
+            {
+                **payload["relationships"][3],
+                "evidence_ids": ["pool::e8"],
+                "hint_ids": ["pool::h8"],
+            }
+        )
+
+    with pytest.raises(ValueError, match="exactly one proves target"):
+        normalize_proof_entities(payload, decisions)
 
 
 def test_candidate_free_created_result_target_projects_inventory_and_compiles() -> None:
@@ -604,6 +650,19 @@ def test_provenance_schema_strictly_validates_proof_entity_provenance() -> None:
     unknown_provenance["proof_entities"][0]["invented"] = True
     with pytest.raises(ValidationError):
         validator.validate(unknown_provenance)
+
+
+def test_decisions_schema_requires_complete_input_identity() -> None:
+    """A schema-valid worker artifact must remain bound to its assigned packet."""
+
+    schema = json.loads((SKILL_DIR / "proof-normalization.schema.json").read_text(encoding="utf-8"))
+    validator = Draft202012Validator(schema)
+    decisions = _decisions()
+    validator.validate(decisions)
+    del decisions["input_identity"]["packet_payload_sha256"]
+
+    with pytest.raises(ValidationError):
+        validator.validate(decisions)
 
 
 def test_final_inventory_provenance_validates_against_schema() -> None:
@@ -861,7 +920,8 @@ def test_proof_free_input_is_an_exact_semantic_identity() -> None:
 
     normalized, report = normalize_proof_entities(
         semantic,
-        {"document_kind": "proof-normalization-decisions", "ir_version": 1, "decisions": []},
+        {"document_kind": "proof-normalization-decisions", "ir_version": 1,
+         "input_identity": _input_identity(), "decisions": []},
     )
 
     assert normalized == expected

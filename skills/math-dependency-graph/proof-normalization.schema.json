@@ -9,6 +9,18 @@
   ],
   "$defs": {
     "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "input_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["semantic_ir_sha256", "inventory_sha256", "source_sha256", "packet_payload_sha256"],
+      "properties": {
+        "semantic_ir_sha256": {"$ref": "#/$defs/sha256"},
+        "inventory_sha256": {"$ref": "#/$defs/sha256"},
+        "source_sha256": {"$ref": "#/$defs/sha256"},
+        "packet_payload_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
     "qualified_evidence_id": {"type": "string", "pattern": "^[^:]+::e[1-9][0-9]*$"},
     "qualified_hint_id": {"type": "string", "pattern": "^[^:]+::h[1-9][0-9]*$"},
     "qualified_reference_id": {"type": "string", "pattern": "^[^:]+::r[1-9][0-9]*$"},
@@ -79,10 +91,11 @@
     "decisions_document": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["document_kind", "ir_version", "decisions"],
+      "required": ["document_kind", "ir_version", "input_identity", "decisions"],
       "properties": {
         "document_kind": {"const": "proof-normalization-decisions"},
         "ir_version": {"const": 1},
+        "input_identity": {"$ref": "#/$defs/input_identity"},
         "decisions": {"type": "array", "items": {"$ref": "#/$defs/decision"}}
       }
     },

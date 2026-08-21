@@ -6,9 +6,9 @@ Read one bounded proof-centered packet, then write exhaustive proof-normalizatio
 
 ## Bounded inputs and output
 
-Read the assigned packet and `proof-normalization.schema.json` completely. Require the packet to carry its controller-recorded semantic-IR identity and immutable source identity. The packet contains only registered proof candidates, proposed targets, incident relationships, exact registered source ranges, and necessary neighboring entity identities. It is the complete evidence boundary: do not open the controller's whole transitional semantic IR, rescan the paper, open unregistered ranges, or use adjacency outside the packet.
+Read the assigned packet and `proof-normalization.schema.json` completely. Require the packet to carry `input_identity` with the controller-recorded semantic IR, pooled inventory, immutable source, and bounded packet-payload hashes. Copy that object byte-for-byte by value into the decisions document as `input_identity`; do not recompute, omit, or alter any hash. The packet contains only registered proof candidates, proposed targets, incident relationships, exact registered source ranges, and necessary neighboring entity identities. It is the complete evidence boundary: do not open the controller's whole transitional semantic IR, rescan the paper, open unregistered ranges, or use adjacency outside the packet.
 
-Write one object with `document_kind: "proof-normalization-decisions"`, `ir_version: 1`, and a `decisions` array that validates against `proof-normalization.schema.json`. Return only the assigned decisions-output path. The runtime, not this interface, produces the normalized semantic IR and provenance report.
+Write one object with `document_kind: "proof-normalization-decisions"`, `ir_version: 1`, the packet's exact `input_identity`, and a `decisions` array that validates against `proof-normalization.schema.json`. Return only the assigned decisions-output path. The runtime, not this interface, produces the normalized semantic IR and provenance report.
 
 Append bounded actual-clock progress lines to the assigned stable progress path using only timestamps, milestone names, and integer counters. A retry reuses the path and appends without needing to read prior lines. Do not put source text, semantic decisions, or reasoning in progress output.
 
@@ -49,6 +49,6 @@ Before writing output:
 3. Confirm complementary informal and formal presentations share a bundle only with registered continuation or argument-compatibility evidence.
 4. Confirm alternative proof bundles remain separate when their arguments materially differ.
 5. Confirm excluded irrelevant prose is reasoned from registered evidence and no accepted proof or dependency was invented.
-6. Validate the decisions object against `proof-normalization.schema.json`.
+6. Confirm `input_identity` exactly equals the packet value, then validate the decisions object against `proof-normalization.schema.json`.
 
 Return only the decisions-output path. On ambiguous ownership, inconsistent registered evidence, incomplete accounting, or schema failure, return task failure rather than an approximate decisions object.

@@ -17,6 +17,7 @@ from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]*$")
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _QUALIFIED_ID_RE = {
     "evidence": re.compile(r"^[^:]+::e[1-9][0-9]*$"),
     "hint": re.compile(r"^[^:]+::h[1-9][0-9]*$"),
@@ -168,12 +169,41 @@ def validate_normalized_semantic_profile(payload: object) -> None:
             raise ValueError("normalized semantic profile rejects transitional proves relationship")
 
 
+def _validate_input_identity(identity: object) -> dict:
+    record = _require_keys(
+        identity,
+        {
+            "semantic_ir_sha256",
+            "inventory_sha256",
+            "source_sha256",
+            "packet_payload_sha256",
+        },
+        {
+            "semantic_ir_sha256",
+            "inventory_sha256",
+            "source_sha256",
+            "packet_payload_sha256",
+        },
+        "proof-normalization input identity",
+    )
+    for name, value in record.items():
+        if not isinstance(value, str) or _SHA256_RE.fullmatch(value) is None:
+            raise ValueError(f"proof-normalization input identity {name} must be sha256")
+    return record
+
+
 def _validate_decisions(decisions: object, proof_ids: set[str]) -> dict[str, dict]:
     if not isinstance(decisions, dict) or decisions.get("document_kind") != "proof-normalization-decisions":
         raise ValueError("proof-normalization decisions must be a decisions document")
-    _require_keys(decisions, {"document_kind", "ir_version", "decisions"}, {"document_kind", "ir_version", "decisions"}, "proof-normalization decisions")
+    _require_keys(
+        decisions,
+        {"document_kind", "ir_version", "input_identity", "decisions"},
+        {"document_kind", "ir_version", "input_identity", "decisions"},
+        "proof-normalization decisions",
+    )
     if decisions["ir_version"] != 1 or not isinstance(decisions["decisions"], list):
         raise ValueError("proof-normalization decisions have invalid version or records")
+    _validate_input_identity(decisions["input_identity"])
     indexed: dict[str, dict] = {}
     for index, decision in enumerate(decisions["decisions"]):
         decision = _require_keys(decision, {"proof_id", "disposition", "reason"}, {"proof_id", "disposition", "bundle_id", "target_id", "reason"}, f"proof decision {index}")
@@ -203,12 +233,11 @@ def _relationship_snapshot(relationship: dict) -> dict:
     return deepcopy(relationship)
 
 
-def _validate_proof_ownership(
-    semantic_ir: dict,
-    proof_ids: set[str],
-    decisions: dict[str, dict],
-) -> dict[str, dict]:
+def validate_transitional_proof_ownership(semantic_ir: dict) -> dict[str, dict]:
+    """Require one eligible target for every transitional proof entity."""
+
     entities = {entity["id"]: entity for entity in semantic_ir["entities"]}
+    proof_ids = {identifier for identifier, entity in entities.items() if entity["type"] == "proof"}
     outgoing: dict[str, list[dict]] = {proof_id: [] for proof_id in proof_ids}
     for relationship in semantic_ir["relationships"]:
         source = relationship["from"]
@@ -228,14 +257,24 @@ def _validate_proof_ownership(
         elif source in proof_ids:
             raise ValueError(f"unrelated outgoing proof edge: {source} -> {target}")
 
+    for proof_id, edges in outgoing.items():
+        if len(edges) != 1:
+            raise ValueError(f"proof must have exactly one proves target: {proof_id}")
+    return {proof_id: edges[0] for proof_id, edges in outgoing.items()}
+
+
+def _validate_proof_ownership(
+    semantic_ir: dict,
+    proof_ids: set[str],
+    decisions: dict[str, dict],
+) -> dict[str, dict]:
+    outgoing = validate_transitional_proof_ownership(semantic_ir)
+
     accepted: dict[str, dict] = {}
     for proof_id, decision in decisions.items():
-        edges = outgoing[proof_id]
         if decision["disposition"] == "excluded":
             continue
-        if len(edges) != 1:
-            raise ValueError(f"accepted proof must have exactly one proves target: {proof_id}")
-        edge = edges[0]
+        edge = outgoing[proof_id]
         if edge["to"] != decision["target_id"]:
             raise ValueError(f"proof decision target disagrees with proves relationship: {proof_id}")
         accepted[proof_id] = edge

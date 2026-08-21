@@ -30,6 +30,7 @@
       "items": {"$ref": "#/$defs/validation_issue"}
     },
     "counts": {"$ref": "#/$defs/aggregate_counts"},
+    "proof_metrics": {"$ref": "#/$defs/proof_metrics"},
     "iterator": {"$ref": "#/$defs/iterator"}
   },
   "$defs": {
@@ -413,10 +414,50 @@
         "gaps": {"type": "integer", "minimum": 0},
         "macros": {"type": "integer", "minimum": 0},
         "proof_entities": {"type": "integer", "minimum": 0},
+        "accepted_proofs": {"type": "integer", "minimum": 0},
         "proof_bundles": {"type": "integer", "minimum": 0},
+        "alternative_bundles": {"type": "integer", "minimum": 0},
         "proof_targets": {"type": "integer", "minimum": 0},
         "proof_exclusions": {"type": "integer", "minimum": 0},
-        "redirected_relationships": {"type": "integer", "minimum": 0}
+        "redirected_relationships": {"type": "integer", "minimum": 0},
+        "total_redirected_relationships": {"type": "integer", "minimum": 0}
+      }
+    },
+    "proof_route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["proof_id", "bundle_id", "evidence_ids"],
+      "properties": {
+        "proof_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"},
+        "bundle_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"},
+        "evidence_ids": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^[^:]+::e[1-9][0-9]*$"}
+        }
+      }
+    },
+    "redirected_relationship_metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to", "type", "proof_ids", "bundle_ids", "routes"],
+      "properties": {
+        "from": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"},
+        "to": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"},
+        "type": {"enum": ["supports", "illustrated-by"]},
+        "proof_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"}},
+        "bundle_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"}},
+        "routes": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/proof_route"}}
+      }
+    },
+    "proof_metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["accepted_proofs", "alternative_bundles", "total_redirected_relationships", "redirected_relationships"],
+      "properties": {
+        "accepted_proofs": {"type": "integer", "minimum": 0},
+        "alternative_bundles": {"type": "integer", "minimum": 0},
+        "total_redirected_relationships": {"type": "integer", "minimum": 0},
+        "redirected_relationships": {"type": "array", "items": {"$ref": "#/$defs/redirected_relationship_metric"}}
       }
     },
     "artifact": {

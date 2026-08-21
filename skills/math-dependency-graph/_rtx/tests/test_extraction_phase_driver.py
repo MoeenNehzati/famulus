@@ -1242,6 +1242,42 @@ def test_finalize_extract_routes_proof_ir_to_one_reconciliation_worker(
     assert RunDiagnostics.open(tmp_path).payload["run"]["status"] == "running"
 
 
+@pytest.mark.parametrize("ownership", ["missing", "multiple", "invalid-target"])
+def test_finalize_extract_corrects_invalid_proof_ownership_before_reconciliation(
+    tmp_path: Path, ownership: str
+) -> None:
+    """Record-local proof targeting defects belong to extraction correction."""
+
+    manifest, _inventory_path, fragment_path = _install_proof_run(tmp_path)
+    semantic = json.loads(fragment_path.read_text(encoding="utf-8"))
+    if ownership == "missing":
+        semantic["relationships"] = [
+            item
+            for item in semantic["relationships"]
+            if not (item["from"] == "proof-sketch" and item["type"] == "proves")
+        ]
+    elif ownership == "multiple":
+        semantic["relationships"].append(
+            {
+                **semantic["relationships"][3],
+                "hint_ids": [],
+                "evidence_ids": ["pool::e4"],
+            }
+        )
+    else:
+        semantic["relationships"][3]["to"] = "assumption-a"
+    _write_json(fragment_path, semantic)
+
+    report = driver.finalize_extract(manifest, tmp_path, None)
+
+    assert report["status"] == "correction-required"
+    assert any(
+        item["code"] == "proof-ownership"
+        for item in report["validation_diagnostics"]
+    )
+    assert not (tmp_path / "proof-reconciliation-packet.json").exists()
+
+
 def test_finalize_proofs_normalizes_then_compiles_once_and_finishes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1252,6 +1288,7 @@ def test_finalize_proofs_normalizes_then_compiles_once_and_finishes(
     manifest, _inventory_path, _fragment = _install_proof_run(tmp_path)
     first = driver.finalize_extract(manifest, tmp_path, None)
     decisions = _decisions()
+    decisions["input_identity"] = first["next_job"]["input_identity"]
     decisions["decisions"].append(
         {
             "proof_id": "proof-alternative",
@@ -1297,10 +1334,32 @@ def test_finalize_proofs_normalizes_then_compiles_once_and_finishes(
     )
     assert provenance_artifact["counts"] == {
         "proof_entities": 3,
+        "accepted_proofs": 3,
         "proof_bundles": 2,
+        "alternative_bundles": 2,
         "proof_targets": 1,
         "proof_exclusions": 0,
         "redirected_relationships": 1,
+        "total_redirected_relationships": 1,
+    }
+    assert diagnostics["proof_metrics"] == {
+        "accepted_proofs": 3,
+        "alternative_bundles": 2,
+        "total_redirected_relationships": 1,
+        "redirected_relationships": [
+            {
+                "from": "assumption-a",
+                "to": "result-r",
+                "type": "supports",
+                "proof_ids": ["proof-formal", "proof-sketch", "proof-alternative"],
+                "bundle_ids": ["bundle-r-main", "bundle-r-alternative"],
+                "routes": [
+                    {"proof_id": "proof-formal", "bundle_id": "bundle-r-main", "evidence_ids": ["pool::e1"]},
+                    {"proof_id": "proof-sketch", "bundle_id": "bundle-r-main", "evidence_ids": ["pool::e2"]},
+                    {"proof_id": "proof-alternative", "bundle_id": "bundle-r-alternative", "evidence_ids": ["pool::e6"]},
+                ],
+            }
+        ],
     }
 
 
@@ -1312,6 +1371,7 @@ def test_invalid_proof_decisions_return_one_immutable_retry(tmp_path: Path) -> N
     decisions = {
         "document_kind": "proof-normalization-decisions",
         "ir_version": 1,
+        "input_identity": first["next_job"]["input_identity"],
         "decisions": [],
     }
     decision_path = Path(first["next_job"]["output"])
@@ -1324,8 +1384,85 @@ def test_invalid_proof_decisions_return_one_immutable_retry(tmp_path: Path) -> N
     assert report["status"] == "proof-reconciliation-retry-required"
     assert "semantic_ir" not in report["next_job"]
     assert report["next_job"]["packet"] == first["next_job"]["packet"]
+    assert report["next_job"]["input_identity"] == first["next_job"]["input_identity"]
     assert report["next_job"]["output"].endswith("proof-reconciliation-001-retry-001.json")
     assert RunDiagnostics.open(tmp_path).payload["run"]["status"] == "running"
+
+
+@pytest.mark.parametrize("artifact", ["semantic", "inventory", "source", "packet"])
+def test_finalize_proofs_rejects_mutated_original_inputs(
+    tmp_path: Path, artifact: str
+) -> None:
+    """A worker result cannot normalize against artifacts changed after assignment."""
+
+    from test_proof_normalizer import _decisions
+
+    manifest, inventory_path, _fragment = _install_proof_run(tmp_path)
+    first = driver.finalize_extract(manifest, tmp_path, None)
+    decisions = _decisions()
+    decisions["input_identity"] = first["next_job"]["input_identity"]
+    decision_path = Path(first["next_job"]["output"])
+    _write_json(decision_path, decisions)
+    decision_manifest = tmp_path / "proof-decisions-manifest.json"
+    _write_json(decision_manifest, {"fragments": [str(decision_path)]})
+    targets = {
+        "semantic": tmp_path / "semantic-ir.json",
+        "inventory": inventory_path,
+        "source": tmp_path / "source-packet.txt",
+        "packet": Path(first["next_job"]["packet"]),
+    }
+    with targets[artifact].open("ab") as stream:
+        stream.write(b"\n")
+
+    with pytest.raises(ValueError, match="identity"):
+        driver.finalize_proofs(decision_manifest, tmp_path, None)
+
+
+def test_finalize_proofs_rejects_replayed_decision_identity(tmp_path: Path) -> None:
+    """Decisions from another immutable packet must not be accepted or retried."""
+
+    from test_proof_normalizer import _decisions
+
+    manifest, _inventory_path, _fragment = _install_proof_run(tmp_path)
+    first = driver.finalize_extract(manifest, tmp_path, None)
+    decisions = _decisions()
+    decisions["input_identity"] = {
+        **first["next_job"]["input_identity"],
+        "packet_payload_sha256": "f" * 64,
+    }
+    decision_path = Path(first["next_job"]["output"])
+    _write_json(decision_path, decisions)
+    decision_manifest = tmp_path / "proof-decisions-manifest.json"
+    _write_json(decision_manifest, {"fragments": [str(decision_path)]})
+
+    with pytest.raises(ValueError, match="decision input identity"):
+        driver.finalize_proofs(decision_manifest, tmp_path, None)
+
+
+def test_finalize_proofs_rejects_replayed_stored_artifact_path(tmp_path: Path) -> None:
+    """The stored tuple must remain bound to this run's canonical artifact paths."""
+
+    from test_proof_normalizer import _decisions
+
+    manifest, _inventory_path, _fragment = _install_proof_run(tmp_path)
+    first = driver.finalize_extract(manifest, tmp_path, None)
+    decisions = _decisions()
+    decisions["input_identity"] = first["next_job"]["input_identity"]
+    decision_path = Path(first["next_job"]["output"])
+    _write_json(decision_path, decisions)
+    decision_manifest = tmp_path / "proof-decisions-manifest.json"
+    _write_json(decision_manifest, {"fragments": [str(decision_path)]})
+    replay_path = tmp_path / "replayed-semantic-ir.json"
+    replay_path.write_bytes((tmp_path / "semantic-ir.json").read_bytes())
+    state_path = tmp_path / "run-state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["proof_reconciliation_original"]["artifacts"]["semantic_ir"]["path"] = str(
+        replay_path
+    )
+    _write_json(state_path, state)
+
+    with pytest.raises(ValueError, match="artifact path identity"):
+        driver.finalize_proofs(decision_manifest, tmp_path, None)
 
 
 def test_malformed_proof_decisions_return_the_same_bounded_retry(tmp_path: Path) -> None:
