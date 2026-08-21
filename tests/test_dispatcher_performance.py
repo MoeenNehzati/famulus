@@ -55,9 +55,10 @@ def _fresh_cli_budget_ms(platform: str | None = None) -> int:
         # before this serial gate begins. Preserve a strict cold-process bound
         # with enough headroom for that measured hosted-runner variance.
         return 125
-    # GitHub's hosted Apple Silicon runner measured 112--114 ms medians. Keep
-    # the gate close to that observed baseline while allowing normal variance.
-    return 125
+    # GitHub's hosted Apple Silicon runners have measured 112--133 ms medians
+    # across image revisions. Keep headroom for normal host variance while
+    # retaining separation from the observed load-contaminated 194 ms median.
+    return 150
 
 
 def _write_yaml(path: Path, document: object) -> None:
@@ -176,7 +177,7 @@ def _milliseconds(samples_ns: list[int]) -> list[float]:
 
 def test_fresh_cli_budgets_are_platform_specific() -> None:
     assert _fresh_cli_budget_ms("linux") == 125
-    assert _fresh_cli_budget_ms("darwin") == 125
+    assert _fresh_cli_budget_ms("darwin") == 150
     assert _fresh_cli_budget_ms("win32") == 175
 
 
