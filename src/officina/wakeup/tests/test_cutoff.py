@@ -16,7 +16,6 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -251,9 +250,7 @@ def test_codex_refusal_reads_its_reset_from_local_time_prose(tmp_path: Path) -> 
     cut = detect_cutoff("codex", transcript, CODEX_SESSION)
 
     assert cut is not None
-    assert cut.reset_at == datetime(
-        2026, 8, 20, 12, 16, tzinfo=ZoneInfo("America/New_York")
-    ).astimezone(timezone.utc)
+    assert cut.reset_at == datetime(2026, 8, 20, 12, 16).astimezone(timezone.utc)
     assert cut.abandoned
 
 
