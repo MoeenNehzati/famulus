@@ -112,6 +112,7 @@ def test_run_installs_only_selected_agents(tmp_path):
 def test_run_copies_windows_agent_launcher_files(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "platform", "win32")
     monkeypatch.setattr(launchers, "_ensure_assistant_default_windows", lambda *args, **kwargs: None)
+    monkeypatch.setattr(launchers, "verify_install", lambda *_args, **_kwargs: True)
     repo_root = _make_repo(tmp_path)
     bin_dir = tmp_path / "bin"
 
@@ -256,6 +257,7 @@ def test_run_sets_assistant_default_in_rc(tmp_path):
 
 def test_run_sets_assistant_default_via_windows_registry(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(launchers, "verify_install", lambda *_args, **_kwargs: True)
     registry_calls = []
     monkeypatch.setattr(
         launchers,
