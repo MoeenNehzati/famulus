@@ -6,7 +6,6 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
-from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -82,9 +81,9 @@ def test_provider_adapters_cover_discovery_progress_resume_and_limits(
     codex_limit = codex.rate_limit(codex_event)
     assert codex_limit is not None
     # 12:16 PM in the machine's local zone, stated only as English prose.
-    assert codex_limit.reset_at == datetime(
-        2026, 8, 20, 12, 16, tzinfo=ZoneInfo("America/New_York")
-    ).astimezone(timezone.utc)
+    assert codex_limit.reset_at == datetime(2026, 8, 20, 12, 16).astimezone(
+        timezone.utc
+    )
     assert codex.resume_command("/bin/provider", "id", "continue") == [
         "/bin/provider",
         "--ask-for-approval",
@@ -147,9 +146,7 @@ def test_latest_rate_limit_understands_real_codex_refusal_shape(
 
     assert limit.provider == "codex"
     assert limit.session_id == session_id
-    assert limit.reset_at == datetime(
-        2026, 8, 20, 12, 16, tzinfo=ZoneInfo("America/New_York")
-    ).astimezone(timezone.utc)
+    assert limit.reset_at == datetime(2026, 8, 20, 12, 16).astimezone(timezone.utc)
 
 
 def test_default_delay_is_one_minute_and_can_be_overridden() -> None:

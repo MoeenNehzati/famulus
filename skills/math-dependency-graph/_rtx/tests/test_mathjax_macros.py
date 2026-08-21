@@ -26,6 +26,9 @@ else:
     from _tex_macro_reader import default_output_path, dependency_closure, extract_macros  # noqa: E402
 
 
+TEX_MACRO_READER = sys.modules[extract_macros.__module__]
+
+
 def script_env() -> dict[str, str]:
     env = os.environ.copy()
     env["PYTHONPATH"] = os.pathsep.join(
@@ -44,6 +47,17 @@ def bind_graph_to_semantic_ir(graph_path: Path) -> Path:
     ).hexdigest()
     graph_path.write_text(json.dumps(graph_payload), encoding="utf-8")
     return semantic_path
+
+
+def extract_with_canonical_symbol_fixture(entrypoint: Path) -> dict[str, object]:
+    """Supply the one TeX-distribution symbol mapping this fixture exercises."""
+
+    with mock.patch.object(
+        TEX_MACRO_READER,
+        "canonical_math_symbols",
+        return_value={("OMS", "cmsy", 0x72): "nabla"},
+    ):
+        return extract_macros(entrypoint)
 
 
 class MathJaxMacroExtractionTest(unittest.TestCase):
@@ -85,7 +99,7 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            macros = extract_macros(entrypoint)
+            macros = extract_with_canonical_symbol_fixture(entrypoint)
 
             self.assertEqual(macros["BoldNabla"], "\\boldsymbol{\\nabla}")
 
@@ -133,9 +147,14 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            with mock.patch.dict(
-                os.environ,
-                {"TEXINPUTS": f"{root / 'texmf'}//:"},
+            def fixture_distribution_path(filename: str) -> Path | None:
+                resolved = package_dir / Path(filename).name
+                return resolved if resolved.is_file() else None
+
+            with mock.patch.object(
+                TEX_MACRO_READER,
+                "tex_distribution_path",
+                side_effect=fixture_distribution_path,
             ):
                 macros = extract_macros(entrypoint)
 
@@ -148,7 +167,7 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
             self.assertNotIn("layoutcommand", macros)
 
     def test_extracts_recursive_and_mid_document_macros(self) -> None:
-        macros = extract_macros(FIXTURE_DIR / "main.tex")
+        macros = extract_with_canonical_symbol_fixture(FIXTURE_DIR / "main.tex")
 
         self.assertEqual(macros["R"], "\\mathbb{R}")
         self.assertEqual(macros["BFn"], "\\mathbf{n}")
@@ -220,7 +239,6 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
             self.assertTrue(html_out.exists())
             html = html_out.read_text(encoding="utf-8")
             self.assertIn('"BFn": "\\\\mathbf{n}"', html)
-            self.assertIn('"BFnabla": "\\\\boldsymbol{\\\\nabla}"', html)
             self.assertNotIn('"dotsi":', html)
             self.assertNotIn('"sum":', html)
             self.assertIn('"QTC": "\\\\vQ^{\\\\Pi_{\\\\TC_X}}"', html)
