@@ -70,6 +70,27 @@ def test_experimental_playbook_adjudicates_discrepancies_before_designing_fixes(
     assert "rendered HTML" not in text
 
 
+def test_experimental_playbook_measures_proof_reconciliation_without_leaking_gold() -> None:
+    """Proof normalization is a distinct measured production stage, never evaluator context."""
+
+    text = (SKILL_DIR / "references" / "experimental-improvement.md").read_text(
+        encoding="utf-8"
+    ).lower()
+    for phrase in (
+        "proof-reconciliation worker",
+        "proof target",
+        "proof bundle",
+        "proof provenance",
+        "normalization stage",
+        "model id",
+        "queue time",
+        "worker time",
+    ):
+        assert phrase in text
+    assert "graph workers are context-free" in text
+    assert "evaluator sees both artifacts" in text
+
+
 def test_gold_playbook_requires_canonical_evidence_audit_and_render() -> None:
     """Gold construction must be independent, canonical, evidenced, and inspectable."""
 

@@ -2,15 +2,15 @@
 
 ## Goal
 
-Read one bounded proof-centered packet and its matching transitional semantic IR, then write exhaustive proof-normalization decisions. Group complementary proof fragments that present the same argument, preserve genuinely alternative proof bundles, resolve only source-grounded ownership, and exclude registered proof-like prose that does not qualify. This interface makes semantic judgments only; deterministic normalization applies the decisions later.
+Read one bounded proof-centered packet, then write exhaustive proof-normalization decisions. Group complementary proof fragments that present the same argument, preserve genuinely alternative proof bundles, resolve only source-grounded ownership, and exclude registered proof-like prose that does not qualify. This interface makes semantic judgments only; deterministic normalization applies the decisions later.
 
 ## Bounded inputs and output
 
-Read the assigned packet, semantic IR, `proof-normalization.schema.json`, and progress path completely. Require the packet to identify the same semantic IR and immutable source identity supplied by the job. The packet contains only registered proof candidates, proposed targets, incident relationships, exact registered source ranges, and necessary neighboring entity identities. It is the complete evidence boundary: do not rescan the paper, open unregistered ranges, or use adjacency outside the packet.
+Read the assigned packet and `proof-normalization.schema.json` completely. Require the packet to carry its controller-recorded semantic-IR identity and immutable source identity. The packet contains only registered proof candidates, proposed targets, incident relationships, exact registered source ranges, and necessary neighboring entity identities. It is the complete evidence boundary: do not open the controller's whole transitional semantic IR, rescan the paper, open unregistered ranges, or use adjacency outside the packet.
 
 Write one object with `document_kind: "proof-normalization-decisions"`, `ir_version: 1`, and a `decisions` array that validates against `proof-normalization.schema.json`. Return only the assigned decisions-output path. The runtime, not this interface, produces the normalized semantic IR and provenance report.
 
-Append bounded actual-clock progress lines to the assigned progress path using only timestamps, milestone names, and integer counters. Do not put source text, semantic decisions, or reasoning in progress output.
+Append bounded actual-clock progress lines to the assigned stable progress path using only timestamps, milestone names, and integer counters. A retry reuses the path and appends without needing to read prior lines. Do not put source text, semantic decisions, or reasoning in progress output.
 
 ## Registered evidence boundary
 

@@ -10,15 +10,16 @@ description: >-
 Catalog: research; topics: mathematical-reasoning, visualization, scholarly-documents; visibility: featured
 Activation: user-request, skill-workflow; persistent modifier: no
 
-Skill Version: 78
+Skill Version: 79
 
 Uses Interfaces:
-- `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-advance-extraction-phases@24`
+- `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-advance-extraction-phases@25`
 - `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-next-inventory-unit@3`
-- `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-record-run-diagnostics@7`
+- `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-record-run-diagnostics@8`
 - `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator@5`
 - `math-dependency-graph.source.gateway -> math-dependency-graph.interface.extract@27`
 - `math-dependency-graph.source.gateway -> math-dependency-graph.interface.inventory@34`
+- `math-dependency-graph.source.gateway -> math-dependency-graph.interface.proof-reconciliation@2`
 - `math-dependency-graph.source.instructions-inventory -> math-dependency-graph._rtx.interface.scripts-next-inventory-unit@3`
 
 Public Interfaces:
@@ -42,7 +43,7 @@ These interfaces are documented prompt surfaces. They are not executed through `
 
 # Mathematical Dependency Graph
 
-The gateway orchestrates one canonical semantic pipeline: inventory -> extract -> compile -> render. It invokes interfaces and schedules workers; it does not restate or perform the mathematical judgments owned by `inventory` and `extract`.
+The gateway orchestrates one canonical semantic pipeline: inventory -> extract -> optional proof reconciliation -> deterministic normalization -> compile -> render. It invokes interfaces and schedules workers; it does not restate or perform the mathematical judgments owned by `inventory`, `extract`, and `proof-reconciliation`.
 
 Use a fresh empty run directory and never reuse an earlier inventory, semantic IR, graph JSON, or HTML artifact. Use only absolute paths returned by process-interface reports. A worker writes its assigned JSON directly; the gateway never generates semantic records with code or bulk transformations.
 
@@ -62,9 +63,13 @@ Use a fresh empty run directory and never reuse an earlier inventory, semantic I
 
 4. **Extract.** Launch exactly one fresh worker from the returned `next_job`, passing its instruction, schema, base, packet, sidecar, immutable source snapshot, retained entrypoint, progress, and output paths exactly. Require every attempt to append bounded actual-clock milestones to the stable `progress_path`; full retries reuse it. Record `worker-queued`, `worker-started`, and `worker-finished` as above with `--phase extract`, the exact model identifier, and an allowlisted retry code on every later attempt. Write the successful output path to the extract manifest.
 
-5. **Finalize.** Invoke `math-dependency-graph._rtx.interface.scripts-advance-extraction-phases finalize-extract <extract-manifest> --run-dir <run-dir> [--html <path>]` and require the report to name the same diagnostics path. A successful final report validates, compiles, renders, and performs the sole diagnostics `finish` event; do not issue another `finish` event. If the report instead has `status: "correction-required"`, the run remains open: schedule only its returned `next_job`, pass the diagnostic, persisted repair base, pooled inventory, immutable extract inputs, entrypoint, repair schema, progress, and output paths exactly, and record the same queued/started/finished lifecycle with `--phase extract`. The correction appends to the same stable progress sidecar. Submit that output in a new manifest to `finalize-extract`. If the diagnostic is not record-local, rerun the single extract job from its immutable inputs instead of submitting a repair.
+5. **Finalize extraction and reconcile proofs when present.** Invoke `math-dependency-graph._rtx.interface.scripts-advance-extraction-phases finalize-extract <extract-manifest> --run-dir <run-dir> [--html <path>]` and require the report to name the same diagnostics path. A proof-free successful final report preserves the existing behavior: it validates, compiles, renders, and performs the sole diagnostics `finish` event; do not issue another `finish` event. If the report instead has `status: "correction-required"`, the run remains open: schedule only its returned `next_job`, pass the diagnostic, persisted repair base, pooled inventory, immutable extract inputs, entrypoint, repair schema, progress, and output paths exactly, and record the same queued/started/finished lifecycle with `--phase extract`. The correction appends to the same stable progress sidecar. Submit that output in a new manifest to `finalize-extract`. If the diagnostic is not record-local, rerun the single extract job from its immutable inputs instead of submitting a repair.
 
-6. **Verify and report.** Require nonempty semantic IR, graph JSON, and HTML artifacts and a schema-valid diagnostics report with final status `success`. Report the diagnostics path and its latest-stage summary; inventory and extract job counts; exact models; retries and retry codes; queue, worker, stage, initialization, and total durations; artifact paths, sizes, hashes, and counts; every per-fragment ratio, the aggregate canonical-fragment ratio, and the remaining physical/pipeline ratios; final entity, relationship, exclusion, unresolved, and gap counts; represented source scope; and genuine unresolved gaps. Never conflate the aggregate canonical-to-owned ratio with physical pooled-inventory-to-active-source bytes. Use the durable report rather than reconstructed console timing.
+   If finalization returns `status: "proof-reconciliation-required"`, launch exactly one fresh proof-reconciliation worker through `math-dependency-graph.interface.proof-reconciliation`, using only the returned bounded proof packet, normalization schema, stable progress path, decisions-output path, and immutable identity hashes. Do not give this worker the whole transitional semantic IR, pooled inventory, broader source snapshot, coordinate sidecar, or any gold, benchmark, evaluator, prior-pass, or controller context. Record `worker-queued`, `worker-started`, and `worker-finished` with `--phase proof-reconciliation` and the exact model identifier. Submit the successful decisions path in a one-fragment manifest to `math-dependency-graph._rtx.interface.scripts-advance-extraction-phases finalize-proofs <proof-decisions-manifest> --run-dir <run-dir> [--html <path>]`.
+
+   A successful `finalize-proofs` report validates exhaustive decisions, deterministically normalizes proof entities into a proof-free semantic IR and compiler-facing inventory, preserves proof bundle and redirected-edge provenance, compiles, renders, and performs the sole diagnostics `finish`. If it returns `status: "proof-reconciliation-retry-required"`, launch only its returned job as the one bounded retry from the same immutable bounded packet, identity hashes, and stable progress path; record `validation-failed` on the retry lifecycle, then resubmit its output to `finalize-proofs`. Do not regroup proofs or choose targets in the gateway. A second invalid or ambiguous result fails closed.
+
+6. **Verify and report.** Require nonempty normalized semantic IR, graph JSON, and HTML artifacts and a schema-valid diagnostics report with final status `success`. Report the diagnostics path and its latest-stage summary; inventory, extract, and proof-reconciliation job counts; exact models; retries and retry codes; queue, worker, normalization-stage, other deterministic-stage, initialization, and total durations; artifact paths, sizes, hashes, and counts; proof target, proof bundle, redirected dependency, and proof provenance counts when present; every per-fragment ratio, the aggregate canonical-fragment ratio, and the remaining physical/pipeline ratios; final proof-free entity, relationship, exclusion, unresolved, and gap counts; represented source scope; and genuine unresolved gaps. Never conflate the aggregate canonical-to-owned ratio with physical pooled-inventory-to-active-source bytes. Use the durable report rather than reconstructed console timing.
 
 If a diagnostics update fails, stop: an unmeasured run is not a successful run. Invalid semantic output never reaches compile or render, and deterministic finalization never supplies missing mathematical content.
 

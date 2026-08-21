@@ -1,7 +1,7 @@
 schema_version: 6
 node_type: behavioral_source
 id: math-dependency-graph.source.instructions-proof-reconciliation
-version: 1
+version: 2
 maturity: experimental
 description: Reconciles registered proof-centered evidence into exhaustive semantic
   decisions for deterministic proof normalization.
@@ -14,7 +14,7 @@ dependencies: []
 uses_interfaces: []
 interfaces:
   math-dependency-graph.source.instructions-proof-reconciliation.interface.proof-reconciliation:
-    version: 1
+    version: 2
     description: Group complementary proof fragments, preserve alternative proofs,
       resolve source-grounded targets, and exhaustively decide every registered proof.
     content:
@@ -44,24 +44,9 @@ interfaces:
             content_type:
               kind: string
               sensitivity: user-private
-        semantic-ir:
-          description: Matching schema-valid transitional semantic IR containing the proof entities
-            and incident relationships to decide.
-          direct_io_ref: read-2
-          required: true
-          sensitivity: derived-private
-          type:
-            kind: file
-            access: read
-            must_exist: true
-            relative_to: caller-cwd
-            syntax: literal
-            content_type:
-              kind: string
-              sensitivity: derived-private
         normalization-schema:
           description: Skill-owned proof-normalization decisions and provenance schema.
-          direct_io_ref: read-3
+          direct_io_ref: read-2
           required: true
           sensitivity: public
           type:
@@ -119,15 +104,6 @@ interfaces:
         - id: read-2
           medium: local-filesystem
           access: read
-          content: matching schema-valid transitional semantic IR
-          formats: [json]
-          path: <semantic-ir>
-          path_match: exact
-          sensitivity: derived-private
-          system: filesystem
-        - id: read-3
-          medium: local-filesystem
-          access: read
           content: skill-owned proof-normalization decision and report schema
           formats: [json]
           path: <normalization-schema>
@@ -162,8 +138,8 @@ interfaces:
           system: filesystem
       execution:
         consistency:
-          snapshot: Every decision uses one bounded proof-centered packet and its matching
-            transitional semantic IR; no unregistered source range, entity, dependency,
+          snapshot: Every decision uses one bounded proof-centered packet carrying the
+            controller-recorded semantic IR identity; no unregistered source range, entity, dependency,
             or target enters the judgment boundary.
         effects:
         - id: decisions-write
@@ -198,7 +174,7 @@ interfaces:
           concurrent_invocations:
             unsafe: Concurrent reconciliation to the same destination can overwrite an artifact.
           idempotency:
-            idempotent: Reconciliation of the same bounded packet and semantic IR produces
+            idempotent: Reconciliation of the same bounded packet produces
               an equivalent exhaustive decision partition.
           on_uncertain_completion:
             verify_then_decide: Validate the requested decisions path before retrying.
@@ -216,7 +192,7 @@ interfaces:
       outcomes:
       - id: reconciled
         class: success
-        caller_action: Submit the decisions with the same transitional semantic IR to deterministic proof normalization.
+        caller_action: Submit the decisions to deterministic proof normalization with the controller-retained transitional semantic IR.
         effects: [decisions-write, progress-sidecar-append]
         outputs: [proof-decisions]
       - id: invalid-or-ambiguous

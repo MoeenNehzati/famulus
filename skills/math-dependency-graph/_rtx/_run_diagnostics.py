@@ -431,6 +431,11 @@ class RunDiagnostics:
             "gap_decisions",
             "gaps",
             "macros",
+            "proof_entities",
+            "proof_bundles",
+            "proof_targets",
+            "proof_exclusions",
+            "redirected_relationships",
         }
         return {key: int(value) for key, value in counts.items() if key in allowed}
 
@@ -532,11 +537,11 @@ class RunDiagnostics:
             elif "queue_ms" not in job:
                 job["queue_ms"] = _elapsed_ms(job["queued_monotonic_ns"], finished_ns)
             if output is not None:
-                kind = (
-                    "inventory-fragment"
-                    if job["phase"] == "inventory"
-                    else "semantic-fragment"
-                )
+                kind = {
+                    "inventory": "inventory-fragment",
+                    "extract": "semantic-fragment",
+                    "proof-reconciliation": "proof-normalization-decisions",
+                }[job["phase"]]
                 artifact, is_new = self._artifact_record(
                     output,
                     kind=kind,
@@ -1083,7 +1088,11 @@ def main(argv: Iterable[str] | None = None) -> dict:
     queued_parser = subparsers.add_parser("worker-queued")
     queued_parser.add_argument("run_dir")
     queued_parser.add_argument("job_id")
-    queued_parser.add_argument("--phase", choices=("inventory", "extract"), required=True)
+    queued_parser.add_argument(
+        "--phase",
+        choices=("inventory", "extract", "proof-reconciliation"),
+        required=True,
+    )
     queued_parser.add_argument("--model", required=True)
     queued_parser.add_argument("--retry-code", choices=sorted(_RETRY_CODES))
 

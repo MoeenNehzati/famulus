@@ -16,10 +16,12 @@ interfaces:
       version: 34
     - interface: math-dependency-graph.interface.extract
       version: 27
+    - interface: math-dependency-graph.interface.proof-reconciliation
+      version: 2
     - interface: math-dependency-graph._rtx.interface.scripts-advance-extraction-phases
-      version: 24
+      version: 25
     - interface: math-dependency-graph._rtx.interface.scripts-record-run-diagnostics
-      version: 7
+      version: 8
     - interface: math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator
       version: 5
     - interface: math-dependency-graph._rtx.interface.scripts-next-inventory-unit
@@ -101,7 +103,7 @@ interfaces:
           sensitivity: derived-private
       preconditions: []
     description: Orchestrate a measured inventory, extract, compile, and render run.
-    version: 65
+    version: 66
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
@@ -109,13 +111,15 @@ uses_interfaces:
   version: 34
 - interface: math-dependency-graph.interface.extract
   version: 27
+- interface: math-dependency-graph.interface.proof-reconciliation
+  version: 2
 - interface: math-dependency-graph._rtx.interface.scripts-advance-extraction-phases
-  version: 24
+  version: 25
 - interface: math-dependency-graph._rtx.interface.scripts-record-run-diagnostics
-  version: 7
+  version: 8
 - interface: math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator
   version: 5
 - interface: math-dependency-graph._rtx.interface.scripts-next-inventory-unit
   version: 3
-version: 72
+version: 73
 maturity: stable

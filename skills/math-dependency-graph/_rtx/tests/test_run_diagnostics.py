@@ -112,6 +112,30 @@ def _minimal_iterator_summary() -> dict:
     }
 
 
+def test_proof_reconciliation_is_a_distinct_worker_phase(tmp_path: Path) -> None:
+    """Folding proof work into extract would erase its model and timing allocation."""
+
+    report = RunDiagnostics.initialize(tmp_path, entrypoint=_entrypoint(tmp_path))
+    output = tmp_path / "proof-decisions.json"
+    output.write_text("{}\n", encoding="utf-8")
+
+    report.worker_queued(
+        "proof-reconciliation-001",
+        phase="proof-reconciliation",
+        model="model-proof",
+    )
+    report.worker_started("proof-reconciliation-001")
+    report.worker_finished(
+        "proof-reconciliation-001", status="success", output=output
+    )
+
+    job = report.payload["jobs"][0]
+    assert job["phase"] == "proof-reconciliation"
+    assert job["model"] == "model-proof"
+    artifact = next(item for item in report.payload["artifacts"] if item["id"] == job["output_artifact"])
+    assert artifact["kind"] == "proof-normalization-decisions"
+
+
 def _diagnostics_process_interface() -> tuple[BlueprintNode, InterfaceExport]:
     """Load the authored diagnostics process surface for invocation compilation."""
 

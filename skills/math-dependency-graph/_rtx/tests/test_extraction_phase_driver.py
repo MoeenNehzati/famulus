@@ -15,6 +15,7 @@ SKILL_DIR = Path(__file__).resolve().parents[2]
 REPO_SRC = SKILL_DIR.parents[1] / "src"
 sys.path.insert(0, str(REPO_SRC))
 sys.path.insert(0, str(SKILL_DIR / "_rtx"))
+sys.path.insert(0, str(Path(__file__).parent))
 
 import _extraction_phase_driver as driver  # noqa: E402
 from _inventory_unit_iterator import (  # noqa: E402
@@ -1058,6 +1059,291 @@ def test_finalize_records_artifacts_ratios_counts_and_success(
     assert "counts" not in artifacts["html"]
     assert diagnostics["run"]["status"] == "success"
     assert result["diagnostics"] == str(tmp_path / "run-diagnostics.json")
+
+
+def _proof_transition() -> tuple[dict, dict]:
+    """Return one reconciled inventory and transitional proof graph."""
+
+    from test_proof_normalizer import _semantic_ir
+
+    semantic = _semantic_ir()
+    semantic["entities"][3]["kind"] = "informal"
+    semantic["entities"].append(
+        {
+            "candidate_ids": [],
+            "id": "proof-alternative",
+            "type": "proof",
+            "kind": "sketch",
+            "short_title": "Alternative proof of R",
+            "description": "A genuinely alternative argument for R.",
+            "source": "explicit",
+        }
+    )
+    semantic["relationships"].extend(
+        [
+            {
+                "from": "assumption-a", "to": "proof-alternative", "type": "supports",
+                "description": "The alternative proof uses A.", "hint_ids": ["pool::h6"],
+                "evidence_ids": ["pool::e6"], "implicit": False, "confidence": "High",
+            },
+            {
+                "from": "proof-alternative", "to": "result-r", "type": "proves",
+                "description": "The alternative argument proves R.", "hint_ids": ["pool::h7"],
+                "evidence_ids": ["pool::e7"], "implicit": False, "confidence": "Verified",
+            },
+        ]
+    )
+    for relationship in semantic["relationships"]:
+        relationship["implicit"] = False
+    candidate_ids = [
+        "candidate-a", "candidate-r", "candidate-proof-formal",
+        "candidate-proof-informal", "candidate-proof-alternative",
+    ]
+    for entity, candidate_id in zip(semantic["entities"], candidate_ids, strict=True):
+        entity["candidate_ids"] = [candidate_id]
+    semantic["inventory"] = {
+        "candidate_ids": candidate_ids,
+        "candidate_count": len(candidate_ids),
+    }
+    inventory = {
+        "ir_version": 2,
+        "chunk_id": "pooled",
+        "files": ["main.tex"],
+        "evidence": [
+            {"id": f"pool::e{index}", "location": [0, index, index], "role": "statement"}
+            for index in range(1, 8)
+        ],
+        "references": [
+            {"id": "pool::r1", "location": [0, 1, 1], "raw": "A", "kind": "label"}
+        ],
+        "candidates": [
+            {
+                "id": candidate_id,
+                "location": [0, index, index],
+                "provenance": "explicit",
+                "type_hint": "proof" if "proof" in candidate_id else ("result" if candidate_id.endswith("r") else "assumption"),
+                "evidence_ids": [f"pool::e{min(index, 5)}"],
+                "summary": candidate_id,
+            }
+            for index, candidate_id in enumerate(candidate_ids, 1)
+        ],
+        "unresolved_entities": [],
+        "relationship_hints": [
+            {
+                "id": f"pool::h{index}",
+                "from": {"candidate_id": source},
+                "to": {"candidate_id": target},
+                "type": edge_type,
+                "basis": "explicit-prose",
+                "assertion": "explicit",
+                "evidence_ids": [f"pool::e{index}"],
+                "confidence": "Verified",
+            }
+            for index, (source, target, edge_type) in enumerate(
+                (
+                    (candidate_ids[0], candidate_ids[2], "supports"),
+                    (candidate_ids[0], candidate_ids[3], "supports"),
+                    (candidate_ids[2], candidate_ids[1], "proves"),
+                    (candidate_ids[3], candidate_ids[1], "proves"),
+                    (candidate_ids[0], candidate_ids[1], "supports"),
+                    (candidate_ids[0], candidate_ids[4], "supports"),
+                    (candidate_ids[4], candidate_ids[1], "proves"),
+                ),
+                1,
+            )
+        ],
+        "reference_decisions": [],
+        "gaps": [],
+    }
+    return inventory, semantic
+
+
+def _install_proof_run(tmp_path: Path) -> tuple[Path, Path, Path]:
+    """Persist the immutable artifacts needed by proof finalization."""
+
+    entrypoint = _entrypoint(tmp_path)
+    _initialize_diagnostics(tmp_path, entrypoint)
+    inventory, semantic = _proof_transition()
+    inventory_path = tmp_path / "inventory-ir.json"
+    fragment_path = tmp_path / "extract-001.json"
+    source_packet = tmp_path / "source-packet.txt"
+    source_packet.write_text(
+        "@@ source: main.tex\n"
+        "0001 | Assumption A.\n"
+        "0002 | Result R.\n"
+        "0003 | Formal proof.\n"
+        "0004 | Proof sketch.\n"
+        "0005 | Direct dependency.\n"
+        "0006 | The alternative argument uses A.\n"
+        "0007 | The alternative argument proves R.\n",
+        encoding="utf-8",
+    )
+    sidecar = tmp_path / "extract-sidecar.json"
+    _write_json(sidecar, {"coordinates": []})
+    _write_json(inventory_path, inventory)
+    _write_json(fragment_path, semantic)
+    _write_json(
+        tmp_path / "extract-chunks.json",
+        {"chunks": [{
+            "chunk_id": "extract-001",
+            "packet_path": str(tmp_path / "extract-packet.json"),
+            "fragment_path": str(fragment_path),
+            "sidecar_path": str(sidecar),
+            "source_packet_path": str(source_packet),
+            "entrypoint_path": str(entrypoint),
+            "progress_path": str(tmp_path / "progress" / "extract-001.progress.md"),
+        }]},
+    )
+    _write_json(
+        tmp_path / "run-state.json",
+        {
+            "entrypoint": str(entrypoint),
+            "source_packet": str(source_packet),
+            "inventory_ir": str(inventory_path),
+            "extract_manifest": str(tmp_path / "extract-chunks.json"),
+        },
+    )
+    manifest = tmp_path / "extract-fragments.json"
+    _write_json(manifest, {"fragments": [str(fragment_path)]})
+    return manifest, inventory_path, fragment_path
+
+
+def test_finalize_extract_routes_proof_ir_to_one_reconciliation_worker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Proof entities must pause before canonical compilation and expose bounded inputs."""
+
+    manifest, inventory_path, _fragment = _install_proof_run(tmp_path)
+    monkeypatch.setattr(driver, "_compile_and_render", lambda *_args: pytest.fail("compiled transitional proof IR"))
+
+    report = driver.finalize_extract(manifest, tmp_path, None)
+
+    assert report["status"] == "proof-reconciliation-required"
+    job = report["next_job"]
+    assert job["chunk_id"] == "proof-reconciliation-001"
+    assert job["instruction"].endswith("/instructions/proof-reconciliation.md")
+    assert job["schema"].endswith("/proof-normalization.schema.json")
+    assert "inventory" not in job
+    assert "source_packet" not in job
+    assert "sidecar" not in job
+    assert "base" not in job
+    assert "semantic_ir" not in job
+    assert job["packet"].endswith("/proof-reconciliation-packet.json")
+    assert job["progress_path"].endswith("/progress/proof-reconciliation-001.progress.md")
+    packet = json.loads(Path(job["packet"]).read_text(encoding="utf-8"))
+    assert {item["id"] for item in packet["proof_entities"]} == {
+        "proof-formal", "proof-sketch", "proof-alternative"
+    }
+    assert all(
+        edge["from"] in {"proof-formal", "proof-sketch", "proof-alternative"}
+        or edge["to"] in {"proof-formal", "proof-sketch", "proof-alternative"}
+        for edge in packet["incident_relationships"]
+    )
+    assert RunDiagnostics.open(tmp_path).payload["run"]["status"] == "running"
+
+
+def test_finalize_proofs_normalizes_then_compiles_once_and_finishes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Accepted complementary and alternative bundles disappear but remain traceable."""
+
+    from test_proof_normalizer import _decisions
+
+    manifest, _inventory_path, _fragment = _install_proof_run(tmp_path)
+    first = driver.finalize_extract(manifest, tmp_path, None)
+    decisions = _decisions()
+    decisions["decisions"].append(
+        {
+            "proof_id": "proof-alternative",
+            "disposition": "accepted",
+            "bundle_id": "bundle-r-alternative",
+            "target_id": "result-r",
+            "reason": "A materially different argument is an alternative bundle.",
+        }
+    )
+    decision_path = Path(first["next_job"]["output"])
+    _write_json(decision_path, decisions)
+    decision_manifest = tmp_path / "proof-decisions-manifest.json"
+    _write_json(decision_manifest, {"fragments": [str(decision_path)]})
+    captured: dict = {}
+
+    def capture_compile(semantic: dict, semantic_path: Path, inventory: dict, *_args) -> dict:
+        captured.update(semantic=semantic, semantic_path=semantic_path, inventory=inventory)
+        return {"status": "compiled", "semantic_ir": str(semantic_path)}
+
+    monkeypatch.setattr(driver, "_compile_and_render", capture_compile)
+
+    report = driver.finalize_proofs(decision_manifest, tmp_path, None)
+
+    assert report["status"] == "compiled"
+    assert all(item["type"] != "proof" for item in captured["semantic"]["entities"])
+    assert all(item["type"] != "proves" for item in captured["semantic"]["relationships"])
+    provenance = json.loads((tmp_path / "proof-provenance.json").read_text(encoding="utf-8"))
+    assert {item["bundle_id"] for item in provenance["bundles"]} == {
+        "bundle-r-main", "bundle-r-alternative"
+    }
+    redirected = provenance["relationships"][0]
+    assert redirected["proof_ids"] == [
+        "proof-formal", "proof-sketch", "proof-alternative"
+    ]
+    assert redirected["bundle_ids"] == ["bundle-r-main", "bundle-r-alternative"]
+    assert redirected["source_relationships"][0]["relationship"]["evidence_ids"] == ["pool::e1"]
+    assert redirected["source_relationships"][-1]["bundle_id"] == "bundle-r-alternative"
+    assert redirected["source_relationships"][-1]["relationship"]["evidence_ids"] == ["pool::e6"]
+    diagnostics = RunDiagnostics.open(tmp_path).payload
+    assert diagnostics["run"]["status"] == "success"
+    provenance_artifact = next(
+        item for item in diagnostics["artifacts"] if item["kind"] == "proof-provenance"
+    )
+    assert provenance_artifact["counts"] == {
+        "proof_entities": 3,
+        "proof_bundles": 2,
+        "proof_targets": 1,
+        "proof_exclusions": 0,
+        "redirected_relationships": 1,
+    }
+
+
+def test_invalid_proof_decisions_return_one_immutable_retry(tmp_path: Path) -> None:
+    """Incomplete reconciliation fails closed without changing its semantic inputs."""
+
+    manifest, _inventory_path, _fragment = _install_proof_run(tmp_path)
+    first = driver.finalize_extract(manifest, tmp_path, None)
+    decisions = {
+        "document_kind": "proof-normalization-decisions",
+        "ir_version": 1,
+        "decisions": [],
+    }
+    decision_path = Path(first["next_job"]["output"])
+    _write_json(decision_path, decisions)
+    decision_manifest = tmp_path / "proof-decisions-manifest.json"
+    _write_json(decision_manifest, {"fragments": [str(decision_path)]})
+
+    report = driver.finalize_proofs(decision_manifest, tmp_path, None)
+
+    assert report["status"] == "proof-reconciliation-retry-required"
+    assert "semantic_ir" not in report["next_job"]
+    assert report["next_job"]["packet"] == first["next_job"]["packet"]
+    assert report["next_job"]["output"].endswith("proof-reconciliation-001-retry-001.json")
+    assert RunDiagnostics.open(tmp_path).payload["run"]["status"] == "running"
+
+
+def test_malformed_proof_decisions_return_the_same_bounded_retry(tmp_path: Path) -> None:
+    """Malformed worker JSON is a retryable worker failure, not a partial finalization."""
+
+    manifest, _inventory_path, _fragment = _install_proof_run(tmp_path)
+    first = driver.finalize_extract(manifest, tmp_path, None)
+    decision_path = Path(first["next_job"]["output"])
+    decision_path.write_text('{"decisions": [', encoding="utf-8")
+    decision_manifest = tmp_path / "proof-decisions-manifest.json"
+    _write_json(decision_manifest, {"fragments": [str(decision_path)]})
+
+    report = driver.finalize_proofs(decision_manifest, tmp_path, None)
+
+    assert report["status"] == "proof-reconciliation-retry-required"
+    assert report["next_job"]["chunk_id"] == "proof-reconciliation-001"
+    assert report["next_job"]["packet"] == first["next_job"]["packet"]
+    assert RunDiagnostics.open(tmp_path).payload["run"]["status"] == "running"
 
 
 def test_diagnostics_initialization_failure_aborts_before_source_work(

@@ -149,14 +149,14 @@ def test_proof_reconciliation_is_a_registered_parent_instruction_interface() -> 
 
     assert source["schema_version"] == 6
     assert source["node_type"] == "behavioral_source"
-    assert source["version"] == 1
-    assert source["interfaces"][source_interface]["version"] == 1
+    assert source["version"] == 2
+    assert source["interfaces"][source_interface]["version"] == 2
     contract = source["interfaces"][source_interface]["contract"]
     assert {
         "packet",
-        "semantic-ir",
         "normalization-schema",
         "progress-sidecar",
+        "decisions-output",
     } <= set(contract["arguments"])
     assert contract["direct_io"]["network"] == []
     assert contract["interaction"]["mode"] == "unattended"
@@ -193,6 +193,7 @@ def test_gateway_contract_routes_inventory_through_iterator_and_measured_diagnos
 
     assert uses["math-dependency-graph.interface.inventory"] == 34
     assert uses["math-dependency-graph.interface.extract"] == 27
+    assert uses["math-dependency-graph.interface.proof-reconciliation"] == 2
     assert uses[
         "math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator"
     ] == 5
@@ -201,10 +202,12 @@ def test_gateway_contract_routes_inventory_through_iterator_and_measured_diagnos
     ] == 3
     assert uses[
         "math-dependency-graph._rtx.interface.scripts-record-run-diagnostics"
-    ] == 7
+    ] == 8
     skill_text = (RUNTIME_DIR.parent / "SKILL.md").read_text(encoding="utf-8")
     assert "retain its durable identity, internal timings, assignment boundaries" in skill_text
     assert "ordered coordinate coverage" in skill_text
+    assert "exactly one fresh proof-reconciliation worker" in skill_text
+    assert "finalize-proofs" in skill_text
 
     iterator = yaml.safe_load(
         (RUNTIME_DIR / "blueprints" / "rtx-inventory-unit-iterator.yaml").read_text(

@@ -1,7 +1,7 @@
 schema_version: 6
 node_type: behavioral_source
 id: math-dependency-graph._rtx.source.rtx-extraction-phase-driver
-version: 28
+version: 29
 description: Deterministically prepares inventory, preserves retryable diagnostics
   after worker-local inventory rejection, routes malformed or non-object extract output
   to a fresh normal extract retry, returns stable per-job progress-sidecar paths through
@@ -43,13 +43,19 @@ dependencies:
   reason: Records worker-independent stage timing, artifacts, ratios, counts, and
     final run status.
   source: math-dependency-graph._rtx.source.rtx-run-diagnostics
-  version: 11
+  version: 12
 - blueprint:
     base: module-root
     path: blueprints/rtx-semantic-graph-compiler.yaml
   reason: Compiles validated semantic IR.
   source: math-dependency-graph._rtx.source.rtx-semantic-graph-compiler
   version: 12
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-proof-normalizer.yaml
+  reason: Applies exhaustive proof decisions and projects compiler-facing inventory.
+  source: math-dependency-graph._rtx.source.rtx-proof-normalizer
+  version: 1
 - blueprint:
     base: module-root
     path: blueprints/rtx-source-packet.yaml
@@ -68,13 +74,14 @@ interfaces:
     content:
     - _extraction_phase_driver\.py
     uses_interfaces: []
-    version: 24
+    version: 25
     description: Prepare one iterator setup assignment, keep worker-local inventory
       rejection open for durable retry, advance completed iterator state to one entrypoint-bearing extract
       packet, or validate extract output and return a progress-preserving fresh retry
       for malformed or globally invalid output or a bounded correction handoff before
-      compilation when needed.
-    usage: <prepare|advance-inventory|finalize-extract> <entrypoint-or-state-or-fragment> --run-dir
+      compilation when needed, or normalize exhaustive proof decisions before the
+      sole compile/render/finish boundary.
+    usage: <prepare|advance-inventory|finalize-extract|finalize-proofs> <entrypoint-or-state-or-fragment> --run-dir
       <path> [--html <path>]
     process_binding:
       kind: process
@@ -118,6 +125,20 @@ interfaces:
         flag_patterns:
           --run-dir: ^.+$
           --html: ^.+$
+      - name: finalize-proofs
+        min_positionals: 2
+        max_positionals: 2
+        allow_stdin: false
+        positional_patterns:
+          '0': ^finalize-proofs$
+        allowed_flags:
+        - --run-dir
+        - --html
+        required_flags:
+        - --run-dir
+        flag_patterns:
+          --run-dir: ^.+$
+          --html: ^.+$
     contract:
       arguments:
         operation:
@@ -129,8 +150,8 @@ interfaces:
             sensitivity: public
         input:
           description: TeX entrypoint, completed inventory iterator state directory
-            for advance-inventory, or extract/repair fragment manifest selected by
-            the operation.
+            for advance-inventory, extract/repair fragment manifest for finalize-extract,
+            or proof-decisions manifest for finalize-proofs.
           direct_io_ref: read-1
           required: true
           sensitivity: user-private
@@ -149,7 +170,7 @@ interfaces:
             kind: string
             sensitivity: user-private
         html:
-          description: Optional final HTML destination for finalize-extract; defaults
+          description: Optional final HTML destination for finalize-extract or finalize-proofs; defaults
             to <run-dir>/dependency-graph.html when omitted.
           direct_io_ref: write-2
           required: false
@@ -165,7 +186,7 @@ interfaces:
               sensitivity: derived-private
       caller_warnings:
       - external-side-effect: Writes or replaces deterministic run artifacts and,
-          during finalize-extract, HTML.
+          during proof-free finalize-extract or finalize-proofs, HTML.
       direct_io:
         network: []
         reads:
@@ -173,7 +194,8 @@ interfaces:
           medium: local-filesystem
           access: read
           content: TeX entrypoint, completed inventory iterator state directory for
-            advance-inventory, or extract/repair fragment manifest selected by the operation
+            advance-inventory, extract/repair fragment manifest for finalize-extract,
+            or proof-decisions manifest for finalize-proofs
           formats:
           - tex
           - json
@@ -207,8 +229,8 @@ interfaces:
         - id: read-4
           medium: local-filesystem
           access: read
-          content: durable metrics-only run diagnostics opened by advance-inventory
-            and finalize-extract
+          content: durable metrics-only run diagnostics opened by advance-inventory,
+            finalize-extract, and finalize-proofs
           formats:
           - json
           path: <run-dir>/run-diagnostics.json
@@ -235,6 +257,17 @@ interfaces:
           - json
           path: <run-dir>/semantic-repair-base.json
           path_match: exact
+          sensitivity: derived-private
+          system: filesystem
+        - id: read-7
+          medium: local-filesystem
+          access: read
+          content: controller-retained transitional semantic IR, proof decisions,
+            proof provenance, and projected inventory consumed by finalize-proofs
+          formats:
+          - json
+          path: <run-dir>/{semantic-ir.json,proof-*.json,inventory-ir-normalized.json}
+          path_match: glob
           sensitivity: derived-private
           system: filesystem
         writes:
@@ -285,8 +318,8 @@ interfaces:
         mutation_safety:
           atomicity:
             per_effect_only: JSON state, correction handoff, repair base, semantic
-              output, and diagnostics artifacts each use sibling replacement before
-              publication.
+              output, three-file proof normalization transaction, and diagnostics artifacts
+              each complete validation before replacement.
           concurrent_invocations:
             unsafe: Do not advance the same run directory concurrently.
           idempotency:
@@ -356,8 +389,8 @@ interfaces:
       outcomes:
       - id: advanced
         class: success
-        caller_action: Give the reported next inventory, extract, or localized-correction
-          packet to the named interface, or use the final artifacts.
+        caller_action: Give the reported next inventory, extract, localized-correction,
+          or bounded proof-reconciliation packet to the named interface, or use the final artifacts.
         effects:
         - phase-artifacts
         - diagnostics-update
@@ -380,7 +413,8 @@ interfaces:
           maximum: 1
         description: JSON report naming each next packet and stable progress-sidecar
           path, a rejected extract's persisted repair base plus retry or bounded correction
-          assignment, or final graph artifacts, always with durable diagnostics.
+          assignment, a proof-reconciliation or bounded retry assignment, or final proof-free
+          graph artifacts, always with durable diagnostics.
         direct_io_ref: write-3
         empty: Never empty.
         ordering: stable

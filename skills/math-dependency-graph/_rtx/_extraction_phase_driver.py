@@ -2,8 +2,9 @@
 """Advance the inventory-to-extract mathematical graph pipeline.
 
 The driver owns deterministic handoffs only: source preparation, inventory
-pooling, one extract packet, and final deterministic compilation.  Inventory
-and extract workers retain every mathematical decision.
+pooling, one extract packet, bounded proof reconciliation when present, and final
+deterministic compilation. Inventory, extract, and proof workers retain every
+mathematical decision.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ try:
         apply_semantic_repair,
         canonical_json_bytes,
         pool_inventory_fragments,
+        validate_extract_reconciliation,
         write_json_atomic,
     )
     from ._extraction_chunk_planner import plan_extract_packet
@@ -34,6 +36,7 @@ try:
         verify_completed_inventories,
     )
     from ._run_diagnostics import RunDiagnostics, _measure_file
+    from ._proof_normalizer import normalize_files
     from ._semantic_graph_compiler import compile_semantic_graph, validate_semantic_payload
     from ._source_packet import collect_source_packet, write_source_packet
     from ._tex_macro_reader import extract_macros, write_macros
@@ -45,6 +48,7 @@ except ImportError:  # pragma: no cover - direct script execution
         apply_semantic_repair,
         canonical_json_bytes,
         pool_inventory_fragments,
+        validate_extract_reconciliation,
         write_json_atomic,
     )
     from _extraction_chunk_planner import plan_extract_packet
@@ -55,6 +59,7 @@ except ImportError:  # pragma: no cover - direct script execution
         verify_completed_inventories,
     )
     from _run_diagnostics import RunDiagnostics, _measure_file
+    from _proof_normalizer import normalize_files
     from _semantic_graph_compiler import compile_semantic_graph, validate_semantic_payload
     from _source_packet import collect_source_packet, write_source_packet
     from _tex_macro_reader import extract_macros, write_macros
@@ -128,6 +133,151 @@ def _extract_retry_job(chunk: dict, *, output_path: Path) -> dict:
     job = _extract_job(chunk)
     job["output"] = str(output_path.resolve())
     return job
+
+
+def _proof_entities(semantic: dict) -> list[dict]:
+    """Return transitional proof entities in source-stable extract order."""
+
+    return [item for item in semantic["entities"] if item.get("type") == "proof"]
+
+
+def _registered_source_evidence(
+    source_packet_path: Path, files: list[str], evidence: list[dict]
+) -> list[dict]:
+    """Embed only exact registered source ranges in the bounded proof packet."""
+
+    source_lines: dict[tuple[str, int], str] = {}
+    current_file: str | None = None
+    for raw_line in source_packet_path.read_text(encoding="utf-8").splitlines():
+        if raw_line.startswith("@@ source: "):
+            current_file = raw_line.removeprefix("@@ source: ")
+            continue
+        if current_file is None or " | " not in raw_line:
+            continue
+        ordinal, text = raw_line.split(" | ", 1)
+        if ordinal.isdigit():
+            source_lines[(current_file, int(ordinal))] = text
+    records: list[dict] = []
+    for item in evidence:
+        file_index, start_line, end_line = item["location"]
+        source_file = files[file_index]
+        lines = [source_lines.get((source_file, line)) for line in range(start_line, end_line + 1)]
+        if any(line is None for line in lines):
+            raise ValueError(f"registered proof evidence is absent from immutable source: {item['id']}")
+        records.append(
+            {
+                "evidence_id": item["id"],
+                "source_file": source_file,
+                "start_line": start_line,
+                "end_line": end_line,
+                "text": "\n".join(line for line in lines if line is not None),
+            }
+        )
+    return records
+
+
+def _proof_packet(
+    semantic: dict,
+    inventory: dict,
+    *,
+    semantic_sha256: str,
+    inventory_sha256: str,
+    source_sha256: str,
+    source_packet_path: Path,
+) -> dict:
+    """Project only registered proof-centered semantic and inventory evidence."""
+
+    proofs = _proof_entities(semantic)
+    proof_ids = {item["id"] for item in proofs}
+    incident = [
+        item
+        for item in semantic["relationships"]
+        if item["from"] in proof_ids or item["to"] in proof_ids
+    ]
+    target_ids = {
+        item["to"]
+        for item in incident
+        if item["type"] == "proves" and item["from"] in proof_ids
+    }
+    targets = [item for item in semantic["entities"] if item["id"] in target_ids]
+    neighboring_ids = {
+        endpoint
+        for relationship in incident
+        for endpoint in (relationship["from"], relationship["to"])
+        if endpoint not in proof_ids and endpoint not in target_ids
+    }
+    neighbors = [item for item in semantic["entities"] if item["id"] in neighboring_ids]
+    candidate_ids = {
+        candidate_id
+        for entity in (*proofs, *targets, *neighbors)
+        for candidate_id in entity.get("candidate_ids", [])
+    }
+    hint_ids = {
+        hint_id for relationship in incident for hint_id in relationship.get("hint_ids", [])
+    }
+    evidence_ids = {
+        evidence_id
+        for relationship in incident
+        for evidence_id in relationship.get("evidence_ids", [])
+    }
+    reference_ids = {
+        reference_id
+        for relationship in incident
+        for reference_id in relationship.get("reference_ids", [])
+    }
+    evidence_ids.update(
+        evidence_id
+        for candidate in inventory["candidates"]
+        if candidate["id"] in candidate_ids
+        for evidence_id in candidate.get("evidence_ids", [])
+    )
+    evidence = [item for item in inventory["evidence"] if item["id"] in evidence_ids]
+    return {
+        "document_kind": "proof-reconciliation-packet",
+        "ir_version": 1,
+        "semantic_ir_sha256": semantic_sha256,
+        "inventory_sha256": inventory_sha256,
+        "source_sha256": source_sha256,
+        "proof_entities": proofs,
+        "target_entities": targets,
+        "neighboring_entities": neighbors,
+        "incident_relationships": incident,
+        "candidates": [item for item in inventory["candidates"] if item["id"] in candidate_ids],
+        "relationship_hints": [item for item in inventory["relationship_hints"] if item["id"] in hint_ids],
+        "evidence": evidence,
+        "source_evidence": _registered_source_evidence(
+            source_packet_path, inventory["files"], evidence
+        ),
+        "references": [item for item in inventory["references"] if item["id"] in reference_ids],
+    }
+
+
+def _proof_reconciliation_job(
+    *,
+    run_dir: Path,
+    state: dict,
+    output_path: Path,
+) -> dict:
+    """Return one immutable bounded proof-reconciliation assignment."""
+
+    extract_manifest = _read_json(Path(state["extract_manifest"]))
+    chunks = extract_manifest.get("chunks")
+    if not isinstance(chunks, list) or len(chunks) != 1:
+        raise ValueError("proof reconciliation requires exactly one saved extract chunk")
+    chunk = chunks[0]
+    return {
+        "chunk_id": "proof-reconciliation-001",
+        "instruction": str(SKILL_DIR / "instructions" / "proof-reconciliation.md"),
+        "schema": str(SKILL_DIR / "proof-normalization.schema.json"),
+        "packet": str((run_dir / "proof-reconciliation-packet.json").resolve()),
+        "semantic_ir_sha256": _measure_file(run_dir / "semantic-ir.json")[1],
+        "inventory_sha256": _measure_file(Path(state["inventory_ir"]))[1],
+        "source_sha256": _measure_file(Path(chunk["source_packet_path"]))[1],
+        "progress_path": str(
+            (run_dir / "progress" / "proof-reconciliation-001.progress.md").resolve()
+        ),
+        "output": str(output_path.resolve()),
+    }
 
 
 def _read_json(path: Path) -> dict:
@@ -615,7 +765,7 @@ def finalize_extract(
                     outputs=[semantic_path],
                     validation=True,
                 ):
-                    validate_semantic_payload(semantic, inventory)
+                    validate_extract_reconciliation(semantic, inventory)
                     write_json_atomic(semantic, semantic_path)
             except ValidationReportError as error:
                 diagnostics.record_validation_diagnostics(error.diagnostics)
@@ -653,6 +803,53 @@ def finalize_extract(
             numerator=semantic_artifact,
             denominator=inventory_artifact,
         )
+        if _proof_entities(semantic):
+            packet_path = run_dir / "proof-reconciliation-packet.json"
+            output_path = run_dir / "proof-reconciliation-001.json"
+            report_path = run_dir / "proof-reconciliation-required.json"
+            state_path = run_dir / "run-state.json"
+            next_job = _proof_reconciliation_job(
+                run_dir=run_dir,
+                state=state,
+                output_path=output_path,
+            )
+            report = {
+                "status": "proof-reconciliation-required",
+                "semantic_ir": str(semantic_path.resolve()),
+                "next_job": next_job,
+                "diagnostics": str(diagnostics.path),
+            }
+            with diagnostics.stage(
+                "proof-reconciliation-planning",
+                inputs=[semantic_path, inventory_path],
+                outputs=[packet_path, report_path, state_path],
+            ):
+                _, semantic_sha256 = _measure_file(semantic_path)
+                _, inventory_sha256 = _measure_file(inventory_path)
+                source_packet_path = Path(state["source_packet"]).resolve()
+                _, source_sha256 = _measure_file(source_packet_path)
+                write_json_atomic(
+                    _proof_packet(
+                        semantic,
+                        inventory,
+                        semantic_sha256=semantic_sha256,
+                        inventory_sha256=inventory_sha256,
+                        source_sha256=source_sha256,
+                        source_packet_path=source_packet_path,
+                    ),
+                    packet_path,
+                )
+                write_json_atomic(report, report_path)
+                state["proof_reconciliation_report"] = str(report_path.resolve())
+                state["proof_reconciliation_attempts"] = 0
+                write_json_atomic(state, state_path)
+            diagnostics.record_artifact(
+                packet_path,
+                kind="proof-reconciliation-packet",
+                phase="proof-reconciliation-planning",
+                counts={"proof_entities": len(_proof_entities(semantic))},
+            )
+            return report
         result = _compile_and_render(
             semantic,
             semantic_path,
@@ -663,6 +860,138 @@ def finalize_extract(
             diagnostics,
             semantic_artifact,
         )
+        diagnostics.finish(status="success")
+        result["diagnostics"] = str(diagnostics.path)
+        return result
+    except BaseException as exc:
+        diagnostics.finish(status="failure", error=exc)
+        raise
+
+
+def finalize_proofs(
+    fragment_manifest_path: Path, run_dir: Path, html: Path | None
+) -> dict:
+    """Validate exhaustive proof decisions, normalize, compile, render, and finish."""
+
+    run_dir = run_dir.resolve()
+    diagnostics = _open_phase_diagnostics(run_dir)
+    state_path = run_dir / "run-state.json"
+    state = _read_json(state_path)
+    semantic_path = run_dir / "semantic-ir.json"
+    inventory_path = Path(state.get("inventory_ir", "")).resolve()
+    packet_path = run_dir / "proof-reconciliation-packet.json"
+    normalized_path = run_dir / "semantic-ir-normalized.json"
+    provenance_path = run_dir / "proof-provenance.json"
+    projected_inventory_path = run_dir / "inventory-ir-normalized.json"
+    try:
+        if not semantic_path.is_file() or not inventory_path.is_file() or not packet_path.is_file():
+            raise ValueError("proof finalization requires immutable semantic, inventory, and proof packet inputs")
+        try:
+            manifest, fragments = _load_fragment_manifest(
+                fragment_manifest_path.resolve()
+            )
+        except WorkerFragmentLoadError as error:
+            try:
+                with diagnostics.stage(
+                    "proof-normalization",
+                    inputs=[error.fragment_path, semantic_path, inventory_path],
+                    outputs=[],
+                    validation=True,
+                ):
+                    raise error
+            except WorkerFragmentLoadError:
+                pass
+            diagnostics.record_validation_diagnostics(error.diagnostics)
+            return _prepare_proof_retry(
+                decision_path=error.fragment_path,
+                semantic_path=semantic_path,
+                inventory_path=inventory_path,
+                packet_path=packet_path,
+                state=state,
+                state_path=state_path,
+                run_dir=run_dir,
+                diagnostics=diagnostics,
+            )
+        if len(fragments) != 1:
+            raise ValueError("proof finalization requires exactly one decisions fragment")
+        decision_path = Path(manifest["fragments"][0]).resolve()
+        try:
+            with diagnostics.stage(
+                "proof-normalization",
+                inputs=[semantic_path, decision_path, inventory_path],
+                outputs=[normalized_path, provenance_path, projected_inventory_path],
+                validation=True,
+            ):
+                normalize_files(
+                    semantic_path,
+                    decision_path,
+                    normalized_path,
+                    provenance_path,
+                    inventory_path,
+                    projected_inventory_path,
+                )
+        except (ValueError, ValidationReportError) as error:
+            return _prepare_proof_retry(
+                decision_path=decision_path,
+                semantic_path=semantic_path,
+                inventory_path=inventory_path,
+                packet_path=packet_path,
+                state=state,
+                state_path=state_path,
+                run_dir=run_dir,
+                diagnostics=diagnostics,
+            )
+
+        normalized = _read_json(normalized_path)
+        projected_inventory = _read_json(projected_inventory_path)
+        semantic_artifact = diagnostics.record_artifact(
+            normalized_path,
+            kind="normalized-semantic-ir",
+            phase="proof-normalization",
+            counts=_structured_record_counts(normalized),
+        )
+        diagnostics.record_artifact(
+            decision_path,
+            kind="proof-normalization-decisions",
+            phase="proof-reconciliation",
+        )
+        provenance = _read_json(provenance_path)
+        diagnostics.record_artifact(
+            provenance_path,
+            kind="proof-provenance",
+            phase="proof-normalization",
+            counts={
+                "proof_entities": len(provenance["proof_entities"]),
+                "proof_bundles": len(provenance["bundles"]),
+                "proof_targets": len(
+                    {item["target_id"] for item in provenance["bundles"]}
+                ),
+                "proof_exclusions": len(provenance["exclusions"]),
+                "redirected_relationships": sum(
+                    bool(item["proof_ids"])
+                    for item in provenance["relationships"]
+                ),
+            },
+        )
+        diagnostics.record_artifact(
+            projected_inventory_path,
+            kind="projected-inventory",
+            phase="proof-normalization",
+            counts=_structured_record_counts(projected_inventory),
+        )
+        result = _compile_and_render(
+            normalized,
+            normalized_path,
+            projected_inventory,
+            state,
+            run_dir,
+            html,
+            diagnostics,
+            semantic_artifact,
+        )
+        result["transitional_semantic_ir"] = str(semantic_path.resolve())
+        result["proof_provenance"] = str(provenance_path.resolve())
+        result["projected_inventory"] = str(projected_inventory_path.resolve())
         diagnostics.finish(status="success")
         result["diagnostics"] = str(diagnostics.path)
         return result
@@ -765,6 +1094,48 @@ def _prepare_extract_retry(
     return report
 
 
+def _prepare_proof_retry(
+    *,
+    decision_path: Path,
+    semantic_path: Path,
+    inventory_path: Path,
+    packet_path: Path,
+    state: dict,
+    state_path: Path,
+    run_dir: Path,
+    diagnostics: RunDiagnostics,
+) -> dict:
+    """Return the sole bounded proof retry without changing controller inputs."""
+
+    attempts = state.get("proof_reconciliation_attempts", 0)
+    if not isinstance(attempts, int) or attempts < 0:
+        raise ValueError("proof reconciliation retry state is invalid")
+    if attempts >= 1:
+        raise ValueError("proof reconciliation exhausted its bounded retry")
+    retry_output = run_dir / "proof-reconciliation-001-retry-001.json"
+    next_job = _proof_reconciliation_job(
+        run_dir=run_dir,
+        state=state,
+        output_path=retry_output,
+    )
+    report = {
+        "status": "proof-reconciliation-retry-required",
+        "retry_code": "validation-failed",
+        "next_job": next_job,
+        "diagnostics": str(diagnostics.path),
+    }
+    report_path = run_dir / "proof-reconciliation-retry.json"
+    with diagnostics.stage(
+        "proof-reconciliation-planning",
+        inputs=[decision_path, semantic_path, inventory_path, packet_path],
+        outputs=[report_path, state_path],
+    ):
+        state["proof_reconciliation_attempts"] = attempts + 1
+        write_json_atomic(report, report_path)
+        write_json_atomic(state, state_path)
+    return report
+
+
 def _compile_and_render(
     semantic: dict,
     semantic_path: Path,
@@ -855,19 +1226,25 @@ def main(argv: Iterable[str] | None = None) -> None:
     prepare_parser = subparsers.add_parser("prepare")
     prepare_parser.add_argument("entrypoint")
     prepare_parser.add_argument("--run-dir", required=True)
-    for mode in ("advance-inventory", "finalize-extract"):
+    for mode in ("advance-inventory", "finalize-extract", "finalize-proofs"):
         phase = subparsers.add_parser(mode)
         phase.add_argument("fragment_manifest")
         phase.add_argument("--run-dir", required=True)
-        if mode == "finalize-extract":
+        if mode in {"finalize-extract", "finalize-proofs"}:
             phase.add_argument("--html")
     args = parser.parse_args(list(argv) if argv is not None else None)
     if args.mode == "prepare":
         report = prepare(Path(args.entrypoint), Path(args.run_dir))
     elif args.mode == "advance-inventory":
         report = advance_inventory(Path(args.fragment_manifest), Path(args.run_dir))
-    else:
+    elif args.mode == "finalize-extract":
         report = finalize_extract(
+            Path(args.fragment_manifest),
+            Path(args.run_dir),
+            Path(args.html) if args.html else None,
+        )
+    else:
+        report = finalize_proofs(
             Path(args.fragment_manifest),
             Path(args.run_dir),
             Path(args.html) if args.html else None,

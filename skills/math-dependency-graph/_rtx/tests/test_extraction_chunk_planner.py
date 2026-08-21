@@ -195,7 +195,7 @@ def test_authored_runtime_blueprints_follow_live_extraction_routes() -> None:
         )
         assert dependency["version"] == dependency_blueprint["version"]
     assert next(iter(driver["interfaces"].values()))["usage"] == (
-        "<prepare|advance-inventory|finalize-extract> "
+        "<prepare|advance-inventory|finalize-extract|finalize-proofs> "
         "<entrypoint-or-state-or-fragment> "
         "--run-dir <path> [--html <path>]"
     )
@@ -204,7 +204,7 @@ def test_authored_runtime_blueprints_follow_live_extraction_routes() -> None:
         pattern["name"]: pattern
         for pattern in driver_interface["process_binding"]["patterns"]
     }
-    assert set(driver_patterns) == {"prepare", "advance-inventory", "finalize-extract"}
+    assert set(driver_patterns) == {"prepare", "advance-inventory", "finalize-extract", "finalize-proofs"}
     for operation in ("prepare", "advance-inventory"):
         assert driver_patterns[operation]["positional_patterns"] == {
             "0": f"^{operation}$"
@@ -219,6 +219,13 @@ def test_authored_runtime_blueprints_follow_live_extraction_routes() -> None:
         "--html",
     ]
     assert driver_patterns["finalize-extract"]["required_flags"] == ["--run-dir"]
+    assert driver_patterns["finalize-proofs"]["positional_patterns"] == {
+        "0": "^finalize-proofs$"
+    }
+    assert driver_patterns["finalize-proofs"]["allowed_flags"] == [
+        "--run-dir", "--html"
+    ]
+    assert driver_patterns["finalize-proofs"]["required_flags"] == ["--run-dir"]
     driver_input = driver_interface["contract"]["arguments"]["input"]
     assert "inventory iterator state directory" in driver_input["description"]
     assert "inventory-chunks" not in driver_input["description"]
@@ -242,6 +249,7 @@ def test_authored_runtime_blueprints_follow_live_extraction_routes() -> None:
     assert set(gateway_versions) == {
         "math-dependency-graph.interface.inventory",
         "math-dependency-graph.interface.extract",
+        "math-dependency-graph.interface.proof-reconciliation",
         driver_export,
         "math-dependency-graph._rtx.interface.scripts-record-run-diagnostics",
         "math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator",

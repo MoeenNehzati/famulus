@@ -1,7 +1,7 @@
 schema_version: 6
 node_type: behavioral_source
 id: math-dependency-graph._rtx.source.rtx-run-diagnostics
-version: 11
+version: 12
 description: Atomically records metrics-only worker, stage, artifact, retry-code,
   structured failure, exact local and aggregate inventory ratios, and final run diagnostics
   without arbitrary error text.
@@ -29,7 +29,7 @@ interfaces:
     content:
     - _run_diagnostics\.py
     uses_interfaces: []
-    version: 7
+    version: 8
     description: Initialize a fresh run report, record one worker lifecycle event,
       or finish the report with allowlisted diagnostics.
     usage: <initialize|worker-queued|worker-started|worker-finished|iterator-controller-timing|finish> <run-dir>
@@ -64,7 +64,7 @@ interfaces:
         - --phase
         - --model
         flag_patterns:
-          --phase: ^(inventory|extract)$
+          --phase: ^(inventory|extract|proof-reconciliation)$
           --model: ^.+$
           --retry-code: ^(worker-failed|validation-failed|timeout|capacity|transient)$
       - name: worker-started
@@ -177,7 +177,7 @@ interfaces:
               kind: string
               sensitivity: user-private
         phase:
-          description: Semantic worker phase for worker-queued.
+          description: Inventory, extract, or proof-reconciliation semantic worker phase for worker-queued.
           required: false
           sensitivity: public
           type:

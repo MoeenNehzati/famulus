@@ -33,7 +33,7 @@ Check all of these source-grounded possibilities before acknowledging:
 - definitions, notation, maps, sets, events, constructions, and other reusable setup;
 - lemmas, propositions, theorems, corollaries, conjectures, and reusable prose claims;
 - named or cited external results whose mathematical content is used;
-- formal proof environments, unwrapped informal arguments, and proof sketches that perform substantive inferential work for a resolvable result;
+- formal proof environments, unwrapped informal arguments, and proof sketches that perform substantive inferential work for a result whose target is resolved or retained through a source-grounded unresolved target handle;
 - proof uses of earlier results, setup, assumptions, or tools, attached to the proof that actually uses them;
 - examples, substantive remarks, and applications with mathematical force.
 

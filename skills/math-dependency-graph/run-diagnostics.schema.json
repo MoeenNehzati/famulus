@@ -234,7 +234,7 @@
       ],
       "properties": {
         "job_id": {"type": "string", "minLength": 1, "maxLength": 160},
-        "phase": {"enum": ["inventory", "extract"]},
+        "phase": {"enum": ["inventory", "extract", "proof-reconciliation"]},
         "model": {"type": "string", "minLength": 1, "maxLength": 160},
         "retry": {"type": "integer", "minimum": 0},
         "retry_code": {"$ref": "#/$defs/retry_code"},
@@ -309,7 +309,9 @@
         "correction-application",
         "compilation",
         "macro-extraction",
-        "rendering"
+        "rendering",
+        "proof-reconciliation-planning",
+        "proof-normalization"
       ]
     },
     "stage": {
@@ -374,11 +376,16 @@
         "html"
         ,"extract-packet"
         ,"coordinate-sidecar"
+        ,"proof-reconciliation-packet"
+        ,"proof-normalization-decisions"
+        ,"normalized-semantic-ir"
+        ,"proof-provenance"
+        ,"projected-inventory"
       ]
     },
     "artifact_phase": {
       "anyOf": [
-        {"enum": ["inventory", "extract"]},
+        {"enum": ["inventory", "extract", "proof-reconciliation"]},
         {"$ref": "#/$defs/operation"}
       ]
     },
@@ -404,7 +411,12 @@
         "unresolved_resolutions": {"type": "integer", "minimum": 0},
         "gap_decisions": {"type": "integer", "minimum": 0},
         "gaps": {"type": "integer", "minimum": 0},
-        "macros": {"type": "integer", "minimum": 0}
+        "macros": {"type": "integer", "minimum": 0},
+        "proof_entities": {"type": "integer", "minimum": 0},
+        "proof_bundles": {"type": "integer", "minimum": 0},
+        "proof_targets": {"type": "integer", "minimum": 0},
+        "proof_exclusions": {"type": "integer", "minimum": 0},
+        "redirected_relationships": {"type": "integer", "minimum": 0}
       }
     },
     "artifact": {
