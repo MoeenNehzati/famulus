@@ -398,7 +398,7 @@ def test_store_rejects_symlinked_parent_and_lock_without_writing_outside(
     victim = outside / "lock"
     victim.write_text("safe", encoding="utf-8")
     lock.symlink_to(victim)
-    with pytest.raises(AtomicWriteError, match="symbolic link"):
+    with pytest.raises(AtomicWriteError, match="symbolic link|reparse point"):
         with store.transaction():
             pass
     assert victim.read_text(encoding="utf-8") == "safe"

@@ -344,7 +344,12 @@ def _decode_reckoning(
 def _confined_reckoning_path(root: Path, path: Path) -> Path:
     """Bind one relative ``*.reckoning.json`` beneath a storage root."""
 
-    if not isinstance(path, Path) or path.is_absolute() or not path.parts:
+    if (
+        not isinstance(path, Path)
+        or path.is_absolute()
+        or bool(path.anchor)
+        or not path.parts
+    ):
         raise RutterDefinitionError(
             "reckoning path must be a relative path beneath its root"
         )
