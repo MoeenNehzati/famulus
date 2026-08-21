@@ -404,7 +404,7 @@ from pathlib import Path
 src_root = Path(sys.argv[1]).resolve()
 repo_root = Path(sys.argv[2]).resolve()
 schema_root = Path(sys.argv[3]).resolve()
-expected_schema_version = int(sys.argv[5])
+expected_schema_version = int(sys.argv[4])
 officina_root = src_root / "officina"
 sys.path.insert(0, str(src_root))
 
@@ -430,7 +430,7 @@ specifications = [
             logical_entrypoint=item["python_target"].get("logical_entrypoint"),
         ),
     )
-    for item in json.loads(sys.argv[4])
+    for item in json.loads(sys.stdin.read())
 ]
 
 def is_under(path, root):
@@ -640,6 +640,19 @@ print(json.dumps(results))
         if not current_pythonpath
         else f"{source_root}{os.pathsep}{current_pythonpath}"
     )
+    specifications_json = json.dumps(
+        [
+            {
+                "skill_root": skill_root.as_posix(),
+                "python_target": _python_process_target_payload(
+                    python_target
+                ),
+            }
+            for skill_root, python_target in normalized
+        ],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
     result = subprocess.run(
         [
             sys.executable,
@@ -648,22 +661,10 @@ print(json.dumps(results))
             str(source_root),
             str(repository_root),
             str(selected_schema_root),
-            json.dumps(
-                [
-                    {
-                        "skill_root": skill_root.as_posix(),
-                        "python_target": _python_process_target_payload(
-                            python_target
-                        ),
-                    }
-                    for skill_root, python_target in normalized
-                ],
-                ensure_ascii=False,
-                separators=(",", ":"),
-            ),
             str(expected_schema_version),
         ],
         cwd=repository_root,
+        input=specifications_json,
         capture_output=True,
         text=True,
         encoding="utf-8",
