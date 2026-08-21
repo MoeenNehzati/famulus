@@ -50,7 +50,12 @@ def test_named_suites_resolve_to_ordered_native_phases() -> None:
         "precommit": ("validators", "tests:shared"),
         "pre-push": ("validators", "tests:shared", "tests:browser"),
         "portability": ("tests:shared",),
-        "full": ("validators", "tests:shared", "tests:performance"),
+        "full": (
+            "tests:performance",
+            "validators",
+            "tests:shared",
+            "tests:browser",
+        ),
     }
 
 
@@ -62,8 +67,9 @@ def test_combined_suites_share_one_pooled_run() -> None:
         "tests:browser",
     )
     assert runner._suite_runs("full", task_id=None) == (
-        "combined",
         "tests:performance",
+        "combined",
+        "tests:browser",
     )
 
 
@@ -240,9 +246,10 @@ def test_runner_adds_exact_xdist_worker_count_for_parallel_jobs() -> None:
     ]
 
 
-def test_full_browser_suite_uses_loadgroup() -> None:
+def test_full_pooled_phase_defers_browser_tests_and_uses_worksteal() -> None:
     args = runner._suite_pytest_args("full", verbose=False, jobs=6)
-    assert args[args.index("--dist") + 1] == "loadgroup"
+    assert args[args.index("--dist") + 1] == "worksteal"
+    assert runner.CHROME_TESTS <= _deselected_tests(args)
 
 
 @pytest.mark.parametrize("suite", ["precommit", "pre-push", "portability"])
@@ -336,9 +343,11 @@ def test_functional_phase_uses_native_discovery_without_explicit_roots(
     )
 
     assert command[command.index("-n") + 1] == "8"
-    assert command[command.index("--dist") + 1] == "loadgroup"
+    assert command[command.index("--dist") + 1] == "worksteal"
     assert not any(argument in {"tests", "hooks/tests", "skills"} for argument in command)
-    assert _deselected_tests(command) == runner.PERFORMANCE_TESTS
+    assert _deselected_tests(command) == (
+        runner.CHROME_TESTS | runner.PERFORMANCE_TESTS
+    )
     assert command[command.index("not github_install") - 1] == "-m"
 
 
@@ -381,12 +390,12 @@ def test_combined_command_enables_validators_in_the_same_xdist_session(
     assert command[command.index("--officina-exclude-validator") + 1] == "repo/other"
 
 
-def test_full_does_not_fail_fast_before_performance(
+def test_full_runs_performance_before_pooled_and_browser_phases(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
     commands = []
-    statuses = iter((1, 0))
+    statuses = iter((0, 1, 0))
     monkeypatch.setattr(
         runner,
         "_capture_working_staged_paths",
@@ -406,9 +415,12 @@ def test_full_does_not_fail_fast_before_performance(
     )
 
     assert status == 1
-    assert len(commands) == 2
-    assert "--officina-run-validators" in commands[0]
-    assert "--officina-run-validators" not in commands[1]
+    assert len(commands) == 3
+    assert commands[0][-len(runner.PERFORMANCE_TESTS) :] == sorted(
+        runner.PERFORMANCE_TESTS
+    )
+    assert "--officina-run-validators" in commands[1]
+    assert commands[2][-len(runner.CHROME_TESTS) :] == sorted(runner.CHROME_TESTS)
 
 
 def test_precommit_native_discovery_ignores_install_test_roots(
@@ -489,7 +501,7 @@ def test_portability_task_keeps_its_identity_at_the_process_boundary(
     )
 
 
-def test_phase_runner_continues_to_performance_after_pooled_failure(
+def test_phase_runner_continues_after_performance_and_pooled_failures(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -502,7 +514,7 @@ def test_phase_runner_continues_to_performance_after_pooled_failure(
     )
 
     assert runner.run_suite(tmp_path, "full", jobs=8) == 5
-    assert launched == ["tests:shared", "tests:performance"]
+    assert launched == ["tests:performance", "tests:shared", "tests:browser"]
 
 
 def test_windows_process_tree_termination_uses_taskkill_tree_mode(monkeypatch) -> None:

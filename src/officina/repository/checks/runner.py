@@ -1284,7 +1284,12 @@ SUITE_PHASES = {
     "precommit": ("validators", "tests:shared"),
     "pre-push": ("validators", "tests:shared", "tests:browser"),
     "portability": ("tests:shared",),
-    "full": ("validators", "tests:shared", "tests:performance"),
+    "full": (
+        "tests:performance",
+        "validators",
+        "tests:shared",
+        "tests:browser",
+    ),
 }
 
 SUITE_TEST_PROFILES = {
@@ -1388,21 +1393,19 @@ def _suite_runs(suite: str, task_id: str | None) -> tuple[str, ...]:
 
     Rationale
     ---------
-    One combined invocation gives both item kinds the same xdist queue; only
-    load-sensitive performance thresholds retain a separate serial run.
+    One combined invocation gives both item kinds the same xdist queue. The
+    declared phase order keeps load-sensitive performance thresholds ahead of
+    pooled work and Chrome-backed tests outside it.
 
     Pseudocode
     ----------
     - if task_id is present:
       - return task_id as the only run
     - set pooled_phases = validator and shared-test phases in suite
-    - if both pooled phases are present:
-      - set runs = combined run
-    - else:
-      - set runs = non-performance suite phases
-    - append non-pooled phases such as the serial browser phase
-    - if performance phase is present:
-      - set runs = runs plus performance phase
+    - walk the declared phases in order
+    - replace the first pooled phase with one combined run when both are present
+    - skip the second pooled phase after combining
+    - preserve every other phase in its declared position
     - return ordered runs
 
     Wraps
@@ -1413,17 +1416,16 @@ def _suite_runs(suite: str, task_id: str | None) -> tuple[str, ...]:
         return (task_id,)
     phases = SUITE_PHASES[suite]
     pooled = {"validators", "tests:shared"}.intersection(phases)
-    runs: list[str] = ["combined"] if pooled == {"validators", "tests:shared"} else []
-    if runs:
-        runs.extend(
-            phase
-            for phase in phases
-            if phase not in pooled and phase != "tests:performance"
-        )
-    else:
-        runs.extend(phase for phase in phases if phase != "tests:performance")
-    if "tests:performance" in phases:
-        runs.append("tests:performance")
+    combine_pooled = pooled == {"validators", "tests:shared"}
+    pooled_inserted = False
+    runs: list[str] = []
+    for phase in phases:
+        if combine_pooled and phase in pooled:
+            if not pooled_inserted:
+                runs.append("combined")
+                pooled_inserted = True
+            continue
+        runs.append(phase)
     return tuple(runs)
 
 
@@ -1558,21 +1560,22 @@ def _suite_pytest_args(
 
     Rationale
     ---------
-    Browser-containing full suites use ``loadgroup`` so their shared browser
-    marker forms one work unit. The pre-push browser phase runs separately and
-    serially, while its pooled phase uses ``worksteal``. Serial suites emit no
-    xdist arguments. Precommit exclusions remain repository policy and belong
-    with suite selection.
+    Browser-free pooled phases use ``worksteal``. Chrome-backed modules run in
+    separate serial phases, and serial suites emit no xdist arguments.
+    Precommit exclusions remain repository policy and belong with suite
+    selection.
 
     Pseudocode
     ----------
-    - set distribution = loadgroup for full; otherwise worksteal
+    - set distribution = worksteal
     - set pytest_arguments = common arguments for jobs and distribution
     - if name is precommit:
       - set pytest_arguments = arguments plus configured deselections
     - else:
       - if name is pre-push:
         - set pytest_arguments = arguments plus configured deselections
+      - if name is full:
+        - set pytest_arguments = arguments plus Chrome deselections
     - return pytest_arguments
 
     Wraps
@@ -1585,10 +1588,7 @@ def _suite_pytest_args(
       why:
         constructs: "Builds the common pytest argument list extended by this suite."
     """
-    if name == "full":
-        distribution = "loadgroup"
-    else:
-        distribution = "worksteal"
+    distribution = "worksteal"
     args = _pytest_args(
         verbose=verbose,
         jobs=jobs,
@@ -1601,6 +1601,9 @@ def _suite_pytest_args(
             args.extend(["--deselect", test])
     elif name == "pre-push":
         for test in sorted(PREPUSH_EXCLUDED_TESTS):
+            args.extend(["--deselect", test])
+    elif name == "full":
+        for test in sorted(CHROME_TESTS):
             args.extend(["--deselect", test])
     return args
 
@@ -2158,9 +2161,9 @@ def run_suite(
     Pseudocode
     ----------
     - set repository_view = staged precommit or requested working/staged view
-    - set pooled_items = selected validators plus ordinary tests
-    - set pooled_status = one pytest-xdist process for pooled items without fail-fast
-    - set performance_status = selected serial performance thresholds after pooled items
+    - resolve the suite's declared ordered phases
+    - replace validator plus shared-test phases with one pooled pytest-xdist process
+    - keep performance and browser phases serial and independent
     - return the aggregate status
 
     Wraps

@@ -11,8 +11,8 @@ Run the staged local gate used by the pre-commit hook:
 python3 repo_checks.py --suite precommit
 ```
 
-Run every validator and functional test, followed by the isolated performance
-thresholds:
+Run every validator and functional test, with Chrome-backed tests and
+performance thresholds isolated from the pooled phase:
 
 ```bash
 python3 repo_checks.py --suite full --verbose
@@ -58,20 +58,20 @@ of test directories.
 | `precommit` | staged | Validators and the fast functional selection in one pytest invocation. |
 | `pre-push` | working | Validators and functional tests except docstring and performance tests. |
 | `portability` | working | Seven cross-platform boundary sentinels. |
-| `full` | working | Validators and all functional tests in one invocation, then performance thresholds serially. |
+| `full` | working | Performance thresholds serially, then validators and browser-free functional tests together, then Chrome-backed tests serially. |
 
 The precommit selection excludes installation tests, Chrome tests, docstring
 tests, performance thresholds, the docstring validator, and the nested-module
 inventory assertion that requires a clean committed checkout. The latter is
 incompatible with a hook that necessarily runs while changes are staged.
 
-The full suite keeps `tests/test_dispatcher_performance.py` in a separate
-single-worker invocation. Its thresholds would be invalid under concurrent
-load. This is the only intentional second pytest invocation in a complete full
-run.
+The full suite runs `tests/test_dispatcher_performance.py` first and keeps
+Chrome-backed modules in a later separate single-worker invocation. Prior
+repository load invalidates the calibrated performance thresholds, while
+Chrome's virtual-time completion is unreliable under pooled repository load.
 
-No suite uses pytest fail-fast. A failure does not cancel already queued items,
-and performance thresholds still run after a pooled full-suite failure.
+No suite uses pytest fail-fast. A failure does not cancel already queued items
+or later declared phases.
 
 ## Repository views
 
@@ -96,11 +96,8 @@ This permits normal bytecode reuse without modifying the staged mirror.
 Pytest-xdist is the only worker pool. The repository runner does not schedule a
 second layer of test processes.
 
-- Browser-free parallel suites use `--dist worksteal`.
-- `full` and `pre-push` use `--dist loadgroup`.
-- Chrome-backed tests share `xdist_group("browser")`, keeping the browser
-  modules on one worker while other workers remain available for ordinary
-  tests.
+- Browser-free parallel phases use `--dist worksteal`.
+- Chrome-backed tests run in their own one-worker phase.
 - A one-worker run omits xdist arguments entirely.
 
 The hidden `--sequential` option is a deprecated compatibility alias. It does
