@@ -415,7 +415,7 @@ class ChangeSet:
 
         self.base_files = set()
         for path in self.root.rglob("*"):
-            if not path.is_file():
+            if not path.is_file() and not path.is_symlink():
                 continue
             relative = path.relative_to(self.root).as_posix()
             if any(part in _CACHE_PARTS for part in PurePosixPath(relative).parts):

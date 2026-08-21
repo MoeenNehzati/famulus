@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -206,6 +207,21 @@ def test_shadow_rejects_unsafe_symlink(
         close_projected_relocation(changes, manifest)
 
 
+def test_shadow_rejects_dangling_symlink(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A dangling link remains an unsafe projected input rather than disappearing."""
+
+    changes, manifest = _closure_fixture(
+        tmp_path, agents_link_target="missing-instructions.md"
+    )
+    monkeypatch.setattr(closure_module, "load_repository_blueprint_graph", _pass_graph)
+    monkeypatch.setattr(closure_module.subprocess, "run", _sync_without_writes)
+
+    with pytest.raises(MechanicalClosureError, match=r"unsafe shadow symlink: AGENTS\.md"):
+        close_projected_relocation(changes, manifest)
+
+
 def test_injected_synchronizer_receives_the_shadow_repository(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -293,7 +309,6 @@ def test_shadow_excludes_assistant_tooling_metadata(
     """Assistant metadata trees are absent even when they contain a bad symlink."""
 
     changes, manifest = _closure_fixture(tmp_path, assistant_tooling=True)
-    assert ".codex/agents" not in changes.projected_files()
 
     def sync(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
         """Assert that excluded assistant tooling never reaches the shadow."""
@@ -396,9 +411,9 @@ def test_syncer_generated_bytes_are_reconciled_into_change_set(
         calls += 1
         if "--check" not in args[0]:
             shadow = Path(str(kwargs["cwd"]))
-            (shadow / "skills/demo/SKILL.md").write_text(
-                "# Demo\n<!-- BEGIN BLUEPRINT CONTRACT -->\nnew\n<!-- END BLUEPRINT CONTRACT -->\n",
-                encoding="utf-8",
+            (shadow / "skills/demo/SKILL.md").write_bytes(
+                b"# Demo\n<!-- BEGIN BLUEPRINT CONTRACT -->\nnew\n"
+                b"<!-- END BLUEPRINT CONTRACT -->\n"
             )
         return _sync_without_writes(*args, **kwargs)
 
@@ -578,6 +593,8 @@ def test_partial_schema_cannot_fall_back_to_the_live_imported_checkout(
         close_projected_relocation(changes, manifest)
 
 
+# famulus-skip: category=platform-contract; reason=Windows filesystems do not expose POSIX executable-mode transitions; alternate=the generated-byte reconciliation test covers the same allowlist boundary on Windows
+@pytest.mark.skipif(os.name == "nt", reason="POSIX file modes are unavailable")
 def test_mode_only_generated_artifact_change_is_rejected(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
