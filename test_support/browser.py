@@ -41,15 +41,23 @@ def chrome_executable(
         if executable:
             return executable
 
-    relative = (
-        Path("Google/Chrome/Application/chrome.exe")
-        if platform == "win32"
-        else Path("Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
-    )
+    if platform == "win32":
+        relative_paths = (Path("Google/Chrome/Application/chrome.exe"),)
+    elif platform == "darwin":
+        relative_paths = (
+            Path(
+                "Applications/Google Chrome for Testing.app/Contents/MacOS/"
+                "Google Chrome for Testing"
+            ),
+            Path("Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
+        )
+    else:
+        relative_paths = ()
     for root in _native_roots(platform, env):
-        candidate = root / relative
-        if candidate.is_file():
-            return str(candidate)
+        for relative_path in relative_paths:
+            candidate = root / relative_path
+            if candidate.is_file():
+                return str(candidate)
     return None
 
 

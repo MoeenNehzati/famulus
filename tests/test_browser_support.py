@@ -48,6 +48,26 @@ def test_chrome_executable_uses_native_install_locations(
     assert chrome_executable(env=env, platform=platform) == str(chrome)
 
 
+def test_chrome_executable_prefers_macos_automation_browser(
+    tmp_path: Path, monkeypatch
+) -> None:
+    root = tmp_path / "root"
+    consumer_chrome = (
+        root / "Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    )
+    testing_chrome = (
+        root
+        / "Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
+    )
+    for executable in (consumer_chrome, testing_chrome):
+        executable.parent.mkdir(parents=True)
+        executable.touch()
+    monkeypatch.setattr("test_support.browser._native_roots", lambda *_args: (root,))
+    monkeypatch.setattr("test_support.browser.shutil.which", lambda _name: None)
+
+    assert chrome_executable(env={}, platform="darwin") == str(testing_chrome)
+
+
 def test_required_browser_gate_fails_instead_of_skipping(monkeypatch) -> None:
     monkeypatch.setattr(browser, "chrome_executable", lambda: None)
     monkeypatch.setenv("FAMULUS_REQUIRE_BROWSER", "1")
