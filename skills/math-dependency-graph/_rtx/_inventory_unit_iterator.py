@@ -842,12 +842,6 @@ def next_inventory_unit(
                 connection.commit()
                 return response
 
-            try:
-                snapshot = _inventory_snapshot(inventory_path, worker_index, sources)
-            except ValueError as error:
-                connection.rollback()
-                return _failure("invalid-inventory", str(error))
-
             latest_ack = connection.execute(
                 "SELECT unit_id, wrapped, response_json FROM acknowledgements "
                 "WHERE worker_index = ? ORDER BY id DESC LIMIT 1",
@@ -862,6 +856,12 @@ def next_inventory_unit(
             if lease is None or lease[0] != ack:
                 connection.rollback()
                 return _failure("unexpected-ack", "acknowledgement does not match the outstanding lease")
+
+            try:
+                snapshot = _inventory_snapshot(inventory_path, worker_index, sources)
+            except ValueError as error:
+                connection.rollback()
+                return _failure("invalid-inventory", str(error))
 
             unit_ordinal = connection.execute(
                 "SELECT ordinal FROM units WHERE id = ?", (ack,)

@@ -612,6 +612,22 @@ def test_next_replays_the_most_recent_matching_acknowledgement_idempotently(
     assert _ack_rows(state_dir) == [(1, "u000001", 0)]
 
 
+def test_next_replays_the_latest_acknowledgement_after_its_fragment_changes(
+    tmp_path: Path,
+) -> None:
+    state_dir = _iterator_with_units(tmp_path)
+    leased = next_inventory_unit(state_dir, 1)
+    _write_valid_inventory(state_dir, 1)
+    advanced = next_inventory_unit(state_dir, 1, ack=leased["unit"]["id"])
+    _inventory_path(state_dir, 1).unlink()
+
+    retried = next_inventory_unit(state_dir, 1, ack=leased["unit"]["id"])
+
+    assert retried == advanced
+    assert retried["unit"]["id"] == "u000002"
+    assert _ack_rows(state_dir) == [(1, "u000001", 0)]
+
+
 def test_next_rejects_idempotent_retry_when_wrap_intent_differs(tmp_path: Path) -> None:
     state_dir = _iterator_with_units(tmp_path)
     leased = next_inventory_unit(state_dir, 1)
