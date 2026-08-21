@@ -17,22 +17,28 @@ sys.path.insert(0, str(REPO_SRC))
 sys.path.insert(0, str(SKILL_DIR / "_rtx"))
 
 import _extraction_chunk_planner as planner  # noqa: E402
-from _extraction_chunk_planner import (  # noqa: E402
-    plan_inventory_chunks,
-)
 
 
-def test_schema_enumerates_only_inventory_and_extract_planning_modes() -> None:
-    """The shared manifest contract must not advertise any semantic worker wave."""
+def test_schema_accepts_only_extract_plans() -> None:
+    """The chunk-plan contract must reject retired inventory traversal metadata."""
 
     schema = json.loads(
         (SKILL_DIR / "chunk-plan.schema.json").read_text(encoding="utf-8")
     )
 
-    assert schema["properties"]["mode"]["enum"] == ["inventory", "extract"]
+    assert schema["properties"]["mode"] == {"const": "extract"}
+    chunk_properties = schema["properties"]["chunks"]["items"]["properties"]
+    assert not {
+        "packet_sha256",
+        "owned_bytes",
+        "anchors",
+        "spans",
+    } & set(chunk_properties)
 
 
-@pytest.mark.parametrize("retired_mode", ("entity", "dependency", "semantic"))
+@pytest.mark.parametrize(
+    "retired_mode", ("inventory", "entity", "dependency", "semantic")
+)
 def test_cli_rejects_retired_planning_modes(
     tmp_path: Path, retired_mode: str
 ) -> None:
@@ -51,12 +57,12 @@ def test_cli_rejects_retired_planning_modes(
     assert failure.value.code == 2
 
 
-def test_planner_exports_only_inventory_and_extract_packet_builders() -> None:
-    """No public planner function may recreate an entity or semantic wave."""
+def test_planner_exports_only_extract_packet_builder() -> None:
+    """Inventory traversal must remain owned exclusively by the durable iterator."""
 
     assert {
         name for name in dir(planner) if name.startswith("plan_")
-    } == {"plan_extract_packet", "plan_inventory_chunks"}
+    } == {"plan_extract_packet"}
 
 
 def test_parent_blueprint_exposes_no_dependency_interface() -> None:
@@ -238,268 +244,6 @@ def test_authored_runtime_blueprints_follow_live_extraction_routes() -> None:
         driver_export,
         "math-dependency-graph._rtx.interface.scripts-record-run-diagnostics",
     }
-
-
-def _large_packet(*, files: int = 12, paragraphs_per_file: int = 36) -> str:
-    lines: list[str] = []
-    sentence = "A mechanically repeated active-source paragraph. " * 10
-    for file_index in range(files):
-        lines.append(f"@@ source: sections/part-{file_index:02d}.tex")
-        line_number = 1
-        for _paragraph in range(paragraphs_per_file):
-            lines.append(f"{line_number:04d} | {sentence}")
-            line_number += 1
-            lines.append(f"{line_number:04d} | ")
-            line_number += 1
-    return "\n".join(lines) + "\n"
-
-
-def _packet() -> str:
-    return (
-        "# packet\n"
-        "@@ source: sections/first.tex\n"
-        "0001 | First paragraph with enough words to count.\n"
-        "0002 | \n"
-        "0003 | Second paragraph with enough words to count.\n"
-        "0004 | \n"
-        "@@ source: sections/second.tex\n"
-        "0001 | A small adjacent file.\n"
-        "0002 | More text.\n"
-    )
-
-
-def test_inventory_plan_combines_small_files_and_covers_lines_once(tmp_path: Path) -> None:
-    manifest = plan_inventory_chunks(
-        _packet(),
-        source_packet_path=tmp_path / "source-packet.txt",
-        output_dir=tmp_path,
-        target_tokens=100,
-        hard_max_tokens=140,
-    )
-
-    assert len(manifest["chunks"]) == 1
-    assert manifest["chunks"][0]["spans"] == [
-        {"source_file": "sections/first.tex", "start_line": 1, "end_line": 4},
-        {"source_file": "sections/second.tex", "start_line": 1, "end_line": 2},
-    ]
-    packet = Path(manifest["chunks"][0]["packet_path"]).read_text(encoding="utf-8")
-    assert "# assigned-span: sections/first.tex:1-4" in packet
-    assert "# assigned-span: sections/second.tex:1-2" in packet
-
-
-def test_fifty_thousand_token_source_uses_one_inventory_job(tmp_path: Path) -> None:
-    packet_text = _large_packet()
-    manifest = plan_inventory_chunks(
-        packet_text,
-        source_packet_path=tmp_path / "source-packet.txt",
-        output_dir=tmp_path,
-    )
-
-    assert len(manifest["chunks"]) == 1
-    assert manifest["chunks"][0]["projected_total_tokens"] <= 95_000
-    planned = {
-        (span["source_file"], line_number)
-        for chunk in manifest["chunks"]
-        for span in chunk["spans"]
-        for line_number in range(span["start_line"], span["end_line"] + 1)
-    }
-    indexed = planner.index_source_packet(packet_text)
-    assert planned == set(indexed)
-
-
-def test_inventory_uses_minimum_chunks_above_projected_context_ceiling(
-    tmp_path: Path,
-) -> None:
-    packet_text = _large_packet(files=24, paragraphs_per_file=45)
-    manifest = plan_inventory_chunks(
-        packet_text,
-        source_packet_path=tmp_path / "source-packet.txt",
-        output_dir=tmp_path,
-    )
-
-    assert 1 < len(manifest["chunks"]) < 5
-    assert all(
-        chunk["projected_total_tokens"] <= 95_000
-        for chunk in manifest["chunks"]
-    )
-
-
-def test_inventory_limits_dense_mathematics_to_sixteen_anchors_per_chunk(
-    tmp_path: Path,
-) -> None:
-    lines = ["@@ source: dense.tex"]
-    line_number = 1
-    for index in range(32):
-        lines.extend(
-            [
-                f"{line_number:04d} | \\begin{{theorem}}",
-                f"{line_number + 1:04d} | Result {index} holds.",
-                f"{line_number + 2:04d} | \\end{{theorem}}",
-                f"{line_number + 3:04d} | ",
-            ]
-        )
-        line_number += 4
-
-    manifest = plan_inventory_chunks(
-        "\n".join(lines) + "\n",
-        source_packet_path=tmp_path / "source-packet.txt",
-        output_dir=tmp_path,
-    )
-
-    assert len(manifest["chunks"]) >= 2
-    anchor_counts = [len(chunk["anchors"]) for chunk in manifest["chunks"]]
-    assert sum(anchor_counts) == 32
-    assert max(anchor_counts) <= 16
-    assert all(
-        "visible-environment-anchor" not in Path(chunk["packet_path"]).read_text(
-            encoding="utf-8"
-        )
-        for chunk in manifest["chunks"]
-    )
-    assert all(
-        chunk["progress_path"]
-        == str((tmp_path / "progress" / f"{chunk['chunk_id']}.progress.md").resolve())
-        for chunk in manifest["chunks"]
-    )
-
-
-def test_inventory_plan_splits_large_file_at_safe_blank_boundary(tmp_path: Path) -> None:
-    manifest = plan_inventory_chunks(
-        _packet(),
-        source_packet_path=tmp_path / "source-packet.txt",
-        output_dir=tmp_path,
-        target_tokens=8,
-        hard_max_tokens=14,
-    )
-
-    first_file_spans = [
-        span
-        for chunk in manifest["chunks"]
-        for span in chunk["spans"]
-        if span["source_file"] == "sections/first.tex"
-    ]
-    covered = [
-        line
-        for span in first_file_spans
-        for line in range(span["start_line"], span["end_line"] + 1)
-    ]
-    assert covered == [1, 2, 3, 4]
-    assert len(first_file_spans) > 1
-
-
-def test_inventory_packet_hides_anchors_and_manifest_retains_them_for_postcheck(
-    tmp_path: Path,
-) -> None:
-    packet_text = (
-        "@@ source: section.tex\n"
-        "0001 | Introductory context.\n"
-        "0002 | \n"
-        "0003 | \\begin{theorem}\n"
-        "0004 | The conclusion holds.\n"
-        "0005 | \\end{theorem}\n"
-        "0006 | \n"
-        "0007 | Closing context.\n"
-    )
-    manifest = plan_inventory_chunks(
-        packet_text,
-        source_packet_path=tmp_path / "source-packet.txt",
-        output_dir=tmp_path,
-        target_tokens=6,
-        hard_max_tokens=20,
-    )
-
-    theorem_chunk = next(
-        chunk
-        for chunk in manifest["chunks"]
-        if any(span["start_line"] == 3 for span in chunk["spans"])
-    )
-    packet = Path(theorem_chunk["packet_path"]).read_text(encoding="utf-8")
-    assert "# Boundary-context lines are read-only" in packet
-    assert "# boundary-context-before: section.tex:1-2" in packet
-    assert "# boundary-context-after: section.tex:7-7" in packet
-    assert "visible-environment-anchor" not in packet
-    assert theorem_chunk["anchors"] == [
-        {
-            "source_file": "section.tex",
-            "start_line": 3,
-            "end_line": 5,
-            "environment": "theorem",
-        }
-    ]
-
-
-def test_inventory_plan_does_not_split_locally_declared_theorem_environment(
-    tmp_path: Path,
-) -> None:
-    """A blank line inside a custom theorem stays within one owned chunk."""
-
-    packet_text = (
-        "@@ source: section.tex\n"
-        "0001 | \\newtheorem{mainclaim}{Main Claim}\n"
-        "0002 | Introductory text.\n"
-        "0003 | \n"
-        "0004 | \\begin{mainclaim}\n"
-        "0005 | The first part of the claim.\n"
-        "0006 | \n"
-        "0007 | The second part of the claim.\n"
-        "0008 | \\end{mainclaim}\n"
-        "0009 | \n"
-        "0010 | Closing text.\n"
-    )
-    manifest = plan_inventory_chunks(
-        packet_text,
-        source_packet_path=tmp_path / "source-packet.txt",
-        output_dir=tmp_path,
-        target_tokens=5,
-        hard_max_tokens=40,
-    )
-
-    owning = [
-        span
-        for chunk in manifest["chunks"]
-        for span in chunk["spans"]
-        if span["start_line"] <= 4 <= span["end_line"]
-    ]
-    assert owning == [
-        {"source_file": "section.tex", "start_line": 4, "end_line": 9}
-    ]
-    assert owning[0]["end_line"] >= 8
-
-
-def test_inventory_plan_does_not_split_theorem_declared_in_another_source_file(
-    tmp_path: Path,
-) -> None:
-    """A preamble declaration must protect its included-file environment body."""
-
-    packet_text = (
-        "@@ source: main.tex\n"
-        "0001 | \\newtheorem{mainclaim}{Main Claim}\n"
-        "0002 | \\input{section}\n"
-        "@@ source: section.tex\n"
-        "0001 | \\begin{mainclaim}\n"
-        "0002 | The first part of the claim.\n"
-        "0003 | \n"
-        "0004 | The second part of the claim.\n"
-        "0005 | \\end{mainclaim}\n"
-    )
-    manifest = plan_inventory_chunks(
-        packet_text,
-        source_packet_path=tmp_path / "source-packet.txt",
-        output_dir=tmp_path,
-        target_tokens=5,
-        hard_max_tokens=40,
-    )
-
-    owning = [
-        span
-        for chunk in manifest["chunks"]
-        for span in chunk["spans"]
-        if span["source_file"] == "section.tex"
-        and span["start_line"] <= 1 <= span["end_line"]
-    ]
-    assert owning == [
-        {"source_file": "section.tex", "start_line": 1, "end_line": 5}
-    ]
 
 
 def test_extract_packet_contains_pooled_inventory_without_source_text(tmp_path: Path) -> None:

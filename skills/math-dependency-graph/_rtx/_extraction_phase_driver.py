@@ -9,8 +9,10 @@ and extract workers retain every mathematical decision.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
+import sqlite3
 from typing import Iterable
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
@@ -22,12 +24,12 @@ try:
         WorkerFragmentLoadError,
         apply_semantic_repair,
         canonical_json_bytes,
-        _owned_packet_bytes,
         pool_inventory_fragments,
         write_json_atomic,
     )
-    from ._extraction_chunk_planner import plan_extract_packet, plan_inventory_chunks
+    from ._extraction_chunk_planner import plan_extract_packet
     from ._graph_builder import main as render_graph
+    from ._inventory_unit_iterator import load_iterator_summary
     from ._run_diagnostics import RunDiagnostics, _measure_file
     from ._semantic_graph_compiler import compile_semantic_graph, validate_semantic_payload
     from ._source_packet import collect_source_packet, write_source_packet
@@ -39,12 +41,12 @@ except ImportError:  # pragma: no cover - direct script execution
         WorkerFragmentLoadError,
         apply_semantic_repair,
         canonical_json_bytes,
-        _owned_packet_bytes,
         pool_inventory_fragments,
         write_json_atomic,
     )
-    from _extraction_chunk_planner import plan_extract_packet, plan_inventory_chunks
+    from _extraction_chunk_planner import plan_extract_packet
     from _graph_builder import main as render_graph
+    from _inventory_unit_iterator import load_iterator_summary
     from _run_diagnostics import RunDiagnostics, _measure_file
     from _semantic_graph_compiler import compile_semantic_graph, validate_semantic_payload
     from _source_packet import collect_source_packet, write_source_packet
@@ -55,16 +57,17 @@ SKILL_DIR = Path(__file__).resolve().parents[1]
 BASE_PATH = SKILL_DIR / "base.json"
 
 
-def _inventory_job(chunk: dict) -> dict:
-    """Return every immutable path required by one inventory worker."""
+class InventoryIncompleteError(ValueError):
+    """Signal that durable inventory workers have not all reached completion."""
+
+
+def _iterator_setup_job(source_packet: Path, state_dir: Path) -> dict:
+    """Return the sole deterministic handoff created by source preparation."""
 
     return {
-        "chunk_id": chunk["chunk_id"],
-        "instruction": str(SKILL_DIR / "instructions" / "inventory.md"),
-        "schema": str(SKILL_DIR / "inventory.schema.json"),
-        "packet": chunk["packet_path"],
-        "progress_path": chunk["progress_path"],
-        "output": chunk["fragment_path"],
+        "operation": "setup-inventory-iterator",
+        "source_packet": str(source_packet.resolve()),
+        "state_dir": str(state_dir.resolve()),
     }
 
 
@@ -127,6 +130,144 @@ def _read_json(path: Path) -> dict:
     if not isinstance(payload, dict):
         raise ValueError(f"expected JSON object: {path}")
     return payload
+
+
+def _assignment_units(summary: dict, assignment: dict) -> list[dict]:
+    """Return the persisted contiguous unit range owned by one assignment."""
+
+    units = summary.get("units")
+    if not isinstance(units, list) or not units:
+        raise ValueError("iterator state requires durable source units")
+    unit_ids = [unit.get("id") for unit in units]
+    try:
+        first = unit_ids.index(assignment["first_unit_id"])
+        last = unit_ids.index(assignment["last_unit_id"])
+    except (KeyError, ValueError) as error:
+        raise ValueError("iterator assignment names an unknown durable unit") from error
+    if first > last:
+        raise ValueError("iterator assignment unit range is reversed")
+    owned = units[first : last + 1]
+    if len(owned) != assignment.get("unit_count"):
+        raise ValueError("iterator assignment unit count does not match durable state")
+    return owned
+
+
+def _owned_spans(units: list[dict]) -> list[dict]:
+    """Coalesce persisted worker coordinates into inclusive source spans."""
+
+    spans: list[dict] = []
+    for unit in units:
+        coordinates = unit.get("coordinates")
+        if not isinstance(coordinates, list) or not coordinates:
+            raise ValueError("durable iterator unit requires source coordinates")
+        for coordinate in coordinates:
+            source_file = coordinate.get("source")
+            line_number = coordinate.get("line")
+            if (
+                not isinstance(source_file, str)
+                or not source_file
+                or not isinstance(line_number, int)
+                or line_number < 1
+            ):
+                raise ValueError("durable iterator coordinate is invalid")
+            if (
+                spans
+                and spans[-1]["source_file"] == source_file
+                and spans[-1]["end_line"] + 1 == line_number
+            ):
+                spans[-1]["end_line"] = line_number
+            else:
+                spans.append(
+                    {
+                        "source_file": source_file,
+                        "start_line": line_number,
+                        "end_line": line_number,
+                    }
+                )
+    return spans
+
+
+def _completed_worker_indexes(state_dir: Path) -> tuple[list[int], list[int]]:
+    """Read effective and complete worker indices from the durable cursor table."""
+
+    try:
+        with sqlite3.connect(state_dir / "iterator.sqlite3") as connection:
+            rows = connection.execute(
+                "SELECT worker_index, complete FROM assignments ORDER BY worker_index"
+            ).fetchall()
+    except sqlite3.Error as error:
+        raise ValueError("iterator completion state is unavailable") from error
+    if not rows or any(complete not in (0, 1) for _worker, complete in rows):
+        raise ValueError("iterator completion state is invalid")
+    workers = [int(worker) for worker, _complete in rows]
+    incomplete = [int(worker) for worker, complete in rows if not complete]
+    return workers, incomplete
+
+
+def _iterator_pool_inputs(state_dir: Path, expected_source: Path) -> tuple[dict, list[dict]]:
+    """Build pooler ownership from private controller packets and durable units."""
+
+    summary = load_iterator_summary(state_dir)
+    if Path(str(summary.get("source_packet_path", ""))).resolve() != expected_source:
+        raise ValueError("iterator source packet does not match prepared run state")
+    assignments = summary.get("assignments")
+    if not isinstance(assignments, list) or not assignments:
+        raise ValueError("iterator state requires effective worker assignments")
+    workers, incomplete = _completed_worker_indexes(state_dir)
+    expected_workers = [assignment.get("worker_index") for assignment in assignments]
+    if workers != expected_workers or summary.get("effective_workers") != len(workers):
+        raise ValueError("iterator assignment state does not match durable worker cursors")
+    if incomplete:
+        raise InventoryIncompleteError(f"inventory workers are incomplete: {incomplete!r}")
+
+    source_sha256 = summary.get("configuration", {}).get("source_sha256")
+    if not isinstance(source_sha256, str) or len(source_sha256) != 64:
+        raise ValueError("iterator state requires a durable source identity")
+    chunks: list[dict] = []
+    fragments: list[dict] = []
+    for assignment in assignments:
+        worker_index = assignment["worker_index"]
+        chunk_id = f"iterator-worker-{worker_index:03d}"
+        units = _assignment_units(summary, assignment)
+        controller_path = Path(assignment["controller_packet_path"]).resolve()
+        controller = _read_json(controller_path)
+        expected_unit_ids = [unit["id"] for unit in units]
+        if controller != {
+            "worker_index": worker_index,
+            "unit_ids": expected_unit_ids,
+            "source_packet_path": str(expected_source),
+            "source_sha256": source_sha256,
+        }:
+            raise ValueError(f"controller packet does not match worker {worker_index}")
+        fragment_path = Path(assignment["inventory_path"]).resolve()
+        fragment = _read_json(fragment_path)
+        if fragment.get("chunk_id") != chunk_id:
+            raise ValueError(f"inventory fragment does not match worker {worker_index}")
+        controller_bytes = controller_path.read_bytes()
+        chunks.append(
+            {
+                "chunk_id": chunk_id,
+                "packet_path": str(controller_path),
+                "packet_sha256": hashlib.sha256(controller_bytes).hexdigest(),
+                "owned_bytes": sum(int(unit["character_count"]) for unit in units),
+                "fragment_path": str(fragment_path),
+                "anchors": [],
+                "spans": _owned_spans(units),
+            }
+        )
+        fragments.append(fragment)
+
+    assignments_path = state_dir / "inventory-assignments.json"
+    manifest_bytes = assignments_path.read_bytes()
+    return (
+        {
+            "mode": "inventory",
+            "source": str(assignments_path),
+            "source_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
+            "chunks": chunks,
+        },
+        fragments,
+    )
 
 
 def _structured_record_counts(payload: dict) -> dict:
@@ -216,14 +357,14 @@ def _open_phase_diagnostics(run_dir: Path) -> RunDiagnostics:
 
 
 def prepare(entrypoint: Path, run_dir: Path) -> dict:
-    """Prepare active source and its minimum deterministic inventory chunk plan."""
+    """Prepare active source and return one durable iterator setup assignment."""
 
     entrypoint = entrypoint.resolve()
     run_dir = run_dir.resolve()
     run_dir.mkdir(parents=True, exist_ok=True)
     diagnostics = RunDiagnostics.initialize(run_dir, entrypoint=entrypoint)
     source_path = run_dir / "source-packet.txt"
-    inventory_manifest_path = run_dir / "inventory-chunks.json"
+    iterator_state_dir = run_dir / "inventory-iterator"
     state_path = run_dir / "run-state.json"
     try:
         with diagnostics.stage(
@@ -239,28 +380,18 @@ def prepare(entrypoint: Path, run_dir: Path) -> dict:
         with diagnostics.stage(
             "planning",
             inputs=[source_path],
-            outputs=[inventory_manifest_path, state_path, run_dir / "inventory-packets"],
+            outputs=[state_path],
         ):
-            manifest = plan_inventory_chunks(
-                packet.text,
-                source_packet_path=source_path,
-                output_dir=run_dir,
-            )
+            setup_job = _iterator_setup_job(source_path, iterator_state_dir)
             state = {
                 "entrypoint": str(entrypoint),
                 "source_packet": str(source_path),
-                "inventory_manifest": str(inventory_manifest_path),
+                "inventory_iterator_state": str(iterator_state_dir),
             }
             write_json_atomic(state, state_path)
-        for chunk in manifest["chunks"]:
-            diagnostics.record_artifact(
-                Path(chunk["packet_path"]),
-                kind="inventory-packet",
-                phase="planning",
-            )
         return {
             **state,
-            "next_jobs": [_inventory_job(item) for item in manifest["chunks"]],
+            "next_job": setup_job,
             "diagnostics": str(diagnostics.path),
         }
     except BaseException as exc:
@@ -268,10 +399,11 @@ def prepare(entrypoint: Path, run_dir: Path) -> dict:
         raise
 
 
-def advance_inventory(fragment_manifest_path: Path, run_dir: Path) -> dict:
-    """Pool inventory fragments and materialize exactly one extract handoff."""
+def advance_inventory(iterator_state_dir: Path, run_dir: Path) -> dict:
+    """Pool completed iterator inventories and materialize one extract handoff."""
 
     run_dir = run_dir.resolve()
+    iterator_state_dir = iterator_state_dir.resolve()
     diagnostics = _open_phase_diagnostics(run_dir)
     inventory_path = run_dir / "inventory-ir.json"
     extract_manifest_path = run_dir / "extract-chunks.json"
@@ -279,35 +411,27 @@ def advance_inventory(fragment_manifest_path: Path, run_dir: Path) -> dict:
     recoverable_pooling_failure = False
     try:
         state = _read_json(state_path)
-        fragment_manifest, fragments = _load_fragment_manifest(
-            fragment_manifest_path.resolve()
-        )
-        chunk_manifest = _read_json(run_dir / "inventory-chunks.json")
-        manifest_paths = [Path(path) for path in fragment_manifest["fragments"]]
-        fragments_by_chunk: dict[str, dict] = {}
-        paths_by_chunk: dict[str, Path] = {}
-        for fragment_path, fragment in zip(manifest_paths, fragments, strict=True):
-            chunk_id = fragment.get("chunk_id")
-            if not isinstance(chunk_id, str) or not chunk_id:
-                raise ValueError("inventory fragment requires a nonempty chunk_id")
-            if chunk_id in fragments_by_chunk:
-                raise ValueError(f"duplicate inventory fragment chunk id: {chunk_id}")
-            fragments_by_chunk[chunk_id] = fragment
-            paths_by_chunk[chunk_id] = fragment_path
-        ordered_chunk_ids = [str(chunk["chunk_id"]) for chunk in chunk_manifest["chunks"]]
-        unknown = sorted(set(fragments_by_chunk) - set(ordered_chunk_ids))
-        missing = sorted(set(ordered_chunk_ids) - set(fragments_by_chunk))
-        if unknown or missing:
-            raise ValueError(
-                f"inventory fragment ownership mismatch: missing={missing!r}, unknown={unknown!r}"
+        prepared_state_dir = Path(state.get("inventory_iterator_state", "")).resolve()
+        if iterator_state_dir != prepared_state_dir:
+            raise ValueError("iterator state does not match prepared iterator state")
+        try:
+            chunk_manifest, fragments = _iterator_pool_inputs(
+                iterator_state_dir,
+                Path(state["source_packet"]).resolve(),
             )
-        fragments = [fragments_by_chunk[chunk_id] for chunk_id in ordered_chunk_ids]
-        fragment_paths = [paths_by_chunk[chunk_id] for chunk_id in ordered_chunk_ids]
-        packet_paths = [Path(chunk["packet_path"]) for chunk in chunk_manifest["chunks"]]
+        except InventoryIncompleteError:
+            recoverable_pooling_failure = True
+            raise
+        chunks = chunk_manifest["chunks"]
+        fragment_paths = [Path(chunk["fragment_path"]) for chunk in chunks]
+        controller_paths = [Path(chunk["packet_path"]) for chunk in chunks]
+        fragments_by_chunk = {
+            str(fragment["chunk_id"]): fragment for fragment in fragments
+        }
         try:
             with diagnostics.stage(
                 "pooling",
-                inputs=[*fragment_paths, *packet_paths],
+                inputs=[*fragment_paths, *controller_paths],
                 outputs=[inventory_path],
                 validation=True,
             ):
@@ -319,33 +443,26 @@ def advance_inventory(fragment_manifest_path: Path, run_dir: Path) -> dict:
         except ValueError:
             recoverable_pooling_failure = True
             raise
-        for chunk, fragment_path in zip(
-            chunk_manifest["chunks"], fragment_paths, strict=True
-        ):
-            packet_artifact = diagnostics.record_artifact(
+        for chunk, fragment_path in zip(chunks, fragment_paths, strict=True):
+            controller_artifact = diagnostics.record_artifact(
                 Path(chunk["packet_path"]),
                 kind="inventory-packet",
                 phase="planning",
             )
+            fragment = fragments_by_chunk[str(chunk["chunk_id"])]
             fragment_artifact = diagnostics.record_artifact(
                 fragment_path,
                 kind="inventory-fragment",
                 phase="inventory",
-                counts=_structured_record_counts(
-                    fragments_by_chunk[str(chunk["chunk_id"])]
-                ),
+                counts=_structured_record_counts(fragment),
             )
             diagnostics.record_ratio(
                 "inventory-fragment-to-owned-packet",
                 numerator=fragment_artifact,
-                denominator=packet_artifact,
+                denominator=controller_artifact,
                 job_id=str(chunk["chunk_id"]),
-                numerator_bytes=len(
-                    canonical_json_bytes(
-                        fragments_by_chunk[str(chunk["chunk_id"])]
-                    )
-                ),
-                denominator_bytes=_owned_packet_bytes(chunk),
+                numerator_bytes=len(canonical_json_bytes(fragment)),
+                denominator_bytes=int(chunk["owned_bytes"]),
                 measurement_basis="canonical-fragment-to-owned-lines",
                 stage_attempt=f"{chunk['chunk_id']}:initial",
             )
@@ -364,13 +481,8 @@ def advance_inventory(fragment_manifest_path: Path, run_dir: Path) -> dict:
             "pooled-canonical-fragments-to-owned-packets",
             numerator=inventory_artifact,
             denominator=source_artifact,
-            numerator_bytes=sum(
-                len(canonical_json_bytes(fragments_by_chunk[chunk_id]))
-                for chunk_id in ordered_chunk_ids
-            ),
-            denominator_bytes=sum(
-                _owned_packet_bytes(chunk) for chunk in chunk_manifest["chunks"]
-            ),
+            numerator_bytes=sum(len(canonical_json_bytes(fragment)) for fragment in fragments),
+            denominator_bytes=sum(int(chunk["owned_bytes"]) for chunk in chunks),
             measurement_basis="canonical-fragments-to-owned-lines",
         )
         diagnostics.record_ratio(

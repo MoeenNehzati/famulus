@@ -3,10 +3,9 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
-import hashlib
 import json
 from pathlib import Path
+import sqlite3
 import sys
 
 import pytest
@@ -18,6 +17,10 @@ sys.path.insert(0, str(REPO_SRC))
 sys.path.insert(0, str(SKILL_DIR / "_rtx"))
 
 import _extraction_phase_driver as driver  # noqa: E402
+from _inventory_unit_iterator import (  # noqa: E402
+    next_inventory_unit,
+    setup_inventory_iterator,
+)
 from _run_diagnostics import RunDiagnostics  # noqa: E402
 
 
@@ -26,18 +29,6 @@ def _write_json(path: Path, payload: dict) -> None:
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload), encoding="utf-8")
-
-
-def _packet_snapshot(path: Path) -> tuple[str, int]:
-    """Return the manifest hash and exact numbered-line bytes for a test packet."""
-
-    raw = path.read_bytes()
-    owned = sum(
-        len(line)
-        for line in raw.splitlines(keepends=True)
-        if b" | " in line and line.split(b" | ", 1)[0].isdigit()
-    )
-    return hashlib.sha256(raw).hexdigest(), owned
 
 
 def _entrypoint(tmp_path: Path) -> Path:
@@ -61,291 +52,202 @@ def _initialize_diagnostics(tmp_path: Path, entrypoint: Path) -> None:
     RunDiagnostics.initialize(tmp_path, entrypoint=entrypoint)
 
 
-def _fragment() -> dict:
-    """Return a compact valid inventory fragment for the only owned chunk."""
+def _setup_prepared_run(
+    tmp_path: Path, *, workers: int = 2, window_chars: int = 40
+) -> tuple[Path, dict]:
+    """Prepare source, execute its one setup assignment, and return durable state."""
 
-    return {
-        "ir_version": 3,
-        "chunk_id": "inventory-001",
-        "files": ["section.tex"],
-        "nodes": [
-            {
-                "local_id": "n1",
-                "location": [0, 1, 1],
-                "environment": "definition",
-                "provenance": "explicit",
-                "type_hint": "setup",
-                "summary": "An admissible object is fixed.",
-            }
-        ],
-        "edges": [],
-        "gaps": [],
-    }
-
-
-def test_advance_inventory_writes_pooled_ir_and_one_extract_job(tmp_path: Path) -> None:
-    """The old candidate-ledger wave must be replaced by exactly one extract handoff."""
-
-    source_path = tmp_path / "source-packet.txt"
-    source_path.write_text(
-        "@@ source: section.tex\n"
-        + "\n".join(f"{line:04d} | " + "x" * 240 for line in range(1, 21))
-        + "\n",
-        encoding="utf-8",
+    run_dir = tmp_path / "run"
+    report = driver.prepare(_entrypoint(tmp_path), run_dir)
+    job = report["next_job"]
+    summary = setup_inventory_iterator(
+        Path(job["source_packet"]),
+        Path(job["state_dir"]),
+        requested_workers=workers,
+        window_chars=window_chars,
     )
-    entrypoint = _entrypoint(tmp_path)
-    _initialize_diagnostics(tmp_path, entrypoint)
-    _write_json(
-        tmp_path / "run-state.json",
-        {
-            "entrypoint": str(entrypoint),
-            "source_packet": str(source_path),
-            "inventory_manifest": str(tmp_path / "inventory-chunks.json"),
-        },
-    )
-    fragment_path = tmp_path / "inventory-fragments/inventory-001.json"
-    _write_json(fragment_path, _fragment())
-    source_sha256, owned_bytes = _packet_snapshot(source_path)
-    _write_json(
-        tmp_path / "inventory-chunks.json",
-        {
-            "plan_version": 1,
-            "mode": "inventory",
-            "source": str(source_path),
-            "source_sha256": source_sha256,
-            "target_tokens": 60_000,
-            "hard_max_tokens": 95_000,
-            "chunks": [
-                {
-                    "chunk_id": "inventory-001",
-                    "estimated_tokens": 100,
-                    "packet_path": str(source_path),
-                    "packet_sha256": source_sha256,
-                    "owned_bytes": owned_bytes,
-                    "anchors": [],
-                    "fragment_path": str(fragment_path),
-                    "spans": [
-                        {"source_file": "section.tex", "start_line": 1, "end_line": 20}
-                    ],
-                }
-            ],
-        },
-    )
-    fragment_manifest = tmp_path / "inventory-fragments.json"
-    _write_json(fragment_manifest, {"fragments": [str(fragment_path)]})
-
-    report = driver.advance_inventory(fragment_manifest, tmp_path)
-
-    assert report["inventory_ir"].endswith("inventory-ir.json")
-    assert report["next_job"]["chunk_id"] == "extract-001"
-    assert report["next_job"]["instruction"].endswith("instructions/extract.md")
-    assert report["next_job"]["schema"].endswith("semantic-graph.schema.json")
-    assert report["next_job"]["source_packet"] == str(source_path.resolve())
-    assert report["next_job"]["entrypoint"] == str(entrypoint.resolve())
-    assert report["next_job"]["progress_path"] == str(
-        (tmp_path / "progress" / "extract-001.progress.md").resolve()
-    )
-    pooled = json.loads((tmp_path / "inventory-ir.json").read_text(encoding="utf-8"))
-    assert pooled["chunk_id"] == "pooled"
-    assert pooled["evidence"][0]["id"] == "inventory-001::e1"
-    state = json.loads((tmp_path / "run-state.json").read_text(encoding="utf-8"))
-    assert state["inventory_ir"] == str((tmp_path / "inventory-ir.json").resolve())
-    assert state["extract_manifest"] == str((tmp_path / "extract-chunks.json").resolve())
-    diagnostics = json.loads(
-        (tmp_path / "run-diagnostics.json").read_text(encoding="utf-8")
-    )
-    assert [stage["operation"] for stage in diagnostics["stages"]] == [
-        "pooling",
-        "planning",
-    ]
-    assert [ratio["kind"] for ratio in diagnostics["ratios"]] == [
-        "inventory-fragment-to-owned-packet",
-        "pooled-canonical-fragments-to-owned-packets",
-        "pooled-inventory-to-active-source",
-    ]
-    artifacts = {artifact["kind"]: artifact for artifact in diagnostics["artifacts"]}
-    expected_fragment_counts = {
-        "files": 1,
-        "nodes": 1,
-        "edges": 0,
-        "gaps": 0,
-    }
-    expected_pooled_counts = {
-        "files": 1,
-        "evidence": 1,
-        "references": 0,
-        "candidates": 1,
-        "unresolved_entities": 0,
-        "relationship_hints": 0,
-        "reference_decisions": 0,
-        "gaps": 0,
-    }
-    assert artifacts["inventory-fragment"]["counts"] == expected_fragment_counts
-    assert artifacts["pooled-inventory"]["counts"] == expected_pooled_counts
-    assert report["diagnostics"] == str(tmp_path / "run-diagnostics.json")
+    return run_dir, summary
 
 
-def test_rejected_inventory_fragment_keeps_run_open_for_bounded_retry(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A worker-local pooling rejection must not close the retryable run."""
+def _complete_worker(state_dir: Path, worker_index: int) -> None:
+    """Acknowledge every durable unit for one test worker."""
 
-    source_path = tmp_path / "source-packet.txt"
-    source_path.write_text("@@ source: section.tex\n0001 | source\n", encoding="utf-8")
-    entrypoint = _entrypoint(tmp_path)
-    _initialize_diagnostics(tmp_path, entrypoint)
-    _write_json(
-        tmp_path / "run-state.json",
-        {
-            "entrypoint": str(entrypoint),
-            "source_packet": str(source_path),
-            "inventory_manifest": str(tmp_path / "inventory-chunks.json"),
-        },
-    )
-    fragment_path = tmp_path / "inventory-fragments/inventory-001.json"
-    _write_json(fragment_path, _fragment())
-    source_sha256, owned_bytes = _packet_snapshot(source_path)
-    _write_json(
-        tmp_path / "inventory-chunks.json",
-        {
-            "plan_version": 1,
-            "mode": "inventory",
-            "source": str(source_path),
-            "source_sha256": source_sha256,
-            "target_tokens": 60_000,
-            "hard_max_tokens": 95_000,
-            "chunks": [
-                {
-                    "chunk_id": "inventory-001",
-                    "estimated_tokens": 10,
-                    "packet_path": str(source_path),
-                    "packet_sha256": source_sha256,
-                    "owned_bytes": owned_bytes,
-                    "anchors": [],
-                    "fragment_path": str(fragment_path),
-                    "spans": [
-                        {"source_file": "section.tex", "start_line": 1, "end_line": 1}
-                    ],
-                }
-            ],
-        },
-    )
-    manifest = tmp_path / "inventory-fragments.json"
-    _write_json(manifest, {"fragments": [str(fragment_path)]})
-
-    def reject_fragment(*_args, **_kwargs):
-        raise ValueError("inventory fragment misses visible environment anchor")
-
-    monkeypatch.setattr(driver, "pool_inventory_fragments", reject_fragment)
-
-    with pytest.raises(ValueError, match="misses visible environment anchor"):
-        driver.advance_inventory(manifest, tmp_path)
-
-    diagnostics = json.loads(
-        (tmp_path / "run-diagnostics.json").read_text(encoding="utf-8")
-    )
-    assert diagnostics["run"]["status"] == "running"
-    assert diagnostics["stages"][-1]["operation"] == "pooling"
-    assert diagnostics["stages"][-1]["status"] == "failure"
+    response = next_inventory_unit(state_dir, worker_index)
+    while response["state"] == "unit":
+        response = next_inventory_unit(
+            state_dir, worker_index, ack=response["unit"]["id"]
+        )
+    assert response == {"state": "complete"}
 
 
-def test_advance_inventory_pairs_reversed_manifest_fragments_by_chunk_id(
+def _completion_rows(state_dir: Path) -> list[tuple[int, int]]:
+    """Read durable worker completion without deriving source units."""
+
+    with sqlite3.connect(state_dir / "iterator.sqlite3") as connection:
+        return connection.execute(
+            "SELECT worker_index, complete FROM assignments ORDER BY worker_index"
+        ).fetchall()
+
+
+def test_prepare_returns_one_iterator_setup_assignment_without_inventory_jobs(
     tmp_path: Path,
 ) -> None:
-    """Ratio ownership must follow each fragment chunk id, never manifest list order."""
+    """Prepare must hand off one deterministic setup call, never source-bearing workers."""
 
-    entrypoint = _entrypoint(tmp_path)
-    _initialize_diagnostics(tmp_path, entrypoint)
-    packet_paths: dict[str, Path] = {}
-    fragment_paths: dict[str, Path] = {}
-    chunks: list[dict] = []
-    for ordinal in (1, 2):
-        chunk_id = f"inventory-{ordinal:03d}"
-        source_file = f"section-{ordinal}.tex"
-        packet_path = tmp_path / f"packet-{ordinal}.txt"
-        packet_path.write_text(
-            f"@@ source: {source_file}\n"
-            + "".join(
-                f"{line:04d} | " + ("x" * (160 + ordinal)) + "\n"
-                for line in range(1, 21)
-            ),
-            encoding="utf-8",
-        )
-        fragment = deepcopy(_fragment())
-        fragment["chunk_id"] = chunk_id
-        fragment["files"] = [source_file]
-        fragment_path = tmp_path / f"fragment-{ordinal}.json"
-        _write_json(fragment_path, fragment)
-        packet_paths[chunk_id] = packet_path
-        fragment_paths[chunk_id] = fragment_path
-        chunks.append(
-            {
-                "chunk_id": chunk_id,
-                "estimated_tokens": 100,
-                "packet_path": str(packet_path),
-                "fragment_path": str(fragment_path),
-                "anchors": [],
-                "spans": [
-                    {"source_file": source_file, "start_line": 1, "end_line": 20}
-                ],
-            }
-            )
-        packet_sha256, owned_bytes = _packet_snapshot(packet_path)
-        chunks[-1]["packet_sha256"] = packet_sha256
-        chunks[-1]["owned_bytes"] = owned_bytes
-    source_sha256, _owned = _packet_snapshot(packet_paths["inventory-001"])
-    _write_json(
-        tmp_path / "run-state.json",
-        {
-            "entrypoint": str(entrypoint),
-            "source_packet": str(packet_paths["inventory-001"]),
-            "inventory_manifest": str(tmp_path / "inventory-chunks.json"),
-        },
+    run_dir = tmp_path / "run"
+
+    report = driver.prepare(_entrypoint(tmp_path), run_dir)
+
+    assert report["next_job"] == {
+        "operation": "setup-inventory-iterator",
+        "source_packet": str((run_dir / "source-packet.txt").resolve()),
+        "state_dir": str((run_dir / "inventory-iterator").resolve()),
+    }
+    assert "next_jobs" not in report
+    assert not (run_dir / "inventory-chunks.json").exists()
+    assert not (run_dir / "inventory-packets").exists()
+    state = json.loads((run_dir / "run-state.json").read_text(encoding="utf-8"))
+    assert state["inventory_iterator_state"] == report["next_job"]["state_dir"]
+
+
+def test_setup_assignment_produces_only_effective_nonempty_workers(tmp_path: Path) -> None:
+    """Executing prepare's setup handoff returns only effective worker ranges."""
+
+    _run_dir, summary = _setup_prepared_run(tmp_path, workers=8, window_chars=40)
+
+    assert summary["effective_workers"] == len(summary["assignments"])
+    assert summary["effective_workers"] < summary["requested_workers"]
+    assert [assignment["worker_index"] for assignment in summary["assignments"]] == list(
+        range(1, summary["effective_workers"] + 1)
     )
-    _write_json(
-        tmp_path / "inventory-chunks.json",
-        {
-            "plan_version": 1,
-            "mode": "inventory",
-            "source": str(packet_paths["inventory-001"]),
-            "source_sha256": source_sha256,
-            "target_tokens": 60_000,
-            "hard_max_tokens": 95_000,
-            "chunks": chunks,
-        },
-    )
-    fragment_manifest = tmp_path / "inventory-fragments.json"
-    _write_json(
-        fragment_manifest,
-        {
-            "fragments": [
-                str(fragment_paths["inventory-002"]),
-                str(fragment_paths["inventory-001"]),
-            ]
-        },
+    assert all(assignment["unit_count"] > 0 for assignment in summary["assignments"])
+
+
+def test_advance_inventory_fails_closed_until_every_worker_is_complete(
+    tmp_path: Path,
+) -> None:
+    """One completed worker cannot authorize pooling while another cursor is open."""
+
+    run_dir, summary = _setup_prepared_run(tmp_path)
+    state_dir = Path(summary["assignments"][0]["inventory_path"]).parents[2]
+    assert summary["effective_workers"] == 2
+    _complete_worker(state_dir, 1)
+
+    with pytest.raises(ValueError, match=r"inventory workers are incomplete: \[2\]"):
+        driver.advance_inventory(state_dir, run_dir)
+
+    assert _completion_rows(state_dir) == [(1, 1), (2, 0)]
+    assert not (run_dir / "inventory-ir.json").exists()
+
+
+def test_advance_inventory_rejects_state_other_than_the_prepared_iterator(
+    tmp_path: Path,
+) -> None:
+    """A different durable iterator directory cannot be substituted at pooling time."""
+
+    run_dir, summary = _setup_prepared_run(tmp_path)
+    other_state = tmp_path / "other-iterator"
+    setup_inventory_iterator(
+        Path(summary["source_packet_path"]),
+        other_state,
+        requested_workers=2,
+        window_chars=40,
     )
 
-    driver.advance_inventory(fragment_manifest, tmp_path)
+    with pytest.raises(ValueError, match="does not match prepared iterator state"):
+        driver.advance_inventory(other_state, run_dir)
 
-    diagnostics = RunDiagnostics.open(tmp_path).payload
-    artifacts = {artifact["id"]: artifact for artifact in diagnostics["artifacts"]}
-    ownership_ratios = [
-        ratio
-        for ratio in diagnostics["ratios"]
-        if ratio["kind"] == "inventory-fragment-to-owned-packet"
+    assert not (run_dir / "inventory-ir.json").exists()
+
+
+def test_advance_inventory_rejects_mismatched_private_controller_state(
+    tmp_path: Path,
+) -> None:
+    """Pooling must authenticate each private packet against durable worker ownership."""
+
+    run_dir, summary = _setup_prepared_run(tmp_path)
+    state_dir = Path(summary["assignments"][0]["inventory_path"]).parents[2]
+    for assignment in summary["assignments"]:
+        _complete_worker(state_dir, assignment["worker_index"])
+    controller_path = Path(summary["assignments"][0]["controller_packet_path"])
+    controller = json.loads(controller_path.read_text(encoding="utf-8"))
+    controller["unit_ids"] = []
+    _write_json(controller_path, controller)
+
+    with pytest.raises(ValueError, match="controller packet does not match worker 1"):
+        driver.advance_inventory(state_dir, run_dir)
+
+    assert not (run_dir / "inventory-ir.json").exists()
+
+
+def test_completed_iterator_pools_private_controller_packets_and_worker_inventories(
+    tmp_path: Path,
+) -> None:
+    """Pooling provenance is controller-only and successful output enters extract unchanged."""
+
+    run_dir, summary = _setup_prepared_run(tmp_path)
+    state_dir = Path(summary["assignments"][0]["inventory_path"]).parents[2]
+    for assignment in summary["assignments"]:
+        _complete_worker(state_dir, assignment["worker_index"])
+
+    report = driver.advance_inventory(state_dir, run_dir)
+
+    assert report["inventory_ir"] == str((run_dir / "inventory-ir.json").resolve())
+    assert report["next_job"]["chunk_id"] == "extract-001"
+    assert report["next_job"]["source_packet"] == str(
+        (run_dir / "source-packet.txt").resolve()
+    )
+    pooled = json.loads((run_dir / "inventory-ir.json").read_text(encoding="utf-8"))
+    assert pooled["chunk_id"] == "pooled"
+    diagnostics = RunDiagnostics.open(run_dir).payload
+    artifacts = [
+        artifact for artifact in diagnostics["artifacts"]
+        if artifact["kind"] == "inventory-packet"
     ]
-    assert [ratio["job_id"] for ratio in ownership_ratios] == [
-        "inventory-001",
-        "inventory-002",
+    assert [artifact["path"] for artifact in artifacts] == [
+        assignment["controller_packet_path"] for assignment in summary["assignments"]
     ]
-    for ratio in ownership_ratios:
-        chunk_id = ratio["job_id"]
-        assert artifacts[ratio["numerator_artifact"]]["path"] == str(
-            fragment_paths[chunk_id].resolve()
-        )
-        assert artifacts[ratio["denominator_artifact"]]["path"] == str(
-            packet_paths[chunk_id].resolve()
-        )
+    assert all(
+        artifact["path"] != summary["source_packet_path"] for artifact in artifacts
+    )
+
+
+def test_advance_inventory_resumes_after_crash_from_same_durable_units(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A pooling crash may retry from SQLite state without source planning or setup."""
+
+    run_dir, summary = _setup_prepared_run(tmp_path)
+    state_dir = Path(summary["assignments"][0]["inventory_path"]).parents[2]
+    for assignment in summary["assignments"]:
+        _complete_worker(state_dir, assignment["worker_index"])
+    with sqlite3.connect(state_dir / "iterator.sqlite3") as connection:
+        durable_units = connection.execute(
+            "SELECT id, ordinal, metadata_json FROM units ORDER BY ordinal"
+        ).fetchall()
+    real_pool = driver.pool_inventory_fragments
+    attempts = 0
+
+    def crash_once(*args, **kwargs):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("injected pooling crash")
+        return real_pool(*args, **kwargs)
+
+    monkeypatch.setattr(driver, "pool_inventory_fragments", crash_once)
+
+    with pytest.raises(RuntimeError, match="injected pooling crash"):
+        driver.advance_inventory(state_dir, run_dir)
+    report = driver.advance_inventory(state_dir, run_dir)
+
+    with sqlite3.connect(state_dir / "iterator.sqlite3") as connection:
+        assert connection.execute(
+            "SELECT id, ordinal, metadata_json FROM units ORDER BY ordinal"
+        ).fetchall() == durable_units
+    assert attempts == 2
+    assert report["next_job"]["chunk_id"] == "extract-001"
+    assert not hasattr(driver, "plan_inventory_chunks")
 
 
 @pytest.mark.parametrize("retired_mode", ("advance-entities", "finalize", "finalize-semantic"))
@@ -828,14 +730,11 @@ def test_prepare_initializes_and_instruments_source_and_planning(tmp_path: Path)
     ]
     assert {artifact["kind"] for artifact in diagnostics["artifacts"]} == {
         "active-source",
-        "inventory-packet",
     }
     assert report["diagnostics"] == str(run_dir / "run-diagnostics.json")
-    assert report["next_jobs"]
-    for job in report["next_jobs"]:
-        assert job["progress_path"] == str(
-            (run_dir / "progress" / f"{job['chunk_id']}.progress.md").resolve()
-        )
+    assert report["next_job"]["state_dir"] == str(
+        (run_dir / "inventory-iterator").resolve()
+    )
 
 
 def test_extract_retry_and_correction_preserve_progress_sidecar(tmp_path: Path) -> None:
@@ -878,7 +777,7 @@ def test_phase_failure_marks_run_failed_and_preserves_earlier_stage(
     def fail_planning(*_args, **_kwargs):
         raise RuntimeError("injected planning failure")
 
-    monkeypatch.setattr(driver, "plan_inventory_chunks", fail_planning)
+    monkeypatch.setattr(driver, "_iterator_setup_job", fail_planning)
     run_dir = tmp_path / "run"
 
     with pytest.raises(RuntimeError, match="injected planning failure"):
