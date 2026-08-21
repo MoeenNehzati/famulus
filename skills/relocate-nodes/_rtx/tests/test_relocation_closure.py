@@ -103,7 +103,7 @@ def _write(path: Path, text: str) -> None:
     """Write one UTF-8 fixture file, creating its parents."""
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+    path.write_bytes(text.encode("utf-8"))
 
 
 def _closure_fixture(
@@ -269,7 +269,7 @@ def test_stale_generated_artifact_is_synchronized_before_check_and_graph(
                 raise MechanicalClosureError("fixture generated artifact is stale")
             return
         calls.append("synchronize")
-        generated.write_text(expected, encoding="utf-8")
+        generated.write_bytes(expected.encode("utf-8"))
 
     def graph(*args: object, **kwargs: object) -> None:
         calls.append("graph")

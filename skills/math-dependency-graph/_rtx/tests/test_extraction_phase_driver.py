@@ -138,7 +138,9 @@ def test_advance_inventory_writes_pooled_ir_and_one_extract_job(tmp_path: Path) 
 
     assert report["inventory_ir"].endswith("inventory-ir.json")
     assert report["next_job"]["chunk_id"] == "extract-001"
-    assert report["next_job"]["instruction"].endswith("instructions/extract.md")
+    assert Path(report["next_job"]["instruction"]) == (
+        SKILL_DIR / "instructions" / "extract.md"
+    ).resolve()
     assert report["next_job"]["schema"].endswith("semantic-graph.schema.json")
     assert report["next_job"]["source_packet"] == str(source_path.resolve())
     assert report["next_job"]["entrypoint"] == str(entrypoint.resolve())
