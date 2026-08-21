@@ -16,6 +16,7 @@ REPO_SRC = SKILL_DIR.parents[2] / "src"
 sys.path.insert(0, str(REPO_SRC))
 sys.path.insert(0, str(SKILL_DIR))
 
+import _inventory_unit_iterator as iterator  # noqa: E402
 from _inventory_unit_iterator import (  # noqa: E402
     load_iterator_summary,
     setup_inventory_iterator,
@@ -98,6 +99,61 @@ def test_setup_keeps_small_latex_and_markdown_blocks_whole(tmp_path: Path) -> No
     assert theorem["oversize"] is False
     assert markdown["text"] == "$$ x = y $$"
     assert markdown["owner"] == "paper.tex:5"
+
+
+@pytest.mark.parametrize(
+    ("opener", "closer"),
+    [(r"\[", r"\]"), ("$$", "$$")],
+)
+def test_setup_keeps_small_multiline_display_math_whole(
+    tmp_path: Path, opener: str, closer: str
+) -> None:
+    packet = _write_packet(
+        tmp_path / "source-packet.txt",
+        "@@ source: paper.md\n"
+        f"0001 | {opener}\n"
+        "0002 | x = y\n"
+        f"0003 | {closer}\n",
+    )
+
+    setup_inventory_iterator(
+        packet, tmp_path / "iterator", requested_workers=1, window_chars=80
+    )
+
+    units = _units(tmp_path / "iterator")
+    assert [unit["text"] for unit in units] == [f"{opener}\nx = y\n{closer}"]
+    assert [unit["environment"] for unit in units] == ["markdown-math"]
+    assert [coordinate["line"] for coordinate in units[0]["coordinates"]] == [1, 2, 3]
+
+
+@pytest.mark.parametrize(
+    ("opener", "closer"),
+    [(r"\[", r"\]"), ("$$", "$$")],
+)
+def test_setup_splits_oversize_multiline_display_math_only_at_valid_boundaries(
+    tmp_path: Path, opener: str, closer: str
+) -> None:
+    packet = _write_packet(
+        tmp_path / "source-packet.txt",
+        "@@ source: paper.md\n"
+        f"0001 | {opener}\n"
+        "0002 | First display paragraph.\n"
+        "0003 | \n"
+        "0004 | Second display paragraph.\n"
+        f"0005 | {closer}\n",
+    )
+
+    setup_inventory_iterator(
+        packet, tmp_path / "iterator", requested_workers=1, window_chars=30
+    )
+
+    units = _units(tmp_path / "iterator")
+    assert [unit["environment"] for unit in units] == ["markdown-math", "markdown-math"]
+    assert [unit["part"] for unit in units] == [1, 2]
+    assert [unit["oversize"] for unit in units] == [False, False]
+    assert [
+        [coordinate["line"] for coordinate in unit["coordinates"]] for unit in units
+    ] == [[1, 2, 3], [4, 5]]
 
 
 def test_setup_splits_oversize_environment_at_complete_paragraph_boundaries(
@@ -279,7 +335,63 @@ def test_setup_publishes_complete_state_or_nothing_when_validation_fails(tmp_pat
     assert not list(tmp_path.glob(".iterator.*.tmp"))
 
 
-def test_setup_reuses_only_an_exact_matching_configuration(tmp_path: Path) -> None:
+def test_setup_publishes_an_immutable_complete_state_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    packet = _write_packet(
+        tmp_path / "source-packet.txt", "@@ source: paper.md\n0001 | text\n"
+    )
+    state_dir = tmp_path / "iterator"
+    original_replace = iterator.os.replace
+    published: dict[str, bytes] = {}
+
+    def capture_publish(source: Path, destination: Path) -> None:
+        assert destination == state_dir
+        assert not destination.exists()
+        assert (source / "iterator.sqlite3").is_file()
+        assert (source / "inventory-assignments.json").is_file()
+        assert (source / "workers/worker-1/inventory.json").is_file()
+        assert (source / "workers/worker-1/progress.md").is_file()
+        assert (source / "controller/worker-1-packet.json").is_file()
+        original_replace(source, destination)
+        published["manifest"] = (destination / "inventory-assignments.json").read_bytes()
+
+    monkeypatch.setattr(iterator.os, "replace", capture_publish)
+
+    setup_inventory_iterator(
+        packet, state_dir, requested_workers=1, window_chars=20
+    )
+
+    assert (state_dir / "inventory-assignments.json").read_bytes() == published["manifest"]
+
+
+def test_setup_removes_temporary_state_when_atomic_publication_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    packet = _write_packet(
+        tmp_path / "source-packet.txt", "@@ source: paper.md\n0001 | text\n"
+    )
+    state_dir = tmp_path / "iterator"
+
+    def fail_publish(source: Path, destination: Path) -> None:
+        assert source.name.startswith(".iterator.")
+        assert (source / "iterator.sqlite3").is_file()
+        assert (source / "inventory-assignments.json").is_file()
+        assert destination == state_dir
+        raise OSError("injected publication failure")
+
+    monkeypatch.setattr(iterator.os, "replace", fail_publish)
+
+    with pytest.raises(OSError, match="injected publication failure"):
+        setup_inventory_iterator(
+            packet, state_dir, requested_workers=1, window_chars=20
+        )
+
+    assert not state_dir.exists()
+    assert not list(tmp_path.glob(".iterator.*.tmp"))
+
+
+def test_setup_reuses_only_an_exact_matching_configuration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     packet = _write_packet(
         tmp_path / "source-packet.txt", "@@ source: paper.md\n0001 | text\n"
     )
@@ -296,6 +408,27 @@ def test_setup_reuses_only_an_exact_matching_configuration(tmp_path: Path) -> No
     with pytest.raises(ValueError, match="existing iterator state does not match"):
         setup_inventory_iterator(
             packet, state_dir, requested_workers=2, window_chars=20
+        )
+    with pytest.raises(ValueError, match="existing iterator state does not match"):
+        setup_inventory_iterator(
+            packet, state_dir, requested_workers=1, window_chars=21
+        )
+    packet.write_text("@@ source: paper.md\n0001 | changed text\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="existing iterator state does not match"):
+        setup_inventory_iterator(
+            packet, state_dir, requested_workers=1, window_chars=20
+        )
+    packet.write_text("@@ source: paper.md\n0001 | text\n", encoding="utf-8")
+    monkeypatch.setattr(iterator, "SCANNER_VERSION", iterator.SCANNER_VERSION + 1)
+    with pytest.raises(ValueError, match="existing iterator state does not match"):
+        setup_inventory_iterator(
+            packet, state_dir, requested_workers=1, window_chars=20
+        )
+    monkeypatch.setattr(iterator, "SCANNER_VERSION", iterator.SCANNER_VERSION - 1)
+    monkeypatch.setattr(iterator, "SCHEMA_VERSION", iterator.SCHEMA_VERSION + 1)
+    with pytest.raises(ValueError, match="existing iterator state does not match"):
+        setup_inventory_iterator(
+            packet, state_dir, requested_workers=1, window_chars=20
         )
     assert load_iterator_summary(state_dir) == first
     assert json.loads((state_dir / "inventory-assignments.json").read_text(encoding="utf-8"))[
@@ -322,4 +455,4 @@ def test_setup_records_each_substage_time_with_the_injected_clock(tmp_path: Path
     assert summary["timings_ms"]["partition"] == 1
     assert summary["timings_ms"]["database"] == 1
     assert summary["timings_ms"]["validation"] == 1
-    assert summary["timings_ms"]["publication"] == 1
+    assert "publication" not in summary["timings_ms"]

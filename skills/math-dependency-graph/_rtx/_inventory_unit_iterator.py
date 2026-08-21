@@ -102,6 +102,26 @@ def _environment_ranges(rows: list[dict]) -> dict[int, tuple[int, str]]:
     return result
 
 
+def _display_math_range(rows: list[dict], start: int) -> int | None:
+    """Return the inclusive end of one complete display-math block."""
+
+    text = rows[start]["text"].strip()
+    if text.startswith("\\["):
+        if text.endswith("\\]") and len(text) > 2:
+            return start
+        closing = "\\]"
+    elif text.startswith("$$"):
+        if text.endswith("$$") and len(text) > 2:
+            return start
+        closing = "$$"
+    else:
+        return None
+    for end in range(start + 1, len(rows)):
+        if rows[end]["text"].strip().endswith(closing):
+            return end
+    return None
+
+
 def _parts_for_oversize(rows: list[dict], window_chars: int) -> list[list[dict]]:
     """Split only after paragraphs, complete nested environments, or display math."""
 
@@ -112,16 +132,10 @@ def _parts_for_oversize(rows: list[dict], window_chars: int) -> list[list[dict]]
     for start, (end, _name) in _environment_ranges(rows).items():
         if start > 0 and end < len(rows) - 1:
             boundaries.add(end + 1)
-    display_start: int | None = None
     for index, row in enumerate(rows):
-        text = row["text"].strip()
-        if text.startswith("\\["):
-            display_start = index
-        elif display_start is not None and text.endswith("\\]"):
-            boundaries.add(index + 1)
-            display_start = None
-        elif text.startswith("$$") and (text.endswith("$$") and len(text) > 2):
-            boundaries.add(index + 1)
+        display_end = _display_math_range(rows, index)
+        if display_end is not None and display_end < len(rows) - 1:
+            boundaries.add(display_end + 1)
 
     parts: list[list[dict]] = []
     start = 0
@@ -266,20 +280,28 @@ def _scan_units(packet_text: str, window_chars: int) -> tuple[list[dict], list[d
                 )
             index = end_index + 1
             continue
-        if _DISPLAY_MATH_RE.match(row["text"]):
+        display_end = _display_math_range(rows, index)
+        if display_end is not None:
             flush_outside()
             owner = f"{row['source']}:{row['line']}"
-            units.append(
-                _unit_record(
-                    [row],
-                    environment="markdown-math",
-                    owner=(f"{row['source']}:{row['line'] - 1}" if heading else owner),
-                    part=1,
-                    oversize=_character_count([row]) > window_chars,
-                    heading=heading,
-                )
+            block = rows[index : display_end + 1]
+            parts = (
+                [block]
+                if _character_count(block) <= window_chars
+                else _parts_for_oversize(block, window_chars)
             )
-            index += 1
+            for part, portion in enumerate(parts, start=1):
+                units.append(
+                    _unit_record(
+                        portion,
+                        environment="markdown-math",
+                        owner=(f"{row['source']}:{row['line'] - 1}" if heading else owner),
+                        part=part,
+                        oversize=_character_count(portion) > window_chars,
+                        heading=heading,
+                    )
+                )
+            index = display_end + 1
             continue
         outside.append(row)
         index += 1
@@ -363,7 +385,6 @@ def _validate_state(summary: dict, state_dir: Path) -> None:
         raise ValueError("iterator assignments are not contiguous exact coverage")
     expected = {
         state_dir / "iterator.sqlite3",
-        state_dir / "inventory-assignments.json",
     }
     for assignment in summary["assignments"]:
         expected.update(
@@ -533,23 +554,20 @@ def setup_inventory_iterator(
                 "partition": partition_ms,
                 "database": database_ms,
                 "validation": 0,
-                "publication": 0,
                 "total": 0,
             },
             "created_at": _timestamp(utc_now()),
             "units": units,
         }
-        _write_json(temporary / "inventory-assignments.json", {key: value for key, value in summary.items() if key != "units"})
         validate_start = clock_ns()
         _validate_state(summary, temporary)
         summary["timings_ms"]["validation"] = (clock_ns() - validate_start) // 1_000_000
-        _write_json(temporary / "inventory-assignments.json", {key: value for key, value in summary.items() if key != "units"})
-        _write_json(temporary / "inventory-assignments.json", {key: value for key, value in summary.items() if key != "units"})
-        publication_start = clock_ns()
-        os.replace(temporary, state_dir)
-        summary["timings_ms"]["publication"] = (clock_ns() - publication_start) // 1_000_000
         summary["timings_ms"]["total"] = (clock_ns() - total_start) // 1_000_000
-        _write_json(state_dir / "inventory-assignments.json", {key: value for key, value in summary.items() if key != "units"})
+        _write_json(
+            temporary / "inventory-assignments.json",
+            {key: value for key, value in summary.items() if key != "units"},
+        )
+        os.replace(temporary, state_dir)
         return load_iterator_summary(state_dir)
     except Exception:
         if temporary.exists():
