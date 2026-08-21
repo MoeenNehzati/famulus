@@ -1,7 +1,7 @@
 schema_version: 6
 node_type: behavioral_source
 id: math-dependency-graph.source.instructions-inventory
-version: 30
+version: 31
 maturity: stable
 description: Authors one recall-first mathematical discovery fragment by consuming
   a durable source-unit iterator in order and validating before every acknowledgement.
@@ -13,17 +13,17 @@ content:
 dependencies: []
 uses_interfaces:
 - interface: math-dependency-graph._rtx.interface.scripts-next-inventory-unit
-  version: 1
+  version: 2
 interfaces:
   math-dependency-graph.source.instructions-inventory.interface.inventory:
-    version: 30
+    version: 31
     description: Author one concise recall-first graph inventory fragment through
       a validated iterator acknowledgement loop.
     content:
     - instructions/inventory\.md
     uses_interfaces:
     - interface: math-dependency-graph._rtx.interface.scripts-next-inventory-unit
-      version: 1
+      version: 2
     contract:
       arguments:
         request:
@@ -108,7 +108,10 @@ interfaces:
           system: filesystem
       execution:
         consistency:
-          snapshot: The worker consumes only source units returned in order by its
+          snapshot: The worker invokes next only as state directory, worker index,
+            optional acknowledgement, and optional wrap; its bound inventory,
+            schema, and progress paths remain file responsibilities, never next-call
+            arguments. The worker consumes only source units returned in order by its
             assigned iterator index, retains cross-unit ownership context, records
             recall-first graph candidates and direct dependency leads, validates
             its cumulative fragment before acknowledging every unit, closes each
@@ -199,8 +202,8 @@ interfaces:
           minimum: 1
           maximum: 1
         description: Supplied filesystem path to one schema-valid completed version-3
-          inventory fragment plus bounded numeric process-startup and total measurements
-          for every actual next call.
+          inventory fragment plus bounded numeric controlled-child process-dispatch
+          and total measurements for every actual next call.
         direct_io_ref: write-1
         empty: Never empty on success.
         ordering: stable

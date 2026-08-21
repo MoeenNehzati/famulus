@@ -154,7 +154,7 @@ def test_diagnostics_interface_compiles_iterator_controller_timing_operation() -
                 "iterator-controller-timing",
                 "run-dir",
                 "setup",
-                "--process-startup-ms",
+                "--process-dispatch-ms",
                 "6",
                 "--publication-ms",
                 "2",
@@ -169,7 +169,7 @@ def test_diagnostics_interface_compiles_iterator_controller_timing_operation() -
         "iterator-controller-timing",
         "run-dir",
         "setup",
-        "--process-startup-ms",
+        "--process-dispatch-ms",
         "6",
         "--publication-ms",
         "2",
@@ -191,7 +191,7 @@ def test_controller_timing_process_operation_records_each_iterator_call(
             "iterator-controller-timing",
             str(tmp_path),
             "setup",
-            "--process-startup-ms",
+            "--process-dispatch-ms",
             "6",
             "--publication-ms",
             "2",
@@ -204,7 +204,7 @@ def test_controller_timing_process_operation_records_each_iterator_call(
             "iterator-controller-timing",
             str(tmp_path),
             "next",
-            "--process-startup-ms",
+            "--process-dispatch-ms",
             "7",
             "--total-ms",
             "12",
@@ -214,12 +214,12 @@ def test_controller_timing_process_operation_records_each_iterator_call(
 
     persisted = json.loads(report.path.read_text(encoding="utf-8"))
     assert persisted["iterator"]["setup"]["controller_timings_ms"] == {
-        "process_startup": {"samples": 1, "total": 6, "maximum": 6},
+        "process_dispatch": {"samples": 1, "total": 6, "maximum": 6},
         "publication": {"samples": 1, "total": 2, "maximum": 2},
         "total": {"samples": 1, "total": 23, "maximum": 23},
     }
     assert persisted["iterator"]["next"]["controller_timings_ms"] == {
-        "process_startup": {"samples": 1, "total": 7, "maximum": 7},
+        "process_dispatch": {"samples": 1, "total": 7, "maximum": 7},
         "total": {"samples": 1, "total": 12, "maximum": 12},
     }
 
@@ -529,13 +529,18 @@ def test_iterator_summary_is_fixed_size_schema_valid_and_privacy_bounded(
     )
     report.record_iterator_controller_timing(
         "setup",
-        process_startup_ms=6,
+        process_dispatch_ms=6,
         publication_ms=2,
         total_ms=23,
     )
     report.record_iterator_controller_timing(
+        "setup",
+        process_dispatch_ms=4,
+        total_ms=10,
+    )
+    report.record_iterator_controller_timing(
         "next",
-        process_startup_ms=7,
+        process_dispatch_ms=7,
         total_ms=12,
     )
 
@@ -557,13 +562,13 @@ def test_iterator_summary_is_fixed_size_schema_valid_and_privacy_bounded(
             "total": 15,
         },
         "controller_timings_ms": {
-            "process_startup": {"samples": 1, "total": 6, "maximum": 6},
+            "process_dispatch": {"samples": 2, "total": 10, "maximum": 6},
             "publication": {"samples": 1, "total": 2, "maximum": 2},
-            "total": {"samples": 1, "total": 23, "maximum": 23},
+            "total": {"samples": 2, "total": 33, "maximum": 23},
         },
     }
     assert persisted["iterator"]["next"]["controller_timings_ms"] == {
-        "process_startup": {"samples": 1, "total": 7, "maximum": 7},
+        "process_dispatch": {"samples": 1, "total": 7, "maximum": 7},
         "total": {"samples": 1, "total": 12, "maximum": 12},
     }
     assert sentinel not in json.dumps(persisted, sort_keys=True)

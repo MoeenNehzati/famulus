@@ -902,21 +902,19 @@ class RunDiagnostics:
         self,
         operation: str,
         *,
-        process_startup_ms: int,
+        process_dispatch_ms: int,
         total_ms: int,
         publication_ms: int | None = None,
     ) -> None:
-        """Accumulate controller timing separately from iterator internal time."""
+        """Accumulate returned public-wrapper timing separately from iterator internal time."""
 
         if operation not in {"setup", "next"}:
             raise ValueError("iterator controller timing operation must be setup or next")
-        if operation == "setup" and publication_ms is None:
-            raise ValueError("iterator setup controller timing requires publication_ms")
         if operation == "next" and publication_ms is not None:
             raise ValueError("iterator next controller timing cannot record publication_ms")
         measurements = {
-            "process_startup": self._nonnegative_integer(
-                process_startup_ms, field=f"{operation}.process_startup_ms"
+            "process_dispatch": self._nonnegative_integer(
+                process_dispatch_ms, field=f"{operation}.process_dispatch_ms"
             ),
             "total": self._nonnegative_integer(
                 total_ms, field=f"{operation}.controller_total_ms"
@@ -1103,9 +1101,7 @@ def main(argv: Iterable[str] | None = None) -> dict:
     iterator_timing_parser = subparsers.add_parser("iterator-controller-timing")
     iterator_timing_parser.add_argument("run_dir")
     iterator_timing_parser.add_argument("iterator_operation", choices=("setup", "next"))
-    iterator_timing_parser.add_argument(
-        "--process-startup-ms", required=True, type=int
-    )
+    iterator_timing_parser.add_argument("--process-dispatch-ms", required=True, type=int)
     iterator_timing_parser.add_argument("--publication-ms", type=int)
     iterator_timing_parser.add_argument("--total-ms", required=True, type=int)
 
@@ -1140,7 +1136,7 @@ def main(argv: Iterable[str] | None = None) -> dict:
         elif args.operation == "iterator-controller-timing":
             report.record_iterator_controller_timing(
                 args.iterator_operation,
-                process_startup_ms=args.process_startup_ms,
+                process_dispatch_ms=args.process_dispatch_ms,
                 publication_ms=args.publication_ms,
                 total_ms=args.total_ms,
             )

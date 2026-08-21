@@ -1,7 +1,7 @@
 schema_version: 6
 node_type: behavioral_source
 id: math-dependency-graph._rtx.source.rtx-run-diagnostics
-version: 10
+version: 11
 description: Atomically records metrics-only worker, stage, artifact, retry-code,
   structured failure, exact local and aggregate inventory ratios, and final run diagnostics
   without arbitrary error text.
@@ -29,7 +29,7 @@ interfaces:
     content:
     - _run_diagnostics\.py
     uses_interfaces: []
-    version: 6
+    version: 7
     description: Initialize a fresh run report, record one worker lifecycle event,
       or finish the report with allowlisted diagnostics.
     usage: <initialize|worker-queued|worker-started|worker-finished|iterator-controller-timing|finish> <run-dir>
@@ -112,15 +112,14 @@ interfaces:
           '0': ^iterator-controller-timing$
           '2': ^setup$
         allowed_flags:
-        - --process-startup-ms
+        - --process-dispatch-ms
         - --publication-ms
         - --total-ms
         required_flags:
-        - --process-startup-ms
-        - --publication-ms
+        - --process-dispatch-ms
         - --total-ms
         flag_patterns:
-          --process-startup-ms: ^[0-9]+$
+          --process-dispatch-ms: ^[0-9]+$
           --publication-ms: ^[0-9]+$
           --total-ms: ^[0-9]+$
       - name: iterator-controller-timing-next
@@ -131,13 +130,13 @@ interfaces:
           '0': ^iterator-controller-timing$
           '2': ^next$
         allowed_flags:
-        - --process-startup-ms
+        - --process-dispatch-ms
         - --total-ms
         required_flags:
-        - --process-startup-ms
+        - --process-dispatch-ms
         - --total-ms
         flag_patterns:
-          --process-startup-ms: ^[0-9]+$
+          --process-dispatch-ms: ^[0-9]+$
           --total-ms: ^[0-9]+$
     contract:
       arguments:
@@ -230,14 +229,15 @@ interfaces:
             kind: string
             sensitivity: public
         iterator-operation:
-          description: Setup or next iterator call whose measured controller timing is recorded.
+          description: Setup or next public iterator-wrapper call whose returned timing is recorded.
           required: false
           sensitivity: public
           type:
             kind: string
             sensitivity: public
-        process-startup-ms:
-          description: Nonnegative controller measurement of process startup elapsed time.
+        process-dispatch-ms:
+          description: Nonnegative public-wrapper measurement from private child
+            spawn through child bootstrap entry.
           required: false
           sensitivity: public
           type:
@@ -251,7 +251,8 @@ interfaces:
             kind: integer
             minimum: 0
         total-ms:
-          description: Nonnegative controller measurement of the complete iterator process call.
+          description: Nonnegative public-wrapper measurement from immediately before
+            controlled-child spawn through complete child stdout and exit.
           required: false
           sensitivity: public
           type:

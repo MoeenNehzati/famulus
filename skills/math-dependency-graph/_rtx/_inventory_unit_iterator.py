@@ -4,15 +4,17 @@
 from __future__ import annotations
 
 import argparse
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stdout
 from datetime import datetime, timezone
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
 import re
 import shutil
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import time
@@ -1080,6 +1082,8 @@ def setup_inventory_iterator(
     window_chars: int,
     clock_ns: Callable[[], int] = time.monotonic_ns,
     utc_now: Callable[[], datetime] = _utc_now,
+    process_observations: dict[str, object] | None = None,
+    publication_clock_ns: Callable[[], int] = time.monotonic_ns,
 ) -> dict:
     """Scan, validate, and atomically publish reusable iterator state.
 
@@ -1135,6 +1139,9 @@ def setup_inventory_iterator(
 
     source_packet_path = source_packet_path.resolve()
     state_dir = state_dir.resolve()
+    if process_observations is not None:
+        process_observations.clear()
+        process_observations["publication_observed"] = False
     if not source_packet_path.is_file():
         raise FileNotFoundError(f"source packet not found: {source_packet_path}")
     if requested_workers < 1 or window_chars < 1:
@@ -1271,7 +1278,21 @@ def setup_inventory_iterator(
             temporary / "inventory-assignments.json",
             {key: value for key, value in summary.items() if key != "units"},
         )
+        publication_start = publication_clock_ns()
         os.replace(temporary, state_dir)
+        publication_finished = publication_clock_ns()
+        if publication_finished < publication_start:
+            raise ValueError("iterator publication monotonic clock moved backwards")
+        if process_observations is not None:
+            process_observations.update(
+                {
+                    "publication_observed": True,
+                    "publication_ms": (
+                        publication_finished - publication_start
+                    )
+                    // 1_000_000,
+                }
+            )
         return load_iterator_summary(state_dir)
     except Exception:
         if temporary.exists():
@@ -2204,7 +2225,11 @@ def _positive_integer(value: str) -> int:
     return result
 
 
-def main(argv: Iterable[str] | None = None) -> int:
+def main(
+    argv: Iterable[str] | None = None,
+    *,
+    process_observations: dict[str, object] | None = None,
+) -> int:
     """Run one atomic iterator operation, print JSON, and return success.
 
     Intent
@@ -2256,6 +2281,7 @@ def main(argv: Iterable[str] | None = None) -> int:
             Path(args.state_dir),
             requested_workers=args.workers,
             window_chars=args.window_chars,
+            process_observations=process_observations,
         )
         response = {
             "state": "setup",
@@ -2280,6 +2306,115 @@ def main(argv: Iterable[str] | None = None) -> int:
         return 0
     print(json.dumps(response, indent=2))
     return 0
+
+
+def _execute_timed_child(
+    parent_start_ns: int,
+    argv: list[str],
+    *,
+    clock_ns: Callable[[], int] = time.monotonic_ns,
+) -> int:
+    """Execute one logical iterator call and emit a private timing envelope."""
+
+    bootstrap_ns = clock_ns()
+    if bootstrap_ns < parent_start_ns:
+        raise ValueError("iterator child monotonic clock moved backwards")
+    observations: dict[str, object] = {"publication_observed": False}
+    logical_stdout = io.StringIO()
+    with redirect_stdout(logical_stdout):
+        status = main(argv, process_observations=observations)
+    logical_response = json.loads(logical_stdout.getvalue())
+    envelope = {
+        "protocol": 1,
+        "logical_response": logical_response,
+        "process_dispatch_ms": (bootstrap_ns - parent_start_ns) // 1_000_000,
+        **observations,
+    }
+    print(json.dumps(envelope, ensure_ascii=False, separators=(",", ":")))
+    return status
+
+
+def _execute_measured_public_call(
+    argv: list[str],
+    *,
+    clock_ns: Callable[[], int] = time.monotonic_ns,
+    run_child: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+) -> tuple[int, str, str]:
+    """Run one private child and enrich its logical response with exact timings."""
+
+    child_env = os.environ.copy()
+    runtime_root = Path(sys.modules["officina"].__file__).resolve().parents[1]
+    inherited_pythonpath = child_env.get("PYTHONPATH")
+    child_env["PYTHONPATH"] = (
+        str(runtime_root)
+        if not inherited_pythonpath
+        else f"{runtime_root}{os.pathsep}{inherited_pythonpath}"
+    )
+    started_ns = clock_ns()
+    command = [
+        sys.executable,
+        str(Path(__file__).resolve()),
+        "--timed-child",
+        str(started_ns),
+        *argv,
+    ]
+    completed = run_child(
+        command,
+        cwd=Path(__file__).resolve().parent,
+        env=child_env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="strict",
+        check=False,
+    )
+    finished_ns = clock_ns()
+    if finished_ns < started_ns:
+        raise ValueError("iterator parent monotonic clock moved backwards")
+    if completed.returncode != 0:
+        return completed.returncode, completed.stdout, completed.stderr
+    try:
+        envelope = json.loads(completed.stdout)
+    except json.JSONDecodeError as error:
+        raise ValueError("iterator child emitted invalid timing envelope") from error
+    if not isinstance(envelope, dict) or envelope.get("protocol") != 1:
+        raise ValueError("iterator child emitted invalid timing envelope")
+    response = envelope.get("logical_response")
+    if not isinstance(response, dict):
+        raise ValueError("iterator child logical_response must be an object")
+    process_dispatch_ms = envelope.get("process_dispatch_ms")
+    if (
+        isinstance(process_dispatch_ms, bool)
+        or not isinstance(process_dispatch_ms, int)
+        or process_dispatch_ms < 0
+    ):
+        raise ValueError("iterator child process_dispatch_ms must be nonnegative")
+    publication_observed = envelope.get("publication_observed")
+    if not isinstance(publication_observed, bool):
+        raise ValueError("iterator child publication_observed must be boolean")
+    publication_ms = envelope.get("publication_ms")
+    if publication_observed:
+        if (
+            isinstance(publication_ms, bool)
+            or not isinstance(publication_ms, int)
+            or publication_ms < 0
+        ):
+            raise ValueError("observed iterator publication_ms must be nonnegative")
+    elif "publication_ms" in envelope:
+        raise ValueError("unobserved iterator publication cannot include publication_ms")
+    total_ms = (finished_ns - started_ns) // 1_000_000
+    if process_dispatch_ms > total_ms:
+        raise ValueError("iterator process_dispatch_ms exceeds total_ms")
+    if publication_observed and publication_ms > total_ms:
+        raise ValueError("iterator publication_ms exceeds total_ms")
+    response["process_timings_ms"] = {
+        "process_dispatch": process_dispatch_ms,
+        "total": total_ms,
+    }
+    response["publication_observed"] = publication_observed
+    if publication_observed:
+        response["process_timings_ms"]["publication"] = publication_ms
+    return 0, json.dumps(response, ensure_ascii=False, indent=2) + "\n", ""
 
 
 class Interface(PythonArgvMachineInterface):
@@ -2329,8 +2464,15 @@ class Interface(PythonArgvMachineInterface):
         - main -> preprocess: passes received machine argv unchanged; postprocess: returns the successful process status; fixed_arguments: none
 
         """
-        return main(argv)
+        status, stdout, stderr = _execute_measured_public_call(argv)
+        if stdout:
+            sys.stdout.write(stdout)
+        if stderr:
+            sys.stderr.write(stderr)
+        return status
 
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) >= 3 and sys.argv[1] == "--timed-child":
+        raise SystemExit(_execute_timed_child(int(sys.argv[2]), sys.argv[3:]))
+    raise SystemExit(main())

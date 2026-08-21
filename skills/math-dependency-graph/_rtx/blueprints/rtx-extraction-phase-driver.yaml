@@ -1,7 +1,7 @@
 schema_version: 6
 node_type: behavioral_source
 id: math-dependency-graph._rtx.source.rtx-extraction-phase-driver
-version: 27
+version: 28
 description: Deterministically prepares inventory, preserves retryable diagnostics
   after worker-local inventory rejection, routes malformed or non-object extract output
   to a fresh normal extract retry, returns stable per-job progress-sidecar paths through
@@ -43,7 +43,7 @@ dependencies:
   reason: Records worker-independent stage timing, artifacts, ratios, counts, and
     final run status.
   source: math-dependency-graph._rtx.source.rtx-run-diagnostics
-  version: 10
+  version: 11
 - blueprint:
     base: module-root
     path: blueprints/rtx-semantic-graph-compiler.yaml

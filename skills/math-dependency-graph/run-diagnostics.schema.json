@@ -473,9 +473,9 @@
     "iterator_setup_controller_timings": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["process_startup", "publication", "total"],
+      "required": ["process_dispatch", "total"],
       "properties": {
-        "process_startup": {"$ref": "#/$defs/timing_aggregate"},
+        "process_dispatch": {"$ref": "#/$defs/timing_aggregate"},
         "publication": {"$ref": "#/$defs/timing_aggregate"},
         "total": {"$ref": "#/$defs/timing_aggregate"}
       }
@@ -507,9 +507,9 @@
     "iterator_next_controller_timings": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["process_startup", "total"],
+      "required": ["process_dispatch", "total"],
       "properties": {
-        "process_startup": {"$ref": "#/$defs/timing_aggregate"},
+        "process_dispatch": {"$ref": "#/$defs/timing_aggregate"},
         "total": {"$ref": "#/$defs/timing_aggregate"}
       }
     },

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -210,6 +211,185 @@ def test_iterator_cli_setup_and_next_emit_structured_atomic_responses(
     }
     assert next_response["state"] == "unit"
     assert next_response["unit"]["id"] == "u000001"
+
+
+def test_measured_public_wrapper_reports_exact_child_and_parent_boundaries() -> None:
+    """Dropping child dispatch timing or parent completion timing hides process cost."""
+
+    ticks = iter((1_000_000, 11_000_000))
+    captured: dict[str, object] = {}
+
+    def run_child(command: list[str], **kwargs) -> subprocess.CompletedProcess[str]:
+        captured["command"] = command
+        captured["kwargs"] = kwargs
+        envelope = {
+            "protocol": 1,
+            "logical_response": {"state": "unit", "unit": {"id": "u000001"}},
+            "process_dispatch_ms": 2,
+            "publication_observed": False,
+        }
+        return subprocess.CompletedProcess(command, 0, json.dumps(envelope), "")
+
+    status, stdout, stderr = iterator._execute_measured_public_call(
+        ["next", "iterator-state", "1"],
+        clock_ns=lambda: next(ticks),
+        run_child=run_child,
+    )
+
+    assert status == 0
+    assert stderr == ""
+    assert json.loads(stdout) == {
+        "state": "unit",
+        "unit": {"id": "u000001"},
+        "process_timings_ms": {"process_dispatch": 2, "total": 10},
+        "publication_observed": False,
+    }
+    assert captured["command"][2:5] == [
+        "--timed-child",
+        "1000000",
+        "next",
+    ]
+
+
+def test_measured_public_wrapper_rejects_invalid_envelope_and_preserves_child_failure() -> None:
+    """Accepting malformed timing data or masking child failure falsifies diagnostics."""
+
+    def malformed(command: list[str], **_kwargs) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            json.dumps(
+                {
+                    "protocol": 1,
+                    "logical_response": {"state": "complete"},
+                    "process_dispatch_ms": -1,
+                    "publication_observed": False,
+                }
+            ),
+            "",
+        )
+
+    with pytest.raises(ValueError, match="process_dispatch_ms"):
+        iterator._execute_measured_public_call(
+            ["next", "state", "1"],
+            clock_ns=iter((0, 1_000_000)).__next__,
+            run_child=malformed,
+        )
+
+    def impossible(command: list[str], **_kwargs) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            json.dumps(
+                {
+                    "protocol": 1,
+                    "logical_response": {"state": "complete"},
+                    "process_dispatch_ms": 2,
+                    "publication_observed": True,
+                    "publication_ms": 3,
+                }
+            ),
+            "",
+        )
+
+    with pytest.raises(ValueError, match="exceeds total"):
+        iterator._execute_measured_public_call(
+            ["setup", "packet", "state", "--workers", "1", "--window-chars", "1"],
+            clock_ns=iter((0, 1_000_000)).__next__,
+            run_child=impossible,
+        )
+
+    def failed(command: list[str], **_kwargs) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(command, 7, "", "child failed")
+
+    assert iterator._execute_measured_public_call(
+        ["next", "state", "1"],
+        clock_ns=iter((0, 1_000_000)).__next__,
+        run_child=failed,
+    ) == (7, "", "child failed")
+
+
+def test_setup_publication_observation_distinguishes_fresh_state_from_reuse(
+    tmp_path: Path,
+) -> None:
+    """Reporting zero publication on reuse would claim an atomic replacement occurred."""
+
+    packet = _write_packet(
+        tmp_path / "source-packet.txt", "@@ source: paper.md\n0001 | text\n"
+    )
+    state_dir = tmp_path / "iterator"
+    fresh: dict[str, object] = {}
+    reused: dict[str, object] = {}
+
+    setup_inventory_iterator(
+        packet,
+        state_dir,
+        requested_workers=1,
+        window_chars=20,
+        process_observations=fresh,
+    )
+    setup_inventory_iterator(
+        packet,
+        state_dir,
+        requested_workers=1,
+        window_chars=20,
+        process_observations=reused,
+    )
+
+    assert fresh["publication_observed"] is True
+    assert isinstance(fresh["publication_ms"], int) and fresh["publication_ms"] >= 0
+    assert reused == {"publication_observed": False}
+
+
+def test_public_interface_measures_fresh_reuse_next_ack_and_retry_without_changing_logic(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Timing enrichment must not change durable acknowledgement or retry payloads."""
+
+    packet = _write_packet(
+        tmp_path / "source-packet.txt", "@@ source: paper.md\n0001 | text\n"
+    )
+    state_dir = tmp_path / "iterator"
+    interface = iterator.Interface()
+    setup_argv = [
+        "setup",
+        str(packet),
+        str(state_dir),
+        "--workers",
+        "1",
+        "--window-chars",
+        "20",
+    ]
+
+    assert interface.run(setup_argv) == 0
+    fresh = json.loads(capsys.readouterr().out)
+    assert fresh["publication_observed"] is True
+    assert fresh["process_timings_ms"]["publication"] >= 0
+    assert fresh["process_timings_ms"]["process_dispatch"] >= 0
+    assert fresh["process_timings_ms"]["total"] >= 0
+
+    assert interface.run(setup_argv) == 0
+    reused = json.loads(capsys.readouterr().out)
+    assert reused["publication_observed"] is False
+    assert "publication" not in reused["process_timings_ms"]
+
+    assert interface.run(["next", str(state_dir), "1"]) == 0
+    leased = json.loads(capsys.readouterr().out)
+    _write_valid_inventory(state_dir, 1)
+    ack_argv = ["next", str(state_dir), "1", "--ack", leased["unit"]["id"], "--wrap"]
+    assert interface.run(ack_argv) == 0
+    acknowledged = json.loads(capsys.readouterr().out)
+    assert interface.run(ack_argv) == 0
+    retried = json.loads(capsys.readouterr().out)
+
+    def logical(payload: dict) -> dict:
+        return {
+            key: value
+            for key, value in payload.items()
+            if key not in {"process_timings_ms", "publication_observed"}
+        }
+
+    assert logical(acknowledged) == logical(retried) == {"state": "complete"}
 
 
 def test_iterator_cli_emits_the_prepared_response_without_reserializing(

@@ -1,7 +1,7 @@
 schema_version: 6
 node_type: behavioral_source
 id: math-dependency-graph._rtx.source.rtx-inventory-unit-iterator
-version: 2
+version: 3
 maturity: experimental
 description: Sets up durable, source-ordered inventory units once and advances one
   worker cursor atomically without making mathematical graph decisions.
@@ -26,7 +26,7 @@ dependencies:
 uses_interfaces: []
 interfaces:
   math-dependency-graph._rtx.source.rtx-inventory-unit-iterator.interface.scripts-setup-inventory-iterator:
-    version: 2
+    version: 3
     description: Create or verify one durable source-unit iterator state directory and
       publish its effective worker assignments atomically.
     usage: <source-packet> <state-dir> --workers <positive-int> --window-chars <positive-int>
@@ -189,7 +189,8 @@ interfaces:
           minimum: 1
           maximum: 1
         description: JSON setup report with state directory, effective worker and unit
-          counts, and each worker's public inventory and progress paths.
+          counts, worker paths, measured child dispatch/total timing, and publication
+          timing only when atomic replacement occurred.
         direct_io_ref: write-2
         empty: Never empty on success.
         ordering: stable
@@ -204,7 +205,7 @@ interfaces:
           sensitivity: derived-private
       preconditions: []
   math-dependency-graph._rtx.source.rtx-inventory-unit-iterator.interface.scripts-next-inventory-unit:
-    version: 1
+    version: 2
     description: Atomically lease one worker's next source unit or acknowledge its
       outstanding unit before returning the next unit or complete state.
     usage: <state-dir> <worker-index> [--ack <unit-id>] [--wrap]
@@ -294,7 +295,8 @@ interfaces:
         - id: write-2
           medium: stdout
           access: write
-          content: JSON response with unit, complete, or structured failure state.
+          content: JSON response with unit, complete, or structured failure state
+            plus measured child dispatch and total timing.
           formats:
           - json
           sensitivity: derived-private

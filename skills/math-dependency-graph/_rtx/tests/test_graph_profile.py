@@ -35,7 +35,7 @@ def test_inventory_instruction_contract_uses_only_public_iterator_source_deliver
     assert inventory["uses_interfaces"] == [
         {
             "interface": "math-dependency-graph._rtx.interface.scripts-next-inventory-unit",
-            "version": 1,
+            "version": 2,
         }
     ]
     assert interface["uses_interfaces"] == inventory["uses_interfaces"]
@@ -45,6 +45,31 @@ def test_inventory_instruction_contract_uses_only_public_iterator_source_deliver
         for item in interface["contract"]["direct_io"]["reads"]
         if item.get("medium") == "local-filesystem"
     } == {"$skill/inventory.schema.json"}
+
+    iterator = yaml.safe_load(
+        (
+            RUNTIME_DIR
+            / "blueprints"
+            / "rtx-inventory-unit-iterator.yaml"
+        ).read_text(encoding="utf-8")
+    )
+    next_interface = iterator["interfaces"][
+        "math-dependency-graph._rtx.source.rtx-inventory-unit-iterator.interface.scripts-next-inventory-unit"
+    ]
+    assert set(next_interface["contract"]["arguments"]) == {
+        "state-dir",
+        "worker-index",
+        "ack",
+        "wrap",
+    }
+    assert next_interface["usage"] == (
+        "<state-dir> <worker-index> [--ack <unit-id>] [--wrap]"
+    )
+    instruction_text = (
+        RUNTIME_DIR.parent / "instructions" / "inventory.md"
+    ).read_text(encoding="utf-8")
+    assert "`<state-dir> <worker-index> [--ack <unit-id>] [--wrap]`" in instruction_text
+    assert "Those paths are your file responsibilities, never arguments to `next`." in instruction_text
 
 
 def test_gateway_contract_routes_inventory_through_iterator_and_measured_diagnostics() -> None:
@@ -59,16 +84,16 @@ def test_gateway_contract_routes_inventory_through_iterator_and_measured_diagnos
         item["interface"]: item["version"] for item in gateway["uses_interfaces"]
     }
 
-    assert uses["math-dependency-graph.interface.inventory"] == 30
+    assert uses["math-dependency-graph.interface.inventory"] == 31
     assert uses[
         "math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator"
-    ] == 2
+    ] == 3
     assert uses[
         "math-dependency-graph._rtx.interface.scripts-next-inventory-unit"
-    ] == 1
+    ] == 2
     assert uses[
         "math-dependency-graph._rtx.interface.scripts-record-run-diagnostics"
-    ] == 6
+    ] == 7
 
 
 def test_base_payload_defines_the_complete_shared_math_vocabulary() -> None:

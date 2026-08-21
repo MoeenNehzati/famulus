@@ -13,17 +13,17 @@ interfaces:
     - SKILL\.md
     uses_interfaces:
     - interface: math-dependency-graph.interface.inventory
-      version: 30
+      version: 31
     - interface: math-dependency-graph.interface.extract
       version: 26
     - interface: math-dependency-graph._rtx.interface.scripts-advance-extraction-phases
       version: 24
     - interface: math-dependency-graph._rtx.interface.scripts-record-run-diagnostics
-      version: 6
+      version: 7
     - interface: math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator
-      version: 2
+      version: 3
     - interface: math-dependency-graph._rtx.interface.scripts-next-inventory-unit
-      version: 1
+      version: 2
     contract:
       arguments:
         request:
@@ -57,7 +57,7 @@ interfaces:
         consistency:
           snapshot: The result is derived from one fresh source snapshot whose inventory
             workers consume only durable iterator responses, while every setup and next
-            process call has caller-measured timing recorded through diagnostics.
+            public wrapper call returns controlled-child timing recorded through diagnostics.
         lifecycle: finite
         state_effect: read-only
         verification:
@@ -101,21 +101,21 @@ interfaces:
           sensitivity: derived-private
       preconditions: []
     description: Orchestrate a measured inventory, extract, compile, and render run.
-    version: 61
+    version: 62
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
 - interface: math-dependency-graph.interface.inventory
-  version: 30
+  version: 31
 - interface: math-dependency-graph.interface.extract
   version: 26
 - interface: math-dependency-graph._rtx.interface.scripts-advance-extraction-phases
   version: 24
 - interface: math-dependency-graph._rtx.interface.scripts-record-run-diagnostics
-  version: 6
+  version: 7
 - interface: math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator
-  version: 2
+  version: 3
 - interface: math-dependency-graph._rtx.interface.scripts-next-inventory-unit
-  version: 1
-version: 67
+  version: 2
+version: 68
 maturity: stable
