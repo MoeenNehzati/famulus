@@ -1,13 +1,7 @@
 """Browser regression coverage for overview-scale node readability."""
 
-import pytest
-
 from officina.visualization.elk_html_renderer import build_html_with_elk
 from test_support.browser import require_chrome, run_html
-
-
-pytestmark = pytest.mark.xdist_group("browser")
-
 
 def test_default_nodes_use_larger_cells_and_heavy_condensed_labels() -> None:
     """Ordinary nodes expose the selected 130%-cell readability treatment."""

@@ -8,6 +8,7 @@ import subprocess
 import sys
 from types import SimpleNamespace
 import pytest
+import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -941,21 +942,79 @@ def test_ci_runs_combined_full_suite_before_portability() -> None:
     assert "python3 repo_checks.py --suite tests --verbose" not in workflow
 
 
-def test_ci_shards_windows_repository_checks_for_parallel_diagnostics() -> None:
+def test_ci_runs_browser_behavior_only_on_stable_hosts() -> None:
     workflow = (
         Path(__file__).resolve().parents[1]
         / ".github"
         / "workflows"
         / "python-tests.yml"
     ).read_text(encoding="utf-8")
-
-    assert "task: validators" in workflow
-    assert "task: 'tests:shared'" in workflow
-    assert "task: 'tests:browser'" in workflow
-    assert "task: 'tests:performance'" in workflow
-    assert workflow.count("jobs: 4") == 3
-    assert "artifact: windows-tests-browser" in workflow
-    assert workflow.count("FAMULUS_REQUIRE_BROWSER: '1'") == 2
+    parsed = yaml.safe_load(workflow)
+    test_job = parsed["jobs"]["test"]
+    assert test_job["strategy"]["matrix"]["include"] == [
+        {
+            "os": "ubuntu-latest",
+            "task": "combined",
+            "artifact": "ubuntu-combined",
+        },
+        {
+            "os": "macos-latest",
+            "task": "validators",
+            "jobs": 4,
+            "artifact": "macos-validators",
+        },
+        {
+            "os": "macos-latest",
+            "task": "tests:shared",
+            "jobs": 4,
+            "artifact": "macos-tests-shared",
+        },
+        {
+            "os": "macos-latest",
+            "task": "tests:performance",
+            "jobs": 4,
+            "artifact": "macos-tests-performance",
+        },
+        {
+            "os": "windows-latest",
+            "task": "validators",
+            "jobs": 4,
+            "artifact": "windows-validators",
+        },
+        {
+            "os": "windows-latest",
+            "task": "tests:shared",
+            "jobs": 4,
+            "artifact": "windows-tests-shared",
+        },
+        {
+            "os": "windows-latest",
+            "task": "tests:performance",
+            "jobs": 4,
+            "artifact": "windows-tests-performance",
+        },
+        {
+            "os": "windows-latest",
+            "task": "tests:browser",
+            "jobs": 1,
+            "artifact": "windows-tests-browser",
+        },
+    ]
+    assert "env" not in test_job
+    steps = {step["name"]: step for step in test_job["steps"] if "name" in step}
+    assert steps["Run repository checks"]["env"] == {
+        "FAMULUS_REQUIRE_BROWSER": "1"
+    }
+    assert steps["Run repository check shard"]["env"] == {
+        "FAMULUS_REQUIRE_BROWSER": "${{ matrix.task == 'tests:browser' && '1' || '0' }}"
+    }
+    assert parsed["jobs"]["probe"]["env"] == {
+        "FAMULUS_REQUIRE_BROWSER": (
+            "${{ (inputs.task == 'tests:browser' || inputs.task == 'combined') "
+            "&& '1' || '0' }}"
+        )
+    }
+    assert "matrix.os == 'macos-latest' && matrix.task == 'tests:performance'" in workflow
     assert "FAMULUS_RUN_PERFORMANCE_GATES: '1'" not in workflow
     assert 'if: matrix.task == \'combined\'' in workflow
     assert 'if: matrix.task != \'combined\'' in workflow

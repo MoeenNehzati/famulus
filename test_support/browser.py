@@ -89,29 +89,14 @@ def run_html(
             f"--user-data-dir={root / 'profile'}",
             f"--virtual-time-budget={virtual_time_budget}",
         ]
-        if sys.platform == "darwin":
-            command.extend(
-                ("--use-mock-keychain", "--disable-features=DialMediaRouteProvider")
-            )
         if window_size is not None:
             command.append(f"--window-size={window_size}")
         command.extend(("--dump-dom", page.as_uri()))
-        try:
-            return subprocess.run(
-                command,
-                check=True,
-                capture_output=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=10,
-            )
-        except subprocess.TimeoutExpired as error:
-            stdout = error.stdout or b""
-            stderr = error.stderr or b""
-            if isinstance(stdout, bytes):
-                stdout = stdout.decode("utf-8", errors="replace")
-            if isinstance(stderr, bytes):
-                stderr = stderr.decode("utf-8", errors="replace")
-            if not stdout.rstrip().endswith("</html>"):
-                raise
-            return subprocess.CompletedProcess(command, 0, stdout, stderr)
+        return subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+        )

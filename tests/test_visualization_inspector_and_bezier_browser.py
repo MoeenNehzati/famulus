@@ -1,8 +1,5 @@
 """Browser coverage for inspector navigation and advanced edge geometry."""
 
-import pytest
-pytestmark = pytest.mark.xdist_group("browser")
-
 from officina.visualization.elk_html_renderer import build_html_with_elk
 from test_support.browser import require_chrome, run_html
 

@@ -81,7 +81,7 @@ def test_run_html_uses_temporary_paths_and_decodes_chrome_as_utf8(monkeypatch) -
         "capture_output": True,
         "encoding": "utf-8",
         "errors": "replace",
-        "timeout": 10,
+        "timeout": 30,
     }
     command = observed["command"]
     assert "--no-first-run" in command
@@ -92,44 +92,14 @@ def test_run_html_uses_temporary_paths_and_decodes_chrome_as_utf8(monkeypatch) -
     assert not observed["page"].exists()
 
 
-def test_run_html_suppresses_macos_permission_dialogs(monkeypatch) -> None:
-    observed: dict[str, object] = {}
-
-    def fake_run(command, **kwargs):
-        observed.update(command=command, kwargs=kwargs)
-        return subprocess.CompletedProcess(command, 0, stdout="rendered", stderr="")
-
-    monkeypatch.setattr(browser.subprocess, "run", fake_run)
-    monkeypatch.setattr(browser.sys, "platform", "darwin")
-
-    run_html("/browser", "<html></html>", virtual_time_budget=2500)
-
-    command = observed["command"]
-    assert "--use-mock-keychain" in command
-    assert "--disable-features=DialMediaRouteProvider" in command
-
-
-def test_run_html_recovers_complete_dom_when_chrome_cleanup_times_out(monkeypatch) -> None:
+def test_run_html_propagates_chrome_timeout_after_complete_dom(monkeypatch) -> None:
     def fake_run(command, **_kwargs):
         raise subprocess.TimeoutExpired(
             command,
-            10,
+            30,
             output=b"<html><body data-test-status=\"PASS\"></body></html>\n",
             stderr=b"background process did not exit\n",
         )
-
-    monkeypatch.setattr(browser.subprocess, "run", fake_run)
-
-    result = run_html("/browser", "<html></html>", virtual_time_budget=2500)
-
-    assert result.returncode == 0
-    assert result.stdout.endswith("</html>\n")
-    assert result.stderr == "background process did not exit\n"
-
-
-def test_run_html_rejects_incomplete_dom_when_chrome_times_out(monkeypatch) -> None:
-    def fake_run(command, **_kwargs):
-        raise subprocess.TimeoutExpired(command, 10, output=b"<html>", stderr=b"stuck\n")
 
     monkeypatch.setattr(browser.subprocess, "run", fake_run)
 

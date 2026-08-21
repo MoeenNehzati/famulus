@@ -77,8 +77,17 @@ jobs:
             task: combined
             artifact: ubuntu-combined
           - os: macos-latest
-            task: combined
-            artifact: macos-combined
+            task: validators
+            jobs: 4
+            artifact: macos-validators
+          - os: macos-latest
+            task: 'tests:shared'
+            jobs: 4
+            artifact: macos-tests-shared
+          - os: macos-latest
+            task: 'tests:performance'
+            jobs: 4
+            artifact: macos-tests-performance
           - os: windows-latest
             task: validators
             jobs: 4
@@ -96,12 +105,6 @@ jobs:
             jobs: 1
             artifact: windows-tests-browser
     runs-on: ${{ matrix.os }}
-    # Browser jobs must execute browser assertions rather than pass by skipping
-    # them. Wall-clock benchmarks stay opt-in because hosted-runner load is not
-    # a stable regression signal; structural performance invariants still run.
-    env:
-      FAMULUS_REQUIRE_BROWSER: '1'
-
     steps:
       - uses: actions/checkout@v4
         with:
@@ -149,10 +152,14 @@ jobs:
 
       - name: Run repository checks
         if: matrix.task == 'combined'
+        env:
+          FAMULUS_REQUIRE_BROWSER: '1'
         run: python3 repo_checks.py --suite full --verbose --sequential --timing-output .repo-checks/timing.json
 
       - name: Run repository check shard
         if: matrix.task != 'combined'
+        env:
+          FAMULUS_REQUIRE_BROWSER: ${{ matrix.task == 'tests:browser' && '1' || '0' }}
         run: python3 repo_checks.py --suite full --task-id "${{ matrix.task }}" --verbose --jobs "${{ matrix.jobs }}" --timing-output .repo-checks/timing.json
 
       - name: Run portability sentinel
@@ -170,14 +177,14 @@ jobs:
       - name: Run native keyring smoke
         if: >-
           always() &&
-          ((matrix.os == 'macos-latest' && matrix.task == 'combined') ||
+          ((matrix.os == 'macos-latest' && matrix.task == 'tests:performance') ||
           (matrix.os == 'windows-latest' && matrix.task == 'tests:performance'))
         run: python3 repo_checks.py --suite full --task native:keyring --jobs 1 --timing-output .repo-checks/native-keyring.json
 
       - name: Run native recurring scheduler smoke
         if: >-
           always() &&
-          ((matrix.os == 'macos-latest' && matrix.task == 'combined') ||
+          ((matrix.os == 'macos-latest' && matrix.task == 'tests:performance') ||
           (matrix.os == 'windows-latest' && matrix.task == 'tests:performance'))
         run: python3 repo_checks.py --suite full --task native:scheduler --jobs 1 --timing-output .repo-checks/native-scheduler.json
 
@@ -195,10 +202,8 @@ jobs:
     name: probe (${{ inputs.os }}, ${{ inputs.task }})
     timeout-minutes: 10
     runs-on: ${{ inputs.os }}
-    # A browser probe promises real browser coverage. Wall-clock benchmarks
-    # remain an explicit diagnostic rather than a hosted-runner gate.
     env:
-      FAMULUS_REQUIRE_BROWSER: '1'
+      FAMULUS_REQUIRE_BROWSER: ${{ (inputs.task == 'tests:browser' || inputs.task == 'combined') && '1' || '0' }}
 
     steps:
       - uses: actions/checkout@v4

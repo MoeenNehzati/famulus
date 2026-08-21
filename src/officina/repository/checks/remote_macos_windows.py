@@ -2,7 +2,9 @@
 
 EXPECTED_MATRIX = (
     ("ubuntu-latest", "combined"),
-    ("macos-latest", "combined"),
+    ("macos-latest", "validators"),
+    ("macos-latest", "tests:shared"),
+    ("macos-latest", "tests:performance"),
     ("windows-latest", "validators"),
     ("windows-latest", "tests:shared"),
     ("windows-latest", "tests:performance"),

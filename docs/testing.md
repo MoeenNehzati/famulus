@@ -97,7 +97,8 @@ Pytest-xdist is the only worker pool. The repository runner does not schedule a
 second layer of test processes.
 
 - Browser-free parallel phases use `--dist worksteal`.
-- Chrome-backed tests run in their own one-worker phase.
+- Chrome-backed tests run in their own one-worker phase; no second lock or
+  xdist grouping layer is used.
 - A one-worker run omits xdist arguments entirely.
 
 The hidden `--sequential` option is a deprecated compatibility alias. It does
@@ -109,8 +110,12 @@ the simplified route is certified on Linux, macOS, and Windows.
 Maintainers may repeat `--validator ID` or `--exclude-validator ID` for suites
 that contain validators. The private stable phase identifiers used by the
 benchmark harness are `validators`, `tests:shared`, `tests:performance`, and
-`tests:browser`. CI gives the Windows browser phase its own one-worker shard so
-the shared shard can stay parallel without dropping cross-platform coverage.
+`tests:browser`. CI runs the complete browser behavior suite on Ubuntu and in
+a dedicated one-worker Windows shard. macOS gates validators, shared tests,
+performance invariants, portability, keyring, and scheduler behavior, but not
+Chrome rendering: the hosted macOS Chrome CLI renders correctly and then fails
+to terminate reliably, so treating its timeout as success is not an acceptable
+browser gate.
 
 `--timing-output PATH` writes schema-version-1 JSON containing task wall time
 and pytest's per-file setup, call, and teardown totals. These totals do not
@@ -137,10 +142,12 @@ it completes.
 the exact Python test environment from `requirements-ci.txt` and both
 supported assistant CLIs, then runs:
 
-1. the full repository suite;
-2. the portability sentinel;
-3. on macOS and Windows, the native keyring smoke;
-4. on macOS and Windows, the native recurring-scheduler smoke.
+1. the full repository suite on Ubuntu;
+2. explicit validator, shared, and performance shards on macOS and Windows;
+3. the complete browser suite in a separate Windows shard;
+4. the portability sentinel on every supported OS;
+5. on macOS and Windows, the native keyring smoke;
+6. on macOS and Windows, the native recurring-scheduler smoke.
 
 The native smokes use `always()` so their platform evidence is still collected
 after an unrelated full-suite failure.
