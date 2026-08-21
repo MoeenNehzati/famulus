@@ -21,8 +21,10 @@ sys.path.insert(0, str(REPO_SRC))
 sys.path.insert(0, str(SCRIPT_DIR))
 
 if __package__ and __package__.count(".") >= 1:
+    from .. import _tex_macro_reader as macro_reader
     from .._tex_macro_reader import default_output_path, dependency_closure, extract_macros
 else:
+    import _tex_macro_reader as macro_reader  # noqa: E402
     from _tex_macro_reader import default_output_path, dependency_closure, extract_macros  # noqa: E402
 
 
@@ -85,7 +87,12 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            macros = extract_macros(entrypoint)
+            macro_reader.canonical_math_symbols.cache_clear()
+            self.addCleanup(macro_reader.canonical_math_symbols.cache_clear)
+            with mock.patch.object(
+                macro_reader, "tex_distribution_path", return_value=None
+            ):
+                macros = extract_macros(entrypoint)
 
             self.assertEqual(macros["BoldNabla"], "\\boldsymbol{\\nabla}")
 
@@ -136,6 +143,13 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
             with mock.patch.dict(
                 os.environ,
                 {"TEXINPUTS": f"{root / 'texmf'}//:"},
+            ), mock.patch.object(
+                macro_reader,
+                "tex_distribution_path",
+                side_effect=lambda filename: {
+                    "outerstyle.sty": package_dir / "outerstyle.sty",
+                    "innerstyle.sty": package_dir / "innerstyle.sty",
+                }.get(filename),
             ):
                 macros = extract_macros(entrypoint)
 
