@@ -312,6 +312,102 @@ def test_every_persisted_payload_is_schema_valid_and_contains_no_artifact_prose(
     assert persisted["run"]["total_ms"] == 0
 
 
+def test_iterator_summary_is_fixed_size_schema_valid_and_privacy_bounded(
+    tmp_path: Path,
+) -> None:
+    """Copying iterator source or validation values into shared diagnostics is a leak."""
+
+    sentinel = "PRIVATE_UNIT_TEXT SOURCE_PROSE INVENTORY_PROSE RAW_INSTANCE_VALUE"
+    report = RunDiagnostics.initialize(
+        tmp_path, entrypoint=_entrypoint(tmp_path), clock=_clock()
+    )
+    timing = {"samples": 3, "total": 9, "maximum": 5}
+    report.record_iterator_summary(
+        {
+            "setup": {
+                "unit_count": 7,
+                "worker_count": 2,
+                "assigned_characters": 321,
+                "internal_timings_ms": {
+                    "scan": 1,
+                    "unitization": 2,
+                    "partition": 3,
+                    "database": 4,
+                    "validation": 5,
+                    "total": 15,
+                },
+                "unit_text": sentinel,
+            },
+            "next": {
+                "calls": 3,
+                "acknowledgements": 2,
+                "wraps": 1,
+                "retries": 1,
+                "failures": 1,
+                "open_sequence": {
+                    "count": 1,
+                    "unit_count": 2,
+                    "character_count": 88,
+                    "maximum_elapsed_ms": 40,
+                },
+                "internal_timings_ms": {
+                    name: timing
+                    for name in (
+                        "validation",
+                        "transaction",
+                        "lookup",
+                        "serialization",
+                        "total",
+                    )
+                },
+                "source_prose": sentinel,
+                "inventory_prose": sentinel,
+                "raw_validation_instance": {"description": sentinel},
+            },
+        }
+    )
+    report.record_iterator_controller_timing(
+        "setup",
+        process_startup_ms=6,
+        publication_ms=2,
+        total_ms=23,
+    )
+    report.record_iterator_controller_timing(
+        "next",
+        process_startup_ms=7,
+        total_ms=12,
+    )
+
+    persisted = json.loads(report.path.read_text(encoding="utf-8"))
+    schema = json.loads(
+        (SKILL_DIR / "run-diagnostics.schema.json").read_text(encoding="utf-8")
+    )
+    jsonschema.Draft202012Validator(schema).validate(persisted)
+    assert persisted["iterator"]["setup"] == {
+        "unit_count": 7,
+        "worker_count": 2,
+        "assigned_characters": 321,
+        "internal_timings_ms": {
+            "scan": 1,
+            "unitization": 2,
+            "partition": 3,
+            "database": 4,
+            "validation": 5,
+            "total": 15,
+        },
+        "controller_timings_ms": {
+            "process_startup": {"samples": 1, "total": 6, "maximum": 6},
+            "publication": {"samples": 1, "total": 2, "maximum": 2},
+            "total": {"samples": 1, "total": 23, "maximum": 23},
+        },
+    }
+    assert persisted["iterator"]["next"]["controller_timings_ms"] == {
+        "process_startup": {"samples": 1, "total": 7, "maximum": 7},
+        "total": {"samples": 1, "total": 12, "maximum": 12},
+    }
+    assert sentinel not in json.dumps(persisted, sort_keys=True)
+
+
 def test_failed_atomic_update_preserves_last_complete_report(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

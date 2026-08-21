@@ -212,6 +212,34 @@ def test_completed_iterator_pools_private_controller_packets_and_worker_inventor
     )
 
 
+def test_completed_iterator_publishes_bounded_iterator_diagnostics(
+    tmp_path: Path,
+) -> None:
+    """Pooling without the durable iterator aggregates loses traversal evidence."""
+
+    run_dir, summary = _setup_prepared_run(tmp_path, workers=2, window_chars=40)
+    state_dir = Path(summary["assignments"][0]["inventory_path"]).parents[2]
+    for assignment in summary["assignments"]:
+        _complete_worker(state_dir, assignment["worker_index"])
+
+    driver.advance_inventory(state_dir, run_dir)
+
+    iterator_summary = RunDiagnostics.open(run_dir).payload["iterator"]
+    assert iterator_summary["setup"]["unit_count"] == len(summary["units"])
+    assert iterator_summary["setup"]["worker_count"] == summary["effective_workers"]
+    assert iterator_summary["setup"]["assigned_characters"] == sum(
+        assignment["character_count"] for assignment in summary["assignments"]
+    )
+    assert iterator_summary["next"]["acknowledgements"] == len(summary["units"])
+    assert iterator_summary["next"]["failures"] == 0
+    assert iterator_summary["next"]["open_sequence"] == {
+        "count": 0,
+        "unit_count": 0,
+        "character_count": 0,
+        "maximum_elapsed_ms": 0,
+    }
+
+
 def test_advance_inventory_rejects_valid_content_changed_after_final_ack(
     tmp_path: Path,
 ) -> None:

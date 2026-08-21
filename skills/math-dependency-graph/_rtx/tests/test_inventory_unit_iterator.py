@@ -26,6 +26,7 @@ from officina.blueprints.process_binding import (  # noqa: E402
 )
 import _inventory_unit_iterator as iterator  # noqa: E402
 from _inventory_unit_iterator import (  # noqa: E402
+    load_iterator_diagnostics,
     load_iterator_summary,
     next_inventory_unit,
     setup_inventory_iterator,
@@ -628,7 +629,22 @@ def test_setup_records_each_substage_time_with_the_injected_clock(tmp_path: Path
     packet = _write_packet(
         tmp_path / "source-packet.txt", "@@ source: paper.md\n0001 | text\n"
     )
-    ticks = iter(range(0, 20_000_000, 1_000_000))
+    ticks = iter(
+        (
+            0,
+            1_000_000,
+            2_000_000,
+            3_000_000,
+            5_000_000,
+            6_000_000,
+            7_000_000,
+            8_000_000,
+            9_000_000,
+            10_000_000,
+            11_000_000,
+            12_000_000,
+        )
+    )
 
     summary = setup_inventory_iterator(
         packet,
@@ -640,10 +656,72 @@ def test_setup_records_each_substage_time_with_the_injected_clock(tmp_path: Path
     )
 
     assert summary["timings_ms"]["scan"] == 1
+    assert summary["timings_ms"]["unitization"] == 2
     assert summary["timings_ms"]["partition"] == 1
     assert summary["timings_ms"]["database"] == 1
     assert summary["timings_ms"]["validation"] == 1
     assert "publication" not in summary["timings_ms"]
+
+
+def test_next_records_bounded_internal_timings_and_iterator_status_counts(
+    tmp_path: Path,
+) -> None:
+    """Dropping retry/failure or timing aggregates hides iterator control-flow cost."""
+
+    state_dir = _iterator_with_units(tmp_path, units=2)
+    now = datetime(2026, 8, 21, 12, 0, tzinfo=timezone.utc)
+    leased = next_inventory_unit(state_dir, 1, utc_now=lambda: now)
+    _write_valid_inventory(state_dir, 1)
+    advanced = next_inventory_unit(
+        state_dir,
+        1,
+        ack=leased["unit"]["id"],
+        utc_now=lambda: now,
+    )
+    retried = next_inventory_unit(
+        state_dir,
+        1,
+        ack=leased["unit"]["id"],
+        utc_now=lambda: now,
+    )
+    failed = next_inventory_unit(
+        state_dir,
+        1,
+        ack="u999999",
+        utc_now=lambda: now,
+    )
+
+    assert retried == advanced
+    assert failed["state"] == "failure"
+    summary = load_iterator_diagnostics(
+        state_dir,
+        utc_now=lambda: datetime(2026, 8, 21, 12, 0, 5, tzinfo=timezone.utc),
+    )
+    assert summary["setup"]["unit_count"] == 2
+    assert summary["setup"]["worker_count"] == 1
+    assert summary["setup"]["assigned_characters"] > 0
+    assert summary["next"]["calls"] == 4
+    assert summary["next"]["acknowledgements"] == 1
+    assert summary["next"]["wraps"] == 0
+    assert summary["next"]["retries"] == 1
+    assert summary["next"]["failures"] == 1
+    assert summary["next"]["open_sequence"]["count"] == 1
+    assert summary["next"]["open_sequence"]["unit_count"] == 1
+    assert summary["next"]["open_sequence"]["character_count"] > 0
+    assert summary["next"]["open_sequence"]["maximum_elapsed_ms"] == 5_000
+    assert set(summary["next"]["internal_timings_ms"]) == {
+        "validation",
+        "transaction",
+        "lookup",
+        "serialization",
+        "total",
+    }
+    assert all(
+        timing["samples"] == 4
+        and timing["total"] >= 0
+        and timing["maximum"] >= 0
+        for timing in summary["next"]["internal_timings_ms"].values()
+    )
 
 
 def test_next_leases_first_unit_and_replays_it_until_acknowledged(tmp_path: Path) -> None:

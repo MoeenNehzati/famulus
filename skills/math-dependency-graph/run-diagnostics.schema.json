@@ -29,7 +29,8 @@
       "type": "array",
       "items": {"$ref": "#/$defs/validation_issue"}
     },
-    "counts": {"$ref": "#/$defs/aggregate_counts"}
+    "counts": {"$ref": "#/$defs/aggregate_counts"},
+    "iterator": {"$ref": "#/$defs/iterator"}
   },
   "$defs": {
     "timestamp": {
@@ -444,6 +445,107 @@
         },
         "stage_attempt": {"type": "string", "minLength": 1, "maxLength": 160},
         "value": {"type": "number", "minimum": 0}
+      }
+    },
+    "timing_aggregate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["samples", "total", "maximum"],
+      "properties": {
+        "samples": {"type": "integer", "minimum": 0},
+        "total": {"type": "integer", "minimum": 0},
+        "maximum": {"type": "integer", "minimum": 0}
+      }
+    },
+    "iterator_setup_internal_timings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scan", "unitization", "partition", "database", "validation", "total"],
+      "properties": {
+        "scan": {"type": "integer", "minimum": 0},
+        "unitization": {"type": "integer", "minimum": 0},
+        "partition": {"type": "integer", "minimum": 0},
+        "database": {"type": "integer", "minimum": 0},
+        "validation": {"type": "integer", "minimum": 0},
+        "total": {"type": "integer", "minimum": 0}
+      }
+    },
+    "iterator_setup_controller_timings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["process_startup", "publication", "total"],
+      "properties": {
+        "process_startup": {"$ref": "#/$defs/timing_aggregate"},
+        "publication": {"$ref": "#/$defs/timing_aggregate"},
+        "total": {"$ref": "#/$defs/timing_aggregate"}
+      }
+    },
+    "iterator_setup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unit_count", "worker_count", "assigned_characters", "internal_timings_ms"],
+      "properties": {
+        "unit_count": {"type": "integer", "minimum": 0},
+        "worker_count": {"type": "integer", "minimum": 0},
+        "assigned_characters": {"type": "integer", "minimum": 0},
+        "internal_timings_ms": {"$ref": "#/$defs/iterator_setup_internal_timings"},
+        "controller_timings_ms": {"$ref": "#/$defs/iterator_setup_controller_timings"}
+      }
+    },
+    "iterator_next_internal_timings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["validation", "transaction", "lookup", "serialization", "total"],
+      "properties": {
+        "validation": {"$ref": "#/$defs/timing_aggregate"},
+        "transaction": {"$ref": "#/$defs/timing_aggregate"},
+        "lookup": {"$ref": "#/$defs/timing_aggregate"},
+        "serialization": {"$ref": "#/$defs/timing_aggregate"},
+        "total": {"$ref": "#/$defs/timing_aggregate"}
+      }
+    },
+    "iterator_next_controller_timings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["process_startup", "total"],
+      "properties": {
+        "process_startup": {"$ref": "#/$defs/timing_aggregate"},
+        "total": {"$ref": "#/$defs/timing_aggregate"}
+      }
+    },
+    "open_sequence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count", "unit_count", "character_count", "maximum_elapsed_ms"],
+      "properties": {
+        "count": {"type": "integer", "minimum": 0},
+        "unit_count": {"type": "integer", "minimum": 0},
+        "character_count": {"type": "integer", "minimum": 0},
+        "maximum_elapsed_ms": {"type": "integer", "minimum": 0}
+      }
+    },
+    "iterator_next": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["calls", "acknowledgements", "wraps", "retries", "failures", "open_sequence", "internal_timings_ms"],
+      "properties": {
+        "calls": {"type": "integer", "minimum": 0},
+        "acknowledgements": {"type": "integer", "minimum": 0},
+        "wraps": {"type": "integer", "minimum": 0},
+        "retries": {"type": "integer", "minimum": 0},
+        "failures": {"type": "integer", "minimum": 0},
+        "open_sequence": {"$ref": "#/$defs/open_sequence"},
+        "internal_timings_ms": {"$ref": "#/$defs/iterator_next_internal_timings"},
+        "controller_timings_ms": {"$ref": "#/$defs/iterator_next_controller_timings"}
+      }
+    },
+    "iterator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["setup", "next"],
+      "properties": {
+        "setup": {"$ref": "#/$defs/iterator_setup"},
+        "next": {"$ref": "#/$defs/iterator_next"}
       }
     },
     "aggregate_counts": {

@@ -29,6 +29,7 @@ try:
     from ._extraction_chunk_planner import plan_extract_packet
     from ._graph_builder import main as render_graph
     from ._inventory_unit_iterator import (
+        load_iterator_diagnostics,
         load_iterator_summary,
         verify_completed_inventories,
     )
@@ -49,6 +50,7 @@ except ImportError:  # pragma: no cover - direct script execution
     from _extraction_chunk_planner import plan_extract_packet
     from _graph_builder import main as render_graph
     from _inventory_unit_iterator import (
+        load_iterator_diagnostics,
         load_iterator_summary,
         verify_completed_inventories,
     )
@@ -406,6 +408,9 @@ def advance_inventory(iterator_state_dir: Path, run_dir: Path) -> dict:
         prepared_state_dir = Path(state.get("inventory_iterator_state", "")).resolve()
         if iterator_state_dir != prepared_state_dir:
             raise ValueError("iterator state does not match prepared iterator state")
+        diagnostics.record_iterator_summary(
+            load_iterator_diagnostics(iterator_state_dir)
+        )
         try:
             chunk_manifest, fragments = _iterator_pool_inputs(
                 iterator_state_dir,

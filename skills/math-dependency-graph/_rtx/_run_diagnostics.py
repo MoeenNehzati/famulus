@@ -795,6 +795,156 @@ class RunDiagnostics:
 
         self._update(mutate)
 
+    @staticmethod
+    def _nonnegative_integer(value: object, *, field: str) -> int:
+        """Normalize one bounded aggregate without accepting booleans or negatives."""
+
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError(f"iterator diagnostics {field} must be nonnegative")
+        return value
+
+    @classmethod
+    def _iterator_timing_aggregate(cls, value: dict, *, field: str) -> dict:
+        """Project one fixed-size timing aggregate onto its three numeric fields."""
+
+        return {
+            key: cls._nonnegative_integer(value[key], field=f"{field}.{key}")
+            for key in ("samples", "total", "maximum")
+        }
+
+    def record_iterator_summary(self, summary: dict) -> None:
+        """Replace iterator state detail with a fixed-size prose-free projection."""
+
+        setup_source = summary["setup"]
+        next_source = summary["next"]
+        setup_timings = setup_source["internal_timings_ms"]
+        next_timings = next_source["internal_timings_ms"]
+        open_sequence = next_source["open_sequence"]
+        setup = {
+            "unit_count": self._nonnegative_integer(
+                setup_source["unit_count"], field="setup.unit_count"
+            ),
+            "worker_count": self._nonnegative_integer(
+                setup_source["worker_count"], field="setup.worker_count"
+            ),
+            "assigned_characters": self._nonnegative_integer(
+                setup_source["assigned_characters"],
+                field="setup.assigned_characters",
+            ),
+            "internal_timings_ms": {
+                key: self._nonnegative_integer(
+                    setup_timings[key], field=f"setup.internal_timings_ms.{key}"
+                )
+                for key in (
+                    "scan",
+                    "unitization",
+                    "partition",
+                    "database",
+                    "validation",
+                    "total",
+                )
+            },
+        }
+        next_summary = {
+            key: self._nonnegative_integer(next_source[key], field=f"next.{key}")
+            for key in (
+                "calls",
+                "acknowledgements",
+                "wraps",
+                "retries",
+                "failures",
+            )
+        }
+        next_summary["open_sequence"] = {
+            key: self._nonnegative_integer(
+                open_sequence[key], field=f"next.open_sequence.{key}"
+            )
+            for key in (
+                "count",
+                "unit_count",
+                "character_count",
+                "maximum_elapsed_ms",
+            )
+        }
+        next_summary["internal_timings_ms"] = {
+            key: self._iterator_timing_aggregate(
+                next_timings[key], field=f"next.internal_timings_ms.{key}"
+            )
+            for key in (
+                "validation",
+                "transaction",
+                "lookup",
+                "serialization",
+                "total",
+            )
+        }
+
+        def mutate(payload: dict) -> None:
+            prior = payload.get("iterator", {})
+            prior_setup = prior.get("setup", {})
+            prior_next = prior.get("next", {})
+            if "controller_timings_ms" in prior_setup:
+                setup["controller_timings_ms"] = deepcopy(
+                    prior_setup["controller_timings_ms"]
+                )
+            if "controller_timings_ms" in prior_next:
+                next_summary["controller_timings_ms"] = deepcopy(
+                    prior_next["controller_timings_ms"]
+                )
+            payload["iterator"] = {
+                "setup": deepcopy(setup),
+                "next": deepcopy(next_summary),
+            }
+
+        self._update(mutate)
+
+    def record_iterator_controller_timing(
+        self,
+        operation: str,
+        *,
+        process_startup_ms: int,
+        total_ms: int,
+        publication_ms: int | None = None,
+    ) -> None:
+        """Accumulate controller timing separately from iterator internal time."""
+
+        if operation not in {"setup", "next"}:
+            raise ValueError("iterator controller timing operation must be setup or next")
+        if operation == "setup" and publication_ms is None:
+            raise ValueError("iterator setup controller timing requires publication_ms")
+        if operation == "next" and publication_ms is not None:
+            raise ValueError("iterator next controller timing cannot record publication_ms")
+        measurements = {
+            "process_startup": self._nonnegative_integer(
+                process_startup_ms, field=f"{operation}.process_startup_ms"
+            ),
+            "total": self._nonnegative_integer(
+                total_ms, field=f"{operation}.controller_total_ms"
+            ),
+        }
+        if publication_ms is not None:
+            measurements["publication"] = self._nonnegative_integer(
+                publication_ms, field="setup.publication_ms"
+            )
+
+        def mutate(payload: dict) -> None:
+            if "iterator" not in payload:
+                raise ValueError(
+                    "iterator summary must be recorded before controller timing"
+                )
+            target = payload["iterator"][operation].setdefault(
+                "controller_timings_ms", {}
+            )
+            for name, value in measurements.items():
+                aggregate = target.setdefault(
+                    name, {"samples": 0, "total": 0, "maximum": 0}
+                )
+                aggregate["samples"] += 1
+                aggregate["total"] += value
+                aggregate["maximum"] = max(aggregate["maximum"], value)
+
+        self._update(mutate)
+
     def finish(
         self,
         *,
