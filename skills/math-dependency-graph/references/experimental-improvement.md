@@ -7,42 +7,56 @@ Use this playbook to improve `math-dependency-graph` by running fresh subagents 
 Before a pass, record:
 
 - the immutable source snapshot, entrypoint, and exact source scope;
+- the prepared-input SHA-256 and the iterator version;
+- the requested and effective worker counts and the window character limit;
+- the scanner version, inventory schema version, and setup and next interface versions;
 - the current skill and instruction versions;
 - the model id and reasoning level for every worker;
 - the gold version and its annotation policy;
 - the canonical schema and validator used for final output;
 - the acceptance metrics and the single question tested by this pass.
 
+Obtain these identities from public contracts and returned reports. If an iterator identity, coverage count, or timing boundary required by the hypothesis is not publicly observable, record a contract gap and stop the pass; do not recover it by inspecting private iterator storage or inventing a field.
+
 Use a fresh run directory. Preserve every input, worker artifact, progress sidecar, diagnostic report, canonical JSON file, discrepancy ledger, score, and adjudication. Never overwrite an earlier pass.
 
 ## Keep roles separated
 
-1. **Graph workers are context-free.** Start each worker in a new agent session whose initial message contains only the production job and its returned paths. Inventory and extract workers receive only the material returned by the production skill. They must not see gold, prior passes, benchmark reports, proposed fixes, controller notes, or another worker's output. Give parallel inventory workers distinct fragment and progress paths and prohibit cross-worker messages.
+1. **Graph workers are context-free.** Start each worker in a new agent session whose initial message contains only the production job and its returned paths. Inventory and extract workers receive only the material returned by the production skill. They must not see gold, prior passes, benchmark reports, proposed fixes, controller notes, or another worker's output. Give parallel inventory workers distinct fragment and progress paths and prohibit cross-worker messages. An inventory worker receives source text only in responses from the public next interface: it must not read the prepared input, controller-only packets, iterator state, or another worker's artifacts.
 2. **The evaluator sees both artifacts and the source.** It compares the completed canonical graph with the current gold by mathematical identity, source location, labels, descriptions, and directness—not by generated ids alone. It adjudicates every discrepancy from source evidence and the frozen annotation policy before counting errors.
 3. **Gold adjudicators see the dispute.** They receive the annotation policy, exact source evidence, current gold decision, and contested proposed correction. They do not edit artifacts.
-4. **The controller owns diagnostics.** It serializes lifecycle events, preserves artifacts, calculates metrics, and decides the next experimental hypothesis. Semantic workers never manage benchmark thresholds.
+4. **The controller owns diagnostics.** It invokes public setup exactly once, serializes lifecycle events, preserves artifacts, calculates metrics, and decides the next experimental hypothesis. Semantic workers never manage benchmark thresholds. It retains the controlled-child timing returned by every setup and next response and separately measures the outer gateway latency around each complete public invocation; neither layer may be estimated from or subtracted from the other.
 
 ## Run one pass
 
-1. Prepare the source through the live public skill route.
-2. Queue fresh inventory workers with the chosen model and reasoning level. Record queue time, worker time, progress checkpoints, retries, failures, and output bytes separately.
-3. Pool once all initial fragments validate. Retry only schema, ownership, anchor-coverage, or accounting failures. Do not dispatch compaction or wording-rewrite work. Size is an evaluation signal, not a worker task.
-4. Run one fresh extract worker, finalize through the live route, and validate the semantic and canonical schemas. The resulting canonical JSON is the authoritative experimental output.
-5. Build a discrepancy ledger covering every gold-only node or edge, every output-only node or edge, and every non-equivalent match. For each discrepancy, inspect its exact source evidence and the frozen annotation policy, then decide whether the worker is wrong, the gold is wrong, both are wrong, the difference is an allowed granularity choice, or the evidence remains unresolved. Do not count a discrepancy as an error before this decision.
-6. Independently adjudicate every proposed gold correction, update gold only when accepted, and recompute mappings and denominators after any correction.
-7. Categorize the confirmed worker mistakes by observable failure type, pipeline stage, and underlying cause. Develop proposed solutions for the categories, connecting each solution to its supporting discrepancies, expected effect, risks, and a measurable paper-independent test.
-8. Write the pass report, including the discrepancy ledger, adjudications, mistake taxonomy, causes, and proposed solutions, before changing instructions, schemas, or runtime.
+1. Prepare the source through the live public skill route. Invoke the public setup interface exactly once with the frozen worker and window configuration. Preserve the exact requested worker and window arguments, its response, effective assignments, setup summary, and timing before launching workers; a failed setup attempt remains part of the pass record.
+2. Queue one fresh inventory worker for each effective assignment with the chosen model and reasoning level. Each worker repeatedly invokes only the public next interface for its assigned state and worker index, consumes the returned unit in order, and updates only its assigned inventory and progress artifacts. Require it to validate the complete worker-owned inventory before every acknowledgement and acknowledge every returned unit with that exact unit id. It must close each attention sequence with `--wrap` when the consecutive mathematical context ends and continue until an acknowledgement returns `complete`; a lease response alone is not completion.
+3. Preserve every public next response and record queue time, worker time, progress checkpoints, calls, acknowledgements, wraps, retries, and failures separately. Build the controller-owned attention-sequence record from returned unit ids, character counts, wrap choices, completion states, and observed call times; record worker index, first and last unit ids, unit and character counts, closure reason, elapsed time, and whether it remained open at collection. Do not ask a worker to read iterator storage for this accounting.
+4. Before pooling, require the report returned by the single setup call or the pooling report to expose exact coordinate coverage. Compare its complete assignable coordinate universe with the multiset union of unit coordinates and report exact covered, missing, and duplicate counts plus all coordinate gaps and overlaps. Report structural-context-only coordinates separately. Require each effective assignment to be nonempty, each unit to have one owner, every leased unit to have one accepted acknowledgement, and every worker to reach `complete`. If the public reports do not expose this accounting, classify the experiment as unobservable rather than inspecting private state.
+5. Pool once all initial fragments validate and iterator completion authenticates them. Retry only schema, ownership, anchor-coverage, or accounting failures. Do not dispatch compaction or wording-rewrite work. Size is an evaluation signal, not a worker task. Preserve the authenticated iterator summary alongside the pooled version-2 inventory passed upstream to extraction.
+6. Run one fresh extract worker, finalize through the live route, and validate the semantic and canonical schemas. The resulting canonical JSON is the authoritative experimental output. Iterator traversal does not create a second extraction iterator or alter the extract worker's pooled-inventory reconciliation obligations.
+7. Build a discrepancy ledger covering every gold-only node or edge, every output-only node or edge, and every non-equivalent match. For each discrepancy, inspect its exact source evidence and the frozen annotation policy, then decide whether the worker is wrong, the gold is wrong, both are wrong, the difference is an allowed granularity choice, or the evidence remains unresolved. Do not count a discrepancy as an error before this decision.
+8. Independently adjudicate every proposed gold correction, update gold only when accepted, and recompute mappings and denominators after any correction.
+9. Categorize the confirmed worker mistakes by observable failure type, pipeline stage, and underlying cause. Develop proposed solutions for the categories, connecting each solution to its supporting discrepancies, expected effect, risks, and a measurable paper-independent test.
+10. Write the pass report, including the discrepancy ledger, adjudications, mistake taxonomy, causes, and proposed solutions, before changing instructions, schemas, or runtime.
 
 ## Measure time and space
 
 Report both wall-clock and allocation detail:
 
 - source preparation, planning, pooling, validation, and compilation duration;
+- setup internal scan, unitization, partition, database, validation, and total duration;
+- next internal validation, transaction, lookup, serialization, and total aggregates;
+- public controlled-child process dispatch, publication, and total durations, with publication present only when fresh setup actually publishes state;
+- outer gateway latency for every setup and next invocation, kept distinct from the public controlled-child and iterator-internal timing layers;
 - per-attempt queue time and worker time for inventory and extract;
 - retry count, retry reason, and time spent in failed or discarded attempts;
-- raw and canonical bytes for each inventory fragment, pooled IR, semantic IR, and canonical graph;
+- iterator calls, acknowledgements, wraps, retries, failures, closed-sequence data, and any open-sequence aggregate;
+- raw and canonical bytes for each inventory fragment, pooled IR, semantic IR, and canonical graph, with each artifact path, size, and hash preserved;
 - local fragment-to-owned-source ratios and the aggregate canonical-fragment ratio;
 - entity, relationship, exclusion, unresolved-resolution, and gap counts.
+
+Never combine the three timing layers. Iterator-internal timings describe work inside setup or next; public process timings describe the controlled child used by that interface; outer gateway latency includes the surrounding dispatch and response boundary. Record returned measurements verbatim, record unobserved publication as absent rather than zero, and reject a pass whose required timing layer cannot be observed.
 
 Use the diagnostics record rather than an informal percentage. The local ratio is kind `inventory-fragment-to-owned-packet`: canonical bytes for one fragment's records divided by the bytes of source lines owned by that job. The aggregate ratio is kind `pooled-canonical-fragments-to-owned-packets`: deduplicated canonical bytes for all retained fragments divided by the union of their owned source-line bytes. A value above 0.50 locally or 0.35 in aggregate crosses the controller-facing reference threshold. Crossing one does not invalidate the graph and must not cause an LLM compaction pass. It indicates that the general instructions or schema may be spending space poorly.
 

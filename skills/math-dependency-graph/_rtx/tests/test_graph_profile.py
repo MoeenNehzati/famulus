@@ -101,6 +101,37 @@ def test_gateway_contract_routes_inventory_through_iterator_and_measured_diagnos
     ] == 7
 
 
+def test_experimental_improvement_records_complete_iterator_conditions() -> None:
+    """An experiment without traversal identity and timing layers is not reproducible."""
+
+    reference = (
+        RUNTIME_DIR.parent / "references" / "experimental-improvement.md"
+    ).read_text(encoding="utf-8")
+    required_contract = (
+        "requested and effective worker counts",
+        "window character limit",
+        "scanner version",
+        "inventory schema version",
+        "setup and next interface versions",
+        "exactly once",
+        "validate the complete worker-owned inventory before every acknowledgement",
+        "acknowledge every returned unit",
+        "close each attention sequence",
+        "coordinate gaps and overlaps",
+        "process dispatch, publication, and total",
+        "outer gateway latency",
+        "calls, acknowledgements, wraps, retries, and failures",
+        "must not read the prepared input",
+        "record a contract gap and stop the pass",
+        "rather than inspecting private state",
+        "exact requested worker and window arguments",
+        "report returned by the single setup call",
+    )
+
+    missing = [item for item in required_contract if item not in reference]
+    assert missing == []
+
+
 def test_base_payload_defines_the_complete_shared_math_vocabulary() -> None:
     base = load_base_payload()
 
