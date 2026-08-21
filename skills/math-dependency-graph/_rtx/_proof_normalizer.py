@@ -367,8 +367,14 @@ def _validate_provenance_report(report: object) -> None:
     if "compiler_inventory" in record:
         compiler_inventory = _require_keys(
             record["compiler_inventory"],
-            {"removed_proof_candidate_ids", "removed_proof_hint_ids", "projected_candidate_ids"},
-            {"removed_proof_candidate_ids", "removed_proof_hint_ids", "projected_candidate_ids"},
+            {
+                "removed_proof_candidate_ids", "removed_proof_hint_ids",
+                "removed_proof_reference_ids", "projected_candidate_ids",
+            },
+            {
+                "removed_proof_candidate_ids", "removed_proof_hint_ids",
+                "removed_proof_reference_ids", "projected_candidate_ids",
+            },
             "proof report compiler inventory",
         )
         for name in ("removed_proof_candidate_ids", "projected_candidate_ids"):
@@ -381,6 +387,11 @@ def _validate_provenance_report(report: object) -> None:
             compiler_inventory["removed_proof_hint_ids"],
             "hint",
             "proof report compiler inventory removed_proof_hint_ids",
+        )
+        _require_handle_list(
+            compiler_inventory["removed_proof_reference_ids"],
+            "reference",
+            "proof report compiler inventory removed_proof_reference_ids",
         )
 
 
@@ -435,12 +446,10 @@ def normalize_proof_entities(semantic_ir: object, decisions: object) -> tuple[di
     if (
         len(normalized["entities"]) > 1
         and not normalized_relationships
-        and excluded_incident
-        and "edgeless_justification" not in normalized
+        and not normalized.get("edgeless_justification")
     ):
-        normalized["edgeless_justification"] = (
-            "All transitional relationships were incident to proof entities excluded "
-            "during proof reconciliation."
+        raise ValueError(
+            "proof normalization requires a preexisting source-grounded edgeless_justification"
         )
     validate_normalized_semantic_profile(normalized)
     _validate_semantic_ir(normalized)
@@ -548,6 +557,7 @@ def normalize_with_inventory(semantic_ir: object, decisions: object, inventory: 
     }
     retained_hints: list[dict] = []
     removed_hint_ids: list[str] = []
+    removed_hint_reference_ids: set[str] = set()
     for hint in projected["relationship_hints"]:
         incident_proofs = {
             proof_by_candidate[candidate_id]
@@ -558,6 +568,7 @@ def normalize_with_inventory(semantic_ir: object, decisions: object, inventory: 
         }
         if hint["id"] in proves_hint_ids or incident_proofs & excluded_proofs:
             removed_hint_ids.append(hint["id"])
+            removed_hint_reference_ids.update(hint.get("reference_ids", []))
             continue
         retained_hints.append(hint)
     projected["relationship_hints"] = retained_hints
@@ -572,12 +583,45 @@ def normalize_with_inventory(semantic_ir: object, decisions: object, inventory: 
         for proof_id, replacement in target_endpoints.items():
             if candidate_id in entities[proof_id]["candidate_ids"]:
                 hint["to"] = replacement
+    proof_relationship_reference_ids = {
+        reference_id
+        for relationship in semantic_ir["relationships"]
+        if relationship["from"] in decision_by_proof or relationship["to"] in decision_by_proof
+        for reference_id in relationship.get("reference_ids", [])
+    }
+    surviving_reference_ids = {
+        reference_id
+        for relationship in normalized["relationships"]
+        for reference_id in relationship.get("reference_ids", [])
+    }
+    surviving_reference_ids.update(
+        gap["reference_id"]
+        for gap in normalized["gaps"]
+        if gap.get("category") == "reference" and "reference_id" in gap
+    )
+    removable_reference_ids = (
+        removed_hint_reference_ids | proof_relationship_reference_ids
+    ) - surviving_reference_ids
+    removed_reference_ids = [
+        item["id"] for item in projected["references"]
+        if item["id"] in removable_reference_ids
+    ]
+    removed_reference_id_set = set(removed_reference_ids)
+    projected["references"] = [
+        item for item in projected["references"]
+        if item["id"] not in removed_reference_id_set
+    ]
+    normalized["reference_decisions"] = [
+        item for item in normalized["reference_decisions"]
+        if item["reference_id"] not in removed_reference_id_set
+    ]
     normalized["inventory"]["candidate_ids"] = [item["id"] for item in projected["candidates"]]
     normalized["inventory"]["candidate_count"] = len(projected["candidates"])
     validate_extract_reconciliation(normalized, projected)
     report["compiler_inventory"] = {
         "removed_proof_candidate_ids": sorted(proof_candidates),
         "removed_proof_hint_ids": removed_hint_ids,
+        "removed_proof_reference_ids": removed_reference_ids,
         "projected_candidate_ids": normalized["inventory"]["candidate_ids"],
     }
     _validate_provenance_report(report)
@@ -672,7 +716,6 @@ def normalize_files(
 
     semantic = _load_json_object(semantic_path, "transitional semantic IR")
     decisions = _load_json_object(decisions_path, "proof-normalization decisions")
-    normalize_proof_entities(semantic, decisions)
     normalized, report, projected = normalize_with_inventory(
         semantic, decisions, _load_json_object(inventory_path, "pooled inventory")
     )

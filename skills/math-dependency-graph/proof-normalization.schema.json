@@ -36,13 +36,21 @@
     "compiler_inventory": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["removed_proof_candidate_ids", "removed_proof_hint_ids", "projected_candidate_ids"],
+      "required": [
+        "removed_proof_candidate_ids",
+        "removed_proof_hint_ids",
+        "removed_proof_reference_ids",
+        "projected_candidate_ids"
+      ],
       "properties": {
         "removed_proof_candidate_ids": {
           "type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/identifier"}
         },
         "removed_proof_hint_ids": {
           "type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/qualified_hint_id"}
+        },
+        "removed_proof_reference_ids": {
+          "type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/qualified_reference_id"}
         },
         "projected_candidate_ids": {
           "type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/identifier"}

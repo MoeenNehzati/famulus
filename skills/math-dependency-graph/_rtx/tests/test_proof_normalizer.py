@@ -360,11 +360,11 @@ def test_normalizer_rejects_unaccounted_proof_without_replacing_outputs() -> Non
         provenance_path = root / "provenance.json"
         inventory_path = root / "inventory.json"
         inventory_out_path = root / "inventory-out.json"
-        semantic_path.write_text(json.dumps(_semantic_ir()), encoding="utf-8")
-        decisions = _decisions()
+        semantic, decisions, inventory = _compiler_proof_fixture()
+        semantic_path.write_text(json.dumps(semantic), encoding="utf-8")
         decisions["decisions"].pop()
         decisions_path.write_text(json.dumps(decisions), encoding="utf-8")
-        inventory_path.write_text("{}", encoding="utf-8")
+        inventory_path.write_text(json.dumps(inventory), encoding="utf-8")
         normalized_path.write_text('{"previous":"normalized"}\n', encoding="utf-8")
         provenance_path.write_text('{"previous":"provenance"}\n', encoding="utf-8")
 
@@ -532,6 +532,9 @@ def test_excluded_proof_removes_incident_hints_and_accounts_relationships() -> N
     from _proof_normalizer import normalize_with_inventory
 
     semantic, decisions, inventory = _compiler_proof_fixture()
+    semantic["edgeless_justification"] = (
+        "The two retained statements have no direct source-grounded dependency once the prose is excluded."
+    )
     decisions["decisions"][0] = {
         "proof_id": "proof-existence",
         "disposition": "excluded",
@@ -555,6 +558,9 @@ def test_excluded_proof_removes_prior_decision_for_incident_dependency_hint() ->
     from _proof_normalizer import normalize_with_inventory
 
     semantic, decisions, inventory = _compiler_proof_fixture()
+    semantic["edgeless_justification"] = (
+        "The two retained statements have no direct source-grounded dependency once the prose is excluded."
+    )
     semantic["relationships"][0]["hint_ids"] = []
     semantic["hint_decisions"] = [
         {
@@ -711,3 +717,152 @@ def test_normalizer_preserves_every_nonproof_entity_exactly() -> None:
     normalized, _ = normalize_proof_entities(semantic, _decisions())
 
     assert normalized["entities"] == expected
+
+
+def test_normalizer_fails_closed_when_proof_removal_would_invent_edgeless_prose() -> None:
+    """Runtime must not synthesize a source-grounded justification absent from extraction."""
+
+    from _proof_normalizer import normalize_with_inventory
+
+    semantic, decisions, inventory = _compiler_proof_fixture()
+    decisions["decisions"][0] = {
+        "proof_id": "proof-existence",
+        "disposition": "excluded",
+        "reason": "The passage is only motivational prose.",
+    }
+
+    with pytest.raises(ValueError, match="preexisting source-grounded edgeless_justification"):
+        normalize_with_inventory(semantic, decisions, inventory)
+
+
+def test_accepted_proves_reference_is_removed_while_surviving_reference_is_retained() -> None:
+    """A proves-only reference must disappear without deleting a redirected dependency reference."""
+
+    from _graph_builder import load_base_payload
+    from _proof_normalizer import normalize_with_inventory
+    from _semantic_graph_compiler import compile_semantic_graph
+
+    semantic, decisions, inventory = _compiler_proof_fixture()
+    inventory["references"] = [
+        {"id": "inventory-001::r1", "location": [2, 82, 84], "raw": "A", "kind": "label"},
+        {"id": "inventory-001::r2", "location": [2, 82, 84], "raw": "R", "kind": "label"},
+    ]
+    inventory["relationship_hints"][0]["reference_ids"] = ["inventory-001::r1"]
+    inventory["relationship_hints"][1]["reference_ids"] = ["inventory-001::r2"]
+    semantic["relationships"][0]["reference_ids"] = ["inventory-001::r1"]
+    semantic["relationships"][1]["reference_ids"] = ["inventory-001::r2"]
+
+    normalized, report, projected = normalize_with_inventory(semantic, decisions, inventory)
+
+    assert [item["id"] for item in projected["references"]] == ["inventory-001::r1"]
+    assert normalized["relationships"][0]["reference_ids"] == ["inventory-001::r1"]
+    assert report["compiler_inventory"]["removed_proof_reference_ids"] == ["inventory-001::r2"]
+    assert compile_semantic_graph(normalized, load_base_payload(), projected)["entities"]
+
+
+def test_excluded_proof_removes_all_incident_references_and_still_compiles() -> None:
+    """References carried only by excluded proof relationships must be projected out."""
+
+    from _graph_builder import load_base_payload
+    from _proof_normalizer import normalize_with_inventory
+    from _semantic_graph_compiler import compile_semantic_graph
+
+    semantic, decisions, inventory = _compiler_proof_fixture()
+    semantic["edgeless_justification"] = (
+        "The two retained statements have no direct source-grounded dependency once the prose is excluded."
+    )
+    inventory["references"] = [
+        {"id": "inventory-001::r1", "location": [2, 82, 84], "raw": "A", "kind": "label"},
+        {"id": "inventory-001::r2", "location": [2, 82, 84], "raw": "R", "kind": "label"},
+    ]
+    inventory["relationship_hints"][0]["reference_ids"] = ["inventory-001::r1"]
+    inventory["relationship_hints"][1]["reference_ids"] = ["inventory-001::r2"]
+    semantic["relationships"][0]["reference_ids"] = ["inventory-001::r1"]
+    semantic["relationships"][1]["reference_ids"] = ["inventory-001::r2"]
+    decisions["decisions"][0] = {
+        "proof_id": "proof-existence",
+        "disposition": "excluded",
+        "reason": "The passage is only motivational prose.",
+    }
+
+    normalized, report, projected = normalize_with_inventory(semantic, decisions, inventory)
+
+    assert projected["references"] == []
+    assert report["compiler_inventory"]["removed_proof_reference_ids"] == [
+        "inventory-001::r1",
+        "inventory-001::r2",
+    ]
+    assert compile_semantic_graph(normalized, load_base_payload(), projected)["entities"]
+
+
+def test_removed_proof_hint_also_removes_matching_reference_decision() -> None:
+    """A decision for a reference owned only by a removed proof hint must not become orphaned."""
+
+    from _graph_builder import load_base_payload
+    from _proof_normalizer import normalize_with_inventory
+    from _semantic_graph_compiler import compile_semantic_graph
+
+    semantic, decisions, inventory = _compiler_proof_fixture()
+    inventory["references"] = [
+        {"id": "inventory-001::r2", "location": [2, 82, 84], "raw": "R", "kind": "label"}
+    ]
+    inventory["relationship_hints"][1]["reference_ids"] = ["inventory-001::r2"]
+    semantic["reference_decisions"] = [
+        {
+            "reference_id": "inventory-001::r2",
+            "decision": "non-dependency",
+            "evidence_ids": ["inventory-001::e3"],
+            "reason": "The reference establishes proof ownership rather than a canonical dependency.",
+        }
+    ]
+
+    normalized, report, projected = normalize_with_inventory(semantic, decisions, inventory)
+
+    assert normalized["reference_decisions"] == []
+    assert projected["references"] == []
+    assert report["compiler_inventory"]["removed_proof_reference_ids"] == ["inventory-001::r2"]
+    assert compile_semantic_graph(normalized, load_base_payload(), projected)["entities"]
+
+
+def test_proof_free_input_is_an_exact_semantic_identity() -> None:
+    """The normalization pass must leave every proof-free semantic collection untouched."""
+
+    from _proof_normalizer import normalize_proof_entities
+
+    semantic = _semantic_ir()
+    semantic["entities"] = semantic["entities"][:2]
+    semantic["relationships"] = semantic["relationships"][-1:]
+    semantic["exclusions"] = [{"candidate_id": "pool::n9", "reason": "Irrelevant prose."}]
+    semantic["unresolved_resolutions"] = [
+        {"unresolved_id": "pool::u1", "disposition": "rejected", "reason": "No entity."}
+    ]
+    semantic["hint_decisions"] = [
+        {"hint_id": "pool::h9", "decision": "rejected", "reason": "Not direct."}
+    ]
+    semantic["reference_decisions"] = [
+        {
+            "reference_id": "pool::r9",
+            "decision": "navigation",
+            "evidence_ids": ["pool::e9"],
+        }
+    ]
+    semantic["gap_decisions"] = [
+        {"gap_id": "pool::g9", "disposition": "rejected", "reason": "Resolved by inspection."}
+    ]
+    semantic["gaps"] = [
+        {
+            "id": "remaining-gap",
+            "category": "evidence",
+            "evidence_ids": ["pool::e9"],
+            "description": "One source ambiguity remains.",
+        }
+    ]
+    expected = deepcopy(semantic)
+
+    normalized, report = normalize_proof_entities(
+        semantic,
+        {"document_kind": "proof-normalization-decisions", "ir_version": 1, "decisions": []},
+    )
+
+    assert normalized == expected
+    assert report["proof_entities"] == []
