@@ -252,6 +252,65 @@ def test_advance_inventory_rejects_valid_content_changed_after_final_ack(
     assert all(stage["operation"] != "pooling" for stage in diagnostics["stages"])
 
 
+def test_advance_inventory_never_rereads_worker_files_after_authentication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pooling and diagnostics use sealed authenticated content, not worker files."""
+
+    run_dir, summary = _setup_prepared_run(tmp_path)
+    state_dir = Path(summary["assignments"][0]["inventory_path"]).parents[2]
+    for assignment in summary["assignments"]:
+        _complete_worker(state_dir, assignment["worker_index"])
+    worker_paths = [
+        Path(assignment["inventory_path"]) for assignment in summary["assignments"]
+    ]
+    acknowledged = [
+        json.loads(path.read_text(encoding="utf-8")) for path in worker_paths
+    ]
+    real_verify = driver.verify_completed_inventories
+
+    def verify_then_delete(state_path: Path) -> dict:
+        verification = real_verify(state_path)
+        for path in worker_paths:
+            path.unlink()
+        return verification
+
+    monkeypatch.setattr(driver, "verify_completed_inventories", verify_then_delete)
+
+    report = driver.advance_inventory(state_dir, run_dir)
+
+    assert report["inventory_ir"] == str((run_dir / "inventory-ir.json").resolve())
+    sealed_paths = [
+        run_dir
+        / "authenticated-inventory-fragments"
+        / f"iterator-worker-{assignment['worker_index']:03d}.json"
+        for assignment in summary["assignments"]
+    ]
+    assert [
+        json.loads(path.read_text(encoding="utf-8")) for path in sealed_paths
+    ] == acknowledged
+    diagnostics = RunDiagnostics.open(run_dir).payload
+    fragment_artifacts = [
+        artifact
+        for artifact in diagnostics["artifacts"]
+        if artifact["kind"] == "inventory-fragment"
+    ]
+    assert [artifact["path"] for artifact in fragment_artifacts] == [
+        str(path.resolve()) for path in sealed_paths
+    ]
+    pooling_stage = next(
+        stage for stage in diagnostics["stages"]
+        if stage["operation"] == "pooling"
+    )
+    assert all(
+        str(path.resolve()) not in pooling_stage["input_paths"]
+        for path in worker_paths
+    )
+    assert all(
+        str(path.resolve()) in pooling_stage["input_paths"] for path in sealed_paths
+    )
+
+
 def test_advance_inventory_resumes_after_crash_from_same_durable_units(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -234,7 +234,6 @@ def _iterator_pool_inputs(state_dir: Path, expected_source: Path) -> tuple[dict,
             "source_sha256": source_sha256,
         }:
             raise ValueError(f"controller packet does not match worker {worker_index}")
-        fragment_path = Path(assignment["inventory_path"]).resolve()
         if fragment.get("chunk_id") != chunk_id:
             raise ValueError(f"inventory fragment does not match worker {worker_index}")
         controller_bytes = controller_path.read_bytes()
@@ -244,7 +243,6 @@ def _iterator_pool_inputs(state_dir: Path, expected_source: Path) -> tuple[dict,
                 "packet_path": str(controller_path),
                 "packet_sha256": hashlib.sha256(controller_bytes).hexdigest(),
                 "owned_bytes": sum(int(unit["character_count"]) for unit in units),
-                "fragment_path": str(fragment_path),
                 "anchors": [],
                 "spans": _owned_spans(units),
             }
@@ -417,6 +415,11 @@ def advance_inventory(iterator_state_dir: Path, run_dir: Path) -> dict:
             recoverable_pooling_failure = True
             raise
         chunks = chunk_manifest["chunks"]
+        authenticated_fragment_dir = run_dir / "authenticated-inventory-fragments"
+        for chunk, fragment in zip(chunks, fragments, strict=True):
+            fragment_path = authenticated_fragment_dir / f"{chunk['chunk_id']}.json"
+            write_json_atomic(fragment, fragment_path)
+            chunk["fragment_path"] = str(fragment_path.resolve())
         fragment_paths = [Path(chunk["fragment_path"]) for chunk in chunks]
         controller_paths = [Path(chunk["packet_path"]) for chunk in chunks]
         fragments_by_chunk = {
