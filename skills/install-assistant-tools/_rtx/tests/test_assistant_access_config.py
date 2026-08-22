@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import errno
 import json
+import os
 import stat
 import sys
 import tomllib
@@ -15,6 +16,7 @@ from officina.install.context import InstallationContext
 
 if __package__ and __package__.count(".") >= 1:
     from .. import _assistant_access_config as access_config
+    from .. import _install_uninstall as uninstall
     from .. import _state_record as state_record
     from .._assistant_access_config import (
         ACCESS_BEGIN,
@@ -25,6 +27,7 @@ if __package__ and __package__.count(".") >= 1:
     from .._state_record import Manifest
 else:
     import _assistant_access_config as access_config  # noqa: E402
+    import _install_uninstall as uninstall  # noqa: E402
     import _state_record as state_record  # noqa: E402
     from _assistant_access_config import (  # noqa: E402
         ACCESS_BEGIN,
@@ -612,6 +615,8 @@ def test_reconcile_recovers_claude_write_completed_before_committed_record(
         ("json_array_values", "claude"),
     ],
 )
+# famulus-skip: category=platform-contract; reason=Windows st_mode does not represent the DACL journal identity; alternate=Windows identity normalization is covered by test_windows_journal_identity_does_not_use_posix_mode_bits and hosted lifecycle tests
+@pytest.mark.skipif(os.name == "nt", reason="Windows st_mode does not represent the secured DACL")
 def test_reconcile_pending_post_state_rejects_mode_change(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -774,6 +779,8 @@ def test_reapply_recovers_write_completed_before_manifest_commit(
     } == {"committed"}
 
 
+# famulus-skip: category=platform-contract; reason=Windows mode bits do not represent the DACL preserved by the native writer; alternate=hosted Windows assistant-access tests verify the restrictive DACL path
+@pytest.mark.skipif(os.name == "nt", reason="Windows mode bits do not represent the secured DACL")
 def test_reconcile_preserves_existing_file_modes(tmp_path: Path) -> None:
     context = _context(tmp_path)
     codex = context.codex_home / "config.toml"
@@ -791,6 +798,8 @@ def test_reconcile_preserves_existing_file_modes(tmp_path: Path) -> None:
     assert claude.stat().st_mode & 0o777 == 0o640
 
 
+# famulus-skip: category=platform-contract; reason=fchmod is a POSIX-only capability; alternate=Windows native ACL tests cover the corresponding permission boundary
+@pytest.mark.skipif(os.name != "posix", reason="fchmod is a POSIX capability")
 def test_reconcile_fails_closed_when_secure_posix_fchmod_is_unavailable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -802,6 +811,15 @@ def test_reconcile_fails_closed_when_secure_posix_fchmod_is_unavailable(
 
     assert not (context.codex_home / "config.toml").exists()
     assert not (context.claude_home / "settings.json").exists()
+
+
+def test_windows_journal_identity_does_not_use_posix_mode_bits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(access_config.os, "name", "nt")
+
+    assert access_config._identity_mode(0o600) is None
+    assert uninstall._identity_mode(0o666) is None
 
 
 def test_directory_sync_tolerates_filesystems_without_directory_fsync(

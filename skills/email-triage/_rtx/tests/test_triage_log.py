@@ -32,13 +32,16 @@ def _without_xdg(monkeypatch) -> None:
 def test_decision_log_uses_canonical_state_and_ignores_process_override(
     monkeypatch, tmp_path: Path
 ) -> None:
+    from officina.common.famulus_paths import resolve_famulus_paths
+
     sink = _load("_decision_sink.py")
     _without_xdg(monkeypatch)
     monkeypatch.setenv("EMAIL_TRIAGE_STATE_DIR", str(tmp_path / "hostile"))
+    expected = resolve_famulus_paths(
+        platform=sys.platform, home=tmp_path, environ=os.environ
+    ).email_triage_state_root / "triage.log"
 
-    assert sink.triage_log_path(home=tmp_path) == (
-        tmp_path / ".local" / "state" / "famulus" / "email-triage" / "triage.log"
-    )
+    assert sink.triage_log_path(home=tmp_path) == expected
 
 
 def test_unmanaged_triage_log_api_honors_the_explicit_process_override(

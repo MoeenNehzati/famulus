@@ -54,6 +54,13 @@ def _sha256(raw: bytes | None) -> str | None:
     return None if raw is None else hashlib.sha256(raw).hexdigest()
 
 
+def _identity_mode(mode: int | None) -> int | None:
+    # Windows st_mode exposes only the coarse read-only attribute, not the
+    # DACL that this writer creates and verifies.  Treating it as a durable
+    # identity makes a freshly secured file disagree with its own journal.
+    return None if os.name == "nt" else mode
+
+
 def _read_optional(path: Path) -> bytes | None:
     try:
         parent = path.parent.lstat()
@@ -188,7 +195,7 @@ def _preflight_codex(manifest: "Manifest", context: InstallationContext, require
             if state.sha256 == prior.get("pre_sha256")
             else prior.get("post_mode", prior.get("file_mode"))
         )
-        if state.mode != expected_mode:
+        if _identity_mode(state.mode) != expected_mode:
             raise AssistantAccessConfigError(f"pending assistant configuration mode differs from its recorded state: {path}")
         if plan.replacement_sha256 != prior.get("post_sha256"):
             raise AssistantAccessConfigError(f"pending assistant configuration intent changed: {path}")
@@ -206,8 +213,8 @@ def _codex_record(manifest: "Manifest", plan: toml_io.ManagedArrayPlan) -> dict[
         "block_sha256": plan.block_sha256, "transaction": "pending",
         "created_file": plan.created_file, "pre_sha256": plan.current_sha256,
         "post_sha256": plan.replacement_sha256,
-        "pre_mode": None if plan.current_sha256 is None else plan.mode,
-        "post_mode": plan.mode,
+        "pre_mode": None if plan.current_sha256 is None else _identity_mode(plan.mode),
+        "post_mode": _identity_mode(plan.mode),
         "file_mode": plan.mode,
     }
     return record
@@ -229,7 +236,9 @@ def _plan_claude(manifest: "Manifest", path: Path, required: list[str]) -> _Clau
         identity = _sha256(current)
         if identity not in {prior.get("pre_sha256"), prior.get("post_sha256")}:
             raise AssistantAccessConfigError(f"pending assistant configuration has neither its pre-state nor intended post-state: {path}")
-        current_mode = None if current is None else stat.S_IMODE(path.stat().st_mode)
+        current_mode = _identity_mode(
+            None if current is None else stat.S_IMODE(path.stat().st_mode)
+        )
         expected_mode = (
             prior.get("pre_mode", None if prior.get("pre_sha256") is None else prior.get("file_mode"))
             if identity == prior.get("pre_sha256")
@@ -248,7 +257,9 @@ def _assert_claude_plan_current(plan: _ClaudePlan) -> None:
     current = _read_optional(plan.path)
     if current != plan.expected:
         raise AssistantAccessConfigError(f"assistant configuration changed after pair preflight: {plan.path}")
-    if current is not None and stat.S_IMODE(plan.path.stat().st_mode) != plan.mode:
+    if current is not None and _identity_mode(
+        stat.S_IMODE(plan.path.stat().st_mode)
+    ) != _identity_mode(plan.mode):
         raise AssistantAccessConfigError(f"assistant configuration mode changed after pair preflight: {plan.path}")
 
 
@@ -260,7 +271,8 @@ def _claude_record(manifest: "Manifest", plan: _ClaudePlan) -> dict[str, object]
     current, replacement, ownership, path, mode = plan.expected, plan.replacement, plan.ownership, plan.path, plan.mode
     return {**ownership, "transaction": "pending", "created_file": created_file,
             "pre_sha256": _sha256(current), "post_sha256": _sha256(replacement),
-            "pre_mode": None if current is None else mode, "post_mode": mode,
+            "pre_mode": None if current is None else _identity_mode(mode),
+            "post_mode": _identity_mode(mode),
             "file_mode": mode}
 
 

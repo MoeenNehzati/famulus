@@ -133,17 +133,18 @@ def test_init_custom_name(tmp_path):
 
 
 def test_managed_cloud_state_uses_canonical_lock_and_cache_roots(monkeypatch, tmp_path):
+    from officina.common.famulus_paths import resolve_famulus_paths
+
     for name in ("XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_STATE_HOME"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("LIST_MANAGER_CLOUD_LOCK_DIR", str(tmp_path / "hostile-locks"))
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    state_root = resolve_famulus_paths(
+        platform=sys.platform, home=tmp_path, environ=os.environ
+    ).state_root
 
-    assert yaml_store._cloud_lock_dir(managed=True) == (
-        tmp_path / ".local" / "state" / "famulus" / "list-manager" / "locks"
-    )
-    assert yaml_store._cloud_cache_dir(managed=True) == (
-        tmp_path / ".local" / "state" / "famulus" / "list-manager" / "cache"
-    )
+    assert yaml_store._cloud_lock_dir(managed=True) == state_root / "list-manager" / "locks"
+    assert yaml_store._cloud_cache_dir(managed=True) == state_root / "list-manager" / "cache"
     assert yaml_store._cloud_lock_dir() == tmp_path / "hostile-locks"
 
 

@@ -87,14 +87,20 @@ def test_resolver_returns_only_the_canonical_ordered_roots(
     environ: dict[str, str],
     expected_suffixes: tuple[str, ...],
 ) -> None:
-    context = _standard_context(tmp_path, platform=platform, environ=environ)
+    portable_environ = {
+        name: str(tmp_path / value.lstrip("/")) if value.startswith("/") else value
+        for name, value in environ.items()
+    }
+    context = _standard_context(
+        tmp_path, platform=platform, environ=portable_environ
+    )
 
     roots = resolve_assistant_access_roots(context)
 
     assert roots == tuple(
         (context.selected_home / suffix).resolve(strict=False)
         if not suffix.startswith("/")
-        else Path(suffix).resolve(strict=False)
+        else (tmp_path / suffix.lstrip("/")).resolve(strict=False)
         for suffix in expected_suffixes
     )
     assert context.paths.config_root not in roots

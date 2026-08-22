@@ -85,9 +85,9 @@ interfaces:
               value: append
             - description: Append only when the complete predecessor bytes match.
               value: compare-and-append
-            - description: Publish complete replacement bytes after checking predecessor bytes and mode.
+            - description: Publish complete replacement bytes after checking predecessor bytes and POSIX mode; Windows verifies a restrictive native DACL instead of treating coarse st_mode bits as ACL identity.
               value: compare-and-replace
-            - description: Remove one file after checking predecessor bytes and mode.
+            - description: Remove one file after checking predecessor bytes and POSIX mode; Windows verifies native handles and ACLs rather than coarse st_mode bits.
               value: compare-and-delete
             - description: Hold one confined regular sidecar as a cooperative process lock.
               value: exclusive-lock

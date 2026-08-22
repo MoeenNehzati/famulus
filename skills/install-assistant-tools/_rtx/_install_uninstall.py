@@ -447,6 +447,10 @@ def _content_identity(raw: bytes | None) -> str | None:
     return None if raw is None else hashlib.sha256(raw).hexdigest()
 
 
+def _identity_mode(mode: int | None) -> int | None:
+    return None if os.name == "nt" else mode
+
+
 def _read_optional_bytes(path: Path) -> bytes | None:
     return _read_optional(path)
 
@@ -457,7 +461,7 @@ def _pending_replay_state(
     if entry.get("transaction") != "pending":
         return "post"
     identity = _content_identity(raw)
-    current_mode = _mode(path)
+    current_mode = _identity_mode(_mode(path))
     pre_mode = entry.get("pre_mode", None if entry.get("pre_sha256") is None else entry.get("file_mode"))
     post_mode = entry.get("post_mode", entry.get("file_mode"))
     if identity == entry.get("pre_sha256") and current_mode == pre_mode:
@@ -486,7 +490,7 @@ def _uninstall_replay_state(
     if entry.get("uninstall_transaction") != "pending":
         return "new"
     identity = _content_identity(raw)
-    current_mode = _mode(path)
+    current_mode = _identity_mode(_mode(path))
     if (
         identity == entry.get("uninstall_post_sha256")
         and current_mode == entry.get("uninstall_post_mode")
@@ -516,12 +520,13 @@ def _persist_uninstall_intent(
 ) -> int:
     pre_mode = _mode(path)
     assert pre_mode is not None
-    post_mode = None if replacement is None else pre_mode
+    identity_pre_mode = _identity_mode(pre_mode)
+    post_mode = None if replacement is None else identity_pre_mode
     intended = {
         "uninstall_transaction": "pending",
         "uninstall_pre_sha256": _content_identity(original),
         "uninstall_post_sha256": _content_identity(replacement),
-        "uninstall_pre_mode": pre_mode,
+        "uninstall_pre_mode": identity_pre_mode,
         "uninstall_post_mode": post_mode,
     }
     if entry.get("uninstall_transaction") == "pending":
@@ -549,17 +554,17 @@ def remove_codex_access_array_block(
     if entry.get("transaction") == "pending":
         pre_mode = entry.get("pre_mode", None if entry.get("pre_sha256") is None else entry.get("file_mode"))
         post_mode = entry.get("post_mode", entry.get("file_mode"))
-        if state.sha256 == entry.get("pre_sha256") and state.mode == pre_mode:
+        if state.sha256 == entry.get("pre_sha256") and _identity_mode(state.mode) == pre_mode:
             report.add("skipped", label, "pending write never applied; pre-state preserved")
             return True
-        if state.sha256 != entry.get("post_sha256") or state.mode != post_mode:
+        if state.sha256 != entry.get("post_sha256") or _identity_mode(state.mode) != post_mode:
             report.add("FAILED", label, "pending write has neither its recorded pre-state nor intended post-state; preserved")
             return False
     if entry.get("uninstall_transaction") == "pending":
-        if state.sha256 == entry.get("uninstall_post_sha256") and state.mode == entry.get("uninstall_post_mode"):
+        if state.sha256 == entry.get("uninstall_post_sha256") and _identity_mode(state.mode) == entry.get("uninstall_post_mode"):
             report.add("removed", label, "completed uninstall intent recovered")
             return True
-        if state.sha256 != entry.get("uninstall_pre_sha256") or state.mode != entry.get("uninstall_pre_mode"):
+        if state.sha256 != entry.get("uninstall_pre_sha256") or _identity_mode(state.mode) != entry.get("uninstall_pre_mode"):
             report.add("FAILED", label, "pending uninstall has neither its recorded pre-state nor intended post-state; preserved")
             return False
     if state.sha256 is None:
@@ -582,8 +587,8 @@ def remove_codex_access_array_block(
             "uninstall_transaction": "pending",
             "uninstall_pre_sha256": plan.current_sha256,
             "uninstall_post_sha256": plan.replacement_sha256,
-            "uninstall_pre_mode": plan.mode,
-            "uninstall_post_mode": None if plan.replacement_sha256 is None else plan.mode,
+            "uninstall_pre_mode": _identity_mode(plan.mode),
+            "uninstall_post_mode": None if plan.replacement_sha256 is None else _identity_mode(plan.mode),
         }
         if entry.get("uninstall_transaction") == "pending":
             if any(entry.get(key) != value for key, value in intended.items()):
@@ -761,7 +766,7 @@ def _prepared_access_current(prepared: dict[int, object], report: Report) -> boo
             except (OSError, toml_io.TomlManagedArrayError) as exc:
                 report.add("FAILED", "assistant access preflight", str(exc))
                 return False
-            if state.sha256 != value.current_sha256 or state.mode != value.mode:
+            if state.sha256 != value.current_sha256 or _identity_mode(state.mode) != _identity_mode(value.mode):
                 report.add("FAILED", "assistant access preflight", "Codex target changed after frozen preflight")
                 return False
         elif isinstance(value, tuple) and len(value) == 4:
@@ -771,7 +776,10 @@ def _prepared_access_current(prepared: dict[int, object], report: Report) -> boo
             except (OSError, AssistantAccessConfigError) as exc:
                 report.add("FAILED", "assistant access preflight", str(exc))
                 return False
-            if current != expected or (current is not None and _mode(path) != mode):
+            if current != expected or (
+                current is not None
+                and _identity_mode(_mode(path)) != _identity_mode(mode)
+            ):
                 report.add("FAILED", "assistant access preflight", "Claude target changed after frozen preflight")
                 return False
     return True

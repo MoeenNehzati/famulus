@@ -122,7 +122,9 @@ interfaces:
         consistency:
           live: Both targets are preflighted before either replacement and every replacement
             compares the bytes observed during preflight, then requires post-state verification
-            because comparison and publication are separate portable steps.
+            because comparison and publication are separate portable steps. POSIX mode bits
+            participate in journal identity; Windows relies on the native writer's verified DACL
+            because st_mode does not represent that ACL.
         effects:
         - action: update
           confirmation_evidence:
