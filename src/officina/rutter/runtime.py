@@ -24,6 +24,7 @@ from officina.rutter.model import (
     RutterDefinitionError,
     RutterStateError,
     State,
+    Turn,
     ValidationReport,
 )
 from officina.rutter.storage import _ReckoningStore, _confined_reckoning_path
@@ -357,10 +358,6 @@ class _BoundVoyage:
         if create:
             self._store.create(reckoning)
 
-    @property
-    def reckoning(self) -> Reckoning:
-        return self._reckoning
-
     def _validate_reckoning(self, reckoning: Reckoning) -> None:
         active: list[tuple[ActiveRun, _BoundDefinition]] = []
         run = reckoning.root
@@ -372,10 +369,13 @@ class _BoundVoyage:
                     f"active Rutter definition {identity!r} is unavailable"
                 )
             definition.require_current_metadata()
-            if run.entered_node.state_id not in definition.states:
+            state = definition.states.get(run.entered_node.state_id)
+            if state is None:
                 raise RutterStateError(
                     "active state is absent from its bound Rutter definition"
                 )
+            if isinstance(state, Prompt):
+                self._validate_prompt_authority(run, state, reckoning.fault)
             active.append((run, definition))
             if run.active_child is None:
                 break
@@ -407,6 +407,58 @@ class _BoundVoyage:
                 raise RutterStateError(
                     "active child identity differs from its bound definition"
                 )
+
+    @staticmethod
+    def _validate_prompt_authority(
+        run: ActiveRun,
+        prompt: Prompt,
+        fault: Mapping[str, JsonValue] | None,
+    ) -> None:
+        entered = run.entered_node
+        turns = tuple(
+            entry
+            for entry in run.history
+            if isinstance(entry, Turn)
+            and entry.node_entry_id == entered.entry_id
+            and entry.state_id == entered.state_id
+        )
+        if len(turns) != 1:
+            raise RutterStateError(
+                "active Prompt requires exactly one matching current Turn"
+            )
+        turn = turns[0]
+        if (
+            turn.message.instructions["text"] != prompt.text
+            or turn.message.instructions["answer"] != prompt.answer.outcomes
+        ):
+            raise RutterStateError(
+                "active Prompt Turn differs from the bound Prompt definition"
+            )
+        child = run.active_child
+        if turn.response is None:
+            if child is not None:
+                raise RutterStateError(
+                    "active Prompt with an open Turn cannot own an active child"
+                )
+            return
+        if turn.response.outcome not in prompt.answer.outcomes:
+            raise RutterStateError(
+                "active Prompt Turn has an undeclared accepted outcome"
+            )
+        if child is None and fault is not None and (
+            fault.get("run_id") == run.run_id
+            and fault.get("state_id") == entered.state_id
+            and fault.get("node_entry_id") == entered.entry_id
+        ):
+            return
+        if (
+            child is None
+            or child.kind != "attached_case"
+            or child.attached_to_edge_id != turn.record_id
+        ):
+            raise RutterStateError(
+                "accepted active Prompt Turn requires its matching attached child"
+            )
 
     def _definition_identity(self, source: object) -> tuple[str, int]:
         for definition in self._definitions.values():

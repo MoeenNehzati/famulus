@@ -202,7 +202,7 @@ def test_active_done_must_match_current_entrance(done) -> None:
         )
 
 
-def test_active_done_cannot_have_an_active_child_at_task_five_boundary() -> None:
+def test_active_done_can_own_attached_child_bound_to_done_record() -> None:
     child = ActiveRun(
         "child-run",
         "child",
@@ -214,13 +214,70 @@ def test_active_done_cannot_have_an_active_child_at_task_five_boundary() -> None
     )
     active_child = ActiveChild(
         "call-active",
-        "explicit_call",
-        "delegate",
-        None,
+        "attached_case",
+        "maker-1",
+        "done-terminal",
         child,
     )
 
-    with pytest.raises(RutterStateError, match="active child"):
+    active = ActiveRun(
+        "root-run",
+        "example",
+        1,
+        Charter({}),
+        EnteredNode("entry-terminal", "complete"),
+        (
+            DoneRecord(
+                "done-terminal",
+                "entry-terminal",
+                "complete",
+                RunResult("completed", {}),
+            ),
+        ),
+        active_child,
+    )
+
+    assert active.active_child == active_child
+    assert ActiveRun.from_json(active.to_json()) == active
+
+
+@pytest.mark.parametrize(
+    "active_child",
+    (
+        ActiveChild(
+            "call-explicit",
+            "explicit_call",
+            "delegate",
+            None,
+            ActiveRun(
+                "explicit-child",
+                "child",
+                1,
+                Charter({}),
+                EnteredNode("entry-explicit", "start"),
+                (),
+                None,
+            ),
+        ),
+        ActiveChild(
+            "call-wrong-edge",
+            "attached_case",
+            "maker-1",
+            "other-edge",
+            ActiveRun(
+                "wrong-edge-child",
+                "child",
+                1,
+                Charter({}),
+                EnteredNode("entry-attached", "start"),
+                (),
+                None,
+            ),
+        ),
+    ),
+)
+def test_active_done_rejects_nonattached_or_wrong_edge_child(active_child) -> None:
+    with pytest.raises(RutterStateError, match="DoneRecord"):
         ActiveRun(
             "root-run",
             "example",
@@ -447,7 +504,21 @@ def test_definition_values_keep_callbacks_in_process_only() -> None:
     action = Action(lambda context: ActionResult("ok", {}), mode="pure", then="done")
     call = Call(ExampleRutter, charter=lambda context: {}, then="done")
     done = Done(RunResult("completed", {}))
-    instruction = PythonInstruction("action-1", action.run)
+
+    def execute_action() -> ActionResult:
+        return ActionResult("ok", {})
+
+    answer_format = {
+        "outcome": "declared outcome",
+        "value": {"type": "finite JSON"},
+    }
+    instruction = PythonInstruction(
+        "action-1",
+        "pure",
+        execute_action,
+        answer_format,
+    )
+    answer_format["value"]["type"] = "changed"  # type: ignore[index]
 
     assert isinstance(prompt, Prompt)
     assert prompt.text == "Report."
@@ -455,11 +526,47 @@ def test_definition_values_keep_callbacks_in_process_only() -> None:
     assert call.child is ExampleRutter
     assert done.result == RunResult("completed", {})
     assert instruction.action_id == "action-1"
+    assert instruction.mode == "pure"
+    assert instruction.run() == ActionResult("ok", {})
+    assert instruction.answer_format == {
+        "outcome": "declared outcome",
+        "value": {"type": "finite JSON"},
+    }
+    assert isinstance(instruction.answer_format, MappingProxyType)
+    assert isinstance(instruction.answer_format["value"], MappingProxyType)
     assert not hasattr(prompt, "to_json")
     assert not hasattr(action, "to_json")
     assert not hasattr(call, "to_json")
     assert not hasattr(done, "to_json")
     assert not hasattr(instruction, "to_json")
+
+
+@pytest.mark.parametrize(
+    "construct",
+    (
+        lambda: PythonInstruction(
+            "action-1",
+            "sometimes",
+            lambda: ActionResult("ok", {}),
+            {"outcome": "string", "value": {}},
+        ),
+        lambda: PythonInstruction(
+            "action-1",
+            "pure",
+            lambda context: ActionResult("ok", {}),
+            {"outcome": "string", "value": {}},
+        ),
+        lambda: PythonInstruction(
+            "action-1",
+            "pure",
+            lambda: ActionResult("ok", {}),
+            {"outcome": "string", "value": nan},
+        ),
+    ),
+)
+def test_python_instruction_rejects_invalid_exact_values(construct) -> None:
+    with pytest.raises(RutterDefinitionError):
+        construct()
 
 
 def test_rutter_author_boundary_has_stable_identity_and_empty_case_makers() -> None:

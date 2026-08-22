@@ -25,8 +25,10 @@ from officina.rutter.model import (
     Done,
     DoneRecord,
     EnteredNode,
+    Message,
     Prompt,
     Reckoning,
+    Response,
     RunResult,
     Rutter,
     RutterDefinitionError,
@@ -74,6 +76,24 @@ def _done_states() -> Mapping[str, object]:
     return {"start": Done(RunResult("complete", {}))}
 
 
+def _prompt_message(
+    entry_id: str,
+    state_id: str = "report",
+    revision: int = 1,
+) -> Message:
+    return Message(
+        instructions={"text": "Report.", "answer": {"reported": {}}},
+        data={
+            "state": {
+                "id": state_id,
+                "entry_id": entry_id,
+                "revision": revision,
+            },
+            "payload": {"chunk": "A"},
+        },
+    )
+
+
 @pytest.fixture
 def reckoning_root(tmp_path: Path) -> Path:
     return tmp_path / "reckonings"
@@ -87,6 +107,28 @@ def registry(reckoning_root: Path) -> RutterRegistry:
 @pytest.fixture(autouse=True)
 def _task_five_constructor_seam(monkeypatch: pytest.MonkeyPatch) -> None:
     def create_reckoning(bound_definition: object, charter: Charter) -> Reckoning:
+        entry_id = "test-entry"
+        state_id = bound_definition.start_state
+        state = bound_definition.states[state_id]
+        history = ()
+        if isinstance(state, Prompt):
+            message = Message(
+                instructions={
+                    "text": state.text,
+                    "answer": state.answer.to_json(),
+                },
+                data={
+                    "state": {
+                        "id": state_id,
+                        "entry_id": entry_id,
+                        "revision": 0,
+                    },
+                    "payload": {},
+                },
+            )
+            history = (
+                Turn("test-turn", entry_id, state_id, 0, message, None),
+            )
         return Reckoning(
             3,
             0,
@@ -95,8 +137,8 @@ def _task_five_constructor_seam(monkeypatch: pytest.MonkeyPatch) -> None:
                 bound_definition.rutter_id,
                 bound_definition.definition_version,
                 charter,
-                EnteredNode("test-entry", bound_definition.start_state),
-                (),
+                EnteredNode(entry_id, state_id),
+                history,
                 None,
             ),
             {},
@@ -449,7 +491,7 @@ def test_definition_instances_remain_run_neutral_and_voyage_owns_authority(
     )
 
     assert not vars(definition)
-    assert voyage.reckoning.root.charter == Charter({"artifact": "draft.md"})
+    assert voyage._reckoning.root.charter == Charter({"artifact": "draft.md"})
     assert isinstance(voyage._store, _ReckoningStore)
     assert voyage._store._path == (reckoning_root / "bound.reckoning.json").absolute()
 
@@ -477,6 +519,9 @@ def test_registry_and_bound_voyage_expose_only_the_frozen_construction_protocol(
         "dry_run",
     )
     assert tuple(inspect.signature(voyage.get_current_node).parameters) == ()
+    assert {
+        name for name in dir(voyage) if not name.startswith("_")
+    } == {"get_instruction", "validate", "next", "get_current_node"}
     for obsolete in ("get_instructions", "advance", "inspect", "start", "resume"):
         assert not hasattr(voyage, obsolete)
 
@@ -589,7 +634,7 @@ def test_registry_create_lazily_delegates_complete_initial_reckoning_to_engine(
         {"artifact": "draft.md"},
     )
 
-    assert voyage.reckoning is initial
+    assert voyage._reckoning is initial
     assert calls == [(registry._by_name["friendly-example"], charter)]
     assert _ReckoningStore(
         (reckoning_root / "engine-created.reckoning.json").absolute()
@@ -613,6 +658,351 @@ def _unknown_completed_run() -> CompletedRun:
     )
 
 
+@pytest.mark.parametrize(
+    "history",
+    (
+        (),
+        (
+            Turn(
+                "turn-other",
+                "entry-other",
+                "report",
+                1,
+                _prompt_message("entry-other"),
+                None,
+            ),
+        ),
+        (
+            Turn(
+                "turn-first",
+                "entry-report",
+                "report",
+                1,
+                _prompt_message("entry-report"),
+                Response(1, "reported", {}),
+            ),
+            Turn(
+                "turn-second",
+                "entry-report",
+                "report",
+                1,
+                _prompt_message("entry-report"),
+                Response(1, "reported", {}),
+            ),
+        ),
+        (
+            Turn(
+                "turn-accepted",
+                "entry-report",
+                "report",
+                1,
+                _prompt_message("entry-report"),
+                Response(1, "reported", {}),
+            ),
+        ),
+        (
+            Turn(
+                "turn-altered",
+                "entry-report",
+                "report",
+                1,
+                Message(
+                    instructions={
+                        "text": "Altered.",
+                        "answer": {"reported": {}},
+                    },
+                    data={
+                        "state": {
+                            "id": "report",
+                            "entry_id": "entry-report",
+                            "revision": 1,
+                        },
+                        "payload": {},
+                    },
+                ),
+                None,
+            ),
+        ),
+    ),
+)
+def test_open_rejects_missing_mismatched_duplicate_or_stranded_prompt_turn(
+    reckoning_root: Path,
+    history: tuple[Turn, ...],
+) -> None:
+    root = ActiveRun(
+        "root-run",
+        "example",
+        1,
+        Charter({}),
+        EnteredNode("entry-report", "report"),
+        history,
+        None,
+    )
+    path = (reckoning_root / "invalid-prompt.reckoning.json").absolute()
+    _ReckoningStore(path).create(Reckoning(3, 1, root, {}, None, None))
+
+    with pytest.raises(RutterStateError, match="active Prompt"):
+        RutterRegistry({"example": ExampleRutter}, reckoning_root).open(
+            Path("invalid-prompt.reckoning.json")
+        )
+
+
+def test_open_rejects_open_prompt_turn_with_active_attached_child(
+    reckoning_root: Path,
+) -> None:
+    definition = _definition(
+        {
+            "start": Prompt(
+                "Report.",
+                answer=AnswerSpec({"reported": {}}),
+                then="complete",
+            ),
+            "complete": Done(RunResult("complete", {})),
+        },
+        case_makers=(
+            CaseMakerProbe("attached", DirectChildRutter, child_charter),
+        ),
+    )
+    turn = Turn(
+        "turn-root",
+        "entry-root",
+        "start",
+        1,
+        _prompt_message("entry-root", "start"),
+        None,
+    )
+    child = ActiveRun(
+        "child-run",
+        "direct-child",
+        1,
+        Charter({}),
+        EnteredNode("entry-child", "complete"),
+        (),
+        None,
+    )
+    root = ActiveRun(
+        "root-run",
+        "probe",
+        1,
+        Charter({}),
+        EnteredNode("entry-root", "start"),
+        (turn,),
+        ActiveChild(
+            "attached-call",
+            "attached_case",
+            "attached",
+            turn.record_id,
+            child,
+        ),
+    )
+    path = (reckoning_root / "open-with-child.reckoning.json").absolute()
+    _ReckoningStore(path).create(Reckoning(3, 1, root, {}, None, None))
+
+    with pytest.raises(RutterStateError, match="active Prompt"):
+        RutterRegistry({"probe": definition}, reckoning_root).open(
+            Path("open-with-child.reckoning.json")
+        )
+
+
+def test_open_accepts_accepted_prompt_turn_with_matching_attached_child(
+    reckoning_root: Path,
+) -> None:
+    definition = _definition(
+        {
+            "start": Prompt(
+                "Report.",
+                answer=AnswerSpec({"reported": {}}),
+                then="complete",
+            ),
+            "complete": Done(RunResult("complete", {})),
+        },
+        case_makers=(
+            CaseMakerProbe("attached", DirectChildRutter, child_charter),
+        ),
+    )
+    turn = Turn(
+        "turn-root",
+        "entry-root",
+        "start",
+        1,
+        _prompt_message("entry-root", "start"),
+        Response(1, "reported", {}),
+    )
+    child = ActiveRun(
+        "child-run",
+        "direct-child",
+        1,
+        Charter({}),
+        EnteredNode("entry-child", "complete"),
+        (),
+        None,
+    )
+    root = ActiveRun(
+        "root-run",
+        "probe",
+        1,
+        Charter({}),
+        EnteredNode("entry-root", "start"),
+        (turn,),
+        ActiveChild(
+            "attached-call",
+            "attached_case",
+            "attached",
+            turn.record_id,
+            child,
+        ),
+    )
+    path = (reckoning_root / "accepted-with-child.reckoning.json").absolute()
+    reckoning = Reckoning(3, 1, root, {}, None, None)
+    _ReckoningStore(path).create(reckoning)
+
+    opened = RutterRegistry({"probe": definition}, reckoning_root).open(
+        Path("accepted-with-child.reckoning.json")
+    )
+
+    assert opened._reckoning == reckoning
+
+
+def test_open_accepts_faulted_prompt_after_response_without_child(
+    reckoning_root: Path,
+) -> None:
+    turn = Turn(
+        "turn-root",
+        "entry-report",
+        "report",
+        1,
+        _prompt_message("entry-report"),
+        Response(1, "reported", {}),
+    )
+    root = ActiveRun(
+        "root-run",
+        "example",
+        1,
+        Charter({}),
+        EnteredNode("entry-report", "report"),
+        (turn,),
+        None,
+    )
+    fault = {
+        "category": "routing",
+        "run_id": "root-run",
+        "state_id": "report",
+        "node_entry_id": "entry-report",
+    }
+    path = (reckoning_root / "faulted-prompt.reckoning.json").absolute()
+    reckoning = Reckoning(3, 1, root, {}, None, fault)
+    _ReckoningStore(path).create(reckoning)
+
+    opened = RutterRegistry({"example": ExampleRutter}, reckoning_root).open(
+        Path("faulted-prompt.reckoning.json")
+    )
+
+    assert opened._reckoning == reckoning
+
+
+@pytest.mark.parametrize(
+    "fault",
+    (
+        {
+            "category": "routing",
+            "run_id": "other-run",
+            "state_id": "report",
+            "node_entry_id": "entry-report",
+        },
+        {
+            "category": "routing",
+            "run_id": "root-run",
+            "state_id": "other-state",
+            "node_entry_id": "entry-report",
+        },
+        {
+            "category": "routing",
+            "run_id": "root-run",
+            "state_id": "report",
+            "node_entry_id": "other-entry",
+        },
+    ),
+)
+def test_open_rejects_accepted_prompt_without_child_for_mismatched_fault(
+    reckoning_root: Path,
+    fault: dict[str, object],
+) -> None:
+    turn = Turn(
+        "turn-root",
+        "entry-report",
+        "report",
+        1,
+        _prompt_message("entry-report"),
+        Response(1, "reported", {}),
+    )
+    root = ActiveRun(
+        "root-run",
+        "example",
+        1,
+        Charter({}),
+        EnteredNode("entry-report", "report"),
+        (turn,),
+        None,
+    )
+    path = (reckoning_root / "mismatched-fault.reckoning.json").absolute()
+    _ReckoningStore(path).create(Reckoning(3, 1, root, {}, None, fault))
+
+    with pytest.raises(RutterStateError, match="accepted active Prompt"):
+        RutterRegistry({"example": ExampleRutter}, reckoning_root).open(
+            Path("mismatched-fault.reckoning.json")
+        )
+
+
+def test_open_accepts_current_done_with_matching_terminal_attached_child(
+    reckoning_root: Path,
+) -> None:
+    definition = _definition(
+        {"start": Done(RunResult("complete", {}))},
+        case_makers=(
+            CaseMakerProbe("attached", DirectChildRutter, child_charter),
+        ),
+    )
+    done = DoneRecord(
+        "done-root",
+        "entry-root",
+        "start",
+        RunResult("complete", {}),
+    )
+    child = ActiveRun(
+        "child-run",
+        "direct-child",
+        1,
+        Charter({}),
+        EnteredNode("entry-child", "complete"),
+        (),
+        None,
+    )
+    root = ActiveRun(
+        "root-run",
+        "probe",
+        1,
+        Charter({}),
+        EnteredNode("entry-root", "start"),
+        (done,),
+        ActiveChild(
+            "attached-call",
+            "attached_case",
+            "attached",
+            done.record_id,
+            child,
+        ),
+    )
+    path = (reckoning_root / "terminal-child.reckoning.json").absolute()
+    reckoning = Reckoning(3, 1, root, {}, None, None)
+    _ReckoningStore(path).create(reckoning)
+
+    opened = RutterRegistry({"probe": definition}, reckoning_root).open(
+        Path("terminal-child.reckoning.json")
+    )
+
+    assert opened._reckoning == reckoning
+
+
 def test_open_does_not_require_definitions_for_archived_completed_runs(
     reckoning_root: Path,
 ) -> None:
@@ -632,6 +1022,14 @@ def test_open_does_not_require_definitions_for_archived_completed_runs(
                 None,
                 completed.run_id,
             ),
+            Turn(
+                "current-turn",
+                "root-entry",
+                "report",
+                1,
+                _prompt_message("root-entry"),
+                None,
+            ),
         ),
         None,
     )
@@ -643,7 +1041,7 @@ def test_open_does_not_require_definitions_for_archived_completed_runs(
         Path("archived.reckoning.json")
     )
 
-    assert opened.reckoning == reckoning
+    assert opened._reckoning == reckoning
 
 
 def test_open_does_not_resolve_inactive_reachable_child_metadata(
@@ -656,7 +1054,7 @@ def test_open_does_not_resolve_inactive_reachable_child_metadata(
 
     opened = registry.open(Path("inactive-child.reckoning.json"))
 
-    assert opened.reckoning.root.rutter_id == "discovery-root"
+    assert opened._reckoning.root.rutter_id == "discovery-root"
 
 
 def test_open_requires_every_definition_on_the_recursively_active_path(
@@ -673,18 +1071,18 @@ def test_open_requires_every_definition_on_the_recursively_active_path(
     )
     root = ActiveRun(
         "root-run",
-        "example",
+        "discovery-root",
         1,
         Charter({}),
-        EnteredNode("root-entry", "report"),
+        EnteredNode("root-entry", "delegate"),
         (),
-        ActiveChild("active-call", "explicit_call", "report", None, unknown),
+        ActiveChild("active-call", "explicit_call", "delegate", None, unknown),
     )
     path = (reckoning_root / "active.reckoning.json").absolute()
     _ReckoningStore(path).create(Reckoning(3, 0, root, {}, None, None))
 
     with pytest.raises(RutterStateError, match="active Rutter definition"):
-        RutterRegistry({"example": ExampleRutter}, reckoning_root).open(
+        RutterRegistry({"root": DiscoveryRootRutter}, reckoning_root).open(
             Path("active.reckoning.json")
         )
 

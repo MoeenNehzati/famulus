@@ -193,6 +193,25 @@ def _validate_reckoning(reckoning: Reckoning) -> None:
     entrances = [run.entered_node.entry_id for run in active_runs]
     if len(entrances) != len(set(entrances)):
         raise RutterStateError("duplicate entrance ID")
+    entrance_authorities: dict[str, tuple[str, str]] = {}
+
+    def bind_entrance(entry_id: str, state_id: str, owner_id: str) -> None:
+        authority = entrance_authorities.get(entry_id)
+        if authority is None:
+            entrance_authorities[entry_id] = (owner_id, state_id)
+            return
+        authority_owner, authority_state = authority
+        if authority_owner != owner_id:
+            raise RutterStateError("entrance owner is not unique")
+        if authority_state != state_id:
+            raise RutterStateError("entrance state identity is inconsistent")
+
+    for run in active_runs:
+        bind_entrance(
+            run.entered_node.entry_id,
+            run.entered_node.state_id,
+            run.run_id,
+        )
 
     call_ids = set(active_call_ids)
     if len(call_ids) != len(active_call_ids):
@@ -211,13 +230,17 @@ def _validate_reckoning(reckoning: Reckoning) -> None:
     )
     for owner_id, history, owner_completed in owners:
         seen_done = False
+        edge_sources: dict[str, Turn | ActionRecord | CallRecord | DoneRecord] = {}
         for entry in history:
             identity = _history_identity(entry)
             if identity in history_ids:
                 raise RutterStateError("duplicate history record ID")
             history_ids.add(identity)
+            if isinstance(entry, (Turn, ActionRecord, DoneRecord)):
+                bind_entrance(entry.node_entry_id, entry.state_id, owner_id)
             if isinstance(entry, DoneRecord):
                 seen_done = True
+                edge_sources[entry.record_id] = entry
                 continue
             if seen_done and not (
                 isinstance(entry, CallRecord) and entry.site_kind == "attached_case"
@@ -227,6 +250,11 @@ def _validate_reckoning(reckoning: Reckoning) -> None:
                 if entry.action_id in action_ids:
                     raise RutterStateError("duplicate action ID")
                 action_ids.add(entry.action_id)
+                edge_sources[entry.record_id] = entry
+                continue
+            if isinstance(entry, Turn):
+                edge_sources[entry.record_id] = entry
+                continue
             if not isinstance(entry, CallRecord):
                 continue
             if entry.call_id in call_ids:
@@ -239,10 +267,22 @@ def _validate_reckoning(reckoning: Reckoning) -> None:
                 graph[owner_id].add(entry.completed_run_id)
             if entry.site_kind == "attached_case":
                 assert entry.attached_to_edge_id is not None
+                source = edge_sources.get(entry.attached_to_edge_id)
+                if source is None:
+                    raise RutterStateError(
+                        "attached edge source must name exactly one earlier "
+                        "record in the same run"
+                    )
+                if source.node_entry_id != entry.node_entry_id:
+                    raise RutterStateError(
+                        "attached CallRecord must share its source entrance"
+                    )
                 authority = (entry.site_id, entry.attached_to_edge_id)
                 if authority in attachment_authorities:
                     raise RutterStateError("duplicate attachment authority")
                 attachment_authorities.add(authority)
+            else:
+                edge_sources[entry.call_id] = entry
 
     if any(count != 1 for count in references.values()):
         raise RutterStateError(

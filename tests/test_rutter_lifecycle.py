@@ -86,7 +86,7 @@ def test_prompt_read_operations_return_stored_values_without_writing(
         "example",
         1,
         "report",
-        voyage.reckoning.root.entered_node.entry_id,
+        voyage._store.read().root.entered_node.entry_id,
         0,
         "ready",
     )
@@ -220,7 +220,7 @@ def test_valid_prompt_response_fills_the_same_turn_and_enters_done(
     path = Path("accepted.reckoning.json")
     registry = RutterRegistry({"example": ExampleRutter}, root)
     voyage = registry.create("example", path, {})
-    source = voyage.reckoning.root.history[0]
+    source = voyage._store.read().root.history[0]
     assert isinstance(source, Turn)
 
     entered = voyage.next(
@@ -228,7 +228,7 @@ def test_valid_prompt_response_fills_the_same_turn_and_enters_done(
         continue_=False,
     )
     reopened = registry.open(path)
-    persisted = reopened.reckoning
+    persisted = reopened._store.read()
 
     assert entered == NodeView(
         "example",
@@ -282,7 +282,7 @@ def test_prompt_self_loop_allocates_a_new_entrance_and_rerenders_from_history(
         "loop", path, {}
     )
     first_message = voyage.get_instruction()
-    first_entry = voyage.reckoning.root.entered_node.entry_id
+    first_entry = voyage._store.read().root.entered_node.entry_id
 
     second_node = voyage.next(
         {"revision": 0, "outcome": "again", "evidence": {}},
@@ -295,9 +295,10 @@ def test_prompt_self_loop_allocates_a_new_entrance_and_rerenders_from_history(
     assert second_message != first_message
     assert second_message.data["payload"] == {"accepted": 1}
     assert second_message.data["state"]["revision"] == 1
-    assert len(voyage.reckoning.root.history) == 2
-    assert voyage.reckoning.root.history[0].response is not None
-    assert voyage.reckoning.root.history[1].response is None
+    persisted = voyage._store.read()
+    assert len(persisted.root.history) == 2
+    assert persisted.root.history[0].response is not None
+    assert persisted.root.history[1].response is None
 
 
 def test_target_prompt_render_failure_keeps_accepted_source_and_faults_in_place(
@@ -334,7 +335,7 @@ def test_target_prompt_render_failure_keeps_accepted_source_and_faults_in_place(
     path = Path("render-failure.reckoning.json")
     registry = RutterRegistry({"failure": RenderFailureRutter}, root)
     voyage = registry.create("failure", path, {})
-    source_entry = voyage.reckoning.root.entered_node.entry_id
+    source_entry = voyage._store.read().root.entered_node.entry_id
 
     faulted = voyage.next(
         {"revision": 0, "outcome": "go", "evidence": {}},
@@ -345,11 +346,12 @@ def test_target_prompt_render_failure_keeps_accepted_source_and_faults_in_place(
     assert faulted.condition == "fault"
     assert faulted.state_id == "source"
     assert faulted.node_entry_id == source_entry
-    assert reopened.reckoning.root.history[0].response is not None
-    assert reopened.reckoning.root.entered_node.entry_id == source_entry
-    assert reopened.reckoning.fault == {
+    persisted = reopened._store.read()
+    assert persisted.root.history[0].response is not None
+    assert persisted.root.entered_node.entry_id == source_entry
+    assert persisted.fault == {
         "category": "target-materialization",
-        "run_id": reopened.reckoning.root.run_id,
+        "run_id": persisted.root.run_id,
         "state_id": "source",
         "node_entry_id": source_entry,
         "target_state_id": "target",
@@ -390,7 +392,7 @@ def test_prompt_routing_failure_preserves_the_accepted_turn_before_fault(
     path = Path("routing-failure.reckoning.json")
     registry = RutterRegistry({"failure": RoutingFailureRutter}, root)
     voyage = registry.create("failure", path, {})
-    source_entry = voyage.reckoning.root.entered_node.entry_id
+    source_entry = voyage._store.read().root.entered_node.entry_id
 
     faulted = voyage.next(
         {"revision": 0, "outcome": "go", "evidence": {}},
@@ -399,9 +401,10 @@ def test_prompt_routing_failure_preserves_the_accepted_turn_before_fault(
     reopened = registry.open(path)
 
     assert faulted.condition == "fault"
-    assert reopened.reckoning.root.entered_node.entry_id == source_entry
-    assert reopened.reckoning.root.history[0].response is not None
-    assert reopened.reckoning.fault["category"] == "routing"
+    persisted = reopened._store.read()
+    assert persisted.root.entered_node.entry_id == source_entry
+    assert persisted.root.history[0].response is not None
+    assert persisted.fault["category"] == "routing"
     assert b"private routing detail" not in (root / path).read_bytes()
 
 
@@ -432,10 +435,11 @@ def test_continue_true_settles_done_once_and_terminal_next_is_idempotent(
     assert reopened.get_instruction() is None
     with pytest.raises(NotApplicable):
         reopened.validate({})
-    assert reopened.reckoning.root.history[-1].result == RunResult("completed", {})
+    persisted = reopened._store.read()
+    assert persisted.root.history[-1].result == RunResult("completed", {})
     assert sum(
         1
-        for entry in reopened.reckoning.root.history
+        for entry in persisted.root.history
         if isinstance(entry, DoneRecord)
     ) == 1
     assert (root / path).read_bytes() == before
@@ -489,7 +493,7 @@ def test_prompt_and_done_dry_runs_preview_without_entering_or_writing(
 
     assert preview == NodeView("preview", 1, "target", None, 0, "preview")
     assert target_calls == []
-    assert voyage.reckoning.root.history[0].response is None
+    assert voyage._store.read().root.history[0].response is None
     assert (root / path).read_bytes() == before
 
     done_path = Path("done-preview.reckoning.json")
@@ -500,7 +504,7 @@ def test_prompt_and_done_dry_runs_preview_without_entering_or_writing(
     done_preview = done.next(dry_run=True)
 
     assert done_preview == NodeView("direct-child", 1, "complete", None, 0, "preview")
-    assert done.reckoning.root.history == ()
+    assert done._store.read().root.history == ()
     assert (root / done_path).read_bytes() == done_before
 
 
@@ -530,6 +534,7 @@ def test_done_projection_failure_faults_without_a_done_record(
     reopened = registry.open(path)
 
     assert faulted.condition == "fault"
-    assert reopened.reckoning.fault["category"] == "done-projection"
-    assert reopened.reckoning.root.history == ()
+    persisted = reopened._store.read()
+    assert persisted.fault["category"] == "done-projection"
+    assert persisted.root.history == ()
     assert b"private result detail" not in (root / path).read_bytes()

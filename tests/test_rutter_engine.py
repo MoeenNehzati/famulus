@@ -12,9 +12,16 @@ import officina.rutter as rutter_public
 import officina.rutter.engine as engine
 import officina.rutter.runtime as runtime
 from officina.rutter.model import (
+    ActiveRun,
     AnswerSpec,
+    CallRecord,
+    Charter,
+    CompletedRun,
     Done,
+    DoneRecord,
+    EnteredNode,
     Prompt,
+    Reckoning,
     Rutter,
     RutterStateError,
     RunResult,
@@ -42,9 +49,57 @@ def test_public_cutover_exports_registry_and_only_the_four_voyage_operations(
     )
     assert tuple(inspect.signature(voyage.get_current_node).parameters) == ()
     assert not hasattr(voyage, "advance")
+    assert not hasattr(voyage, "reckoning")
     next_parameters = inspect.signature(engine._next).parameters
     assert tuple(next_parameters) == ("voyage", "response", "continue_", "dry_run")
     assert next_parameters["response"].default is runtime._MISSING
+
+
+def test_done_remains_terminal_after_its_attached_case_child_returns() -> None:
+    """A post-Done attached-case return must not reopen completion."""
+
+    result = RunResult("complete", {})
+    done = DoneRecord("done-root", "entry-root", "done", result)
+    child = CompletedRun(
+        "run-child",
+        "child",
+        1,
+        Charter({}),
+        (
+            DoneRecord(
+                "done-child",
+                "entry-child",
+                "done",
+                result,
+            ),
+        ),
+    )
+    returned = CallRecord(
+        "call-child",
+        "entry-root",
+        "attached_case",
+        "terminal-check",
+        done.record_id,
+        child.run_id,
+    )
+    reckoning = Reckoning(
+        3,
+        1,
+        ActiveRun(
+            "run-root",
+            "root",
+            1,
+            Charter({}),
+            EnteredNode("entry-root", "done"),
+            (done, returned),
+            None,
+        ),
+        {child.run_id: child},
+        None,
+        None,
+    )
+
+    assert engine._condition(reckoning, Done(result)) == "terminal"
 
 
 def test_every_operation_reloads_authoritative_reckoning(
@@ -121,6 +176,6 @@ def test_continuation_limit_leaves_entered_done_resumable(
     reopened = registry.open(path)
     assert reopened.get_current_node().state_id == "complete"
     assert reopened.get_current_node().condition == "ready"
-    assert reopened.reckoning.root.history[0].response is not None
+    assert reopened._store.read().root.history[0].response is not None
     monkeypatch.setattr(engine, "_OPERATION_LIMIT", 100)
     assert reopened.next().condition == "terminal"

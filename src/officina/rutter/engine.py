@@ -114,10 +114,13 @@ def _condition(reckoning: Reckoning, state: State) -> str:
     if effect is not None and effect.get("disposition") == "uncertain":
         return "uncertain"
     leaf = _active_leaf(reckoning)
-    if isinstance(state, Done) and isinstance(
-        _source_record(leaf.run, leaf.run.entered_node), DoneRecord
-    ):
-        return "terminal"
+    if isinstance(state, Done):
+        done = HistoryView(leaf.run.history, reckoning.completed_runs).done()
+        if done is not None and (
+            done.node_entry_id == leaf.run.entered_node.entry_id
+            and done.state_id == leaf.run.entered_node.state_id
+        ):
+            return "terminal"
     return "ready"
 
 
@@ -527,17 +530,18 @@ def _publish(
 
 def _fault_and_publish(
     voyage: _BoundVoyageLike,
-    reckoning: Reckoning,
+    previous: Reckoning,
+    fault_base: Reckoning,
     fault: _EngineFault,
 ) -> NodeView:
-    leaf = _active_leaf(reckoning)
+    leaf = _active_leaf(fault_base)
     faulted = _fault_reckoning(
-        reckoning,
+        fault_base,
         leaf,
         fault.category,
         target=fault.target,
     )
-    _publish(voyage, reckoning, faulted)
+    _publish(voyage, previous, faulted)
     state = _leaf_definition(voyage, leaf).states[leaf.run.entered_node.state_id]
     return _node_view(faulted, leaf, state)
 
@@ -570,7 +574,7 @@ def _next(
             except _EngineFault as fault:
                 if dry_run:
                     raise RutterValidationError("Prompt validation failed") from fault
-                return _fault_and_publish(voyage, reckoning, fault)
+                return _fault_and_publish(voyage, reckoning, reckoning, fault)
             if not report.valid:
                 raise RutterValidationError("Prompt response was rejected")
             normalized = Response.from_json(response)
@@ -591,8 +595,7 @@ def _next(
             except _EngineFault as fault:
                 if dry_run:
                     raise RutterValidationError("Prompt routing failed") from fault
-                _publish(voyage, reckoning, accepted)
-                return _fault_and_publish(voyage, accepted, fault)
+                return _fault_and_publish(voyage, reckoning, accepted, fault)
             assert edge.target is not None
             if dry_run:
                 return NodeView(
@@ -604,7 +607,6 @@ def _next(
                     "preview",
                 )
 
-            _publish(voyage, reckoning, accepted)
             try:
                 entered = _enter_node(
                     accepted,
@@ -613,8 +615,8 @@ def _next(
                     definition=definition,
                 )
             except _EngineFault as fault:
-                return _fault_and_publish(voyage, accepted, fault)
-            _publish(voyage, accepted, entered)
+                return _fault_and_publish(voyage, reckoning, accepted, fault)
+            _publish(voyage, reckoning, entered)
             reckoning = entered
             if not continue_:
                 entered_leaf = _active_leaf(reckoning)
@@ -640,7 +642,7 @@ def _next(
             except _EngineFault as fault:
                 if dry_run:
                     raise RutterValidationError("Done projection failed") from fault
-                return _fault_and_publish(voyage, reckoning, fault)
+                return _fault_and_publish(voyage, reckoning, reckoning, fault)
             if dry_run:
                 return _node_view(reckoning, leaf, state, preview=True)
             settled = _settle_done(reckoning, leaf.run.run_id, result)

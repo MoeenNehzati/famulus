@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import KW_ONLY, dataclass, field
+from inspect import signature
 from math import isfinite
 import re
 from types import MappingProxyType
@@ -340,12 +341,27 @@ class Done:
 @dataclass(frozen=True)
 class PythonInstruction:
     action_id: str
-    run: Callable[[ActionContext], ActionResult]
+    mode: str
+    run: Callable[[], ActionResult]
+    answer_format: JsonObject
 
     def __post_init__(self) -> None:
         _require_id(self.action_id, "action", RutterDefinitionError)
+        if self.mode not in {"pure", "repeat-safe", "non-repeat-safe"}:
+            raise RutterDefinitionError("PythonInstruction mode is invalid")
         if not callable(self.run):
             raise RutterDefinitionError("PythonInstruction run must be callable")
+        try:
+            signature(self.run).bind()
+        except (TypeError, ValueError) as exc:
+            raise RutterDefinitionError(
+                "PythonInstruction run must accept zero arguments"
+            ) from exc
+        object.__setattr__(
+            self,
+            "answer_format",
+            _freeze_object(self.answer_format, "PythonInstruction answer format"),
+        )
 
 
 State: TypeAlias = Prompt | Action | Call | Done
@@ -818,9 +834,13 @@ class ActiveRun:
                 raise RutterStateError(
                     "ActiveRun DoneRecord must match the current entered node"
                 )
-            if self.active_child is not None:
+            if self.active_child is not None and (
+                self.active_child.kind != "attached_case"
+                or self.active_child.attached_to_edge_id != done.record_id
+            ):
                 raise RutterStateError(
-                    "ActiveRun with a DoneRecord cannot have an active child"
+                    "ActiveRun DoneRecord child must be an attached case bound "
+                    "to that DoneRecord"
                 )
         object.__setattr__(self, "history", history)
 

@@ -107,17 +107,60 @@ def _call(
     call_id: str,
     completed_run_id: str,
     *,
+    node_entry_id: str = "entry-root",
     site_kind: str = "explicit_call",
     site_id: str = "delegate",
     edge_id: str | None = None,
 ) -> dict[str, object]:
     return {
         "call_id": call_id,
-        "node_entry_id": "entry-root",
+        "node_entry_id": node_entry_id,
         "site_kind": site_kind,
         "site_id": site_id,
         "attached_to_edge_id": edge_id,
         "completed_run_id": completed_run_id,
+    }
+
+
+def _turn(
+    record_id: str = "turn-root",
+    *,
+    node_entry_id: str = "entry-root",
+    state_id: str = "review",
+) -> dict[str, object]:
+    return {
+        "record_id": record_id,
+        "node_entry_id": node_entry_id,
+        "state_id": state_id,
+        "revision": 2,
+        "message": {
+            "instructions": {"text": "Review.", "answer": {"reviewed": {}}},
+            "data": {
+                "state": {
+                    "id": state_id,
+                    "entry_id": node_entry_id,
+                    "revision": 2,
+                },
+                "payload": {},
+            },
+        },
+        "response": {"revision": 2, "outcome": "reviewed", "evidence": {}},
+    }
+
+
+def _action(
+    record_id: str = "action-root",
+    *,
+    node_entry_id: str = "entry-root",
+    state_id: str = "review",
+) -> dict[str, object]:
+    return {
+        "record_id": record_id,
+        "action_id": f"issued-{record_id}",
+        "node_entry_id": node_entry_id,
+        "state_id": state_id,
+        "mode": "pure",
+        "result": {"outcome": "stored", "value": {}},
     }
 
 
@@ -544,6 +587,7 @@ def test_decode_rejects_duplicate_attachment_authority() -> None:
     completed = mapping["completed_runs"]
     assert isinstance(root, dict) and isinstance(completed, dict)
     root["history"] = [
+        _turn("edge-1"),
         _call(
             "call-child",
             "child-run",
@@ -575,6 +619,256 @@ def test_decode_rejects_duplicate_attachment_authority() -> None:
     }
 
     with pytest.raises(RutterStateError, match="duplicate attachment authority"):
+        _decode_reckoning(_bytes(mapping))
+
+
+@pytest.mark.parametrize("source_kind", ("turn", "action", "explicit_call", "done"))
+def test_decode_accepts_attached_call_bound_to_valid_earlier_source(
+    source_kind: str,
+) -> None:
+    mapping = _valid_mapping()
+    root = mapping["root"]
+    completed = mapping["completed_runs"]
+    assert isinstance(root, dict) and isinstance(completed, dict)
+    if source_kind == "turn":
+        source = _turn("edge-source")
+    elif source_kind == "action":
+        source = _action("edge-source")
+    elif source_kind == "explicit_call":
+        source = _call("edge-source", "source-run")
+        completed["source-run"] = {
+            "run_id": "source-run",
+            "rutter_id": "child",
+            "definition_version": 1,
+            "charter": {},
+            "history": [
+                {
+                    "record_id": "done-source",
+                    "node_entry_id": "entry-source-done",
+                    "state_id": "complete",
+                    "result": {"outcome": "completed", "value": {}},
+                }
+            ],
+        }
+    else:
+        source = {
+            "record_id": "edge-source",
+            "node_entry_id": "entry-root",
+            "state_id": "review",
+            "result": {"outcome": "completed", "value": {}},
+        }
+    root["history"] = [
+        source,
+        _call(
+            "call-child",
+            "child-run",
+            site_kind="attached_case",
+            site_id="maker-1",
+            edge_id="edge-source",
+        ),
+    ]
+
+    decoded = _decode_reckoning(_bytes(mapping))
+
+    assert decoded.root.history[-1].attached_to_edge_id == "edge-source"
+
+
+def test_decode_rejects_dangling_attached_edge_source() -> None:
+    mapping = _valid_mapping()
+    root = mapping["root"]
+    assert isinstance(root, dict)
+    root["history"] = [
+        _call(
+            "call-child",
+            "child-run",
+            site_kind="attached_case",
+            site_id="maker-1",
+            edge_id="missing-edge",
+        )
+    ]
+
+    with pytest.raises(RutterStateError, match="attached edge source"):
+        _decode_reckoning(_bytes(mapping))
+
+
+def test_decode_rejects_future_attached_edge_source() -> None:
+    mapping = _valid_mapping()
+    root = mapping["root"]
+    assert isinstance(root, dict)
+    root["history"] = [
+        _call(
+            "call-child",
+            "child-run",
+            site_kind="attached_case",
+            site_id="maker-1",
+            edge_id="future-edge",
+        ),
+        _turn("future-edge"),
+    ]
+
+    with pytest.raises(RutterStateError, match="attached edge source"):
+        _decode_reckoning(_bytes(mapping))
+
+
+def test_decode_rejects_wrong_run_attached_edge_source() -> None:
+    mapping = _valid_mapping()
+    root = mapping["root"]
+    assert isinstance(root, dict)
+    root["history"] = [
+        _call(
+            "call-child",
+            "child-run",
+            site_kind="attached_case",
+            site_id="maker-1",
+            edge_id="done-child",
+        )
+    ]
+
+    with pytest.raises(RutterStateError, match="attached edge source"):
+        _decode_reckoning(_bytes(mapping))
+
+
+def test_decode_rejects_attached_edge_source_from_another_entrance() -> None:
+    mapping = _valid_mapping()
+    root = mapping["root"]
+    assert isinstance(root, dict)
+    root["history"] = [
+        _turn("edge-source"),
+        _call(
+            "call-child",
+            "child-run",
+            node_entry_id="entry-other",
+            site_kind="attached_case",
+            site_id="maker-1",
+            edge_id="edge-source",
+        ),
+    ]
+
+    with pytest.raises(RutterStateError, match="source entrance"):
+        _decode_reckoning(_bytes(mapping))
+
+
+def test_decode_rejects_attached_call_as_an_edge_source() -> None:
+    mapping = _valid_mapping()
+    root = mapping["root"]
+    completed = mapping["completed_runs"]
+    assert isinstance(root, dict) and isinstance(completed, dict)
+    completed["grand-run"] = {
+        "run_id": "grand-run",
+        "rutter_id": "child",
+        "definition_version": 1,
+        "charter": {},
+        "history": [
+            {
+                "record_id": "done-grand",
+                "node_entry_id": "entry-grand-done",
+                "state_id": "complete",
+                "result": {"outcome": "completed", "value": {}},
+            }
+        ],
+    }
+    root["history"] = [
+        _turn("edge-source"),
+        _call(
+            "call-child",
+            "child-run",
+            site_kind="attached_case",
+            site_id="maker-1",
+            edge_id="edge-source",
+        ),
+        _call(
+            "call-grand",
+            "grand-run",
+            site_kind="attached_case",
+            site_id="maker-2",
+            edge_id="call-child",
+        ),
+    ]
+
+    with pytest.raises(RutterStateError, match="attached edge source"):
+        _decode_reckoning(_bytes(mapping))
+
+
+def test_decode_rejects_ambiguous_attached_edge_source() -> None:
+    mapping = _valid_mapping()
+    root = mapping["root"]
+    assert isinstance(root, dict)
+    root["history"] = [
+        _turn("edge-source"),
+        _action("edge-source"),
+        _call(
+            "call-child",
+            "child-run",
+            site_kind="attached_case",
+            site_id="maker-1",
+            edge_id="edge-source",
+        ),
+    ]
+
+    with pytest.raises(RutterStateError, match="duplicate history record ID"):
+        _decode_reckoning(_bytes(mapping))
+
+
+def test_decode_allows_multiple_attached_calls_from_one_source_entrance() -> None:
+    mapping = _valid_mapping()
+    root = mapping["root"]
+    completed = mapping["completed_runs"]
+    assert isinstance(root, dict) and isinstance(completed, dict)
+    completed["grand-run"] = {
+        "run_id": "grand-run",
+        "rutter_id": "child",
+        "definition_version": 1,
+        "charter": {},
+        "history": [
+            {
+                "record_id": "done-grand",
+                "node_entry_id": "entry-grand-done",
+                "state_id": "complete",
+                "result": {"outcome": "completed", "value": {}},
+            }
+        ],
+    }
+    root["history"] = [
+        _turn("edge-source"),
+        _call(
+            "call-child",
+            "child-run",
+            site_kind="attached_case",
+            site_id="maker-1",
+            edge_id="edge-source",
+        ),
+        _call(
+            "call-grand",
+            "grand-run",
+            site_kind="attached_case",
+            site_id="maker-2",
+            edge_id="edge-source",
+        ),
+    ]
+
+    decoded = _decode_reckoning(_bytes(mapping))
+
+    assert len(decoded.root.history) == 3
+
+
+def test_decode_rejects_one_entrance_with_conflicting_historical_states() -> None:
+    mapping = _valid_mapping()
+    root = mapping["root"]
+    assert isinstance(root, dict)
+    root["history"].insert(0, _action(state_id="other-state"))
+
+    with pytest.raises(RutterStateError, match="entrance state"):
+        _decode_reckoning(_bytes(mapping))
+
+
+def test_decode_rejects_historical_entrance_reused_by_another_run() -> None:
+    mapping = _valid_mapping()
+    completed = mapping["completed_runs"]
+    assert isinstance(completed, dict)
+    completed["child-run"]["history"][0]["node_entry_id"] = "entry-root"
+    completed["child-run"]["history"][0]["state_id"] = "review"
+
+    with pytest.raises(RutterStateError, match="entrance owner"):
         _decode_reckoning(_bytes(mapping))
 
 
