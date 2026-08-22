@@ -21,27 +21,42 @@ from typing import Callable, Iterator, Mapping, TypeAlias
 import officina.common.atomic_files as atomic_files
 
 from officina.rutter.model import (
-    Charter,
-    Fix,
+    ActionRecord,
+    ActionResult,
+    ActiveRun,
+    CallRecord,
+    DoneRecord,
     Reckoning,
     RutterDefinitionError,
     RutterStateError,
-    ValidationIssue,
-    _EffectRecovery,
+    Turn,
 )
 
 
 _SemanticValidator: TypeAlias = Callable[[Reckoning], None]
 
-_RECKONING_KEYS = frozenset({"storage_version", "charter", "fix"})
-_CHARTER_KEYS = frozenset({"rutter_id", "definition_version", "data"})
-_FIX_KEYS = frozenset(
-    {"current_state_id", "revision", "lifecycle", "effect", "diagnostics"}
+_RECKONING_KEYS = frozenset(
+    {
+        "storage_version",
+        "global_revision",
+        "root",
+        "completed_runs",
+        "active_effect",
+        "fault",
+    }
 )
 _EFFECT_KEYS = frozenset(
-    {"state_id", "revision", "disposition", "repeat_safe"}
+    {
+        "action_id",
+        "owner_run_id",
+        "node_entry_id",
+        "state_id",
+        "mode",
+        "disposition",
+        "result",
+    }
 )
-_DIAGNOSTIC_KEYS = frozenset({"path", "code", "message"})
+_MAX_ACTIVE_DEPTH = 64
 _RECKONING_SUFFIX = ".reckoning.json"
 
 
@@ -49,9 +64,7 @@ def _require_reckoning_filename(path: Path) -> None:
     """Require one named ``*.reckoning.json`` durable-authority file."""
 
     name = path.name
-    if not name.endswith(_RECKONING_SUFFIX) or len(name) == len(
-        _RECKONING_SUFFIX
-    ):
+    if not name.endswith(_RECKONING_SUFFIX) or len(name) == len(_RECKONING_SUFFIX):
         raise RutterDefinitionError(
             "reckoning path basename must end with .reckoning.json"
         )
@@ -83,180 +96,175 @@ def _json_value(value: object, *, label: str) -> object:
     raise RutterStateError(f"{label} is not finite JSON")
 
 
-def _record(
-    value: object,
-    *,
-    label: str,
-    keys: frozenset[str],
-) -> Mapping[str, object]:
-    """Require an object with exactly one declared set of member names."""
+def _unsupported_version() -> RutterStateError:
+    return RutterStateError("unsupported Reckoning storage_version; expected 3")
+
+
+def _preflight_mapping(value: object) -> Mapping[str, object]:
+    """Reject legacy versions and pathological recursion before construction."""
 
     if not isinstance(value, Mapping):
-        raise RutterStateError(f"{label} must be a JSON object")
-    actual = set(value)
-    if actual != keys:
-        detail = []
-        missing = sorted(keys.difference(actual))
-        unknown = sorted(actual.difference(keys))
-        if missing:
-            detail.append("missing " + ", ".join(missing))
-        if unknown:
-            detail.append("unknown " + ", ".join(unknown))
-        raise RutterStateError(f"{label} fields are invalid: {'; '.join(detail)}")
+        raise RutterStateError("Reckoning has invalid fields")
+    storage_version = value.get("storage_version")
+    if type(storage_version) is int and storage_version in {1, 2}:
+        raise _unsupported_version()
+    if set(value) != _RECKONING_KEYS:
+        raise RutterStateError("Reckoning has invalid fields")
+    if type(value["storage_version"]) is not int or value["storage_version"] != 3:
+        raise _unsupported_version()
+    run = value["root"]
+    depth = 1
+    while isinstance(run, Mapping):
+        child = run.get("active_child")
+        if child is None or not isinstance(child, Mapping):
+            break
+        depth += 1
+        if depth > _MAX_ACTIVE_DEPTH:
+            raise RutterStateError("Reckoning active-child nesting is too deep")
+        run = child.get("run")
     return value
 
 
-def _string(value: object, *, label: str) -> str:
-    """Require one nonempty persisted string."""
-
-    if not isinstance(value, str) or not value:
-        raise RutterStateError(f"{label} must be a non-empty string")
-    return value
-
-
-def _integer(value: object, *, label: str, minimum: int = 0) -> int:
-    """Require a non-boolean persisted integer at or above ``minimum``."""
-
-    if type(value) is not int or value < minimum:
-        raise RutterStateError(f"{label} must be an integer at least {minimum}")
-    return value
+def _history_identity(entry: object) -> str:
+    if isinstance(entry, CallRecord):
+        return entry.call_id
+    assert isinstance(entry, (Turn, ActionRecord, DoneRecord))
+    return entry.record_id
 
 
-def _diagnostic_to_mapping(issue: ValidationIssue) -> dict[str, object]:
-    """Encode one exact observational diagnostic record."""
-
-    if not isinstance(issue, ValidationIssue):
-        raise RutterStateError("Fix diagnostics must be ValidationIssue values")
-    return {"path": issue.path, "code": issue.code, "message": issue.message}
-
-
-def _diagnostic_from_mapping(value: object, *, label: str) -> ValidationIssue:
-    """Decode one exact observational diagnostic record."""
-
-    raw = _record(value, label=label, keys=_DIAGNOSTIC_KEYS)
-    try:
-        return ValidationIssue(
-            path=_string(raw["path"], label=f"{label}.path"),
-            code=_string(raw["code"], label=f"{label}.code"),
-            message=_string(raw["message"], label=f"{label}.message"),
-        )
-    except ValueError as exc:
-        raise RutterStateError(f"{label} is invalid") from exc
-
-
-def _effect_to_mapping(effect: _EffectRecovery) -> dict[str, object]:
-    """Encode one exact private effect-recovery record."""
-
-    if not isinstance(effect, _EffectRecovery):
-        raise RutterStateError("Fix effect must be framework recovery data")
-    return {
-        "state_id": effect.state_id,
-        "revision": effect.revision,
-        "disposition": effect.disposition,
-        "repeat_safe": effect.repeat_safe,
-    }
-
-
-def _effect_from_mapping(value: object, *, label: str) -> _EffectRecovery:
-    """Decode one exact private effect-recovery record."""
-
-    raw = _record(value, label=label, keys=_EFFECT_KEYS)
-    repeat_safe = raw["repeat_safe"]
-    if type(repeat_safe) is not bool:
-        raise RutterStateError(f"{label}.repeat_safe must be a boolean")
-    return _EffectRecovery(
-        state_id=_string(raw["state_id"], label=f"{label}.state_id"),
-        revision=_integer(raw["revision"], label=f"{label}.revision"),
-        disposition=_string(raw["disposition"], label=f"{label}.disposition"),
-        repeat_safe=repeat_safe,
-    )
+def _validate_effect(
+    reckoning: Reckoning, leaf: ActiveRun, action_ids: set[str]
+) -> None:
+    effect = reckoning.active_effect
+    if effect is None:
+        return
+    if set(effect) != _EFFECT_KEYS:
+        raise RutterStateError("active effect recovery has invalid fields")
+    string_fields = ("action_id", "owner_run_id", "node_entry_id", "state_id")
+    if any(
+        type(effect[field]) is not str or not effect[field] for field in string_fields
+    ):
+        raise RutterStateError("active effect recovery has invalid identifiers")
+    if effect["mode"] not in {"repeat-safe", "non-repeat-safe"}:
+        raise RutterStateError("active effect recovery has invalid mode")
+    disposition = effect["disposition"]
+    result = effect["result"]
+    if disposition not in {"planned", "completed", "uncertain"}:
+        raise RutterStateError("active effect recovery has invalid disposition")
+    if (disposition == "completed") != (result is not None):
+        raise RutterStateError("active effect recovery has inconsistent result")
+    if result is not None:
+        ActionResult.from_json(result)
+    if effect["owner_run_id"] != leaf.run_id:
+        raise RutterStateError("active effect owner must be the deepest active run")
+    if (
+        effect["node_entry_id"] != leaf.entered_node.entry_id
+        or effect["state_id"] != leaf.entered_node.state_id
+    ):
+        raise RutterStateError("active effect recovery has stale node coordinates")
+    if effect["action_id"] in action_ids:
+        raise RutterStateError("active effect action ID was already consumed")
 
 
-def _charter_to_mapping(charter: Charter) -> dict[str, object]:
-    """Encode every Charter field without reflection."""
-
-    if not isinstance(charter, Charter):
-        raise RutterStateError("Reckoning charter must be a Charter")
-    return {
-        "rutter_id": charter.rutter_id,
-        "definition_version": charter.definition_version,
-        "data": _json_value(charter.data, label="Charter data"),
-    }
-
-
-def _charter_from_mapping(value: object) -> Charter:
-    """Decode every Charter field with exact structural types."""
-
-    raw = _record(value, label="Charter", keys=_CHARTER_KEYS)
-    data = raw["data"]
-    if not isinstance(data, Mapping):
-        raise RutterStateError("Charter.data must be a JSON object")
-    try:
-        return Charter(
-            rutter_id=_string(raw["rutter_id"], label="Charter.rutter_id"),
-            definition_version=_integer(
-                raw["definition_version"],
-                label="Charter.definition_version",
-                minimum=1,
-            ),
-            data=data,
-        )
-    except RutterDefinitionError as exc:
-        raise RutterStateError(f"Charter is invalid: {exc}") from exc
-
-
-def _fix_to_mapping(fix: Fix) -> dict[str, object]:
-    """Encode every Fix field without reflection."""
-
-    if not isinstance(fix, Fix):
-        raise RutterStateError("Reckoning fix must be a Fix")
-    return {
-        "current_state_id": fix.current_state_id,
-        "revision": fix.revision,
-        "lifecycle": fix.lifecycle,
-        "effect": None if fix.effect is None else _effect_to_mapping(fix.effect),
-        "diagnostics": [
-            _diagnostic_to_mapping(issue) for issue in fix.diagnostics
-        ],
-    }
-
-
-def _fix_from_mapping(value: object) -> Fix:
-    """Decode every Fix field with exact structural types."""
-
-    raw = _record(value, label="Fix", keys=_FIX_KEYS)
-    diagnostics = raw["diagnostics"]
-    if not isinstance(diagnostics, list):
-        raise RutterStateError("Fix.diagnostics must be a JSON array")
-    effect = raw["effect"]
-    return Fix(
-        current_state_id=_string(
-            raw["current_state_id"], label="Fix.current_state_id"
-        ),
-        revision=_integer(raw["revision"], label="Fix.revision"),
-        lifecycle=_string(raw["lifecycle"], label="Fix.lifecycle"),
-        effect=(
-            None
-            if effect is None
-            else _effect_from_mapping(effect, label="Fix.effect")
-        ),
-        diagnostics=tuple(
-            _diagnostic_from_mapping(item, label=f"Fix.diagnostics[{index}]")
-            for index, item in enumerate(diagnostics)
-        ),
-    )
-
-
-def _reckoning_to_mapping(reckoning: Reckoning) -> dict[str, object]:
-    """Encode the exact schema-version-1 Reckoning hierarchy."""
+def _validate_reckoning(reckoning: Reckoning) -> None:
+    """Validate cross-record and recursive v3 invariants."""
 
     if not isinstance(reckoning, Reckoning):
         raise RutterStateError("value must be a Reckoning")
-    return {
-        "storage_version": reckoning.storage_version,
-        "charter": _charter_to_mapping(reckoning.charter),
-        "fix": _fix_to_mapping(reckoning.fix),
-    }
+    if reckoning.storage_version != 3:
+        raise _unsupported_version()
+
+    active_runs: list[ActiveRun] = []
+    active_call_ids: list[str] = []
+    current = reckoning.root
+    while True:
+        active_runs.append(current)
+        if len(active_runs) > _MAX_ACTIVE_DEPTH:
+            raise RutterStateError("Reckoning active-child nesting is too deep")
+        if current.active_child is None:
+            break
+        active_call_ids.append(current.active_child.call_id)
+        current = current.active_child.run
+
+    run_ids = [run.run_id for run in active_runs]
+    run_ids.extend(reckoning.completed_runs)
+    if len(run_ids) != len(set(run_ids)):
+        raise RutterStateError("duplicate run IDs")
+    entrances = [run.entered_node.entry_id for run in active_runs]
+    if len(entrances) != len(set(entrances)):
+        raise RutterStateError("duplicate entrance ID")
+
+    call_ids = set(active_call_ids)
+    if len(call_ids) != len(active_call_ids):
+        raise RutterStateError("duplicate call ID")
+    history_ids: set[str] = set()
+    action_ids: set[str] = set()
+    references = {run_id: 0 for run_id in reckoning.completed_runs}
+    graph = {run_id: set() for run_id in reckoning.completed_runs}
+    attachment_authorities: set[tuple[str, str]] = set()
+
+    owners: list[tuple[str, tuple[object, ...], bool]] = [
+        (run.run_id, run.history, False) for run in active_runs
+    ]
+    owners.extend(
+        (run_id, run.history, True) for run_id, run in reckoning.completed_runs.items()
+    )
+    for owner_id, history, owner_completed in owners:
+        seen_done = False
+        for entry in history:
+            identity = _history_identity(entry)
+            if identity in history_ids:
+                raise RutterStateError("duplicate history record ID")
+            history_ids.add(identity)
+            if isinstance(entry, DoneRecord):
+                seen_done = True
+                continue
+            if seen_done and not (
+                isinstance(entry, CallRecord) and entry.site_kind == "attached_case"
+            ):
+                raise RutterStateError("non-attached record follows DoneRecord")
+            if isinstance(entry, ActionRecord):
+                if entry.action_id in action_ids:
+                    raise RutterStateError("duplicate action ID")
+                action_ids.add(entry.action_id)
+            if not isinstance(entry, CallRecord):
+                continue
+            if entry.call_id in call_ids:
+                raise RutterStateError("duplicate call ID")
+            call_ids.add(entry.call_id)
+            if entry.completed_run_id not in references:
+                raise RutterStateError("CallRecord references unknown completed run")
+            references[entry.completed_run_id] += 1
+            if owner_completed:
+                graph[owner_id].add(entry.completed_run_id)
+            if entry.site_kind == "attached_case":
+                assert entry.attached_to_edge_id is not None
+                authority = (entry.site_id, entry.attached_to_edge_id)
+                if authority in attachment_authorities:
+                    raise RutterStateError("duplicate attachment authority")
+                attachment_authorities.add(authority)
+
+    if any(count != 1 for count in references.values()):
+        raise RutterStateError(
+            "every completed run must be referenced by exactly one CallRecord"
+        )
+
+    indegree = {run_id: 0 for run_id in graph}
+    for children in graph.values():
+        for child_id in children:
+            indegree[child_id] += 1
+    ready = [run_id for run_id, count in indegree.items() if count == 0]
+    visited = 0
+    while ready:
+        run_id = ready.pop()
+        visited += 1
+        for child_id in graph[run_id]:
+            indegree[child_id] -= 1
+            if indegree[child_id] == 0:
+                ready.append(child_id)
+    if visited != len(graph):
+        raise RutterStateError("completed-run references are cyclic")
+    _validate_effect(reckoning, active_runs[-1], action_ids)
 
 
 def _reckoning_from_mapping(
@@ -264,17 +272,14 @@ def _reckoning_from_mapping(
     *,
     semantic_validator: _SemanticValidator | None = None,
 ) -> Reckoning:
-    """Decode exact records, then apply definition-owned semantic validation."""
+    """Construct exact records, then apply internal and bound semantics."""
 
-    raw = _record(value, label="Reckoning", keys=_RECKONING_KEYS)
-    storage_version = raw["storage_version"]
-    if type(storage_version) is not int or storage_version != 1:
-        raise RutterStateError("Reckoning.storage_version must be 1")
-    reckoning = Reckoning(
-        storage_version=storage_version,
-        charter=_charter_from_mapping(raw["charter"]),
-        fix=_fix_from_mapping(raw["fix"]),
-    )
+    raw = _preflight_mapping(value)
+    try:
+        reckoning = Reckoning.from_json(raw)
+    except RecursionError as exc:
+        raise RutterStateError("Reckoning active-child nesting is too deep") from exc
+    _validate_reckoning(reckoning)
     if semantic_validator is not None:
         if not callable(semantic_validator):
             raise RutterDefinitionError("semantic_validator must be callable")
@@ -285,9 +290,11 @@ def _reckoning_from_mapping(
 def _canonical_reckoning_bytes(reckoning: Reckoning) -> bytes:
     """Encode sorted compact UTF-8 JSON with exactly one trailing newline."""
 
+    _validate_reckoning(reckoning)
+    mapping = _json_value(reckoning.to_json(), label="Reckoning")
     return (
         json.dumps(
-            _reckoning_to_mapping(reckoning),
+            mapping,
             ensure_ascii=False,
             allow_nan=False,
             sort_keys=True,
@@ -303,9 +310,7 @@ def _reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]
     result: dict[str, object] = {}
     for key, value in pairs:
         if key in result:
-            raise RutterStateError(
-                f"Reckoning JSON contains duplicate key {key!r}"
-            )
+            raise RutterStateError(f"Reckoning JSON contains duplicate key {key!r}")
         result[key] = value
     return result
 
@@ -313,9 +318,7 @@ def _reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]
 def _reject_non_finite(constant: str) -> object:
     """Reject non-standard JSON constants such as NaN and Infinity."""
 
-    raise RutterStateError(
-        f"Reckoning JSON contains non-finite number {constant}"
-    )
+    raise RutterStateError(f"Reckoning JSON contains non-finite number {constant}")
 
 
 def _decode_reckoning(

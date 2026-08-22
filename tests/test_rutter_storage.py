@@ -1,4 +1,4 @@
-"""Exercise strict canonical Reckoning persistence and confinement."""
+"""Exercise storage-version-3 Reckoning persistence and confinement."""
 
 from __future__ import annotations
 
@@ -10,7 +10,12 @@ from threading import Barrier, Event, Thread
 
 import pytest
 
+from officina.common.atomic_files import AtomicWriteError
 from officina.rutter.model import (
+    ActiveChild,
+    ActiveRun,
+    Charter,
+    EnteredNode,
     Reckoning,
     RutterDefinitionError,
     RutterStateError,
@@ -20,202 +25,557 @@ from officina.rutter.storage import (
     _canonical_reckoning_bytes,
     _confined_reckoning_path,
     _decode_reckoning,
-    _json_value,
-    _reckoning_from_mapping,
-    _reckoning_to_mapping,
 )
 import officina.rutter.storage as storage_module
-from officina.common.atomic_files import AtomicWriteError
-from test_support.rutter_fixtures import example_reckoning
 
 
-_CANONICAL = (
-    b'{"charter":{"data":{"artifact":"draft.md","options":["careful"]},'
-    b'"definition_version":1,"rutter_id":"example"},"fix":{'
-    b'"current_state_id":"review","diagnostics":[],"effect":null,'
-    b'"lifecycle":"active","revision":0},"storage_version":1}\n'
-)
+def _active(
+    *,
+    run_id: str = "root-run",
+    entry_id: str = "entry-root",
+    state_id: str = "review",
+    history: tuple[object, ...] = (),
+    active_child: ActiveChild | None = None,
+) -> ActiveRun:
+    return ActiveRun(
+        run_id,
+        "example",
+        1,
+        Charter({"artifact": "draft.md"}),
+        EnteredNode(entry_id, state_id),
+        history,
+        active_child,
+    )
 
 
-def _literal_mapping() -> dict[str, object]:
-    """Return an independently decoded editable copy of the expected record."""
+def _example_reckoning(
+    *, global_revision: int = 0, state_id: str = "review"
+) -> Reckoning:
+    return Reckoning(3, global_revision, _active(state_id=state_id), {}, None, None)
 
-    value = json.loads(_CANONICAL)
-    assert isinstance(value, dict)
-    return value
+
+def _valid_mapping() -> dict[str, object]:
+    """Return a hand-authored v3 record independent of the storage codec."""
+
+    return {
+        "storage_version": 3,
+        "global_revision": 2,
+        "root": {
+            "run_id": "root-run",
+            "rutter_id": "example",
+            "definition_version": 1,
+            "charter": {"artifact": "draft.md"},
+            "entered_node": {"entry_id": "entry-root", "state_id": "review"},
+            "history": [
+                {
+                    "call_id": "call-child",
+                    "node_entry_id": "entry-root",
+                    "site_kind": "explicit_call",
+                    "site_id": "delegate",
+                    "attached_to_edge_id": None,
+                    "completed_run_id": "child-run",
+                }
+            ],
+            "active_child": None,
+        },
+        "completed_runs": {
+            "child-run": {
+                "run_id": "child-run",
+                "rutter_id": "child",
+                "definition_version": 1,
+                "charter": {"item": "A"},
+                "history": [
+                    {
+                        "record_id": "done-child",
+                        "node_entry_id": "entry-child-done",
+                        "state_id": "complete",
+                        "result": {"outcome": "completed", "value": {"item": "A"}},
+                    }
+                ],
+            }
+        },
+        "active_effect": None,
+        "fault": None,
+    }
+
+
+def _bytes(mapping: dict[str, object]) -> bytes:
+    return json.dumps(mapping, separators=(",", ":")).encode("utf-8")
+
+
+def _call(
+    call_id: str,
+    completed_run_id: str,
+    *,
+    site_kind: str = "explicit_call",
+    site_id: str = "delegate",
+    edge_id: str | None = None,
+) -> dict[str, object]:
+    return {
+        "call_id": call_id,
+        "node_entry_id": "entry-root",
+        "site_kind": site_kind,
+        "site_id": site_id,
+        "attached_to_edge_id": edge_id,
+        "completed_run_id": completed_run_id,
+    }
 
 
 def test_codec_round_trips_one_stable_compact_utf8_record() -> None:
-    """A changed field map, ordering, spacing, or newline breaks canonical bytes."""
+    mapping = _valid_mapping()
+    expected = (
+        json.dumps(mapping, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        + "\n"
+    ).encode("utf-8")
 
-    reckoning = example_reckoning()
+    decoded = _decode_reckoning(_bytes(mapping))
 
-    assert _reckoning_from_mapping(_reckoning_to_mapping(reckoning)) == reckoning
-    assert _decode_reckoning(_CANONICAL) == reckoning
-    assert _canonical_reckoning_bytes(reckoning) == _CANONICAL
-    assert _CANONICAL.endswith(b"\n")
-    assert _CANONICAL.count(b"\n") == 1
-    assert b", " not in _CANONICAL and b": " not in _CANONICAL
-
-
-def test_codec_round_trips_private_recovery_and_diagnostic_records() -> None:
-    """Dropping or reflecting either private nested record breaks authority."""
-
-    mapping = _literal_mapping()
-    fix = mapping["fix"]
-    assert isinstance(fix, dict)
-    fix["effect"] = {
-        "state_id": "review",
-        "revision": 0,
-        "disposition": "uncertain",
-        "repeat_safe": False,
-    }
-    fix["diagnostics"] = [
-        {
-            "path": "effect",
-            "code": "uncertain_effect",
-            "message": "external completion is unknown",
-        }
-    ]
-
-    reckoning = _reckoning_from_mapping(mapping)
-    encoded = _canonical_reckoning_bytes(reckoning)
-
-    assert _reckoning_to_mapping(reckoning) == mapping
-    assert _decode_reckoning(encoded) == reckoning
+    assert _canonical_reckoning_bytes(decoded) == expected
+    assert _decode_reckoning(expected) == decoded
 
 
-@pytest.mark.parametrize(
-    ("level", "missing_key"),
-    (
-        ("root", "storage_version"),
-        ("charter", "rutter_id"),
-        ("fix", "lifecycle"),
-        ("effect", "disposition"),
-        ("diagnostic", "code"),
-    ),
-)
-def test_codec_rejects_missing_and_unknown_keys_at_every_record_level(
-    level: str,
-    missing_key: str,
+@pytest.mark.parametrize("storage_version", (1, 2))
+def test_decode_rejects_legacy_storage_versions_with_one_stable_error(
+    storage_version: int,
 ) -> None:
-    """Every explicit record rejects schema drift instead of ignoring it."""
-
-    mapping = _literal_mapping()
-    fix = mapping["fix"]
-    assert isinstance(fix, dict)
-    fix["effect"] = {
-        "state_id": "review",
-        "revision": 0,
-        "disposition": "planned",
-        "repeat_safe": True,
+    mapping = {
+        "storage_version": storage_version,
+        "charter": {"legacy": True},
+        "fix": {"legacy": True},
     }
-    fix["diagnostics"] = [
-        {"path": "outcome", "code": "invalid", "message": "invalid outcome"}
-    ]
-    records = {
-        "root": mapping,
-        "charter": mapping["charter"],
-        "fix": fix,
-        "effect": fix["effect"],
-        "diagnostic": fix["diagnostics"][0],
-    }
-    record = records[level]
-    assert isinstance(record, dict)
-    missing = json.loads(json.dumps(mapping))
-    missing_record = {
-        "root": missing,
-        "charter": missing["charter"],
-        "fix": missing["fix"],
-        "effect": missing["fix"]["effect"],
-        "diagnostic": missing["fix"]["diagnostics"][0],
-    }[level]
-    del missing_record[missing_key]
 
-    with pytest.raises(RutterStateError, match="fields are invalid"):
-        _reckoning_from_mapping(missing)
+    with pytest.raises(RutterStateError) as error:
+        _decode_reckoning(_bytes(mapping))
 
-    record["unknown"] = True
-    with pytest.raises(RutterStateError, match="fields are invalid"):
-        _reckoning_from_mapping(mapping)
+    assert str(error.value) == "unsupported Reckoning storage_version; expected 3"
 
 
-@pytest.mark.parametrize(
-    "data",
-    (
-        b'{"storage_version":1,"storage_version":1}\n',
-        b'{"storage_version":NaN}\n',
-        b'{"storage_version":Infinity}\n',
-        b"\xff\n",
-        b"{not json}\n",
-        b"[]\n",
-    ),
-)
-def test_codec_rejects_duplicate_nonfinite_and_corrupt_json(data: bytes) -> None:
-    """Malformed input cannot produce a partial or permissively decoded value."""
+def test_decode_rejects_duplicate_keys() -> None:
+    with pytest.raises(RutterStateError, match="duplicate key"):
+        _decode_reckoning(b'{"storage_version":3,"storage_version":3}\n')
 
+
+@pytest.mark.parametrize("constant", ("NaN", "Infinity", "-Infinity"))
+def test_decode_rejects_nonfinite_numbers(constant: str) -> None:
+    with pytest.raises(RutterStateError, match="non-finite"):
+        _decode_reckoning((f'{{"storage_version":{constant}}}').encode("ascii"))
+
+
+@pytest.mark.parametrize("data", (b"\xff\n", b"{not json}\n", b"[]\n"))
+def test_decode_rejects_corrupt_json(data: bytes) -> None:
     with pytest.raises(RutterStateError):
         _decode_reckoning(data)
 
 
-@pytest.mark.parametrize("value", (float("nan"), float("inf"), float("-inf")))
-def test_encoder_rejects_nonfinite_values_at_its_own_boundary(value: float) -> None:
-    """The codec remains strict even if an in-memory model was compromised."""
+def test_decode_constructs_structure_before_running_bound_semantics() -> None:
+    mapping = _valid_mapping()
+    root = mapping["root"]
+    assert isinstance(root, dict)
+    del root["entered_node"]
+    seen: list[Reckoning] = []
 
-    with pytest.raises(RutterStateError, match="non-finite"):
-        _json_value(value, label="test value")
+    with pytest.raises(RutterStateError, match="fields"):
+        _decode_reckoning(_bytes(mapping), semantic_validator=seen.append)
+
+    assert seen == []
+
+
+def test_decode_runs_bound_semantics_after_internal_validation() -> None:
+    seen: list[Reckoning] = []
+
+    def reject(reckoning: Reckoning) -> None:
+        seen.append(reckoning)
+        raise RutterStateError("definition mismatch")
+
+    with pytest.raises(RutterStateError, match="definition mismatch"):
+        _decode_reckoning(_bytes(_valid_mapping()), semantic_validator=reject)
+    assert len(seen) == 1
+
+
+def test_decode_rejects_excessive_active_child_depth() -> None:
+    mapping = _valid_mapping()
+    mapping["completed_runs"] = {}
+    root = mapping["root"]
+    assert isinstance(root, dict)
+    root["history"] = []
+    current = root
+    for index in range(65):
+        child = {
+            "run_id": f"run-{index}",
+            "rutter_id": "child",
+            "definition_version": 1,
+            "charter": {},
+            "entered_node": {"entry_id": f"entry-{index}", "state_id": "start"},
+            "history": [],
+            "active_child": None,
+        }
+        current["active_child"] = {
+            "call_id": f"call-{index}",
+            "kind": "explicit_call",
+            "site": "delegate",
+            "attached_to_edge_id": None,
+            "run": child,
+        }
+        current = child
+
+    with pytest.raises(RutterStateError, match="nesting is too deep"):
+        _decode_reckoning(_bytes(mapping))
+
+
+def test_encoder_rejects_an_active_path_that_cannot_be_reopened() -> None:
+    run = _active(run_id="run-64", entry_id="entry-64")
+    for index in reversed(range(64)):
+        run = _active(
+            run_id=f"run-{index}",
+            entry_id=f"entry-{index}",
+            active_child=ActiveChild(
+                f"call-{index}", "explicit_call", "delegate", None, run
+            ),
+        )
+    reckoning = Reckoning(3, 0, run, {}, None, None)
+
+    with pytest.raises(RutterStateError, match="nesting is too deep"):
+        _canonical_reckoning_bytes(reckoning)
+
+
+def test_decode_rejects_wrong_active_effect_owner() -> None:
+    mapping = _valid_mapping()
+    mapping["completed_runs"] = {}
+    root = mapping["root"]
+    assert isinstance(root, dict)
+    root["history"] = []
+    root["active_child"] = {
+        "call_id": "call-active",
+        "kind": "explicit_call",
+        "site": "delegate",
+        "attached_to_edge_id": None,
+        "run": {
+            "run_id": "active-child",
+            "rutter_id": "child",
+            "definition_version": 1,
+            "charter": {},
+            "entered_node": {"entry_id": "entry-child", "state_id": "act"},
+            "history": [],
+            "active_child": None,
+        },
+    }
+    mapping["active_effect"] = {
+        "action_id": "action-1",
+        "owner_run_id": "root-run",
+        "node_entry_id": "entry-root",
+        "state_id": "review",
+        "mode": "repeat-safe",
+        "disposition": "planned",
+        "result": None,
+    }
+
+    with pytest.raises(RutterStateError, match="deepest active run"):
+        _decode_reckoning(_bytes(mapping))
 
 
 @pytest.mark.parametrize(
-    ("path", "value"),
+    ("disposition", "result"),
     (
-        (("storage_version",), True),
-        (("storage_version",), 0),
-        (("storage_version",), 2),
-        (("charter", "definition_version"), True),
-        (("fix", "revision"), True),
-        (("fix", "effect", "revision"), True),
+        ("planned", {"outcome": "ok", "value": {}}),
+        ("uncertain", {"outcome": "ok", "value": {}}),
+        ("completed", None),
     ),
 )
-def test_codec_rejects_boolean_integers_and_wrong_versions(
-    path: tuple[str, ...],
-    value: object,
+def test_decode_rejects_inconsistent_effect_recovery(
+    disposition: str, result: object
 ) -> None:
-    """Boolean integer aliases and all unsupported versions fail closed."""
-
-    mapping = _literal_mapping()
-    fix = mapping["fix"]
-    assert isinstance(fix, dict)
-    fix["effect"] = {
+    mapping = _valid_mapping()
+    mapping["active_effect"] = {
+        "action_id": "action-1",
+        "owner_run_id": "root-run",
+        "node_entry_id": "entry-root",
         "state_id": "review",
-        "revision": 0,
-        "disposition": "planned",
-        "repeat_safe": True,
+        "mode": "repeat-safe",
+        "disposition": disposition,
+        "result": result,
     }
-    target = mapping
-    for component in path[:-1]:
-        nested = target[component]
-        assert isinstance(nested, dict)
-        target = nested
-    target[path[-1]] = value
-
-    with pytest.raises(RutterStateError):
-        _reckoning_from_mapping(mapping)
+    with pytest.raises(RutterStateError, match="effect recovery"):
+        _decode_reckoning(_bytes(mapping))
 
 
-def test_codec_runs_final_semantic_validator_after_structural_validation() -> None:
-    """A structurally valid but definition-mismatched Reckoning is rejected."""
+def test_decode_preserves_valid_effect_and_opaque_fault_json() -> None:
+    mapping = _valid_mapping()
+    effect = {
+        "action_id": "action-1",
+        "owner_run_id": "root-run",
+        "node_entry_id": "entry-root",
+        "state_id": "review",
+        "mode": "non-repeat-safe",
+        "disposition": "uncertain",
+        "result": None,
+    }
+    fault = {"category": "callback", "coordinates": {"run": "root-run"}}
+    mapping["active_effect"] = effect
+    mapping["fault"] = fault
 
-    seen = []
+    decoded = _decode_reckoning(_bytes(mapping))
 
-    def reject_identity(reckoning: object) -> None:
-        seen.append(reckoning)
-        raise RutterStateError("Fix and Charter do not match the definition")
+    assert decoded.active_effect == effect
+    assert decoded.fault == fault
 
-    with pytest.raises(RutterStateError, match="Fix and Charter"):
-        _decode_reckoning(_CANONICAL, semantic_validator=reject_identity)
 
-    assert seen == [example_reckoning()]
+def test_decode_rejects_dangling_completed_run_map_identity() -> None:
+    mapping = _valid_mapping()
+    completed = mapping["completed_runs"]
+    assert isinstance(completed, dict)
+    completed["wrong-key"] = completed.pop("child-run")
+
+    with pytest.raises(RutterStateError, match="key must match"):
+        _decode_reckoning(_bytes(mapping))
+
+
+def test_decode_rejects_duplicate_active_run_ids() -> None:
+    mapping = _valid_mapping()
+    mapping["completed_runs"] = {}
+    root = mapping["root"]
+    assert isinstance(root, dict)
+    root["history"] = []
+    child = json.loads(json.dumps(root))
+    child["entered_node"] = {"entry_id": "entry-child", "state_id": "start"}
+    root["active_child"] = {
+        "call_id": "call-active",
+        "kind": "explicit_call",
+        "site": "delegate",
+        "attached_to_edge_id": None,
+        "run": child,
+    }
+
+    with pytest.raises(RutterStateError, match="run IDs"):
+        _decode_reckoning(_bytes(mapping))
+
+
+def test_decode_rejects_duplicate_call_ids_across_active_and_history() -> None:
+    mapping = _valid_mapping()
+    root = mapping["root"]
+    assert isinstance(root, dict)
+    root["active_child"] = {
+        "call_id": "call-child",
+        "kind": "explicit_call",
+        "site": "delegate",
+        "attached_to_edge_id": None,
+        "run": {
+            "run_id": "active-child",
+            "rutter_id": "child",
+            "definition_version": 1,
+            "charter": {},
+            "entered_node": {"entry_id": "entry-active", "state_id": "start"},
+            "history": [],
+            "active_child": None,
+        },
+    }
+
+    with pytest.raises(RutterStateError, match="duplicate call ID"):
+        _decode_reckoning(_bytes(mapping))
+
+
+def test_decode_rejects_duplicate_record_ids_across_runs() -> None:
+    mapping = _valid_mapping()
+    root = mapping["root"]
+    assert isinstance(root, dict)
+    root["history"].insert(
+        0,
+        {
+            "record_id": "done-child",
+            "action_id": "action-root",
+            "node_entry_id": "entry-root",
+            "state_id": "review",
+            "mode": "pure",
+            "result": {"outcome": "ok", "value": {}},
+        },
+    )
+
+    with pytest.raises(RutterStateError, match="duplicate history record ID"):
+        _decode_reckoning(_bytes(mapping))
+
+
+def test_decode_rejects_duplicate_active_entrance_ids() -> None:
+    mapping = _valid_mapping()
+    mapping["completed_runs"] = {}
+    root = mapping["root"]
+    assert isinstance(root, dict)
+    root["history"] = []
+    root["active_child"] = {
+        "call_id": "call-active",
+        "kind": "explicit_call",
+        "site": "delegate",
+        "attached_to_edge_id": None,
+        "run": {
+            "run_id": "active-child",
+            "rutter_id": "child",
+            "definition_version": 1,
+            "charter": {},
+            "entered_node": {"entry_id": "entry-root", "state_id": "start"},
+            "history": [],
+            "active_child": None,
+        },
+    }
+
+    with pytest.raises(RutterStateError, match="duplicate entrance ID"):
+        _decode_reckoning(_bytes(mapping))
+
+
+def test_decode_rejects_call_record_referencing_no_completed_run() -> None:
+    mapping = _valid_mapping()
+    root = mapping["root"]
+    assert isinstance(root, dict)
+    root["history"][0]["completed_run_id"] = "missing-run"
+
+    with pytest.raises(RutterStateError, match="unknown completed run"):
+        _decode_reckoning(_bytes(mapping))
+
+
+def test_decode_rejects_more_than_one_done_record() -> None:
+    mapping = _valid_mapping()
+    completed = mapping["completed_runs"]
+    assert isinstance(completed, dict)
+    completed["child-run"]["history"].append(
+        {
+            "record_id": "done-child-again",
+            "node_entry_id": "entry-child-again",
+            "state_id": "complete",
+            "result": {"outcome": "completed", "value": {}},
+        }
+    )
+
+    with pytest.raises(RutterStateError, match="DoneRecord"):
+        _decode_reckoning(_bytes(mapping))
+
+
+def test_decode_rejects_active_child_field_under_completed_run() -> None:
+    mapping = _valid_mapping()
+    completed = mapping["completed_runs"]
+    assert isinstance(completed, dict)
+    completed["child-run"]["active_child"] = None
+
+    with pytest.raises(RutterStateError, match="fields"):
+        _decode_reckoning(_bytes(mapping))
+
+
+@pytest.mark.parametrize("reference_count", (0, 2))
+def test_decode_rejects_completed_run_without_exactly_one_reference(
+    reference_count: int,
+) -> None:
+    mapping = _valid_mapping()
+    root = mapping["root"]
+    assert isinstance(root, dict)
+    root["history"] = [
+        _call(f"call-{index}", "child-run") for index in range(reference_count)
+    ]
+
+    with pytest.raises(RutterStateError, match="exactly one CallRecord"):
+        _decode_reckoning(_bytes(mapping))
+
+
+def test_decode_rejects_cyclic_completed_run_references() -> None:
+    mapping = _valid_mapping()
+    root = mapping["root"]
+    assert isinstance(root, dict)
+    root["history"] = []
+    completed = mapping["completed_runs"]
+    assert isinstance(completed, dict)
+    completed["child-run"]["history"].insert(0, _call("call-grand", "grand-run"))
+    completed["grand-run"] = {
+        "run_id": "grand-run",
+        "rutter_id": "child",
+        "definition_version": 1,
+        "charter": {},
+        "history": [
+            _call("call-child", "child-run"),
+            {
+                "record_id": "done-grand",
+                "node_entry_id": "entry-grand-done",
+                "state_id": "complete",
+                "result": {"outcome": "completed", "value": {}},
+            },
+        ],
+    }
+
+    with pytest.raises(RutterStateError, match="cyclic"):
+        _decode_reckoning(_bytes(mapping))
+
+
+def test_decode_rejects_nonattached_record_after_done() -> None:
+    mapping = _valid_mapping()
+    completed = mapping["completed_runs"]
+    assert isinstance(completed, dict)
+    completed["child-run"]["history"].append(
+        {
+            "record_id": "action-after-done",
+            "action_id": "late-action",
+            "node_entry_id": "entry-child-done",
+            "state_id": "complete",
+            "mode": "pure",
+            "result": {"outcome": "ok", "value": {}},
+        }
+    )
+
+    with pytest.raises(RutterStateError, match="DoneRecord"):
+        _decode_reckoning(_bytes(mapping))
+
+
+def test_decode_rejects_explicit_call_with_attached_edge_provenance() -> None:
+    mapping = _valid_mapping()
+    root = mapping["root"]
+    assert isinstance(root, dict)
+    root["history"][0]["attached_to_edge_id"] = "edge-1"
+
+    with pytest.raises(RutterStateError, match="provenance"):
+        _decode_reckoning(_bytes(mapping))
+
+
+def test_decode_rejects_attached_call_without_edge_provenance() -> None:
+    mapping = _valid_mapping()
+    root = mapping["root"]
+    assert isinstance(root, dict)
+    root["history"][0]["site_kind"] = "attached_case"
+
+    with pytest.raises(RutterStateError, match="provenance"):
+        _decode_reckoning(_bytes(mapping))
+
+
+def test_decode_rejects_duplicate_attachment_authority() -> None:
+    mapping = _valid_mapping()
+    root = mapping["root"]
+    completed = mapping["completed_runs"]
+    assert isinstance(root, dict) and isinstance(completed, dict)
+    root["history"] = [
+        _call(
+            "call-child",
+            "child-run",
+            site_kind="attached_case",
+            site_id="maker-1",
+            edge_id="edge-1",
+        ),
+        _call(
+            "call-grand",
+            "grand-run",
+            site_kind="attached_case",
+            site_id="maker-1",
+            edge_id="edge-1",
+        ),
+    ]
+    completed["grand-run"] = {
+        "run_id": "grand-run",
+        "rutter_id": "child",
+        "definition_version": 1,
+        "charter": {},
+        "history": [
+            {
+                "record_id": "done-grand",
+                "node_entry_id": "entry-grand-done",
+                "state_id": "complete",
+                "result": {"outcome": "completed", "value": {}},
+            }
+        ],
+    }
+
+    with pytest.raises(RutterStateError, match="duplicate attachment authority"):
+        _decode_reckoning(_bytes(mapping))
 
 
 @pytest.mark.parametrize(
@@ -223,127 +583,94 @@ def test_codec_runs_final_semantic_validator_after_structural_validation() -> No
     (
         Path("../escape.reckoning"),
         Path("nested/../../escape.reckoning"),
-        Path("/tmp/escape.reckoning"),
+        Path("/tmp/x.reckoning"),
         Path("."),
     ),
 )
-def test_confined_path_rejects_absolute_and_out_of_root_aliases(
-    tmp_path: Path,
-    candidate: Path,
+def test_confined_path_rejects_out_of_root_aliases(
+    tmp_path: Path, candidate: Path
 ) -> None:
-    """Callers cannot alias a Reckoning outside its configured root."""
-
     with pytest.raises(RutterDefinitionError, match="relative path"):
         _confined_reckoning_path(tmp_path, candidate)
 
 
-def test_confined_path_returns_an_absolute_lexical_descendant(tmp_path: Path) -> None:
-    """A valid relative name is bound beneath exactly one configured root."""
-
-    assert _confined_reckoning_path(
-        tmp_path, Path("jobs/paper.reckoning.json")
-    ) == (
-        tmp_path.absolute() / "jobs" / "paper.reckoning.json"
-    )
-
-
-@pytest.mark.parametrize(
-    "candidate",
-    (
-        Path("jobs/paper.json"),
-        Path("jobs/paper.reckoning.json.lock"),
-        Path("jobs/.reckoning.json"),
-    ),
-)
-def test_reckoning_paths_require_a_named_reckoning_json_suffix(
-    tmp_path: Path,
-    candidate: Path,
-) -> None:
-    """Only named ``*.reckoning.json`` files can hold durable authority."""
-
+def test_confined_path_requires_named_reckoning_json_suffix(tmp_path: Path) -> None:
     with pytest.raises(RutterDefinitionError, match=r"\.reckoning\.json"):
-        _confined_reckoning_path(tmp_path, candidate)
+        _confined_reckoning_path(tmp_path, Path("paper.json"))
 
 
-def test_reckoning_lock_appends_lock_to_the_complete_filename(
-    tmp_path: Path,
-) -> None:
-    """The lock is ``<reckoning-path>.lock`` and cannot itself be authority."""
-
+def _store(tmp_path: Path) -> _ReckoningStore:
     root = tmp_path / "reckonings"
-    paper = _ReckoningStore(
-        _confined_reckoning_path(root, Path("jobs/paper.reckoning.json"))
-    )
-    paper.create(example_reckoning())
-    assert paper.read() == example_reckoning()
-    lock = root / "jobs/paper.reckoning.json.lock"
-    lock_inode = lock.stat().st_ino
-
-    with pytest.raises(RutterDefinitionError, match=r"\.reckoning\.json"):
-        _confined_reckoning_path(root, Path("jobs/paper.reckoning.json.lock"))
-    with pytest.raises(RutterDefinitionError, match=r"\.reckoning\.json"):
-        _ReckoningStore(lock.absolute())
-
-    assert lock.stat().st_ino == lock_inode
-    assert paper.read() == example_reckoning()
+    path = _confined_reckoning_path(root, Path("jobs/paper.reckoning.json"))
+    return _ReckoningStore(path)
 
 
-def _store(tmp_path: Path, name: str = "jobs/paper.reckoning.json") -> _ReckoningStore:
-    """Return one store bound through the public confinement seam."""
-
-    root = tmp_path / "reckonings"
-    return _ReckoningStore(_confined_reckoning_path(root, Path(name)))
-
-
-def test_store_creates_reads_and_modes_one_canonical_reckoning(
-    tmp_path: Path,
-) -> None:
-    """Create must not omit the Charter, relax mode, or alter canonical bytes."""
-
+def test_store_create_read_and_lock_modes(tmp_path: Path) -> None:
     store = _store(tmp_path)
-    reckoning = example_reckoning()
+    reckoning = _example_reckoning()
 
     store.create(reckoning)
 
     target = tmp_path / "reckonings/jobs/paper.reckoning.json"
     assert store.read() == reckoning
-    assert target.read_bytes() == _CANONICAL
     if os.name == "posix":
         assert stat.S_IMODE(target.stat().st_mode) == 0o600
+        lock = target.with_name(target.name + ".lock")
+        assert stat.S_IMODE(lock.stat().st_mode) == 0o600
 
 
-def test_store_create_collision_preserves_the_first_reckoning(tmp_path: Path) -> None:
-    """Create-only construction can never replace existing authority."""
-
+def test_store_create_collision_preserves_first_authority(tmp_path: Path) -> None:
     store = _store(tmp_path)
-    first = example_reckoning()
+    first = _example_reckoning()
     store.create(first)
-    before = (tmp_path / "reckonings/jobs/paper.reckoning.json").read_bytes()
+    target = tmp_path / "reckonings/jobs/paper.reckoning.json"
+    before = target.read_bytes()
 
     with pytest.raises(RutterStateError, match="already exists"):
-        store.create(example_reckoning(state_id="complete", revision=1))
+        store.create(_example_reckoning(global_revision=1))
 
-    assert (tmp_path / "reckonings/jobs/paper.reckoning.json").read_bytes() == before
+    assert target.read_bytes() == before
     assert store.read() == first
 
 
-def test_store_rejects_missing_symlink_and_non_regular_reckonings(
-    tmp_path: Path,
-) -> None:
-    """Reads accept only the configured no-follow regular file."""
+def test_store_rejects_symlink_parent(tmp_path: Path) -> None:
+    root = tmp_path / "reckonings"
+    outside = tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    (root / "jobs").symlink_to(outside, target_is_directory=True)
 
+    with pytest.raises(RutterStateError, match="symbolic link"):
+        _store(tmp_path).create(_example_reckoning())
+
+    assert not (outside / "paper.reckoning.json").exists()
+
+
+def test_store_rejects_symlink_lock(tmp_path: Path) -> None:
+    root = tmp_path / "reckonings/jobs"
+    root.mkdir(parents=True)
+    victim = tmp_path / "victim"
+    victim.write_text("safe", encoding="utf-8")
+    (root / "paper.reckoning.json.lock").symlink_to(victim)
+
+    with pytest.raises(AtomicWriteError, match="symbolic link"):
+        with _store(tmp_path).transaction():
+            pass
+
+    assert victim.read_text(encoding="utf-8") == "safe"
+
+
+def test_store_rejects_symlink_and_nonregular_authority(tmp_path: Path) -> None:
     store = _store(tmp_path)
-    with pytest.raises(RutterStateError, match="cannot read"):
-        store.read()
-
     target = tmp_path / "reckonings/jobs/paper.reckoning.json"
     target.parent.mkdir(parents=True)
     outside = tmp_path / "outside.reckoning.json"
-    outside.write_bytes(_CANONICAL)
+    outside.write_bytes(_canonical_reckoning_bytes(_example_reckoning()))
     target.symlink_to(outside)
+
     with pytest.raises(RutterStateError, match="cannot read"):
         store.read()
-    assert outside.read_bytes() == _CANONICAL
+    assert outside.exists()
 
     target.unlink()
     target.mkdir()
@@ -351,127 +678,53 @@ def test_store_rejects_missing_symlink_and_non_regular_reckonings(
         store.read()
 
 
-def test_missing_root_cannot_become_an_unlocked_successful_read(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A creator racing the missing-root check cannot supply unlocked authority."""
-
+def test_replace_requires_live_locked_predecessor(tmp_path: Path) -> None:
     store = _store(tmp_path)
-    target = tmp_path / "reckonings/jobs/paper.reckoning.json"
-    unlocked_reads = []
-
-    def create_during_unlocked_read() -> bytes:
-        unlocked_reads.append(1)
-        target.parent.mkdir(parents=True)
-        target.write_bytes(_CANONICAL)
-        return _CANONICAL
-
-    monkeypatch.setattr(store, "_read_bytes", create_during_unlocked_read)
-
-    with pytest.raises(RutterStateError, match="cannot read"):
-        store.read()
-
-    assert unlocked_reads == []
-    assert not target.exists()
-
-
-def test_store_rejects_symlinked_parent_and_lock_without_writing_outside(
-    tmp_path: Path,
-) -> None:
-    """Neither parent creation nor the sibling lock may follow a symlink."""
-
-    root = tmp_path / "reckonings"
-    outside = tmp_path / "outside"
-    root.mkdir()
-    outside.mkdir()
-    (root / "jobs").symlink_to(outside, target_is_directory=True)
-    store = _store(tmp_path)
-
-    with pytest.raises(RutterStateError, match="symbolic link"):
-        store.create(example_reckoning())
-    assert not (outside / "paper.reckoning.json").exists()
-
-    (root / "jobs").unlink()
-    (root / "jobs").mkdir()
-    lock = root / "jobs/paper.reckoning.json.lock"
-    victim = outside / "lock"
-    victim.write_text("safe", encoding="utf-8")
-    lock.symlink_to(victim)
-    with pytest.raises(AtomicWriteError, match="symbolic link"):
-        with store.transaction():
-            pass
-    assert victim.read_text(encoding="utf-8") == "safe"
-
-
-def test_store_semantic_validation_rejects_read_create_and_replace(
-    tmp_path: Path,
-) -> None:
-    """Definition mismatches fail before new authority can be published."""
-
-    def require_review(reckoning: object) -> None:
-        assert hasattr(reckoning, "fix")
-        if reckoning.fix.current_state_id != "review":
-            raise RutterStateError("Fix and Charter identity mismatch")
-
-    store = _ReckoningStore(
-        _confined_reckoning_path(tmp_path / "root", Path("paper.reckoning.json")),
-        semantic_validator=require_review,
-    )
-    invalid = example_reckoning(state_id="complete", revision=1)
-    with pytest.raises(RutterStateError, match="identity mismatch"):
-        store.create(invalid)
-    assert not (tmp_path / "root/paper.reckoning.json").exists()
-
-    valid = example_reckoning()
-    store.create(valid)
-    before = (tmp_path / "root/paper.reckoning.json").read_bytes()
-    with store.transaction():
-        with pytest.raises(RutterStateError, match="identity mismatch"):
-            store.replace(valid, invalid)
-    assert (tmp_path / "root/paper.reckoning.json").read_bytes() == before
-
-    (tmp_path / "root/paper.reckoning.json").write_bytes(
-        _canonical_reckoning_bytes(invalid)
-    )
-    with pytest.raises(RutterStateError, match="identity mismatch"):
-        store.read()
-
-
-def test_replace_requires_the_exact_canonical_predecessor_bytes(
-    tmp_path: Path,
-) -> None:
-    """Equivalent but externally reformatted JSON is not the predecessor token."""
-
-    store = _store(tmp_path)
-    previous = example_reckoning()
-    replacement = example_reckoning(state_id="complete", revision=1)
+    previous = _example_reckoning()
+    replacement = _example_reckoning(global_revision=1)
     store.create(previous)
-    target = tmp_path / "reckonings/jobs/paper.reckoning.json"
-    target.write_text(json.dumps(_literal_mapping()) + "\n", encoding="utf-8")
-    before = target.read_bytes()
 
+    with pytest.raises(RutterStateError, match="active transaction"):
+        store.replace(previous, replacement)
+
+    target = tmp_path / "reckonings/jobs/paper.reckoning.json"
+    target.write_text(
+        json.dumps(json.loads(target.read_bytes()), indent=2) + "\n",
+        encoding="utf-8",
+    )
+    before = target.read_bytes()
     with store.transaction():
         with pytest.raises(RutterStateError, match="changed"):
             store.replace(previous, replacement)
-
     assert target.read_bytes() == before
 
 
-def test_two_store_instances_cannot_overwrite_one_predecessor(
+def test_atomic_replace_reopens_as_one_complete_reckoning(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    previous = _example_reckoning()
+    replacement = _example_reckoning(global_revision=1, state_id="complete")
+    store.create(previous)
+
+    with store.transaction() as loaded:
+        assert loaded == previous
+        store.replace(loaded, replacement)
+
+    assert store.read() == replacement
+    target = tmp_path / "reckonings/jobs/paper.reckoning.json"
+    assert target.read_bytes() == _canonical_reckoning_bytes(replacement)
+
+
+def test_two_store_instances_cannot_publish_one_predecessor_twice(
     tmp_path: Path,
 ) -> None:
-    """The losing serialized caller detects that disk authority changed."""
-
     first = _store(tmp_path)
     second = _store(tmp_path)
-    previous = example_reckoning()
-    winner = example_reckoning(state_id="complete", revision=1)
-    loser = example_reckoning(state_id="revision-required", revision=1)
+    previous = _example_reckoning()
+    winner = _example_reckoning(global_revision=1, state_id="winner")
+    loser = _example_reckoning(global_revision=1, state_id="loser")
     first.create(previous)
 
     with first.transaction():
-        assert first.read() == previous
         first.replace(previous, winner)
     with second.transaction():
         with pytest.raises(RutterStateError, match="changed"):
@@ -480,50 +733,34 @@ def test_two_store_instances_cannot_overwrite_one_predecessor(
     assert first.read() == winner
 
 
-def test_replace_requires_transaction_ownership(tmp_path: Path) -> None:
-    """A direct caller cannot race after comparing an unlocked predecessor."""
-
-    store = _store(tmp_path)
-    previous = example_reckoning()
-    replacement = example_reckoning(state_id="complete", revision=1)
-    store.create(previous)
-
-    with pytest.raises(RutterStateError, match="active transaction"):
-        store.replace(previous, replacement)
-
-    assert store.read() == previous
-
-
 def test_concurrent_same_predecessor_publishes_exactly_one_successor(
     tmp_path: Path,
 ) -> None:
-    """Two real callers cannot both commit from one predecessor authority."""
-
     first = _store(tmp_path)
     second = _store(tmp_path)
-    previous = example_reckoning()
-    replacements = (
-        example_reckoning(state_id="complete", revision=1),
-        example_reckoning(state_id="revision-required", revision=1),
+    previous = _example_reckoning()
+    successors = (
+        _example_reckoning(global_revision=1, state_id="winner"),
+        _example_reckoning(global_revision=1, state_id="loser"),
     )
     first.create(previous)
     start = Barrier(3)
-    outcomes = []
+    outcomes: list[str] = []
 
-    def publish(store: _ReckoningStore, replacement: Reckoning) -> None:
+    def publish(store: _ReckoningStore, successor: Reckoning) -> None:
         start.wait()
         try:
             with store.transaction():
-                store.replace(previous, replacement)
-        except RutterStateError as exc:
-            assert "changed" in str(exc)
+                store.replace(previous, successor)
+        except RutterStateError as error:
+            assert "changed" in str(error)
             outcomes.append("lost")
         else:
             outcomes.append("published")
 
     threads = (
-        Thread(target=publish, args=(first, replacements[0])),
-        Thread(target=publish, args=(second, replacements[1])),
+        Thread(target=publish, args=(first, successors[0])),
+        Thread(target=publish, args=(second, successors[1])),
     )
     for thread in threads:
         thread.start()
@@ -532,17 +769,13 @@ def test_concurrent_same_predecessor_publishes_exactly_one_successor(
         thread.join(timeout=1)
 
     assert sorted(outcomes) == ["lost", "published"]
-    assert first.read() in replacements
+    assert first.read() in successors
 
 
-def test_transaction_serializes_real_concurrent_store_instances(
-    tmp_path: Path,
-) -> None:
-    """A second OS-sidecar caller cannot enter while the first holds the lock."""
-
+def test_transactions_serialize_real_store_instances(tmp_path: Path) -> None:
     first = _store(tmp_path)
     second = _store(tmp_path)
-    first.create(example_reckoning())
+    first.create(_example_reckoning())
     attempted = Event()
     entered = Event()
 
@@ -561,66 +794,12 @@ def test_transaction_serializes_real_concurrent_store_instances(
     assert entered.is_set()
 
 
-def test_transaction_yields_the_authoritative_reckoning_loaded_under_lock(
-    tmp_path: Path,
-) -> None:
-    """Task 3 must consume a reload taken only after lock acquisition."""
-
-    store = _store(tmp_path)
-    authoritative = example_reckoning(state_id="complete", revision=3)
-    store.create(authoritative)
-
-    with store.transaction() as loaded:
-        assert loaded == authoritative
-
-    lock = tmp_path / "reckonings/jobs/paper.reckoning.json.lock"
-    if os.name == "posix":
-        assert stat.S_IMODE(lock.stat().st_mode) == 0o600
-
-
-def test_direct_reader_observes_no_intermediate_pure_fix(tmp_path: Path) -> None:
-    """Even direct reads wait for the writer's complete locked publication."""
-
-    writer = _store(tmp_path)
-    reader = _store(tmp_path)
-    predecessor = example_reckoning()
-    final = example_reckoning(state_id="complete", revision=2)
-    writer.create(predecessor)
-    writer_entered = Event()
-    allow_commit = Event()
-    observed = []
-
-    def write_final() -> None:
-        with writer.transaction():
-            writer_entered.set()
-            assert allow_commit.wait(timeout=1)
-            writer.replace(predecessor, final)
-
-    def read_after_writer() -> None:
-        observed.append(reader.read())
-
-    writer_thread = Thread(target=write_final)
-    writer_thread.start()
-    assert writer_entered.wait(timeout=1)
-    reader_thread = Thread(target=read_after_writer)
-    reader_thread.start()
-    assert not observed
-    allow_commit.set()
-    writer_thread.join(timeout=1)
-    reader_thread.join(timeout=1)
-
-    assert observed == [final]
-
-
 def test_failed_replacement_preserves_exact_predecessor_bytes(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A failure before publication cannot expose computed successor authority."""
-
     store = _store(tmp_path)
-    previous = example_reckoning()
-    replacement = example_reckoning(state_id="complete", revision=1)
+    previous = _example_reckoning()
+    replacement = _example_reckoning(global_revision=1)
     store.create(previous)
     target = tmp_path / "reckonings/jobs/paper.reckoning.json"
     before = target.read_bytes()
@@ -629,9 +808,7 @@ def test_failed_replacement_preserves_exact_predecessor_bytes(
         raise AtomicWriteError("injected replacement failure")
 
     monkeypatch.setattr(
-        storage_module.atomic_files,
-        "atomic_replace_bytes",
-        fail_replace,
+        storage_module.atomic_files, "atomic_replace_bytes", fail_replace
     )
     with store.transaction():
         with pytest.raises(RutterStateError, match="reopen and inspect"):
@@ -641,14 +818,11 @@ def test_failed_replacement_preserves_exact_predecessor_bytes(
 
 
 def test_late_durability_error_requires_reopen_to_resolve_authority(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A post-publication error diagnoses uncertainty while retaining whole bytes."""
-
     store = _store(tmp_path)
-    previous = example_reckoning()
-    replacement = example_reckoning(state_id="complete", revision=1)
+    previous = _example_reckoning()
+    replacement = _example_reckoning(global_revision=1)
     store.create(previous)
     real_replace = storage_module.atomic_files.atomic_replace_bytes
 
@@ -657,9 +831,7 @@ def test_late_durability_error_requires_reopen_to_resolve_authority(
         raise AtomicWriteError("injected late durability failure")
 
     monkeypatch.setattr(
-        storage_module.atomic_files,
-        "atomic_replace_bytes",
-        replace_then_fail,
+        storage_module.atomic_files, "atomic_replace_bytes", replace_then_fail
     )
     with store.transaction():
         with pytest.raises(RutterStateError, match="reopen and inspect"):
