@@ -78,3 +78,6 @@ Stop only when the full report is green or a repair element returns a concrete
 blocked reason. Targeted tests and whole-element tests never establish overall
 green. Machine reports are evidence, not Git authority; machine interfaces do
 not create branches, commit, push, integrate, or clean worktrees.
+
+After the full report is green, **REQUIRED:** read [prevention.md](prevention.md)
+and complete its prevention review before closing the CI repair.
