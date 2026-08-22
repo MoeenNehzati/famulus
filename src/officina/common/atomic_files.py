@@ -872,7 +872,7 @@ _WINDOWS_APIS: tuple[object, object, object] | None = None
 # FileRenameInfoEx and FILE_ID_INFO; LockFileEx and FlushFileBuffers; and
 # handle-based GetSecurityInfo/SetSecurityInfo.
 _WIN_SHARE_ALL = 0x1 | 0x2 | 0x4
-_WIN_DIR_ACCESS = 0x2 | 0x20 | 0x80 | 0x00100000
+_WIN_DIR_ACCESS = 0x2 | 0x20 | 0x40 | 0x80 | 0x00100000
 _WIN_READ_ACCESS = 0x1 | 0x80 | 0x00020000 | 0x00100000
 _WIN_MUTATE_ACCESS = (
     0x1 | 0x2 | 0x4 | 0x80 | 0x00010000 | 0x00020000 | 0x00040000 | 0x00100000

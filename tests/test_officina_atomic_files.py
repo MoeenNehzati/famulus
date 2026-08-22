@@ -957,9 +957,11 @@ def test_windows_file_disposition_boolean_has_native_one_byte_abi() -> None:
 
 def test_windows_directory_handle_requests_relative_rename_target_access() -> None:
     # FileRenameInformation resolves a relative destination by opening its
-    # directory with FILE_ADD_FILE.  A retained RootDirectory handle without
-    # that granted right fails with STATUS_ACCESS_DENIED on Windows.
+    # directory with FILE_ADD_FILE. Replacing an existing destination can also
+    # delete that directory child. A retained RootDirectory handle without
+    # both granted rights fails with STATUS_ACCESS_DENIED on Windows.
     assert atomic_files._WIN_DIR_ACCESS & 0x2
+    assert atomic_files._WIN_DIR_ACCESS & 0x40
 
 
 def test_windows_rename_retries_legacy_handle_relative_class(
