@@ -892,6 +892,8 @@ def test_access_replay_rejects_exact_codex_block_outside_selected_writable_roots
     } == {"codex_access_array_block", "json_array_values"}
 
 
+# famulus-skip: category=platform-contract; reason=Windows st_mode does not represent the secured DACL; alternate=native DACL behavior is covered by atomic-files Windows tests
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX mode preservation contract")
 def test_access_replay_preserves_full_file_mode_on_rewrite(tmp_path: Path) -> None:
     context = _standard_context(tmp_path)
     claude = context.claude_home / "settings.json"

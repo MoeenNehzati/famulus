@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import stat
 from pathlib import Path
 
@@ -37,7 +38,8 @@ def test_access_plan_preserves_foreign_toml_and_crlf(tmp_path: Path) -> None:
     result = config.read_bytes()
     assert b'model = "keep"\r\n' in result
     assert b'  "/foreign", # keep\r\n' in result
-    assert stat.S_IMODE(config.stat().st_mode) == 0o640
+    if os.name != "nt":
+        assert stat.S_IMODE(config.stat().st_mode) == 0o640
     inspection = codex_toml.inspect_access_roots(tmp_path, begin=BEGIN, end=END)
     assert inspection.roots == ("/foreign", "/famulus/logs")
     assert inspection.marker_values == ("/famulus/logs",)

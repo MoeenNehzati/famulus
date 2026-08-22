@@ -178,9 +178,14 @@ def test_restore_postcondition_failure_is_structured(
         report = real_uninstall(**kwargs)
         if broken_postcondition == "policy":
             codex_path = Path(state["codex_config"])
+            raw = codex_path.read_text(encoding="utf-8")
+            foreign_literal = json.dumps(str(state["foreign_codex_root"]))
+            assert foreign_literal in raw
             codex_path.write_text(
-                codex_path.read_text(encoding="utf-8").replace(
-                    str(state["foreign_codex_root"]), str(paths["control"])
+                raw.replace(
+                    foreign_literal,
+                    json.dumps(str(paths["control"])),
+                    1,
                 ),
                 encoding="utf-8",
             )
@@ -875,7 +880,7 @@ def test_authenticated_claude_probe_records_evidence_only_after_real_canary_outc
         target = Path(prompt.split("TARGET=", 1)[1].splitlines()[0])
         if target.parent == Path(state["allowed_roots"][0]):
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text("famulus assistant access probe\n", encoding="utf-8")
+            target.write_bytes(b"famulus assistant access probe\n")
             return subprocess.CompletedProcess(
                 argv, 0, _claude_event_stream(target, denied=False), ""
             )

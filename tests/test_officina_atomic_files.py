@@ -47,6 +47,8 @@ def test_compare_replace_and_delete_reject_changed_preimages(tmp_path: Path) -> 
     assert target.read_bytes() == b"external"
 
 
+# famulus-skip: category=platform-contract; reason=this injects the POSIX descriptor write boundary; alternate=Windows verifies retained handle identity in its native compare-and-replace path
+@pytest.mark.skipif(os.name != "posix", reason="POSIX descriptor implementation contract")
 def test_compare_replace_rejects_leaf_replacement_after_preimage_read(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
