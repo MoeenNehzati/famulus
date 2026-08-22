@@ -119,7 +119,7 @@ class DevLinkHooksTests(unittest.TestCase):
                 self.assertEqual(module.dispatcher_available(), (True, []))
             finally:
                 shutil.which = original_which
-            self.assertEqual(module._REPO_ROOT, resources)
+            self.assertEqual(module._REPO_ROOT, resources.resolve())
 
     def test_development_hook_binding_uses_exact_checkout_without_repository_walking(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

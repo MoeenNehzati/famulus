@@ -245,6 +245,7 @@ def test_run_writes_durable_default_without_touching_shell_rc(tmp_path):
     rc_file.write_text("")
 
     launchers.run(
+        environ={},
         repo_root=repo_root,
         agents=["assistant"],
         home=tmp_path / "home",
@@ -257,7 +258,18 @@ def test_run_writes_durable_default_without_touching_shell_rc(tmp_path):
     )
 
     assert rc_file.read_text() == ""
-    config = tmp_path / "home" / ".config" / "famulus" / "launchers.json"
+    if sys.platform == "darwin":
+        config = (
+            tmp_path
+            / "home"
+            / "Library"
+            / "Application Support"
+            / "Famulus"
+            / "config"
+            / "launchers.json"
+        )
+    else:
+        config = tmp_path / "home" / ".config" / "famulus" / "launchers.json"
     assert '"default_backend": "codex"' in config.read_text()
 
 

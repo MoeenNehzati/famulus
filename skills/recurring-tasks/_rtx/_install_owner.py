@@ -150,7 +150,7 @@ def require_ownership(
     # the temp directory which is then deleted; an installation recorded as
     # owned by it points at a path that is about to stop existing, and the
     # health check would be pointing there too.
-    if live_install and Path(skill_dir).is_relative_to(
+    if live_install and Path(skill_dir).resolve(strict=False).is_relative_to(
         Path(tempfile.gettempdir()).resolve()
     ):
         raise NotTheOwnerError(

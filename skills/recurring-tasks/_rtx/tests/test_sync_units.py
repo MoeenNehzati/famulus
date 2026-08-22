@@ -455,3 +455,31 @@ def test_sync_from_a_temporary_copy_leaves_the_real_crontab_alone(
         pass
     else:
         raise AssertionError("a mirrored checkout must not be allowed to sync")
+
+
+# famulus-skip: category=platform-contract; reason=the regression exercises POSIX temporary-directory symlink aliases; alternate=Windows ownership tests cover native path handling
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX temporary path alias")
+def test_temporary_path_alias_cannot_claim_live_install(monkeypatch, tmp_path):
+    """A logical temp path must be compared by physical identity.
+
+    macOS exposes the same temporary tree through ``/var`` and ``/private/var``.
+    Comparing one unresolved spelling with the other resolved spelling let a
+    disposable repository mirror pass the live-install ownership gate.
+    """
+    from .. import _install_owner as install_owner
+
+    physical_temp = tmp_path / "physical-temp"
+    physical_temp.mkdir()
+    logical_temp = tmp_path / "logical-temp"
+    logical_temp.symlink_to(physical_temp, target_is_directory=True)
+    monkeypatch.setattr(
+        install_owner.tempfile, "gettempdir", lambda: str(logical_temp)
+    )
+
+    with pytest.raises(install_owner.NotTheOwnerError):
+        install_owner.require_ownership(
+            unit_dir=tmp_path / "units",
+            skill_dir=logical_temp / "mirror" / "_rtx",
+            registrations_present=False,
+            live_install=True,
+        )

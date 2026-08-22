@@ -20,6 +20,13 @@ from _schedule_backend._linux_registration_check import (  # noqa: E402
 import _install_owner as install_owner  # noqa: E402
 
 
+def _runtime_resolver(root: Path) -> Path:
+    resolver = root / "runtime" / "launch.py"
+    resolver.parent.mkdir(parents=True, exist_ok=True)
+    resolver.touch()
+    return resolver
+
+
 def _context(unit_dir: Path) -> ScheduleContext:
     return ScheduleContext(
         skill_dir=SKILL_DIR,
@@ -27,6 +34,7 @@ def _context(unit_dir: Path) -> ScheduleContext:
         log_dir=SKILL_DIR / "logs",
         unit_dir=unit_dir,
         live=False,
+        runtime_resolver=_runtime_resolver(unit_dir),
     )
 
 
@@ -131,6 +139,7 @@ def test_managed_unit_survives_removed_skill_executor(tmp_path):
         log_dir=absent / "logs",
         unit_dir=tmp_path / "units",
         live=False,
+        runtime_resolver=_runtime_resolver(tmp_path),
     )
     job = _job()
     backend.sync([job], context)
