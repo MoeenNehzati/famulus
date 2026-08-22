@@ -33,17 +33,45 @@ domain as the thing it describes: restore both, lose both, move both together.
 from __future__ import annotations
 
 import json
+import ntpath
 import os
+import sys
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 # Kept outside the ``ai-*.timer``/``ai-*.service`` shapes the backends glob when
 # they sweep away disabled jobs, so the record is never mistaken for a
 # registration and deleted with one.
 RECORD_NAME = "install-owner.json"
 _SCHEMA_VERSION = 2
+
+
+def _windows_path_parts(value: str | Path) -> tuple[str, ...]:
+    """Canonical Windows components after removing an extended namespace."""
+    text = str(value)
+    folded = text.casefold()
+    if folded.startswith("\\\\?\\unc\\"):
+        text = "\\\\" + text[8:]
+    elif folded.startswith("\\\\?\\"):
+        text = text[4:]
+    normalized = ntpath.normcase(ntpath.normpath(text))
+    return PureWindowsPath(normalized).parts
+
+
+def _path_is_within(
+    candidate: str | Path, root: str | Path, *, platform: str = sys.platform
+) -> bool:
+    """Component-wise containment for already-resolved host paths."""
+    if platform == "win32":
+        candidate_parts = _windows_path_parts(candidate)
+        root_parts = _windows_path_parts(root)
+        return (
+            len(candidate_parts) >= len(root_parts)
+            and candidate_parts[: len(root_parts)] == root_parts
+        )
+    return Path(candidate).is_relative_to(Path(root))
 
 
 @dataclass(frozen=True)
@@ -150,9 +178,9 @@ def require_ownership(
     # the temp directory which is then deleted; an installation recorded as
     # owned by it points at a path that is about to stop existing, and the
     # health check would be pointing there too.
-    if live_install and Path(skill_dir).resolve(strict=False).is_relative_to(
-        Path(tempfile.gettempdir()).resolve()
-    ):
+    resolved_skill_dir = Path(skill_dir).resolve(strict=False)
+    resolved_temp_root = Path(tempfile.gettempdir()).resolve()
+    if live_install and _path_is_within(resolved_skill_dir, resolved_temp_root):
         raise NotTheOwnerError(
             "Refusing to take ownership of the installation from a temporary "
             f"copy of the skill tree ({Path(skill_dir)})."

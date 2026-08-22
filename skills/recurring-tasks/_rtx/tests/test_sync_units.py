@@ -483,3 +483,30 @@ def test_temporary_path_alias_cannot_claim_live_install(monkeypatch, tmp_path):
             registrations_present=False,
             live_install=True,
         )
+
+
+@pytest.mark.parametrize(
+    ("candidate", "temporary_root"),
+    [
+        (
+            r"\\?\C:\Users\runneradmin\AppData\Local\Temp\mirror\_rtx",
+            r"C:\Users\runneradmin\AppData\Local\Temp",
+        ),
+        (
+            r"\\?\UNC\server\share\Temp\mirror\_rtx",
+            r"\\server\share\Temp",
+        ),
+    ],
+)
+def test_temporary_copy_guard_normalizes_windows_extended_namespaces(
+    candidate, temporary_root
+):
+    """Drive and UNC extended namespaces must retain component containment."""
+    from .. import _install_owner as install_owner
+
+    assert install_owner._path_is_within(
+        candidate, temporary_root, platform="win32"
+    )
+    assert not install_owner._path_is_within(
+        temporary_root + "-other", temporary_root, platform="win32"
+    )

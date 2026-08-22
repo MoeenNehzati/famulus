@@ -306,8 +306,9 @@ def test_invoke_skill_uses_selected_home_instead_of_ambient_home(tmp_path, monke
         selected_home / ".local" / "share" / "famulus" / "runtime"
         / "bootstrap" / "resolvers" / "v1" / "launch.py"
     )
-    assert Path(assigned_string(rendered, "RESOLVER")) == expected_resolver
-    assert ambient_home not in expected_resolver.parents
+    rendered_resolver = Path(assigned_string(rendered, "RESOLVER"))
+    assert rendered_resolver == expected_resolver
+    assert ambient_home not in rendered_resolver.parents
 
 
 def test_run_writes_windows_dispatcher_wakeup_and_invoke_skill_launchers(tmp_path, monkeypatch, capsys):

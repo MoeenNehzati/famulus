@@ -89,10 +89,12 @@ def test_records_written_before_run_journals_existed_stay_readable(tmp_path: Pat
     assert "old shape" in shown.stdout
 
 
-def test_timeline_renders_with_a_legacy_windows_console_encoding(tmp_path: Path) -> None:
-    """Plain timeline output must not require Unicode-capable stdout."""
+def test_timeline_escapes_non_cp1252_plain_text_on_a_legacy_console(
+    tmp_path: Path,
+) -> None:
+    """Plain output stays readable when dynamic text exceeds the encoding."""
     logs = tmp_path / "logs"
-    call(MILESTONE, "portable output", logs=logs)
+    call(MILESTONE, "portable output 🙂", logs=logs)
 
     shown = call(
         TIMELINE,
@@ -103,6 +105,30 @@ def test_timeline_renders_with_a_legacy_windows_console_encoding(tmp_path: Path)
 
     assert shown.returncode == 0, shown.stderr
     assert "portable output" in shown.stdout
+    assert r"\U0001f642" in shown.stdout
+
+
+def test_timeline_json_preserves_unicode_with_utf8_and_legacy_output(
+    tmp_path: Path,
+) -> None:
+    """JSON escapes only when required and remains semantically lossless."""
+    logs = tmp_path / "logs"
+    call(MILESTONE, "--run", "unicode-run", "json payload 🙂", logs=logs)
+
+    utf8 = call(TIMELINE, "--run", "unicode-run", "--json", logs=logs)
+    legacy = call(
+        TIMELINE,
+        "--run",
+        "unicode-run",
+        "--json",
+        logs=logs,
+        env_overrides={"PYTHONIOENCODING": "cp1252"},
+    )
+
+    assert utf8.returncode == 0, utf8.stderr
+    assert "🙂" in utf8.stdout
+    assert legacy.returncode == 0, legacy.stderr
+    assert json.loads(legacy.stdout)["events"][0]["doing"] == "json payload 🙂"
 
 
 def test_listing_sessions_ignores_run_journals(tmp_path: Path) -> None:

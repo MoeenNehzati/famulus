@@ -33,6 +33,24 @@ CODEX_SESSIONS = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")) / "s
 RUNS_DIR = "runs"
 
 
+def configure_output(stream) -> None:
+    """Escape only characters the selected console encoding cannot represent."""
+    reconfigure = getattr(stream, "reconfigure", None)
+    if callable(reconfigure):
+        reconfigure(errors="backslashreplace")
+
+
+def json_output(value: object, stream) -> str:
+    """Keep Unicode JSON when writable; otherwise use lossless JSON escapes."""
+    rendered = json.dumps(value, ensure_ascii=False, indent=2)
+    encoding = getattr(stream, "encoding", None) or "utf-8"
+    try:
+        rendered.encode(encoding, errors="strict")
+    except (LookupError, UnicodeEncodeError):
+        return json.dumps(value, ensure_ascii=True, indent=2)
+    return rendered
+
+
 def _writer():
     """The writer owns the run-id rule; importing it keeps one definition.
 
@@ -332,6 +350,8 @@ def render(events: list[dict], slow: float) -> None:
 
 
 def main() -> int:
+    configure_output(sys.stdout)
+    configure_output(sys.stderr)
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("session", nargs="?", help="session id (default: most recent)")
     ap.add_argument("-l", "--list", action="store_true", help="list known sessions")
@@ -353,7 +373,7 @@ def main() -> int:
             print(f"no journal for run {args.run!r} under {LOGS / RUNS_DIR}", file=sys.stderr)
             return 1
         if args.json:
-            print(json.dumps(reconstructed, ensure_ascii=False, indent=2))
+            print(json_output(reconstructed, sys.stdout))
         else:
             render_run(reconstructed)
         return 0
