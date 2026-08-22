@@ -280,7 +280,7 @@ def test_windows_bootstrap_disappearing_after_path_resolution_is_a_prerequisite_
     tmp_path: Path, monkeypatch
 ) -> None:
     disappeared = tmp_path / "python.exe"
-    monkeypatch.setattr(runtime.shutil, "which", lambda name, path: str(disappeared))
+    monkeypatch.setattr(runtime, "_which", lambda *args, **kwargs: str(disappeared))
 
     with pytest.raises(RecurringPrerequisiteError, match="bootstrap.*unreadable"):
         runtime._bootstrap_python("win32", {"PATH": str(tmp_path)})

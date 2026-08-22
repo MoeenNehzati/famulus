@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import stat
 import sys
 from dataclasses import dataclass, field
@@ -138,10 +137,15 @@ def _which(name: str, *, platform: str, environ: Mapping[str, str]) -> str | Non
     if platform == "win32" and not Path(name).suffix:
         extensions = environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD").split(";")
         candidates = tuple(name + extension.lower() for extension in extensions)
-    return next(
-        (match for candidate in candidates if (match := shutil.which(candidate, path=search_path))),
-        None,
-    )
+    for directory in search_path.split(os.pathsep):
+        if not directory:
+            continue
+        root = Path(directory.strip('"'))
+        for candidate in candidates:
+            selected = root / candidate
+            if selected.is_file() and os.access(selected, os.X_OK):
+                return str(selected)
+    return None
 
 
 def _resolve_executable(

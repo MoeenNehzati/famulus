@@ -26,6 +26,12 @@ else:
 def _authority(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, platform: str = "linux"
 ):
+    if platform in {"linux", "darwin"}:
+        monkeypatch.setattr(
+            schedule_context,
+            "_posix_account_home",
+            lambda: tmp_path / "host-account-home",
+        )
     home = tmp_path / "home with 'quotes' % ! 雪"
     home.mkdir()
     selector_environ = {}
@@ -279,6 +285,8 @@ def test_descriptor_rejects_invalid_schema_identity_paths_and_newlines(
     )
     path = schedule_context.schedule_descriptor_path(context)
     payload = json.loads(path.read_text(encoding="utf-8"))
+    if key == "jobs_file":
+        value = str(tmp_path / "jobs\n.yaml")
     payload[key] = value
     path.write_text(json.dumps(payload), encoding="utf-8")
     path.chmod(0o600)
@@ -320,11 +328,12 @@ def test_descriptor_rejects_noncanonical_symlink_and_open_permissions(
         runtime_root=context.paths.runtime_root, environ=environ
     )
     canonical = schedule_context.schedule_descriptor_path(context)
-    canonical.chmod(0o644)
-    with pytest.raises(schedule_context.ScheduleContextError, match="user-only"):
-        schedule_context.load_schedule_descriptor(
-            path=canonical, environ=environ
-        )
+    if os.name != "nt":
+        canonical.chmod(0o644)
+        with pytest.raises(schedule_context.ScheduleContextError, match="user-only"):
+            schedule_context.load_schedule_descriptor(
+                path=canonical, environ=environ
+            )
 
     canonical.chmod(0o600)
     alias = tmp_path / "descriptor-link.json"

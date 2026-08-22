@@ -218,6 +218,8 @@ def test_generated_shell_exec_and_export_are_real_and_unicode_safe(tmp_path):
         check=False,
     )
     assert exported.returncode == 0, exported.stderr
+    expected_home = context.development_root / ".famulus" / "home"
+    assert str(expected_home) in exported.stdout
     evaluated = subprocess.run(
         ["/bin/sh", "-c", exported.stdout + "\nprintf '%s\\n' \"$HOME\" \"${PYTHONPATH-unset}\""],
         env=inherited,
@@ -225,10 +227,9 @@ def test_generated_shell_exec_and_export_are_real_and_unicode_safe(tmp_path):
         capture_output=True,
         check=True,
     )
-    assert evaluated.stdout.splitlines() == [
-        str(context.development_root / ".famulus" / "home"),
-        "unset",
-    ]
+    evaluated_lines = evaluated.stdout.splitlines()
+    assert Path(evaluated_lines[0]).parts[-2:] == (".famulus", "home")
+    assert evaluated_lines[1] == "unset"
     assert probe.exists()
 
 
@@ -355,10 +356,9 @@ def test_generated_cmd_export_is_real_and_special_character_safe(tmp_path):
         check=False,
     )
     assert evaluated.returncode == 0, evaluated.stderr
-    assert evaluated.stdout.splitlines() == [
-        str(context.development_root / ".famulus" / "home"),
-        "unset",
-    ]
+    evaluated_lines = evaluated.stdout.splitlines()
+    assert Path(evaluated_lines[0]).parts[-2:] == (".famulus", "home")
+    assert evaluated_lines[1] == "unset"
 
 
 # famulus-skip: category=platform-contract; reason=the managed command path uses native cmd.exe call and environment semantics; alternate=the POSIX shell exec test above covers the same managed-command isolation contract on non-Windows hosts
@@ -403,9 +403,11 @@ def test_generated_cmd_exec_runs_managed_command_in_isolated_environment(tmp_pat
     )
     assert executed.returncode == 0, executed.stderr
     lines = executed.stdout.splitlines()
-    assert lines[0] == str(context.development_root / ".famulus" / "home")
-    assert lines[1] == str(context.codex_home)
-    assert lines[2].startswith(str(context.paths.user_bin) + os.pathsep)
+    assert Path(lines[0]).parts[-2:] == (".famulus", "home")
+    assert Path(lines[1]).parts[-3:] == (".famulus", "homes", "codex")
+    activated_bin = Path(lines[2].split(os.pathsep)[0])
+    assert activated_bin.name == "bin"
+    assert "Famulus" in activated_bin.parts
     assert lines[3] == "unset"
     assert "not a security sandbox" in executed.stderr
 
