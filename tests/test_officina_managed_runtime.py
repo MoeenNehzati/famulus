@@ -912,7 +912,11 @@ def test_interrupted_resolver_upgrade_preserves_working_old_bundle_and_pointer(
 ):
     runtime_root = tmp_path / "runtime"
     release_dir = runtime_root / "releases" / "old-release"
-    python_bin = release_dir / "venv" / "bin" / "python"
+    python_bin = (
+        release_dir / "venv" / "Scripts" / "python.exe"
+        if os.name == "nt"
+        else release_dir / "venv" / "bin" / "python"
+    )
     python_bin.parent.mkdir(parents=True)
     python_bin.symlink_to(Path(sys.executable).resolve())
     runtime_root.mkdir(exist_ok=True)

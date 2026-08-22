@@ -41,9 +41,12 @@ def test_linux_paths_avoid_documents(monkeypatch, tmp_path):
     _assert_derived_fields(paths)
 
 
-def test_windows_requires_localappdata(monkeypatch, tmp_path):
-    with pytest.raises(RuntimeError):
-        resolve_famulus_paths(platform="win32", home=tmp_path, environ={})
+def test_windows_missing_overrides_use_home_appdata_conventions(tmp_path):
+    paths = resolve_famulus_paths(platform="win32", home=tmp_path, environ={})
+
+    assert paths.data_root == tmp_path / "AppData" / "Local" / "Famulus"
+    assert paths.config_root == tmp_path / "AppData" / "Roaming" / "Famulus"
+    assert paths.state_root == paths.data_root / "state"
 
 
 def test_windows_paths_resolve_under_localappdata(monkeypatch, tmp_path):

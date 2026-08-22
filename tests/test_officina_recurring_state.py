@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from officina.recurring import control, executor, native
+from officina.recurring import control, executor, native, state
 from officina.recurring.jobs import validate_jobs_payload
 from officina.recurring.records import RunRecord, write_record
 from officina.recurring.runtime import ManagedSchedule
@@ -233,6 +233,7 @@ def test_default_jobs_use_structured_backends_and_managed_wakeup_module():
 
 
 def test_cleanup_removes_only_exact_legacy_environment_ownership(tmp_path, monkeypatch):
+    monkeypatch.setattr(state, "sys_platform_linux", lambda: True)
     schedule = _schedule(tmp_path)
     env_file = Path(schedule.environment["HOME"]) / ".config/environment.d/20-ai-agent.conf"
     env_file.parent.mkdir(parents=True)
@@ -245,6 +246,7 @@ def test_cleanup_removes_only_exact_legacy_environment_ownership(tmp_path, monke
 
 
 def test_cleanup_removes_exact_legacy_file_and_manager_value(tmp_path, monkeypatch):
+    monkeypatch.setattr(state, "sys_platform_linux", lambda: True)
     schedule = _schedule(tmp_path)
     env_file = Path(schedule.environment["HOME"]) / ".config/environment.d/20-ai-agent.conf"
     env_file.parent.mkdir(parents=True)

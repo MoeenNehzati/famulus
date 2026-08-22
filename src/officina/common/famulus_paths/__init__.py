@@ -20,7 +20,7 @@ class InvalidFamulusHomeError(FamulusPathsError, ValueError):
 
 
 class FamulusLocalAppDataMissingError(FamulusPathsError, RuntimeError):
-    """Raised when LOCALAPPDATA is required but unset on Windows."""
+    """Compatibility error retained for callers of the former Windows contract."""
 
 
 @dataclass(frozen=True)
@@ -80,16 +80,12 @@ def resolve_famulus_paths(
         state_root = base / "state"
         user_bin = home / ".local" / "bin"
     elif platform == "win32":
-        local_app_data = _environment_root(environ, "LOCALAPPDATA")
-        if not local_app_data:
-            raise FamulusLocalAppDataMissingError(
-                "LOCALAPPDATA is required to resolve Famulus paths on Windows"
-            )
-        app_data = _environment_root(environ, "APPDATA")
-        if not app_data:
-            raise FamulusLocalAppDataMissingError(
-                "APPDATA is required to resolve Famulus paths on Windows"
-            )
+        local_app_data = (
+            _environment_root(environ, "LOCALAPPDATA") or home / "AppData" / "Local"
+        )
+        app_data = (
+            _environment_root(environ, "APPDATA") or home / "AppData" / "Roaming"
+        )
         base = local_app_data / "Famulus"
         data_root = base
         config_root = app_data / "Famulus"

@@ -355,6 +355,8 @@ _ALLOWED_LEFTOVERS = {
     # --no-git-hooks deliberately retains the context manifest entry so a
     # later retry can restore the checkout's previous local hooksPath.
     ".local/state/famulus/install/install-manifest.json",
+    "Library/Application Support/Famulus/state/install/install-manifest.json",
+    "AppData/Local/Famulus/state/install/install-manifest.json",
 }
 
 

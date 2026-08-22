@@ -13,13 +13,6 @@ from .context import (
     resolve_stable_roots,
     validate_development_boundaries,
 )
-from .development_activation import (
-    ActivationError,
-    build_interactive_environment,
-    install_development_activation,
-    main as development_activation_main,
-    verify_managed_commands,
-)
 from .managed_runtime import deployed_resolver_trusted_roots
 from .runtime_pointer import (
     InstalledContextRecord,
@@ -60,18 +53,37 @@ __all__ = [
     "verify_managed_commands",
 ]
 
-_DOCTOR_EXPORTS = {
+_LAZY_EXPORTS = {
+    "ActivationError": (".development_activation", "ActivationError"),
+    "build_interactive_environment": (
+        ".development_activation",
+        "build_interactive_environment",
+    ),
+    "development_activation_main": (".development_activation", "main"),
+    "install_development_activation": (
+        ".development_activation",
+        "install_development_activation",
+    ),
+    "verify_managed_commands": (
+        ".development_activation",
+        "verify_managed_commands",
+    ),
+}
+
+for _doctor_name in (
     "DiagnosticCheck",
     "DiagnosticReport",
     "diagnose_installation",
     "render_diagnostic_json",
     "render_diagnostic_text",
-}
+):
+    _LAZY_EXPORTS[_doctor_name] = (".doctor", _doctor_name)
 
 
 def __getattr__(name: str):
-    if name not in _DOCTOR_EXPORTS:
+    if name not in _LAZY_EXPORTS:
         raise AttributeError(name)
-    value = getattr(import_module(".doctor", __name__), name)
+    module_name, attribute = _LAZY_EXPORTS[name]
+    value = getattr(import_module(module_name, __name__), attribute)
     globals()[name] = value
     return value

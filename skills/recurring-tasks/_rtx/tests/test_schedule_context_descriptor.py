@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import sys
 from pathlib import Path
 
 import pytest
@@ -70,6 +72,8 @@ def _authority(
         executable = backend_bin / name
         executable.write_text("#!/bin/sh\n", encoding="utf-8")
         executable.chmod(0o700)
+        if platform == "win32":
+            shutil.copy2(sys.executable, backend_bin / f"{name}.exe")
     if platform == "win32":
         python = backend_bin / "python"
         python.write_text("#!/bin/sh\n", encoding="utf-8")

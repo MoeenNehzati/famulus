@@ -36,7 +36,8 @@ interfaces:
             access: read
         environ:
           description: Explicit environment mapping containing any XDG, APPDATA,
-            LOCALAPPDATA, or assistant-home overrides selected by the caller.
+            LOCALAPPDATA, or assistant-home overrides selected by the caller. Missing
+            platform path overrides use conventions below the explicit home.
           required: true
           sensitivity: user-private
           type:
@@ -95,11 +96,6 @@ interfaces:
         outputs: []
         effects: []
         caller_action: Supply an absolute home directory path.
-      - id: missing-localappdata
-        class: error
-        outputs: []
-        effects: []
-        caller_action: Ensure LOCALAPPDATA is set before resolving paths on Windows.
       execution:
         state_effect: read-only
         lifecycle: finite

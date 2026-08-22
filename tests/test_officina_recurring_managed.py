@@ -36,6 +36,12 @@ sys.path.insert(0, str(_MANAGED_CONTROL_ROOT))
 import _managed_control as managed_control
 
 
+@pytest.fixture(autouse=True)
+def _portable_simulated_uid(monkeypatch: pytest.MonkeyPatch) -> None:
+    if not hasattr(native.os, "getuid"):
+        monkeypatch.setattr(native.os, "getuid", lambda: 1000, raising=False)
+
+
 def _managed_schedule(tmp_path: Path) -> ManagedSchedule:
     backend = Path(sys.executable).resolve()
     descriptor = tmp_path / "config" / "schedule-descriptor.json"

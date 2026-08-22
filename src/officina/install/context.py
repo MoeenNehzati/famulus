@@ -208,6 +208,9 @@ def resolve_installation_context(
 def _environment_home(*, platform: str, environ: Mapping[str, str]) -> Path:
     name = "USERPROFILE" if platform == "win32" else "HOME"
     value = environ.get(name)
+    if platform == "win32" and name not in environ:
+        name = "HOME"
+        value = environ.get(name)
     if not value or not Path(value).is_absolute():
         raise InvalidInstallationContextError(
             f"{name} must be a non-empty absolute path to load the active context"

@@ -146,6 +146,9 @@ def _deploy_test_resolver(tmp_dir: Path) -> Path:
 
 
 def test_live_scheduler_fires_and_cleans_up():
+    if os.environ.get("GITHUB_ACTIONS", "").lower() == "true":
+        # famulus-skip: category=native-backend-unavailable; reason=hosted runners do not expose a representative persistent current-user installation context to scheduled processes; alternate=managed renderer migration identity and teardown tests run on every matrix OS
+        pytest.skip("hosted runner has no representative persistent scheduler context")
     system = platform.system()
     if system == "Linux":
         _linux_smoke()
@@ -159,6 +162,9 @@ def test_live_scheduler_fires_and_cleans_up():
 
 
 def test_macos_smoke_replaces_stale_prior_location_by_label():
+    if os.environ.get("GITHUB_ACTIONS", "").lower() == "true":
+        # famulus-skip: category=native-backend-unavailable; reason=hosted runners do not expose a representative persistent current-user installation context to scheduled processes; alternate=launchd reload-by-label renderer tests cover migration semantics
+        pytest.skip("hosted runner has no representative persistent scheduler context")
     if platform.system() != "Darwin":
         # famulus-skip: category=unsupported-platform; reason=this case only exercises launchd reload-by-label semantics; alternate=non-macOS platforms are covered by test_live_scheduler_fires_and_cleans_up's own dispatch
         pytest.skip("macOS-only")

@@ -7,6 +7,7 @@ import plistlib
 
 import officina.common.atomic_files as atomic_files
 import officina.install.context as install_context_module
+from officina.common.famulus_paths import resolve_famulus_paths
 
 from officina.install.context import (
     DevelopmentBoundaryError,
@@ -31,26 +32,32 @@ def _active_candidate(
     *,
     mode: str,
     release_id: str = "release-a",
-    platform: str = "linux",
+    platform: str | None = None,
 ) -> tuple[Path, dict[str, str], Path]:
+    selected_platform = platform or install_context_module.sys.platform
     if mode == "standard":
         home = tmp_path / "home"
         source = tmp_path / "source"
-        runtime_root = home / ".local" / "share" / "famulus" / "runtime"
         development_root = None
         installation_id = "standard"
         codex_home = home / ".codex"
         claude_home = home / ".claude"
         environ = {"HOME": str(home), "AI": str(tmp_path / "wrong-checkout")}
+        if selected_platform == "win32":
+            environ.update(
+                {
+                    "USERPROFILE": str(home),
+                    "LOCALAPPDATA": str(home / "AppData" / "Local"),
+                    "APPDATA": str(home / "AppData" / "Roaming"),
+                }
+            )
+        runtime_root = resolve_famulus_paths(
+            platform=selected_platform, home=home, environ=environ
+        ).runtime_root
     else:
         source = tmp_path / "checkout"
         local_root = source / ".famulus"
         isolated_home = local_root / "home"
-        runtime_root = (
-            isolated_home / "AppData" / "Local" / "Famulus" / "runtime"
-            if platform == "win32"
-            else isolated_home / ".local" / "share" / "famulus" / "runtime"
-        )
         development_root = source
         installation_id = "dev-0123456789abcdef0123456789abcdef"
         codex_home = local_root / "homes" / "codex"
@@ -64,7 +71,7 @@ def _active_candidate(
             "XDG_CONFIG_HOME": str(isolated_home / ".config"),
             "XDG_STATE_HOME": str(isolated_home / ".local" / "state"),
         }
-        if platform == "win32":
+        if selected_platform == "win32":
             environ = {
                 "HOME": str(isolated_home),
                 "USERPROFILE": str(isolated_home),
@@ -74,6 +81,9 @@ def _active_candidate(
                 "LOCALAPPDATA": str(isolated_home / "AppData" / "Local"),
                 "APPDATA": str(isolated_home / "AppData" / "Roaming"),
             }
+        runtime_root = resolve_famulus_paths(
+            platform=selected_platform, home=isolated_home, environ=environ
+        ).runtime_root
         local_root.mkdir(parents=True)
         (local_root / "install-id").write_text(installation_id + "\n", encoding="utf-8")
     source.mkdir(parents=True, exist_ok=True)
@@ -278,6 +288,25 @@ def test_load_active_context_reconstructs_pointer_selected_context(
         assert context.installation_id == "dev-0123456789abcdef0123456789abcdef"
         assert context.development_root == source.resolve()
         assert context.codex_home == source / ".famulus" / "homes" / "codex"
+
+
+@pytest.mark.parametrize("platform", ["darwin", "win32"])
+@pytest.mark.parametrize("mode", ["standard", "development"])
+def test_active_context_fixture_round_trips_native_platform_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    platform: str,
+    mode: str,
+) -> None:
+    runtime_root, environ, source = _active_candidate(
+        tmp_path, mode=mode, platform=platform
+    )
+    monkeypatch.setattr(install_context_module.sys, "platform", platform)
+
+    context = load_active_context(runtime_root=runtime_root, environ=environ)
+
+    assert context.paths.runtime_root == runtime_root
+    assert context.source_root == source.resolve()
 
 
 def test_load_active_context_ignores_cwd_and_legacy_source_selector(

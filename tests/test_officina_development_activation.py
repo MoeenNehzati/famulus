@@ -240,6 +240,8 @@ def test_export_failure_emits_no_partial_stdout(tmp_path):
         python_executable=Path(sys.executable),
         managed_commands=("missing-command",),
     )
+    if os.name == "nt":
+        bootstrap = bootstrap.with_suffix(".cmd")
     result = subprocess.run(
         [str(bootstrap), "export", "--shell", "sh"],
         text=True,
