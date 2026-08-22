@@ -58,13 +58,30 @@ class RecordingManifest:
         self.entries.append((kind, fields))
 
 
+def _isolated_standard_environment(home: Path) -> dict[str, str]:
+    environ = {"HOME": str(home)}
+    if agent_module.sys.platform == "win32":
+        environ.update(
+            {
+                "USERPROFILE": str(home),
+                "LOCALAPPDATA": str(home / "AppData" / "Local"),
+                "APPDATA": str(home / "AppData" / "Roaming"),
+            }
+        )
+    return environ
+
+
 def _write_active_standard_launcher(tmp_path: Path) -> tuple[InstallationContext, Path]:
     source = Path(__file__).resolve().parents[1]
     context = InstallationContext(
         mode="standard",
         source_root=source,
         development_root=None,
-        paths=resolve_famulus_paths(platform=agent_module.sys.platform, home=tmp_path, environ={}),
+        paths=resolve_famulus_paths(
+            platform=agent_module.sys.platform,
+            home=tmp_path,
+            environ=_isolated_standard_environment(tmp_path),
+        ),
         codex_home=tmp_path / ".codex",
         claude_home=tmp_path / ".claude",
         installation_id="standard",
@@ -174,9 +191,9 @@ def test_fresh_launcher_accepts_active_generation_interpreter_trust(
         "XDG_CACHE_HOME",
     ):
         environ.pop(name, None)
+    environ.update(_isolated_standard_environment(tmp_path))
     environ.update(
         {
-            "HOME": str(tmp_path),
             "PATH": os.pathsep.join((str(fake_bin), environ.get("PATH", ""))),
             "PYTHONPATH": str(repo_root / "src"),
         }
@@ -240,7 +257,8 @@ def test_fresh_launcher_rejects_relative_interpreter_trust(tmp_path: Path) -> No
         "XDG_CACHE_HOME",
     ):
         environ.pop(name, None)
-    environ.update({"HOME": str(tmp_path), "PYTHONPATH": str(repo_root / "src")})
+    environ.update(_isolated_standard_environment(tmp_path))
+    environ["PYTHONPATH"] = str(repo_root / "src")
 
     result = subprocess.run(
         [
@@ -474,7 +492,8 @@ def test_production_agent_launches_use_active_context_and_durable_backend_withou
         "CLAUDE_CONFIG_DIR",
     ):
         monkeypatch.delenv(name, raising=False)
-    monkeypatch.setenv("HOME", str(tmp_path))
+    for name, value in _isolated_standard_environment(tmp_path).items():
+        monkeypatch.setenv(name, value)
     launched: list[list[str]] = []
     monkeypatch.setattr(agent_module, "_launch_command", lambda command: launched.append(command) or 0)
 

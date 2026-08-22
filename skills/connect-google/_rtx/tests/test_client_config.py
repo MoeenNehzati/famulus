@@ -20,6 +20,17 @@ assert SPEC.loader is not None
 SPEC.loader.exec_module(client_config)
 
 
+@pytest.fixture(autouse=True)
+def isolate_windows_famulus_roots(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Keep explicit test homes independent from the runner account."""
+    if sys.platform == "win32":
+        home = tmp_path / "home"
+        monkeypatch.setenv("APPDATA", str(home / "AppData" / "Roaming"))
+        monkeypatch.setenv("LOCALAPPDATA", str(home / "AppData" / "Local"))
+
+
 def desktop_client(client_id: str = "cid") -> dict[str, object]:
     return {
         "installed": {

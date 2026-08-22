@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import os
 import sys
@@ -18,6 +19,19 @@ from .._install_launcher._base_launcher import LauncherInstallerBase
 
 RUNTIME_ROOT = Path(__file__).resolve().parents[1]
 from .install_test_utils import assert_default_bin_dir_matches_famulus_paths
+
+
+def assigned_string(source: str, name: str) -> str:
+    """Read one generated module constant without comparing escaped source."""
+    for statement in ast.parse(source).body:
+        if (
+            isinstance(statement, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == name for target in statement.targets)
+            and isinstance(statement.value, ast.Constant)
+            and isinstance(statement.value.value, str)
+        ):
+            return statement.value.value
+    raise AssertionError(f"generated source has no string assignment for {name}")
 
 
 def write_runtime_dependencies_manifest(repo_root: Path, python_packages: list[str]) -> None:
@@ -257,8 +271,9 @@ def test_development_scaffold_embeds_only_the_selected_context_runtime_root(
 
     dispatcher_text = (context.paths.user_bin / "dispatcher").read_text(encoding="utf-8")
     invoke_text = (context.paths.user_bin / "invoke-skill").read_text(encoding="utf-8")
-    assert str(context.paths.runtime_root) in dispatcher_text
-    assert str(context.paths.runtime_root) in invoke_text
+    expected_resolver = context.paths.runtime_root / "bootstrap" / "resolvers" / "v1" / "launch.py"
+    assert Path(assigned_string(dispatcher_text, "RESOLVER")) == expected_resolver
+    assert Path(assigned_string(invoke_text, "RESOLVER")) == expected_resolver
     assert hostile["XDG_DATA_HOME"] not in dispatcher_text
     assert hostile["XDG_DATA_HOME"] not in invoke_text
     assert hostile["XDG_DATA_HOME"] not in capsys.readouterr().out
@@ -287,8 +302,12 @@ def test_invoke_skill_uses_selected_home_instead_of_ambient_home(tmp_path, monke
     )
 
     rendered = (bin_dir / "invoke-skill").read_text(encoding="utf-8")
-    assert str(selected_home / ".local" / "share" / "famulus" / "runtime") in rendered
-    assert str(ambient_home) not in rendered
+    expected_resolver = (
+        selected_home / ".local" / "share" / "famulus" / "runtime"
+        / "bootstrap" / "resolvers" / "v1" / "launch.py"
+    )
+    assert Path(assigned_string(rendered, "RESOLVER")) == expected_resolver
+    assert ambient_home not in expected_resolver.parents
 
 
 def test_run_writes_windows_dispatcher_wakeup_and_invoke_skill_launchers(tmp_path, monkeypatch, capsys):

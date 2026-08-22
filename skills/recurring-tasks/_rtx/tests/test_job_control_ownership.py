@@ -17,11 +17,6 @@ _JOBS = """jobs:
 """
 
 
-class _InstalledBackend:
-    def registrations_present(self, context):
-        return True
-
-
 def test_enable_from_a_non_owning_checkout_leaves_jobs_yaml_untouched(
     monkeypatch, tmp_path
 ):
@@ -51,8 +46,14 @@ def test_enable_from_a_non_owning_checkout_leaves_jobs_yaml_untouched(
         installation_id=installation_id,
     )
     monkeypatch.setattr(job_control, "schedule_context", lambda _: context)
+
+    class ExistingRegistrationBackend:
+        def registrations_present(self, selected_context):
+            assert selected_context is context
+            return True
+
     monkeypatch.setattr(
-        job_control, "platform_schedule_backend", lambda: _InstalledBackend()
+        job_control, "platform_schedule_backend", ExistingRegistrationBackend
     )
 
     with pytest.raises(install_owner.NotTheOwnerError):

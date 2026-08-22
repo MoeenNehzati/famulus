@@ -19,7 +19,10 @@ from unittest.mock import patch
 import pytest
 from test_support.git_repository import GitTestRepository
 
-from install_test_utils import REPO_ROOT, can_create_symlink
+if __package__ and __package__.count('.') >= 1:
+    from .install_test_utils import REPO_ROOT, can_create_symlink
+else:
+    from install_test_utils import REPO_ROOT, can_create_symlink
 
 SCRIPTS = REPO_ROOT / "skills" / "install-assistant-tools" / "_rtx"
 sys.path.insert(0, str(SCRIPTS))
@@ -176,10 +179,9 @@ def test_manifest_records_file_and_block_content_identity(tmp_path: Path):
     generated = tmp_path / "generated.json"
     generated.write_text('{"owned": true}\n', encoding="utf-8")
     rc = tmp_path / ".bashrc"
-    rc.write_text(
-        "user\n# >>> assistant-tools >>>\nexport AI=/checkout\n"
-        "# <<< assistant-tools <<<\n",
-        encoding="utf-8",
+    rc.write_bytes(
+        b"user\n# >>> assistant-tools >>>\nexport AI=/checkout\n"
+        b"# <<< assistant-tools <<<\n"
     )
     manifest = Manifest(tmp_path / "manifest.json")
 
@@ -310,7 +312,10 @@ def test_setup_symlinks_records_links(tmp_path: Path):
         sys.modules.update(saved_llmhooks)
     recorded = {e["path"] for e in manifest.entries if e["kind"] == "symlink"}
     assert str(claude_home / "skills") in recorded
-    assert str(claude_home / "CLAUDE.md") in recorded
+    if sys.platform != "win32":
+        assert str(claude_home / "CLAUDE.md") in recorded
+    else:
+        assert str(claude_home / "CLAUDE.md") not in recorded
 
 
 def test_setup_symlinks_dry_run_records_nothing(tmp_path: Path):

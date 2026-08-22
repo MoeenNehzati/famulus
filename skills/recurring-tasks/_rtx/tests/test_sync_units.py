@@ -457,7 +457,7 @@ def test_sync_from_a_temporary_copy_leaves_the_real_crontab_alone(
         raise AssertionError("a mirrored checkout must not be allowed to sync")
 
 
-# famulus-skip: category=platform-contract; reason=the regression exercises POSIX temporary-directory symlink aliases; alternate=Windows ownership tests cover native path handling
+# famulus-skip: category=platform-contract; reason=the regression exercises POSIX temporary-directory symlink aliases; alternate=Windows extended-namespace regressions cover native path aliases
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX temporary path alias")
 def test_temporary_path_alias_cannot_claim_live_install(monkeypatch, tmp_path):
     """A logical temp path must be compared by physical identity.

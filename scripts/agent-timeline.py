@@ -182,7 +182,7 @@ def render_run(reconstructed: dict) -> None:
         ts = at(rec, "ts")
         clock = ts.strftime("%H:%M:%S")
         offset = f"+{int((ts - start).total_seconds()):>6}s"
-        print(f"{clock} {offset}  {origin.ljust(width)}  ▸ {oneline(rec.get('doing', ''), 200)}")
+        print(f"{clock} {offset}  {origin.ljust(width)}  > {oneline(rec.get('doing', ''), 200)}")
         # The typed line comes first: it is what recovery reads, and `prev` is
         # the human gloss on it.
         tags = " ".join(
@@ -198,12 +198,12 @@ def render_run(reconstructed: dict) -> None:
             print(indent + line)
     print(
         f"\n{len(events)} events from {len(reconstructed['sessions'])} session(s)"
-        f" — {reconstructed['path']}"
+        f" - {reconstructed['path']}"
     )
     if reconstructed["malformed"]:
         # Part of the report, not an operational error: a damaged journal is a
         # finding the reader must see next to what did survive.
-        print(f"{len(reconstructed['malformed'])} malformed line(s) — journal is damaged")
+        print(f"{len(reconstructed['malformed'])} malformed line(s) - journal is damaged")
         for bad in reconstructed["malformed"]:
             print(f"  line {bad['line']}: {bad['reason']}")
 
@@ -315,17 +315,17 @@ def render(events: list[dict], slow: float) -> None:
     for ev in events:
         gap = (ev["ts"] - prev_ts).total_seconds() if prev_ts else 0.0
         prev_ts = ev["ts"]
-        mark = " «" if gap >= slow else ""
+        mark = " [slow]" if gap >= slow else ""
         clock = ev["ts"].strftime("%H:%M:%S")
         offset = f"+{int((ev['ts'] - start).total_seconds()):>5}s"
         agent = ev["agent"][:width].ljust(width)
-        lead = "▸ " if ev["kind"] == "milestone" else "  "
+        lead = "> " if ev["kind"] == "milestone" else "  "
         print(f"{clock} {offset}  {agent}  {lead}{ev['text']}{mark}")
         if ev["kind"] == "milestone" and ev.get("prev"):
             print(f"{' ' * (len(clock) + len(offset) + width + 6)}prev: {ev['prev']}")
     span = (events[-1]["ts"] - start).total_seconds()
     tools = sum(1 for e in events if e["kind"] == "tool")
-    print(f"\n{len(events)} events over {span:.0f}s — {tools} tool calls, {len(events) - tools} milestones")
+    print(f"\n{len(events)} events over {span:.0f}s - {tools} tool calls, {len(events) - tools} milestones")
     roots = sorted({e["cwd"] for e in events if e.get("cwd")})
     if roots:
         print("worked in: " + ", ".join(roots))

@@ -25,7 +25,7 @@ TIMELINE = SCRIPTS / "agent-timeline.py"
 
 
 def call(script: Path, *args: str, logs: Path, session: str = "sess-a", thread: str | None = None,
-         cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+         cwd: Path | None = None, env_overrides: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     """Invoke a helper the way a shell on PATH would, with a private log root."""
     env = dict(os.environ)
     env["ASSISTANT_LOGS"] = str(logs)
@@ -35,6 +35,8 @@ def call(script: Path, *args: str, logs: Path, session: str = "sess-a", thread: 
         env.pop("CODEX_THREAD_ID", None)
     else:
         env["CODEX_THREAD_ID"] = thread
+    if env_overrides:
+        env.update(env_overrides)
     return subprocess.run(
         [sys.executable, str(script), *args],
         env=env, capture_output=True, text=True, cwd=str(cwd or SCRIPTS.parent),
@@ -85,6 +87,22 @@ def test_records_written_before_run_journals_existed_stay_readable(tmp_path: Pat
 
     assert shown.returncode == 0, shown.stderr
     assert "old shape" in shown.stdout
+
+
+def test_timeline_renders_with_a_legacy_windows_console_encoding(tmp_path: Path) -> None:
+    """Plain timeline output must not require Unicode-capable stdout."""
+    logs = tmp_path / "logs"
+    call(MILESTONE, "portable output", logs=logs)
+
+    shown = call(
+        TIMELINE,
+        "sess-a",
+        logs=logs,
+        env_overrides={"PYTHONIOENCODING": "cp1252"},
+    )
+
+    assert shown.returncode == 0, shown.stderr
+    assert "portable output" in shown.stdout
 
 
 def test_listing_sessions_ignores_run_journals(tmp_path: Path) -> None:

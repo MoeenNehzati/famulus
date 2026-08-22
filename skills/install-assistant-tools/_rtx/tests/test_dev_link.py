@@ -37,7 +37,10 @@ if __package__ and __package__.count('.') >= 1:
     from .._state_record import Manifest
 else:
     from _state_record import Manifest  # noqa: E402
-from install_test_utils import can_create_symlink  # noqa: E402
+if __package__ and __package__.count('.') >= 1:
+    from .install_test_utils import can_create_symlink
+else:
+    from install_test_utils import can_create_symlink  # noqa: E402
 if __package__ and __package__.count('.') >= 1:
     from .._fs_links import default_bin_dir
 else:
@@ -155,16 +158,17 @@ class SetupSymlinksTests(unittest.TestCase):
                 claude_home / "skills": repo_root / "skills",
                 claude_home / "references": repo_root / "references",
                 claude_home / "agents": repo_root / "agents",
-                claude_home / "CLAUDE.md": repo_root / "CLAUDE.md",
             }
             codex_expected = {
                 codex_home / "references": repo_root / "references",
                 codex_home / "agents": repo_root / "agents",
-                codex_home / "AGENTS.md": (repo_root / "CLAUDE.md").resolve(),
                 codex_home / "assistant.config.toml": repo_root / "profiles" / "assistant.config.toml",
                 codex_home / "collab.config.toml": repo_root / "profiles" / "collab.config.toml",
                 codex_home / "coauthor.config.toml": repo_root / "profiles" / "coauthor.config.toml",
             }
+            if sys.platform != "win32":
+                claude_expected[claude_home / "CLAUDE.md"] = repo_root / "CLAUDE.md"
+                codex_expected[codex_home / "AGENTS.md"] = (repo_root / "CLAUDE.md").resolve()
 
             for path, target in claude_expected.items():
                 self.assertTrue(path.is_symlink(), path)
