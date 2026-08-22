@@ -23,6 +23,12 @@ exports:
       allow_all_modules: true
       allowed_callers: []
     source_interface: install-assistant-tools.source.gateway.interface.default
+  install-assistant-tools.interface.setup:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: install-assistant-tools.source.gateway.interface.default
+    setup_requires_setup_of: []
 gateway:
   language: Markdown
   path: SKILL.md

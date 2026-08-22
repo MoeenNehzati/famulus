@@ -18,8 +18,13 @@ Uses Interfaces:
 - `install-assistant-tools.source.gateway -> install-assistant-tools._rtx.interface.scripts-launchers@3`
 - `install-assistant-tools.source.gateway -> install-assistant-tools._rtx.interface.scripts-scaffold@2`
 
+Setup Requires Setup Of: none
+Setup Order:
+1. `install-assistant-tools.interface.setup`
+
 Public Interfaces:
 - `install-assistant-tools.interface.default`
+- `install-assistant-tools.interface.setup`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
@@ -28,6 +33,7 @@ Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
 - `install-assistant-tools.interface.default` — Primary LLM-facing skill instructions.
+- `install-assistant-tools.interface.setup` — Primary LLM-facing skill instructions.
 <!-- END BLUEPRINT INTERFACES -->
 # Install Assistant Tools
 

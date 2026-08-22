@@ -25,10 +25,15 @@ Uses Interfaces:
 - `connect-google.source.instructions-connect-services -> connect-google._rtx.interface.install-client@1`
 - `connect-google.source.instructions-create-client -> connect-google.source.instructions-connect-services.interface.connect-services@1`
 
+Setup Requires Setup Of: none
+Setup Order:
+1. `connect-google.interface.setup`
+
 Public Interfaces:
 - `connect-google.interface.connect-services`
 - `connect-google.interface.create-client`
 - `connect-google.interface.default`
+- `connect-google.interface.setup`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
@@ -39,6 +44,7 @@ These interfaces are documented prompt surfaces. They are not executed through `
 - `connect-google.interface.connect-services` — Install or reuse a Google Desktop OAuth client and hand selected Google services to their owning skills.
 - `connect-google.interface.create-client` — Guide a user through creating and privately downloading a Google Desktop OAuth client for selected Famulus services.
 - `connect-google.interface.default` — Route Google OAuth-client preparation according to whether a valid Desktop client is already installed.
+- `connect-google.interface.setup` — Route Google OAuth-client preparation according to whether a valid Desktop client is already installed.
 <!-- END BLUEPRINT INTERFACES -->
 Skill: connect-google
 

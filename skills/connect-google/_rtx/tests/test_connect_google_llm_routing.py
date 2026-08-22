@@ -175,6 +175,7 @@ def test_module_and_markdown_gateway_graph(
         "connect-google.interface.default",
         "connect-google.interface.create-client",
         "connect-google.interface.connect-services",
+        "connect-google.interface.setup",
     }
     child = load_blueprint(SKILL_ROOT / "_rtx/blueprint.yaml")
     assert set(child["exports"]) == {

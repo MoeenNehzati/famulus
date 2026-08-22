@@ -24,6 +24,14 @@ exports:
       allow_all_modules: true
       allowed_callers: []
     source_interface: cloud-files.source.gateway.interface.default
+  cloud-files.interface.setup:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: cloud-files.source.gateway.interface.default
+    setup_requires_setup_of:
+    - interface: connect-google.interface.setup
+      version: 1
 gateway:
   language: Markdown
   path: SKILL.md

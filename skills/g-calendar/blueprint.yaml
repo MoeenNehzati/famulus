@@ -25,6 +25,14 @@ exports:
       allow_all_modules: true
       allowed_callers: []
     source_interface: g-calendar.source.gateway.interface.default
+  g-calendar.interface.setup:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: g-calendar.source.gateway.interface.default
+    setup_requires_setup_of:
+    - interface: connect-google.interface.setup
+      version: 1
 gateway:
   language: Markdown
   path: SKILL.md
