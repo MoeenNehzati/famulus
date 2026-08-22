@@ -20,6 +20,7 @@ from officina.install.context import InstallationContext, resolve_installation_c
 from officina.install.runtime_pointer import (
     RuntimePointer,
     RuntimePointerError,
+    load_deployed_resolver_trusted_roots,
     load_current_pointer,
     load_installed_context_record,
 )
@@ -139,23 +140,14 @@ def select_backend(
     return configuration.default_backend
 
 
-def _trusted_interpreter_roots(runtime_root: Path) -> tuple[Path, ...]:
-    path = runtime_root / "bootstrap" / "resolvers" / "v1" / "trusted-roots.json"
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return ()
-    if not isinstance(payload, list):
-        return ()
-    return tuple(Path(value) for value in payload if isinstance(value, str))
-
-
 def _active_context(
     *, runtime_root: Path, home: Path, environ: Mapping[str, str]
 ) -> tuple[RuntimePointer, InstallationContext]:
     pointer = load_current_pointer(
         runtime_root=runtime_root,
-        trusted_interpreter_roots=_trusted_interpreter_roots(runtime_root),
+        trusted_interpreter_roots=load_deployed_resolver_trusted_roots(
+            runtime_root=runtime_root
+        ),
     )
     if pointer.installation_context is None or pointer.launcher_resources is None:
         raise RuntimePointerError("managed agent launch requires a schema-3 pointer")

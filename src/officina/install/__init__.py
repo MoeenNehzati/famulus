@@ -1,5 +1,7 @@
 """Public installation API aggregation."""
 
+from importlib import import_module
+
 from .context import (
     DevelopmentBoundaryError,
     InstallationContext,
@@ -16,13 +18,6 @@ from .development_activation import (
     install_development_activation,
     main as development_activation_main,
     verify_managed_commands,
-)
-from .doctor import (
-    DiagnosticCheck,
-    DiagnosticReport,
-    diagnose_installation,
-    render_diagnostic_json,
-    render_diagnostic_text,
 )
 from .managed_runtime import deployed_resolver_trusted_roots
 from .runtime_pointer import (
@@ -62,3 +57,19 @@ __all__ = [
     "validate_development_boundaries",
     "verify_managed_commands",
 ]
+
+_DOCTOR_EXPORTS = {
+    "DiagnosticCheck",
+    "DiagnosticReport",
+    "diagnose_installation",
+    "render_diagnostic_json",
+    "render_diagnostic_text",
+}
+
+
+def __getattr__(name: str):
+    if name not in _DOCTOR_EXPORTS:
+        raise AttributeError(name)
+    value = getattr(import_module(".doctor", __name__), name)
+    globals()[name] = value
+    return value

@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -16,6 +19,34 @@ from officina.launchers.agent import (
     select_backend,
 )
 from officina.launchers import agent as agent_module
+
+
+def test_launcher_module_starts_in_a_fresh_interpreter(tmp_path: Path) -> None:
+    """Catch package-level import cycles before a generated launcher delegates."""
+    repo_root = Path(__file__).resolve().parents[1]
+    environ = os.environ.copy()
+    environ["PYTHONPATH"] = str(repo_root / "src")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "officina.launchers.agent", "--help"],
+        cwd=tmp_path,
+        env=environ,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="strict",
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "RuntimeWarning" not in result.stderr
+
+
+def test_launcher_packages_preserve_lazy_compatibility_exports() -> None:
+    from officina import install, launchers
+
+    assert install.diagnose_installation.__module__ == "officina.install.doctor"
+    assert launchers.build_agent_command.__module__ == "officina.launchers.agent"
 
 
 class RecordingManifest:
@@ -90,6 +121,149 @@ def _write_active_standard_launcher(tmp_path: Path) -> tuple[InstallationContext
         '{"schema_version": 1, "default_backend": "codex"}\n', encoding="utf-8"
     )
     return context, resources
+
+
+def test_fresh_launcher_accepts_active_generation_interpreter_trust(
+    tmp_path: Path,
+) -> None:
+    """Catch launchers that read the retired fixed resolver trust sidecar."""
+    context, _resources = _write_active_standard_launcher(tmp_path)
+    pointer = json.loads(context.paths.current_pointer.read_text(encoding="utf-8"))
+    python_bin = Path(pointer["python_bin"])
+    python_bin.unlink()
+    python_root = tmp_path / "uv-python"
+    external_python = python_root / "bin" / "python3"
+    external_python.parent.mkdir(parents=True)
+    external_python.write_text("python\n", encoding="utf-8")
+    python_bin.symlink_to(external_python)
+
+    generation = "a" * 64
+    generation_root = (
+        context.paths.runtime_root
+        / "bootstrap"
+        / "resolvers"
+        / "generations"
+        / generation
+    )
+    generation_root.mkdir(parents=True)
+    (generation_root / "launch.py").write_text("# resolver\n", encoding="utf-8")
+    (generation_root / "trusted-roots.json").write_text(
+        json.dumps([str(python_root)]), encoding="utf-8"
+    )
+    fixed_root = context.paths.runtime_root / "bootstrap" / "resolvers" / "v1"
+    fixed_root.mkdir(parents=True)
+    (fixed_root / "active.json").write_text(
+        json.dumps({"schema_version": 1, "generation": generation}),
+        encoding="utf-8",
+    )
+
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    fake_codex = fake_bin / ("codex.exe" if sys.platform == "win32" else "codex")
+    shutil.copy2(sys.executable, fake_codex)
+    repo_root = Path(__file__).resolve().parents[1]
+    environ = os.environ.copy()
+    for name in (
+        "CODEX_HOME",
+        "CLAUDE_CONFIG_DIR",
+        "CLAUDE_HOME",
+        "XDG_DATA_HOME",
+        "XDG_CONFIG_HOME",
+        "XDG_STATE_HOME",
+        "XDG_CACHE_HOME",
+    ):
+        environ.pop(name, None)
+    environ.update(
+        {
+            "HOME": str(tmp_path),
+            "PATH": os.pathsep.join((str(fake_bin), environ.get("PATH", ""))),
+            "PYTHONPATH": str(repo_root / "src"),
+        }
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "officina.launchers.agent",
+            "--runtime-root",
+            str(context.paths.runtime_root),
+            "--agent",
+            "assistant",
+            "--codex",
+            "--version",
+        ],
+        cwd=tmp_path,
+        env=environ,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="strict",
+        check=False,
+    )
+
+    assert "RuntimePointerError" not in result.stderr
+    assert "model_instructions_file" in result.stderr
+
+
+def test_fresh_launcher_rejects_relative_interpreter_trust(tmp_path: Path) -> None:
+    context, _resources = _write_active_standard_launcher(tmp_path)
+    generation = "b" * 64
+    generation_root = (
+        context.paths.runtime_root
+        / "bootstrap"
+        / "resolvers"
+        / "generations"
+        / generation
+    )
+    generation_root.mkdir(parents=True)
+    (generation_root / "launch.py").write_text("# resolver\n", encoding="utf-8")
+    (generation_root / "trusted-roots.json").write_text(
+        json.dumps(["relative-root"]), encoding="utf-8"
+    )
+    fixed_root = context.paths.runtime_root / "bootstrap" / "resolvers" / "v1"
+    fixed_root.mkdir(parents=True)
+    (fixed_root / "active.json").write_text(
+        json.dumps({"schema_version": 1, "generation": generation}),
+        encoding="utf-8",
+    )
+    repo_root = Path(__file__).resolve().parents[1]
+    environ = os.environ.copy()
+    for name in (
+        "CODEX_HOME",
+        "CLAUDE_CONFIG_DIR",
+        "CLAUDE_HOME",
+        "XDG_DATA_HOME",
+        "XDG_CONFIG_HOME",
+        "XDG_STATE_HOME",
+        "XDG_CACHE_HOME",
+    ):
+        environ.pop(name, None)
+    environ.update({"HOME": str(tmp_path), "PYTHONPATH": str(repo_root / "src")})
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "officina.launchers.agent",
+            "--runtime-root",
+            str(context.paths.runtime_root),
+            "--agent",
+            "assistant",
+            "--codex",
+            "--version",
+        ],
+        cwd=tmp_path,
+        env=environ,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="strict",
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "resolver trusted roots must be absolute path strings" in result.stderr
 
 
 def _write_active_development_launcher(
