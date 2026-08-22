@@ -78,6 +78,7 @@ def _authority(
         python = backend_bin / "python"
         python.write_text("#!/bin/sh\n", encoding="utf-8")
         python.chmod(0o700)
+        shutil.copy2(sys.executable, backend_bin / "python.exe")
     (paths.config_root).mkdir(parents=True)
     monkeypatch.setattr(schedule_context, "decode_current_pointer", lambda *_args, **_kwargs: pointer)
     monkeypatch.setattr(
@@ -127,6 +128,7 @@ def _authority(
     environ = {"HOME": str(home), "PATH": str(backend_bin), **selector_environ}
     if platform == "win32":
         environ["USERPROFILE"] = str(home)
+        environ["PATHEXT"] = os.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD")
     return context, environ
 
 

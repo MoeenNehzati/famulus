@@ -30,7 +30,7 @@ _SECURITY_WARNING = (
 
 
 def _cmd_literal(value: str) -> str:
-    return value.replace("^", "^^").replace("%", "%%").replace("!", "^!")
+    return value.replace("^", "^^").replace("%", "%%")
 
 
 def build_interactive_environment(

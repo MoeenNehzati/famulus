@@ -152,6 +152,9 @@ def _active_live_development_runtime(tmp_path: Path):
 def test_managed_public_control_live_sync_trigger_record_and_selected_removal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    if os.environ.get("GITHUB_ACTIONS", "").lower() == "true":
+        # famulus-skip: category=native-backend-unavailable; reason=hosted runners do not expose a representative persistent installed context to scheduled processes; alternate=managed control renderer migration and teardown tests run on every matrix OS
+        pytest.skip("hosted runner has no representative persistent scheduler context")
     _native_capability()
     context, environment = _active_live_development_runtime(tmp_path)
     marker_script = tmp_path / "write managed marker.py"

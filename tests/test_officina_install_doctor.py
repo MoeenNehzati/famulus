@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import sys
 from pathlib import Path
 
 import pytest
@@ -24,7 +26,7 @@ def _standard_context(tmp_path: Path) -> InstallationContext:
         mode="standard",
         source_root=source,
         development_root=None,
-        paths=resolve_famulus_paths(platform="linux", home=tmp_path, environ={}),
+        paths=resolve_famulus_paths(platform=sys.platform, home=tmp_path, environ={}),
         codex_home=tmp_path / ".codex",
         claude_home=tmp_path / ".claude",
         installation_id="standard",
@@ -33,7 +35,11 @@ def _standard_context(tmp_path: Path) -> InstallationContext:
 
 def _write_healthy_installation(context: InstallationContext) -> None:
     release = context.paths.releases_root / "release-a"
-    python_bin = release / "venv" / "bin" / "python"
+    python_bin = (
+        release / "venv" / "Scripts" / "python.exe"
+        if sys.platform == "win32"
+        else release / "venv" / "bin" / "python"
+    )
     python_bin.parent.mkdir(parents=True)
     python_bin.write_text("python\n", encoding="utf-8")
     resources = release / "launcher-resources"
@@ -76,8 +82,13 @@ def _write_healthy_installation(context: InstallationContext) -> None:
     )
     context.paths.user_bin.mkdir(parents=True, exist_ok=True)
     for command in ("dispatcher", "invoke-skill", "llm-wakeup", "lw", "background_run"):
-        path = context.paths.user_bin / command
-        path.write_text("#!/bin/sh\n", encoding="utf-8")
+        path = context.paths.user_bin / (
+            f"{command}.bat" if sys.platform == "win32" else command
+        )
+        path.write_text(
+            "@echo off\r\n" if sys.platform == "win32" else "#!/bin/sh\n",
+            encoding="utf-8",
+        )
         path.chmod(0o755)
     context.paths.install_state_root.mkdir(parents=True, exist_ok=True)
     (context.paths.install_state_root / "install-manifest.json").write_text(
@@ -90,14 +101,26 @@ def _write_healthy_installation(context: InstallationContext) -> None:
     )
 
 
+def _context_environment(context: InstallationContext) -> dict[str, str]:
+    environment = {
+        "HOME": str(context.codex_home.parent),
+        "PATH": str(context.paths.user_bin),
+    }
+    if sys.platform == "win32":
+        environment.update(
+            {
+                "USERPROFILE": environment["HOME"],
+                "PATHEXT": os.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD"),
+            }
+        )
+    return environment
+
+
 def _diagnose(context: InstallationContext) -> DiagnosticReport:
     return diagnose_installation(
         context=context,
-        environ={
-            "HOME": str(context.codex_home.parent),
-            "PATH": str(context.paths.user_bin),
-        },
-        platform="linux",
+        environ=_context_environment(context),
+        platform=sys.platform,
     )
 
 
@@ -107,14 +130,14 @@ def _write_recurring_descriptor(context: InstallationContext) -> None:
     resolver.write_text("# managed resolver\n", encoding="utf-8")
     for backend in ("claude", "codex"):
         path = context.paths.user_bin / backend
-        path.write_text("#!/bin/sh\n", encoding="utf-8")
-        path.chmod(0o755)
+        if sys.platform == "win32":
+            shutil.copy2(sys.executable, path.with_suffix(".exe"))
+        else:
+            path.write_text("#!/bin/sh\n", encoding="utf-8")
+            path.chmod(0o755)
     write_managed_schedule(
         runtime_root=context.paths.runtime_root,
-        environ={
-            "HOME": str(context.codex_home.parent),
-            "PATH": str(context.paths.user_bin),
-        },
+        environ=_context_environment(context),
     )
 
 

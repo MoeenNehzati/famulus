@@ -350,9 +350,15 @@ def test_load_active_development_context_uses_only_the_supplied_environment(
     ],
 )
 def test_load_active_development_context_rejects_supplied_selector_substitution(
-    tmp_path: Path, selector: str, relative: Path
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    selector: str,
+    relative: Path,
 ) -> None:
-    runtime_root, environ, _ = _active_candidate(tmp_path, mode="development")
+    runtime_root, environ, _ = _active_candidate(
+        tmp_path, mode="development", platform="linux"
+    )
+    monkeypatch.setattr(install_context_module.sys, "platform", "linux")
     environ[selector] = str(tmp_path / relative)
 
     with pytest.raises(InvalidInstallationContextError, match="development context"):

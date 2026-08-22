@@ -20,6 +20,12 @@ from officina.recurring.state import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _portable_simulated_uid(monkeypatch: pytest.MonkeyPatch) -> None:
+    if not hasattr(native.os, "getuid"):
+        monkeypatch.setattr(native.os, "getuid", lambda: 1000, raising=False)
+
+
 def _schedule(root: Path, installation_id: str = "standard") -> ManagedSchedule:
     backend = Path(sys.executable).resolve()
     return ManagedSchedule(
