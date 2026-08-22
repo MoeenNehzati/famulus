@@ -30,8 +30,15 @@ Uses Interfaces:
 - `list-manager.source.gateway -> list-manager._rtx.interface.read-list@1`
 - `list-manager.source.gateway -> list-manager._rtx.interface.update-list@1`
 
+Setup Requires Setup Of:
+- `connect-google.interface.setup@1`
+Setup Order:
+1. `connect-google.interface.setup`
+2. `list-manager.interface.setup`
+
 Public Interfaces:
 - `list-manager.interface.default`
+- `list-manager.interface.setup`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
@@ -40,6 +47,7 @@ Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
 - `list-manager.interface.default` — Primary LLM-facing skill instructions.
+- `list-manager.interface.setup` — Primary LLM-facing skill instructions.
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 

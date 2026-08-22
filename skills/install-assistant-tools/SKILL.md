@@ -21,9 +21,14 @@ Uses Interfaces:
 - `install-assistant-tools.source.gateway -> install-assistant-tools._rtx.interface.scripts-scaffold@2`
 - `install-assistant-tools.source.gateway -> recurring-tasks.interface.default@1`
 
+Setup Requires Setup Of: none
+Setup Order:
+1. `install-assistant-tools.interface.setup`
+
 Public Interfaces:
 - `install-assistant-tools.interface.default`
 - `install-assistant-tools.interface.diagnose`
+- `install-assistant-tools.interface.setup`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
@@ -33,6 +38,7 @@ Instruction Interfaces:
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
 - `install-assistant-tools.interface.default` — Primary LLM-facing skill instructions.
 - `install-assistant-tools.interface.diagnose` — Diagnose one explicitly selected Famulus installation context through the canonical read-only child diagnostic route.
+- `install-assistant-tools.interface.setup` — Primary LLM-facing skill instructions.
 <!-- END BLUEPRINT INTERFACES -->
 # Install Assistant Tools
 
