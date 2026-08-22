@@ -534,9 +534,13 @@ def _fault_and_publish(
     fault_base: Reckoning,
     fault: _EngineFault,
 ) -> NodeView:
-    leaf = _active_leaf(fault_base)
-    faulted = _fault_reckoning(
+    anchored = replace(
         fault_base,
+        global_revision=previous.global_revision,
+    )
+    leaf = _active_leaf(anchored)
+    faulted = _fault_reckoning(
+        anchored,
         leaf,
         fault.category,
         target=fault.target,

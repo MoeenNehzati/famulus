@@ -228,6 +228,7 @@ def _validate_reckoning(reckoning: Reckoning) -> None:
     owners.extend(
         (run_id, run.history, True) for run_id, run in reckoning.completed_runs.items()
     )
+    active_by_id = {run.run_id: run for run in active_runs}
     for owner_id, history, owner_completed in owners:
         seen_done = False
         edge_sources: dict[str, Turn | ActionRecord | CallRecord | DoneRecord] = {}
@@ -282,7 +283,30 @@ def _validate_reckoning(reckoning: Reckoning) -> None:
                     raise RutterStateError("duplicate attachment authority")
                 attachment_authorities.add(authority)
             else:
+                bind_entrance(entry.node_entry_id, entry.site_id, owner_id)
                 edge_sources[entry.call_id] = entry
+
+        active_owner = active_by_id.get(owner_id)
+        if active_owner is None or active_owner.active_child is None:
+            continue
+        active_child = active_owner.active_child
+        if active_child.kind != "attached_case":
+            continue
+        assert active_child.attached_to_edge_id is not None
+        source = edge_sources.get(active_child.attached_to_edge_id)
+        if source is None:
+            raise RutterStateError(
+                "active attached edge source must name exactly one prior "
+                "record in the same parent run"
+            )
+        if source.node_entry_id != active_owner.entered_node.entry_id:
+            raise RutterStateError(
+                "active attached child must share its source entrance"
+            )
+        authority = (active_child.site, active_child.attached_to_edge_id)
+        if authority in attachment_authorities:
+            raise RutterStateError("duplicate attachment authority")
+        attachment_authorities.add(authority)
 
     if any(count != 1 for count in references.values()):
         raise RutterStateError(

@@ -375,7 +375,12 @@ class _BoundVoyage:
                     "active state is absent from its bound Rutter definition"
                 )
             if isinstance(state, Prompt):
-                self._validate_prompt_authority(run, state, reckoning.fault)
+                self._validate_prompt_authority(
+                    run,
+                    state,
+                    reckoning.global_revision,
+                    reckoning.fault,
+                )
             active.append((run, definition))
             if run.active_child is None:
                 break
@@ -412,6 +417,7 @@ class _BoundVoyage:
     def _validate_prompt_authority(
         run: ActiveRun,
         prompt: Prompt,
+        global_revision: int,
         fault: Mapping[str, JsonValue] | None,
     ) -> None:
         entered = run.entered_node
@@ -427,6 +433,10 @@ class _BoundVoyage:
                 "active Prompt requires exactly one matching current Turn"
             )
         turn = turns[0]
+        if turn.revision != global_revision:
+            raise RutterStateError(
+                "active Prompt Turn revision differs from Reckoning revision"
+            )
         if (
             turn.message.instructions["text"] != prompt.text
             or turn.message.instructions["answer"] != prompt.answer.outcomes

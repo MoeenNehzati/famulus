@@ -747,6 +747,53 @@ def test_open_rejects_missing_mismatched_duplicate_or_stranded_prompt_turn(
         )
 
 
+@pytest.mark.parametrize(
+    ("response", "fault"),
+    (
+        (None, None),
+        (
+            Response(1, "reported", {}),
+            {
+                "category": "routing",
+                "run_id": "root-run",
+                "state_id": "report",
+                "node_entry_id": "entry-report",
+            },
+        ),
+    ),
+    ids=("open", "accepted"),
+)
+def test_open_rejects_current_prompt_turn_with_stale_global_revision(
+    reckoning_root: Path,
+    response: Response | None,
+    fault: dict[str, object] | None,
+) -> None:
+    turn = Turn(
+        "turn-root",
+        "entry-report",
+        "report",
+        1,
+        _prompt_message("entry-report"),
+        response,
+    )
+    root = ActiveRun(
+        "root-run",
+        "example",
+        1,
+        Charter({}),
+        EnteredNode("entry-report", "report"),
+        (turn,),
+        None,
+    )
+    path = (reckoning_root / "stale-prompt-turn.reckoning.json").absolute()
+    _ReckoningStore(path).create(Reckoning(3, 2, root, {}, None, fault))
+
+    with pytest.raises(RutterStateError, match="active Prompt Turn revision"):
+        RutterRegistry({"example": ExampleRutter}, reckoning_root).open(
+            Path("stale-prompt-turn.reckoning.json")
+        )
+
+
 def test_open_rejects_open_prompt_turn_with_active_attached_child(
     reckoning_root: Path,
 ) -> None:
@@ -1016,7 +1063,7 @@ def test_open_does_not_require_definitions_for_archived_completed_runs(
         (
             CallRecord(
                 "archived-call",
-                "root-entry",
+                "retired-entry",
                 "explicit_call",
                 "retired-site",
                 None,
@@ -1033,7 +1080,7 @@ def test_open_does_not_require_definitions_for_archived_completed_runs(
         ),
         None,
     )
-    reckoning = Reckoning(3, 0, root, {completed.run_id: completed}, None, None)
+    reckoning = Reckoning(3, 1, root, {completed.run_id: completed}, None, None)
     path = (reckoning_root / "archived.reckoning.json").absolute()
     _ReckoningStore(path).create(reckoning)
 
