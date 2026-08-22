@@ -14,15 +14,13 @@ from pathlib import Path
 from typing import Literal, Mapping, Protocol
 
 from officina.common.atomic_files import atomic_replace_bytes
-from officina.common.famulus_paths import resolve_famulus_paths
 import officina.common.toml_io as toml_io
-from officina.install.context import InstallationContext, resolve_installation_context
+from officina.install.context import InstallationContext, load_context_from_pointer
 from officina.install.runtime_pointer import (
     RuntimePointer,
     RuntimePointerError,
     load_deployed_resolver_trusted_roots,
     load_current_pointer,
-    load_installed_context_record,
 )
 
 Backend = Literal["claude", "codex"]
@@ -151,34 +149,9 @@ def _active_context(
     )
     if pointer.installation_context is None or pointer.launcher_resources is None:
         raise RuntimePointerError("managed agent launch requires a schema-3 pointer")
-    record = load_installed_context_record(pointer.installation_context)
-    if record.mode == "development":
-        context = resolve_installation_context(
-            mode="development",
-            source_root=record.source_root,
-            development_root=record.development_root,
-            platform=sys.platform,
-            home=home,
-            environ=environ,
-            installation_id=record.installation_id,
-        )
-    else:
-        paths = resolve_famulus_paths(platform=sys.platform, home=home, environ=environ)
-        context = InstallationContext(
-            mode="standard",
-            source_root=record.source_root,
-            development_root=None,
-            paths=paths,
-            codex_home=Path(environ.get("CODEX_HOME", home / ".codex")),
-            claude_home=Path(environ.get("CLAUDE_CONFIG_DIR", home / ".claude")),
-            installation_id="standard",
-        )
-    if context.paths.runtime_root.resolve(strict=False) != runtime_root.resolve(strict=False):
-        raise RuntimePointerError("installation_context runtime_root does not match resolver root")
-    if context.codex_home.resolve(strict=False) != record.codex_home:
-        raise RuntimePointerError("installation_context codex_home does not match resolved context")
-    if context.claude_home.resolve(strict=False) != record.claude_home:
-        raise RuntimePointerError("installation_context claude_home does not match resolved context")
+    context = load_context_from_pointer(
+        pointer=pointer, runtime_root=runtime_root, environ=environ
+    )
     return pointer, context
 
 

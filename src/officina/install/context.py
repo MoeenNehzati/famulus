@@ -47,6 +47,13 @@ def installation_context_home_fields(context: InstallationContext) -> dict[str, 
 
 
 _DEVELOPMENT_ID = re.compile(r"dev-[0-9a-f]{32}\Z")
+_DEVELOPMENT_REMOVED_SELECTORS = (
+    "AI",
+    "FAMULUS_REPO_ROOT",
+    "PYTHONPATH",
+    "PYTHONHOME",
+    "VIRTUAL_ENV",
+)
 
 
 def _existing_absolute_directory(path: Path, *, label: str) -> Path:
@@ -76,6 +83,30 @@ def _development_environment(*, platform: str, isolated_home: Path) -> dict[str,
         "XDG_CONFIG_HOME": str(isolated_home / ".config"),
         "XDG_STATE_HOME": str(isolated_home / ".local" / "state"),
     }
+
+
+def build_development_environment(
+    development_root: Path, *, environ: Mapping[str, str], platform: str
+) -> dict[str, str]:
+    """Build the exact child-process environment for one development checkout."""
+    checkout = _existing_absolute_directory(development_root, label="development_root")
+    local_root = checkout / ".famulus"
+    isolated_home = local_root / "home"
+    result = dict(environ)
+    for name in _DEVELOPMENT_REMOVED_SELECTORS:
+        result.pop(name, None)
+    result["CODEX_HOME"] = str(local_root / "homes" / "codex")
+    result["CLAUDE_CONFIG_DIR"] = str(local_root / "homes" / "claude")
+    result["HOME"] = str(isolated_home)
+    result.update(_development_environment(platform=platform, isolated_home=isolated_home))
+    if platform == "win32":
+        result["USERPROFILE"] = str(isolated_home)
+    paths = resolve_famulus_paths(platform=platform, home=isolated_home, environ=result)
+    inherited_path = environ.get("PATH", "")
+    result["PATH"] = str(paths.user_bin) + (
+        os.pathsep + inherited_path if inherited_path else ""
+    )
+    return result
 
 
 def _assistant_home(
@@ -431,6 +462,7 @@ def load_or_create_development_installation_id(
 
 
 __all__ = [
+    "build_development_environment",
     "DevelopmentBoundaryError",
     "InstallationContext",
     "InvalidInstallationContextError",

@@ -13,6 +13,7 @@ from officina.common.famulus_paths import FamulusPaths
 from officina.install.context import (
     DevelopmentBoundaryError,
     InstallationContext,
+    build_development_environment,
     validate_development_boundaries,
 )
 
@@ -37,24 +38,13 @@ def build_interactive_environment(
 ) -> dict[str, str]:
     if context.mode != "development" or context.development_root is None:
         raise ActivationError("interactive development activation requires a development context")
-    result = dict(environ)
-    for name in _REMOVED_SELECTORS:
-        result.pop(name, None)
-    isolated_home = context.development_root / ".famulus" / "home"
-    result["CODEX_HOME"] = str(context.codex_home)
-    result["CLAUDE_CONFIG_DIR"] = str(context.claude_home)
-    if platform == "win32":
-        result["HOME"] = str(isolated_home)
-        result["USERPROFILE"] = str(isolated_home)
-        result["LOCALAPPDATA"] = str(isolated_home / "AppData" / "Local")
-        result["APPDATA"] = str(isolated_home / "AppData" / "Roaming")
-    else:
-        result["HOME"] = str(isolated_home)
-        result["XDG_DATA_HOME"] = str(isolated_home / ".local" / "share")
-        result["XDG_CONFIG_HOME"] = str(isolated_home / ".config")
-        result["XDG_STATE_HOME"] = str(isolated_home / ".local" / "state")
-    inherited_path = environ.get("PATH", "")
-    result["PATH"] = str(context.paths.user_bin) + (os.pathsep + inherited_path if inherited_path else "")
+    result = build_development_environment(
+        context.development_root, environ=environ, platform=platform
+    )
+    if Path(result["CODEX_HOME"]) != context.codex_home or Path(
+        result["CLAUDE_CONFIG_DIR"]
+    ) != context.claude_home:
+        raise ActivationError("development context assistant homes are not canonical")
     return result
 
 

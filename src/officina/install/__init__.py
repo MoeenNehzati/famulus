@@ -3,6 +3,7 @@
 from importlib import import_module
 
 from .context import (
+    build_development_environment,
     DevelopmentBoundaryError,
     InstallationContext,
     InvalidInstallationContextError,
@@ -42,6 +43,7 @@ __all__ = [
     "RuntimePointerError",
     "activate_release",
     "build_interactive_environment",
+    "build_development_environment",
     "development_activation_main",
     "deployed_resolver_trusted_roots",
     "diagnose_installation",

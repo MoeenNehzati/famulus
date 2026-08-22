@@ -11,6 +11,7 @@ import pytest
 
 from officina.common.famulus_paths import resolve_famulus_paths
 from officina.install.context import InstallationContext, resolve_installation_context
+from officina.install.development_activation import build_interactive_environment
 
 from officina.launchers.agent import (
     LauncherConfigurationError,
@@ -524,7 +525,13 @@ def test_development_agent_launches_use_exact_live_resources_without_legacy_sele
         "CLAUDE_CONFIG_DIR",
     ):
         monkeypatch.delenv(name, raising=False)
-    monkeypatch.setenv("HOME", str(host_home))
+    activated = build_interactive_environment(
+        context,
+        environ={"HOME": str(host_home), "PATH": os.environ.get("PATH", "")},
+        platform=agent_module.sys.platform,
+    )
+    for name, value in activated.items():
+        monkeypatch.setenv(name, value)
     launched: list[list[str]] = []
     monkeypatch.setattr(agent_module, "_launch_command", lambda command: launched.append(command) or 0)
 
