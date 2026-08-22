@@ -14,11 +14,65 @@ import pytest
 import officina.common.atomic_files as atomic_files
 from officina.common.atomic_files import (
     AtomicWriteError,
+    atomic_compare_and_delete,
+    atomic_compare_and_replace_bytes,
     atomic_append_bytes,
     atomic_compare_and_append_bytes,
     atomic_create_bytes,
     atomic_replace_bytes,
 )
+
+
+def test_compare_replace_and_delete_reject_changed_preimages(tmp_path: Path) -> None:
+    target = tmp_path / "managed.json"
+    target.write_bytes(b"external")
+
+    with pytest.raises(AtomicWriteError, match="predecessor mismatch"):
+        atomic_compare_and_replace_bytes(
+            target,
+            b"replacement",
+            expected_previous_bytes=b"planned",
+            expected_previous_mode=0o600,
+            allowed_root=tmp_path,
+            mode=0o600,
+        )
+    with pytest.raises(AtomicWriteError, match="predecessor mismatch"):
+        atomic_compare_and_delete(
+            target,
+            expected_previous_bytes=b"planned",
+            expected_previous_mode=0o600,
+            allowed_root=tmp_path,
+        )
+
+    assert target.read_bytes() == b"external"
+
+
+def test_compare_replace_rejects_leaf_replacement_after_preimage_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "managed.json"
+    target.write_bytes(b"planned")
+    target.chmod(0o600)
+    real_write = atomic_files._write_and_sync
+
+    def swap_after_read(descriptor: int, data: bytes) -> None:
+        real_write(descriptor, data)
+        target.unlink()
+        target.write_bytes(b"external")
+
+    monkeypatch.setattr(atomic_files, "_write_and_sync", swap_after_read)
+
+    with pytest.raises(AtomicWriteError, match="changed"):
+        atomic_compare_and_replace_bytes(
+            target,
+            b"replacement",
+            expected_previous_bytes=b"planned",
+            expected_previous_mode=0o600,
+            allowed_root=tmp_path,
+            mode=0o600,
+        )
+
+    assert target.read_bytes() == b"external"
 
 
 # famulus-skip: category=platform-contract; reason=these cases inject POSIX descriptor internals; alternate=the native Windows contract cases below exercise the corresponding Windows branches

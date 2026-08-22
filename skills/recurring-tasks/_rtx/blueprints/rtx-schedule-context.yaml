@@ -19,7 +19,7 @@ node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
 - interface: common.interface.atomic-files
-  version: 1
+  version: 2
 - interface: install.interface.context
   version: 1
 - interface: install.interface.runtime-pointer

@@ -7,9 +7,10 @@ dependencies:
   reason: Activates only a previously resolved and boundary-validated development context.
   source: install.source.context
   version: 1
-description: Generates clone-local famulus-env bootstraps, constructs an inherited but
-  selector-clean interactive environment, verifies managed command origin, and implements
-  exec and all-or-nothing shell export.
+description: Generates schema-2 clone-local famulus-env bootstraps that carry selected_home,
+  reads legacy schema-1 descriptors compatibly, constructs an inherited but selector-clean
+  interactive environment, verifies managed command origin, and implements exec and
+  all-or-nothing shell export.
 gateway:
   language: Python
   path: development_activation.py
@@ -191,7 +192,7 @@ interfaces:
         - id: activation-bootstrap
           medium: local-filesystem
           access: read-write
-          content: Generated famulus-env, famulus-env.cmd, and activation descriptor.
+          content: Generated famulus-env, famulus-env.cmd, and schema-2 activation descriptor containing selected_home.
           formats:
           - text
           - json

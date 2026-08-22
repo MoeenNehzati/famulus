@@ -42,6 +42,7 @@ def _active_candidate(
         source = tmp_path / "source"
         development_root = None
         installation_id = "standard"
+        selected_home = home
         codex_home = home / ".codex"
         claude_home = home / ".claude"
         environ = {"HOME": str(home), "AI": str(tmp_path / "wrong-checkout")}
@@ -62,6 +63,7 @@ def _active_candidate(
         isolated_home = local_root / "home"
         development_root = source
         installation_id = "dev-0123456789abcdef0123456789abcdef"
+        selected_home = isolated_home
         codex_home = local_root / "homes" / "codex"
         claude_home = local_root / "homes" / "claude"
         environ = {
@@ -105,12 +107,13 @@ def _active_candidate(
     context_record.write_text(
         json.dumps(
             {
-                "schema_version": 1,
+                "schema_version": 2,
                 "release_id": release_id,
                 "mode": mode,
                 "installation_id": installation_id,
                 "source_root": str(source),
                 "development_root": str(development_root) if development_root else None,
+                "selected_home": str(selected_home),
                 "codex_home": str(codex_home),
                 "claude_home": str(claude_home),
             }

@@ -1132,8 +1132,8 @@ def test_ci_workflow_dispatches_a_full_matrix_or_one_safe_probe() -> None:
             assert "${{ inputs." not in line
 
 
-def test_ci_artifact_uploads_include_hidden_repository_check_evidence() -> None:
-    """Catch upload-artifact silently excluding the hidden evidence directory."""
+def test_ci_artifact_uploads_include_hidden_and_separate_access_evidence() -> None:
+    """Catch hidden or assistant-access evidence being folded into another artifact."""
 
     workflow = (
         Path(__file__).resolve().parents[1]
@@ -1143,9 +1143,37 @@ def test_ci_artifact_uploads_include_hidden_repository_check_evidence() -> None:
     ).read_text(encoding="utf-8")
 
     upload_count = workflow.count("uses: actions/upload-artifact@")
-    assert upload_count == 3
-    assert workflow.count("path: .repo-checks/*.json") == upload_count
+    assert upload_count == 4
+    assert workflow.count("path: .repo-checks/*.json") == 2
+    assert "path: .repo-checks/unified-*.json" in workflow
+    assert (
+        "path: .repo-checks/assistant-access-${{ matrix.evidence_os }}.json"
+        in workflow
+    )
     assert workflow.count("include-hidden-files: true") == upload_count
+    access_upload = workflow.split("- name: Upload assistant access evidence", 1)[1]
+    access_upload = access_upload.split("- name:", 1)[0]
+    assert "if-no-files-found: error" in access_upload
+
+
+def test_unified_access_qualification_scopes_pins_control_and_credentials() -> None:
+    workflow = (
+        Path(__file__).resolve().parents[1]
+        / ".github"
+        / "workflows"
+        / "python-tests.yml"
+    ).read_text(encoding="utf-8")
+
+    pinned = "npm install -g @anthropic-ai/claude-code@2.1.237 @openai/codex@0.149.0"
+    unpinned = "npm install -g @anthropic-ai/claude-code @openai/codex"
+    assert workflow.count(pinned) == 1
+    assert workflow.count(unpinned) == 2
+    assert "id: assistant-access-control" in workflow
+    assert "Path.home()" in workflow
+    assert "--control-root \"${{ steps.assistant-access-control.outputs.control_root }}\"" in workflow
+    assert "FAMULUS_CLAUDE_ACCESS_SMOKE_API_KEY" in workflow
+    assert "ANTHROPIC_API_KEY: ${{ secrets.FAMULUS_CLAUDE_ACCESS_SMOKE_API_KEY }}" in workflow
+    assert "<<:" not in workflow
 
 
 def test_ci_dependency_lock_covers_the_complete_test_environment() -> None:

@@ -12,6 +12,9 @@ _CHECK_ROOTS = ["skills", "src", "script_dispatcher", "llmhooks"]
 _SKIP_PARTS = {"tests", "validators", "__pycache__", ".git", ".claude-plugin", ".codex-plugin", "logs"}
 _ALLOWED_REL = Path("src/officina/common/toml_io.py")
 _ALLOWED_COMMON_TOML_DIR = Path("src/officina/common")
+_DIRECT_PATH_IO = {
+    "open", "read_bytes", "read_text", "replace", "unlink", "write_bytes", "write_text"
+}
 
 
 def _iter_python_files(repo_root: Path):
@@ -344,8 +347,75 @@ def _validate_file(
         for child in ast.iter_child_nodes(parent):
             parents[child] = parent
 
+    boundary_objects: set[str] = set()
+    escaped_paths: set[str] = set()
+    safe_streams: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.With, ast.AsyncWith)):
+            for item in node.items:
+                if (
+                    isinstance(item.context_expr, ast.Call)
+                    and _is_toml_io_open_call(item.context_expr)
+                    and isinstance(item.optional_vars, ast.Name)
+                ):
+                    safe_streams.add(item.optional_vars.id)
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
+            continue
+        target = node.targets[0].id
+        value = node.value
+        if isinstance(value, ast.Call) and _is_toml_io_open_call(value):
+            boundary_objects.add(target)
+        if (
+            isinstance(value, ast.Attribute)
+            and value.attr == "path"
+            and (
+                (isinstance(value.value, ast.Call) and _is_toml_io_open_call(value.value))
+                or (isinstance(value.value, ast.Name) and value.value.id in boundary_objects)
+            )
+        ):
+            escaped_paths.add(target)
+
     errors: list[str] = []
     for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            if (
+                isinstance(node.func.value, ast.Name)
+                and node.func.value.id in escaped_paths
+                and node.func.attr in _DIRECT_PATH_IO
+            ):
+                errors.append(
+                    f"{rel_path}:{node.lineno}: escaped toml_io path must not perform direct file IO"
+                )
+            if (
+                isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "tomllib"
+                and node.func.attr in {"load", "loads"}
+            ):
+                safe = bool(
+                    node.func.attr == "loads"
+                    and node.args
+                    and isinstance(node.args[0], ast.Call)
+                    and isinstance(node.args[0].func, ast.Attribute)
+                    and node.args[0].func.attr == "read"
+                    and isinstance(node.args[0].func.value, ast.Name)
+                    and node.args[0].func.value.id in safe_streams
+                )
+                if not safe:
+                    errors.append(
+                        f"{rel_path}:{node.lineno}: direct tomllib parsing must remain inside the shared TOML boundary"
+                    )
+            if (
+                isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "re"
+                and node.func.attr == "sub"
+                and node.args
+                and isinstance(node.args[0], ast.Constant)
+                and isinstance(node.args[0].value, str)
+                and "=" in node.args[0].value
+            ):
+                errors.append(
+                    f"{rel_path}:{node.lineno}: direct TOML structure rewriting must remain inside the shared TOML boundary"
+                )
         if isinstance(node, ast.Call) and _is_toml_io_open_call(node):
             filename_arg = _open_filename_arg(node)
             if filename_arg is None:

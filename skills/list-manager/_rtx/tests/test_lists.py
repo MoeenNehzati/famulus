@@ -132,6 +132,21 @@ def test_init_custom_name(tmp_path):
     assert data["name"] == "My Tasks"
 
 
+def test_managed_cloud_state_uses_canonical_lock_and_cache_roots(monkeypatch, tmp_path):
+    for name in ("XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_STATE_HOME"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("LIST_MANAGER_CLOUD_LOCK_DIR", str(tmp_path / "hostile-locks"))
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+
+    assert yaml_store._cloud_lock_dir(managed=True) == (
+        tmp_path / ".local" / "state" / "famulus" / "list-manager" / "locks"
+    )
+    assert yaml_store._cloud_cache_dir(managed=True) == (
+        tmp_path / ".local" / "state" / "famulus" / "list-manager" / "cache"
+    )
+    assert yaml_store._cloud_lock_dir() == tmp_path / "hostile-locks"
+
+
 def test_init_fails_if_file_exists(tmp_path):
     f = tmp_path / "todo.yaml"
     f.write_text("schema: todo\nname: todo\ncategories: []\n")
@@ -1032,6 +1047,7 @@ def test_cloud_concurrent_writers_are_serialized_across_processes(tmp_path):
     env_base["PYTHONPATH"] = os.pathsep.join([str(REPO_SRC), str(SCRIPTS_DIR)])
     env_base["LIST_MANAGER_TEST_CLOUD_DIR"] = str(cloud_dir)
     env_base["LIST_MANAGER_CLOUD_LOCK_DIR"] = str(tmp_path / "locks")
+    env_base["XDG_STATE_HOME"] = str(tmp_path / "xdg-state")
 
     env1 = env_base.copy()
     env1["LIST_MANAGER_TEST_RACE_DELAY"] = "1.0"

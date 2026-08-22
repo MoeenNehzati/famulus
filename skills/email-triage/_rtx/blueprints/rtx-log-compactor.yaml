@@ -2,13 +2,20 @@ content:
 - _log_compactor\.py
 dependencies:
 - blueprint:
+    base: repository-root
+    path: src/officina/common/blueprints/famulus-paths.yaml
+  reason: Resolves the managed email-triage state root containing the log to prune.
+  source: common.source.famulus-paths
+  version: 1
+- blueprint:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
   source: email-triage._rtx.source.rtx-init
   version: 1
-description: Rewrites the skill-local triage log after retaining recent and unparseable
-  entries.
+description: Optionally copies a legacy module-local log into the platform-resolved
+  email-triage state root, then rewrites the selected log after retaining recent
+  and unparseable entries.
 gateway:
   language: Python
   path: _log_compactor.py
@@ -17,33 +24,58 @@ interfaces:
   email-triage._rtx.source.rtx-log-compactor.interface.scripts-prune-log:
     content:
     - _log_compactor\.py
-    uses_interfaces: []
+    uses_interfaces:
+    - interface: common.interface.famulus-paths
+      version: 1
     contract:
       arguments: {}
       caller_warnings:
       - external-side-effect: Permanently removes parseable triage-log entries older
           than 30 days.
+      - external-side-effect: Without an EMAIL_TRIAGE_STATE_DIR override, an absent
+          managed log is initialized by copying an existing legacy <module-root>/triage.log
+          before pruning; migration and pruning are separate writes.
+      - external-side-effect: Setting EMAIL_TRIAGE_STATE_DIR selects an explicit
+          unmanaged log and disables legacy migration.
       direct_io:
         network: []
         reads:
+        - access: read
+          content: Optional legacy email-triage decisions copied only when the canonical managed log is absent.
+          formats: [text]
+          id: legacy-log
+          medium: local-filesystem
+          path: <module-root>/triage.log
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
         - access: read
           content: log
           formats:
           - text
           id: read-1
           medium: local-filesystem
-          path: triage.log
+          path: <email_triage_state_root>/triage.log
           path_match: exact
           sensitivity: user-private
           system: filesystem
         writes:
         - access: write
-          content: log
+          content: Guarded legacy-log copy into the canonical managed log before pruning.
+          formats: [text]
+          id: migration-write
+          medium: local-filesystem
+          path: <email_triage_state_root>/triage.log
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        - access: write
+          content: Migrated or pre-existing log rewritten with old parseable entries removed.
           formats:
           - text
           id: write-1
           medium: local-filesystem
-          path: triage.log
+          path: <email_triage_state_root>/triage.log
           path_match: exact
           sensitivity: user-private
           system: filesystem
@@ -56,8 +88,22 @@ interfaces:
           sensitivity: derived-private
       execution:
         consistency:
-          snapshot: Reads the log once and rewrites the entries retained by that snapshot.
+          snapshot: Optionally copies the legacy log first, then reads the selected
+            log once and rewrites the entries retained by that snapshot.
         effects:
+        - action: create
+          confirmation_evidence:
+            direct_io_ref: migration-write
+            kind: direct-io
+          direct_io_ref: migration-write
+          id: migrate-legacy-log
+          may_occur_in_outcomes:
+          - pruned
+          reversibility:
+            irreversible: Migration and the subsequent pruning rewrite are not retained as separable states.
+          value_source:
+            direct_io_ref: legacy-log
+            kind: direct-io
         - action: update
           confirmation_evidence:
             direct_io_ref: write-1
@@ -74,8 +120,8 @@ interfaces:
         lifecycle: finite
         mutation_safety:
           atomicity:
-            per_effect_only: The complete retained line set is written in one direct
-              rewrite.
+            per_effect_only: Guarded legacy copy and pruning rewrite are separate;
+              the complete retained line set is written in one direct rewrite.
           concurrent_invocations:
             unsafe: Concurrent appends can be lost during the read-then-rewrite window.
           idempotency:
@@ -83,7 +129,8 @@ interfaces:
           on_uncertain_completion:
             verify_then_decide: Inspect triage.log before retrying.
           partial_effects_on_failure:
-            possible: An interrupted direct rewrite can truncate the log.
+            possible: A migrated managed log can remain unpruned if failure occurs
+              before rewrite, and an interrupted pruning rewrite can truncate the log.
           rollback_on_failure:
             unavailable: Pruned lines are not backed up.
         state_effect: mutating
@@ -97,6 +144,7 @@ interfaces:
       - caller_action: Retain the summary for run reporting.
         class: success
         effects:
+        - migrate-legacy-log
         - rewrite-log
         id: pruned
         outputs:
@@ -145,6 +193,8 @@ platform_support:
   windows: true
 runtime_dependencies: []
 schema_version: 6
-uses_interfaces: []
+uses_interfaces:
+- interface: common.interface.famulus-paths
+  version: 1
 version: 1
 maturity: stable

@@ -236,12 +236,13 @@ def _write_schema3_pointer(runtime_root: Path) -> Path:
     context.write_text(
         json.dumps(
             {
-                "schema_version": 1,
+                "schema_version": 2,
                 "release_id": release_dir.name,
                 "mode": "standard",
                 "installation_id": "standard",
                 "source_root": str(repository),
                 "development_root": None,
+                "selected_home": str(runtime_root.parent / "home"),
                 "codex_home": str(runtime_root.parent / "home" / ".codex"),
                 "claude_home": str(runtime_root.parent / "home" / ".claude"),
             }

@@ -13,6 +13,8 @@ from officina.install.context import (
 )
 from officina.install.development_activation import (
     ActivationError,
+    _context_from_payload,
+    _context_payload,
     build_interactive_environment,
     install_development_activation,
     verify_managed_commands,
@@ -66,6 +68,29 @@ def _executable(path: Path, body: str = "#!/bin/sh\nexit 0\n") -> Path:
     path.write_text(body, encoding="utf-8")
     path.chmod(path.stat().st_mode | stat.S_IXUSR)
     return path
+
+
+def test_activation_descriptor_publishes_schema2_and_loads_schema1_without_selected_home(tmp_path):
+    context = _context(tmp_path)
+    home, environ = _stable_inputs(tmp_path, "linux")
+    payload = _context_payload(
+        context,
+        (),
+        platform="linux",
+        home=home,
+        environ=environ,
+    )
+
+    assert payload["schema_version"] == 2
+    assert payload["selected_home"] == str(context.selected_home)
+
+    legacy_payload = dict(payload)
+    legacy_payload["schema_version"] = 1
+    legacy_payload.pop("selected_home")
+    loaded, commands = _context_from_payload(legacy_payload)
+
+    assert commands == ()
+    assert loaded.selected_home == context.development_root / ".famulus" / "home"
 
 
 def test_interactive_environment_preserves_host_tools_and_session_but_cleans_python(tmp_path):

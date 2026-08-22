@@ -25,7 +25,20 @@ dependencies:
   reason: Imports Python source from _rtx/_install_scaffold.py.
   source: install-assistant-tools._rtx.source.rtx-install-scaffold
   version: 1
-description: Resolves one installation context and runs the confirmed five-stage idempotent apply workflow.
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-assistant-access-config.yaml
+  reason: Reconciles the context-derived Codex and Claude access policy during apply.
+  source: install-assistant-tools._rtx.source.rtx-assistant-access-config
+  version: 1
+- blueprint:
+    base: repository-root
+    path: src/officina/install/blueprints/assistant-access.yaml
+  reason: Resolves and previews the exact narrow writable-root allowlist.
+  source: install.source.assistant-access
+  version: 1
+description: Resolves one installation context and runs the confirmed five-stage
+  idempotent apply workflow, including recoverable user-level Codex and Claude access reconciliation.
 gateway:
   language: Python
   path: _phase_entry.py
@@ -40,6 +53,10 @@ interfaces:
     - interface: install.interface.install-info
       version: 1
     - interface: install.interface.context
+      version: 1
+    - interface: install.interface.assistant-access
+      version: 1
+    - interface: install-assistant-tools._rtx.source.rtx-assistant-access-config.interface.python-api
       version: 1
     - interface: install.interface.doctor
       version: 1
@@ -60,6 +77,8 @@ interfaces:
       caller_warnings:
       - external-side-effect: Non-dry-run execution can install launchers and bridge
           live development configuration across multiple installer phases.
+      - external-side-effect: Apply reconciles separate owned values in user-level
+          Codex and Claude settings; the recurring config root grants scheduled-command authority.
       direct_io:
         network: []
         reads:
@@ -72,7 +91,8 @@ interfaces:
           sensitivity: user-private
         writes:
         - access: configure
-          content: managed assistant installation state
+          content: managed assistant installation state, including a separately marked
+            Codex writable_roots block and recorded Claude additionalDirectories values
           formats:
           - files
           - symlinks
@@ -215,6 +235,10 @@ uses_interfaces:
 - interface: common.interface.famulus-paths
   version: 1
 - interface: install.interface.context
+  version: 1
+- interface: install.interface.assistant-access
+  version: 1
+- interface: install-assistant-tools._rtx.source.rtx-assistant-access-config.interface.python-api
   version: 1
 - interface: install.interface.doctor
   version: 1

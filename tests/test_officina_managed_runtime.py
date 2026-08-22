@@ -1089,10 +1089,11 @@ def _launcher_context(
         paths = resolve_famulus_paths(platform="linux", home=home, environ={})
         return InstallationContext(
             mode="standard",
-            source_root=repo_root,
-            development_root=None,
-            paths=paths,
-            codex_home=home / ".codex",
+                source_root=repo_root,
+                development_root=None,
+                paths=paths,
+                selected_home=home,
+                codex_home=home / ".codex",
             claude_home=home / ".claude",
             installation_id="standard",
         )
@@ -1111,6 +1112,7 @@ def _launcher_context(
         source_root=repo_root,
         development_root=repo_root,
         paths=paths,
+        selected_home=isolated_home,
         codex_home=repo_root / ".famulus" / "homes" / "codex",
         claude_home=repo_root / ".famulus" / "homes" / "claude",
         installation_id="dev-0123456789abcdef0123456789abcdef",
@@ -1188,6 +1190,7 @@ def test_development_candidate_points_to_exact_live_launcher_resources(monkeypat
     record = json.loads(pointer.installation_context.read_text())
     assert record["release_id"] == pointer.release_id
     assert record["installation_id"] == context.installation_id
+    assert record["selected_home"] == str(context.selected_home)
 
 
 def test_context_publication_failure_preserves_prior_pointer(monkeypatch, tmp_path):

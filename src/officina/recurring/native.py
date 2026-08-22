@@ -440,6 +440,8 @@ def _systemd_unit_inventory(
     )
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "").strip()
+        if result.returncode == 1 and not detail:
+            return _NativeInventory(True)
         return _NativeInventory(False, detail=detail or f"exit {result.returncode}")
     selected = []
     for line in (result.stdout or "").splitlines():

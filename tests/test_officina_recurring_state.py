@@ -631,6 +631,26 @@ def test_linux_inventory_removes_inactive_enabled_orphan_without_registration_fi
     assert ["systemctl", "--user", "disable", "--now", timer] in calls
 
 
+def test_linux_inventory_treats_exit_one_without_output_as_an_empty_namespace(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        native.subprocess,
+        "run",
+        lambda argv, **_kwargs: subprocess.CompletedProcess(
+            argv, 1, stdout="", stderr=""
+        ),
+    )
+
+    inventory = native._systemd_unit_inventory(
+        "ai-dev-example-", "dev-example", native.linux_session_environment()
+    )
+
+    assert inventory.available
+    assert inventory.entries == ()
+    assert inventory.detail == ""
+
+
 def test_linux_teardown_disables_independently_enabled_service_and_converges(
     tmp_path, monkeypatch
 ):

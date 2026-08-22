@@ -264,7 +264,9 @@ def test_failed_activation_leaves_prior_pointer_untouched(tmp_path: Path) -> Non
     assert pointer.release_id == "good-release"
 
 
-def _schema3_candidate(tmp_path: Path, *, mode: str = "standard") -> dict[str, Path]:
+def _schema3_candidate(
+    tmp_path: Path, *, mode: str = "standard", context_schema: int = 2
+) -> dict[str, Path]:
     runtime_root = tmp_path / "runtime"
     release_dir = runtime_root / "releases" / "release-3"
     python_bin = release_dir / "venv" / "bin" / "python"
@@ -281,6 +283,7 @@ def _schema3_candidate(tmp_path: Path, *, mode: str = "standard") -> dict[str, P
         source_root = repository
         development_root = None
         installation_id = "standard"
+        selected_home = tmp_path / "home"
         codex_home = tmp_path / "home" / ".codex"
         claude_home = tmp_path / "home" / ".claude"
     else:
@@ -288,6 +291,7 @@ def _schema3_candidate(tmp_path: Path, *, mode: str = "standard") -> dict[str, P
         source_root = repository
         development_root = repository
         installation_id = "dev-0123456789abcdef0123456789abcdef"
+        selected_home = repository / ".famulus" / "home"
         codex_home = repository / ".famulus" / "homes" / "codex"
         claude_home = repository / ".famulus" / "homes" / "claude"
     launcher_resources.mkdir(parents=True, exist_ok=True)
@@ -295,7 +299,7 @@ def _schema3_candidate(tmp_path: Path, *, mode: str = "standard") -> dict[str, P
     context_path.write_text(
         json.dumps(
             {
-                "schema_version": 1,
+                "schema_version": context_schema,
                 "release_id": release_dir.name,
                 "mode": mode,
                 "installation_id": installation_id,
@@ -305,6 +309,7 @@ def _schema3_candidate(tmp_path: Path, *, mode: str = "standard") -> dict[str, P
                 ),
                 "codex_home": str(codex_home),
                 "claude_home": str(claude_home),
+                **({"selected_home": str(selected_home)} if context_schema == 2 else {}),
             }
         ),
         encoding="utf-8",
@@ -390,3 +395,30 @@ def test_schema3_reader_rejects_unknown_pointer_keys(tmp_path: Path) -> None:
 
     with pytest.raises(RuntimePointerError, match="exactly"):
         load_current_pointer(runtime_root=candidate["runtime_root"])
+
+
+def test_schema3_rejects_a_context_record_missing_selected_home(tmp_path: Path) -> None:
+    candidate = _schema3_candidate(tmp_path)
+    payload = json.loads(candidate["installation_context"].read_text())
+    payload.pop("selected_home")
+    candidate["installation_context"].write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(RuntimePointerError, match="selected_home"):
+        activate_release(**candidate)
+
+
+def test_reapply_interruption_keeps_a_schema1_context_pointer_launchable(
+    tmp_path: Path,
+) -> None:
+    """A newly deployed resolver must still launch the old selected pointer."""
+    candidate = _schema3_candidate(tmp_path, context_schema=1)
+
+    activate_release(**candidate)
+
+    from officina.install.launcher_entry import _load_current_pointer
+
+    assert load_current_pointer(runtime_root=candidate["runtime_root"]).release_id == "release-3"
+    assert _load_current_pointer(candidate["runtime_root"], trusted_roots=()) == (
+        candidate["python_bin"],
+        candidate["repository_config"],
+    )

@@ -75,6 +75,7 @@ _INVENTORY = {
     ("skills/email-client/_rtx/_email_accounts.py", "cmd_use_google_credential_file"): "process override",
     ("skills/email-client/_rtx/_oauth_tokens.py", "get_gmail_access_token"): "development-isolated",
     ("skills/list-manager/_rtx/_yaml_store.py", "_cloud_lock_dir"): "development-isolated",
+    ("skills/list-manager/_rtx/_yaml_store.py", "_cloud_cache_dir"): "development-isolated",
     ("skills/find-handoff-candidates/_rtx/_codex_parser.py", "home_dir"): "development-isolated",
     ("skills/find-handoff-candidates/_rtx/_claude_parser.py", "home_dir"): "development-isolated",
     ("skills/skill-drift/_rtx/_check_drift_state.py", "requested_scopes"): "process override",
@@ -102,6 +103,8 @@ for _module in (
     "_finalize_run.py",
 ):
     _INVENTORY[(f"skills/email-triage/_rtx/{_module}", "default_state_dir")] = "development-isolated"
+for _module in ("_decision_sink.py", "_log_compactor.py"):
+    _INVENTORY[(f"skills/email-triage/_rtx/{_module}", "triage_log_path")] = "development-isolated"
 
 
 def _scanned_consumers() -> set[tuple[str, str]]:

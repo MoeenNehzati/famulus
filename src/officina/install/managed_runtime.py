@@ -843,7 +843,7 @@ def _publish_installation_context(
 ) -> Path:
     path = release_dir / "installation-context.json"
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "release_id": release_dir.name,
         "mode": context.mode,
         "installation_id": context.installation_id,

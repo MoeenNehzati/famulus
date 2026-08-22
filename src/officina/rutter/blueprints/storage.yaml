@@ -17,7 +17,7 @@ dependencies:
     path: blueprints/model.yaml
   reason: Imports Charter, Fix, Reckoning, diagnostics, and exact model errors.
 - source: common.source.atomic-files
-  version: 1
+  version: 2
   blueprint:
     base: repository-root
     path: src/officina/common/blueprints/atomic-files.yaml
@@ -27,7 +27,7 @@ uses_interfaces:
 - interface: rutter.source.model.interface.python-api
   version: 1
 - interface: common.interface.atomic-files
-  version: 1
+  version: 2
 interfaces:
   rutter.source.storage.interface.read:
     content:
@@ -36,7 +36,7 @@ interfaces:
     - interface: rutter.source.model.interface.python-api
       version: 1
     - interface: common.interface.atomic-files
-      version: 1
+      version: 2
     version: 1
     description: Strictly decodes one complete Reckoning without changing storage.
     contract:
@@ -125,7 +125,7 @@ interfaces:
     - interface: rutter.source.model.interface.python-api
       version: 1
     - interface: common.interface.atomic-files
-      version: 1
+      version: 2
     version: 1
     description: Appends .lock to one confined .reckoning.json path and reloads authoritative
       Reckoning bytes under that stable sidecar.
@@ -219,7 +219,7 @@ interfaces:
     - interface: rutter.source.model.interface.python-api
       version: 1
     - interface: common.interface.atomic-files
-      version: 1
+      version: 2
     version: 1
     description: Atomically creates or compare-and-replaces one complete Reckoning
       and returns no value.

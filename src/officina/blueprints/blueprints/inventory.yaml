@@ -6,7 +6,7 @@ dependencies:
     path: src/officina/common/blueprints/atomic-files.yaml
   reason: Imports descriptor-safe regular-file reads from atomic_files.py.
   source: common.source.atomic-files
-  version: 1
+  version: 2
 - blueprint:
     base: repository-root
     path: src/officina/git/blueprints/provenance.yaml

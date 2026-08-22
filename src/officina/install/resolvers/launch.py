@@ -44,9 +44,11 @@ _CONTEXT_KEYS = {
     "installation_id",
     "source_root",
     "development_root",
+    "selected_home",
     "codex_home",
     "claude_home",
 }
+_CONTEXT_V1_KEYS = _CONTEXT_KEYS - {"selected_home"}
 _RUNTIME_ROOT_MODULES = frozenset(
     {
         "officina.launchers.agent",
@@ -227,9 +229,13 @@ def _validate_schema3(
         context = json.loads(validated_context.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, ValueError) as exc:
         raise ResolverError(f"cannot read installation_context: {exc}") from exc
-    if not isinstance(context, dict) or set(context) != _CONTEXT_KEYS:
+    if not isinstance(context, dict):
         raise ResolverError("installation_context has an invalid exact schema")
-    if context.get("schema_version") != 1 or context.get("release_id") != release_id:
+    context_schema = context.get("schema_version")
+    expected_context_keys = _CONTEXT_V1_KEYS if context_schema == 1 else _CONTEXT_KEYS
+    if context_schema not in {1, 2} or set(context) != expected_context_keys:
+        raise ResolverError("installation_context has an invalid exact schema")
+    if context.get("release_id") != release_id:
         raise ResolverError("installation_context release identity does not match pointer")
     mode = context.get("mode")
     if mode == "standard":

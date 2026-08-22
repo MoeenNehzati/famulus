@@ -18,6 +18,15 @@ if __package__ and __package__.count('.') >= 1:
     from .. import _config_bridge as dev_link
 else:
     import _config_bridge as dev_link  # noqa: E402
+if __package__ and __package__.count('.') >= 1:
+    from .._assistant_access_config import reconcile_assistant_access
+    from .._state_record import Manifest
+else:
+    from _assistant_access_config import reconcile_assistant_access  # noqa: E402
+    from _state_record import Manifest  # noqa: E402
+
+from officina.common.famulus_paths import resolve_famulus_paths
+from officina.install.context import InstallationContext
 
 
 class DevLinkHooksTests(unittest.TestCase):
@@ -100,6 +109,39 @@ class DevLinkHooksTests(unittest.TestCase):
             self.assertIn("user = 'keep'", config_text)
             self.assertIn("--codex", config_text)
             self.assertNotIn('/hooks/inject_dispatcher_context.py"', config_text)
+
+    def test_access_reconcile_preserves_the_existing_codex_hook_block_exactly(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            codex_home = home / ".codex"
+            dev_link.install_codex_hooks(codex_home, self.repo_root, dry_run=False)
+            config = codex_home / "config.toml"
+            before = config.read_bytes()
+            context = InstallationContext(
+                mode="standard",
+                source_root=self.repo_root,
+                development_root=None,
+                paths=resolve_famulus_paths(platform=sys.platform, home=home, environ={}),
+                selected_home=home,
+                codex_home=codex_home,
+                claude_home=home / ".claude",
+                installation_id="standard",
+            )
+            manifest = Manifest(context.paths.install_state_root / "install-manifest.json")
+            manifest.bind_context(mode="standard", installation_id="standard")
+
+            reconcile_assistant_access(context, manifest)
+
+            after = config.read_bytes()
+            begin = before.index(dev_link.HOOKS_BLOCK_BEGIN.encode())
+            end = before.index(dev_link.HOOKS_BLOCK_END.encode()) + len(
+                dev_link.HOOKS_BLOCK_END.encode()
+            )
+            self.assertIn(before[begin:end], after)
+            self.assertEqual(
+                {entry["kind"] for entry in manifest.entries if entry["path"] == str(config)},
+                {"codex_access_array_block"},
+            )
 
     def test_hook_loaded_from_standard_release_uses_only_that_immutable_resource_root(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

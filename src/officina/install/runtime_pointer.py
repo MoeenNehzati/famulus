@@ -30,12 +30,13 @@ class RuntimePointer:
 
 @dataclass(frozen=True)
 class InstalledContextRecord:
-    schema_version: Literal[1]
+    schema_version: Literal[1, 2]
     release_id: str
     mode: Literal["standard", "development"]
     installation_id: str
     source_root: Path
     development_root: Path | None
+    selected_home: Path | None
     codex_home: Path
     claude_home: Path
 
@@ -56,9 +57,11 @@ _CONTEXT_KEYS = {
     "installation_id",
     "source_root",
     "development_root",
+    "selected_home",
     "codex_home",
     "claude_home",
 }
+_CONTEXT_V1_KEYS = _CONTEXT_KEYS - {"selected_home"}
 _DEVELOPMENT_ID = re.compile(r"dev-[0-9a-f]{32}\Z")
 
 
@@ -110,12 +113,19 @@ def load_installed_context_record(path: Path) -> InstalledContextRecord:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, ValueError) as exc:
         raise RuntimePointerError(f"cannot read installation_context: {exc}") from exc
-    if not isinstance(payload, dict) or set(payload) != _CONTEXT_KEYS:
-        raise RuntimePointerError(
-            "installation_context must contain exactly the schema-1 context fields"
-        )
-    if payload.get("schema_version") != 1:
+    if not isinstance(payload, dict):
+        raise RuntimePointerError("installation_context must contain an exact supported schema")
+    schema_version = payload.get("schema_version")
+    if schema_version not in {1, 2}:
         raise RuntimePointerError("unsupported installation_context schema_version")
+    expected_keys = _CONTEXT_V1_KEYS if schema_version == 1 else _CONTEXT_KEYS
+    missing = expected_keys - set(payload)
+    if missing:
+        raise RuntimePointerError(
+            f"installation_context is missing required field: {sorted(missing)[0]}"
+        )
+    if set(payload) != expected_keys:
+        raise RuntimePointerError("installation_context must contain an exact supported schema")
     mode = payload.get("mode")
     release_id = payload.get("release_id")
     installation_id = payload.get("installation_id")
@@ -139,7 +149,10 @@ def load_installed_context_record(path: Path) -> InstalledContextRecord:
     else:
         raise RuntimePointerError(f"invalid installation_context mode: {mode!r}")
     paths: dict[str, Path] = {}
-    for key in ("source_root", "codex_home", "claude_home"):
+    path_keys = ("source_root", "codex_home", "claude_home")
+    if schema_version == 2:
+        path_keys += ("selected_home",)
+    for key in path_keys:
         value = payload.get(key)
         if not isinstance(value, str) or not Path(value).is_absolute():
             raise RuntimePointerError(f"installation_context {key} must be absolute")
@@ -149,12 +162,13 @@ def load_installed_context_record(path: Path) -> InstalledContextRecord:
             "development installation_context source_root must equal development_root"
         )
     return InstalledContextRecord(
-        schema_version=1,
+        schema_version=schema_version,
         release_id=release_id,
         mode=mode,
         installation_id=installation_id,
         source_root=paths["source_root"],
         development_root=development_root,
+        selected_home=paths.get("selected_home"),
         codex_home=paths["codex_home"],
         claude_home=paths["claude_home"],
     )

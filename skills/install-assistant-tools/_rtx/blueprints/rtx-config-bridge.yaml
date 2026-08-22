@@ -18,9 +18,9 @@ interfaces:
     - _config_bridge\.py
     uses_interfaces:
     - interface: common.interface.codex-toml
-      version: 1
+      version: 2
     - interface: common.interface.toml-io
-      version: 1
+      version: 2
     contract:
       arguments:
         options:
@@ -203,8 +203,8 @@ runtime_dependencies:
 schema_version: 6
 uses_interfaces:
 - interface: common.interface.codex-toml
-  version: 1
+  version: 2
 - interface: common.interface.toml-io
-  version: 1
+  version: 2
 version: 1
 maturity: stable

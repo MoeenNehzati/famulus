@@ -90,6 +90,15 @@ Backend selection is durable in `launchers.json`. Treat
 `ASSISTANT_DEFAULT` only as a process-local override and never as installation
 state.
 
+Managed assistants receive exactly these writable access roots from the
+selected context: `assistant_logs_root`, `recurring_config_root`,
+`recurring_state_root`, `email_triage_state_root`, `list_manager_lock_root`,
+`list_manager_cache_root`, and `llm_wakeup_root`. Treat
+`recurring_config_root` as writable scheduled-command authority: secrets embedded in job strings may be exposed. Use indirect credential references instead of embedding credentials in job strings.
+The installer does not inspect job strings for secrets. It persists these roots
+to Codex user configuration and Claude user settings; treat IDE/app enforcement
+as unverified until its dedicated qualification runs.
+
 ## Diagnosis and recovery
 
 Use the declared read-only diagnostic interface. Pass `--mode standard`, or

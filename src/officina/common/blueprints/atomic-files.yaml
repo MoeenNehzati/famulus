@@ -2,8 +2,8 @@ content:
 - atomic_files\.py
 dependencies: []
 description: Implements confined regular-file reads, secure replace, create, append,
-  compare-and-append, and advisory sidecar locking on POSIX and Windows, with an explicit
-  non-atomic fallback.
+  compare-and-append, compare-and-replace, compare-and-delete, and advisory sidecar
+  locking on POSIX and Windows, with an explicit non-atomic fallback.
 gateway:
   language: Python
   path: atomic_files.py
@@ -42,13 +42,23 @@ interfaces:
             description: Python bytes value; omitted for read.
             kind: string
         expected-previous-bytes:
-          description: Complete expected predecessor bytes, or null when absence is
-            expected, for compare-and-append.
+          description: Complete expected predecessor bytes for compare-and-append,
+            compare-and-replace, or compare-and-delete; compare-and-replace alone
+            also accepts null when absence is expected.
           required: false
           sensitivity: user-private
           type:
             description: Python bytes value or null.
             kind: string
+        expected-previous-mode:
+          description: Exact predecessor permission bits required by compare-and-replace
+            when a file is expected and by compare-and-delete.
+          required: false
+          sensitivity: public
+          type:
+            kind: integer
+            maximum: 4095
+            minimum: 0
         mode:
           default: 384
           description: Requested file permission bits for mutation operations.
@@ -75,6 +85,10 @@ interfaces:
               value: append
             - description: Append only when the complete predecessor bytes match.
               value: compare-and-append
+            - description: Publish complete replacement bytes after checking predecessor bytes and mode.
+              value: compare-and-replace
+            - description: Remove one file after checking predecessor bytes and mode.
+              value: compare-and-delete
             - description: Hold one confined regular sidecar as a cooperative process lock.
               value: exclusive-lock
         path:
@@ -90,10 +104,12 @@ interfaces:
             relative_to: caller-cwd
             syntax: literal
       caller_warnings:
-      - external-side-effect: Mutation operations create or change a local file; compare-and-append
-          may fail when another writer changes it. Exclusive locking serializes only callers
+      - external-side-effect: Mutation operations create, change, or remove a local file;
+          compare operations may fail when another writer changes it. Exclusive locking serializes only callers
           that acquire the same stable sidecar; it does not govern direct edits or external
-          systems.
+          systems. Handle confinement rejects path and symlink swaps, but a noncooperating
+          already-open writer can race the separate final comparison and publication steps;
+          callers must verify post-state and recover when required.
       direct_io:
         network: []
         reads:
@@ -137,11 +153,13 @@ interfaces:
         mutation_safety:
           atomicity:
             per_effect_only: Secure operations are atomic per file; the explicit fallback
-              is confined but non-atomic.
+              is confined but non-atomic, and comparison plus publication is not a portable
+              byte compare-and-swap transaction.
           concurrent_invocations:
-            safe: Native create and replace and append and compare-and-append use
-              platform synchronization and final-state checks; exclusive-lock callers
-              serialize through one stable sidecar.
+            unsafe: Handle confinement rejects path and symlink swaps, and exclusive-lock
+              callers serialize cooperating operations through one stable sidecar. A
+              noncooperating already-open writer can race the separate final comparison
+              and publication steps, so callers must verify post-state and recover.
           idempotency:
             non_idempotent: Append operations add another frame when repeated.
           on_uncertain_completion:
@@ -174,7 +192,8 @@ interfaces:
         effects: []
         id: rejected
         outputs: []
-      - caller_action: Reread the file and decide whether to retry compare-and-append.
+      - caller_action: Reread the file and decide whether to retry the compare-and-append,
+          compare-and-replace, or compare-and-delete operation.
         class: error
         effects: []
         id: conflict
@@ -209,9 +228,9 @@ interfaces:
         id: confined-path
         unmet_outcome: rejected
     description: Provides atomic file operations to Python callers.
-    version: 1
+    version: 2
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces: []
-version: 1
+version: 2
 maturity: stable

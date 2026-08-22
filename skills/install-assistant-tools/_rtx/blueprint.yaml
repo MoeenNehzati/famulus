@@ -1,5 +1,28 @@
 authority:
-  owns_filesystem: []
+  owns_filesystem:
+  - allowed_readers:
+    - install.interface.doctor
+    match: exact
+    path: <codex-home>/config.toml
+    reason: The installer owns only its separately marked writable_roots entries;
+      foreign Codex configuration remains user-owned.
+  - allowed_readers:
+    - install.interface.doctor
+    match: exact
+    path: <claude-home>/settings.json
+    reason: The installer owns only its recorded permissions.additionalDirectories
+      values; foreign Claude settings remain user-owned.
+  - allowed_readers:
+    - install.interface.doctor
+    match: exact
+    path: <famulus-install-state-root>/install-manifest.json
+    reason: The manifest journals exact installer ownership, including recoverable
+      assistant configuration transactions.
+  - allowed_readers: []
+    match: exact
+    path: <famulus-install-state-root>/assistant-access.lock
+    reason: The installer owns the stable empty sidecar that serializes cooperating
+      assistant-access apply and uninstall operations.
   suggested_permissions:
     bash:
     - command:
@@ -64,6 +87,7 @@ content:
 - _install_launcher/_windows_launcher\.py
 - _install_scaffold\.py
 - _phase_entry\.py
+- _assistant_access_config\.py
 - tests/.*
 description: Code module for the install-assistant-tools skill.
 exports:
@@ -129,6 +153,10 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/rtx-phase-entry.yaml
+  install-assistant-tools._rtx.source.rtx-assistant-access-config:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-assistant-access-config.yaml
   install-assistant-tools._rtx.source.rtx-scripts-doctor:
     blueprint:
       base: module-root

@@ -19,7 +19,7 @@ interfaces:
     - runtime_pointer\.py
     uses_interfaces:
     - interface: common.interface.atomic-files
-      version: 1
+      version: 2
     contract:
       arguments:
         operation:
@@ -36,7 +36,7 @@ interfaces:
             - value: activate-release
               description: Atomically point current.json at release-dir's python-bin.
             - value: load-installed-context
-              description: Load the exact immutable schema-1 installation-context record.
+              description: Load an exact immutable schema-1 or schema-2 installation-context record; schema 2 carries selected_home.
             - value: load-resolver-trusted-roots
               description: Load the trusted interpreter roots selected by the fixed resolver.
         runtime-root:
@@ -107,8 +107,10 @@ interfaces:
       outputs:
       - id: result
         audience: machine
-        description: RuntimePointer dataclass instance with release identity, interpreter,
-          repository configuration, launcher resources, and installation-context fields.
+        description: RuntimePointer or InstalledContextRecord dataclass instance with
+          release identity, interpreter, repository configuration, launcher resources,
+          and installation-context fields; schema-2 records expose selected_home while
+          schema-1 records remain readable with selected_home absent.
         direct_io_ref: return-value
         cardinality:
           minimum: 1
@@ -245,6 +247,6 @@ node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
 - interface: common.interface.atomic-files
-  version: 1
+  version: 2
 version: 1
 maturity: stable

@@ -13,6 +13,7 @@ from .context import (
     resolve_stable_roots,
     validate_development_boundaries,
 )
+from .assistant_access import AssistantAccessBoundaryError, resolve_assistant_access_roots
 from .managed_runtime import deployed_resolver_trusted_roots
 from .runtime_pointer import (
     InstalledContextRecord,
@@ -26,6 +27,7 @@ from .runtime_pointer import (
 
 __all__ = [
     "ActivationError",
+    "AssistantAccessBoundaryError",
     "DevelopmentBoundaryError",
     "DiagnosticCheck",
     "DiagnosticReport",
@@ -46,6 +48,7 @@ __all__ = [
     "load_installed_context_record",
     "load_or_create_development_installation_id",
     "resolve_installation_context",
+    "resolve_assistant_access_roots",
     "render_diagnostic_json",
     "render_diagnostic_text",
     "resolve_stable_roots",
