@@ -1,0 +1,179 @@
+schema_version: 6
+id: launchers.source.agent
+version: 1
+maturity: stable
+node_type: behavioral_source
+description: Validate the active schema-3 installation, select a durable or process-local backend, and launch a named managed agent.
+gateway:
+  language: Python
+  path: agent.py
+content:
+- agent\.py
+dependencies: []
+uses_interfaces:
+- interface: common.interface.atomic-files
+  version: 1
+- interface: common.interface.famulus-paths
+  version: 1
+- interface: install.interface.context
+  version: 1
+- interface: install.interface.runtime-pointer
+  version: 1
+interfaces:
+  launchers.source.agent.interface.python-api:
+    version: 1
+    content:
+    - agent\.py
+    uses_interfaces:
+    - interface: common.interface.atomic-files
+      version: 1
+    - interface: common.interface.famulus-paths
+      version: 1
+    - interface: install.interface.context
+      version: 1
+    - interface: install.interface.runtime-pointer
+      version: 1
+    contract:
+      arguments:
+        operation:
+          description: Durable configuration read or write, or managed agent launch.
+          required: true
+          sensitivity: public
+          type:
+            kind: enum
+            values:
+            - value: load-configuration
+              description: Validate and return launchers.json.
+            - value: ensure-configuration
+              description: Create, preserve, or explicitly change launchers.json.
+            - value: launch-agent
+              description: Resolve the active schema-3 context and launch one agent.
+        runtime-root:
+          description: Absolute active runtime root injected by the fixed resolver for launch-agent.
+          required: false
+          sensitivity: user-private
+          direct_io_ref: runtime-state
+          type:
+            kind: dir
+            syntax: literal
+            relative_to: caller-cwd
+            must_exist: true
+            access: read
+        config-root:
+          description: Absolute context configuration root owning launchers.json.
+          required: false
+          sensitivity: user-private
+          direct_io_ref: launcher-configuration
+          type:
+            kind: dir
+            syntax: literal
+            relative_to: caller-cwd
+            must_exist: false
+            access: read-write
+      preconditions: []
+      interaction:
+        mode: unattended
+      caller_warnings:
+      - external-side-effect: ensure-configuration may atomically replace launchers.json and launch-agent replaces or waits for an external assistant process.
+      outputs:
+      - id: result
+        audience: machine
+        description: Validated launcher configuration, generated command, or process exit status.
+        direct_io_ref: return-value
+        cardinality:
+          minimum: 1
+          maximum: 1
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        empty: Never empty on success.
+        type:
+          kind: string
+          sensitivity: user-private
+      outcomes:
+      - id: completed
+        class: success
+        outputs:
+        - result
+        effects:
+        - launcher-state
+        caller_action: Consume the returned configuration or launched process status.
+      - id: invalid-context
+        class: error
+        outputs: []
+        effects: []
+        caller_action: Repair the active pointer, context record, or launcher configuration before retrying.
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency:
+          live: Pointer, context, launcher resources, and configuration are validated at invocation time.
+        effects:
+        - id: launcher-state
+          direct_io_ref: launcher-configuration
+          action: update
+          value_source:
+            kind: argument
+            argument_ref: operation
+          may_occur_in_outcomes:
+          - completed
+          confirmation_evidence:
+            kind: direct-io
+            direct_io_ref: launcher-configuration
+          reversibility:
+            reversible: A later explicit backend selection atomically replaces launchers.json.
+        mutation_safety:
+          atomicity:
+            atomic: launchers.json is replaced atomically as one complete JSON document.
+          concurrent_invocations:
+            safe: Readers observe a complete previous or replacement file.
+          idempotency:
+            idempotent: Repeating the same ensure operation preserves the same backend selection.
+          on_uncertain_completion:
+            verify_then_decide: Reload launchers.json before retrying.
+          partial_effects_on_failure:
+            impossible: Validation completes before replacement and atomic replacement never exposes partial JSON.
+          rollback_on_failure:
+            automatic: Atomic replacement preserves the previous visible file on pre-replace failure.
+        verification:
+        - method: direct-io-state
+          direct_io_ref: launcher-configuration
+      helpers: []
+      direct_io:
+        network: []
+        reads:
+        - id: runtime-state
+          medium: local-filesystem
+          access: read
+          content: Active current.json, installation context, and launcher resources.
+          formats:
+          - json
+          sensitivity: user-private
+          path: <runtime-root>
+        - id: launcher-configuration
+          medium: local-filesystem
+          access: read-write
+          content: Exact durable default-backend selection.
+          formats:
+          - json
+          sensitivity: user-private
+          path: <famulus-config-root>/launchers.json
+        writes:
+        - id: return-value
+          medium: local-system
+          access: write
+          content: Python return value or process exit status.
+          formats:
+          - text
+          sensitivity: user-private
+        - id: launcher-configuration
+          medium: local-filesystem
+          access: read-write
+          content: Exact durable default-backend selection.
+          formats:
+          - json
+          sensitivity: user-private
+          path: <famulus-config-root>/launchers.json
+    description: Own durable backend selection and managed agent launch policy.

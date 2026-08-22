@@ -61,12 +61,15 @@ def test_detects_service_and_timer_drift(tmp_path):
         backend_name=backend.name, job=job, context=context
     ) is None
 
-    # A service whose ExecStart points at a jobs.yaml that no longer exists is
+    # A service whose ExecStart points at a descriptor that no longer exists is
     # the case this check exists for: systemd would fail to exec it, and
     # nothing else notices until the log goes stale a full interval later.
     service = tmp_path / "ai-my-job.service"
     service.write_text(
-        service.read_text().replace(str(context.jobs_file), "/stale/jobs.yaml")
+        service.read_text().replace(
+            str(context.config_root / "schedule-descriptor.json"),
+            "/stale/schedule-descriptor.json",
+        )
     )
     assert check_job_configuration(
         backend_name=backend.name, job=job, context=context
@@ -109,12 +112,12 @@ def test_a_non_owning_copy_declines_to_judge_instead_of_reporting_drift(tmp_path
 
     assert reason is not None
     assert "stale" not in reason
-    assert "does not own" in reason
+    assert "recorded source missing" in reason
 
 
 # famulus-skip: category=platform-contract; reason=systemd unit text uses POSIX paths and newlines; alternate=Windows registration drift tests cover the native scheduler backend
 @pytest.mark.skipif(os.name == "nt", reason="systemd unit contract")
-def test_reports_a_unit_whose_executor_no_longer_exists(tmp_path):
+def test_managed_unit_survives_removed_skill_executor(tmp_path):
     """Byte-identical units are not enough: the target has to be there.
 
     This is the stranding case -- a sync from a checkout that was later deleted
@@ -136,6 +139,4 @@ def test_reports_a_unit_whose_executor_no_longer_exists(tmp_path):
         backend_name=backend.name, job=job, context=context
     )
 
-    assert reason is not None
-    assert "stale" not in reason
-    assert "missing" in reason
+    assert reason is None

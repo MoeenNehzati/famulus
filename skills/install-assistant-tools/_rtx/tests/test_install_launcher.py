@@ -113,12 +113,13 @@ def test_linux_dispatcher_and_invoke_skill_are_extensionless(tmp_path):
     assert str(repo_root) not in dispatcher_text
     assert sys.executable not in dispatcher_text
     assert invoke_text.startswith("#!/usr/bin/env python3")
-    assert "os.execvp(command[0], command)" in invoke_text
-    assert "_agent_invoker.sh" not in invoke_text
+    assert "os.execv(RESOLVER" in invoke_text
+    assert "'officina.launchers.agent'" in invoke_text
+    assert "'--invoke-skill'" in invoke_text
     assert sys.executable not in invoke_text
 
 
-def test_invoke_skill_runs_the_background_run_agent_not_assistant(tmp_path):
+def test_invoke_skill_delegates_agent_policy_to_managed_module(tmp_path):
     """Every scheduled job goes through invoke-skill, so which agent it names
     decides how all unattended work is configured.
 
@@ -134,19 +135,10 @@ def test_invoke_skill_runs_the_background_run_agent_not_assistant(tmp_path):
     installer.install_invoke_skill_launcher(bin_dir, dry_run=False)
     invoke_text = (bin_dir / "invoke-skill").read_text(encoding="utf-8")
 
-    assert "'background_run'" in invoke_text
-    assert "'assistant'" not in invoke_text
-
-    # Both backends, and each still invokes the skill itself.
-    assert "command += " not in invoke_text  # no conditional prompt assembly
-    assert "'-p', f'/{skill}'" in invoke_text
-    assert "f'${skill}'" in invoke_text
-
-    # The contract must arrive through the agent definition, not be pasted in
-    # here. Two hand-built copies drift, and the codex one had to be appended
-    # to the prompt to avoid displacing the skill token.
-    assert "append-system-prompt" not in invoke_text
-    assert "background_run.md" not in invoke_text
+    assert "'officina.launchers.agent'" in invoke_text
+    assert "'--invoke-skill'" in invoke_text
+    assert "ASSISTANT_DEFAULT" not in invoke_text
+    assert "background_run" not in invoke_text
 
 
 # famulus-skip: category=platform-contract; reason=the Linux wakeup bundle executes POSIX launchers; alternate=test_windows_dispatcher_and_invoke_skill_are_batch_launchers covers native Windows launchers
@@ -279,11 +271,8 @@ def test_windows_dispatcher_and_invoke_skill_are_batch_launchers(tmp_path):
     assert sys.executable not in content
     assert not (bin_dir / "dispatcher").exists()
     assert invoke_skill.status == "installed"
-    # Windows has to reach the same agent the POSIX launcher does; a scheduled
-    # run that fell back to `assistant` here would quietly lose the unattended
-    # instructions and the reasoning budget that go with background_run.
-    assert "background_run --local --claude" in invoke_content
-    assert "background_run --local --codex exec" in invoke_content
+    assert "-m officina.launchers.agent --invoke-skill %*" in invoke_content
+    assert "ASSISTANT_DEFAULT" not in invoke_content
     assert not (bin_dir / "invoke-skill").exists()
 
 
@@ -293,6 +282,7 @@ def test_windows_wakeup_bundle_installs_both_batch_commands(tmp_path, monkeypatc
     bin_dir = tmp_path / "bin"
     monkeypatch.setattr(sys, "platform", "win32")
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
+    monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
     with mock.patch.object(
         windows_launcher.shutil,
         "which",
@@ -363,27 +353,54 @@ def test_windows_dispatcher_raises_clear_error_when_no_interpreter_found(tmp_pat
             _windows_dispatcher_content(repo_root, home=tmp_path / "home")
 
 
-def test_windows_agent_launcher_files_are_copied(tmp_path):
-    source_bin = tmp_path / "repo" / "skills" / "install-assistant-tools" / "_rtx/assets/bin"
-    source_bin.mkdir(parents=True)
-    for name in ["assistant", "_agent_launch.py", "assistant.bat"]:
-        (source_bin / name).write_text("stub\n", encoding="utf-8")
+def test_linux_agent_launcher_is_generated_for_managed_agent_module(tmp_path):
+    installer = platform_launcher_installer("linux")
     bin_dir = tmp_path / "bin"
 
-    installer = platform_launcher_installer("win32")
     installer.install_agent_launcher_files(
-        source_bin_dir=source_bin,
+        source_bin_dir=tmp_path / "unused-assets",
         bin_dir=bin_dir,
         agent="assistant",
         dry_run=False,
         manifest=None,
+        home=tmp_path / "home",
+        environ={},
     )
 
-    assert (bin_dir / "assistant").is_file()
-    assert (bin_dir / "_agent_launch.py").is_file()
-    assert (bin_dir / "assistant.bat").is_file()
-    assert not (bin_dir / "assistant").is_symlink()
-    assert not (bin_dir / "_agent_launch.py").is_symlink()
+    content = (bin_dir / "assistant").read_text(encoding="utf-8")
+    assert "officina.launchers.agent" in content
+    assert "--agent" in content and "assistant" in content
+    assert "_agent_launch.py" not in content
+
+
+def test_windows_agent_launcher_pins_bootstrap_interpreter(tmp_path):
+    installer = platform_launcher_installer("win32")
+    bin_dir = tmp_path / "bin"
+    with mock.patch.object(
+        windows_launcher.shutil,
+        "which",
+        side_effect=lambda name: r"C:\Python312\python.exe" if name == "python" else None,
+    ):
+        installer.install_agent_launcher_files(
+            source_bin_dir=tmp_path / "unused-assets",
+            bin_dir=bin_dir,
+            agent="assistant",
+            dry_run=False,
+            manifest=None,
+            home=tmp_path / "home",
+            environ={
+                "LOCALAPPDATA": str(tmp_path / "local"),
+                "APPDATA": str(tmp_path / "roaming"),
+            },
+        )
+
+    content = (bin_dir / "assistant.bat").read_text(encoding="utf-8")
+    assert r'"C:\Python312\python.exe"' in content
+    assert "officina.launchers.agent" in content
+    assert "--agent assistant" in content
+    assert 'if /I "%~1"=="--help" (\n' in content
+    assert "& exit /b 0" not in content
+    assert not (bin_dir / "assistant").exists()
 
 
 def test_windows_tw_is_skipped(tmp_path):

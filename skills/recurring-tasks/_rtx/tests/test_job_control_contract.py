@@ -1,66 +1,23 @@
-"""Owner-local behavioral contracts for recurring-task job edits."""
+from __future__ import annotations
 
-from pathlib import Path
+from unittest import mock
 
 import pytest
 
 from .. import _job_control as job_control
 
 
-SCRIPT = Path(__file__).resolve().parents[1] / "_job_control.py"
+@pytest.mark.parametrize("operation", ["enable", "disable"])
+def test_job_edit_interface_uses_only_managed_canonical_authority(monkeypatch, operation):
+    delegated = mock.Mock(return_value=0)
+    monkeypatch.setattr(job_control, "run_managed_control", delegated)
+
+    assert job_control.Interface().run([operation, "target"]) == 0
+    delegated.assert_called_once_with(operation, ["target"])
 
 
-@pytest.mark.parametrize(
-    ("operation", "initial_enabled", "expected_enabled"),
-    [
-        ("enable", False, True),
-        ("disable", True, False),
-    ],
-)
-def test_job_edit_interface_uses_custom_file_without_scheduler_sync(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    operation: str,
-    initial_enabled: bool,
-    expected_enabled: bool,
-) -> None:
-    jobs_file = tmp_path / "jobs.yaml"
-    job_control.save_jobs(
-        [
-            {
-                "name": "target",
-                "command": "true",
-                "schedule": "0 * * * *",
-                "enabled": initial_enabled,
-            },
-            {
-                "name": "sibling",
-                "command": "true",
-                "schedule": "0 1 * * *",
-                "enabled": True,
-            },
-        ],
-        jobs_file,
-    )
-
-    def reject_sync(*_args: object, **_kwargs: object) -> None:
-        raise AssertionError("--no-sync must not invoke scheduler synchronization")
-
-    monkeypatch.setattr(job_control, "sync_units", reject_sync)
-
-    result = job_control.Interface().run(
-        [
-            operation,
-            "target",
-            "--jobs-file",
-            str(jobs_file),
-            "--no-sync",
-        ]
-    )
-
-    assert result == 0
-    jobs_by_name = {
-        job["name"]: job for job in job_control.load_jobs(jobs_file)
-    }
-    assert jobs_by_name["target"]["enabled"] is expected_enabled
-    assert jobs_by_name["sibling"]["enabled"] is True
+def test_job_edit_interface_retires_custom_file_and_no_sync_modes():
+    with pytest.raises(SystemExit):
+        job_control.Interface().run(
+            ["enable", "target", "--jobs-file", "/tmp/other.yaml", "--no-sync"]
+        )

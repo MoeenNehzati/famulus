@@ -107,5 +107,9 @@ def _plugin_sources(home: Path) -> list[SkillSource]:
 def sources() -> list[SkillSource]:
     """Return Claude direct skills and registry-named active plugin roots."""
 
-    home = Path(os.environ.get("CLAUDE_HOME", "~/.claude")).expanduser()
+    home = Path(
+        os.environ.get(
+            "CLAUDE_CONFIG_DIR", os.environ.get("CLAUDE_HOME", "~/.claude")
+        )
+    ).expanduser()
     return [*host_skill_sources("claude", home), *_plugin_sources(home)]

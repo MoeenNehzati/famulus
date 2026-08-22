@@ -43,7 +43,9 @@ def assert_default_bin_dir_matches_famulus_paths(default_bin_dir, home: Path) ->
     """
     from officina.common.famulus_paths import resolve_famulus_paths
 
-    expected = resolve_famulus_paths(platform=sys.platform, home=home).user_bin
+    expected = resolve_famulus_paths(
+        platform=sys.platform, home=home, environ=os.environ
+    ).user_bin
     result = default_bin_dir(home=home)
 
     assert result == expected

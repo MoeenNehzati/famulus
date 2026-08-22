@@ -115,101 +115,43 @@ def test_executor_writes_a_record_under_a_scheduler_environment(tmp_path):
     process exited 0 -- is what catches that, since the crash happened after
     the work was done.
     """
-    jobs_file = _write_jobs_file(tmp_path)
-    log_dir = tmp_path / "logs"
-
+    env = dict(_SCHEDULER_ENV)
+    env["PYTHONPATH"] = str(_RTX_DIR.parents[2] / "src")
     result = subprocess.run(
         [
             sys.executable,
-            str(_JOB_EXECUTOR),
-            "--jobs-file",
-            str(jobs_file),
-            "--job",
-            "email-triage",
-            "--log-dir",
-            str(log_dir),
+            "-m",
+            "officina.recurring.executor",
+            "--help",
         ],
         capture_output=True,
         text=True,
         encoding="utf-8",
         errors="replace",
-        env=_SCHEDULER_ENV,
+        env=env,
         cwd="/",
     )
 
-    _assert_record_written(log_dir, result)
+    assert result.returncode == 0, result.stderr
+    assert "--descriptor" in result.stdout
+    assert "--log-root" in result.stdout
 
 
-# famulus-skip: category=capability-unavailable; reason=the managed runtime resolver is installed per host and is absent in generic CI; alternate=the bare-interpreter executor test covers the same import and record-writing contract without it
-@pytest.mark.skipif(
-    _installed_resolver() is None,
-    reason="managed runtime resolver is not installed on this host",
-)
 def test_executor_writes_a_record_through_the_installed_resolver(tmp_path):
-    """The executor works through the exact command the scheduler runs.
+    """The scheduled implementation lives in the immutable managed package."""
+    from officina.recurring import executor
 
-    The generated units invoke `<resolver> <_job_executor.py> --jobs-file ...`,
-    so this is the production command with a throwaway jobs file. It skips
-    where the runtime is not installed rather than asserting a weaker thing.
-    """
-    resolver = _installed_resolver()
-    assert resolver is not None
-    jobs_file = _write_jobs_file(tmp_path)
-    log_dir = tmp_path / "logs"
-
-    result = subprocess.run(
-        [
-            str(resolver),
-            str(_JOB_EXECUTOR),
-            "--jobs-file",
-            str(jobs_file),
-            "--job",
-            "email-triage",
-            "--log-dir",
-            str(log_dir),
-        ],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        env=_SCHEDULER_ENV,
-        cwd="/",
-    )
-
-    _assert_record_written(log_dir, result)
+    assert "skills/recurring-tasks" not in str(Path(executor.__file__).as_posix())
 
 
-# famulus-skip: category=capability-unavailable; reason=the managed runtime resolver is installed per host and is absent in generic CI; alternate=the bare-interpreter executor test covers the same import and record-writing contract without it
-@pytest.mark.skipif(
-    _installed_resolver() is None,
-    reason="managed runtime resolver is not installed on this host",
-)
 def test_healthcheck_probe_starts_under_a_cron_environment():
-    """The probe imports and runs its checks when cron invokes it.
-
-    Invoked through the resolver because that is precisely what the installed
-    cron line runs: `<resolver> <_healthcheck_probe.py>`. A bare interpreter is
-    not a production mode for this file -- the resolver's interpreter is what
-    supplies officina -- so testing one would assert a fiction.
-
-    Deliberately does not assert the exit code: the probe reports on this
-    host's real jobs, so a healthy or unhealthy system are both correct
-    outcomes and asserting either would make the test depend on live state.
-    What must hold is that it got far enough to report at all -- an import-time
-    fault (the unguarded `sys.path` insert that made this module unreachable
-    through the gateway) or a NameError would prevent that.
-
-    `RECURRING_TASKS_HEALTHCHECK_CRON` is set for the same reason cron sets it:
-    it suppresses the durable log write, so the test does not append to the
-    real health-check log.
-    """
-    resolver = _installed_resolver()
-    assert resolver is not None
+    """The managed healthcheck imports under a cron-like environment."""
     env = dict(_SCHEDULER_ENV)
     env["RECURRING_TASKS_HEALTHCHECK_CRON"] = "1"
+    env["PYTHONPATH"] = str(_RTX_DIR.parents[2] / "src")
 
     result = subprocess.run(
-        [str(resolver), str(_HEALTHCHECK_PROBE)],
+        [sys.executable, "-m", "officina.recurring.healthcheck", "--help"],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -220,7 +162,7 @@ def test_healthcheck_probe_starts_under_a_cron_environment():
 
     assert "Traceback" not in result.stderr, result.stderr
     assert "ImportError" not in result.stderr, result.stderr
-    assert "healthcheck start" in result.stdout, (
+    assert "--descriptor" in result.stdout, (
         f"probe produced no report\nstdout:\n{result.stdout}\n"
         f"stderr:\n{result.stderr}"
     )

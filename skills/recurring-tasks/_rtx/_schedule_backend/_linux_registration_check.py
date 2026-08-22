@@ -14,6 +14,8 @@ from ._linux_backend import (
     default_unit_dir,
     service_content,
     timer_content,
+    service_name,
+    timer_name,
 )
 
 
@@ -59,32 +61,34 @@ def check_job_configuration(
     # remaining checks (freshness, activity) do not depend on this copy's paths.
     # A *missing* record is deliberately not a refusal here: there is nothing to
     # contradict, and SYNC owns that case.
-    owner = read_owner(unit_dir)
-    if owner is not None and owner != context.skill_dir:
+    owner = read_owner(unit_dir, context.installation_id)
+    if owner is not None and not owner.exists():
         return (
-            f"{job.name}: registration not verified -- this copy does not own "
-            f"the installation (owner: {owner})"
+            f"{job.name}: recorded source missing for installation "
+            f"{context.installation_id} ({owner}); restore the source and repair this context"
         )
-    service_name = f"{PREFIX}{job.name}.service"
-    timer_name = f"{PREFIX}{job.name}.timer"
+    selected_service_name = service_name(job.name, context.installation_id)
+    selected_timer_name = timer_name(job.name, context.installation_id)
     expected = (
         (
-            unit_dir / service_name,
+            unit_dir / selected_service_name,
             service_content(
                 job.name,
                 job.description,
                 context.jobs_file,
                 context.skill_dir / "_job_executor.py",
                 context.runtime_resolver,
+                log_root=context.log_dir,
+                descriptor=context.config_root / "schedule-descriptor.json",
             ),
             "service",
         ),
         (
-            unit_dir / timer_name,
+            unit_dir / selected_timer_name,
             timer_content(
                 job.description,
                 cron_to_systemd_calendar(job.schedule),
-                service_name,
+                selected_service_name,
             ),
             "timer",
         ),
@@ -102,7 +106,9 @@ def check_job_configuration(
     # from a checkout that was later deleted leaves exactly that: a clean
     # comparison over a registration that fails to exec, with nothing else to
     # notice until the outcome record goes stale a full interval later.
-    executor = context.skill_dir / "_job_executor.py"
-    if not executor.exists():
-        return f"{job.name}: executor missing ({executor})"
+    if not context.runtime_resolver.exists():
+        return f"{job.name}: fixed resolver missing ({context.runtime_resolver})"
+    descriptor = context.config_root / "schedule-descriptor.json"
+    if context.live and not descriptor.exists():
+        return f"{job.name}: schedule descriptor missing ({descriptor}); run Famulus apply"
     return None

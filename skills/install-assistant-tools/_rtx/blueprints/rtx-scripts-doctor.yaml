@@ -1,0 +1,104 @@
+content:
+- _scripts_doctor\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: install-assistant-tools._rtx.source.rtx-init
+  version: 1
+description: Diagnoses one explicitly selected standard or development installation context without mutation.
+gateway:
+  language: Python
+  path: _scripts_doctor.py
+id: install-assistant-tools._rtx.source.rtx-scripts-doctor
+interfaces:
+  install-assistant-tools._rtx.source.rtx-scripts-doctor.interface.scripts-doctor:
+    content:
+    - _scripts_doctor\.py
+    uses_interfaces:
+    - interface: install.interface.context
+      version: 1
+    - interface: install.interface.doctor
+      version: 1
+    contract:
+      arguments:
+        options:
+          description: Explicit mode, optional absolute development checkout, optional home, and JSON rendering choice.
+          required: true
+          sensitivity: user-private
+          type: {kind: string, sensitivity: user-private}
+      caller_warnings: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: Selected context pointer, runtime, source, commands, manifest, and recurring registrations.
+          formats: [json, files, paths]
+          id: installation-state
+          medium: local-filesystem
+          path: explicitly selected installation context
+          sensitivity: user-private
+          system: filesystem
+        writes:
+        - access: write
+          content: Human or schema-versioned JSON diagnostic report.
+          formats: [text, json]
+          id: report
+          medium: stdout
+          sensitivity: derived-private
+      execution:
+        consistency:
+          live: Every check reflects state read during this invocation.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: report
+      helpers: []
+      interaction: {mode: unattended}
+      outcomes:
+      - caller_action: Follow exact safe recovery guidance for failed checks.
+        class: success
+        effects: []
+        id: diagnosed
+        outputs: [report]
+      outputs:
+      - audience: both
+        cardinality: {minimum: 1, maximum: 1}
+        description: Complete diagnostic report for the selected context.
+        direct_io_ref: report
+        empty: Never empty.
+        id: report
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        type: {kind: string, sensitivity: derived-private}
+      preconditions: []
+    description: Diagnose one explicit context; mode is never inferred from cwd and no state is mutated.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allowed_flags: [--mode, --checkout, --home, --json]
+        flag_patterns:
+          --mode: ^(standard|development)$
+          --checkout: ^/.+$
+          --home: ^.+$
+        max_positionals: 0
+        min_positionals: 0
+        name: owner
+        required_flags: [--mode]
+    usage: --mode {standard,development} [--checkout ABSOLUTE_PATH] [--home DIR] [--json]
+    version: 1
+node_type: behavioral_source
+platform_support: {linux: true, macos: true, windows: true}
+runtime_dependencies: []
+schema_version: 6
+uses_interfaces:
+- interface: install.interface.context
+  version: 1
+- interface: install.interface.doctor
+  version: 1
+version: 1
+maturity: stable

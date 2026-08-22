@@ -156,7 +156,7 @@ def test_state_dir_defaults_to_famulus_state_root_not_skill_dir(monkeypatch, tmp
     from officina.common.famulus_paths import resolve_famulus_paths
 
     expected = resolve_famulus_paths(
-        platform=sys.platform, home=tmp_path
+        platform=sys.platform, home=tmp_path, environ=os.environ
     ).email_triage_state_root
 
     assert fe.default_state_dir(home=tmp_path) == expected

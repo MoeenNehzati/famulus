@@ -312,7 +312,13 @@ def _cloud_lock_dir(*, home: Path | None = None) -> Path:
         return Path(override)
     from officina.common.famulus_paths import resolve_famulus_paths
 
-    return resolve_famulus_paths(platform=sys.platform, home=home or Path.home()).state_root / "list-manager" / "locks"
+    return (
+        resolve_famulus_paths(
+            platform=sys.platform, home=home or Path.home(), environ=os.environ
+        ).state_root
+        / "list-manager"
+        / "locks"
+    )
 
 
 _SAFE_LOCK_NAME_RE = re.compile(r"[^A-Za-z0-9_.-]")

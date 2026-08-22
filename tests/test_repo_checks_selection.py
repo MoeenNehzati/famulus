@@ -170,6 +170,7 @@ def test_native_tasks_use_their_exact_smoke_nodes() -> None:
     assert keyring[-1].endswith(
         "tests/test_officina_secret_store.py::test_default_backend_native_roundtrip_when_available"
     )
-    assert scheduler[-1].endswith(
-        "skills/recurring-tasks/_rtx/tests/test_scheduler_live_smoke.py"
-    )
+    assert [Path(target).as_posix() for target in scheduler[-2:]] == [
+        "skills/recurring-tasks/_rtx/tests/test_scheduler_live_smoke.py",
+        "tests/test_officina_recurring_managed.py",
+    ]

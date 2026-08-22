@@ -2,8 +2,8 @@ content:
 - famulus_paths/__init__\.py
 dependencies: []
 description: Resolves platform-correct Famulus install, config, state, and runtime
-  paths that avoid the user's Documents folder on every platform, honoring XDG and
-  LOCALAPPDATA overrides.
+  paths from an explicit environment mapping, avoiding ambient process state and
+  the user's Documents folder on every platform.
 gateway:
   language: Python
   path: famulus_paths/__init__.py
@@ -34,6 +34,16 @@ interfaces:
             relative_to: caller-cwd
             must_exist: false
             access: read
+        environ:
+          description: Explicit environment mapping containing any XDG, APPDATA,
+            LOCALAPPDATA, or assistant-home overrides selected by the caller. Missing
+            platform path overrides use conventions below the explicit home.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            description: Read-only string-to-string mapping; ambient os.environ
+              is never consulted.
       preconditions:
       - id: absolute-home
         description: home must be an absolute path.
@@ -43,6 +53,14 @@ interfaces:
           predicate: present
         unmet_outcome: invalid-home
         caller_action: Supply an absolute home directory path.
+      - id: absolute-environment-roots
+        description: Every supplied root override must be non-empty and absolute.
+        check:
+          kind: argument
+          argument_ref: environ
+          predicate: present
+        unmet_outcome: invalid-home
+        caller_action: Remove the override or supply a non-empty absolute path.
       interaction:
         mode: unattended
       caller_warnings: []
@@ -78,16 +96,11 @@ interfaces:
         outputs: []
         effects: []
         caller_action: Supply an absolute home directory path.
-      - id: missing-localappdata
-        class: error
-        outputs: []
-        effects: []
-        caller_action: Ensure LOCALAPPDATA is set before resolving paths on Windows.
       execution:
         state_effect: read-only
         lifecycle: finite
         consistency:
-          live: Environment overrides are read once during the call.
+          live: The explicit environment mapping is read once during the call.
         verification:
         - method: output-schema
           output_ref: result
@@ -103,38 +116,6 @@ interfaces:
           sensitivity: user-private
           path: <home>
           path_match: exact
-        - id: xdg-data-home-env
-          medium: local-system
-          access: read
-          system: process-environment
-          content: XDG_DATA_HOME override
-          formats:
-          - environment-variable
-          sensitivity: public
-        - id: xdg-config-home-env
-          medium: local-system
-          access: read
-          system: process-environment
-          content: XDG_CONFIG_HOME override
-          formats:
-          - environment-variable
-          sensitivity: public
-        - id: xdg-state-home-env
-          medium: local-system
-          access: read
-          system: process-environment
-          content: XDG_STATE_HOME override
-          formats:
-          - environment-variable
-          sensitivity: public
-        - id: localappdata-env
-          medium: local-system
-          access: read
-          system: process-environment
-          content: LOCALAPPDATA override required on Windows
-          formats:
-          - environment-variable
-          sensitivity: public
         writes:
         - id: return-value
           medium: local-system

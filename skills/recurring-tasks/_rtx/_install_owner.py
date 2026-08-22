@@ -35,6 +35,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -42,29 +43,39 @@ from pathlib import Path
 # they sweep away disabled jobs, so the record is never mistaken for a
 # registration and deleted with one.
 RECORD_NAME = "install-owner.json"
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
+
+
+@dataclass(frozen=True)
+class OwnerRecord:
+    installation_id: str
+    source_path: Path
 
 
 class NotTheOwnerError(RuntimeError):
     """Raised when a copy that does not own the installation tries to write it."""
 
 
-def record_path(unit_dir: Path) -> Path:
-    return Path(unit_dir) / RECORD_NAME
+def record_path(unit_dir: Path, installation_id: str = "standard") -> Path:
+    name = RECORD_NAME if installation_id == "standard" else f"install-owner-{installation_id}.json"
+    return Path(unit_dir) / name
 
 
-def write_owner(*, unit_dir: Path, owner: Path) -> None:
+def write_owner(
+    *, unit_dir: Path, owner: Path, installation_id: str = "standard"
+) -> None:
     """Record ``owner`` as the checkout owning this installation.
 
     Written atomically: a torn record reads back as no record at all, which is
     a branch the caller must already handle, whereas a half-written one would
     be a new failure mode.
     """
-    target = record_path(unit_dir)
+    target = record_path(unit_dir, installation_id)
     target.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "schema_version": _SCHEMA_VERSION,
-        "owner": str(Path(owner)),
+        "installation_id": installation_id,
+        "source_path": str(Path(owner)),
         "recorded_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
     tmp = target.with_name(f".{target.name}.tmp")
@@ -72,7 +83,9 @@ def write_owner(*, unit_dir: Path, owner: Path) -> None:
     os.replace(tmp, target)
 
 
-def read_owner(unit_dir: Path) -> Path | None:
+def read_owner_record(
+    unit_dir: Path, installation_id: str = "standard"
+) -> OwnerRecord | None:
     """Return the recorded owner, or None when there is not a usable record.
 
     Every unreadable shape -- absent, truncated, malformed, wrong type, a
@@ -82,16 +95,33 @@ def read_owner(unit_dir: Path) -> Path | None:
     reporting the previous run's stale reason.
     """
     try:
-        raw = record_path(unit_dir).read_text(encoding="utf-8")
+        raw = record_path(unit_dir, installation_id).read_text(encoding="utf-8")
     except (OSError, ValueError):
         return None
     try:
-        owner = json.loads(raw).get("owner")
+        payload = json.loads(raw)
     except (ValueError, AttributeError):
         return None
-    if not isinstance(owner, str) or not owner:
+    if not isinstance(payload, dict):
         return None
-    return Path(owner)
+    schema = payload.get("schema_version")
+    if schema == 1 and installation_id == "standard":
+        owner = payload.get("owner")
+        if not isinstance(owner, str) or not owner:
+            return None
+        write_owner(unit_dir=unit_dir, installation_id="standard", owner=Path(owner))
+        return OwnerRecord("standard", Path(owner))
+    if schema != _SCHEMA_VERSION or payload.get("installation_id") != installation_id:
+        return None
+    source_path = payload.get("source_path")
+    if not isinstance(source_path, str) or not source_path:
+        return None
+    return OwnerRecord(installation_id, Path(source_path))
+
+
+def read_owner(unit_dir: Path, installation_id: str = "standard") -> Path | None:
+    record = read_owner_record(unit_dir, installation_id)
+    return record.source_path if record is not None else None
 
 
 def require_ownership(
@@ -101,6 +131,7 @@ def require_ownership(
     registrations_present: bool,
     adopt: bool = False,
     live_install: bool = True,
+    installation_id: str = "standard",
 ) -> None:
     """Refuse unless this copy may write the installation.
 
@@ -128,10 +159,10 @@ def require_ownership(
         )
     if adopt:
         return
-    owner = read_owner(unit_dir)
-    if owner is not None and owner == Path(skill_dir):
+    record = read_owner_record(unit_dir, installation_id)
+    if record is not None:
         return
-    if owner is None:
+    if record is None:
         # No record is a fresh install only when there is nothing installed.
         # Treating it as one whenever the record is merely absent would let a
         # single deleted file disarm the guard: the next sync from any copy
@@ -144,9 +175,3 @@ def require_ownership(
             f"from: {Path(skill_dir)}\nRe-run from the owning checkout, or pass "
             "--adopt to record this one as the owner."
         )
-    raise NotTheOwnerError(
-        "This copy of the skill does not own the installed scheduler "
-        f"registrations.\n  installation owner: {owner}\n  running from:       "
-        f"{Path(skill_dir)}\nRe-run from the owning checkout, or pass --adopt "
-        "to move the installation here."
-    )

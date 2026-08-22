@@ -33,6 +33,7 @@ skills/recurring-tasks/logs/
 .credentials.json
 .last-cleanup
 .last-update-result.json
+/.famulus/
 
 # Upstream plugin cache (not owned by us)
 plugins/

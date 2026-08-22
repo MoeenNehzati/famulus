@@ -1,6 +1,13 @@
 content:
 - _job_control\.py
+- _managed_control\.py
 dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-schedule-context.yaml
+  reason: Loads the validated installation schedule context for interactive control operations.
+  source: recurring-tasks._rtx.source.rtx-schedule-context
+  version: 1
 - blueprint:
     base: module-root
     path: blueprints/rtx-jobs-config.yaml
@@ -48,29 +55,17 @@ interfaces:
   recurring-tasks._rtx.source.rtx-job-control.interface.scripts-disable:
     content:
     - _job_control\.py
-    uses_interfaces: []
+    uses_interfaces:
+    - interface: recurring.interface.control
+      version: 1
     contract:
       arguments:
-        jobs-file:
-          default: jobs.yaml
-          description: Optional jobs YAML path used for testing or an alternate configuration
-          required: false
-          sensitivity: user-private
-          type:
-            kind: string
         name:
           description: Configured job name to disable
           required: true
           sensitivity: user-private
           type:
             kind: string
-        no-sync:
-          default: false
-          description: Skip native scheduler reconciliation after editing jobs YAML
-          required: false
-          sensitivity: public
-          type:
-            kind: flag
       caller_warnings:
       - external-side-effect: Rewrites jobs YAML and normally removes or disables
           native scheduler entries.
@@ -122,8 +117,7 @@ interfaces:
           sensitivity: derived-private
       execution:
         consistency:
-          live: Loads the selected jobs file before changing the matching enabled
-            flag.
+          live: Loads the canonical jobs file before changing the matching enabled flag.
         effects:
         - action: update
           confirmation_evidence:
@@ -133,7 +127,6 @@ interfaces:
           id: write-jobs
           may_occur_in_outcomes:
           - disabled
-          - disabled-no-sync
           reversibility:
             reversible: Enable the same job again.
           value_source:
@@ -184,13 +177,6 @@ interfaces:
         id: disabled
         outputs:
         - result
-      - caller_action: Run scheduler sync before relying on native state.
-        class: partial
-        effects:
-        - write-jobs
-        id: disabled-no-sync
-        outputs:
-        - result
       - caller_action: Check jobs.yaml for the requested name.
         class: error
         effects: []
@@ -238,42 +224,26 @@ interfaces:
       entry: Interface
       kind: process
       patterns:
-      - allowed_flags:
-        - --jobs-file
-        - --no-sync
-        flag_patterns:
-          --jobs-file: ^.+$
+      - allowed_flags: []
         max_positionals: 1
         min_positionals: 1
         name: owner
-    usage: <name> [--jobs-file FILE] [--no-sync]
+    usage: <name>
     version: 1
   recurring-tasks._rtx.source.rtx-job-control.interface.scripts-enable:
     content:
     - _job_control\.py
-    uses_interfaces: []
+    uses_interfaces:
+    - interface: recurring.interface.control
+      version: 1
     contract:
       arguments:
-        jobs-file:
-          default: jobs.yaml
-          description: Optional jobs YAML path used for testing or an alternate configuration
-          required: false
-          sensitivity: user-private
-          type:
-            kind: string
         name:
           description: Configured job name to enable
           required: true
           sensitivity: user-private
           type:
             kind: string
-        no-sync:
-          default: false
-          description: Skip native scheduler reconciliation after editing jobs YAML
-          required: false
-          sensitivity: public
-          type:
-            kind: flag
       caller_warnings:
       - external-side-effect: Rewrites jobs YAML and normally creates and starts native
           scheduler entries.
@@ -325,8 +295,7 @@ interfaces:
           sensitivity: derived-private
       execution:
         consistency:
-          live: Loads the selected jobs file before changing the matching enabled
-            flag.
+          live: Loads the canonical jobs file before changing the matching enabled flag.
         effects:
         - action: update
           confirmation_evidence:
@@ -336,7 +305,6 @@ interfaces:
           id: write-jobs
           may_occur_in_outcomes:
           - enabled
-          - enabled-no-sync
           reversibility:
             reversible: Disable the same job again.
           value_source:
@@ -387,13 +355,6 @@ interfaces:
         id: enabled
         outputs:
         - result
-      - caller_action: Run scheduler sync before relying on native state.
-        class: partial
-        effects:
-        - write-jobs
-        id: enabled-no-sync
-        outputs:
-        - result
       - caller_action: Check jobs.yaml for the requested name.
         class: error
         effects: []
@@ -441,20 +402,115 @@ interfaces:
       entry: Interface
       kind: process
       patterns:
-      - allowed_flags:
-        - --jobs-file
-        - --no-sync
-        flag_patterns:
-          --jobs-file: ^.+$
+      - allowed_flags: []
         max_positionals: 1
         min_positionals: 1
         name: owner
-    usage: <name> [--jobs-file FILE] [--no-sync]
+    usage: <name>
+    version: 1
+  recurring-tasks._rtx.source.rtx-job-control.interface.scripts-remove-context:
+    content:
+    - _job_control\.py
+    uses_interfaces:
+    - interface: recurring.interface.control
+      version: 1
+    contract:
+      arguments: {}
+      caller_warnings:
+      - external-side-effect: Removes only the active context's native registrations,
+          sentinel, and owner record while preserving recurring configuration and history.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: active-context recurring authority
+          formats: [json, yaml]
+          id: read-1
+          medium: local-filesystem
+          path: $famulus-recurring-config-root/schedule-descriptor.json
+          path_match: exact
+          sensitivity: user-private
+        writes:
+        - access: configure
+          content: selected-context scheduler state
+          formats: [files]
+          id: write-1
+          medium: local-system
+          sensitivity: user-private
+          system: native-scheduler
+        - access: write
+          content: operation result
+          formats: [text]
+          id: write-2
+          medium: stdout
+          sensitivity: derived-private
+      execution:
+        consistency:
+          live: Revalidates the active descriptor before selecting exact context artifacts.
+        effects:
+        - action: delete
+          confirmation_evidence: {kind: direct-io, direct_io_ref: write-1}
+          direct_io_ref: write-1
+          id: remove-native-state
+          may_occur_in_outcomes: [removed]
+          reversibility:
+            reversible: Run recurring setup to recreate this context's registrations.
+          value_source: {kind: direct-io, direct_io_ref: read-1}
+        lifecycle: finite
+        mutation_safety:
+          atomicity: {per_effect_only: Registration summary replacement is atomic; host teardown consists of separate exact-context effects.}
+          concurrent_invocations: {unsafe: Do not run setup or sync concurrently with teardown.}
+          idempotency: {idempotent: Repeated teardown converges on no native state for this installation ID.}
+          on_uncertain_completion: {verify_then_decide: Inspect this context's registration summary and retry remove-context.}
+          partial_effects_on_failure: {possible: A host command may fail after another exact-context artifact was removed.}
+          rollback_on_failure: {unavailable: Retry teardown or setup after correcting the reported host error.}
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: result
+      helpers: []
+      interaction: {mode: unattended}
+      outcomes:
+      - caller_action: Installer removal may proceed for this exact context.
+        class: success
+        effects: [remove-native-state]
+        id: removed
+        outputs: [result]
+      - caller_action: Correct the named host failure and retry remove-context.
+        class: error
+        effects: []
+        id: failed
+        outputs: [result]
+      outputs:
+      - audience: both
+        cardinality: {minimum: 0, maximum: 1}
+        description: Teardown result or diagnostic.
+        direct_io_ref: write-2
+        empty: Successful teardown may be silent.
+        id: result
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        type: {kind: string, sensitivity: derived-private}
+      preconditions: []
+    description: Remove only the active installation context's native recurring state.
+    process_binding:
+      args_prefix: [remove-context]
+      entry: Interface
+      kind: process
+      patterns:
+      - allowed_flags: []
+        max_positionals: 0
+        min_positionals: 0
+        name: owner
+    usage: ''
     version: 1
   recurring-tasks._rtx.source.rtx-job-control.interface.scripts-status:
     content:
     - _job_control\.py
-    uses_interfaces: []
+    uses_interfaces:
+    - interface: recurring.interface.control
+      version: 1
     contract:
       arguments: {}
       caller_warnings: []
@@ -557,7 +613,9 @@ interfaces:
   recurring-tasks._rtx.source.rtx-job-control.interface.scripts-test:
     content:
     - _job_control\.py
-    uses_interfaces: []
+    uses_interfaces:
+    - interface: recurring.interface.control
+      version: 1
     contract:
       arguments:
         name:
@@ -737,7 +795,9 @@ interfaces:
   recurring-tasks._rtx.source.rtx-job-control.interface.scripts-view-logs:
     content:
     - _job_control\.py
-    uses_interfaces: []
+    uses_interfaces:
+    - interface: recurring.interface.control
+      version: 1
     contract:
       arguments:
         job-name:
@@ -1071,6 +1131,8 @@ runtime_dependencies:
   reason: Provides the per-user scheduler used to trigger jobs.
   version: any
 schema_version: 6
-uses_interfaces: []
+uses_interfaces:
+- interface: recurring.interface.control
+  version: 1
 version: 1
 maturity: experimental

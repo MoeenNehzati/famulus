@@ -19,12 +19,14 @@ exports:
       - install
       - recurring-tasks
       - recurring-tasks._rtx
+      - recurring
       - skill-certifier
       - skill-certifier._rtx
       - skill-maker
       - skill-maker._rtx
       - credentials
       - rutter
+      - launchers
     source_interface: common.source.atomic-files.interface.python-api
   common.interface.codex-toml:
     access:
@@ -48,9 +50,11 @@ exports:
       - email-triage._rtx
       - install-assistant-tools
       - install-assistant-tools._rtx
+      - install
       - recurring-tasks
       - recurring-tasks._rtx
       - credentials
+      - launchers
     source_interface: common.source.famulus-paths.interface.python-api
   common.interface.repository-paths:
     access:

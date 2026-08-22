@@ -86,12 +86,19 @@ def _context(tmp_path: Path, unit_dir: Path) -> ScheduleContext:
     skill = tmp_path / "skill"
     skill.mkdir(parents=True, exist_ok=True)
     (skill / "_job_executor.py").touch()
+    resolver = tmp_path / "runtime" / "launch.py"
+    resolver.parent.mkdir(parents=True)
+    resolver.touch()
+    config_root = tmp_path / "config"
+    config_root.mkdir()
+    (config_root / "schedule-descriptor.json").touch()
     return ScheduleContext(
         skill_dir=tmp_path / "skill",
         jobs_file=tmp_path / "skill" / "jobs.yaml",
         log_dir=tmp_path / "logs",
         unit_dir=unit_dir,
-        runtime_resolver=tmp_path / "runtime" / "launch.py",
+        runtime_resolver=resolver,
+        config_root=config_root,
     )
 
 
@@ -216,6 +223,8 @@ def test_registration_check_agrees_across_environments(tmp_path, monkeypatch):
             context.jobs_file,
             context.skill_dir / "_job_executor.py",
             context.runtime_resolver,
+            log_root=context.log_dir,
+            descriptor=context.config_root / "schedule-descriptor.json",
         ),
         encoding="utf-8",
     )

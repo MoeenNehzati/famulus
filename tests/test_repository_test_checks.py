@@ -931,7 +931,7 @@ def test_ci_runs_combined_full_suite_before_portability() -> None:
         / "python-tests.yml"
     ).read_text(encoding="utf-8")
 
-    full = workflow.index("python3 repo_checks.py --suite full --verbose")
+    full = workflow.index("python3 repo_checks.py --suite full --verbose --jobs 1")
     portability = workflow.index(
         "python3 repo_checks.py --suite full --task tests:portability"
     )
@@ -1019,11 +1019,55 @@ def test_ci_runs_browser_behavior_only_on_stable_hosts() -> None:
     assert 'if: matrix.task == \'combined\'' in workflow
     assert 'if: matrix.task != \'combined\'' in workflow
     assert (
-        'python3 repo_checks.py --suite full --task-id "${{ matrix.task }}" '
+        'python3 repo_checks.py --suite full --task "${{ matrix.task }}" '
         '--verbose --jobs "${{ matrix.jobs }}"'
     ) in workflow
     assert workflow.count("timeout-minutes: 20") == 1
     assert workflow.count("timeout-minutes: 10") == 1
+
+
+def test_ci_runs_unified_installation_lifecycle_on_all_supported_hosts() -> None:
+    workflow = (
+        Path(__file__).resolve().parents[1]
+        / ".github"
+        / "workflows"
+        / "python-tests.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "name: unified installation lifecycle (${{ matrix.os }})" in workflow
+    for operating_system in (
+        "ubuntu-latest",
+        "macos-latest",
+        "windows-latest",
+    ):
+        assert f"          - os: {operating_system}" in workflow
+    assert workflow.count("--exclude-validator repo/docstrings") >= 3
+    assert "--task-id" not in workflow
+    assert "--sequential" not in workflow
+    for selector in (
+        "tests/test_officina_install_context.py",
+        "tests/test_officina_development_activation.py",
+        "tests/test_officina_runtime_pointer.py",
+        "tests/test_officina_managed_runtime.py",
+        "tests/test_officina_install_doctor.py",
+        "tests/test_officina_recurring_managed.py",
+        "tests/test_officina_recurring_state.py",
+        "tests/test_install_context_consumers.py",
+        "skills/recurring-tasks/_rtx/tests/test_schedule_context_descriptor.py",
+        "skills/recurring-tasks/_rtx/tests/test_installation_namespaces.py",
+        "skills/install-assistant-tools/_rtx/tests/test_install.py",
+        "skills/install-assistant-tools/_rtx/tests/test_uninstall.py",
+        "skills/install-assistant-tools/_rtx/tests/test_doctor.py",
+        "skills/install-assistant-tools/_rtx/tests/test_e2e_lifecycle.py",
+    ):
+        assert f"--selector {selector}" in workflow
+    assert "Run lifecycle renderer and migration evidence" in workflow
+    assert "Run lifecycle native scheduler evidence where available" in workflow
+    lifecycle_native = workflow.split(
+        "- name: Run lifecycle native scheduler evidence where available", 1
+    )[1].split("- name:", 1)[0]
+    assert "FAMULUS_RUN_SCHEDULER_SMOKE: '1'" in lifecycle_native
+    assert workflow.count("FAMULUS_RUN_SCHEDULER_SMOKE: '1'") == 1
 
 
 def test_ci_workflow_dispatches_a_full_matrix_or_one_safe_probe() -> None:
@@ -1099,7 +1143,7 @@ def test_ci_artifact_uploads_include_hidden_repository_check_evidence() -> None:
     ).read_text(encoding="utf-8")
 
     upload_count = workflow.count("uses: actions/upload-artifact@")
-    assert upload_count == 2
+    assert upload_count == 3
     assert workflow.count("path: .repo-checks/*.json") == upload_count
     assert workflow.count("include-hidden-files: true") == upload_count
 

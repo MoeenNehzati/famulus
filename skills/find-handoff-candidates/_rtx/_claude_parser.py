@@ -22,7 +22,10 @@ class ClaudeParser:
     opaque_field = "signature"  # Claude Code's opaque thinking-block crypto blob
 
     def home_dir(self) -> str:
-        return os.environ.get("CLAUDE_HOME", os.path.expanduser("~/.claude"))
+        return os.environ.get(
+            "CLAUDE_CONFIG_DIR",
+            os.environ.get("CLAUDE_HOME", os.path.expanduser("~/.claude")),
+        )
 
     def list_session_files(self) -> list[str]:
         return glob.glob(os.path.join(self.home_dir(), "projects", "*", "*.jsonl"))

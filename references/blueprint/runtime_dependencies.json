@@ -2246,6 +2246,9 @@
             }
           ]
         },
+        "install-assistant-tools._rtx.interface.scripts-doctor": {
+          "dependencies": []
+        },
         "install-assistant-tools._rtx.interface.scripts-install": {
           "dependencies": [
             {
@@ -2258,61 +2261,6 @@
                 "windows": true
               },
               "reason": "Configures repository hook settings during development installs."
-            },
-            {
-              "kind": "python-package",
-              "name": "cryptography",
-              "version": ">=44.0.1",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Implements Ed25519 key and signature primitives."
-            },
-            {
-              "kind": "python-package",
-              "name": "keyring",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Clears stored account credentials when requested."
-            },
-            {
-              "kind": "python-package",
-              "name": "keyring",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
-            },
-            {
-              "kind": "python-package",
-              "name": "keyring",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Stores Gmail OAuth refresh tokens and client secrets in the host credential store."
-            },
-            {
-              "kind": "python-package",
-              "name": "keyring",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Stores IMAP or SMTP credentials in the host credential store."
             }
           ]
         },
@@ -2320,30 +2268,7 @@
           "dependencies": []
         },
         "install-assistant-tools._rtx.interface.scripts-scaffold": {
-          "dependencies": [
-            {
-              "kind": "python-package",
-              "name": "cryptography",
-              "version": ">=44.0.1",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Implements Ed25519 key and signature primitives."
-            },
-            {
-              "kind": "python-package",
-              "name": "keyring",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
-            }
-          ]
+          "dependencies": []
         }
       }
     },
@@ -5186,6 +5111,17 @@
             {
               "kind": "python-package",
               "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Parses canonical recurring jobs configuration."
+            },
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
               "version": ">=6",
               "platforms": {
                 "linux": true,
@@ -5553,6 +5489,17 @@
             {
               "kind": "python-package",
               "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Parses canonical recurring jobs configuration."
+            },
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
               "version": ">=6",
               "platforms": {
                 "linux": true,
@@ -5717,43 +5664,6 @@
             }
           ]
         },
-        "recurring-tasks._rtx.interface.scripts-ensure-agent-env": {
-          "dependencies": [
-            {
-              "kind": "binary",
-              "name": "systemctl",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": false,
-                "windows": false
-              },
-              "reason": "Publishes recurring-task environment variables to the user manager when available."
-            },
-            {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": ">=6",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Loads the selected recurring job from jobs.yaml."
-            },
-            {
-              "kind": "system-service",
-              "name": "systemd-user",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": false,
-                "windows": false
-              },
-              "reason": "Owns the user manager environment updated for recurring-task jobs."
-            }
-          ]
-        },
         "recurring-tasks._rtx.interface.scripts-healthcheck": {
           "dependencies": [
             {
@@ -5814,6 +5724,17 @@
             {
               "kind": "python-package",
               "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Parses canonical recurring jobs configuration."
+            },
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
               "version": ">=6",
               "platforms": {
                 "linux": true,
@@ -5854,6 +5775,384 @@
                 "windows": true
               },
               "reason": "Provides the per-user scheduler state checked by health probes."
+            }
+          ]
+        },
+        "recurring-tasks._rtx.interface.scripts-remove-context": {
+          "dependencies": [
+            {
+              "kind": "binary",
+              "name": "launchctl",
+              "version": "any",
+              "platforms": {
+                "linux": false,
+                "macos": true,
+                "windows": false
+              },
+              "reason": "Disables generated user scheduler entries."
+            },
+            {
+              "kind": "binary",
+              "name": "launchctl",
+              "version": "any",
+              "platforms": {
+                "linux": false,
+                "macos": true,
+                "windows": false
+              },
+              "reason": "Enables and starts generated user scheduler entries."
+            },
+            {
+              "kind": "binary",
+              "name": "launchctl",
+              "version": "any",
+              "platforms": {
+                "linux": false,
+                "macos": true,
+                "windows": false
+              },
+              "reason": "Lists active generated user scheduler entries."
+            },
+            {
+              "kind": "binary",
+              "name": "launchctl",
+              "version": "any",
+              "platforms": {
+                "linux": false,
+                "macos": true,
+                "windows": false
+              },
+              "reason": "Loads generated user scheduler entries."
+            },
+            {
+              "kind": "binary",
+              "name": "launchctl",
+              "version": "any",
+              "platforms": {
+                "linux": false,
+                "macos": true,
+                "windows": false
+              },
+              "reason": "Starts the generated scheduler entry immediately."
+            },
+            {
+              "kind": "binary",
+              "name": "schtasks",
+              "version": "any",
+              "platforms": {
+                "linux": false,
+                "macos": false,
+                "windows": true
+              },
+              "reason": "Creates or updates generated user scheduler entries."
+            },
+            {
+              "kind": "binary",
+              "name": "schtasks",
+              "version": "any",
+              "platforms": {
+                "linux": false,
+                "macos": false,
+                "windows": true
+              },
+              "reason": "Disables generated user scheduler entries."
+            },
+            {
+              "kind": "binary",
+              "name": "schtasks",
+              "version": "any",
+              "platforms": {
+                "linux": false,
+                "macos": false,
+                "windows": true
+              },
+              "reason": "Enables and starts generated user scheduler entries."
+            },
+            {
+              "kind": "binary",
+              "name": "schtasks",
+              "version": "any",
+              "platforms": {
+                "linux": false,
+                "macos": false,
+                "windows": true
+              },
+              "reason": "Lists active generated user scheduler entries."
+            },
+            {
+              "kind": "binary",
+              "name": "schtasks",
+              "version": "any",
+              "platforms": {
+                "linux": false,
+                "macos": false,
+                "windows": true
+              },
+              "reason": "Starts the generated scheduler entry immediately."
+            },
+            {
+              "kind": "binary",
+              "name": "systemctl",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": false,
+                "windows": false
+              },
+              "reason": "Disables generated user timers."
+            },
+            {
+              "kind": "binary",
+              "name": "systemctl",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": false,
+                "windows": false
+              },
+              "reason": "Enables and starts generated user timers."
+            },
+            {
+              "kind": "binary",
+              "name": "systemctl",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": false,
+                "windows": false
+              },
+              "reason": "Lists active generated user timers."
+            },
+            {
+              "kind": "binary",
+              "name": "systemctl",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": false,
+                "windows": false
+              },
+              "reason": "Reloads and enables generated user timers."
+            },
+            {
+              "kind": "binary",
+              "name": "systemctl",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": false,
+                "windows": false
+              },
+              "reason": "Starts the generated user service immediately."
+            },
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
+              "version": ">=6",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Loads jobs.yaml before locating the run log."
+            },
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
+              "version": ">=6",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Loads jobs.yaml in the management CLI."
+            },
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
+              "version": ">=6",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Loads the selected recurring job from jobs.yaml."
+            },
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Parses canonical recurring jobs configuration."
+            },
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
+              "version": ">=6",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Reads and writes jobs.yaml."
+            },
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
+              "version": ">=6",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Reads jobs.yaml before running the job."
+            },
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
+              "version": ">=6",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Reads jobs.yaml while generating unit files."
+            },
+            {
+              "kind": "system-service",
+              "name": "launchd",
+              "version": "any",
+              "platforms": {
+                "linux": false,
+                "macos": true,
+                "windows": false
+              },
+              "reason": "Provides the per-user scheduler queried for recurring-task status."
+            },
+            {
+              "kind": "system-service",
+              "name": "launchd",
+              "version": "any",
+              "platforms": {
+                "linux": false,
+                "macos": true,
+                "windows": false
+              },
+              "reason": "Provides the per-user scheduler that loads generated entries."
+            },
+            {
+              "kind": "system-service",
+              "name": "launchd",
+              "version": "any",
+              "platforms": {
+                "linux": false,
+                "macos": true,
+                "windows": false
+              },
+              "reason": "Provides the per-user scheduler that owns generated recurring-task entries."
+            },
+            {
+              "kind": "system-service",
+              "name": "launchd",
+              "version": "any",
+              "platforms": {
+                "linux": false,
+                "macos": true,
+                "windows": false
+              },
+              "reason": "Provides the per-user scheduler used to trigger jobs."
+            },
+            {
+              "kind": "system-service",
+              "name": "systemd-user",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": false,
+                "windows": false
+              },
+              "reason": "Provides the user service manager used to trigger jobs."
+            },
+            {
+              "kind": "system-service",
+              "name": "systemd-user",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": false,
+                "windows": false
+              },
+              "reason": "Provides the user timer manager queried for recurring-task status."
+            },
+            {
+              "kind": "system-service",
+              "name": "systemd-user",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": false,
+                "windows": false
+              },
+              "reason": "Provides the user timer manager that loads generated unit files."
+            },
+            {
+              "kind": "system-service",
+              "name": "systemd-user",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": false,
+                "windows": false
+              },
+              "reason": "Provides the user timer manager that owns generated recurring-task units."
+            },
+            {
+              "kind": "system-service",
+              "name": "task-scheduler",
+              "version": "any",
+              "platforms": {
+                "linux": false,
+                "macos": false,
+                "windows": true
+              },
+              "reason": "Provides the per-user scheduler queried for recurring-task status."
+            },
+            {
+              "kind": "system-service",
+              "name": "task-scheduler",
+              "version": "any",
+              "platforms": {
+                "linux": false,
+                "macos": false,
+                "windows": true
+              },
+              "reason": "Provides the per-user scheduler that loads generated entries."
+            },
+            {
+              "kind": "system-service",
+              "name": "task-scheduler",
+              "version": "any",
+              "platforms": {
+                "linux": false,
+                "macos": false,
+                "windows": true
+              },
+              "reason": "Provides the per-user scheduler that owns generated recurring-task entries."
+            },
+            {
+              "kind": "system-service",
+              "name": "task-scheduler",
+              "version": "any",
+              "platforms": {
+                "linux": false,
+                "macos": false,
+                "windows": true
+              },
+              "reason": "Provides the per-user scheduler used to trigger jobs."
             }
           ]
         },
@@ -5978,17 +6277,6 @@
                 "macos": false,
                 "windows": false
               },
-              "reason": "Publishes recurring-task environment variables to the user manager when available."
-            },
-            {
-              "kind": "binary",
-              "name": "systemctl",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": false,
-                "windows": false
-              },
               "reason": "Reloads and enables generated user timers."
             },
             {
@@ -6001,6 +6289,17 @@
                 "windows": true
               },
               "reason": "Loads the selected recurring job from jobs.yaml."
+            },
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Parses canonical recurring jobs configuration."
             },
             {
               "kind": "python-package",
@@ -6067,17 +6366,6 @@
                 "windows": false
               },
               "reason": "Provides the per-user scheduler that loads generated entries."
-            },
-            {
-              "kind": "system-service",
-              "name": "systemd-user",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": false,
-                "windows": false
-              },
-              "reason": "Owns the user manager environment updated for recurring-task jobs."
             },
             {
               "kind": "system-service",
@@ -6350,6 +6638,17 @@
             {
               "kind": "python-package",
               "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Parses canonical recurring jobs configuration."
+            },
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
               "version": ">=6",
               "platforms": {
                 "linux": true,
@@ -6559,6 +6858,17 @@
                 "windows": true
               },
               "reason": "Loads the selected recurring job from jobs.yaml."
+            },
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Parses canonical recurring jobs configuration."
             },
             {
               "kind": "python-package",
@@ -6805,6 +7115,17 @@
                 "windows": true
               },
               "reason": "Loads the selected recurring job from jobs.yaml."
+            },
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Parses canonical recurring jobs configuration."
             },
             {
               "kind": "python-package",
@@ -7172,6 +7493,17 @@
                 "windows": true
               },
               "reason": "Loads the selected recurring job from jobs.yaml."
+            },
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Parses canonical recurring jobs configuration."
             },
             {
               "kind": "python-package",

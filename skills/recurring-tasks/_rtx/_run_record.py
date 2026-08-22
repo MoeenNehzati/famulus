@@ -238,7 +238,7 @@ def _resolve_job_state_dir(*, skills_root: Path, job_name: str) -> Path:
             from officina.common.famulus_paths import resolve_famulus_paths
 
             return resolve_famulus_paths(
-                platform=sys.platform, home=Path.home()
+                platform=sys.platform, home=Path.home(), environ=os.environ
             ).email_triage_state_root
 
     return skills_root / job_name / "state"

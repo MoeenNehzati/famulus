@@ -125,13 +125,25 @@ def canonical_client_path(*, home: Path, platform: str) -> Path:
     """Return the single canonical Google Desktop OAuth client path."""
     from officina.common.famulus_paths import resolve_famulus_paths
 
-    return resolve_famulus_paths(platform=platform, home=Path(home)).config_root / "connect-google" / "client.json"
+    return (
+        resolve_famulus_paths(
+            platform=platform, home=Path(home), environ=os.environ
+        ).config_root
+        / "connect-google"
+        / "client.json"
+    )
 
 
 def _credentials_registry_path(*, home: Path, platform: str) -> Path:
     from officina.common.famulus_paths import resolve_famulus_paths
 
-    return resolve_famulus_paths(platform=platform, home=Path(home)).config_root / "connect-google" / "credentials.json"
+    return (
+        resolve_famulus_paths(
+            platform=platform, home=Path(home), environ=os.environ
+        ).config_root
+        / "connect-google"
+        / "credentials.json"
+    )
 
 
 def _credential_files_dir(*, home: Path, platform: str) -> Path:
@@ -139,7 +151,9 @@ def _credential_files_dir(*, home: Path, platform: str) -> Path:
     from officina.common.famulus_paths import resolve_famulus_paths
 
     return (
-        resolve_famulus_paths(platform=platform, home=Path(home)).config_root
+        resolve_famulus_paths(
+            platform=platform, home=Path(home), environ=os.environ
+        ).config_root
         / "connect-google"
         / "credentials"
     )

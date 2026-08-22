@@ -1,0 +1,41 @@
+schema_version: 6
+id: recurring.source.executor
+version: 1
+maturity: experimental
+node_type: behavioral_source
+description: Executes one descriptor-selected recurring job and atomically records its result without skill source.
+gateway: {language: Python, path: executor.py}
+content: [executor\.py]
+dependencies: [{source: recurring.source.runtime, version: 1, blueprint: {base: module-root, path: blueprints/runtime.yaml}, reason: Uses sealed schedule authority and managed run records.}]
+uses_interfaces: []
+interfaces:
+  recurring.source.executor.interface.cli:
+    version: 1
+    description: Execute one named recurring job.
+    content: [executor\.py]
+    uses_interfaces: []
+    contract:
+      arguments:
+        runtime-root: {description: Active runtime root injected by the fixed resolver., required: true, sensitivity: user-private, direct_io_ref: authority, type: {kind: dir, syntax: literal, relative_to: caller-cwd, must_exist: true, access: read}}
+        descriptor: {description: Canonical schedule descriptor., required: true, sensitivity: user-private, direct_io_ref: authority, type: {kind: file, syntax: literal, relative_to: caller-cwd, must_exist: true, access: read, opaque_content: true}}
+        job: {description: Exact job name., required: true, sensitivity: user-private, type: {kind: string}}
+        log-root: {description: Explicit canonical log root which must match the descriptor., required: true, sensitivity: user-private, direct_io_ref: authority, type: {kind: dir, syntax: literal, relative_to: caller-cwd, must_exist: false, access: read-write}}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings: [{external-side-effect: Executes the configured external job and writes its log and outcome record.}]
+      outputs: [{id: result, audience: machine, description: Process exit status., direct_io_ref: result, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty., type: {kind: integer}}]
+      outcomes: [{id: completed, class: success, outputs: [result], effects: [run-state], caller_action: Read the recorded outcome.}, {id: failed, class: error, outputs: [result], effects: [run-state], caller_action: Inspect the job log and outcome reason.}]
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency: {live: Job configuration is read once after descriptor validation.}
+        effects:
+        - {id: run-state, direct_io_ref: run-state, action: update, value_source: {kind: argument, argument_ref: job}, may_occur_in_outcomes: [completed, failed], confirmation_evidence: {kind: direct-io, direct_io_ref: run-state}, reversibility: {irreversible: Run history records observed external execution and is not rolled back.}}
+        mutation_safety: {atomicity: {per_effect_only: The latest outcome record is atomically replaced but external job execution and log append are separate.}, concurrent_invocations: {unsafe: Concurrent runs of one job can interleave the append-only log.}, idempotency: {non_idempotent: Each invocation executes the external job and creates a new run identity.}, on_uncertain_completion: {verify_then_decide: Read running.json and latest.json before retrying.}, partial_effects_on_failure: {possible: External work and log output may occur before an interrupted outcome write.}, rollback_on_failure: {unavailable: External job effects cannot be rolled back generically.}}
+        verification: [{method: output-schema, output_ref: result}]
+      helpers: []
+      direct_io: {network: [], reads: [{id: authority, medium: local-filesystem, access: read, content: Descriptor jobs and launcher authority., formats: [json, yaml], sensitivity: user-private, path: <selected-context>/**, path_match: glob}], writes: [{id: run-state, medium: local-filesystem, access: read-write, content: Per-job log running marker and latest outcome., formats: [text, json], sensitivity: user-private, path: <recurring-log-root>/**, path_match: glob}, {id: result, medium: local-system, access: write, content: Exit status., formats: [integer], sensitivity: public}]}
+    process_binding: {kind: process, entry: Interface, patterns: [{name: execute, min_positionals: 0, max_positionals: 0, allowed_flags: [--runtime-root, --descriptor, --job, --log-root], required_flags: [--runtime-root, --descriptor, --job, --log-root], allow_stdin: false}]}
+    usage: --runtime-root ROOT --descriptor FILE --job NAME --log-root DIR
+platform_support: {linux: true, macos: true, windows: true}
+runtime_dependencies: [{kind: python-package, name: PyYAML, version: any, platforms: {linux: true, macos: true, windows: true}, reason: Parses canonical recurring jobs configuration.}]

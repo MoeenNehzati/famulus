@@ -29,9 +29,11 @@ On the research side, it provides skills for reviewing document flow and prose, 
 
 ## Quick Start
 
-Installing Famulus is two steps: install the plugin so your host can see the
-skills, then run the workstation installer so the local commands those skills
-rely on exist on your `PATH`. Both steps are described below.
+Installing Famulus begins by registering the package with your host, then using
+the package's five-stage apply workflow to create or repair one explicit
+installation context. Both parts are described below.
+In short: register the package, then run the workstation installer through the
+assistant workflow below.
 
 ### Step 1: install the plugin
 
@@ -55,22 +57,29 @@ codex plugin add famulus@nullkit --json
 
 Restart the host afterwards so it loads the newly installed plugin.
 
-### Step 2: install the assistant tools
+### Apply an installation context
 
 Installing the plugin makes the skills visible, but it does not create the local
 commands they depend on: `dispatcher`, `llm-wakeup`/`lw`, `invoke-skill`, the
 required `background_run` launcher, profile files, and `PATH` wiring.
 
-Ask your assistant to install the assistant tools. It runs the
-`install-assistant-tools` skill, which builds and activates the managed runtime,
-writes those commands, and walks you through the remaining choices — whether to
-add the optional `assistant`, `collab`, `coauthor`, and `tw` launchers, and
-whether you want an editable checkout instead of the packaged plugin. Open a new
-shell afterwards so the updated `PATH` takes effect.
+Ask your assistant to install the assistant tools. The
+`install-assistant-tools` skill walks through exactly five stages: choose a
+`standard` package context or a `development` checkout context, confirm the
+resolved choices, apply once, diagnose that same context, and explain optional
+Google connection and recurring-job next steps without running them. Open a new
+shell afterwards when the standard installer reports a search-path change.
 
-Once the tools are installed, later repairs and targeted reinstalls route through
-`dispatcher`. The non-interactive flags, the dev-mode checkout, the repair
-routes, and the verification steps are all in
+Development contexts keep their runtime, state, assistant homes, jobs, and logs
+under the selected checkout's `.famulus/` tree. This isolation prevents
+different checkouts from sharing state, but it is not a security sandbox: the
+launched assistant retains its host-granted authority.
+
+Once the tools are installed, later updates and repairs use the same apply
+workflow. Installed commands and development adapters use a self-locating
+resolver and the selected context's `current.json`; normal operation does not
+depend on the original clone location. The context choices, diagnosis, removal,
+and verification steps are all in
 [docs/officina/installation.md](docs/officina/installation.md).
 
 ### Choose a workflow
@@ -102,12 +111,13 @@ claude plugin update famulus@nullkit
 codex plugin marketplace upgrade nullkit --json
 ```
 
-After an update, restart the host and ask your assistant to reinstall the
-assistant tools, so the managed runtime and local commands match the refreshed
-plugin. Before removing the plugin, disable recurring jobs and run the
-manifest-based workstation uninstaller while the plugin is still installed.
+After an update, restart the host and ask your assistant to apply the same
+installation context again, so the managed runtime and local commands match the
+refreshed package. Before removing a context, use `recurring-tasks` to disable
+its jobs and run `scripts-remove-context`, then run the manifest-based
+uninstaller while the source is still available.
 Exact removal commands and the separate credential-revocation steps are in the
-[installation lifecycle](docs/officina/installation.md#6-updating-repairing-and-removing-famulus).
+[installation lifecycle](docs/officina/installation.md#uninstall-versus-purge).
 
 ## Platform Support
 
@@ -226,7 +236,7 @@ For a broader list of workflows and prompt ideas, see [docs/skills.md](docs/skil
 
 ## Agents and Launchers
 
-The workstation installer provides three main agent launchers:
+The installer can provide three main agent launchers:
 
 - `assistant` for day-to-day personal assistant work
 - `collab` for longer project sessions with continuity and handoff behavior
@@ -239,7 +249,11 @@ modes so they cannot pause for a person who is not present; review the
 [unattended execution boundary](docs/security-and-privacy.md#authorization-and-confirmation-boundaries)
 before enabling any recurring job.
 
-Those launchers work with both Claude Code and Codex. A separate `tw` / `tmux-workspace` wrapper can launch them inside a prearranged tmux workspace with assistant, terminal, scratch, and logs panes/windows.
+Durable backend selection lives in the context's `launchers.json`;
+`ASSISTANT_DEFAULT` is only a per-process override. Those launchers work with
+both Claude Code and Codex. A separate `tw` / `tmux-workspace` wrapper can
+launch them inside a prearranged tmux workspace with assistant, terminal,
+scratch, and logs panes/windows.
 
 Usage details and documentation for the launchers are in [docs/launchers.md](docs/launchers.md).
 

@@ -8,7 +8,9 @@ import os
 import shlex
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Mapping
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
@@ -19,17 +21,17 @@ if not __package__ and str(RTX_DIR) not in sys.path:
     sys.path.insert(0, str(RTX_DIR))
 
 if __package__:
-    from . import _ensure_agent_env
-else:
-    import _ensure_agent_env  # noqa: E402
-if __package__:
     from . import _unit_writer
 else:
     import _unit_writer  # noqa: E402
 if __package__:
-    from ._schedule_backend import ScheduleContext, platform_schedule_backend
+    from ._schedule_backend import platform_schedule_backend
+    from ._schedule_context import production_schedule_context
+    from ._managed_control import run as run_managed_control
 else:
-    from _schedule_backend import ScheduleContext, platform_schedule_backend  # noqa: E402
+    from _schedule_backend import platform_schedule_backend  # noqa: E402
+    from _schedule_context import production_schedule_context  # noqa: E402
+    from _managed_control import run as run_managed_control  # noqa: E402
 
 CRON_MARKER = "# ai-recurring-healthcheck"
 OLD_CRON_MARKER = "# ai-recurring"
@@ -119,9 +121,13 @@ def _without_old_recurring_lines(existing: str) -> str:
 def render_healthcheck_cron(
     *,
     runtime_resolver: Path,
-    healthcheck: Path,
     log_file: Path,
     uid: int,
+    healthcheck: Path | None = None,
+    module: str = "officina.recurring.healthcheck",
+    descriptor: Path | None = None,
+    installation_id: str = "standard",
+    environment: Mapping[str, str] | None = None,
 ) -> str:
     """Render the independent health-check cron command.
 
@@ -129,7 +135,10 @@ def render_healthcheck_cron(
     failures that checker-owned logic cannot observe.
     """
     resolver_arg = shlex.quote(str(runtime_resolver))
-    healthcheck_arg = shlex.quote(str(healthcheck))
+    descriptor_path = descriptor or (log_file.parents[1] / "schedule-descriptor.json")
+    module_arg = shlex.quote(module)
+    descriptor_arg = shlex.quote(str(descriptor_path))
+    log_root_arg = shlex.quote(str(log_file.parents[1]))
     log_arg = shlex.quote(str(log_file))
     title = shlex.quote("Recurring tasks need attention")
     # The checker leaves its findings beside its log; read them into the body
@@ -142,27 +151,40 @@ def render_healthcheck_cron(
     )
     body = f'"$(cat {summary_arg} 2>/dev/null || echo {fallback})"'
     runtime_dir = f"/run/user/{uid}"
+    assignments = []
+    for name, value in sorted((environment or {}).items()):
+        if not name.replace("_", "a").isalnum() or not (name[0].isalpha() or name[0] == "_"):
+            raise ValueError(f"invalid environment name: {name!r}")
+        if "\r" in value or "\n" in value:
+            raise ValueError(f"environment {name} must not contain CR or LF")
+        assignments.append(f"{name}={shlex.quote(value)}")
+    environment_prefix = (" ".join(assignments) + " ") if assignments else ""
     return (
         "0 */4 * * * "
-        f"RECURRING_TASKS_HEALTHCHECK_CRON=1 {resolver_arg} {healthcheck_arg} "
+        f"{environment_prefix}{resolver_arg} -m {module_arg} "
+        f"--descriptor {descriptor_arg} --log-root {log_root_arg} "
+        "--cron "
         f">> {log_arg} 2>&1 || "
         f"XDG_RUNTIME_DIR={runtime_dir} "
         f"DBUS_SESSION_BUS_ADDRESS=unix:path={runtime_dir}/bus "
         f"/usr/bin/notify-send --urgency=critical {title} {body} "
-        f"{CRON_MARKER}"
+        f"{healthcheck_marker(installation_id)}"
     )
 
 
-def _replace_managed_cron_line(existing: str, desired: str) -> str:
+def _replace_managed_cron_line(
+    existing: str, desired: str, installation_id: str = "standard"
+) -> str:
     """Replace all managed sentinel lines with one desired line.
 
     Exact replacement makes setup idempotent and repairs stale command paths
     without accumulating duplicate sentinels.
     """
+    marker = healthcheck_marker(installation_id)
     kept = [
         line
         for line in existing.splitlines(keepends=True)
-        if CRON_MARKER not in line
+        if not line.rstrip("\r\n").rstrip().endswith(marker)
     ]
     prefix = "".join(kept)
     if prefix and not prefix.endswith("\n"):
@@ -174,26 +196,37 @@ def install_healthcheck_cron(
     *,
     skill_root: Path,
     runtime_resolver: Path,
-    healthcheck: Path,
     uid: int,
+    healthcheck: Path | None = None,
+    module: str = "officina.recurring.healthcheck",
+    descriptor: Path | None = None,
     migrate_cron: bool = False,
+    installation_id: str = "standard",
+    log_root: Path | None = None,
+    environment: Mapping[str, str] | None = None,
 ) -> None:
     """Install or repair the independent health-check cron entry.
 
     Setup must repair stale registrations while preserving unrelated cron
     entries and avoiding unnecessary writes.
     """
-    log_dir = skill_root / "logs" / "healthcheck"
+    log_dir = (log_root or (skill_root / "logs")) / "healthcheck"
     log_dir.mkdir(parents=True, exist_ok=True)
     existing = _read_crontab()
     normalized = _without_old_recurring_lines(existing) if migrate_cron else existing
     desired = render_healthcheck_cron(
         runtime_resolver=runtime_resolver,
         healthcheck=healthcheck,
+        module=module,
+        descriptor=descriptor,
         log_file=log_dir / "run.log",
         uid=uid,
+        installation_id=installation_id,
+        environment=environment,
     )
-    updated = _replace_managed_cron_line(normalized, desired)
+    updated = _replace_managed_cron_line(
+        normalized, desired, installation_id=installation_id
+    )
 
     if updated == existing:
         print("Healthcheck cron entry already current.")
@@ -215,25 +248,17 @@ def run_setup(*, argv: list[str], home: Path | None = None) -> None:
         action="store_true",
         help="Remove old ai-recurring cron entries before installing the healthcheck entry.",
     )
-    args, unit_writer_args = parser.parse_known_args(argv)
+    args = parser.parse_args(argv)
 
     import yaml  # noqa: F401
 
     print("Prerequisites")
     print("PyYAML ok")
 
-    selected_home = home or Path.home()
-    _ensure_agent_env.run(home=selected_home, dry_run=False)
-
     print("")
     print("Syncing scheduler entries")
-    _unit_writer.main(unit_writer_args)
-
-    context = ScheduleContext(
-        skill_dir=SKILL_DIR,
-        jobs_file=_unit_writer.DEFAULT_JOBS,
-        log_dir=_unit_writer.LOG_DIR,
-    )
+    _unit_writer.main([])
+    context = production_schedule_context()
 
     print("")
     print("Installing healthcheck cron entry")
@@ -242,11 +267,16 @@ def run_setup(*, argv: list[str], home: Path | None = None) -> None:
             skill_root=SKILL_ROOT,
             runtime_resolver=context.runtime_resolver,
             healthcheck=SKILL_DIR / "_healthcheck_probe.py",
+            module="officina.recurring.healthcheck",
+            descriptor=context.config_root / "schedule-descriptor.json",
             uid=os.getuid(),
             migrate_cron=args.migrate_cron,
+            installation_id=context.installation_id,
+            log_root=context.log_dir,
+            environment=context.environment,
         )
     else:
-        print("Independent cron healthcheck is available on Linux hosts only.")
+        print(healthcheck_capability(sys.platform).detail)
 
     print("")
     print("Active scheduled jobs")
@@ -277,9 +307,27 @@ def main(argv: list[str] | None = None) -> int:
     A small process entrypoint gives direct and machine-interface callers one
     stable exit-code contract.
     """
-    run_setup(argv=list(argv or []))
-    return 0
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--migrate-cron", action="store_true")
+    args = parser.parse_args(argv)
+    if args.migrate_cron:
+        raise ValueError("legacy cron migration remains owned by the later migration checkpoint")
+    return run_managed_control("setup")
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
+def healthcheck_marker(installation_id: str = "standard") -> str:
+    return CRON_MARKER if installation_id == "standard" else f"{CRON_MARKER}:{installation_id}"
+
+
+@dataclass(frozen=True)
+class HealthcheckCapability:
+    independent_scheduler: bool
+    detail: str
+
+
+def healthcheck_capability(platform: str) -> HealthcheckCapability:
+    if platform.startswith("linux"):
+        return HealthcheckCapability(True, "independent cron sentinel")
+    return HealthcheckCapability(False, "on-demand healthcheck only; independent second scheduler unsupported")

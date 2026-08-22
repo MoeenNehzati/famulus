@@ -52,7 +52,7 @@ personal-assistant workflows.
 | `list-manager` | Cloud-backed lists | Adds, changes, completes, rejects, and deletes list entries through `cloud-files` |
 | `daily-plan` | Calendar data, weather, lists, and existing plans | Writes plans and plan metadata to Drive; list-changing requests can update master lists |
 | `wrap-up` | Plans, lists, and session context | Updates plans and lists after a consolidated user review |
-| `recurring-tasks` | Job definitions, run status, and captured job output | Installs and removes per-user scheduled jobs; enabled jobs may invoke other skills without a new interactive prompt |
+| `recurring-tasks` | Context-specific job definitions, run status, and captured job output | Installs and removes per-user jobs namespaced by `installation_id`; enabled jobs may invoke other skills without a new interactive prompt |
 | `install-assistant-tools` | Host configuration and the selected installation source | Installs launchers, hooks, profiles, runtime files, and the unattended `background_run` prerequisite; it does not enable jobs, and uninstall/purge remove only resources they currently own |
 | `get-weather` | A location supplied by the user or another workflow | Sends that location to Open-Meteo geocoding and forecast services; it uses no credential |
 | `send-feedback` | A reviewed, redacted diagnostic report | Publishes the report as a public issue on the configured project, or sends it by email, only after preview and explicit approval; it refuses vulnerability reports and routes them to the private security channel |
@@ -93,6 +93,15 @@ Famulus uses these platform roots for newer shared configuration and state:
 | Linux | `$XDG_CONFIG_HOME/famulus`, or `~/.config/famulus` | `$XDG_STATE_HOME/famulus`, or `~/.local/state/famulus` |
 | macOS | `~/Library/Application Support/Famulus/config` | `~/Library/Application Support/Famulus/state` |
 | Windows | `%LOCALAPPDATA%\Famulus\config` | `%LOCALAPPDATA%\Famulus\state` |
+
+These are the `standard` context roots. A `development` context instead keeps
+its config, data, state, assistant homes, jobs, and logs under the selected
+checkout's `.famulus/` tree. This prevents contexts from sharing mutable state;
+it does not sandbox the assistant from the rest of the operating-system
+account. Backend ownership is durable in each context's `launchers.json`.
+`ASSISTANT_DEFAULT` and `ASSISTANT_LOGS` are process-local overrides only.
+`AI` and `FAMULUS_REPO_ROOT` are not installation selectors and must not be
+persisted.
 
 `~` below means the account running the host agent. `<PLUGIN>` means the
 installed Famulus plugin directory or checkout. Plugin directories are
@@ -153,16 +162,15 @@ a known hardening gap.
 | Email-triage classification log | `<PLUGIN>/skills/email-triage/_rtx/triage.log`; includes account, message ID, sender, subject, decision, and reason |
 | List-manager category cache | `<PLUGIN>/skills/list-manager/_rtx/tmp/categories.<list>.yaml`; contains list category paths and cache counters, not list entries |
 | Daily-plan run status | `<PLUGIN>/skills/daily-plan/state/status.json` |
-| Recurring-task definitions | `<PLUGIN>/skills/recurring-tasks/_rtx/jobs.yaml` and installed per-user scheduler configuration; platform scheduler support files may also use `<CONFIG>/recurring-tasks/` and `<STATE>/recurring-tasks/` |
-| Recurring-task output and outcome records | `<PLUGIN>/skills/recurring-tasks/_rtx/logs/`; command output is captured and logs are rotated after 5 MiB with one prior copy retained |
+| Recurring-task definitions | The selected context's recurring configuration root, namespaced by `installation_id`, plus native per-user scheduler registrations |
+| Recurring-task output and outcome records | The selected context's recurring state root, namespaced by `installation_id`; command output is captured and logs rotate after 5 MiB with one prior copy retained |
 | Weather queries | Location and forecast parameters sent to Open-Meteo |
 | Feedback reports | Email recipient configured by the project, only after the user reviews and approves the report |
 
-The generated `<PLUGIN>` state/log locations are ignored by Git and are not part
-of the tracked release payload, but plugin-cache replacement can discard them
-and their content is private. They are disposable in the first-release
-contract. Move them to `<STATE>` before promising that plugin replacement will
-retain them.
+Standard recurring state lives below platform Famulus roots. Development
+recurring state lives below the selected checkout's `.famulus/` tree. Package
+cache replacement therefore does not own or discard either context's mutable
+jobs or history.
 
 ## What reaches Claude or Codex
 
@@ -222,8 +230,8 @@ The implemented public workflows use the following boundaries:
 
 ### Unattended recurring execution
 
-Phase 1 always installs `invoke-skill` and its required `background_run`
-launcher, profile, and worker directory. That installation alone does not
+Stage 3 installs `invoke-skill` and its required `background_run` capability,
+profile, and context-owned worker directory. That installation alone does not
 create or enable a scheduled job. A job runs only after the user explicitly
 asks `recurring-tasks` to create or enable it.
 
@@ -257,9 +265,11 @@ therefore remains open.
 
 These are distinct operations:
 
-1. **Disable automation.** Use `recurring-tasks` to disable and synchronize
-   every job that invokes the integration. This stops future scheduled runs but
-   does not remove credentials or remote data.
+1. **Disable automation and remove its context registrations.** Use
+   `recurring-tasks` to disable the selected context's jobs, synchronize, and
+   run `scripts-remove-context`. This removes only that installation ID's
+   native registrations, sentinel, and owner record; it preserves recurring
+   configuration and history and does not remove credentials or remote data.
 2. **Revoke Google access.** Remove the OAuth connection in the Google Account
    [third-party connections page](https://myaccount.google.com/connections).
    Revocation ends the token's server-side authority. Deleting local files
@@ -273,10 +283,12 @@ These are distinct operations:
    lists, plans, mail, attachments already saved locally, calendar events, or
    data already retained by a model provider. Delete those separately only
    after identifying their exact owner and desired retention.
-5. **Uninstall Famulus.** The installer removes resources recorded in its
-   manifest. Its `--purge` mode removes recorded configuration directories, but
-   the current implementation does not comprehensively revoke Google access,
-   clear all shared keyring entries, or cover every legacy/service path.
+5. **Uninstall Famulus.** After recurring preflight reports no registrations,
+   ordinary uninstall removes unchanged manifest-owned resources. `--purge`
+   additionally removes exact-identity immutable runtime/bootstrap, launcher,
+   and generated profile artifacts. Neither mode recursively deletes mutable
+   configuration or credentials, comprehensively revokes Google access, clears
+   all shared keyring entries, or deletes arbitrary service data.
 
 There is no single complete disconnect-and-purge command yet. Until one exists,
 do not describe uninstall or local file deletion as revocation.
@@ -310,8 +322,9 @@ The audit identified these unresolved items:
    an encrypted native credential store.
 6. Untrusted external content is not isolated from model instructions by a
    complete deterministic authorization layer.
-7. Email-triage, list-manager, daily-plan, and recurring-task private state,
-   working copies, or logs still have paths inside replaceable plugin content.
+7. Some email-triage, list-manager, and daily-plan private working copies or
+   logs still have paths inside replaceable package content; recurring mutable
+   jobs and logs have moved to context-owned state.
 8. Email recipients, subjects, and attachment paths are present in local
    process arguments; only the email body is passed through standard input.
 9. Enabled recurring jobs deliberately run without interactive host approvals
