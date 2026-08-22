@@ -13,8 +13,8 @@ dependencies:
     process interface.
   source: recurring-tasks._rtx.source.rtx-job-executor
   version: 1
-description: Selects and implements native per-user scheduling backends, including
-  registration-drift checks where supported.
+description: Selects and implements installation-ID-namespaced native per-user scheduling
+  backends, canonical registration discovery, and registration-drift checks where supported.
 gateway:
   language: Python
   path: _schedule_backend/__init__.py

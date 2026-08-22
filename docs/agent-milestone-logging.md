@@ -20,10 +20,10 @@ it composes the log path, the timestamp, and the JSON record itself.
 merges the milestone logs with the harness transcripts into one chronological
 timeline.
 
-Both are linked into the user's bin directory by `install-assistant-tools`, and
-those links are recorded in the install manifest, so uninstall removes them.
-The instruction names `milestone` as a command, so the link must exist wherever
-the instruction is delivered.
+Both are exposed through the selected installation context's command directory
+by `install-assistant-tools`, and those entries are recorded in the context's
+install manifest. The instruction names `milestone` as a command, so the
+context must be applied wherever the instruction is delivered.
 
 `CLAUDE.md`/`AGENTS.md` is delivered by the harness to every subagent on both
 supported hosts, so no cooperation from the spawning parent is needed. Two
@@ -56,10 +56,12 @@ milestone --path          # print the log path and exit
 
 ## Log Format
 
-One JSON object per line, appended to
-`$ASSISTANT_LOGS/<YYYY-MM-DD>/<session>.<agent>.jsonl`. `ASSISTANT_LOGS` is set
-by the installer (`skills/install-assistant-tools/_rtx/_config_bridge.py`) and
-defaults to `~/.assistant-logs`.
+One JSON object per line is appended below the active context's log root. The
+standalone writer falls back to
+`~/.assistant-logs/<YYYY-MM-DD>/<session>.<agent>.jsonl` when no context is
+available. `ASSISTANT_LOGS` is a process-local compatibility override only;
+the installer does not persist it, and shell or scheduler configuration should
+not either.
 
 The fields are `ts`, `role`, `cwd`, `doing`, and `prev`. `doing` is what is
 starting now, and is the literal `(done)` on the final line. `prev` is how the
@@ -122,9 +124,9 @@ agents are ignoring it.
   compensates by matching every thread id seen in the milestone logs, but a
   subagent that logged nothing cannot be found this way.
 - There is no rotation or pruning. The log directory grows without bound.
-- A checkout whose install has not run yet has the instruction from `CLAUDE.md`
-  but no `milestone` on PATH, and the calls fail quietly — a non-zero exit inside
-  one shell call, with nothing logged to say why.
+- A checkout whose development context has not been applied may have the
+  instruction but no `milestone` on its isolated command path. Apply that
+  context before treating logging as available.
 - Compliance is best-effort. The instruction is followed by a model, not enforced
   by the harness, so a missing milestone means nothing was logged — not that
   nothing happened.

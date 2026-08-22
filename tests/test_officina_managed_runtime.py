@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+import runpy
 import shutil
 import subprocess
+import sys
 import tomllib
 import hashlib
 from pathlib import Path
@@ -11,13 +13,18 @@ from pathlib import Path
 import pytest
 
 import officina.common.atomic_files as atomic_files
+import officina.install.managed_runtime as managed_runtime_module
+from officina.common.famulus_paths import resolve_famulus_paths
+from officina.install.context import InstallationContext
 from officina.install.managed_runtime import (
     ManagedRuntimeError,
+    _deploy_resolver,
     _source_revision,
     _venv_python_bin,
     _venv_site_packages,
     build_candidate_release as _build_candidate_release,
     declared_python_packages,
+    deployed_resolver_trusted_roots,
     optional_runtime_modules,
     package_size_estimates,
     load_cached_package_index_metadata,
@@ -40,6 +47,9 @@ UV_BIN = shutil.which("uv")
 FAKE_UV_BIN = Path("/fake/uv")
 PINNED_UV_VERSION = "0.11.29"
 PINNED_PYTHON_VERSION = "3.11.15"
+LEGACY_RESOLVER_SOURCE = (
+    REPO_ROOT / "tests" / "fixtures" / "officina" / "legacy_resolver_v1_launch.py"
+)
 
 
 def _pinned_uv_is_available() -> bool:
@@ -602,19 +612,7 @@ def test_build_candidate_release_resolver_deploy_failure_writes_no_pointer(monke
     assert not (runtime_root / "bootstrap" / "resolvers" / "v1" / "launch.py").exists()
 
 
-def test_deploy_resolver_writes_through_atomic_replace_bytes_not_plain_copy(monkeypatch, tmp_path):
-    """Regression test for a real bug: _deploy_resolver used to write the
-    resolver with plain `shutil.copy2`, which is not atomic. The resolver
-    at `<runtime_root>/bootstrap/resolvers/v1/launch.py` is a fixed path
-    every generated launcher shim and every scheduled recurring-tasks job
-    execs into, and build_candidate_release genuinely runs a second time
-    against the same runtime_root during a normal install-then-update flow
-    -- a non-atomic overwrite risks a torn read by a job executing the file
-    at that exact moment. This asserts the real deployment goes through
-    officina.common.atomic_files.atomic_replace_bytes (like its sibling
-    uv_bootstrap.py/runtime_pointer.py writes) instead of shutil.copy2, and
-    that the deployed file is both correct and executable.
-    """
+def test_deploy_resolver_atomically_selects_a_complete_immutable_generation(monkeypatch, tmp_path):
     calls: list = []
     monkeypatch.setattr(
         "subprocess.run", fake_uv_subprocess_run(calls, trusted_python_dir=tmp_path / "uv-python-store")
@@ -640,17 +638,351 @@ def test_deploy_resolver_writes_through_atomic_replace_bytes_not_plain_copy(monk
         python_version="3.11",
     )
 
-    assert len(atomic_calls) == 1
-    resolver_path = runtime_root / "bootstrap" / "resolvers" / "v1" / "launch.py"
-    args, kwargs = atomic_calls[0]
-    assert args[0] == resolver_path
-    assert kwargs["mode"] == 0o755
+    resolver_dir = runtime_root / "bootstrap" / "resolvers" / "v1"
+    assert len(atomic_calls) == 4
+    deployed = {Path(args[0]).name: kwargs["mode"] for args, kwargs in atomic_calls}
+    resolver_path = resolver_dir / "launch.py"
+    assert deployed == {
+        "launch.py": 0o755,
+        "trusted-roots.json": 0o644,
+        "active.json": 0o644,
+    }
     assert resolver_path.exists()
     assert resolver_path.read_bytes() == (
         Path(__file__).resolve().parents[1]
         / "src" / "officina" / "install" / "resolvers" / "launch.py"
     ).read_bytes()
+    active = json.loads((resolver_dir / "active.json").read_text(encoding="utf-8"))
+    assert active["schema_version"] == 1
+    generation = (
+        runtime_root / "bootstrap" / "resolvers" / "generations" / active["generation"]
+    )
+    assert generation.is_dir()
+    assert (generation / "launch.py").read_bytes() == resolver_path.read_bytes()
+    assert json.loads((generation / "trusted-roots.json").read_text(encoding="utf-8"))
     assert os.access(resolver_path, os.X_OK)
+
+
+def test_public_trusted_root_reader_matches_a_valid_deployed_generation(tmp_path):
+    runtime_root = tmp_path / "runtime"
+    trusted_root = tmp_path / "trusted-python"
+
+    _deploy_resolver(
+        runtime_root=runtime_root,
+        trusted_interpreter_roots=(trusted_root,),
+    )
+
+    assert deployed_resolver_trusted_roots(runtime_root=runtime_root) == (
+        trusted_root.resolve(strict=False),
+    )
+
+
+def test_public_trusted_root_reader_rejects_generation_symlink_escape(tmp_path):
+    runtime_root = tmp_path / "runtime"
+    fixed = runtime_root / "bootstrap" / "resolvers" / "v1"
+    generations = runtime_root / "bootstrap" / "resolvers" / "generations"
+    generation_id = "a" * 64
+    outside = tmp_path / "outside-generation"
+    fixed.mkdir(parents=True)
+    generations.mkdir(parents=True)
+    outside.mkdir()
+    (outside / "launch.py").write_text("# complete\n", encoding="utf-8")
+    (outside / "trusted-roots.json").write_text(
+        json.dumps([str(tmp_path / "attacker-root")]), encoding="utf-8"
+    )
+    try:
+        (generations / generation_id).symlink_to(outside, target_is_directory=True)
+    except OSError:
+        # famulus-skip: category=capability-unavailable; reason=escape regression requires a real directory symlink; alternate=wrong-schema and malformed-selector tests exercise the same strict public rejection boundary without symlinks
+        pytest.skip("directory symlinks are unavailable")
+    (fixed / "active.json").write_text(
+        json.dumps({"schema_version": 1, "generation": generation_id}),
+        encoding="utf-8",
+    )
+    shutil.copy2(
+        REPO_ROOT / "src" / "officina" / "install" / "resolvers" / "launch.py",
+        fixed / "launch.py",
+    )
+    resolver_namespace = runpy.run_path(
+        str(fixed / "launch.py"), run_name="_famulus_parity_resolver"
+    )
+    resolver_error = resolver_namespace["ResolverError"]
+
+    with pytest.raises(resolver_error, match="escapes its generation root"):
+        resolver_namespace["_active_generation_source"]()
+
+    with pytest.raises(ManagedRuntimeError, match="escapes its generation root"):
+        deployed_resolver_trusted_roots(runtime_root=runtime_root)
+
+
+@pytest.mark.parametrize(
+    ("active_text", "error_fragment"),
+    [
+        ("{", "could not read active resolver generation"),
+        (
+            json.dumps({"schema_version": 2, "generation": "a" * 64}),
+            "unsupported schema",
+        ),
+    ],
+)
+def test_public_trusted_root_reader_rejects_invalid_active_selector(
+    tmp_path, active_text, error_fragment
+):
+    runtime_root = tmp_path / "runtime"
+    fixed = runtime_root / "bootstrap" / "resolvers" / "v1"
+    generation = (
+        runtime_root / "bootstrap" / "resolvers" / "generations" / ("a" * 64)
+    )
+    fixed.mkdir(parents=True)
+    generation.mkdir(parents=True)
+    (generation / "launch.py").write_text("# complete\n", encoding="utf-8")
+    (generation / "trusted-roots.json").write_text("[]", encoding="utf-8")
+    (fixed / "active.json").write_text(active_text, encoding="utf-8")
+
+    with pytest.raises(ManagedRuntimeError, match=error_fragment):
+        deployed_resolver_trusted_roots(runtime_root=runtime_root)
+
+
+# famulus-skip: category=platform-contract; reason=POSIX directory fsync is the durability primitive exercised here; alternate=the managed-runtime product suite and legacy-migration interruption test exercise the shared publication order on every host
+@pytest.mark.skipif(os.name == "nt", reason="POSIX directory fsync contract")
+def test_generation_directory_publication_fsyncs_parent_after_rename(
+    monkeypatch, tmp_path
+):
+    publisher = getattr(managed_runtime_module, "_durably_publish_generation", None)
+    assert publisher is not None, "generation publication lacks a durability boundary"
+    generations_dir = tmp_path / "generations"
+    generations_dir.mkdir()
+    temporary = generations_dir / ".candidate.tmp"
+    temporary.mkdir()
+    (temporary / "launch.py").write_text("complete\n", encoding="utf-8")
+    generation = generations_dir / ("a" * 64)
+    events: list[str] = []
+    directory_descriptors: set[int] = set()
+    real_open = os.open
+    real_replace = os.replace
+    real_fsync = os.fsync
+    real_close = os.close
+
+    def recording_open(path, flags, *args, **kwargs):
+        descriptor = real_open(path, flags, *args, **kwargs)
+        if Path(path) == generations_dir:
+            directory_descriptors.add(descriptor)
+        return descriptor
+
+    def recording_replace(source, destination, *args, **kwargs):
+        result = real_replace(source, destination, *args, **kwargs)
+        if Path(destination) == generation:
+            events.append("generation-rename")
+        return result
+
+    def recording_fsync(descriptor):
+        if descriptor in directory_descriptors:
+            events.append("generations-directory-fsync")
+        return real_fsync(descriptor)
+
+    def recording_close(descriptor):
+        try:
+            return real_close(descriptor)
+        finally:
+            directory_descriptors.discard(descriptor)
+
+    monkeypatch.setattr(managed_runtime_module.os, "open", recording_open)
+    monkeypatch.setattr(managed_runtime_module.os, "replace", recording_replace)
+    monkeypatch.setattr(managed_runtime_module.os, "fsync", recording_fsync)
+    monkeypatch.setattr(managed_runtime_module.os, "close", recording_close)
+
+    publisher(temporary, generation, generations_dir)
+
+    assert events == ["generation-rename", "generations-directory-fsync"]
+    assert generation.is_dir()
+
+
+def test_durable_generation_publication_completes_before_selector_replacement(
+    monkeypatch, tmp_path
+):
+    publisher = getattr(managed_runtime_module, "_durably_publish_generation", None)
+    assert publisher is not None, "generation publication lacks a durability boundary"
+    events: list[str] = []
+
+    def recording_publisher(temporary, generation, generations_dir):
+        publisher(temporary, generation, generations_dir)
+        events.append("durable-generation")
+
+    real_atomic_replace_bytes = atomic_files.atomic_replace_bytes
+
+    def recording_atomic_replace(path, *args, **kwargs):
+        if Path(path).name == "active.json":
+            events.append("selector")
+        return real_atomic_replace_bytes(path, *args, **kwargs)
+
+    monkeypatch.setattr(
+        managed_runtime_module, "_durably_publish_generation", recording_publisher
+    )
+    monkeypatch.setattr(
+        managed_runtime_module.atomic_files,
+        "atomic_replace_bytes",
+        recording_atomic_replace,
+    )
+
+    _deploy_resolver(
+        runtime_root=tmp_path / "runtime",
+        trusted_interpreter_roots=(tmp_path / "trusted-python",),
+    )
+
+    assert events == ["durable-generation", "selector"]
+
+
+# famulus-skip: category=platform-contract; reason=POSIX retry durability is established by parent-directory fsync; alternate=the shared legacy-migration interruption test exercises retry-safe selector ordering on every host
+@pytest.mark.skipif(os.name == "nt", reason="POSIX directory fsync retry contract")
+def test_retry_resyncs_visible_generation_before_selector_replacement(
+    monkeypatch, tmp_path
+):
+    runtime_root = tmp_path / "runtime"
+    generations_dir = runtime_root / "bootstrap" / "resolvers" / "generations"
+    fixed_dir = runtime_root / "bootstrap" / "resolvers" / "v1"
+    real_publisher = managed_runtime_module._durably_publish_generation
+
+    def fail_after_rename(temporary, generation, parent):
+        os.replace(temporary, generation)
+        raise OSError("simulated parent fsync failure")
+
+    monkeypatch.setattr(
+        managed_runtime_module, "_durably_publish_generation", fail_after_rename
+    )
+    with pytest.raises(ManagedRuntimeError, match="simulated parent fsync failure"):
+        _deploy_resolver(
+            runtime_root=runtime_root,
+            trusted_interpreter_roots=(tmp_path / "trusted-python",),
+        )
+    assert not (fixed_dir / "active.json").exists()
+    assert any(path.is_dir() for path in generations_dir.iterdir())
+    monkeypatch.setattr(
+        managed_runtime_module, "_durably_publish_generation", real_publisher
+    )
+
+    events: list[str] = []
+    directory_descriptors: set[int] = set()
+    real_open = os.open
+    real_fsync = os.fsync
+    real_close = os.close
+    real_atomic_replace_bytes = atomic_files.atomic_replace_bytes
+
+    def recording_open(path, flags, *args, **kwargs):
+        descriptor = real_open(path, flags, *args, **kwargs)
+        if Path(path) == generations_dir:
+            directory_descriptors.add(descriptor)
+        return descriptor
+
+    def recording_fsync(descriptor):
+        if descriptor in directory_descriptors:
+            events.append("generations-directory-fsync")
+        return real_fsync(descriptor)
+
+    def recording_close(descriptor):
+        try:
+            return real_close(descriptor)
+        finally:
+            directory_descriptors.discard(descriptor)
+
+    def recording_atomic_replace(path, *args, **kwargs):
+        if Path(path).name == "active.json":
+            events.append("selector")
+        return real_atomic_replace_bytes(path, *args, **kwargs)
+
+    monkeypatch.setattr(managed_runtime_module.os, "open", recording_open)
+    monkeypatch.setattr(managed_runtime_module.os, "fsync", recording_fsync)
+    monkeypatch.setattr(managed_runtime_module.os, "close", recording_close)
+    monkeypatch.setattr(
+        managed_runtime_module.atomic_files,
+        "atomic_replace_bytes",
+        recording_atomic_replace,
+    )
+
+    _deploy_resolver(
+        runtime_root=runtime_root,
+        trusted_interpreter_roots=(tmp_path / "trusted-python",),
+    )
+
+    assert events == ["generations-directory-fsync", "selector"]
+
+
+@pytest.mark.parametrize("interrupted_target", ("active.json", "launch.py"))
+def test_interrupted_resolver_upgrade_preserves_working_old_bundle_and_pointer(
+    monkeypatch, tmp_path, interrupted_target
+):
+    runtime_root = tmp_path / "runtime"
+    release_dir = runtime_root / "releases" / "old-release"
+    python_bin = release_dir / "venv" / "bin" / "python"
+    python_bin.parent.mkdir(parents=True)
+    python_bin.symlink_to(Path(sys.executable).resolve())
+    runtime_root.mkdir(exist_ok=True)
+    (runtime_root / "current.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "release_id": release_dir.name,
+                "runtime_source": str(release_dir),
+                "python_bin": str(python_bin),
+            }
+        ),
+        encoding="utf-8",
+    )
+    resolver_dir = runtime_root / "bootstrap" / "resolvers" / "v1"
+    resolver_dir.mkdir(parents=True)
+    resolver = resolver_dir / "launch.py"
+    shutil.copy2(LEGACY_RESOLVER_SOURCE, resolver)
+    resolver.chmod(0o755)
+    trusted_root = Path(sys.executable).resolve().parent
+    legacy_trust = json.dumps([str(trusted_root)]).encode("utf-8")
+    (resolver_dir / "trusted-roots.json").write_bytes(legacy_trust)
+    active_path = resolver_dir / "active.json"
+    assert not active_path.exists()
+    old_pointer = (runtime_root / "current.json").read_bytes()
+    legacy_resolver = resolver.read_bytes()
+    resolver_command = (
+        [sys.executable, str(resolver)] if os.name == "nt" else [str(resolver)]
+    )
+    before = subprocess.run(
+        [*resolver_command, "-c", "print('old-bundle-works')"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert before.returncode == 0, before.stderr
+    assert before.stdout == "old-bundle-works\n"
+
+    real_atomic_replace_bytes = atomic_files.atomic_replace_bytes
+
+    def interrupt_publication(path, *args, **kwargs):
+        if Path(path) == resolver_dir / interrupted_target:
+            raise OSError("simulated resolver publication interruption")
+        return real_atomic_replace_bytes(path, *args, **kwargs)
+
+    monkeypatch.setattr(
+        "officina.install.managed_runtime.atomic_files.atomic_replace_bytes",
+        interrupt_publication,
+    )
+    with pytest.raises(ManagedRuntimeError, match="simulated resolver publication interruption"):
+        _deploy_resolver(
+            runtime_root=runtime_root,
+            trusted_interpreter_roots=(tmp_path / "new-python-store",),
+        )
+
+    if interrupted_target == "active.json":
+        assert not active_path.exists()
+    else:
+        assert active_path.exists()
+    assert (runtime_root / "current.json").read_bytes() == old_pointer
+    assert resolver.read_bytes() == legacy_resolver
+    assert (resolver_dir / "trusted-roots.json").read_bytes() == legacy_trust
+    after = subprocess.run(
+        [*resolver_command, "-c", "print('old-bundle-still-works')"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert after.returncode == 0, after.stderr
+    assert after.stdout == "old-bundle-still-works\n"
 
 
 def test_repo_candidate_installs_verified_officina_wheel_before_activation(monkeypatch, tmp_path):
@@ -743,6 +1075,153 @@ def test_invalid_repository_config_preserves_prior_pointer(monkeypatch, tmp_path
 
     assert (runtime_root / "current.json").read_bytes() == prior_pointer
     assert prior.python_bin.exists()
+
+
+def _launcher_context(
+    tmp_path: Path, repo_root: Path, *, mode: str
+) -> InstallationContext:
+    home = tmp_path / "home"
+    if mode == "standard":
+        paths = resolve_famulus_paths(platform="linux", home=home, environ={})
+        return InstallationContext(
+            mode="standard",
+            source_root=repo_root,
+            development_root=None,
+            paths=paths,
+            codex_home=home / ".codex",
+            claude_home=home / ".claude",
+            installation_id="standard",
+        )
+    isolated_home = repo_root / ".famulus" / "home"
+    paths = resolve_famulus_paths(
+        platform="linux",
+        home=isolated_home,
+        environ={
+            "XDG_DATA_HOME": str(isolated_home / ".local" / "share"),
+            "XDG_CONFIG_HOME": str(isolated_home / ".config"),
+            "XDG_STATE_HOME": str(isolated_home / ".local" / "state"),
+        },
+    )
+    return InstallationContext(
+        mode="development",
+        source_root=repo_root,
+        development_root=repo_root,
+        paths=paths,
+        codex_home=repo_root / ".famulus" / "homes" / "codex",
+        claude_home=repo_root / ".famulus" / "homes" / "claude",
+        installation_id="dev-0123456789abcdef0123456789abcdef",
+    )
+
+
+def _launcher_repo(tmp_path: Path) -> Path:
+    repo = tmp_path / "repo"
+    (repo / "skills").mkdir(parents=True)
+    (repo / "src" / "officina").mkdir(parents=True)
+    (repo / "src" / "officina" / "__init__.py").write_text("", encoding="utf-8")
+    (repo / "agents").mkdir()
+    (repo / "agents" / "assistant.md").write_text("original\n", encoding="utf-8")
+    (repo / "profiles").mkdir()
+    (repo / "profiles" / "assistant_claude_setting.json").write_text("{}\n")
+    (repo / "officina.toml").write_text(
+        'schema_version = 1\n[modules]\nroots = ["skills", "src/officina"]\n',
+        encoding="utf-8",
+    )
+    (repo / "pyproject.toml").write_text(
+        '[build-system]\nrequires = ["setuptools"]\nbuild-backend = "setuptools.build_meta"\n',
+        encoding="utf-8",
+    )
+    return repo
+
+
+def test_standard_candidate_copies_immutable_launcher_resources(monkeypatch, tmp_path):
+    calls: list = []
+    monkeypatch.setattr(
+        "subprocess.run",
+        fake_uv_subprocess_run(calls, trusted_python_dir=tmp_path / "uv-python-store"),
+    )
+    repo = _launcher_repo(tmp_path)
+    manifest = tmp_path / "runtime_dependencies.json"
+    manifest.write_text('{"version": 2, "skills": {}}')
+    context = _launcher_context(tmp_path, repo, mode="standard")
+
+    pointer = build_candidate_release(
+        runtime_root=context.paths.runtime_root,
+        manifest_path=manifest,
+        platform="linux",
+        uv_bin=FAKE_UV_BIN,
+        python_version="3.11",
+        repo_root=repo,
+        installation_context=context,
+    )
+    assert pointer.launcher_resources == pointer.runtime_source / "launcher-resources"
+    assert (pointer.launcher_resources / "agents" / "assistant.md").read_text() == "original\n"
+    (repo / "agents" / "assistant.md").write_text("changed\n")
+    assert (pointer.launcher_resources / "agents" / "assistant.md").read_text() == "original\n"
+
+
+def test_development_candidate_points_to_exact_live_launcher_resources(monkeypatch, tmp_path):
+    calls: list = []
+    monkeypatch.setattr(
+        "subprocess.run",
+        fake_uv_subprocess_run(calls, trusted_python_dir=tmp_path / "uv-python-store"),
+    )
+    repo = _launcher_repo(tmp_path)
+    manifest = tmp_path / "runtime_dependencies.json"
+    manifest.write_text('{"version": 2, "skills": {}}')
+    context = _launcher_context(tmp_path, repo, mode="development")
+
+    pointer = build_candidate_release(
+        runtime_root=context.paths.runtime_root,
+        manifest_path=manifest,
+        platform="linux",
+        uv_bin=FAKE_UV_BIN,
+        python_version="3.11",
+        repo_root=repo,
+        installation_context=context,
+    )
+
+    assert pointer.launcher_resources == repo.resolve()
+    record = json.loads(pointer.installation_context.read_text())
+    assert record["release_id"] == pointer.release_id
+    assert record["installation_id"] == context.installation_id
+
+
+def test_context_publication_failure_preserves_prior_pointer(monkeypatch, tmp_path):
+    calls: list = []
+    monkeypatch.setattr(
+        "subprocess.run",
+        fake_uv_subprocess_run(calls, trusted_python_dir=tmp_path / "uv-python-store"),
+    )
+    repo = _launcher_repo(tmp_path)
+    manifest = tmp_path / "runtime_dependencies.json"
+    manifest.write_text('{"version": 2, "skills": {}}')
+    context = _launcher_context(tmp_path, repo, mode="standard")
+    prior = build_candidate_release(
+        runtime_root=context.paths.runtime_root,
+        manifest_path=manifest,
+        platform="linux",
+        uv_bin=FAKE_UV_BIN,
+        python_version="3.11",
+    )
+    before = context.paths.current_pointer.read_bytes()
+    monkeypatch.setattr(
+        "officina.install.managed_runtime._publish_installation_context",
+        lambda **_kwargs: (_ for _ in ()).throw(ManagedRuntimeError("interrupted")),
+    )
+
+    with pytest.raises(ManagedRuntimeError, match="interrupted"):
+        build_candidate_release(
+            runtime_root=context.paths.runtime_root,
+            manifest_path=manifest,
+            platform="linux",
+            uv_bin=FAKE_UV_BIN,
+            python_version="3.11",
+            repo_root=repo,
+            installation_context=context,
+        )
+
+    assert context.paths.current_pointer.read_bytes() == before
+    assert prior.release_id == json.loads(before)["release_id"]
 
 
 # famulus-skip: category=capability-unavailable; reason=requires a real uv binary on PATH; alternate=mocked tests above cover call shapes and ordering without uv installed

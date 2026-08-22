@@ -17,16 +17,19 @@ longer installs packages into the ambient Python itself (see
 warn_if_managed_release_missing for the lightweight, non-blocking sanity
 check that a managed release exists).
 
-Does NOT set ASSISTANT_DEFAULT (see launchers.py) or AI (see dev_link.py) —
-this subcommand only owns PATH.
+Does NOT persist launcher defaults or repository-root selectors. Durable
+backend selection belongs to launchers.json; this subcommand owns only PATH.
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
+import ntpath
 import os
 import re
 import sys
 from pathlib import Path
+from typing import Mapping
 
 REPO_SRC = Path(__file__).resolve().parents[3] / "src"
 if not __package__ and str(REPO_SRC) not in sys.path:
@@ -36,6 +39,7 @@ if not __package__:
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 from officina.common.famulus_paths import resolve_famulus_paths
+from officina.install.context import InstallationContext
 from officina.install.managed_runtime import declared_python_packages
 
 if __package__:
@@ -43,9 +47,9 @@ if __package__:
 else:
     from _install_launcher import LauncherInstallResult, platform_launcher_installer
 if __package__:
-    from ._state_record import Manifest, manifest_path
+    from ._state_record import InstallManifestError, Manifest, manifest_path
 else:
-    from _state_record import Manifest, manifest_path
+    from _state_record import InstallManifestError, Manifest, manifest_path
 if __package__:
     from ._shell_block import ensure_rc_vars
 else:
@@ -151,7 +155,12 @@ def required_python_packages(repo_root: Path) -> list[str]:
     return sorted(declared_python_packages(manifest, platform=platform_name), key=str.lower)
 
 
-def warn_if_managed_release_missing(*, home: Path) -> None:
+def warn_if_managed_release_missing(
+    *,
+    home: Path,
+    environ: Mapping[str, str],
+    context: InstallationContext | None = None,
+) -> None:
     """Log an advisory (non-blocking) note if no managed-runtime release is
     active yet.
 
@@ -164,7 +173,13 @@ def warn_if_managed_release_missing(*, home: Path) -> None:
     (bypassing `_phase_entry.py`) by targeted-repair invocations and tests.
     """
     try:
-        current_pointer = resolve_famulus_paths(platform=sys.platform, home=home).current_pointer
+        current_pointer = (
+            context.paths.current_pointer
+            if context is not None
+            else resolve_famulus_paths(
+                platform=sys.platform, home=home, environ=environ
+            ).current_pointer
+        )
     except Exception:
         return
     if not current_pointer.exists():
@@ -174,81 +189,6 @@ def warn_if_managed_release_missing(*, home: Path) -> None:
             "not work until officina.install.managed_runtime.build_candidate_release "
             "has run (see _phase_entry.py)."
         )
-
-
-def _import_certificate_records():
-    """Import point for ``officina.certification.records``, isolated so
-    ``install_certificate_signing_material`` can be tested against a missing
-    ``cryptography`` dependency without actually uninstalling it (see that
-    function's ``ModuleNotFoundError`` handling below).
-    """
-    from officina.certification.records import (
-        certificate_public_key_root,
-        provision_certificate_signing_material,
-    )
-
-    return certificate_public_key_root, provision_certificate_signing_material
-
-
-def install_certificate_signing_material(
-    repo_root: Path,
-    dry_run: bool,
-) -> LauncherInstallResult:
-    """Provision the existing certifier key lifecycle as one required capability."""
-
-    workflows = ("v4 certification", "certificate verification")
-    if dry_run:
-        log("  (dry-run) Would provision certificate signing material")
-        return LauncherInstallResult(
-            name="certificate-signing-material",
-            required=True,
-            status="would-install",
-            workflows=workflows,
-        )
-    try:
-        certificate_public_key_root, provision_certificate_signing_material = (
-            _import_certificate_records()
-        )
-    except ModuleNotFoundError as exc:
-        # certificate_records.py imports `cryptography` at module level, and
-        # this runs in-process against the installer's own ambient
-        # interpreter (not the managed-runtime venv that build_candidate_
-        # release provisions packages into -- see the module docstring).
-        # On a fresh machine whose ambient Python never had `cryptography`
-        # installed, fail with a clear, actionable message instead of a
-        # confusing raw traceback. Deliberately does NOT pip-install into
-        # the ambient interpreter: that ambient-mutation anti-pattern was
-        # removed elsewhere in this same effort (see module docstring).
-        return LauncherInstallResult(
-            name="certificate-signing-material",
-            required=True,
-            status="failed",
-            workflows=workflows,
-            reason=(
-                f"missing module {exc.name!r}: cryptography is not installed in the "
-                "interpreter running this installer -- install it with "
-                "`pip install cryptography`, or run the installer with a Python "
-                "environment that already has it"
-            ),
-        )
-    try:
-        provision_certificate_signing_material(repo_root)
-        path = certificate_public_key_root(repo_root)
-    except Exception as exc:
-        return LauncherInstallResult(
-            name="certificate-signing-material",
-            required=True,
-            status="failed",
-            workflows=workflows,
-            reason=str(exc),
-        )
-    return LauncherInstallResult(
-        name="certificate-signing-material",
-        required=True,
-        status="installed",
-        workflows=workflows,
-        path=path,
-    )
 
 
 def report_capabilities(results: list[LauncherInstallResult]) -> int:
@@ -300,28 +240,124 @@ def ensure_path_windows(bin_dir: Path, dry_run: bool, manifest: Manifest | None 
 
         bin_str = str(bin_dir)
         parts = [p for p in current_path.split(";") if p]
-        if bin_str not in parts:
+        new_path = ";".join([bin_str] + parts)
+        fields = {
+            "names": ["PATH"],
+            "path_inserted": True,
+            "path_value": bin_str,
+            "value_type": path_type,
+            "prior_path": current_path,
+            "prior_path_sha256": hashlib.sha256(
+                current_path.encode("utf-8")
+            ).hexdigest(),
+            "installed_path_sha256": hashlib.sha256(
+                new_path.encode("utf-8")
+            ).hexdigest(),
+        }
+        existing = next(
+            (
+                entry for entry in manifest.entries
+                if manifest is not None
+                and entry.get("kind") == "registry_env"
+                and entry.get("path") == bin_str
+            ),
+            None,
+        ) if manifest is not None else None
+        if existing is not None and existing.get("transaction_state") == "pending":
+            existing_prior = existing.get("prior_path")
+            prior_identity = existing.get("prior_path_sha256")
+            installed_identity = existing.get("installed_path_sha256")
+            valid = (
+                existing.get("path_value") == bin_str
+                and existing.get("value_type") == path_type
+                and isinstance(existing_prior, str)
+                and isinstance(prior_identity, str)
+                and isinstance(installed_identity, str)
+                and hashlib.sha256(existing_prior.encode("utf-8")).hexdigest()
+                == prior_identity
+            )
+            current_identity = hashlib.sha256(current_path.encode("utf-8")).hexdigest()
+            if valid and current_identity == installed_identity:
+                committed = {
+                    key: value for key, value in existing.items()
+                    if key not in {"kind", "path", "transaction_state"}
+                }
+                manifest.record(
+                    "registry_env", path=bin_str,
+                    transaction_state="committed", **committed,
+                )
+                log(f"  Recovered installed user PATH ownership: {bin_dir}")
+                return
+            if not (valid and current_identity == prior_identity):
+                log(
+                    "  WARN: pending user PATH transaction no longer matches its "
+                    f"prior or intended value; preserving registry and intent: {bin_dir}"
+                )
+                return
+            current_path = existing_prior
+            parts = [p for p in current_path.split(";") if p]
             new_path = ";".join([bin_str] + parts)
-            winreg.SetValueEx(key, "PATH", 0, path_type, new_path)
+            fields = {
+                key: value for key, value in existing.items()
+                if key not in {"kind", "path", "transaction_state"}
+            }
+        normalized_bin = ntpath.normcase(ntpath.normpath(bin_str))
+        present = any(
+            ntpath.normcase(ntpath.normpath(part)) == normalized_bin
+            for part in parts
+        )
+        if not present:
+            if manifest is not None:
+                manifest.record(
+                    "registry_env", path=bin_str,
+                    transaction_state="pending", **fields,
+                )
+            try:
+                winreg.SetValueEx(key, "PATH", 0, path_type, new_path)
+            except Exception:
+                if manifest is not None:
+                    try:
+                        observed, observed_type = winreg.QueryValueEx(key, "PATH")
+                    except FileNotFoundError:
+                        observed, observed_type = "", path_type
+                    if observed == current_path and observed_type == path_type:
+                        manifest.forget("registry_env", path=bin_str)
+                raise
+            if manifest is not None:
+                manifest.record(
+                    "registry_env", path=bin_str,
+                    transaction_state="committed", **fields,
+                )
             log(f"  Added to user PATH: {bin_dir}")
         else:
             log(f"  User PATH already contains: {bin_dir}")
 
-    if manifest is not None:
-        manifest.record("registry_env", path=str(bin_dir), names=["PATH"])
-
 
 def run(
     *,
-    repo_root: Path,
+    context: InstallationContext | None = None,
+    environ: Mapping[str, str],
+    repo_root: Path | None = None,
     home: Path | None = None,
     bin_dir: Path | None = None,
     shell_rc: Path | None = None,
     dry_run: bool = False,
     manifest: Manifest | None = None,
 ) -> int:
+    if context is not None:
+        repo_root = context.source_root
+        bin_dir = context.paths.user_bin
+        home = (
+            context.development_root / ".famulus" / "home"
+            if context.mode == "development" and context.development_root is not None
+            else (home or Path.home())
+        )
+    if repo_root is None:
+        raise ValueError("repo_root is required when context is omitted")
     home = home or Path.home()
-    bin_dir = bin_dir or default_bin_dir(home=home)
+    bin_dir = bin_dir or resolve_famulus_paths(
+        platform=sys.platform, home=home, environ=environ
+    ).user_bin
 
     if manifest is None and not dry_run:
         manifest = Manifest(manifest_path(home))
@@ -329,33 +365,36 @@ def run(
         manifest = None
 
     if not dry_run:
-        warn_if_managed_release_missing(home=home)
+        warn_if_managed_release_missing(home=home, environ=environ, context=context)
 
     declared_packages = required_python_packages(repo_root)
     launcher_installer = platform_launcher_installer()
+    runtime_root = context.paths.runtime_root if context is not None else None
     capability_results = [
-        launcher_installer.install_dispatcher_launcher(repo_root, bin_dir, dry_run, manifest, home=home),
-        launcher_installer.install_wakeup_launcher(bin_dir, dry_run, manifest, home=home),
-        launcher_installer.install_invoke_skill_launcher(bin_dir, dry_run, manifest),
+        launcher_installer.install_dispatcher_launcher(
+            repo_root, bin_dir, dry_run, manifest, home=home, runtime_root=runtime_root
+        ),
+        launcher_installer.install_wakeup_launcher(
+            bin_dir, dry_run, manifest, home=home, runtime_root=runtime_root
+        ),
+        launcher_installer.install_invoke_skill_launcher(
+            bin_dir, dry_run, manifest, home=home, runtime_root=runtime_root
+        ),
     ]
-    if any(_declares_package(package, "cryptography") for package in declared_packages):
-        capability_results.append(
-            install_certificate_signing_material(repo_root, dry_run)
-        )
-
-    if sys.platform == "win32":
-        ensure_path_windows(bin_dir, dry_run, manifest)
-    else:
-        if shell_rc is None:
-            detected_shell = os.environ.get("SHELL", "")
-            shell_rc = home / (".zshrc" if "zsh" in detected_shell else ".bashrc")
-        ensure_rc_vars(
-            shell_rc,
-            {"PATH": f'export PATH="{bin_dir}:$PATH"'},
-            dry_run,
-            manifest,
-            label="user",
-        )
+    if context is None or context.mode == "standard":
+        if sys.platform == "win32":
+            ensure_path_windows(bin_dir, dry_run, manifest)
+        else:
+            if shell_rc is None:
+                detected_shell = environ.get("SHELL", "")
+                shell_rc = home / (".zshrc" if "zsh" in detected_shell else ".bashrc")
+            ensure_rc_vars(
+                shell_rc,
+                {"PATH": f'export PATH="{bin_dir}:$PATH"'},
+                dry_run,
+                manifest,
+                label="user",
+            )
 
     if manifest is not None:
         manifest.save()
@@ -393,6 +432,7 @@ def main(argv: list[str] | None = None) -> int:
         bin_dir=Path(args.bin_dir) if args.bin_dir else None,
         shell_rc=Path(args.shell_rc) if args.shell_rc else None,
         dry_run=args.dry_run,
+        environ=os.environ,
     )
 
 

@@ -12,11 +12,28 @@ import sys
 from pathlib import Path
 from unittest import mock
 
+import pytest
+
 from .. import _job_control as job_control
 
 SKILL_DIR = Path(__file__).parent.parent
 REPO_SRC = SKILL_DIR.parents[2] / "src"
 SCRIPT = SKILL_DIR / "_job_control.py"
+
+
+@pytest.fixture(autouse=True)
+def explicit_test_schedule_context(monkeypatch):
+    def context():
+        return job_control.ScheduleContext(
+            skill_dir=job_control.SKILL_DIR,
+            jobs_file=job_control.JOBS_FILE,
+            log_dir=job_control.LOG_DIR,
+            unit_dir=job_control._unit_writer.DEFAULT_UNIT_DIR,
+            live=False,
+        )
+
+    monkeypatch.setattr(job_control, "production_schedule_context", context)
+    monkeypatch.setattr(job_control._unit_writer, "production_schedule_context", context)
 
 
 def _load():
@@ -99,9 +116,18 @@ def test_disable_job_passes_custom_jobs_file_to_sync():
         f.write("jobs:\n  - name: a\n    command: 'true'\n    schedule: '0 * * * *'\n    enabled: true\n")
         path = Path(f.name)
     try:
+        unit_dir = path.parent / "no-units"
+        context = mod.ScheduleContext(
+            skill_dir=Path.home() / "not-a-temp-checkout" / "_rtx",
+            jobs_file=path,
+            log_dir=path.parent / "logs",
+            unit_dir=unit_dir,
+            live=False,
+        )
         with mock.patch.object(mod, "sync_units") as sync_units, \
+             mock.patch.object(mod, "schedule_context", return_value=context), \
              mock.patch.object(
-                 mod._unit_writer, "DEFAULT_UNIT_DIR", path.parent / "no-units"
+                 mod._unit_writer, "DEFAULT_UNIT_DIR", unit_dir
              ), \
              mock.patch.object(
                  mod._unit_writer, "SKILL_DIR", Path.home() / "not-a-temp-checkout" / "_rtx"
@@ -138,6 +164,7 @@ def test_default_jobs_file_calls_sync_units_with_no_override():
 def test_sync_units_invokes_platform_backend(tmp_path):
     mod = _load()
     backend = mock.Mock()
+    backend.registrations_present.return_value = False
     with mock.patch.object(mod, "load_jobs", return_value=[]), \
          mock.patch.object(mod._unit_writer, "DEFAULT_UNIT_DIR", tmp_path / "units"), \
          mock.patch.object(mod._unit_writer, "SKILL_DIR", Path.home() / "not-a-temp-checkout" / "_rtx"), \
@@ -161,9 +188,9 @@ def test_sync_units_passes_jobs_file_override(tmp_path):
          mock.patch.object(
              mod._unit_writer, "platform_schedule_backend", return_value=backend
          ):
-        mod.sync_units(custom)
-        context = backend.sync.call_args[0][1]
-        assert context.jobs_file == custom
+        with pytest.raises(ValueError, match="canonical descriptor"):
+            mod.sync_units(custom)
+        backend.sync.assert_not_called()
     print("PASS: sync_units() passes through a jobs_file override")
 
 
@@ -209,6 +236,35 @@ def test_test_job_reports_pass_when_run_record_reports_success():
             backend.test.assert_called_once()
             assert backend.test.call_args[0][0] == "my-job"
     print("PASS: test_job reports True when the run record reports success")
+
+
+def test_test_job_reads_only_the_selected_context_log_root(tmp_path):
+    mod = _load()
+    selected_logs = tmp_path / "development" / "logs"
+    other_logs = tmp_path / "standard" / "logs"
+    context = mod.ScheduleContext(
+        skill_dir=tmp_path / "source",
+        jobs_file=tmp_path / "development" / "jobs.yaml",
+        log_dir=selected_logs,
+        unit_dir=tmp_path / "units",
+        live=False,
+        installation_id="dev-0123456789abcdef0123456789abcdef",
+    )
+    mod.LOG_DIR = other_logs
+    _write_run_record(other_logs, "same-job", success=False, run_id="other")
+    backend = mock.Mock()
+
+    def fake_test(job_name, selected_context):
+        assert selected_context is context
+        _write_run_record(selected_logs, job_name, success=True, run_id="selected")
+        return True
+
+    backend.test.side_effect = fake_test
+    with mock.patch.object(mod, "schedule_context", return_value=context), \
+         mock.patch.object(mod, "platform_schedule_backend", return_value=backend), \
+         mock.patch.object(mod.time, "monotonic", side_effect=[0, 0, 2]), \
+         mock.patch.object(mod.time, "sleep"):
+        assert mod.test_job("same-job", timeout_seconds=1) is True
 
 
 def test_test_job_reports_failure_when_scheduler_rejects_trigger():
@@ -356,74 +412,50 @@ def test_status_lists_ai_timers(capsys):
 # default when invoked for real, which would be an unacceptable side effect
 # from a test run.
 
-def test_cli_sync_subcommand_dispatches_to_sync_units():
+def test_cli_sync_subcommand_dispatches_to_managed_control():
     mod = _load()
-    with mock.patch.object(mod.sys, "argv", ["manage_job.py", "sync"]), \
-         mock.patch.object(mod, "sync_units") as sync_units:
-        mod.main()
-        sync_units.assert_called_once_with()
-    print("PASS: CLI 'sync' subcommand dispatches to sync_units()")
+    with mock.patch.object(mod, "run_managed_control", return_value=0) as managed:
+        assert mod.main(["sync"]) == 0
+        managed.assert_called_once_with("sync", [])
 
 
-def test_cli_test_subcommand_dispatches_to_test_job():
+def test_cli_test_subcommand_dispatches_to_managed_control():
     mod = _load()
-    with mock.patch.object(mod.sys, "argv", ["manage_job.py", "test", "my-job"]), \
-         mock.patch.object(mod, "test_job") as test_job:
-        mod.main()
-        test_job.assert_called_once_with("my-job")
-    print("PASS: CLI 'test' subcommand dispatches to test_job() with the job name")
+    with mock.patch.object(mod, "run_managed_control", return_value=0) as managed:
+        assert mod.main(["test", "my-job"]) == 0
+        managed.assert_called_once_with("test", ["my-job"])
 
 
-def test_cli_test_subcommand_exits_zero_when_test_job_succeeds():
+def test_cli_returns_managed_test_status():
     mod = _load()
-    with mock.patch.object(mod.sys, "argv", ["manage_job.py", "test", "my-job"]), \
-         mock.patch.object(mod, "test_job", return_value=True):
-        assert mod.main() == 0
-    print("PASS: CLI 'test' subcommand exits 0 when test_job() reports success")
-
-
-def test_cli_test_subcommand_exits_nonzero_when_test_job_fails():
-    mod = _load()
-    with mock.patch.object(mod.sys, "argv", ["manage_job.py", "test", "my-job"]), \
-         mock.patch.object(mod, "test_job", return_value=False):
-        assert mod.main() != 0
-    print("PASS: CLI 'test' subcommand exits nonzero when test_job() reports failure")
+    with mock.patch.object(mod, "run_managed_control", return_value=7):
+        assert mod.main(["test", "my-job"]) == 7
 
 
 def test_cli_view_logs_subcommand_passes_lines_flag():
     mod = _load()
-    with mock.patch.object(mod.sys, "argv", ["manage_job.py", "view-logs", "my-job", "--lines", "10"]), \
-         mock.patch.object(mod, "view_logs") as view_logs:
-        mod.main()
-        view_logs.assert_called_once_with("my-job", 10)
-    print("PASS: CLI 'view-logs' subcommand passes name and --lines through")
+    with mock.patch.object(mod, "run_managed_control", return_value=0) as managed:
+        assert mod.main(["view-logs", "my-job", "--lines", "10"]) == 0
+        managed.assert_called_once_with("view-logs", ["my-job", "--lines", "10"])
 
 
-def test_cli_status_subcommand_dispatches_to_status():
+def test_cli_status_subcommand_dispatches_to_managed_control():
     mod = _load()
-    with mock.patch.object(mod.sys, "argv", ["manage_job.py", "status"]), \
-         mock.patch.object(mod, "status") as status_fn:
-        mod.main()
-        status_fn.assert_called_once_with()
-    print("PASS: CLI 'status' subcommand dispatches to status()")
+    with mock.patch.object(mod, "run_managed_control", return_value=0) as managed:
+        assert mod.main(["status"]) == 0
+        managed.assert_called_once_with("status", [])
 
 
-def test_cli_enable_subcommand_passes_jobs_file_and_no_sync():
+def test_cli_enable_rejects_custom_file_and_no_sync():
     mod = _load()
-    argv = ["manage_job.py", "enable", "my-job", "--jobs-file", "/tmp/x.yaml", "--no-sync"]
-    with mock.patch.object(mod.sys, "argv", argv), \
-         mock.patch.object(mod, "enable_job") as enable_job:
-        mod.main()
-        enable_job.assert_called_once_with("my-job", jobs_file=Path("/tmp/x.yaml"), sync=False)
-    print("PASS: CLI 'enable' subcommand passes --jobs-file/--no-sync through")
+    with pytest.raises(SystemExit):
+        mod.main(["enable", "my-job", "--jobs-file", "/tmp/x.yaml", "--no-sync"])
 
 
-def test_cli_reports_error_and_exits_nonzero_on_exception():
+def test_cli_propagates_managed_failure_status():
     mod = _load()
-    with mock.patch.object(mod.sys, "argv", ["manage_job.py", "test", "my-job"]), \
-         mock.patch.object(mod, "test_job", side_effect=RuntimeError("kaboom")):
-        assert mod.main() != 0
-    print("PASS: CLI reports an error and exits non-zero when a handler raises")
+    with mock.patch.object(mod, "run_managed_control", return_value=1):
+        assert mod.main(["test", "my-job"]) == 1
 
 
 def test_cli_unknown_command_is_rejected():
@@ -467,14 +499,7 @@ if __name__ == "__main__":
     test_test_job_ignores_a_stale_run_record_from_a_previous_run()
     test_test_job_detects_fresh_run_despite_same_second_finished_at_collision()
     test_status_lists_ai_timers()
-    test_cli_sync_subcommand_dispatches_to_sync_units()
-    test_cli_test_subcommand_dispatches_to_test_job()
-    test_cli_test_subcommand_exits_zero_when_test_job_succeeds()
-    test_cli_test_subcommand_exits_nonzero_when_test_job_fails()
     test_cli_view_logs_subcommand_passes_lines_flag()
-    test_cli_status_subcommand_dispatches_to_status()
-    test_cli_enable_subcommand_passes_jobs_file_and_no_sync()
-    test_cli_reports_error_and_exits_nonzero_on_exception()
     test_cli_unknown_command_is_rejected()
     test_cli_requires_a_subcommand()
     print("\nAll tests passed (note: capsys-based tests require pytest).")

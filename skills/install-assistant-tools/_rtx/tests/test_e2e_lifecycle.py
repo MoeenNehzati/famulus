@@ -19,6 +19,7 @@ import subprocess
 import sys
 from contextlib import redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from test_support.git_repository import GitTestRepository
@@ -53,8 +54,34 @@ if __package__ and __package__.count('.') >= 1:
     from .._install_launcher import platform_launcher_installer
 else:
     from _install_launcher import platform_launcher_installer  # noqa: E402
+if __package__ and __package__.count('.') >= 1:
+    from .._state_record import Manifest, manifest_path
+else:
+    from _state_record import Manifest, manifest_path  # noqa: E402
+if __package__ and __package__.count('.') >= 1:
+    from .. import _install_uninstall as uninstall
+else:
+    import _install_uninstall as uninstall  # noqa: E402
+from officina.recurring import native as recurring_native
+from officina.install.context import resolve_installation_context
 
 UNINSTALL = SCRIPT_DIR.parent / "_install_uninstall.py"
+
+
+def _run_isolated_uninstall(command: list[str], native_root: Path) -> None:
+    """Run parser/main with an explicitly empty native scheduler namespace."""
+    empty = recurring_native._NativeInventory(True, ())
+    with (
+        patch.object(sys, "argv", [str(UNINSTALL), *command[2:]]),
+        patch.object(uninstall, "native_registration_root", lambda context, platform: native_root),
+        patch.object(recurring_native, "_systemd_unit_inventory", lambda *args, **kwargs: empty),
+        patch.object(recurring_native, "_launchd_label_inventory", lambda *args, **kwargs: empty),
+        patch.object(recurring_native, "_windows_task_inventory", lambda *args, **kwargs: empty),
+        patch.object(recurring_native, "_read_crontab", lambda: ""),
+        pytest.raises(SystemExit) as stopped,
+    ):
+        uninstall.main()
+    assert stopped.value.code == 0
 
 # famulus-skip: category=capability-unavailable; reason=dev-mode lifecycle test requires symlink creation; alternate=plugin-mode install tests cover copy-based Windows launcher behavior
 pytestmark = pytest.mark.skipif(
@@ -88,43 +115,33 @@ def _tree_hash(root: Path) -> str:
 
 
 def _dev_install(home: Path, claude_home: Path, codex_home: Path, repo_root: Path) -> str:
-    # dev_link.run() now also writes `git config core.hooksPath` on repo_root.
-    # When repo_root is the real live checkout (as in the dev-mode-against-
-    # real-repo tests below), save and restore that value so this test run
-    # never leaves a lasting side effect on the real repo's git config.
-    probe = _raw_git_config(
-        repo_root,
-        "--local",
-        "--get",
-        "core.hooksPath",
-        check=False,
-    )
-    original_hooks_path = (
-        probe.stdout.decode("utf-8").strip()
-        if probe.returncode == 0
-        else None
-    )
-
     buf = io.StringIO()
-    try:
-        with redirect_stdout(buf):
+    with redirect_stdout(buf):
+        # This projection test uses the live checkout read-only. Git-hook
+        # mutation/restoration is covered against disposable repositories.
+        with patch.object(dev_link, "install_git_hooks"):
             dev_link.run(
                 home=home,
                 repo_root=repo_root,
                 claude_home=claude_home,
                 codex_home=codex_home,
             )
-    finally:
-        if original_hooks_path is not None:
-            _raw_git_config(repo_root, "core.hooksPath", original_hooks_path)
-        else:
-            _raw_git_config(
-                repo_root,
-                "--unset",
-                "core.hooksPath",
-                check=False,
-            )
     return buf.getvalue()
+
+
+def _publish_standard_manifest(home: Path, repo_root: Path) -> None:
+    legacy = Manifest(manifest_path(home))
+    context = resolve_installation_context(
+        mode="standard",
+        source_root=repo_root,
+        development_root=None,
+        platform=sys.platform,
+        home=home,
+        environ={},
+    )
+    current = Manifest(context.paths.install_state_root / "install-manifest.json")
+    current.entries = list(legacy.entries)
+    current.bind_context(mode="standard", installation_id="standard")
 
 
 @pytest.fixture()
@@ -184,7 +201,9 @@ def test_launchers_executable_after_install(homes):
             REPO_ROOT, bin_dir, dry_run=False, home=homes["home"]
         )
         for agent in ("assistant", "collab", "coauthor", "tw"):
-            launchers.install_agent_launcher_files(source_bin, bin_dir, agent, dry_run=False, manifest=None)
+            launchers.install_agent_launcher_files(
+                source_bin, bin_dir, agent, dry_run=False, manifest=None, environ={}
+            )
 
     env = python_test_env(homes["root"], {"HOME": str(homes["home"])})
     # "dispatcher" is generated separately below: it now execs into the
@@ -282,9 +301,11 @@ def test_user_skill_survives_install_and_uninstall(homes):
     assert (homes["claude"] / "skills" / "repo-skill" / "SKILL.md").is_file()
 
     # uninstall (against the fake repo) must not delete the user's work
+    _publish_standard_manifest(homes["home"], repo)
     cmd = [
         sys.executable,
         str(UNINSTALL),
+        "--mode", "standard",
         "--home", str(homes["home"]),
         "--claude-home", str(homes["claude"]),
         "--codex-home", str(homes["codex"]),
@@ -294,10 +315,9 @@ def test_user_skill_survives_install_and_uninstall(homes):
         "--no-system-shell-rc",
         "--no-pip",
         "--no-git-hooks",
+        "--purge",
     ]
-    env = python_test_env(homes["root"])
-    env["HOME"] = str(homes["home"])
-    run_command(cmd, env=env)
+    _run_isolated_uninstall(cmd, homes["root"] / "native")
 
     # the wiring is gone, but the user skill's content persists in the repo tree
     assert not (homes["claude"] / "skills").is_symlink()
@@ -332,6 +352,9 @@ _ALLOWED_LEFTOVERS = {
     # the manifest correctly stays while it still tracks kept artifacts
     # (the cloud-files config above); it is removed on a fully clean run
     ".local/state/assistant-tools/install-manifest.json",
+    # --no-git-hooks deliberately retains the context manifest entry so a
+    # later retry can restore the checkout's previous local hooksPath.
+    ".local/state/famulus/install/install-manifest.json",
 }
 
 
@@ -365,7 +388,10 @@ def test_install_uninstall_roundtrip_restores_home(homes, tmp_path: Path):
                 claude_home=homes["claude"],
                 codex_home=homes["codex"],
             )
-            scaffold.run(repo_root=repo, home=home, bin_dir=bin_dir, shell_rc=shell_rc)
+            scaffold.run(
+                repo_root=repo, home=home, bin_dir=bin_dir, shell_rc=shell_rc,
+                environ={},
+            )
             launchers.run(
                 repo_root=repo,
                 agents=["assistant", "collab", "coauthor", "tw"],
@@ -375,6 +401,7 @@ def test_install_uninstall_roundtrip_restores_home(homes, tmp_path: Path):
                 claude_home=homes["claude"],
                 shell_rc=shell_rc,
                 default_llm="claude",
+                environ={},
             )
     finally:
         sys.path[:] = saved_path
@@ -385,9 +412,11 @@ def test_install_uninstall_roundtrip_restores_home(homes, tmp_path: Path):
     installed = _home_snapshot(home)
     assert installed != before, "install produced no observable change — test is vacuous"
 
+    _publish_standard_manifest(home, repo)
     cmd = [
         sys.executable,
         str(UNINSTALL),
+        "--mode", "standard",
         "--home", str(home),
         "--claude-home", str(homes["claude"]),
         "--codex-home", str(homes["codex"]),
@@ -397,10 +426,9 @@ def test_install_uninstall_roundtrip_restores_home(homes, tmp_path: Path):
         "--no-system-shell-rc",
         "--no-pip",
         "--no-git-hooks",
+        "--purge",
     ]
-    env = python_test_env(homes["root"])
-    env["HOME"] = str(home)
-    run_command(cmd, env=env)
+    _run_isolated_uninstall(cmd, homes["root"] / "native")
 
     after = _home_snapshot(home)
 

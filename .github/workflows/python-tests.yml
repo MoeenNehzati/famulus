@@ -148,11 +148,11 @@ jobs:
 
       - name: Run repository checks
         if: matrix.task == 'combined'
-        run: python3 repo_checks.py --suite full --verbose --sequential --timing-output .repo-checks/timing.json
+        run: python3 repo_checks.py --suite full --verbose --jobs 1 --timing-output .repo-checks/timing.json
 
       - name: Run repository check shard
         if: matrix.task != 'combined'
-        run: python3 repo_checks.py --suite full --task-id "${{ matrix.task }}" --verbose --jobs "${{ matrix.jobs }}" --timing-output .repo-checks/timing.json
+        run: python3 repo_checks.py --suite full --task "${{ matrix.task }}" --verbose --jobs "${{ matrix.jobs }}" --timing-output .repo-checks/timing.json
 
       - name: Run portability sentinel
         if: >-
@@ -181,6 +181,58 @@ jobs:
         run: python3 repo_checks.py --suite full --task native:scheduler --jobs 1 --timing-output .repo-checks/native-scheduler.json
 
       - name: Upload repository-check evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: repo-checks-${{ matrix.artifact }}-${{ github.run_id }}
+          path: .repo-checks/*.json
+          include-hidden-files: true
+          if-no-files-found: warn
+
+  unified-installation-lifecycle:
+    if: github.event_name != 'workflow_dispatch' || inputs.mode == 'matrix'
+    name: unified installation lifecycle (${{ matrix.os }})
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: ubuntu-unified-installation
+          - os: macos-latest
+            artifact: macos-unified-installation
+          - os: windows-latest
+            artifact: windows-unified-installation
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install test dependencies
+        run: python3 -m pip install -r requirements-ci.txt
+
+      - name: Run lifecycle renderer and migration evidence
+        run: python3 repo_checks.py --suite full --task tests:shared --exclude-validator repo/docstrings --jobs 1 --selector tests/test_officina_install_context.py --selector tests/test_officina_development_activation.py --selector tests/test_officina_runtime_pointer.py --selector tests/test_officina_managed_runtime.py --selector tests/test_officina_install_doctor.py --selector tests/test_officina_recurring_managed.py --selector tests/test_officina_recurring_state.py --selector tests/test_install_context_consumers.py --selector skills/recurring-tasks/_rtx/tests/test_schedule_context_descriptor.py --selector skills/recurring-tasks/_rtx/tests/test_installation_namespaces.py --selector skills/install-assistant-tools/_rtx/tests/test_install.py --selector skills/install-assistant-tools/_rtx/tests/test_uninstall.py --selector skills/install-assistant-tools/_rtx/tests/test_doctor.py --selector skills/install-assistant-tools/_rtx/tests/test_e2e_lifecycle.py --timing-output .repo-checks/unified-shared.json
+
+      - name: Run lifecycle installer evidence
+        run: python3 repo_checks.py --suite full --task tests:install --exclude-validator repo/docstrings --jobs 1 --timing-output .repo-checks/unified-install.json
+
+      # The live smoke self-skips with an explicit reason when a hosted runner
+      # cannot expose its per-user scheduler. Renderer and migration evidence
+      # above remains mandatory on every operating system.
+      - name: Run lifecycle native scheduler evidence where available
+        env:
+          FAMULUS_RUN_SCHEDULER_SMOKE: '1'
+        run: python3 repo_checks.py --suite full --task native:scheduler --exclude-validator repo/docstrings --jobs 1 --timing-output .repo-checks/unified-native-scheduler.json
+
+      - name: Upload unified installation evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:

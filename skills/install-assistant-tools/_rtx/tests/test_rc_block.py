@@ -3,6 +3,9 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+# ASSISTANT_DEFAULT and AI below are offline compatibility fixtures for the
+# generic historical block merger; no production installer persists them.
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 if __package__ and __package__.count('.') >= 1:

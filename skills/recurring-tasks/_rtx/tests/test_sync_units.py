@@ -4,6 +4,8 @@ import tempfile, os
 import sys
 from pathlib import Path, PurePosixPath
 
+import pytest
+
 from .. import _unit_writer as unit_writer
 
 SKILL_DIR = Path(__file__).parent.parent
@@ -13,6 +15,11 @@ SCRIPT    = SKILL_DIR / "_unit_writer.py"
 
 def _load():
     return unit_writer
+
+
+def test_unit_writer_cli_rejects_non_live_unit_directory(tmp_path):
+    with pytest.raises(SystemExit):
+        unit_writer.main(["--unit-dir", str(tmp_path / "units")])
 
 
 def test_skill_dir_is_absolute_when_entrypoint_uses_a_logical_path(monkeypatch):
@@ -200,7 +207,11 @@ def test_service_runs_python_executor_without_shell(monkeypatch):
         assert "bootstrap/resolvers/v1/launch.py" in content
         assert f'Environment="PATH={expected_bin}:' in content
         assert 'Environment="DBUS_SESSION_BUS_ADDRESS=unix:path=%t/bus"' in content
-        assert '_job_executor.py" --jobs-file' in content
+        assert ' -m officina.recurring.executor ' in content
+        assert '--descriptor ' in content
+        assert '--job test-job' in content
+        assert '--log-root ' in content
+        assert "_job_executor.py" not in content
         assert "/bin/bash" not in content
         assert ">>" not in content
         print("PASS: service ExecStart uses the stable launch resolver without shell redirection")
@@ -269,13 +280,15 @@ def test_live_sync_repairs_the_healthcheck_cron_entry(monkeypatch, tmp_path):
         unit_writer, "platform_schedule_backend", lambda: _NullBackend()
     )
     _install_fake_cron_installer(monkeypatch, _fake_install)
+    _install_test_schedule_context(monkeypatch, tmp_path / "units")
 
     unit_writer.sync_units(
         [], tmp_path / "units", unit_writer.LOG_DIR, live=True,
     )
 
     assert len(calls) == 1, "live sync must render the health-check cron entry"
-    assert calls[0]["healthcheck"].name == "_healthcheck_probe.py"
+    assert calls[0]["module"] == "officina.recurring.healthcheck"
+    assert calls[0]["descriptor"].name == "schedule-descriptor.json"
 
 
 def test_sync_survives_a_host_with_no_cron(monkeypatch, tmp_path, capsys):
@@ -298,6 +311,7 @@ def test_sync_survives_a_host_with_no_cron(monkeypatch, tmp_path, capsys):
         unit_writer, "platform_schedule_backend", lambda: _NullBackend()
     )
     _install_fake_cron_installer(monkeypatch, _raise)
+    _install_test_schedule_context(monkeypatch, tmp_path / "units")
 
     unit_writer.sync_units([], tmp_path / "units", unit_writer.LOG_DIR, live=True)
 
@@ -323,7 +337,21 @@ def _install_fake_cron_installer(monkeypatch, replacement):
     monkeypatch.setattr(_setup_runner, "install_healthcheck_cron", replacement)
 
 
-def test_sync_from_a_non_owning_checkout_is_refused_and_writes_nothing(
+def _install_test_schedule_context(monkeypatch, unit_dir: Path) -> None:
+    monkeypatch.setattr(
+        unit_writer,
+        "production_schedule_context",
+        lambda: unit_writer.ScheduleContext(
+            skill_dir=unit_writer.SKILL_DIR,
+            jobs_file=unit_writer.DEFAULT_JOBS,
+            log_dir=unit_writer.LOG_DIR,
+            unit_dir=unit_dir,
+            live=False,
+        ),
+    )
+
+
+def test_sync_identity_is_installation_id_not_checkout_path(
     monkeypatch, tmp_path
 ):
     """The 2026-08-17 defect, at its source.
@@ -350,45 +378,20 @@ def test_sync_from_a_non_owning_checkout_is_refused_and_writes_nothing(
     monkeypatch.setattr(
         unit_writer, "platform_schedule_backend", lambda: _RecordingBackend()
     )
-    _install_fake_cron_installer(
-        monkeypatch,
-        lambda **kwargs: (_ for _ in ()).throw(
-            AssertionError("a non-owning checkout must not touch the crontab")
-        ),
-    )
+    cron_calls = []
+    _install_fake_cron_installer(monkeypatch, lambda **kwargs: cron_calls.append(kwargs))
+    _install_test_schedule_context(monkeypatch, unit_dir)
 
-    try:
-        unit_writer.sync_units([], unit_dir, unit_writer.LOG_DIR, live=True)
-    except install_owner.NotTheOwnerError:
-        pass
-    else:
-        raise AssertionError("sync from a non-owning checkout must be refused")
+    unit_writer.sync_units([], unit_dir, unit_writer.LOG_DIR, live=True)
 
-    assert synced == [], "the backend must not be reached at all"
-    assert install_owner.read_owner(unit_dir) == tmp_path / "canonical" / "_rtx"
+    assert len(synced) == 1
+    assert len(cron_calls) == 1
+    assert install_owner.read_owner(unit_dir) == tmp_path / "worktree" / "_rtx"
 
 
-def test_adopt_flag_moves_the_installation_to_this_checkout(monkeypatch, tmp_path):
-    """The deliberate move: an operator relocating the canonical checkout."""
-    from .. import _install_owner as install_owner
-
-    unit_dir = tmp_path / "units"
-    unit_dir.mkdir()
-    (unit_dir / "ai-my-job.service").write_text("[Service]\n", encoding="utf-8")
-    install_owner.write_owner(unit_dir=unit_dir, owner=Path.home() / "old" / "_rtx")
-    new_owner = Path.home() / "relocated" / "_rtx"
-    monkeypatch.setattr(unit_writer.sys, "platform", "linux")
-    monkeypatch.setattr(unit_writer, "SKILL_DIR", new_owner)
-    monkeypatch.setattr(unit_writer, "DEFAULT_UNIT_DIR", unit_dir)
-    monkeypatch.setattr(
-        unit_writer, "platform_schedule_backend", lambda: _NullBackend()
-    )
-    _install_fake_cron_installer(monkeypatch, lambda **kwargs: None)
-    monkeypatch.setattr(unit_writer, "load_jobs", lambda _: [])
-
-    unit_writer.main(["--adopt"])
-
-    assert install_owner.read_owner(unit_dir) == new_owner
+def test_adopt_flag_is_retired_from_public_managed_sync():
+    with pytest.raises(SystemExit):
+        unit_writer.main(["--adopt"])
 
 
 def test_live_sync_records_this_checkout_as_the_owner(monkeypatch, tmp_path):
@@ -402,6 +405,7 @@ def test_live_sync_records_this_checkout_as_the_owner(monkeypatch, tmp_path):
     )
     _install_fake_cron_installer(monkeypatch, lambda **kwargs: None)
     unit_dir = tmp_path / "units"
+    _install_test_schedule_context(monkeypatch, unit_dir)
 
     unit_writer.sync_units([], unit_dir, unit_writer.LOG_DIR, live=True)
 
@@ -434,6 +438,7 @@ def test_sync_from_a_temporary_copy_leaves_the_real_crontab_alone(
     monkeypatch.setattr(
         unit_writer, "SKILL_DIR", Path(tempfile.gettempdir()) / "mirror" / "_rtx"
     )
+    monkeypatch.setattr(unit_writer, "DEFAULT_UNIT_DIR", unit_dir)
     monkeypatch.setattr(
         unit_writer, "platform_schedule_backend", lambda: _NullBackend()
     )
@@ -442,6 +447,7 @@ def test_sync_from_a_temporary_copy_leaves_the_real_crontab_alone(
         raise AssertionError("a mirrored checkout must not rewrite the crontab")
 
     _install_fake_cron_installer(monkeypatch, _must_not_run)
+    _install_test_schedule_context(monkeypatch, unit_dir)
 
     try:
         unit_writer.sync_units([], unit_dir, unit_writer.LOG_DIR, live=True)

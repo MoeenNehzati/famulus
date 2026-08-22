@@ -210,8 +210,8 @@ def test_calendar_gateway_declares_complete_oauth_route_invariants(
 
 def test_installer_does_not_depend_on_connect_google() -> None:
     text = authored_skill("install-assistant-tools")
-    assert "phase 2" in text
-    assert "connect-google." not in text
+    assert "5. explain that `connect-google`" in text
+    assert "do not invoke either or make installation success" in text
 
 
 def test_legacy_setup_exports_still_exist_for_compatibility(

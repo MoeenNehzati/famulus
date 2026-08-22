@@ -89,7 +89,6 @@ def _dispatcher_env() -> dict[str, str]:
     env["PYTHONPATH"] = (
         src_root if not existing_pythonpath else os.pathsep.join([src_root, existing_pythonpath])
     )
-    env["AI"] = str(REPO_ROOT)
     return env
 
 

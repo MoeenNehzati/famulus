@@ -13,9 +13,7 @@ dependencies:
   reason: Imports Python source from _rtx/_install_launcher/__init__.py.
   source: install-assistant-tools._rtx.source.rtx-install-launcher-init
   version: 1
-description: Installs dispatcher and invoke-skill launchers, provisions the shared
-  certifier signing material, and ensures the installation bin directory is present
-  in the user's shell path.
+description: Installs dispatcher, llm-wakeup, and invoke-skill launchers and, in standard mode only, ensures the context command directory is on PATH.
 gateway:
   language: Python
   path: _install_scaffold.py
@@ -25,7 +23,7 @@ interfaces:
     content:
     - _install_scaffold\.py
     uses_interfaces:
-    - interface: certification.interface.records
+    - interface: install.interface.context
       version: 1
     - interface: install.interface.managed-runtime
       version: 1
@@ -49,9 +47,6 @@ interfaces:
       caller_warnings:
       - external-side-effect: Non-dry-run execution installs the dispatcher package
           and launchers and may update PATH in a shell startup file.
-      - external-side-effect: When the v4 cryptography dependency is present, provisioning
-          creates or verifies the certifier's public-key files and private key in
-          the configured user secret store.
       direct_io:
         network: []
         reads:
@@ -88,18 +83,6 @@ interfaces:
           id: write-2
           medium: stdout
           sensitivity: derived-private
-        - access: configure
-          content: Ed25519 public verification files and private key selected through
-            the configured secret store
-          formats:
-          - pem
-          - text
-          - secret-store-entry
-          id: write-3
-          medium: local-filesystem
-          path: <repo-root>/skills/skill-certifier/.certificates/public-keys
-          sensitivity: credential
-          system: filesystem
       execution:
         consistency:
           live: Repository source and target path state is observed during installation.
@@ -117,27 +100,12 @@ interfaces:
           value_source:
             argument_ref: repo-root
             kind: argument
-        - action: configure
-          confirmation_evidence:
-            direct_io_ref: write-3
-            kind: direct-io
-          direct_io_ref: write-3
-          id: certificate-signing-material
-          may_occur_in_outcomes:
-          - installed
-          reversibility:
-            irreversible: Removing the active private key prevents future signing
-              and removing retained public keys invalidates historical verification.
-          value_source:
-            argument_ref: repo-root
-            kind: argument
         lifecycle: finite
         mutation_safety:
           atomicity:
             per_effect_only: The declared Python package set installs in one atomic
               batch call (via officina.install.managed-runtime) rather than per-package;
-              certificate-key provisioning, launcher writes, and shell configuration
-              remain separate effects.
+              launcher writes and standard-mode shell configuration remain separate effects.
           concurrent_invocations:
             unsafe: Concurrent scaffold installers are not serialized.
           idempotency:
@@ -147,7 +115,7 @@ interfaces:
             verify_then_decide: Resolve the launcher commands and inspect the managed
               PATH block before retrying.
           partial_effects_on_failure:
-            possible: Package, certificate-key, or launcher installation may complete
+            possible: Package or launcher installation may complete
               before a later shell update fails.
           rollback_on_failure:
             unavailable: Earlier completed effects are not rolled back automatically.
@@ -159,12 +127,10 @@ interfaces:
       interaction:
         mode: unattended
       outcomes:
-      - caller_action: Verify dispatcher, invoke-skill, and the reported certificate-signing-material
-          capability.
+      - caller_action: Verify dispatcher, llm-wakeup, and invoke-skill.
         class: success
         effects:
         - scaffold-state
-        - certificate-signing-material
         id: installed
         outputs:
         - status
@@ -197,8 +163,7 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Install the dispatcher + invoke-skill launchers and put the bin dir
-      on PATH. Universal floor, mode-independent.
+    description: Install the shared launcher floor using an exact context; persist PATH only for standard mode.
     process_binding:
       entry: Interface
       kind: process
@@ -229,7 +194,7 @@ platform_support:
 runtime_dependencies: []
 schema_version: 6
 uses_interfaces:
-- interface: certification.interface.records
+- interface: install.interface.context
   version: 1
 - interface: install.interface.managed-runtime
   version: 1

@@ -1,0 +1,36 @@
+schema_version: 6
+id: launchers
+version: 1
+maturity: stable
+node_type: module
+description: Managed runtime policy for agent launch commands and durable backend selection.
+gateway:
+  language: Python>=3.11
+  path: __init__.py
+content:
+- __init__\.py
+- agent\.py
+exports:
+  launchers.interface.agent:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - install-assistant-tools._rtx
+      - recurring-tasks._rtx
+      - recurring
+    source_interface: launchers.source.agent.interface.python-api
+namespace_exports: {}
+sources:
+  launchers.source.agent:
+    blueprint:
+      base: module-root
+      path: blueprints/agent.yaml
+children: {}
+authority:
+  owns_filesystem:
+  - path: <famulus-config-root>/launchers.json
+    match: exact
+    allowed_readers:
+    - launchers.interface.agent
+    - install-assistant-tools._rtx.interface.scripts-launchers
+    reason: The managed launcher is the sole durable backend-selection owner.

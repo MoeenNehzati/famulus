@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import shutil
 import sys
+import os
 from pathlib import Path
+from typing import Mapping
 
 if __package__ and __package__.count('.') >= 1:
     from .._state_record import Manifest
@@ -59,59 +61,84 @@ def _resolve_python_interpreter() -> str:
     return resolved
 
 
-def _resolver_path(*, home: Path | None = None) -> Path:
+def _resolver_path(
+    *,
+    home: Path | None = None,
+    environ: Mapping[str, str] | None = None,
+    runtime_root: Path | None = None,
+) -> Path:
     """Return the fixed resolver path beneath this host's runtime_root."""
     home = home or Path.home()
-    runtime_root = resolve_famulus_paths(platform=sys.platform, home=home).runtime_root
+    if runtime_root is None:
+        runtime_root = resolve_famulus_paths(
+            platform=sys.platform,
+            home=home,
+            environ=os.environ if environ is None else environ,
+        ).runtime_root
     return runtime_root.joinpath(*_RESOLVER_RELATIVE_PATH)
 
 
-def _windows_module_content(module: str, *, home: Path | None = None) -> str:
+def _windows_module_content(
+    module: str,
+    *,
+    home: Path | None = None,
+    environ: Mapping[str, str] | None = None,
+    fixed_args: tuple[str, ...] = (),
+    help_name: str | None = None,
+    runtime_root: Path | None = None,
+) -> str:
     """Render one batch shim that delegates a module to the active release.
 
     Windows needs a concrete interpreter to start the resolver's Python source.
     The resolved interpreter is only the stable bootstrap interpreter; the
     resolver still selects and enters the active managed release itself.
     """
-    resolver = LauncherInstallerBase._batch_path(_resolver_path(home=home))
+    resolver = LauncherInstallerBase._batch_path(
+        _resolver_path(home=home, environ=environ, runtime_root=runtime_root)
+    )
     interpreter = LauncherInstallerBase._batch_path(Path(_resolve_python_interpreter()))
+    rendered_args = " ".join(fixed_args)
+    if rendered_args:
+        rendered_args += " "
+    local_help = (
+        f'if /I "%~1"=="--help" (\n'
+        f"  echo Usage: {help_name} [--local] [--claude^|--codex] [args...]\n"
+        "  exit /b 0\n"
+        ")\n"
+        f'if /I "%~1"=="-h" (\n'
+        f"  echo Usage: {help_name} [--local] [--claude^|--codex] [args...]\n"
+        "  exit /b 0\n"
+        ")\n"
+        if help_name is not None
+        else ""
+    )
     return (
         "@echo off\n"
         "setlocal\n"
-        f'"{interpreter}" "{resolver}" -m {module} %*\n'
+        f"{local_help}"
+        f'"{interpreter}" "{resolver}" -m {module} {rendered_args}%*\n'
     )
 
 
-def _windows_dispatcher_content(repo_root: Path, *, home: Path | None = None) -> str:
+def _windows_dispatcher_content(
+    repo_root: Path, *, home: Path | None = None, runtime_root: Path | None = None
+) -> str:
     """Preserve the established dispatcher renderer API for external tests."""
-    return _windows_module_content("officina.dispatcher.cli", home=home)
+    return _windows_module_content("officina.dispatcher.cli", home=home, runtime_root=runtime_root)
 
 
-def _windows_invoke_skill_content() -> str:
-    return (
-        "@echo off\n"
-        "setlocal\n"
-        "if \"%~1\"==\"\" (\n"
-        "  echo Usage: invoke-skill ^<skill-name^> 1>&2\n"
-        "  exit /b 2\n"
-        ")\n"
-        "if not \"%~2\"==\"\" (\n"
-        "  echo Usage: invoke-skill ^<skill-name^> 1>&2\n"
-        "  exit /b 2\n"
-        ")\n"
-        "set \"SKILL=%~1\"\n"
-        "if \"%ASSISTANT_DEFAULT%\"==\"\" set \"ASSISTANT_DEFAULT=claude\"\n"
-        "if /I \"%ASSISTANT_DEFAULT%\"==\"claude\" (\n"
-        "  background_run --local --claude --permission-mode bypassPermissions -p \"/%SKILL%\"\n"
-        "  exit /b %ERRORLEVEL%\n"
-        ")\n"
-        "if /I \"%ASSISTANT_DEFAULT%\"==\"codex\" (\n"
-        "  set \"CODEX_SKILL=$%SKILL%\"\n"
-        "  background_run --local --codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox \"%CODEX_SKILL%\"\n"
-        "  exit /b %ERRORLEVEL%\n"
-        ")\n"
-        "echo Unknown ASSISTANT_DEFAULT backend: %ASSISTANT_DEFAULT% 1>&2\n"
-        "exit /b 2\n"
+def _windows_invoke_skill_content(
+    *,
+    home: Path | None = None,
+    environ: Mapping[str, str] | None = None,
+    runtime_root: Path | None = None,
+) -> str:
+    return _windows_module_content(
+        "officina.launchers.agent",
+        home=home,
+        environ=environ,
+        runtime_root=runtime_root,
+        fixed_args=("--invoke-skill",),
     )
 
 
@@ -128,6 +155,7 @@ class WindowsLauncherInstaller(LauncherInstallerBase):
         manifest: Manifest | None = None,
         *,
         home: Path | None = None,
+        runtime_root: Path | None = None,
     ) -> LauncherInstallResult:
         bundle = LauncherBundleSpec(
             name="dispatcher",
@@ -136,7 +164,7 @@ class WindowsLauncherInstaller(LauncherInstallerBase):
                 LauncherFileSpec(
                     destination=bin_dir / "dispatcher.bat",
                     mode="generate",
-                    content=_windows_dispatcher_content(repo_root, home=home),
+                    content=_windows_dispatcher_content(repo_root, home=home, runtime_root=runtime_root),
                 )
             ],
         )
@@ -147,6 +175,9 @@ class WindowsLauncherInstaller(LauncherInstallerBase):
         bin_dir: Path,
         dry_run: bool,
         manifest: Manifest | None = None,
+        *,
+        home: Path | None = None,
+        runtime_root: Path | None = None,
     ) -> LauncherInstallResult:
         bundle = LauncherBundleSpec(
             name="invoke-skill",
@@ -155,7 +186,7 @@ class WindowsLauncherInstaller(LauncherInstallerBase):
                 LauncherFileSpec(
                     destination=bin_dir / "invoke-skill.bat",
                     mode="generate",
-                    content=_windows_invoke_skill_content(),
+                    content=_windows_invoke_skill_content(home=home, runtime_root=runtime_root),
                 )
             ],
         )
@@ -168,9 +199,10 @@ class WindowsLauncherInstaller(LauncherInstallerBase):
         manifest: Manifest | None = None,
         *,
         home: Path | None = None,
+        runtime_root: Path | None = None,
     ) -> LauncherInstallResult:
         """Install both public wakeup names as resolver-backed batch shims."""
-        content = _windows_module_content("officina.wakeup.cli", home=home)
+        content = _windows_module_content("officina.wakeup.cli", home=home, runtime_root=runtime_root)
         bundle = LauncherBundleSpec(
             name="llm-wakeup",
             workflows=WAKEUP_WORKFLOWS,
@@ -193,6 +225,9 @@ class WindowsLauncherInstaller(LauncherInstallerBase):
         agent: str,
         dry_run: bool,
         manifest: Manifest | None,
+        home: Path | None = None,
+        environ: Mapping[str, str] | None = None,
+        runtime_root: Path | None = None,
     ) -> None:
         if agent == "tw":
             log("  SKIP: tw (tmux not available on Windows)")
@@ -202,6 +237,19 @@ class WindowsLauncherInstaller(LauncherInstallerBase):
             name=agent,
             required=False,
             workflows=("agent launcher",),
-            files=self._agent_launcher_files(source_bin_dir, bin_dir, agent),
+            files=[
+                LauncherFileSpec(
+                    destination=bin_dir / f"{agent}.bat",
+                    mode="generate",
+                    content=_windows_module_content(
+                        "officina.launchers.agent",
+                        home=home,
+                        environ=environ,
+                        runtime_root=runtime_root,
+                        fixed_args=("--agent", agent),
+                        help_name=agent,
+                    ),
+                )
+            ],
         )
         self.install_bundle(bundle, dry_run=dry_run, manifest=manifest)

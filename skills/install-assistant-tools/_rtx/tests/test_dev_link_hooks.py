@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import importlib.util
+import shutil
 import sys
 import tempfile
 import unittest
@@ -98,6 +100,37 @@ class DevLinkHooksTests(unittest.TestCase):
             self.assertIn("user = 'keep'", config_text)
             self.assertIn("--codex", config_text)
             self.assertNotIn('/hooks/inject_dispatcher_context.py"', config_text)
+
+    def test_hook_loaded_from_standard_release_uses_only_that_immutable_resource_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            resources = Path(tmp) / "release" / "launcher-resources"
+            script = resources / "llmhooks" / "inject_dispatcher_context.py"
+            script.parent.mkdir(parents=True)
+            script.write_bytes((ROOT_DIR / "llmhooks" / "inject_dispatcher_context.py").read_bytes())
+            (resources / "script_dispatcher" / "src" / "script_dispatcher").mkdir(parents=True)
+            spec = importlib.util.spec_from_file_location("release_dispatcher_hook", script)
+            self.assertIsNotNone(spec)
+            self.assertIsNotNone(spec.loader)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            original_which = shutil.which
+            try:
+                shutil.which = lambda name: "/managed/bin/dispatcher" if name == "dispatcher" else None
+                self.assertEqual(module.dispatcher_available(), (True, []))
+            finally:
+                shutil.which = original_which
+            self.assertEqual(module._REPO_ROOT, resources)
+
+    def test_development_hook_binding_uses_exact_checkout_without_repository_walking(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            checkout = Path(tmp) / "checkout with spaces"
+            checkout.mkdir()
+            binding = dev_link._hook_bindings(checkout, "claude")[0]
+
+            self.assertEqual(
+                binding.argv[1],
+                str(checkout / "llmhooks" / "inject_dispatcher_context.py"),
+            )
 
 
 if __name__ == "__main__":

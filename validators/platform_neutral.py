@@ -16,7 +16,9 @@ This lets a module hold real per-platform logic without a blanket per-skill
 exemption: put platform-specific parts in a file named after that platform
 (plus the __init__.py that wires them together), keep everything else
 (SKILL.md, first-party shared packages, and any generically-named script) free
-of platform references. Validated blueprint files are descriptive graph
+of platform references. Exact generic paths listed below are binding cross-host
+orchestration contracts and are narrowly allowed; adjacent generic paths remain
+subject to the normal checks. Validated blueprint files are descriptive graph
 artifacts rather than module content; once the canonical graph validates them,
 this text guard scans their owned files instead of their declaration metadata.
 Frozen version-4 blueprint fixtures retain the line-level checks below.
@@ -60,6 +62,21 @@ _EXCLUDED_PATHS = {
 _PLATFORM_METADATA_TOOLING_PATHS = {
     Path("skills/skill-maker/_rtx/_blueprint_syncer.py"),
     Path("src/officina/install/runtime_lock.py"),
+}
+_BINDING_CROSS_HOST_ORCHESTRATION_PATHS = {
+    Path("src/officina/install/context.py"),
+    Path("src/officina/install/development_activation.py"),
+    Path("src/officina/install/runtime_pointer.py"),
+    Path("src/officina/install/resolvers/launch.py"),
+    Path("src/officina/launchers/agent.py"),
+    Path("src/officina/recurring/runtime.py"),
+    Path("src/officina/recurring/healthcheck.py"),
+    Path("src/officina/recurring/jobs.py"),
+    Path("src/officina/recurring/executor.py"),
+    Path("src/officina/recurring/native.py"),
+    Path("src/officina/recurring/state.py"),
+    Path("src/officina/recurring/default_jobs.yaml"),
+    Path("src/officina/configuration/schema.json"),
 }
 _HOST_PATTERN = re.compile(r"(?i:(\.claude|claude|\.codex|codex))")
 _PLATFORM_METADATA_LINE_RE = re.compile(
@@ -356,6 +373,8 @@ def _validate(
     repo_root = repo_root.resolve()
     errors: list[str] = []
     for path, rel in _iter_files(repo_root, excluded_blueprints=excluded_blueprints):
+        if rel in _BINDING_CROSS_HOST_ORCHESTRATION_PATHS:
+            continue
         pattern = _forbidden_pattern_for(path)
         if pattern is None:
             continue

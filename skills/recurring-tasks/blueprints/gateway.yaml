@@ -12,15 +12,13 @@ interfaces:
     content:
     - SKILL\.md
     uses_interfaces:
-    - interface: install-assistant-tools.interface.default
-      version: 2
     - interface: recurring-tasks._rtx.interface.scripts-disable
       version: 1
     - interface: recurring-tasks._rtx.interface.scripts-enable
       version: 1
-    - interface: recurring-tasks._rtx.interface.scripts-ensure-agent-env
-      version: 1
     - interface: recurring-tasks._rtx.interface.scripts-healthcheck
+      version: 1
+    - interface: recurring-tasks._rtx.interface.scripts-remove-context
       version: 1
     - interface: recurring-tasks._rtx.interface.scripts-setup
       version: 1
@@ -108,15 +106,13 @@ interfaces:
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
-- interface: install-assistant-tools.interface.default
-  version: 2
 - interface: recurring-tasks._rtx.interface.scripts-disable
   version: 1
 - interface: recurring-tasks._rtx.interface.scripts-enable
   version: 1
-- interface: recurring-tasks._rtx.interface.scripts-ensure-agent-env
-  version: 1
 - interface: recurring-tasks._rtx.interface.scripts-healthcheck
+  version: 1
+- interface: recurring-tasks._rtx.interface.scripts-remove-context
   version: 1
 - interface: recurring-tasks._rtx.interface.scripts-setup
   version: 1

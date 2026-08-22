@@ -85,9 +85,9 @@ def dispatcher_available() -> tuple[bool, list[str]]:
     missing = []
     if shutil.which("dispatcher") is None:
         missing.append("dispatcher CLI not on PATH")
-    # The package is provided by the generated launcher from the repo source
-    # ($AI); it is deliberately not pip-installed, so importability in the
-    # ambient interpreter is not required — source presence is.
+    # The package is provided beside this exact pointer-selected hook resource;
+    # it is deliberately not pip-installed, so ambient importability is not
+    # required. No repository root or cwd discovery is permitted here.
     package_src = _REPO_ROOT / "script_dispatcher" / "src" / "script_dispatcher"
     if not package_src.is_dir() and importlib.util.find_spec("script_dispatcher") is None:
         missing.append("script_dispatcher source not found in repo")

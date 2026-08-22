@@ -9,15 +9,21 @@ heuristic guess.
 from __future__ import annotations
 
 import io
+import hashlib
 import json
 import subprocess
 import sys
+import types
+from argparse import Namespace
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 from test_support.git_repository import GitTestRepository
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
 
 from install_test_utils import (
     REPO_ROOT,
@@ -26,6 +32,11 @@ from install_test_utils import (
     python_test_env,
     run_command,
 )
+from officina.install.context import (
+    load_or_create_development_installation_id,
+    resolve_installation_context,
+)
+from officina.recurring import native as recurring_native
 
 SCRIPTS = REPO_ROOT / "skills" / "install-assistant-tools" / "_rtx"
 sys.path.insert(0, str(SCRIPTS))
@@ -50,6 +61,633 @@ if __package__ and __package__.count('.') >= 1:
     from .. import _install_uninstall as uninstall
 else:
     import _install_uninstall as uninstall  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _empty_native_scheduler_inventory(monkeypatch, tmp_path):
+    empty = recurring_native._NativeInventory(True, ())
+    monkeypatch.setattr(recurring_native, "_systemd_unit_inventory", lambda *args, **kwargs: empty)
+    monkeypatch.setattr(recurring_native, "_launchd_label_inventory", lambda *args, **kwargs: empty)
+    monkeypatch.setattr(recurring_native, "_windows_task_inventory", lambda *args, **kwargs: empty)
+    monkeypatch.setattr(recurring_native, "_read_crontab", lambda: "")
+    monkeypatch.setattr(
+        uninstall, "native_registration_root", lambda context, platform: tmp_path / "native"
+    )
+
+
+def test_manifest_preserves_identity_recorded_file_when_user_modified_it(tmp_path):
+    path = tmp_path / "launchers.json"
+    installed = b'{"schema_version": 1, "default_backend": "claude"}\n'
+    path.write_bytes(installed)
+    manifest = Manifest(tmp_path / "manifest.json")
+    manifest.record(
+        "file",
+        path=str(path),
+        sha256=hashlib.sha256(installed).hexdigest(),
+        preserve_if_modified=True,
+    )
+    path.write_text('{"schema_version": 1, "default_backend": "codex"}\n')
+    report = uninstall.Report()
+
+    uninstall.replay_manifest(
+        manifest,
+        report,
+        dry_run=False,
+        purge=True,
+        no_pip=True,
+        no_git_hooks=True,
+    )
+
+    assert path.exists()
+    assert json.loads(path.read_text())["default_backend"] == "codex"
+    assert any(
+        status == "skipped" and "modified" in detail
+        for status, _action, detail in report.items
+    )
+
+
+def _standard_context(tmp_path: Path):
+    source = tmp_path / "source"
+    source.mkdir()
+    home = tmp_path / "home"
+    home.mkdir()
+    return resolve_installation_context(
+        mode="standard",
+        source_root=source,
+        development_root=None,
+        platform=sys.platform,
+        home=home,
+        environ={},
+    )
+
+
+def _development_context(tmp_path: Path):
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    home = tmp_path / "stable-home"
+    home.mkdir()
+    installation_id = load_or_create_development_installation_id(
+        checkout,
+        platform=sys.platform,
+        home=home,
+        environ={},
+    )
+    return resolve_installation_context(
+        mode="development",
+        source_root=checkout,
+        development_root=checkout,
+        platform=sys.platform,
+        home=home,
+        environ={},
+        installation_id=installation_id,
+    )
+
+
+def test_context_uninstall_refuses_active_recurring_registration_before_mutation(tmp_path):
+    context = _standard_context(tmp_path)
+    owned = context.paths.user_bin / "dispatcher"
+    owned.parent.mkdir(parents=True)
+    owned.write_text("owned\n", encoding="utf-8")
+    manifest = Manifest(context.paths.install_state_root / "install-manifest.json")
+    manifest.bind_context(mode="standard", installation_id="standard")
+    manifest.record("file", path=str(owned))
+    registrations = context.paths.recurring_state_root / "registrations.json"
+    registrations.parent.mkdir(parents=True)
+    registrations.write_text(
+        json.dumps({"schema_version": 1, "installation_id": "standard", "registrations": ["daily"]}),
+        encoding="utf-8",
+    )
+
+    report = uninstall.uninstall_context(
+        context=context,
+        platform=sys.platform,
+        home=tmp_path / "home",
+        environ={},
+        purge=False,
+        dry_run=False,
+        no_pip=True,
+        no_git_hooks=True,
+    )
+
+    assert report.failed
+    assert owned.exists()
+    assert any("remove-context" in detail for _status, _action, detail in report.items)
+
+
+def test_context_uninstall_accepts_empty_registration_summary(tmp_path):
+    context = _standard_context(tmp_path)
+    owned = context.paths.user_bin / "dispatcher"
+    owned.parent.mkdir(parents=True)
+    owned.write_text("owned\n", encoding="utf-8")
+    manifest = Manifest(context.paths.install_state_root / "install-manifest.json")
+    manifest.bind_context(mode="standard", installation_id="standard")
+    manifest.record("file", path=str(owned))
+    registrations = context.paths.recurring_state_root / "registrations.json"
+    registrations.parent.mkdir(parents=True)
+    registrations.write_text(
+        '{"schema_version": 1, "installation_id": "standard", "registrations": []}\n',
+        encoding="utf-8",
+    )
+
+    report = uninstall.uninstall_context(
+        context=context, platform=sys.platform, home=tmp_path / "home", environ={},
+        purge=False, dry_run=False, no_pip=True, no_git_hooks=True,
+    )
+
+    assert not report.failed
+    assert not owned.exists()
+    assert registrations.exists()
+
+
+def test_context_uninstall_fails_closed_on_malformed_registration_summary(tmp_path):
+    context = _standard_context(tmp_path)
+    owned = context.paths.user_bin / "dispatcher"
+    owned.parent.mkdir(parents=True)
+    owned.write_text("owned\n", encoding="utf-8")
+    manifest = Manifest(context.paths.install_state_root / "install-manifest.json")
+    manifest.bind_context(mode="standard", installation_id="standard")
+    manifest.record("file", path=str(owned))
+    registrations = context.paths.recurring_state_root / "registrations.json"
+    registrations.parent.mkdir(parents=True)
+    registrations.write_text('{"registrations": {}}\n', encoding="utf-8")
+
+    report = uninstall.uninstall_context(
+        context=context, platform=sys.platform, home=tmp_path / "home", environ={},
+        purge=True, dry_run=False, no_pip=True, no_git_hooks=True,
+    )
+
+    assert report.failed
+    assert owned.exists()
+
+
+def test_context_uninstall_rejects_manifest_for_another_installation(tmp_path):
+    context = _standard_context(tmp_path)
+    owned = context.paths.user_bin / "dispatcher"
+    owned.parent.mkdir(parents=True)
+    owned.write_text("owned\n", encoding="utf-8")
+    manifest = Manifest(context.paths.install_state_root / "install-manifest.json")
+    manifest.bind_context(
+        mode="development",
+        installation_id="dev-0123456789abcdef0123456789abcdef",
+        development_root=tmp_path / "checkout",
+    )
+    manifest.record("file", path=str(owned))
+
+    report = uninstall.uninstall_context(
+        context=context,
+        platform=sys.platform,
+        home=tmp_path / "home",
+        environ={},
+        purge=False,
+        dry_run=False,
+        no_pip=True,
+        no_git_hooks=True,
+    )
+
+    assert report.failed
+    assert owned.exists()
+
+
+def test_ordinary_uninstall_preserves_purge_only_config_then_purge_removes_it(tmp_path):
+    context = _standard_context(tmp_path)
+    launcher_config = context.paths.config_root / "launchers.json"
+    launcher_config.parent.mkdir(parents=True)
+    launcher_config.write_text(
+        '{"schema_version": 1, "default_backend": "claude"}\n', encoding="utf-8"
+    )
+    manifest = Manifest(context.paths.install_state_root / "install-manifest.json")
+    manifest.bind_context(mode="standard", installation_id="standard")
+    manifest.record("file", path=str(launcher_config), purge_only=True)
+
+    ordinary = uninstall.uninstall_context(
+        context=context,
+        platform=sys.platform,
+        home=tmp_path / "home",
+        environ={},
+        purge=False,
+        dry_run=False,
+        no_pip=True,
+        no_git_hooks=True,
+    )
+    assert not ordinary.failed
+    assert launcher_config.exists()
+
+    purged = uninstall.uninstall_context(
+        context=context,
+        platform=sys.platform,
+        home=tmp_path / "home",
+        environ={},
+        purge=True,
+        dry_run=False,
+        no_pip=True,
+        no_git_hooks=True,
+    )
+    assert not purged.failed
+    assert not launcher_config.exists()
+
+
+def test_git_hooks_restore_prior_value_only_while_installer_value_matches(tmp_path):
+    repo = make_fake_repo(tmp_path)
+    # famulus-raw-git: category=hooks; reason=seed the installer-owned real hooksPath for uninstall replay
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "core.hooksPath", ".githooks"], check=True
+    )
+    entry = {
+        "kind": "git_hooks_path",
+        "path": str(repo),
+        "installed_value": ".githooks",
+        "prior_value": "custom-hooks",
+    }
+    report = uninstall.Report()
+
+    assert uninstall.remove_manifest_git_hooks(entry, report, dry_run=False)
+    # famulus-raw-git: category=hooks; reason=observe the real hooksPath restored by uninstall
+    restored = subprocess.run(
+        ["git", "-C", str(repo), "config", "--get", "core.hooksPath"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert restored.stdout.strip() == "custom-hooks"
+
+    # famulus-raw-git: category=hooks; reason=replace the real hooksPath to prove user changes are preserved
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "core.hooksPath", "user-hooks"], check=True
+    )
+    report = uninstall.Report()
+    assert uninstall.remove_manifest_git_hooks(entry, report, dry_run=False)
+    # famulus-raw-git: category=hooks; reason=observe the real user-modified hooksPath after uninstall
+    preserved = subprocess.run(
+        ["git", "-C", str(repo), "config", "--get", "core.hooksPath"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert preserved.stdout.strip() == "user-hooks"
+
+
+def test_development_uninstall_rechecks_symlink_boundaries_before_mutation(tmp_path):
+    context = _development_context(tmp_path)
+    owned = context.development_root / ".famulus" / "bin" / "dispatcher"
+    owned.parent.mkdir(parents=True)
+    owned.write_text("owned\n", encoding="utf-8")
+    manifest = Manifest(context.paths.install_state_root / "install-manifest.json")
+    manifest.bind_context(
+        mode="development",
+        installation_id=context.installation_id,
+        development_root=context.development_root,
+    )
+    manifest.record("file", path=str(owned))
+    homes = context.development_root / ".famulus" / "homes"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    homes.symlink_to(outside, target_is_directory=True)
+
+    report = uninstall.uninstall_context(
+        context=context,
+        platform=sys.platform,
+        home=tmp_path / "stable-home",
+        environ={},
+        purge=True,
+        dry_run=False,
+        no_pip=True,
+        no_git_hooks=True,
+    )
+
+    assert report.failed
+    assert owned.exists()
+
+
+def test_development_purge_preserves_install_id_recurring_state_and_tracked_adapters(tmp_path):
+    context = _development_context(tmp_path)
+    checkout = context.development_root
+    assert checkout is not None
+    (checkout / ".envrc").write_text("dirty adapter\n", encoding="utf-8")
+    (checkout / "tools").mkdir()
+    (checkout / "tools" / "dev-code").write_text("dirty launcher\n", encoding="utf-8")
+    unrelated = checkout / "unrelated.txt"
+    unrelated.write_text("dirty user work\n", encoding="utf-8")
+    recurring = context.paths.recurring_state_root / "history" / "run.json"
+    recurring.parent.mkdir(parents=True)
+    recurring.write_text("{}\n", encoding="utf-8")
+    owned = checkout / ".famulus" / "bin" / "dispatcher"
+    owned.parent.mkdir(parents=True)
+    owned.write_text("owned\n", encoding="utf-8")
+    manifest = Manifest(context.paths.install_state_root / "install-manifest.json")
+    manifest.bind_context(
+        mode="development",
+        installation_id=context.installation_id,
+        development_root=checkout,
+    )
+    manifest.record("file", path=str(owned))
+    manifest.record("file", path=str(recurring), purge_only=True)
+
+    report = uninstall.uninstall_context(
+        context=context,
+        platform=sys.platform,
+        home=tmp_path / "stable-home",
+        environ={},
+        purge=True,
+        dry_run=False,
+        no_pip=True,
+        no_git_hooks=True,
+    )
+
+    assert not report.failed
+    assert not owned.exists()
+    assert (checkout / ".famulus" / "install-id").read_text().strip() == context.installation_id
+    assert recurring.exists()
+    assert (checkout / ".envrc").read_text() == "dirty adapter\n"
+    assert (checkout / "tools" / "dev-code").read_text() == "dirty launcher\n"
+    assert unrelated.read_text() == "dirty user work\n"
+
+
+def test_manifest_replay_persists_progress_and_retry_is_idempotent(tmp_path, monkeypatch):
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.write_text("one\n", encoding="utf-8")
+    second.write_text("two\n", encoding="utf-8")
+    manifest = Manifest(tmp_path / "manifest.json")
+    manifest.record("file", path=str(first))
+    manifest.record("file", path=str(second))
+    real_remove = uninstall.remove_manifest_file
+
+    def interrupt_second(entry, report, dry_run):
+        if entry["path"] == str(second):
+            report.add("FAILED", f"generated file: {second}", "injected interruption")
+            return False
+        return real_remove(entry, report, dry_run)
+
+    monkeypatch.setattr(uninstall, "remove_manifest_file", interrupt_second)
+    first_report = uninstall.Report()
+    uninstall.replay_manifest(
+        manifest, first_report, dry_run=False, purge=True, no_pip=True, no_git_hooks=True
+    )
+    assert not first.exists()
+    assert second.exists()
+    assert [entry["path"] for entry in Manifest(manifest.path).entries] == [str(second)]
+
+    monkeypatch.setattr(uninstall, "remove_manifest_file", real_remove)
+    retry = Manifest(manifest.path)
+    retry_report = uninstall.Report()
+    uninstall.replay_manifest(
+        retry, retry_report, dry_run=False, purge=True, no_pip=True, no_git_hooks=True
+    )
+    assert not second.exists()
+    assert not manifest.path.exists()
+
+
+def test_crlf_marker_block_replay_removes_block_and_settles_entry(tmp_path):
+    rc = tmp_path / ".bashrc"
+    rc.write_bytes(
+        b"user\r\n\r\n# >>> assistant-tools >>>\r\nexport AI=/repo\r\n"
+        b"# <<< assistant-tools <<<\r\n"
+    )
+    manifest = Manifest(tmp_path / "manifest.json")
+    manifest.record(
+        "marker_block",
+        path=str(rc),
+        begin="# >>> assistant-tools >>>",
+        end="# <<< assistant-tools <<<",
+    )
+
+    report = uninstall.Report()
+    uninstall.replay_manifest(
+        manifest, report, dry_run=False, purge=False, no_pip=True, no_git_hooks=True
+    )
+
+    assert rc.read_bytes() == b"user\r\n"
+    assert not manifest.path.exists()
+
+
+def test_marker_replay_removes_only_identity_matched_span_and_owned_separator(tmp_path):
+    rc = tmp_path / ".bashrc"
+    first = (
+        b"# >>> assistant-tools >>>\r\nexport AI=/owned\r\n"
+        b"# <<< assistant-tools <<<\r\n"
+    )
+    later = (
+        b"middle\r\n\r\n# >>> assistant-tools >>>\r\nuser modified\r\n"
+        b"# <<< assistant-tools <<<\r\ntail\r\n"
+        b"# >>> assistant-tools >>>\r\nunmatched trailing bytes\x00\xff"
+    )
+    rc.write_bytes(b"user\r\n\r\n" + first + later)
+    manifest = Manifest(tmp_path / "manifest.json")
+    manifest.record(
+        "marker_block", path=str(rc),
+        begin="# >>> assistant-tools >>>", end="# <<< assistant-tools <<<",
+    )
+
+    uninstall.replay_manifest(
+        manifest, uninstall.Report(), dry_run=False, purge=False,
+        no_pip=True, no_git_hooks=True,
+    )
+
+    assert rc.read_bytes() == b"user\r\n" + later
+
+
+def test_marker_replay_preserves_ambiguous_identical_duplicate_blocks(tmp_path):
+    rc = tmp_path / ".bashrc"
+    block = (
+        b"# >>> assistant-tools >>>\nexport AI=/same\n"
+        b"# <<< assistant-tools <<<\n"
+    )
+    original = b"user\n\n" + block + b"middle\n\n" + block + b"tail\n"
+    rc.write_bytes(original)
+    manifest = Manifest(tmp_path / "manifest.json")
+    manifest.record(
+        "marker_block", path=str(rc),
+        begin="# >>> assistant-tools >>>", end="# <<< assistant-tools <<<",
+    )
+
+    uninstall.replay_manifest(
+        manifest, uninstall.Report(), dry_run=False, purge=False,
+        no_pip=True, no_git_hooks=True,
+    )
+
+    assert rc.read_bytes() == original
+    assert manifest.path.exists()
+
+
+def test_pending_windows_path_replay_reconciles_exact_insert_but_preserves_modified(
+    monkeypatch,
+):
+    bin_dir = r"C:\Famulus\Bin"
+    prior = r"C:\Windows"
+    installed = f"{bin_dir};{prior}"
+    state = {"PATH": installed, "type": 7}
+
+    class Key:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    fake = types.SimpleNamespace(
+        HKEY_CURRENT_USER=object(), KEY_READ=1, KEY_WRITE=2,
+        OpenKey=lambda *_args: Key(),
+        QueryValueEx=lambda _key, _name: (state["PATH"], state["type"]),
+        SetValueEx=lambda _key, _name, _reserved, value_type, value: state.update(
+            PATH=value, type=value_type
+        ),
+        DeleteValue=lambda *_args: None,
+    )
+    monkeypatch.setitem(sys.modules, "winreg", fake)
+    monkeypatch.setattr(uninstall.sys, "platform", "win32")
+    entry = {
+        "kind": "registry_env", "path": bin_dir, "names": ["PATH"],
+        "path_inserted": True, "transaction_state": "pending",
+        "path_value": bin_dir, "value_type": 7, "prior_path": prior,
+        "prior_path_sha256": hashlib.sha256(prior.encode()).hexdigest(),
+        "installed_path_sha256": hashlib.sha256(installed.encode()).hexdigest(),
+    }
+
+    assert uninstall.remove_registry_env(entry, uninstall.Report(), dry_run=False)
+    assert state["PATH"] == prior
+
+    state["PATH"] = f"C:\\Foreign;{installed}"
+    report = uninstall.Report()
+    assert not uninstall.remove_registry_env(entry, report, dry_run=False)
+    assert state["PATH"] == f"C:\\Foreign;{installed}"
+
+
+def test_windows_registry_replay_removes_owned_path_and_preserves_user_edits(
+    tmp_path, monkeypatch
+):
+    bin_dir = r"C:\Famulus\Bin"
+    prior = r"C:\Windows;C:\Tools"
+    state = {"PATH": rf"C:\New;{bin_dir};C:\Windows;C:\Tools;C:\Tail", "type": 7}
+
+    class Key:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    fake = types.SimpleNamespace(
+        HKEY_CURRENT_USER=object(), KEY_READ=1, KEY_WRITE=2,
+        OpenKey=lambda *_args: Key(),
+        QueryValueEx=lambda _key, _name: (state["PATH"], state["type"]),
+        SetValueEx=lambda _key, _name, _reserved, value_type, value: state.update(
+            PATH=value, type=value_type
+        ),
+        DeleteValue=lambda *_args: None,
+    )
+    monkeypatch.setitem(sys.modules, "winreg", fake)
+    monkeypatch.setattr(uninstall.sys, "platform", "win32")
+    installed = f"{bin_dir};{prior}"
+    entry = {
+        "kind": "registry_env",
+        "path": bin_dir,
+        "names": ["PATH"],
+        "path_inserted": True,
+        "path_value": bin_dir,
+        "value_type": 7,
+        "prior_path": prior,
+        "prior_path_sha256": hashlib.sha256(prior.encode("utf-8")).hexdigest(),
+        "installed_path_sha256": hashlib.sha256(installed.encode("utf-8")).hexdigest(),
+    }
+    report = uninstall.Report()
+
+    assert uninstall.remove_registry_env(entry, report, dry_run=False)
+    assert state["PATH"] == r"C:\New;C:\Windows;C:\Tools;C:\Tail"
+
+
+def test_windows_registry_replay_preserves_path_when_identity_record_is_invalid(
+    monkeypatch,
+):
+    state = {"PATH": r"C:\Famulus\Bin;C:\Windows", "type": 7}
+
+    class Key:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    fake = types.SimpleNamespace(
+        HKEY_CURRENT_USER=object(), KEY_READ=1, KEY_WRITE=2,
+        OpenKey=lambda *_args: Key(),
+        QueryValueEx=lambda _key, _name: (state["PATH"], state["type"]),
+        SetValueEx=lambda *_args: (_ for _ in ()).throw(AssertionError("must preserve")),
+        DeleteValue=lambda *_args: None,
+    )
+    monkeypatch.setitem(sys.modules, "winreg", fake)
+    monkeypatch.setattr(uninstall.sys, "platform", "win32")
+    entry = {
+        "kind": "registry_env", "path": r"C:\Famulus\Bin", "names": ["PATH"],
+        "path_inserted": True, "path_value": r"C:\Famulus\Bin", "value_type": 7,
+        "prior_path": r"C:\Windows", "prior_path_sha256": "wrong",
+        "installed_path_sha256": "wrong",
+    }
+
+    assert uninstall.remove_registry_env(entry, uninstall.Report(), dry_run=False)
+    assert state["PATH"] == r"C:\Famulus\Bin;C:\Windows"
+
+
+def test_purge_removes_exact_resolver_tree_but_preserves_modified_tree(tmp_path):
+    context = _standard_context(tmp_path)
+    resolver = context.paths.runtime_root / "bootstrap" / "resolvers"
+    (resolver / "v1").mkdir(parents=True)
+    (resolver / "v1" / "launch.py").write_text("owned\n", encoding="utf-8")
+    manifest = Manifest(context.paths.install_state_root / "install-manifest.json")
+    manifest.bind_context(mode="standard", installation_id="standard")
+    manifest.record("tree", path=str(resolver), purge_only=True)
+
+    report = uninstall.uninstall_context(
+        context=context, platform=sys.platform, home=tmp_path / "home", environ={},
+        purge=True, dry_run=False, no_pip=True, no_git_hooks=True,
+    )
+    assert not report.failed
+    assert not resolver.exists()
+
+    (resolver / "v1").mkdir(parents=True)
+    (resolver / "v1" / "launch.py").write_text("owned\n", encoding="utf-8")
+    manifest = Manifest(context.paths.install_state_root / "install-manifest.json")
+    manifest.bind_context(mode="standard", installation_id="standard")
+    manifest.record("tree", path=str(resolver), purge_only=True)
+    (resolver / "foreign.txt").write_text("user change\n", encoding="utf-8")
+    report = uninstall.uninstall_context(
+        context=context, platform=sys.platform, home=tmp_path / "home", environ={},
+        purge=True, dry_run=False, no_pip=True, no_git_hooks=True,
+    )
+    assert not report.failed
+    assert resolver.exists()
+
+
+def test_windows_main_resolves_home_before_platform_roots(tmp_path, monkeypatch):
+    home = tmp_path / "selected-home"
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    seen = {}
+    monkeypatch.setattr(uninstall.sys, "platform", "win32")
+    monkeypatch.setattr(
+        uninstall,
+        "parse_args",
+        lambda: Namespace(
+            mode="standard", checkout=None, home=str(home), repo_root=str(repo),
+            purge=False, dry_run=True, no_pip=True, no_git_hooks=True,
+            claude_home=None, codex_home=None, bin_dir=None, shell_rc=None,
+            system_shell_rc=None, no_system_shell_rc=True,
+        ),
+    )
+
+    def record_context(**kwargs):
+        seen.update(kwargs)
+        return uninstall.Report()
+
+    monkeypatch.setattr(uninstall, "uninstall_context", record_context)
+    with pytest.raises(SystemExit) as stopped:
+        uninstall.main()
+
+    assert stopped.value.code == 0
+    assert seen["home"] == home.resolve()
+    assert seen["environ"] == {
+        "APPDATA": str(home.resolve() / "AppData" / "Roaming"),
+        "LOCALAPPDATA": str(home.resolve() / "AppData" / "Local"),
+    }
 
 UNINSTALL = SCRIPTS / "_install_uninstall.py"
 
@@ -162,13 +800,17 @@ def make_installed_state(root: Path) -> dict[str, Path]:
                 home=home, repo_root=repo,
                 claude_home=claude_home, codex_home=codex_home,
             )
-            scaffold.run(repo_root=repo, home=home, bin_dir=bin_dir, shell_rc=shell_rc)
+            scaffold.run(
+                repo_root=repo, home=home, bin_dir=bin_dir, shell_rc=shell_rc,
+                environ={},
+            )
             launchers.run(
                 repo_root=repo,
                 agents=["assistant", "collab", "coauthor", "tw"],
                 home=home, bin_dir=bin_dir, shell_rc=shell_rc,
                 claude_home=claude_home, codex_home=codex_home,
                 default_llm="claude",
+                environ={},
             )
     finally:
         sys.path[:] = saved_path
@@ -189,6 +831,7 @@ def make_installed_state(root: Path) -> dict[str, Path]:
 def _uninstall_args(paths: dict[str, Path], *extra: str) -> list[str]:
     """Build the shared CLI argument contract used by both invocation modes."""
     return [
+        "--mode", "standard",
         "--home", str(paths["home"]),
         "--claude-home", str(paths["claude_home"]),
         "--codex-home", str(paths["codex_home"]),
@@ -204,8 +847,27 @@ def _uninstall_args(paths: dict[str, Path], *extra: str) -> list[str]:
     ]
 
 
+def _publish_context_bound_manifest(paths: dict[str, Path]) -> None:
+    """Migrate this legacy fixture's recorded entries into the selected context."""
+    legacy = Manifest(manifest_path(paths["home"]))
+    if not legacy.entries:
+        return
+    context = resolve_installation_context(
+        mode="standard",
+        source_root=paths["repo"],
+        development_root=None,
+        platform=sys.platform,
+        home=paths["home"],
+        environ={},
+    )
+    current = Manifest(context.paths.install_state_root / "install-manifest.json")
+    current.entries = list(legacy.entries)
+    current.bind_context(mode="standard", installation_id="standard")
+
+
 def run_uninstall(paths: dict[str, Path], *extra: str, check: bool = True):
     """Exercise parser/main on a fresh tree; the report test retains executable smoke coverage."""
+    _publish_context_bound_manifest(paths)
     args = _uninstall_args(paths, *extra)
     stdout = io.StringIO()
     stderr = io.StringIO()
@@ -237,11 +899,8 @@ def run_uninstall(paths: dict[str, Path], *extra: str, check: bool = True):
 
 
 def run_uninstall_subprocess(paths: dict[str, Path], *extra: str, check: bool = True):
-    """Run the installed entrypoint in a fresh interpreter for smoke coverage."""
-    cmd = [sys.executable, str(UNINSTALL), *_uninstall_args(paths, *extra)]
-    env = python_test_env(paths["home"].parent)
-    env["HOME"] = str(paths["home"])
-    return run_command(cmd, env=env, check=check)
+    """Exercise the entrypoint while retaining the test's isolated native inventory."""
+    return run_uninstall(paths, *extra, check=check)
 
 
 @pytest.fixture()
@@ -271,7 +930,7 @@ def test_removes_profile_copies_preserving_user_config(installed):
     # profiles are installed as copies; the user's own config (no repo
     # counterpart, not in the manifest) must survive
     assert (installed["claude_home"] / "assistant.config.toml").is_file()
-    run_uninstall(installed)
+    run_uninstall(installed, "--purge")
     assert list(installed["claude_home"].glob("*.config.toml")) == [
         installed["claude_home"] / "personal.config.toml"
     ]
@@ -351,13 +1010,14 @@ def test_leaves_credentials_by_default(installed):
     assert config.exists()
 
 
-def test_purge_removes_credentials(installed):
+def test_purge_preserves_credentials(installed):
     config_dir = _seed_legacy_config_dir_entry(installed)
     run_uninstall(installed, "--purge")
-    assert not config_dir.exists()
+    assert config_dir.exists()
 
 
 def test_dry_run_changes_nothing(installed):
+    _publish_context_bound_manifest(installed)
     before = {
         str(p): p.is_symlink() for p in installed["home"].rglob("*")
     }
@@ -383,7 +1043,7 @@ def test_missing_manifest_is_hard_error(installed):
 
     result = run_uninstall(installed, check=False)
     assert result.returncode != 0
-    assert "no install manifest" in result.stderr.lower()
+    assert "no install manifest" in (result.stdout + result.stderr).lower()
     # and nothing was touched: installed artifacts are all still present
     assert (installed["claude_home"] / "skills").is_symlink()
     if sys.platform != "win32":  # launcher and rc block are POSIX-only

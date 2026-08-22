@@ -34,9 +34,36 @@ from ._base_backend import (
     ScheduleJob,
     _default_famulus_paths,
     _default_runtime_resolver,
+    registration_token,
 )
 
 PREFIX = "ai-"
+
+
+def unit_prefix(installation_id: str = "standard") -> str:
+    return f"{PREFIX}{registration_token(installation_id)}"
+
+
+def service_name(job_name: str, installation_id: str = "standard") -> str:
+    return f"{unit_prefix(installation_id)}{job_name}.service"
+
+
+def timer_name(job_name: str, installation_id: str = "standard") -> str:
+    return f"{unit_prefix(installation_id)}{job_name}.timer"
+
+
+def _job_from_unit_name(
+    name: str, installation_id: str, suffix: str
+) -> str | None:
+    prefix = unit_prefix(installation_id)
+    if not name.startswith(prefix) or not name.endswith(suffix):
+        return None
+    job_name = name[len(prefix) : -len(suffix)]
+    if installation_id == "standard" and re.match(
+        r"dev-[0-9a-f]{32}-", job_name
+    ):
+        return None
+    return job_name
 
 
 def default_unit_dir() -> Path:
@@ -185,6 +212,8 @@ def service_content(
     executor: Path,
     runtime_resolver: Path,
     launcher_bin: Path | None = None,
+    log_root: Path | None = None,
+    descriptor: Path | None = None,
 ) -> str:
     """Generate systemd service unit for a job.
 
@@ -211,8 +240,9 @@ def service_content(
     # forward-slash string from any concrete Path regardless of the host
     # that produced it.
     resolver = PurePosixPath(runtime_resolver.as_posix())
-    executor_posix = executor.as_posix()
     jobs_file_posix = jobs_file.as_posix()
+    descriptor_posix = (descriptor or jobs_file.parent / "schedule-descriptor.json").as_posix()
+    log_root_posix = (log_root or jobs_file.parent / "logs").as_posix()
     launcher_dir = launcher_bin or _launcher_bin_dir()
     path_value = ":".join(
         unit_form for unit_form, _ in _job_path_entries(launcher_dir, resolver)
@@ -225,8 +255,9 @@ def service_content(
         "Type=oneshot\n"
         f"Environment={_systemd_quote(f'PATH={path_value}')}\n"
         f"Environment={_systemd_quote('DBUS_SESSION_BUS_ADDRESS=unix:path=%t/bus')}\n"
-        f"ExecStart={_systemd_quote(str(resolver))} {_systemd_quote(executor_posix)} "
-        f"--jobs-file {_systemd_quote(jobs_file_posix)} --job {job_name}\n"
+        f"ExecStart={_systemd_quote(str(resolver))} -m officina.recurring.executor "
+        f"--descriptor {_systemd_quote(descriptor_posix)} --job {job_name} "
+        f"--log-root {_systemd_quote(log_root_posix)}\n"
     )
 
 
@@ -260,7 +291,7 @@ class LinuxScheduleBackend:
 
             enabled_names.add(job.name)
             calendar = cron_to_systemd_calendar(job.schedule)
-            svc_name = f"{PREFIX}{job.name}.service"
+            svc_name = service_name(job.name, context.installation_id)
             executor = context.skill_dir / "_job_executor.py"
 
             (unit_dir / svc_name).write_text(
@@ -270,20 +301,27 @@ class LinuxScheduleBackend:
                     context.jobs_file,
                     executor,
                     context.runtime_resolver,
+                    log_root=context.log_dir,
+                    descriptor=context.config_root / "schedule-descriptor.json",
                 )
             )
-            (unit_dir / f"{PREFIX}{job.name}.timer").write_text(
+            (unit_dir / timer_name(job.name, context.installation_id)).write_text(
                 timer_content(job.description, calendar, svc_name)
             )
             print(f"Synced '{job.name}' (OnCalendar={calendar})")
 
-        for timer in sorted(unit_dir.glob(f"{PREFIX}*.timer")):
-            name = timer.stem[len(PREFIX):]
+        selected_prefix = unit_prefix(context.installation_id)
+        for timer in sorted(unit_dir.glob(f"{selected_prefix}*.timer")):
+            name = _job_from_unit_name(
+                timer.name, context.installation_id, ".timer"
+            )
+            if name is None:
+                continue
             if name not in enabled_names:
                 if context.live:
                     _systemctl("disable", "--now", timer.name)
                 timer.unlink(missing_ok=True)
-                (unit_dir / f"{PREFIX}{name}.service").unlink(missing_ok=True)
+                (unit_dir / service_name(name, context.installation_id)).unlink(missing_ok=True)
                 print(f"Removed disabled job: '{name}'")
 
         if context.live:
@@ -294,28 +332,49 @@ class LinuxScheduleBackend:
             failed = []
             for name in sorted(enabled_names):
                 result = _systemctl(
-                    "enable", "--now", f"{PREFIX}{name}.timer", capture=False
+                    "enable", "--now", timer_name(name, context.installation_id), capture=False
                 )
                 if result.returncode == 0:
-                    print(f"Enabled {PREFIX}{name}.timer")
+                    print(f"Enabled {timer_name(name, context.installation_id)}")
                 else:
                     failed.append(name)
-                    print(f"FAILED to enable {PREFIX}{name}.timer")
+                    print(f"FAILED to enable {timer_name(name, context.installation_id)}")
             if failed:
                 raise RuntimeError(
                     "could not enable: " + ", ".join(sorted(failed))
                 )
 
     def test(self, job_name: str, context: ScheduleContext) -> bool:
-        result = _systemctl("start", "--wait", f"{PREFIX}{job_name}.service")
+        result = _systemctl("start", "--wait", service_name(job_name, context.installation_id))
         if result.returncode == 0:
             return True
         print("stderr:", result.stderr)
         return False
 
     def status(self, context: ScheduleContext) -> str:
-        result = _systemctl("list-timers", f"{PREFIX}*.timer", "--no-pager")
-        return result.stdout
+        result = _systemctl("list-timers", f"{unit_prefix(context.installation_id)}*.timer", "--no-pager")
+        lines = result.stdout.splitlines(keepends=True)
+        if context.installation_id == "standard":
+            return "".join(
+                line
+                for line in lines
+                if not re.search(r"ai-dev-[0-9a-f]{32}-", line)
+            )
+        selected = unit_prefix(context.installation_id)
+        return "".join(
+            line for line in lines if "ai-" not in line or selected in line
+        )
+
+    def registrations_present(self, context: ScheduleContext) -> bool:
+        unit_dir = context.unit_dir or default_unit_dir()
+        for suffix in (".timer", ".service"):
+            if any(
+                _job_from_unit_name(path.name, context.installation_id, suffix)
+                is not None
+                for path in unit_dir.glob(f"{unit_prefix(context.installation_id)}*{suffix}")
+            ):
+                return True
+        return False
 
     def check_manager(self) -> str | None:
         result = _systemctl("is-system-running")
@@ -331,18 +390,9 @@ class LinuxScheduleBackend:
                 return f"systemd user manager: {detail[0]}"
         return f"systemd user manager: {state or 'unresponsive'}"
 
-    def get_agent_command_template(self) -> str | None:
-        result = _systemctl("show-environment")
-        for line in result.stdout.splitlines():
-            if line.startswith("AI_AGENT_COMMAND_TEMPLATE="):
-                template = line.split("=", 1)[1]
-                if template.startswith("$'") and template.endswith("'"):
-                    template = template[2:-1]
-                return template
-        return None
-
-    def check_job_active(self, job_name: str) -> bool:
-        result = _systemctl("is-active", f"{PREFIX}{job_name}.timer")
+    def check_job_active(self, job_name: str, context: ScheduleContext | None = None) -> bool:
+        installation_id = context.installation_id if context is not None else "standard"
+        result = _systemctl("is-active", timer_name(job_name, installation_id))
         return result.returncode == 0
 
     def job_search_dirs(self) -> list[Path] | None:

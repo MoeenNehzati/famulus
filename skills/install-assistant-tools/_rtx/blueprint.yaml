@@ -8,7 +8,7 @@ authority:
       - officina.runtime.python_machine_interface_runner
       - _phase_entry.py
       - Interface
-      reason: Run the phase-1 installer orchestrator through the shared Python machine-interface
+      reason: Run the five-stage installer orchestrator through the shared Python machine-interface
         runner.
     - command:
       - python3
@@ -34,22 +34,26 @@ authority:
       - Interface
       reason: Install selected assistant launchers through the shared Python machine-interface
         runner.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _scripts_doctor.py
+      - Interface
+      reason: Diagnose one explicitly selected installation context without mutation.
     network: []
 children: {}
 content:
 - _agent_launchers\.py
-- assets/bin/_agent_launch\.py
-- assets/bin/assistant
-- assets/bin/assistant\.bat
-- assets/bin/coauthor
-- assets/bin/coauthor\.bat
-- assets/bin/collab
-- assets/bin/collab\.bat
 - assets/bin/tmux\-workspace
+- assets/bin/tw\-break
+- assets/bin/tw\-join
+- assets/bin/tw\-monitor
+- assets/bin/tw\-help
 - _config_bridge\.py
 - __init__\.py
 - _fs_links\.py
-- _google_onboarding\.py
+- _scripts_doctor\.py
 - _install_uninstall\.py
 - _shell_block\.py
 - _state_record\.py
@@ -81,6 +85,12 @@ exports:
       allowed_callers:
       - install-assistant-tools
     source_interface: install-assistant-tools._rtx.source.rtx-agent-launchers.interface.scripts-launchers
+  install-assistant-tools._rtx.interface.scripts-doctor:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - install-assistant-tools
+    source_interface: install-assistant-tools._rtx.source.rtx-scripts-doctor.interface.scripts-doctor
   install-assistant-tools._rtx.interface.scripts-scaffold:
     access:
       allow_all_modules: false
@@ -103,10 +113,6 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/rtx-config-bridge.yaml
-  install-assistant-tools._rtx.source.rtx-google-onboarding:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-google-onboarding.yaml
   install-assistant-tools._rtx.source.rtx-init:
     blueprint:
       base: module-root
@@ -123,5 +129,9 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/rtx-phase-entry.yaml
+  install-assistant-tools._rtx.source.rtx-scripts-doctor:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-scripts-doctor.yaml
 version: 1
 maturity: stable

@@ -64,7 +64,8 @@ NATIVE_KEYRING_TESTS = {
     "test_default_backend_native_roundtrip_when_available"
 }
 NATIVE_SCHEDULER_TESTS = {
-    "skills/recurring-tasks/_rtx/tests/test_scheduler_live_smoke.py"
+    "skills/recurring-tasks/_rtx/tests/test_scheduler_live_smoke.py",
+    "tests/test_officina_recurring_managed.py",
 }
 PRECOMMIT_EXCLUDED_TESTS = {
     *INSTALLATION_TESTS,

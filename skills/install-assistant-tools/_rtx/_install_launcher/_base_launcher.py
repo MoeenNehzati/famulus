@@ -6,6 +6,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
+from typing import Mapping
 
 if not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -201,6 +202,9 @@ class LauncherInstallerBase:
         agent: str,
         dry_run: bool,
         manifest: Manifest | None,
+        home: Path | None = None,
+        environ: Mapping[str, str] | None = None,
+        runtime_root: Path | None = None,
     ) -> None:
         raise NotImplementedError
 
@@ -211,33 +215,10 @@ class LauncherInstallerBase:
         manifest: Manifest | None = None,
         *,
         home: Path | None = None,
+        runtime_root: Path | None = None,
     ) -> LauncherInstallResult:
         """Install the canonical wakeup command and its short alias."""
         raise NotImplementedError
-
-    def _agent_launcher_files(self, source_bin_dir: Path, bin_dir: Path, agent: str) -> list[LauncherFileSpec]:
-        files = [
-            LauncherFileSpec(
-                source=source_bin_dir / agent,
-                destination=bin_dir / agent,
-                mode=self.static_launcher_mode,
-            ),
-            LauncherFileSpec(
-                source=source_bin_dir / "_agent_launch.py",
-                destination=bin_dir / "_agent_launch.py",
-                mode=self.static_launcher_mode,
-            ),
-        ]
-        bat = source_bin_dir / f"{agent}.bat"
-        if bat.exists():
-            files.append(
-                LauncherFileSpec(
-                    source=bat,
-                    destination=bin_dir / f"{agent}.bat",
-                    mode=self.static_launcher_mode,
-                )
-            )
-        return files
 
     @staticmethod
     def _shell_quote_path(path: Path) -> str:

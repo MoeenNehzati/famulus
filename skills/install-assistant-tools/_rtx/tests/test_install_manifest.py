@@ -7,6 +7,7 @@ fallback cannot know about.
 """
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import subprocess
@@ -51,6 +52,20 @@ def test_manifest_round_trip(tmp_path: Path):
     assert loaded.entries[0]["kind"] == "symlink"
 
 
+def test_unbound_legacy_manifest_stays_schema_1_until_context_binding(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "manifest.json"
+    manifest = Manifest(path)
+
+    manifest.record("file", path=str(tmp_path / "legacy-file"))
+
+    assert json.loads(path.read_text(encoding="utf-8")) == {
+        "version": 1,
+        "entries": [{"kind": "file", "path": str(tmp_path / "legacy-file")}],
+    }
+
+
 def test_manifest_dedupes_on_kind_and_path(tmp_path: Path):
     m = Manifest(tmp_path / "manifest.json")
     m.record("symlink", path="/x", target="/old")
@@ -74,6 +89,176 @@ def test_manifest_forget_removes_matching_kind_and_path(tmp_path: Path):
 def test_manifest_path_is_under_home_state(tmp_path: Path):
     p = manifest_path(tmp_path)
     assert p == tmp_path / ".local" / "state" / "assistant-tools" / "install-manifest.json"
+
+
+def test_manifest_binds_one_explicit_installation_context(tmp_path: Path):
+    path = tmp_path / "manifest.json"
+    manifest = Manifest(path)
+
+    manifest.bind_context(
+        mode="development",
+        installation_id="dev-0123456789abcdef0123456789abcdef",
+        development_root=tmp_path / "checkout",
+    )
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["version"] == 2
+    assert payload["installation"] == {
+        "mode": "development",
+        "installation_id": "dev-0123456789abcdef0123456789abcdef",
+        "development_root": str(tmp_path / "checkout"),
+    }
+
+    with pytest.raises(ValueError, match="different installation context"):
+        manifest.bind_context(mode="standard", installation_id="standard")
+
+
+def test_manifest_rebases_same_development_installation_after_checkout_move(
+    tmp_path: Path,
+) -> None:
+    old_checkout = tmp_path / "old checkout 雪"
+    moved_checkout = tmp_path / "moved checkout 雪"
+    manifest_path = (
+        old_checkout
+        / ".famulus"
+        / "home"
+        / ".local"
+        / "state"
+        / "famulus"
+        / "install"
+        / "install-manifest.json"
+    )
+    (old_checkout / ".famulus").mkdir(parents=True)
+    manifest = Manifest(manifest_path)
+    installation_id = "dev-0123456789abcdef0123456789abcdef"
+    (old_checkout / ".famulus" / "install-id").write_text(
+        installation_id + "\n", encoding="utf-8"
+    )
+    manifest.bind_context(
+        mode="development",
+        installation_id=installation_id,
+        development_root=old_checkout,
+    )
+    manifest.record(
+        "symlink",
+        path=str(old_checkout / ".famulus" / "homes" / "codex" / "skills"),
+        target=str(old_checkout / "skills"),
+        metadata={"source": str(old_checkout / "profiles")},
+    )
+    stable_canary = tmp_path / "stable home" / "canary.bin"
+    stable_canary.parent.mkdir()
+    stable_canary.write_bytes(b"stable")
+    manifest.record("file", path=str(stable_canary), purge_only=True)
+
+    old_checkout.rename(moved_checkout)
+    moved_manifest_path = moved_checkout / manifest_path.relative_to(old_checkout)
+    moved_manifest = Manifest(moved_manifest_path)
+    moved_manifest.bind_context(
+        mode="development",
+        installation_id=installation_id,
+        development_root=moved_checkout,
+    )
+
+    raw = moved_manifest_path.read_text(encoding="utf-8")
+    payload = json.loads(raw)
+    assert str(old_checkout) not in raw
+    assert payload["installation"]["development_root"] == str(moved_checkout)
+    assert payload["entries"][0]["path"].startswith(str(moved_checkout))
+    assert payload["entries"][0]["target"] == str(moved_checkout / "skills")
+    assert payload["entries"][0]["metadata"]["source"] == str(
+        moved_checkout / "profiles"
+    )
+    assert payload["entries"][1]["path"] == str(stable_canary)
+    assert stable_canary.read_bytes() == b"stable"
+
+
+def test_manifest_records_file_and_block_content_identity(tmp_path: Path):
+    generated = tmp_path / "generated.json"
+    generated.write_text('{"owned": true}\n', encoding="utf-8")
+    rc = tmp_path / ".bashrc"
+    rc.write_text(
+        "user\n# >>> assistant-tools >>>\nexport AI=/checkout\n"
+        "# <<< assistant-tools <<<\n",
+        encoding="utf-8",
+    )
+    manifest = Manifest(tmp_path / "manifest.json")
+
+    manifest.record("file", path=str(generated))
+    manifest.record(
+        "marker_block",
+        path=str(rc),
+        begin="# >>> assistant-tools >>>",
+        end="# <<< assistant-tools <<<",
+    )
+
+    file_entry, block_entry = manifest.entries
+    assert file_entry["sha256"] == hashlib.sha256(generated.read_bytes()).hexdigest()
+    assert block_entry["block_sha256"] == hashlib.sha256(
+        b"# >>> assistant-tools >>>\nexport AI=/checkout\n# <<< assistant-tools <<<\n"
+    ).hexdigest()
+
+
+def test_git_hook_install_records_prior_and_installed_values(tmp_path: Path):
+    if __package__ and __package__.count('.') >= 1:
+        from .. import _config_bridge as dev_link
+    else:
+        import _config_bridge as dev_link
+
+    repo = _make_repo_for_manifest_tests(tmp_path)
+    # famulus-raw-git: category=hooks; reason=seed the real hooksPath that manifest recording must preserve
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "core.hooksPath", "custom-hooks"],
+        check=True,
+    )
+    manifest = Manifest(tmp_path / "manifest.json")
+
+    dev_link.install_git_hooks(repo, repo / ".githooks", False, manifest)
+
+    entry = next(item for item in manifest.entries if item["kind"] == "git_hooks_path")
+    assert entry["prior_value"] == "custom-hooks"
+    assert entry["installed_value"] == ".githooks"
+
+
+def test_git_hook_restore_record_survives_interruption_and_retry(tmp_path: Path, monkeypatch):
+    if __package__ and __package__.count('.') >= 1:
+        from .. import _config_bridge as dev_link
+    else:
+        import _config_bridge as dev_link
+
+    repo = _make_repo_for_manifest_tests(tmp_path)
+    # famulus-raw-git: category=hooks; reason=seed the real hooksPath restored after the injected interruption
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "core.hooksPath", "custom-hooks"],
+        check=True,
+    )
+    manifest = Manifest(tmp_path / "manifest.json")
+    real_run = dev_link.subprocess.run
+
+    def interrupt_after_git_write(command, *args, **kwargs):
+        result = real_run(command, *args, **kwargs)
+        if command[-3:] == ["config", "core.hooksPath", ".githooks"]:
+            raise RuntimeError("injected interruption after git write")
+        return result
+
+    monkeypatch.setattr(dev_link.subprocess, "run", interrupt_after_git_write)
+    with pytest.raises(RuntimeError, match="injected interruption"):
+        dev_link.install_git_hooks(repo, repo / ".githooks", False, manifest)
+
+    recorded = Manifest(manifest.path)
+    entry = next(item for item in recorded.entries if item["kind"] == "git_hooks_path")
+    assert entry["prior_value"] == "custom-hooks"
+    assert entry["installed_value"] == ".githooks"
+
+    monkeypatch.setattr(dev_link.subprocess, "run", real_run)
+    dev_link.install_git_hooks(repo, repo / ".githooks", False, recorded)
+    report = uninstall.Report()
+    assert uninstall.remove_manifest_git_hooks(recorded.entries[0], report, dry_run=False)
+    # famulus-raw-git: category=hooks; reason=observe the real hooksPath after manifest replay
+    restored = subprocess.run(
+        ["git", "-C", str(repo), "config", "--get", "core.hooksPath"],
+        capture_output=True, text=True, check=True,
+    )
+    assert restored.stdout.strip() == "custom-hooks"
 
 
 # ── Install-side recording ────────────────────────────────────────────────────
@@ -179,7 +364,7 @@ def test_rc_block_recorded(tmp_path: Path):
 # ── Uninstall replay ──────────────────────────────────────────────────────────
 
 def run_uninstall_with_home(home: Path, *extra: str, check: bool = True):
-    """Exercise manifest replay through real parser/main while the companion suite retains executable smoke coverage."""
+    """Exercise legacy-v1 replay; context-bound CLI coverage lives in test_uninstall."""
     args = [
         "--home", str(home),
         "--claude-home", str(home / ".claude"),
@@ -191,17 +376,19 @@ def run_uninstall_with_home(home: Path, *extra: str, check: bool = True):
     ]
     stdout = io.StringIO()
     stderr = io.StringIO()
-    with (
-        patch.object(sys, "argv", [str(UNINSTALL), *args]),
-        redirect_stdout(stdout),
-        redirect_stderr(stderr),
-    ):
-        try:
-            uninstall.main()
-        except SystemExit as exc:
-            returncode = int(exc.code or 0)
-        else:
-            returncode = 0
+    report = uninstall.Report()
+    manifest = Manifest(manifest_path(home))
+    with redirect_stdout(stdout), redirect_stderr(stderr):
+        uninstall.replay_manifest(
+            manifest,
+            report,
+            dry_run="--dry-run" in extra,
+            purge="--purge" in extra,
+            no_pip=True,
+            no_git_hooks=True,
+        )
+        report.print()
+    returncode = 1 if report.failed else 0
 
     result = subprocess.CompletedProcess(
         [sys.executable, str(UNINSTALL), *args],
@@ -325,7 +512,10 @@ def test_full_install_writes_manifest(tmp_path: Path):
     home = tmp_path / "home"
     home.mkdir()
 
-    scaffold.run(repo_root=repo, home=home, bin_dir=home / "bin", shell_rc=home / ".bashrc")
+    scaffold.run(
+        repo_root=repo, home=home, bin_dir=home / "bin", shell_rc=home / ".bashrc",
+        environ={},
+    )
     launchers.run(
         repo_root=repo,
         agents=["assistant"],
@@ -335,6 +525,7 @@ def test_full_install_writes_manifest(tmp_path: Path):
         claude_home=home / ".claude",
         shell_rc=home / ".bashrc",
         default_llm="claude",
+        environ={},
     )
 
     mpath = manifest_path(home)
@@ -345,5 +536,5 @@ def test_full_install_writes_manifest(tmp_path: Path):
         assert "file" in kinds
         assert "registry_env" in kinds
     else:
-        assert "symlink" in kinds
+        assert "file" in kinds
         assert "marker_block" in kinds

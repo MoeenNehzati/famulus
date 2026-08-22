@@ -26,17 +26,29 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from ._base_backend import ScheduleContext, ScheduleJob
+from ._base_backend import ScheduleContext, ScheduleJob, registration_token
+from officina.recurring.native import (
+    windows_task_name as managed_task_name,
+    windows_wrapper_name as managed_wrapper_name,
+)
 
-TASK_PREFIX = "Famulus-AI-ai-"
+FAMULUS_TASK_PREFIX = "Famulus-AI-"
+TASK_PREFIX = f"{FAMULUS_TASK_PREFIX}ai-"
 
 
 class WindowsPythonNotFoundError(RuntimeError):
     """Raised when no ``python``/``py`` interpreter can be resolved on PATH."""
 
 
-def task_name(job_name: str) -> str:
-    return f"{TASK_PREFIX}{job_name}"
+def task_prefix(installation_id: str = "standard") -> str:
+    token = registration_token(installation_id)
+    if not token:
+        return TASK_PREFIX
+    return f"Famulus-AI-{token}ai-"
+
+
+def task_name(job_name: str, installation_id: str = "standard") -> str:
+    return managed_task_name(job_name, installation_id)
 
 
 def _short_task_name(name: str) -> str:
@@ -58,8 +70,8 @@ def default_unit_dir() -> Path:
     return base / "Famulus" / "state" / "recurring-tasks" / "task-wrappers"
 
 
-def wrapper_name(job_name: str) -> str:
-    return f"{task_name(job_name)}.cmd"
+def wrapper_name(job_name: str, installation_id: str = "standard") -> str:
+    return managed_wrapper_name(job_name, installation_id)
 
 
 def task_run_command(wrapper_path: Path, *, comspec: str | None = None) -> str:
@@ -129,17 +141,20 @@ def _command_parts(job: ScheduleJob, context: ScheduleContext) -> list[str]:
     hardcoding ``sys.executable`` (which would pin the job to whichever
     interpreter happened to run the sync/installer script).
     """
-    executor = context.skill_dir / "_job_executor.py"
+    bootstrap_python = context.bootstrap_python
+    if bootstrap_python is None:
+        bootstrap_python = Path(_resolve_python_interpreter())
     return [
-        _resolve_python_interpreter(),
+        str(bootstrap_python),
         str(context.runtime_resolver),
-        str(executor),
-        "--jobs-file",
-        str(context.jobs_file),
-        "--log-dir",
-        str(context.log_dir),
+        "-m",
+        "officina.recurring.executor",
+        "--descriptor",
+        str(context.config_root / "schedule-descriptor.json"),
         "--job",
         job.name,
+        "--log-root",
+        str(context.log_dir),
     ]
 
 
@@ -245,23 +260,25 @@ class WindowsScheduleBackend:
         unit_dir = context.unit_dir or default_unit_dir()
         unit_dir.mkdir(parents=True, exist_ok=True)
         enabled_names = {job.name for job in jobs if job.enabled}
+        selected_prefix = task_prefix(context.installation_id)
         if context.live:
             for existing in self._existing_task_names():
                 short_name = _short_task_name(existing)
-                if short_name.startswith(TASK_PREFIX) and short_name[len(TASK_PREFIX):] not in enabled_names:
+                if short_name.startswith(selected_prefix) and short_name[len(selected_prefix):] not in enabled_names:
                     subprocess.run(
                         ["schtasks", "/Delete", "/TN", existing, "/F"],
                         capture_output=True,
                     )
-                    (unit_dir / wrapper_name(short_name[len(TASK_PREFIX):])).unlink(missing_ok=True)
-                    print(f"Removed disabled job: '{short_name[len(TASK_PREFIX):]}'")
+                    name = short_name[len(selected_prefix):]
+                    (unit_dir / wrapper_name(name, context.installation_id)).unlink(missing_ok=True)
+                    print(f"Removed disabled job: '{name}'")
 
         for job in jobs:
-            wrapper_path = unit_dir / wrapper_name(job.name)
+            wrapper_path = unit_dir / wrapper_name(job.name, context.installation_id)
             if not job.enabled:
                 if context.live:
                     subprocess.run(
-                        ["schtasks", "/Delete", "/TN", task_name(job.name), "/F"],
+                        ["schtasks", "/Delete", "/TN", task_name(job.name, context.installation_id), "/F"],
                         capture_output=True,
                     )
                 wrapper_path.unlink(missing_ok=True)
@@ -283,7 +300,7 @@ class WindowsScheduleBackend:
                 "schtasks",
                 "/Create",
                 "/TN",
-                task_name(job.name),
+                task_name(job.name, context.installation_id),
                 "/TR",
                 task_run_command(wrapper_path),
                 "/F",
@@ -291,11 +308,11 @@ class WindowsScheduleBackend:
             ]
             if context.live:
                 subprocess.run(args, check=True)
-            print(f"Synced '{job.name}' (Task Scheduler task={task_name(job.name)})")
+            print(f"Synced '{job.name}' (Task Scheduler task={task_name(job.name, context.installation_id)})")
 
     def test(self, job_name: str, context: ScheduleContext) -> bool:
         result = subprocess.run(
-            ["schtasks", "/Run", "/TN", task_name(job_name)],
+            ["schtasks", "/Run", "/TN", task_name(job_name, context.installation_id)],
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -307,14 +324,17 @@ class WindowsScheduleBackend:
         return False
 
     def status(self, context: ScheduleContext) -> str:
-        result = subprocess.run(
-            ["schtasks", "/Query", "/FO", "LIST", "/V"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="strict",
+        prefix = task_prefix(context.installation_id)
+        return "\n".join(
+            name for name in self._existing_task_names() if _short_task_name(name).startswith(prefix)
         )
-        return result.stdout if result.returncode == 0 else result.stderr
+
+    def registrations_present(self, context: ScheduleContext) -> bool:
+        prefix = task_prefix(context.installation_id)
+        if any(_short_task_name(name).startswith(prefix) for name in self._existing_task_names()):
+            return True
+        unit_dir = context.unit_dir or default_unit_dir()
+        return any(unit_dir.glob(f"{prefix}*.cmd"))
 
     def check_manager(self) -> str | None:
         result = subprocess.run(
@@ -328,16 +348,14 @@ class WindowsScheduleBackend:
             return None
         return f"Windows Task Scheduler: {result.stderr.strip() or 'unresponsive'}"
 
-    def get_agent_command_template(self) -> str | None:
-        return os.environ.get("AI_AGENT_COMMAND_TEMPLATE")
-
     def job_search_dirs(self) -> list[Path] | None:
         """schtasks jobs inherit the ambient PATH; nothing is pinned here."""
         return None
 
-    def check_job_active(self, job_name: str) -> bool:
+    def check_job_active(self, job_name: str, context: ScheduleContext | None = None) -> bool:
+        installation_id = context.installation_id if context is not None else "standard"
         result = subprocess.run(
-            ["schtasks", "/Query", "/TN", task_name(job_name)],
+            ["schtasks", "/Query", "/TN", task_name(job_name, installation_id)],
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -357,6 +375,6 @@ class WindowsScheduleBackend:
             return []
         names: list[str] = []
         for row in csv.reader(result.stdout.splitlines()):
-            if row and _short_task_name(row[0]).startswith(TASK_PREFIX):
+            if row and _short_task_name(row[0]).startswith(FAMULUS_TASK_PREFIX):
                 names.append(row[0])
         return names

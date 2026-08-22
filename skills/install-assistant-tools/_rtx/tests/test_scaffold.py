@@ -3,11 +3,15 @@ from __future__ import annotations
 import json
 import os
 import sys
+import types
 from pathlib import Path
 
 import pytest
 
-import officina.certification.records as certificate_records
+from officina.install.context import (
+    load_or_create_development_installation_id,
+    resolve_installation_context,
+)
 from .. import _install_scaffold as scaffold
 from .._install_launcher import _windows_launcher as windows_launcher
 from .._install_launcher._base_launcher import LauncherInstallerBase
@@ -51,6 +55,146 @@ def test_default_bin_dir_is_not_under_documents(tmp_path):
     assert_default_bin_dir_matches_famulus_paths(scaffold.default_bin_dir, tmp_path)
 
 
+def test_windows_path_preexisting_component_is_not_manifest_owned(tmp_path, monkeypatch):
+    bin_dir = tmp_path / "Bin"
+    set_calls = []
+
+    class Key:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    fake = types.SimpleNamespace(
+        HKEY_CURRENT_USER=object(), KEY_READ=1, KEY_WRITE=2, REG_EXPAND_SZ=3,
+        OpenKey=lambda *_args: Key(),
+        QueryValueEx=lambda _key, _name: (f"{bin_dir};C:\\Windows", 3),
+        SetValueEx=lambda *args: set_calls.append(args),
+    )
+    monkeypatch.setitem(sys.modules, "winreg", fake)
+    manifest = scaffold.Manifest(tmp_path / "manifest.json")
+
+    scaffold.ensure_path_windows(bin_dir, False, manifest)
+
+    assert set_calls == []
+    assert not any(entry["kind"] == "registry_env" for entry in manifest.entries)
+
+
+def test_windows_path_failed_write_leaves_no_manifest_claim(tmp_path, monkeypatch):
+    bin_dir = tmp_path / "Bin"
+
+    class Key:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    fake = types.SimpleNamespace(
+        HKEY_CURRENT_USER=object(), KEY_READ=1, KEY_WRITE=2, REG_EXPAND_SZ=3,
+        OpenKey=lambda *_args: Key(),
+        QueryValueEx=lambda _key, _name: (r"C:\Windows", 3),
+        SetValueEx=lambda *_args: (_ for _ in ()).throw(OSError("injected failure")),
+    )
+    monkeypatch.setitem(sys.modules, "winreg", fake)
+    manifest = scaffold.Manifest(tmp_path / "manifest.json")
+
+    with pytest.raises(OSError, match="injected failure"):
+        scaffold.ensure_path_windows(bin_dir, False, manifest)
+
+    assert not any(entry["kind"] == "registry_env" for entry in manifest.entries)
+
+
+def test_windows_path_manifest_commit_follows_write_and_commit_failure_rolls_back(
+    tmp_path, monkeypatch
+):
+    bin_dir = tmp_path / "Bin"
+    prior = r"C:\Windows;C:\Tools"
+    state = {"PATH": prior}
+    events = []
+
+    class Key:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    def set_value(_key, _name, _reserved, _value_type, value):
+        events.append(("set", value))
+        state["PATH"] = value
+
+    fake = types.SimpleNamespace(
+        HKEY_CURRENT_USER=object(), KEY_READ=1, KEY_WRITE=2, REG_EXPAND_SZ=3,
+        OpenKey=lambda *_args: Key(),
+        QueryValueEx=lambda _key, _name: (state["PATH"], 3),
+        SetValueEx=set_value,
+    )
+    monkeypatch.setitem(sys.modules, "winreg", fake)
+
+    class FailingManifest:
+        entries = []
+
+        def record(self, *_args, **_kwargs):
+            events.append(("record", state["PATH"]))
+            raise OSError("manifest commit failed")
+
+    with pytest.raises(OSError, match="manifest commit failed"):
+        scaffold.ensure_path_windows(bin_dir, False, FailingManifest())
+
+    assert events == [("record", prior)]
+    assert state["PATH"] == prior
+
+
+def test_windows_path_pending_intent_recovers_hard_interrupt_after_write(
+    tmp_path, monkeypatch
+):
+    bin_dir = tmp_path / "Bin"
+    prior = r"C:\Windows"
+    state = {"PATH": prior}
+    writes = []
+
+    class Key:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    def set_value(_key, _name, _reserved, _value_type, value):
+        writes.append(value)
+        state["PATH"] = value
+
+    fake = types.SimpleNamespace(
+        HKEY_CURRENT_USER=object(), KEY_READ=1, KEY_WRITE=2, REG_EXPAND_SZ=3,
+        OpenKey=lambda *_args: Key(),
+        QueryValueEx=lambda _key, _name: (state["PATH"], 3),
+        SetValueEx=set_value,
+    )
+    monkeypatch.setitem(sys.modules, "winreg", fake)
+    manifest = scaffold.Manifest(tmp_path / "manifest.json")
+    real_record = manifest.record
+
+    def interrupt_commit(kind, *, path, **fields):
+        if fields.get("transaction_state") == "committed":
+            raise KeyboardInterrupt("hard interruption")
+        real_record(kind, path=path, **fields)
+
+    monkeypatch.setattr(manifest, "record", interrupt_commit)
+    with pytest.raises(KeyboardInterrupt, match="hard interruption"):
+        scaffold.ensure_path_windows(bin_dir, False, manifest)
+
+    pending = scaffold.Manifest(manifest.path)
+    assert pending.entries[0]["transaction_state"] == "pending"
+    assert state["PATH"] == f"{bin_dir};{prior}"
+
+    scaffold.ensure_path_windows(bin_dir, False, pending)
+
+    assert scaffold.Manifest(manifest.path).entries[0]["transaction_state"] == "committed"
+    assert writes == [f"{bin_dir};{prior}"]
+
+
 def test_run_writes_dispatcher_wakeup_and_invoke_skill_launchers(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "platform", "linux")
     repo_root = tmp_path / "repo"
@@ -59,7 +203,7 @@ def test_run_writes_dispatcher_wakeup_and_invoke_skill_launchers(tmp_path, monke
     rc_file = tmp_path / ".bashrc"
     rc_file.write_text("")
 
-    status = scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, shell_rc=rc_file, dry_run=False)
+    status = scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, shell_rc=rc_file, dry_run=False, environ=dict(os.environ))
 
     dispatcher = bin_dir / "dispatcher"
     llm_wakeup = bin_dir / "llm-wakeup"
@@ -71,14 +215,11 @@ def test_run_writes_dispatcher_wakeup_and_invoke_skill_launchers(tmp_path, monke
     assert lw.is_file()
     assert invoke_skill.is_file()
     if os.name != "nt":
-        assert dispatcher.stat().st_mode & 0o111  # executable bits set
+        assert dispatcher.stat().st_mode & 0o111
         assert llm_wakeup.stat().st_mode & 0o111
         assert lw.stat().st_mode & 0o111
     dispatcher_text = dispatcher.read_text()
     invoke_text = invoke_skill.read_text(encoding="utf-8")
-    # Generated launchers resolve the active release at launch time through
-    # the stable managed-runtime resolver instead of embedding this repo
-    # checkout's path or this test process's own interpreter.
     assert str(repo_root) not in dispatcher_text
     assert sys.executable not in dispatcher_text
     assert "bootstrap" in dispatcher_text and "resolvers" in dispatcher_text and "launch.py" in dispatcher_text
@@ -87,12 +228,76 @@ def test_run_writes_dispatcher_wakeup_and_invoke_skill_launchers(tmp_path, monke
     assert "_agent_invoker.sh" not in invoke_text
 
 
+def test_development_scaffold_embeds_only_the_selected_context_runtime_root(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setattr(sys, "platform", "linux")
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    stable_home = tmp_path / "stable-home"
+    identifier = load_or_create_development_installation_id(
+        checkout,
+        platform="linux",
+        home=stable_home,
+        environ={},
+    )
+    context = resolve_installation_context(
+        mode="development",
+        source_root=checkout,
+        development_root=checkout,
+        platform="linux",
+        home=stable_home,
+        environ={},
+        installation_id=identifier,
+    )
+    hostile = {"XDG_DATA_HOME": str(tmp_path / "hostile-data")}
+    monkeypatch.setenv("XDG_DATA_HOME", hostile["XDG_DATA_HOME"])
+
+    scaffold.run(context=context, environ=hostile, dry_run=False)
+
+    dispatcher_text = (context.paths.user_bin / "dispatcher").read_text(encoding="utf-8")
+    invoke_text = (context.paths.user_bin / "invoke-skill").read_text(encoding="utf-8")
+    assert str(context.paths.runtime_root) in dispatcher_text
+    assert str(context.paths.runtime_root) in invoke_text
+    assert hostile["XDG_DATA_HOME"] not in dispatcher_text
+    assert hostile["XDG_DATA_HOME"] not in invoke_text
+    assert hostile["XDG_DATA_HOME"] not in capsys.readouterr().out
+
+
+def test_invoke_skill_uses_selected_home_instead_of_ambient_home(tmp_path, monkeypatch):
+    monkeypatch.setattr(sys, "platform", "linux")
+    selected_home = tmp_path / "selected-home"
+    ambient_home = tmp_path / "ambient-home"
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: ambient_home))
+    for name in ("XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_STATE_HOME"):
+        monkeypatch.delenv(name, raising=False)
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    bin_dir = tmp_path / "bin"
+    shell_rc = tmp_path / ".bashrc"
+    shell_rc.write_text("", encoding="utf-8")
+
+    scaffold.run(
+        repo_root=repo_root,
+        home=selected_home,
+        bin_dir=bin_dir,
+        shell_rc=shell_rc,
+        dry_run=False,
+        environ=dict(os.environ),
+    )
+
+    rendered = (bin_dir / "invoke-skill").read_text(encoding="utf-8")
+    assert str(selected_home / ".local" / "share" / "famulus" / "runtime") in rendered
+    assert str(ambient_home) not in rendered
+
+
 def test_run_writes_windows_dispatcher_wakeup_and_invoke_skill_launchers(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(sys, "platform", "win32")
     monkeypatch.setattr(scaffold, "ensure_path_windows", lambda *args, **kwargs: None)
     # A real Windows host always has LOCALAPPDATA set; resolving the
     # resolver's fixed path needs it now that this monkeypatches sys.platform.
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
+    monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
     # Dispatcher.bat generation resolves a concrete interpreter path via
     # shutil.which; mock it (as test_schedule_backend.py's Windows tests
     # do) rather than let the real shutil.which run its win32-specific
@@ -107,7 +312,7 @@ def test_run_writes_windows_dispatcher_wakeup_and_invoke_skill_launchers(tmp_pat
     repo_root.mkdir()
     bin_dir = tmp_path / "bin"
 
-    status = scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, dry_run=False)
+    status = scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, dry_run=False, environ=dict(os.environ))
 
     output = capsys.readouterr().out
     dispatcher = bin_dir / "dispatcher.bat"
@@ -125,7 +330,10 @@ def test_run_writes_windows_dispatcher_wakeup_and_invoke_skill_launchers(tmp_pat
     assert str(repo_root) not in dispatcher_text
     assert sys.executable not in dispatcher_text
     assert "py -3" not in dispatcher_text
-    assert "background_run --local --claude" in invoke_skill.read_text(encoding="utf-8")
+    assert (
+        "-m officina.launchers.agent --invoke-skill %*"
+        in invoke_skill.read_text(encoding="utf-8")
+    )
     assert "OK: dispatcher" in output
     assert "OK: llm-wakeup" in output
     assert "OK: invoke-skill" in output
@@ -133,6 +341,40 @@ def test_run_writes_windows_dispatcher_wakeup_and_invoke_skill_launchers(tmp_pat
     assert not (bin_dir / "llm-wakeup").exists()
     assert not (bin_dir / "lw").exists()
     assert not (bin_dir / "invoke-skill").exists()
+
+
+def test_windows_invoke_skill_receives_selected_home(tmp_path, monkeypatch):
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(scaffold, "ensure_path_windows", lambda *args, **kwargs: None)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
+    monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
+    monkeypatch.setattr(
+        windows_launcher.shutil,
+        "which",
+        lambda name: r"C:\Python312\python.exe" if name == "python" else None,
+    )
+    selected_home = tmp_path / "selected-home"
+    seen_homes: list[Path | None] = []
+    real_resolve = windows_launcher.resolve_famulus_paths
+
+    def recording_resolve(*, platform, home, environ):
+        seen_homes.append(home)
+        return real_resolve(platform=platform, home=home, environ=environ)
+
+    monkeypatch.setattr(windows_launcher, "resolve_famulus_paths", recording_resolve)
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+
+    scaffold.run(
+        repo_root=repo_root,
+        home=selected_home,
+        bin_dir=tmp_path / "bin",
+        dry_run=False,
+        environ=dict(os.environ),
+    )
+
+    assert seen_homes
+    assert all(home == selected_home for home in seen_homes)
 
 
 def test_run_adds_bin_dir_to_path_in_rc_file(tmp_path, monkeypatch):
@@ -143,13 +385,13 @@ def test_run_adds_bin_dir_to_path_in_rc_file(tmp_path, monkeypatch):
     rc_file = tmp_path / ".bashrc"
     rc_file.write_text("# pre-existing line\n")
 
-    scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, shell_rc=rc_file, dry_run=False)
+    scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, shell_rc=rc_file, dry_run=False, environ=dict(os.environ))
 
     content = rc_file.read_text()
     assert "# pre-existing line" in content
     assert f'export PATH="{bin_dir}:$PATH"' in content
-    # scaffold must not write ASSISTANT_DEFAULT or AI — those belong to
-    # launchers/dev-link
+    # Production persists neither legacy selector: launchers.json and the
+    # active installation context own those decisions.
     assert "ASSISTANT_DEFAULT" not in content
     assert not content.count("export AI=")
 
@@ -162,7 +404,7 @@ def test_run_dry_run_writes_nothing(tmp_path, monkeypatch):
     rc_file = tmp_path / ".bashrc"
     rc_file.write_text("")
 
-    status = scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, shell_rc=rc_file, dry_run=True)
+    status = scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, shell_rc=rc_file, dry_run=True, environ=dict(os.environ))
 
     assert status == 0
     assert not (bin_dir / "dispatcher").exists()
@@ -179,7 +421,7 @@ def test_run_dry_run_reports_required_capabilities(tmp_path, monkeypatch, capsys
     rc_file = tmp_path / ".bashrc"
     rc_file.write_text("")
 
-    status = scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, shell_rc=rc_file, dry_run=True)
+    status = scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, shell_rc=rc_file, dry_run=True, environ=dict(os.environ))
 
     output = capsys.readouterr().out
     assert status == 0
@@ -200,8 +442,8 @@ def test_run_reruns_idempotently(tmp_path, monkeypatch):
     rc_file = tmp_path / ".bashrc"
     rc_file.write_text("")
 
-    scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, shell_rc=rc_file, dry_run=False)
-    scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, shell_rc=rc_file, dry_run=False)
+    scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, shell_rc=rc_file, dry_run=False, environ=dict(os.environ))
+    scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, shell_rc=rc_file, dry_run=False, environ=dict(os.environ))
 
     content = rc_file.read_text()
     assert content.count('export PATH="') == 1
@@ -226,7 +468,7 @@ def test_run_never_shells_out_to_ambient_python_for_package_install(tmp_path, mo
     rc_file = tmp_path / ".bashrc"
     rc_file.write_text("")
 
-    scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, shell_rc=rc_file, dry_run=False)
+    scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, shell_rc=rc_file, dry_run=False, environ=dict(os.environ))
 
     for cmd in calls:
         assert sys.executable not in cmd, f"scaffold invoked ambient sys.executable: {cmd}"
@@ -241,7 +483,7 @@ def test_run_warns_but_does_not_block_when_no_managed_release_is_active(tmp_path
     rc_file = tmp_path / ".bashrc"
     rc_file.write_text("")
 
-    status = scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, shell_rc=rc_file, dry_run=False)
+    status = scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, shell_rc=rc_file, dry_run=False, environ=dict(os.environ))
 
     output = capsys.readouterr().out
     assert status == 0
@@ -390,102 +632,6 @@ def test_certifier_runtime_declares_its_validator_runner_dependencies() -> None:
     assert versions["pytest"] == "==8.3.4"
     assert versions["pytest-xdist"] == "==3.8.0"
     assert versions["pyflakes"] == "==3.2.0"
-
-
-def test_certificate_signing_material_capability_uses_shared_owner(
-    tmp_path,
-    monkeypatch,
-):
-    calls = []
-    public_key_root = tmp_path / "repo" / "keys"
-    monkeypatch.setattr(
-        certificate_records,
-        "provision_certificate_signing_material",
-        lambda repo_root: calls.append(repo_root),
-    )
-    monkeypatch.setattr(
-        certificate_records,
-        "certificate_public_key_root",
-        lambda repo_root: public_key_root,
-    )
-
-    result = scaffold.install_certificate_signing_material(
-        tmp_path / "repo",
-        dry_run=False,
-    )
-
-    assert calls == [tmp_path / "repo"]
-    assert result.status == "installed"
-    assert result.path == public_key_root
-
-
-def test_certificate_signing_material_capability_fails_closed(
-    tmp_path,
-    monkeypatch,
-):
-    def fail(_repo_root):
-        raise ValueError("verification failed")
-
-    monkeypatch.setattr(
-        certificate_records,
-        "provision_certificate_signing_material",
-        fail,
-    )
-
-    result = scaffold.install_certificate_signing_material(
-        tmp_path / "repo",
-        dry_run=False,
-    )
-
-    assert result.blocks_install()
-    assert result.reason == "verification failed"
-
-
-def test_certificate_signing_material_capability_fails_clearly_when_cryptography_missing(
-    tmp_path,
-    monkeypatch,
-):
-    """On a fresh machine whose ambient interpreter never had `cryptography`
-    installed, certificate_records.py's module-level `import cryptography`
-    raises ModuleNotFoundError. This must surface as a clear, actionable
-    capability-failure reason -- not a raw traceback, and without the
-    installer silently pip-installing anything into the ambient
-    interpreter (that anti-pattern was deliberately removed elsewhere)."""
-
-    def fail_import():
-        raise ModuleNotFoundError("No module named 'cryptography'", name="cryptography")
-
-    monkeypatch.setattr(scaffold, "_import_certificate_records", fail_import)
-
-    result = scaffold.install_certificate_signing_material(
-        tmp_path / "repo",
-        dry_run=False,
-    )
-
-    assert result.blocks_install()
-    assert result.status == "failed"
-    assert "cryptography" in result.reason
-    assert "pip install cryptography" in result.reason
-
-
-def test_certificate_signing_material_dry_run_does_not_write(
-    tmp_path,
-    monkeypatch,
-):
-    monkeypatch.setattr(
-        certificate_records,
-        "provision_certificate_signing_material",
-        lambda _repo_root: (_ for _ in ()).throw(
-            AssertionError("dry-run wrote signing material")
-        ),
-    )
-
-    result = scaffold.install_certificate_signing_material(
-        tmp_path / "repo",
-        dry_run=True,
-    )
-
-    assert result.status == "would-install"
 
 
 # ── uv_release_target: resolves the real uv release-asset naming ────────────

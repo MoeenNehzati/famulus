@@ -153,15 +153,15 @@ def test_linux_sync_writes_units_and_enables_timer(tmp_path):
     # test on all 3 CI platforms) -- assert the POSIX-normalized form, not
     # the raw native path, and assert no backslash leaked in anywhere as a
     # direct, host-independent regression guard.
-    executor_path = context.skill_dir / "_job_executor.py"
     assert f'ExecStart="{context.runtime_resolver.as_posix()}"' in service
-    assert executor_path.as_posix() in service
-    assert context.jobs_file.as_posix() in service
+    assert "-m officina.recurring.executor" in service
+    assert (context.config_root / "schedule-descriptor.json").as_posix() in service
+    assert context.log_dir.as_posix() in service
     assert "\\" not in service
     assert sys.executable not in service
     assert f'Environment="PATH={expected_bin}:' in service
     assert 'Environment="DBUS_SESSION_BUS_ADDRESS=unix:path=%t/bus"' in service
-    assert '_job_executor.py" --jobs-file' in service
+    assert "_job_executor.py" not in service
     assert "/bin/bash" not in service
     assert ">>" not in service
     assert "OnCalendar=*-*-* *:00:00" in timer
@@ -188,8 +188,9 @@ def test_linux_service_content_posix_normalizes_windows_style_input_paths():
         PureWindowsPath(r"C:\Users\runneradmin\AppData\Local\Famulus\runtime\bootstrap\resolvers\v1\launch.py"),
     )
     assert "\\" not in content
-    assert "D:/a/famulus/famulus/skills/recurring-tasks/jobs.yaml" in content
-    assert "D:/a/famulus/famulus/skills/recurring-tasks/_rtx/_job_executor.py" in content
+    assert "D:/a/famulus/famulus/skills/recurring-tasks/schedule-descriptor.json" in content
+    assert "officina.recurring.executor" in content
+    assert "_job_executor.py" not in content
     assert "C:/Users/runneradmin/AppData/Local/Famulus/runtime/bootstrap/resolvers/v1/launch.py" in content
 
 
@@ -236,7 +237,8 @@ def test_osx_sync_writes_plist_and_loads_launch_agent(tmp_path):
     assert plist["Label"] == launchd_label("my-job")
     assert plist["ProgramArguments"][0] == str(context.runtime_resolver)
     assert plist["ProgramArguments"][0] != sys.executable
-    assert "_job_executor.py" in plist["ProgramArguments"][1]
+    assert plist["ProgramArguments"][1:3] == ["-m", "officina.recurring.executor"]
+    assert "_job_executor.py" not in " ".join(plist["ProgramArguments"])
     assert plist["StartCalendarInterval"] == {"Hour": 9, "Minute": 0, "Weekday": 1}
     calls = [call.args[0] for call in run.call_args_list]
     assert ["launchctl", "bootstrap", mock.ANY, str(tmp_path / "ai-my-job.plist")] in calls
@@ -388,10 +390,11 @@ def test_windows_sync_creates_task_scheduler_entry(tmp_path):
     assert create[-4:] == ["/SC", "DAILY", "/ST", "09:00"]
 
     wrapper_text = (tmp_path / wrapper_name("my-job")).read_text(encoding="utf-8")
-    assert "_job_executor.py" in wrapper_text
+    assert "officina.recurring.executor" in wrapper_text
+    assert "_job_executor.py" not in wrapper_text
     assert "_rtx/_rtx" not in wrapper_text.replace("\\", "/")
-    assert "--jobs-file" in wrapper_text
-    assert f'--log-dir" "{context.log_dir}' in wrapper_text
+    assert "--descriptor" in wrapper_text
+    assert f'--log-root" "{context.log_dir}' in wrapper_text
     assert "--job" in wrapper_text and '"my-job"' in wrapper_text
 
 
@@ -630,9 +633,10 @@ def test_windows_wrapper_tr_value_stays_well_under_261_char_limit(tmp_path):
     wrapper_text = wrapper_path.read_text(encoding="utf-8")
     assert str(long_root / "python.exe") in wrapper_text
     assert str(context.runtime_resolver) in wrapper_text
-    assert "_job_executor.py" in wrapper_text
-    assert "--jobs-file" in wrapper_text
-    assert str(context.jobs_file) in wrapper_text
+    assert "officina.recurring.executor" in wrapper_text
+    assert "_job_executor.py" not in wrapper_text
+    assert "--descriptor" in wrapper_text
+    assert str(context.config_root / "schedule-descriptor.json") in wrapper_text
     assert '"codex-ci-smoke-1234567890"' in wrapper_text
 
 

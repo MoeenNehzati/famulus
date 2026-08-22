@@ -5,14 +5,13 @@ Manage recurring jobs: enable, disable, test, view logs, and check status.
 Usage:
   python3 manage_job.py enable <name>          # Enable a job (sets enabled: true, syncs units)
   python3 manage_job.py disable <name>         # Disable a job (sets enabled: false, syncs units)
-  python3 manage_job.py enable <name> --jobs-file FILE --no-sync   # test/dry-run against a different jobs.yaml
   python3 manage_job.py test <name>            # Run a job immediately, show output
   python3 manage_job.py view-logs <name>       # Tail job logs (default 50 lines)
   python3 manage_job.py view-logs <name> --lines 100
   python3 manage_job.py status                 # Show all timers and next fire times
   python3 manage_job.py sync                   # Regenerate scheduler entries from jobs.yaml
 
-All operations sync scheduler entries after modifying jobs.yaml.
+Enable and disable always update the canonical jobs file and synchronize scheduler entries.
 """
 import sys
 import time
@@ -29,6 +28,7 @@ if not __package__ and str(RTX_DIR) not in sys.path:
 if __package__:
     from ._jobs_config import load_jobs as _load_jobs, write_jobs as _write_jobs
     from ._schedule_backend import ScheduleContext, platform_schedule_backend, schedule_jobs_from_mappings
+    from ._schedule_context import production_schedule_context
 else:
     from _jobs_config import load_jobs as _load_jobs, write_jobs as _write_jobs  # noqa: E402
     from _schedule_backend import (  # noqa: E402
@@ -36,16 +36,19 @@ else:
     platform_schedule_backend,
     schedule_jobs_from_mappings,
 )
+    from _schedule_context import production_schedule_context  # noqa: E402
 if __package__:
     from . import _unit_writer
 else:
     import _unit_writer  # noqa: E402
 if __package__:
     from ._run_record import read_latest_run_record
+    from ._managed_control import run as run_managed_control
 else:
     from _run_record import read_latest_run_record  # noqa: E402
+    from _managed_control import run as run_managed_control  # noqa: E402
 
-JOBS_FILE = SKILL_DIR / "jobs.yaml"
+JOBS_FILE = SKILL_DIR / "default_jobs.yaml"
 LOG_DIR = SKILL_DIR / "logs"
 
 # Bounded wait for a job's run record after triggering it via the OS
@@ -60,7 +63,10 @@ TEST_JOB_POLL_INTERVAL_SECONDS = 0.5
 
 
 def schedule_context(jobs_file: Path = JOBS_FILE) -> ScheduleContext:
-    return ScheduleContext(skill_dir=SKILL_DIR, jobs_file=jobs_file, log_dir=LOG_DIR)
+    context = production_schedule_context()
+    if jobs_file != context.jobs_file:
+        raise ValueError("production jobs file comes only from the canonical descriptor")
+    return context
 
 
 def load_jobs(jobs_file: Path = JOBS_FILE) -> list:
@@ -80,10 +86,11 @@ def sync_units(jobs_file: Path | None = None) -> None:
     only supplies the defaults the interactive commands use.
     """
     selected_jobs_file = jobs_file or JOBS_FILE
+    context = schedule_context(selected_jobs_file)
     _unit_writer.sync_units(
         load_jobs(selected_jobs_file),
-        None,  # unit_dir: let the platform backend choose its own location
-        LOG_DIR,
+        context.unit_dir,
+        context.log_dir,
         jobs_file=selected_jobs_file,
     )
 
@@ -91,8 +98,14 @@ def sync_units(jobs_file: Path | None = None) -> None:
 def enable_job(name: str, jobs_file: Path = JOBS_FILE, sync: bool = True) -> None:
     """Enable a job."""
     if sync:
+        context = schedule_context(jobs_file)
         # Before the edit, not after: a refusal must leave jobs.yaml alone.
-        _unit_writer.ensure_owner()
+        _unit_writer.ensure_owner(
+            unit_dir=context.unit_dir,
+            installation_id=context.installation_id,
+            context=context,
+            backend=platform_schedule_backend(),
+        )
     jobs = load_jobs(jobs_file)
     for job in jobs:
         if job["name"] == name:
@@ -108,8 +121,14 @@ def enable_job(name: str, jobs_file: Path = JOBS_FILE, sync: bool = True) -> Non
 def disable_job(name: str, jobs_file: Path = JOBS_FILE, sync: bool = True) -> None:
     """Disable a job."""
     if sync:
+        context = schedule_context(jobs_file)
         # Before the edit, not after: a refusal must leave jobs.yaml alone.
-        _unit_writer.ensure_owner()
+        _unit_writer.ensure_owner(
+            unit_dir=context.unit_dir,
+            installation_id=context.installation_id,
+            context=context,
+            backend=platform_schedule_backend(),
+        )
     jobs = load_jobs(jobs_file)
     for job in jobs:
         if job["name"] == name:
@@ -137,7 +156,9 @@ def test_job(
     fresh JobRunRecord to appear in logs/<name>/latest.json and reports
     pass/fail from its `success` field instead.
     """
-    baseline = read_latest_run_record(log_dir=LOG_DIR, job_name=name)
+    context = schedule_context()
+    selected_log_dir = context.log_dir
+    baseline = read_latest_run_record(log_dir=selected_log_dir, job_name=name)
     # Compare by run_id (a fresh uuid4 per run), not finished_at: finished_at
     # has only second resolution, so a fast run (e.g. an instant
     # spawn-failure) can share a timestamp with the baseline record and get
@@ -145,14 +166,14 @@ def test_job(
     # full timeout on a run that actually completed immediately.
     baseline_run_id = baseline.get("run_id") if baseline else None
 
-    if not platform_schedule_backend().test(name, schedule_context()):
+    if not platform_schedule_backend().test(name, context):
         print(f"FAIL: Test failed: {name} (scheduler did not accept the trigger)")
         return False
 
     deadline = time.monotonic() + timeout_seconds
     record = None
     while time.monotonic() < deadline:
-        candidate = read_latest_run_record(log_dir=LOG_DIR, job_name=name)
+        candidate = read_latest_run_record(log_dir=selected_log_dir, job_name=name)
         if candidate is not None and candidate.get("run_id") != baseline_run_id:
             record = candidate
             break
@@ -203,17 +224,9 @@ def main(argv: list[str] | None = None) -> int:
 
     enable_parser = subparsers.add_parser("enable", help="Enable a job")
     enable_parser.add_argument("name")
-    enable_parser.add_argument("--jobs-file", type=Path, default=JOBS_FILE,
-                                help="jobs.yaml to modify (default: this skill's jobs.yaml)")
-    enable_parser.add_argument("--no-sync", action="store_true",
-                                help="Skip regenerating scheduler entries after modifying jobs.yaml")
 
     disable_parser = subparsers.add_parser("disable", help="Disable a job")
     disable_parser.add_argument("name")
-    disable_parser.add_argument("--jobs-file", type=Path, default=JOBS_FILE,
-                                 help="jobs.yaml to modify (default: this skill's jobs.yaml)")
-    disable_parser.add_argument("--no-sync", action="store_true",
-                                 help="Skip regenerating scheduler entries after modifying jobs.yaml")
 
     subparsers.add_parser("test", help="Test a job").add_argument("name")
     view_logs_parser = subparsers.add_parser("view-logs", help="View job logs")
@@ -221,10 +234,20 @@ def main(argv: list[str] | None = None) -> int:
     view_logs_parser.add_argument("--lines", type=int, default=50)
     subparsers.add_parser("status", help="Show timer status")
     subparsers.add_parser("sync", help="Sync units")
+    subparsers.add_parser(
+        "remove-context", help="Remove only this context's native scheduler state"
+    )
 
     args = p.parse_args(argv)
 
-    try:
+    forwarded: list[str] = []
+    if getattr(args, "name", None):
+        forwarded.append(args.name)
+    if args.command == "view-logs" and args.lines != 50:
+        forwarded.extend(["--lines", str(args.lines)])
+    return run_managed_control(args.command, forwarded)
+
+    try:  # pragma: no cover - retained internal compatibility below
         if args.command == "enable":
             enable_job(args.name, jobs_file=args.jobs_file, sync=not args.no_sync)
         elif args.command == "disable":
