@@ -1005,6 +1005,41 @@ def test_windows_rename_retries_legacy_handle_relative_class(
     assert roots == [456, 456]
 
 
+def test_windows_rename_retries_legacy_after_extended_class_access_denied(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    classes: list[int] = []
+
+    class Ntdll:
+        def NtSetInformationFile(
+            self,
+            _handle: object,
+            _io_status: object,
+            _information: object,
+            _size: int,
+            information_class: int,
+        ) -> int:
+            classes.append(information_class)
+            return -1 if information_class == 65 else 0
+
+        def RtlNtStatusToDosError(self, _status: int) -> int:
+            return 5
+
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_modules",
+        lambda: (object(), object(), Ntdll()),
+    )
+
+    assert atomic_files._windows_rename_handle(
+        123,
+        456,
+        "certificate.jsonl",
+        replace=True,
+    )
+    assert classes == [65, 10]
+
+
 def test_windows_mark_delete_reports_native_failure_after_one_byte_call(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

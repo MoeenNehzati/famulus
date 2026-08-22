@@ -1488,7 +1488,7 @@ def _windows_rename_handle(
         error = int(ntdll.RtlNtStatusToDosError(status))
         if error in {80, 183}:
             return False
-        if information_class == 65 and error in {1, 50, 87, 120}:
+        if information_class == 65 and error in {1, 5, 50, 87, 120}:
             continue
         if error in {1, 50, 87, 120}:
             raise AtomicWriteError(_CAPABILITY_ERROR)
