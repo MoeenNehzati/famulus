@@ -380,6 +380,7 @@ class _BoundVoyage:
                     state,
                     reckoning.global_revision,
                     reckoning.fault,
+                    is_leaf=run.active_child is None,
                 )
             active.append((run, definition))
             if run.active_child is None:
@@ -419,6 +420,8 @@ class _BoundVoyage:
         prompt: Prompt,
         global_revision: int,
         fault: Mapping[str, JsonValue] | None,
+        *,
+        is_leaf: bool,
     ) -> None:
         entered = run.entered_node
         turns = tuple(
@@ -433,7 +436,7 @@ class _BoundVoyage:
                 "active Prompt requires exactly one matching current Turn"
             )
         turn = turns[0]
-        if turn.revision != global_revision:
+        if is_leaf and turn.revision != global_revision:
             raise RutterStateError(
                 "active Prompt Turn revision differs from Reckoning revision"
             )

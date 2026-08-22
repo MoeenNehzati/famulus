@@ -910,6 +910,73 @@ def test_open_accepts_accepted_prompt_turn_with_matching_attached_child(
     assert opened._reckoning == reckoning
 
 
+def test_open_accepts_historical_prompt_revision_with_open_prompt_child(
+    reckoning_root: Path,
+) -> None:
+    definition = _definition(
+        {
+            "start": Prompt(
+                "Report.",
+                answer=AnswerSpec({"reported": {}}),
+                then="complete",
+            ),
+            "complete": Done(RunResult("complete", {})),
+        },
+        case_makers=(
+            CaseMakerProbe("attached", ExampleRutter, child_charter),
+        ),
+    )
+    parent_turn = Turn(
+        "turn-root",
+        "entry-root",
+        "start",
+        1,
+        _prompt_message("entry-root", "start"),
+        Response(1, "reported", {}),
+    )
+    child_turn = Turn(
+        "turn-child",
+        "entry-child",
+        "report",
+        2,
+        _prompt_message("entry-child", revision=2),
+        None,
+    )
+    child = ActiveRun(
+        "child-run",
+        "example",
+        1,
+        Charter({}),
+        EnteredNode("entry-child", "report"),
+        (child_turn,),
+        None,
+    )
+    root = ActiveRun(
+        "root-run",
+        "probe",
+        1,
+        Charter({}),
+        EnteredNode("entry-root", "start"),
+        (parent_turn,),
+        ActiveChild(
+            "attached-call",
+            "attached_case",
+            "attached",
+            parent_turn.record_id,
+            child,
+        ),
+    )
+    path = (reckoning_root / "nested-prompt.reckoning.json").absolute()
+    reckoning = Reckoning(3, 2, root, {}, None, None)
+    _ReckoningStore(path).create(reckoning)
+
+    opened = RutterRegistry({"probe": definition}, reckoning_root).open(
+        Path("nested-prompt.reckoning.json")
+    )
+
+    assert opened._reckoning == reckoning
+
+
 def test_open_accepts_faulted_prompt_after_response_without_child(
     reckoning_root: Path,
 ) -> None:
