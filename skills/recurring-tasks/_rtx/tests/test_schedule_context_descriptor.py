@@ -433,7 +433,7 @@ def test_descriptor_uses_live_platform_adapter_for_supported_hosts(
         assert loaded.bootstrap_python is None
     else:
         assert loaded.native_registration_root == context.paths.recurring_state_root / "task-wrappers"
-        assert loaded.bootstrap_python == Path(environ["PATH"]) / "python"
+        assert loaded.bootstrap_python == Path(environ["PATH"]) / "python.exe"
 
 
 @pytest.mark.parametrize(

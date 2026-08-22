@@ -5,6 +5,7 @@ import json
 import os
 import shlex
 import stat
+import subprocess
 import sys
 from pathlib import Path
 from typing import Mapping, Sequence
@@ -265,7 +266,13 @@ def _exec_command(command: list[str], env: Mapping[str, str], *, platform: str) 
             raise ActivationError("COMSPEC must name an absolute command processor on Windows")
         os.execve(
             comspec,
-            [comspec, "/d", "/s", "/c", "call", *command],
+            [
+                comspec,
+                "/d",
+                "/s",
+                "/c",
+                subprocess.list2cmdline(["call", *command]),
+            ],
             dict(env),
         )
     os.execvpe(command[0], command, dict(env))

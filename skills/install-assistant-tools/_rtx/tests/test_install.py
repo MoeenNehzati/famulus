@@ -403,8 +403,23 @@ def test_moved_installed_development_checkout_repair_rebases_pointer_context_and
     stale_pointer = first_context.paths.current_pointer.read_text(encoding="utf-8")
     stale_manifest_path = install._manifest_path(first_context)
     stale_manifest = stale_manifest_path.read_text(encoding="utf-8")
-    assert str(original) in json.dumps(json.loads(stale_pointer), ensure_ascii=False)
-    assert str(original) in json.dumps(json.loads(stale_manifest), ensure_ascii=False)
+    stale_pointer_payload = json.loads(stale_pointer)
+    assert any(
+        str(original) in value
+        for value in stale_pointer_payload.values()
+        if isinstance(value, str)
+    )
+
+    def contains_original(value: object) -> bool:
+        if isinstance(value, str):
+            return str(original) in value
+        if isinstance(value, dict):
+            return any(contains_original(item) for item in value.values())
+        if isinstance(value, list):
+            return any(contains_original(item) for item in value)
+        return False
+
+    assert contains_original(json.loads(stale_manifest))
 
     standard_context = install.resolve_installation_context(
         mode="standard",

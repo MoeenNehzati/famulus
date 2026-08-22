@@ -132,11 +132,22 @@ def _posix_account_home() -> Path:
     return _absolute(Path(value), label="host account home")
 
 
-def _resolve_executable(
-    name: str, *, environ: Mapping[str, str]
-) -> Path:
+def _which(name: str, *, platform: str, environ: Mapping[str, str]) -> str | None:
     search_path = environ.get("PATH", "")
-    selected = shutil.which(name, path=search_path)
+    candidates = (name,)
+    if platform == "win32" and not Path(name).suffix:
+        extensions = environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD").split(";")
+        candidates = tuple(name + extension.lower() for extension in extensions)
+    return next(
+        (match for candidate in candidates if (match := shutil.which(candidate, path=search_path))),
+        None,
+    )
+
+
+def _resolve_executable(
+    name: str, *, platform: str, environ: Mapping[str, str]
+) -> Path:
+    selected = _which(name, platform=platform, environ=environ)
     if not selected:
         raise ScheduleContextError(f"selected backend {name!r} is missing from the explicit PATH")
     path = _absolute(Path(selected), label=f"{name} executable")
@@ -153,7 +164,7 @@ def _bootstrap_python(*, platform: str, environ: Mapping[str, str]) -> Path | No
     if platform != "win32":
         return None
     for name in ("python", "py"):
-        selected = shutil.which(name, path=environ.get("PATH", ""))
+        selected = _which(name, platform=platform, environ=environ)
         if selected:
             return Path(selected).resolve(strict=True)
     raise ScheduleContextError("Windows bootstrap interpreter is missing (tried python and py)")
@@ -255,7 +266,10 @@ def _expected_descriptor(
     if not resolver.is_file():
         raise ScheduleContextError(f"runtime resolver is missing: {resolver}")
     launcher = load_launcher_configuration(config_root=context.paths.config_root)
-    backends = {name: _resolve_executable(name, environ=environ) for name in _BACKENDS}
+    backends = {
+        name: _resolve_executable(name, platform=platform, environ=environ)
+        for name in _BACKENDS
+    }
     bootstrap = _bootstrap_python(platform=platform, environ=environ)
     descriptor = ScheduleDescriptor(
         schema_version=1,

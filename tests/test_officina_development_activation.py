@@ -339,7 +339,10 @@ def test_generated_cmd_export_is_real_and_special_character_safe(tmp_path):
     assert exported.returncode == 0, exported.stderr
     script = tmp_path / "apply-export.cmd"
     script.write_text(
-        exported.stdout + "\r\necho %HOME%\r\necho %PYTHONPATH%\r\n",
+        "@echo off\r\n"
+        + exported.stdout
+        + "\r\necho %HOME%\r\n"
+        + "if defined PYTHONPATH (echo present) else echo unset\r\n",
         encoding="utf-8",
     )
     env = dict(os.environ)
@@ -354,7 +357,7 @@ def test_generated_cmd_export_is_real_and_special_character_safe(tmp_path):
     assert evaluated.returncode == 0, evaluated.stderr
     assert evaluated.stdout.splitlines() == [
         str(context.development_root / ".famulus" / "home"),
-        "%PYTHONPATH%",
+        "unset",
     ]
 
 

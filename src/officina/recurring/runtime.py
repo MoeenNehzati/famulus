@@ -87,8 +87,22 @@ def native_registration_root(context: InstallationContext, platform: str) -> Pat
     return _native_root(context, platform)
 
 
-def _resolve_executable(name: str, environ: Mapping[str, str]) -> Path:
-    selected = shutil.which(name, path=environ.get("PATH", ""))
+def _which(name: str, *, platform: str, environ: Mapping[str, str]) -> str | None:
+    candidates = (name,)
+    if platform == "win32" and not Path(name).suffix:
+        extensions = environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD").split(";")
+        candidates = tuple(name + extension.lower() for extension in extensions)
+    for candidate in candidates:
+        selected = shutil.which(candidate, path=environ.get("PATH", ""))
+        if selected:
+            return selected
+    return None
+
+
+def _resolve_executable(
+    name: str, environ: Mapping[str, str], *, platform: str
+) -> Path:
+    selected = _which(name, platform=platform, environ=environ)
     if not selected:
         raise RecurringPrerequisiteError(
             f"selected backend {name!r} is missing from the explicit PATH"
@@ -108,7 +122,7 @@ def _bootstrap_python(platform: str, environ: Mapping[str, str]) -> Path | None:
         return None
     for name in ("python", "py"):
         try:
-            selected = shutil.which(name, path=environ.get("PATH", ""))
+            selected = _which(name, platform=platform, environ=environ)
         except OSError as exc:
             raise RecurringPrerequisiteError(
                 f"Windows bootstrap interpreter lookup failed for {name!r}"
@@ -198,7 +212,10 @@ def _expected_schedule(*, runtime_root: Path, environ: Mapping[str, str], platfo
         raise RecurringPrerequisiteError(
             f"launcher configuration cannot reconstruct recurring authority: {exc}"
         ) from exc
-    backends = {name: _resolve_executable(name, environ) for name in _BACKENDS}
+    backends = {
+        name: _resolve_executable(name, environ, platform=platform)
+        for name in _BACKENDS
+    }
     bootstrap = _bootstrap_python(platform, environ)
     if pointer.runtime_source.parent.resolve(strict=False) != (runtime_root / "releases").resolve(strict=False):
         raise RecurringRuntimeError("current pointer runtime source is outside this runtime")

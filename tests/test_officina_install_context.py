@@ -1,6 +1,8 @@
 import json
 import os
 from pathlib import Path
+import shutil
+import sys
 
 import pytest
 import plistlib
@@ -178,6 +180,11 @@ def test_sanitized_scheduler_environment_reloads_active_context_and_descriptor(t
         executable = backend_root / name
         executable.write_text("#!/bin/sh\n", encoding="utf-8")
         executable.chmod(0o700)
+        if sys.platform == "win32":
+            shutil.copy2(sys.executable, executable.with_suffix(".exe"))
+    if sys.platform == "win32":
+        shutil.copy2(sys.executable, backend_root / "python.exe")
+        environ["PATHEXT"] = os.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD")
     authority_environment = {**environ, "PATH": str(backend_root), "SECRET_CANARY": "must-not-persist"}
     schedule = write_managed_schedule(runtime_root=runtime_root, environ=authority_environment)
     rendered = plistlib.loads(
@@ -400,8 +407,13 @@ def test_load_active_context_rejects_absent_or_malformed_pointer(
         )
 
 
-def test_load_active_context_rejects_computed_runtime_root_mismatch(tmp_path: Path) -> None:
-    runtime_root, environ, _ = _active_candidate(tmp_path, mode="standard")
+def test_load_active_context_rejects_computed_runtime_root_mismatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime_root, environ, _ = _active_candidate(
+        tmp_path, mode="standard", platform="linux"
+    )
+    monkeypatch.setattr(install_context_module.sys, "platform", "linux")
     environ["HOME"] = str(tmp_path / "different-home")
 
     with pytest.raises(InvalidInstallationContextError, match="runtime_root"):

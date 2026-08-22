@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import shlex
 import sys
 from pathlib import Path
 
@@ -104,7 +105,9 @@ def _write_healthy_installation(context: InstallationContext) -> None:
 def _context_environment(context: InstallationContext) -> dict[str, str]:
     environment = {
         "HOME": str(context.codex_home.parent),
-        "PATH": str(context.paths.user_bin),
+        "PATH": os.pathsep.join(
+            (str(context.paths.user_bin), str(Path(sys.executable).resolve().parent))
+        ),
     }
     if sys.platform == "win32":
         environment.update(
@@ -138,6 +141,12 @@ def _write_recurring_descriptor(context: InstallationContext) -> None:
     write_managed_schedule(
         runtime_root=context.paths.runtime_root,
         environ=_context_environment(context),
+    )
+
+
+def _backend_path(context: InstallationContext, name: str) -> Path:
+    return context.paths.user_bin / (
+        f"{name}.exe" if sys.platform == "win32" else name
     )
 
 
@@ -227,7 +236,7 @@ def test_doctor_names_missing_recurring_backend_and_uses_install_recovery(tmp_pa
     context = _standard_context(tmp_path)
     _write_healthy_installation(context)
     _write_recurring_descriptor(context)
-    (context.paths.user_bin / "claude").unlink()
+    _backend_path(context, "claude").unlink()
 
     recurring = next(check for check in _diagnose(context).checks if check.id == "recurring")
 
@@ -265,7 +274,7 @@ def test_doctor_validates_reconstruction_before_missing_descriptor_teardown_reco
     _write_healthy_installation(context)
     _write_recurring_descriptor(context)
     (context.paths.recurring_config_root / "schedule-descriptor.json").unlink()
-    (context.paths.user_bin / "claude").unlink()
+    _backend_path(context, "claude").unlink()
     context.paths.recurring_state_root.mkdir(parents=True)
     (context.paths.recurring_state_root / "registrations.json").write_text(
         '{"schema_version": 1, "installation_id": "standard", "registrations": ["daily"]}\n',
@@ -401,7 +410,8 @@ def test_recovery_commands_use_registered_routes_and_real_installer_flags(
     assert development_pointer.recovery == (
         "dispatcher --caller-skill install-assistant-tools "
         "install-assistant-tools._rtx.interface.scripts-install "
-        f"--dev-mode --repo-path {development_root} --non-interactive --yes"
+        f"--dev-mode --repo-path {shlex.quote(str(development_root))} "
+        "--non-interactive --yes"
     )
 
 
@@ -409,7 +419,10 @@ def test_doctor_accepts_windows_batch_command_origins(tmp_path: Path, monkeypatc
     context = _standard_context(tmp_path)
     _write_healthy_installation(context)
     for command in ("dispatcher", "invoke-skill", "llm-wakeup", "lw", "background_run"):
-        (context.paths.user_bin / command).rename(context.paths.user_bin / f"{command}.bat")
+        source = context.paths.user_bin / command
+        destination = context.paths.user_bin / f"{command}.bat"
+        if source.exists():
+            source.rename(destination)
     monkeypatch.setattr(
         doctor_module.shutil,
         "which",
@@ -476,7 +489,10 @@ def test_doctor_classifies_unhealthy_states_with_safe_recovery(
             **{**context.__dict__, "source_root": tmp_path / "missing-source"}
         )
     elif mutation == "stale-command":
-        (context.paths.user_bin / "dispatcher").unlink()
+        command = context.paths.user_bin / (
+            "dispatcher.bat" if sys.platform == "win32" else "dispatcher"
+        )
+        command.unlink()
     elif mutation == "manifest":
         (context.paths.install_state_root / "install-manifest.json").write_text("[]", encoding="utf-8")
     elif mutation == "recurring-malformed":
