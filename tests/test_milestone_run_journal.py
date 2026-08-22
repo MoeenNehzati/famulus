@@ -25,7 +25,8 @@ TIMELINE = SCRIPTS / "agent-timeline.py"
 
 
 def call(script: Path, *args: str, logs: Path, session: str = "sess-a", thread: str | None = None,
-         cwd: Path | None = None, env_overrides: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+         cwd: Path | None = None, env_overrides: dict[str, str] | None = None,
+         output_encoding: str | None = None) -> subprocess.CompletedProcess[str]:
     """Invoke a helper the way a shell on PATH would, with a private log root."""
     env = dict(os.environ)
     env["ASSISTANT_LOGS"] = str(logs)
@@ -39,7 +40,8 @@ def call(script: Path, *args: str, logs: Path, session: str = "sess-a", thread: 
         env.update(env_overrides)
     return subprocess.run(
         [sys.executable, str(script), *args],
-        env=env, capture_output=True, text=True, cwd=str(cwd or SCRIPTS.parent),
+        env=env, capture_output=True, text=True, encoding=output_encoding,
+        cwd=str(cwd or SCRIPTS.parent),
     )
 
 
@@ -115,7 +117,15 @@ def test_timeline_json_preserves_unicode_with_utf8_and_legacy_output(
     logs = tmp_path / "logs"
     call(MILESTONE, "--run", "unicode-run", "json payload 🙂", logs=logs)
 
-    utf8 = call(TIMELINE, "--run", "unicode-run", "--json", logs=logs)
+    utf8 = call(
+        TIMELINE,
+        "--run",
+        "unicode-run",
+        "--json",
+        logs=logs,
+        env_overrides={"PYTHONIOENCODING": "utf-8"},
+        output_encoding="utf-8",
+    )
     legacy = call(
         TIMELINE,
         "--run",
