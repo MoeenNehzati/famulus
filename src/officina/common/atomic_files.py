@@ -146,7 +146,7 @@ def _windows_file_rename_info(
     information = ctypes.cast(
         backing, ctypes.POINTER(_WinFileRenameInfo)
     ).contents
-    information.Flags = int(replace)
+    information.Flags = 0x1 | 0x2 if replace else 0
     information.RootDirectory = parent_handle
     information.FileNameLength = len(encoded)
     if encoded:

@@ -948,6 +948,16 @@ def test_windows_ffi_structures_keep_handle_fields_pointer_width() -> None:
     )
 
 
+def test_windows_extended_replace_allows_a_retained_destination_handle() -> None:
+    information = atomic_files._windows_file_rename_info(
+        "certificate.jsonl",
+        123,
+        replace=True,
+    )
+
+    assert information.Flags == 0x1 | 0x2
+
+
 def test_windows_file_disposition_boolean_has_native_one_byte_abi() -> None:
     fields = dict(atomic_files._WinFileDispositionInformation._fields_)
 
