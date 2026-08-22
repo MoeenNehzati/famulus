@@ -277,9 +277,14 @@ class CodexInstallTests(unittest.TestCase):
             # Famulus state dir instead of installed_path/workers.
             from officina.common.famulus_paths import resolve_famulus_paths
 
-            expected_worker_root = resolve_famulus_paths(
+            installed_paths = resolve_famulus_paths(
                 platform=sys.platform, home=install_home
-            ).worker_root
+            )
+            expected_worker_root = installed_paths.worker_root
+            self.assertEqual(
+                read_json(installed_paths.config_root / "launchers.json"),
+                {"schema_version": 1, "default_backend": "codex"},
+            )
             for agent in ("assistant", "collab", "coauthor"):
                 self.assertTrue(
                     (expected_worker_root / agent).is_dir(),
@@ -337,35 +342,48 @@ class CodexInstallTests(unittest.TestCase):
                 install_claude_home / "coauthor_claude_setting.json": installed_path / "profiles" / "coauthor_claude_setting.json",
             }
             bin_links = {
-                install_bin / "_agent_launch.py": installed_path / "skills" / "install-assistant-tools" / "_rtx/assets/bin" / "_agent_launch.py",
-                install_bin / "assistant": installed_path / "skills" / "install-assistant-tools" / "_rtx/assets/bin" / "assistant",
-                install_bin / "collab": installed_path / "skills" / "install-assistant-tools" / "_rtx/assets/bin" / "collab",
-                install_bin / "coauthor": installed_path / "skills" / "install-assistant-tools" / "_rtx/assets/bin" / "coauthor",
                 install_bin / "tmux-workspace": installed_path / "skills" / "install-assistant-tools" / "_rtx/assets/bin" / "tmux-workspace",
                 install_bin / "tw": installed_path / "skills" / "install-assistant-tools" / "_rtx/assets/bin" / "tmux-workspace",
-                install_bin / "assistant.bat": installed_path / "skills" / "install-assistant-tools" / "_rtx/assets/bin" / "assistant.bat",
-                install_bin / "collab.bat": installed_path / "skills" / "install-assistant-tools" / "_rtx/assets/bin" / "collab.bat",
-                install_bin / "coauthor.bat": installed_path / "skills" / "install-assistant-tools" / "_rtx/assets/bin" / "coauthor.bat",
             }
 
             for path, target in claude_links.items():
                 expect_symlink(path, target)
 
+            self.assertFalse(
+                (install_bin / "_agent_launch.py").exists(),
+                "retired shared agent wrapper must not be installed",
+            )
             if sys.platform == "win32":
-                windows_bin_files = [
-                    install_bin / "_agent_launch.py",
-                    install_bin / "assistant",
-                    install_bin / "collab",
-                    install_bin / "coauthor",
-                    install_bin / "assistant.bat",
-                    install_bin / "collab.bat",
-                    install_bin / "coauthor.bat",
-                ]
-                for path in windows_bin_files:
-                    expect_file(path)
+                for agent in ("assistant", "collab", "coauthor"):
+                    self.assertFalse(
+                        (install_bin / agent).exists(),
+                        f"Windows must install only the .bat {agent} launcher",
+                    )
+                    launcher = install_bin / f"{agent}.bat"
+                    expect_file(launcher)
+                    launcher_text = launcher.read_text(encoding="utf-8")
+                    self.assertIn("officina.launchers.agent", launcher_text)
+                    self.assertIn(f"--agent {agent}", launcher_text)
+                    self.assertIn("bootstrap", launcher_text)
+                    self.assertIn("resolvers", launcher_text)
+                    self.assertIn("launch.py", launcher_text)
+                    self.assertNotIn(str(installed_path), launcher_text)
                 self.assertFalse((install_bin / "tmux-workspace").exists())
                 self.assertFalse((install_bin / "tw").exists())
             else:
+                for agent in ("assistant", "collab", "coauthor"):
+                    launcher = install_bin / agent
+                    self.assertTrue(launcher.is_file(), f"{agent} launcher missing")
+                    self.assertFalse(launcher.is_symlink(), f"{agent} must be generated")
+                    self.assertTrue(os.access(launcher, os.X_OK), f"{agent} not executable")
+                    launcher_text = launcher.read_text(encoding="utf-8")
+                    self.assertIn("officina.launchers.agent", launcher_text)
+                    self.assertIn(f"'--agent', '{agent}'", launcher_text)
+                    self.assertIn("os.execv(RESOLVER", launcher_text)
+                    self.assertIn("bootstrap", launcher_text)
+                    self.assertIn("resolvers", launcher_text)
+                    self.assertIn("launch.py", launcher_text)
+                    self.assertNotIn(str(installed_path), launcher_text)
                 for path, target in bin_links.items():
                     expect_symlink(path, target)
 
@@ -405,10 +423,7 @@ class CodexInstallTests(unittest.TestCase):
             if sys.platform != "win32":
                 shell_text = install_shell_rc.read_text(encoding="utf-8")
                 self.assertIn(f'export PATH="{install_bin}:$PATH"', shell_text)
-                self.assertIn("export ASSISTANT_DEFAULT=codex", shell_text)
-                # $AI is dev_link.py's export, not run here (--no-dev-mode) —
-                # plugin-mode dispatcher already has its own baked-in
-                # repo_root fallback (asserted above), so it doesn't need it.
+                self.assertNotIn("ASSISTANT_DEFAULT", shell_text)
                 self.assertNotIn("export AI=", shell_text)
 
             launcher_env = python_test_env(
@@ -417,21 +432,17 @@ class CodexInstallTests(unittest.TestCase):
                     "HOME": str(install_home),
                     "CODEX_HOME": str(install_codex_home),
                     "CLAUDE_HOME": str(install_claude_home),
-                    "ASSISTANT_DEFAULT": "codex",
-                    # $AI deliberately NOT set: this is a plugin-mode install
-                    # (--no-dev-mode above); dev_link.py is the only thing
-                    # that exports $AI, and it didn't run here. The launcher
-                    # must resolve its own repo root and worker dir the same
-                    # way a real plugin-mode session would.
+                    # Legacy root/default selectors are deliberately absent:
+                    # the pointer and launchers.json own production selection.
                     "PATH": str(install_bin) + os.pathsep + os.environ.get("PATH", ""),
                 },
             )
             # python_test_env() starts from a copy of this process's own
-            # environment; explicitly drop any ambient $AI (e.g. this repo's
-            # own dev-mode install sets it) so the launcher genuinely sees
-            # plugin-mode ($AI unset), not whatever happens to be exported
-            # in the environment running this test.
+            # environment. Drop every ambient legacy selector so this exercises
+            # only the production pointer and durable launcher configuration.
             launcher_env.pop("AI", None)
+            launcher_env.pop("FAMULUS_REPO_ROOT", None)
+            launcher_env.pop("ASSISTANT_DEFAULT", None)
             # "dispatcher" now execs into the stable managed-runtime resolver
             # (officina.install.resolvers.launch) instead of running
             # self-contained against this repo checkout. install_cmd above

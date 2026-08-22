@@ -1,15 +1,10 @@
 content:
 - _agent_launchers\.py
-- assets/bin/_agent_launch\.py
-- assets/bin/assistant
-- assets/bin/assistant\.bat
-- assets/bin/background_run
-- assets/bin/background_run\.bat
-- assets/bin/coauthor
-- assets/bin/coauthor\.bat
-- assets/bin/collab
-- assets/bin/collab\.bat
 - assets/bin/tmux\-workspace
+- assets/bin/tw\-break
+- assets/bin/tw\-join
+- assets/bin/tw\-monitor
+- assets/bin/tw\-help
 dependencies:
 - blueprint:
     base: module-root
@@ -24,7 +19,7 @@ dependencies:
   source: install-assistant-tools._rtx.source.rtx-install-launcher-init
   version: 1
 description: Installs selected assistant command launchers, profile configuration,
-  worker directories, and default-assistant configuration.
+  worker directories, and durable default-backend configuration.
 gateway:
   language: Python
   path: _agent_launchers.py
@@ -33,20 +28,17 @@ interfaces:
   install-assistant-tools._rtx.source.rtx-agent-launchers.interface.scripts-launchers:
     content:
     - _agent_launchers\.py
-    - assets/bin/_agent_launch\.py
-    - assets/bin/assistant
-    - assets/bin/assistant\.bat
-    - assets/bin/background_run
-    - assets/bin/background_run\.bat
-    - assets/bin/coauthor
-    - assets/bin/coauthor\.bat
-    - assets/bin/collab
-    - assets/bin/collab\.bat
     - assets/bin/tmux\-workspace
+    - assets/bin/tw\-break
+    - assets/bin/tw\-join
+    - assets/bin/tw\-monitor
+    - assets/bin/tw\-help
     uses_interfaces:
     - interface: common.interface.toml-io
       version: 1
     - interface: common.interface.famulus-paths
+      version: 1
+    - interface: launchers.interface.agent
       version: 1
     contract:
       arguments:
@@ -78,7 +70,7 @@ interfaces:
             sensitivity: user-private
       caller_warnings:
       - external-side-effect: Non-dry-run execution installs selected launchers and
-          profiles and may update the shell startup file.
+          profiles and may atomically update launchers.json.
       direct_io:
         network: []
         reads:
@@ -97,7 +89,7 @@ interfaces:
         writes:
         - access: configure
           content: launchers and profile configuration and worker directories and
-            shell default
+            durable backend default
           formats:
           - python
           - shell
@@ -106,7 +98,7 @@ interfaces:
           id: write-1
           medium: home-filesystem
           path: caller-selected home and bin and assistant config paths; worker directories
-            default to the platform Famulus state dir in plugin mode and to <repo-root>/workers
+            default to the platform Famulus state dir in standard mode and to <repo-root>/.famulus workers
             in development mode
           sensitivity: user-private
           system: filesystem
@@ -197,14 +189,15 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Install per-agent bin launcher, profile config, worker dir, and ASSISTANT_DEFAULT
-      for the given agents. Direct invocation of this interface installs exactly the
-      --agents selection; when this launcher installation runs as part of the phase-entry
-      orchestrator, assistant is additionally forced into the installed set regardless
+    description: Install per-agent bin launcher, profile config, worker dir, and durable
+      launchers.json backend selection for the given agents. Direct invocation of this interface installs exactly the
+      --agents selection; tw selects one complete tmux-workspace, tw, tw-break,
+      tw-join, tw-monitor, and tw-help bundle. When this runs as part of the five-stage apply orchestrator,
+      assistant is additionally forced into the installed set regardless
       of selection, because it is a required invoke-skill prerequisite (feedback item
-      18) and is not user-selectable. Worker directories are created under the platform
-      Famulus state dir in plugin mode (--mode plugin, the default plugin-cache checkout
-      is a public/immutable tree) or under <repo-root>/workers in development mode
+      18) and is not user-selectable. background_run is installed with invoke-skill.
+      Worker directories are created under the platform Famulus state dir in standard mode
+      or under the selected isolated context in development mode
       (--mode development, an explicit live checkout).
     process_binding:
       entry: Interface
@@ -251,6 +244,8 @@ uses_interfaces:
 - interface: common.interface.toml-io
   version: 1
 - interface: common.interface.famulus-paths
+  version: 1
+- interface: launchers.interface.agent
   version: 1
 version: 1
 maturity: stable

@@ -18,12 +18,23 @@ SCRIPT = SKILL_DIR / "_healthcheck_probe.py"
 
 
 @pytest.fixture(autouse=True)
-def restore_runtime_paths():
+def restore_runtime_paths(monkeypatch):
     """Restore shared module paths after every healthcheck test."""
     original = (
         healthcheck.LOG_DIR,
         healthcheck.HEALTHCHECK_LOG,
         healthcheck.JOBS_FILE,
+    )
+    monkeypatch.setattr(
+        healthcheck,
+        "production_schedule_context",
+        lambda: healthcheck.ScheduleContext(
+            skill_dir=healthcheck.SKILL_DIR,
+            jobs_file=healthcheck.JOBS_FILE,
+            log_dir=healthcheck.LOG_DIR,
+            unit_dir=Path("/tmp/famulus-healthcheck-test-units"),
+            live=False,
+        ),
     )
     yield
     (
@@ -84,64 +95,6 @@ def test_systemd_manager_empty_output_reports_unresponsive():
             reason = mod.check_systemd_manager()
         assert reason == "systemd user manager: unresponsive"
     print("PASS: empty systemctl output reports 'unresponsive'")
-
-
-# ── check_environment ──────────────────────────────────────────────────────────
-
-def test_environment_not_set_fails():
-    with tempfile.TemporaryDirectory() as d:
-        mod = _load(Path(d))
-        backend = mock.Mock()
-        backend.get_agent_command_template.return_value = None
-        with mock.patch.object(mod, "platform_schedule_backend", return_value=backend):
-            reason = mod.check_environment()
-        assert reason == "AI_AGENT_COMMAND_TEMPLATE: not set"
-    print("PASS: missing AI_AGENT_COMMAND_TEMPLATE fails")
-
-
-def test_environment_command_not_found_fails():
-    with tempfile.TemporaryDirectory() as d:
-        mod = _load(Path(d))
-        backend = mock.Mock()
-        backend.get_agent_command_template.return_value = "invoke-skill {skill}"
-        backend.job_search_dirs.return_value = [Path("/opt/famulus/bin")]
-        with mock.patch.object(mod, "platform_schedule_backend", return_value=backend), \
-             mock.patch.object(mod.shutil, "which", return_value=None):
-            reason = mod.check_environment()
-        assert reason == "AI_AGENT_COMMAND_TEMPLATE: command not found: invoke-skill"
-    print("PASS: unresolvable command in template fails")
-
-
-def test_environment_ok_when_set_and_resolvable():
-    with tempfile.TemporaryDirectory() as d:
-        mod = _load(Path(d))
-        backend = mock.Mock()
-        backend.get_agent_command_template.return_value = "invoke-skill {skill}"
-        backend.job_search_dirs.return_value = [Path("/opt/famulus/bin")]
-        with mock.patch.object(mod, "platform_schedule_backend", return_value=backend), \
-             mock.patch.object(mod.shutil, "which", return_value="/usr/local/bin/invoke-skill"):
-            assert mod.check_environment() is None
-    print("PASS: set + resolvable template is OK")
-
-
-def test_environment_strips_bash_quoting():
-    with tempfile.TemporaryDirectory() as d:
-        mod = _load(Path(d))
-        backend = mock.Mock()
-        backend.get_agent_command_template.return_value = "invoke-skill {skill}"
-        scheduler_dirs = [Path("/opt/famulus/bin"), Path("/usr/bin")]
-        backend.job_search_dirs.return_value = scheduler_dirs
-        with mock.patch.object(mod, "platform_schedule_backend", return_value=backend), \
-             mock.patch.object(mod.shutil, "which", return_value="/usr/bin/invoke-skill") as which:
-            assert mod.check_environment() is None
-            # Resolution must use the directories the SCHEDULER gives its jobs,
-            # not this process's PATH. Asserting only that a path kwarg exists
-            # would still pass for `path=os.environ["PATH"]`, i.e. the bug.
-            assert which.call_args.args[0] == "invoke-skill"
-            assert which.call_args.kwargs["path"] == os.pathsep.join(
-                str(part) for part in scheduler_dirs
-            )
-    print("PASS: bash $'...' quoting is stripped before resolving the command")
 
 
 # ── check_job ───────────────────────────────────────────────────────────────────
@@ -335,113 +288,23 @@ def test_log_appends_once_during_manual_invocation():
 
 # ── main(): failure aggregation and reporting ──────────────────────────────────
 
-def test_main_reports_success_when_no_problems():
-    with tempfile.TemporaryDirectory() as d:
-        mod = _load(Path(d))
-        mod.JOBS_FILE.write_text("jobs: []\n")
-        with mock.patch.object(mod, "check_systemd_manager", return_value=None), \
-             mock.patch.object(mod, "check_environment", return_value=None):
-            exit_code = mod.main()
-        assert exit_code == 0
-        assert "OK: All checks passed" in mod.HEALTHCHECK_LOG.read_text()
-    print("PASS: main() reports success when nothing fails")
+def test_main_delegates_healthcheck_to_managed_boundary():
+    mod = _load(Path("/tmp"))
+    with mock.patch.object(mod, "run_managed_control", return_value=0) as managed:
+        assert mod.main([]) == 0
+        managed.assert_called_once_with("healthcheck")
 
 
-def test_main_logs_failure_summary():
-    with tempfile.TemporaryDirectory() as d:
-        mod = _load(Path(d))
-        mod.JOBS_FILE.write_text(
-                "jobs:\n"
-                "  - name: job-a\n"
-                "    command: 'true'\n"
-                "    schedule: '0 * * * *'\n"
-            "    enabled: true\n"
-        )
-        with mock.patch.object(mod, "check_systemd_manager", return_value="systemd user manager: degraded"), \
-             mock.patch.object(mod, "check_environment", return_value=None), \
-             mock.patch.object(mod, "check_job", return_value="job-a: no log file"):
-            exit_code = mod.main()
-        report = mod.HEALTHCHECK_LOG.read_text()
-        assert "FAIL: 2 problem(s) found" in report
-        assert exit_code != 0
-    print("PASS: main() logs the failure summary")
+def test_main_returns_managed_healthcheck_failure_status():
+    mod = _load(Path("/tmp"))
+    with mock.patch.object(mod, "run_managed_control", return_value=1):
+        assert mod.main([]) == 1
 
 
-def test_main_does_not_send_desktop_notifications():
-    with tempfile.TemporaryDirectory() as d:
-        mod = _load(Path(d))
-        mod.JOBS_FILE.write_text("jobs: []\n")
-        with mock.patch.object(mod, "check_systemd_manager", return_value=None), \
-             mock.patch.object(mod, "check_environment", return_value=None), \
-             mock.patch("subprocess.run") as run:
-            assert mod.main() == 0
-        run.assert_not_called()
-
-
-def test_main_skips_disabled_jobs():
-    with tempfile.TemporaryDirectory() as d:
-        mod = _load(Path(d))
-        mod.JOBS_FILE.write_text(
-                "jobs:\n"
-                "  - name: disabled-job\n"
-                "    command: 'true'\n"
-                "    schedule: '0 * * * *'\n"
-            "    enabled: false\n"
-        )
-        with mock.patch.object(mod, "check_systemd_manager", return_value=None), \
-             mock.patch.object(mod, "check_environment", return_value=None), \
-             mock.patch.object(mod, "check_job") as check_job:
-            exit_code = mod.main()
-        check_job.assert_not_called()
-        assert exit_code == 0
-    print("PASS: main() skips disabled jobs entirely")
-
-
-def test_main_handles_missing_jobs_file_gracefully():
-    with tempfile.TemporaryDirectory() as d:
-        mod = _load(Path(d))
-        # JOBS_FILE was never written -> open() raises, main() should log and return
-        exit_code = mod.main()  # must not raise
-        assert "Failed to load jobs.yaml" in mod.HEALTHCHECK_LOG.read_text()
-        assert exit_code != 0
-    print("PASS: main() handles a missing/unreadable jobs.yaml without crashing")
-
-
-def test_main_returns_nonzero_when_problems_found():
-    with tempfile.TemporaryDirectory() as d:
-        mod = _load(Path(d))
-        mod.JOBS_FILE.write_text(
-            "jobs:\n"
-            "  - name: job-a\n"
-            "    schedule: '0 * * * *'\n"
-            "    enabled: true\n"
-        )
-        with mock.patch.object(mod, "check_systemd_manager", return_value=None), \
-             mock.patch.object(mod, "check_environment", return_value=None), \
-             mock.patch.object(mod, "check_job", return_value="job-a: no log file"):
-            exit_code = mod.main()
-        assert exit_code != 0
-    print("PASS: main() returns a nonzero exit code when problems are found")
-
-
-def test_main_returns_zero_when_no_problems():
-    with tempfile.TemporaryDirectory() as d:
-        mod = _load(Path(d))
-        mod.JOBS_FILE.write_text("jobs: []\n")
-        with mock.patch.object(mod, "check_systemd_manager", return_value=None), \
-             mock.patch.object(mod, "check_environment", return_value=None):
-            exit_code = mod.main()
-        assert exit_code == 0
-    print("PASS: main() returns 0 when no problems are found")
-
-
-def test_main_returns_nonzero_on_load_failure():
-    with tempfile.TemporaryDirectory() as d:
-        mod = _load(Path(d))
-        mod.JOBS_FILE.write_text("not: valid: yaml: [")
-        exit_code = mod.main()
-        assert exit_code != 0
-    print("PASS: main() returns a nonzero exit code when jobs.yaml fails to load")
+def test_main_rejects_source_local_healthcheck_arguments(capsys):
+    mod = _load(Path("/tmp"))
+    assert mod.main(["--jobs-file", "/tmp/other"]) == 2
+    assert "unexpected arguments" in capsys.readouterr().err
 
 
 if __name__ == "__main__":
@@ -449,10 +312,6 @@ if __name__ == "__main__":
     test_systemd_manager_degraded_is_ok()
     test_systemd_manager_other_state_fails_with_reason()
     test_systemd_manager_empty_output_reports_unresponsive()
-    test_environment_not_set_fails()
-    test_environment_command_not_found_fails()
-    test_environment_ok_when_set_and_resolvable()
-    test_environment_strips_bash_quoting()
     test_check_job_with_no_recorded_run_fails()
     test_check_job_fresh_log_and_active_timer_is_ok()
     test_check_job_stale_run_fails()
@@ -463,14 +322,6 @@ if __name__ == "__main__":
     test_parse_interval_daily()
     test_log_relies_on_stdout_redirection_during_cron_invocation()
     test_log_appends_once_during_manual_invocation()
-    test_main_reports_success_when_no_problems()
-    test_main_logs_failure_summary()
-    test_main_does_not_send_desktop_notifications()
-    test_main_skips_disabled_jobs()
-    test_main_handles_missing_jobs_file_gracefully()
-    test_main_returns_nonzero_when_problems_found()
-    test_main_returns_zero_when_no_problems()
-    test_main_returns_nonzero_on_load_failure()
     print("\nAll tests passed.")
 
 

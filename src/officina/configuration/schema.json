@@ -269,6 +269,7 @@
         "command": {"$ref": "#/definitions/nonEmptyString"},
         "schedule": {"$ref": "#/definitions/nonEmptyString"},
         "enabled": {"type": "boolean"},
+        "backend": {"type": "string", "enum": ["claude", "codex"]},
         "success": {
           "type": "object",
           "additionalProperties": false,

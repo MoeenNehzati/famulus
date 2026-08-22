@@ -24,9 +24,10 @@ class CodexAdapter:
     def transcript_root(self) -> Path:
         """Return Codex's local session transcript directory."""
 
-        return Path(
-            os.environ.get("LLM_WAKEUP_CODEX_DIR", "~/.codex/sessions")
-        ).expanduser()
+        configured = os.environ.get("LLM_WAKEUP_CODEX_DIR")
+        if configured:
+            return Path(configured).expanduser()
+        return Path(os.environ.get("CODEX_HOME", "~/.codex")).expanduser() / "sessions"
 
     def include_log(self, path: Path) -> bool:
         """Accept Codex JSONL rollout transcripts and reject other files."""

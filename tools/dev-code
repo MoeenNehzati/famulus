@@ -1,0 +1,26 @@
+#!/bin/sh
+set -eu
+
+tool_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+checkout=$(CDPATH= cd -- "$tool_dir/.." && pwd -P)
+activation="$checkout/.famulus/bin/famulus-env"
+
+if [ ! -x "$activation" ]; then
+    echo "dev-code: development runtime is not installed; run the Famulus development install first" >&2
+    exit 2
+fi
+
+code_executable=$(command -v code 2>/dev/null || true)
+if [ -z "$code_executable" ]; then
+    echo "dev-code: code executable not found on the host PATH" >&2
+    exit 2
+fi
+case "$code_executable" in
+    /*) ;;
+    *)
+        code_dir=$(CDPATH= cd -- "$(dirname -- "$code_executable")" && pwd -P)
+        code_executable="$code_dir/$(basename -- "$code_executable")"
+        ;;
+esac
+
+exec "$activation" exec -- "$code_executable" "$checkout" "$@"

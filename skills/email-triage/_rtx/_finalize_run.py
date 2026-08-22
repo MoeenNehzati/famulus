@@ -77,7 +77,9 @@ def default_state_dir(*, home: Path | None = None) -> Path:
         return Path(override)
     from officina.common.famulus_paths import resolve_famulus_paths
 
-    return resolve_famulus_paths(platform=sys.platform, home=home or Path.home()).email_triage_state_root
+    return resolve_famulus_paths(
+        platform=sys.platform, home=home or Path.home(), environ=os.environ
+    ).email_triage_state_root
 
 
 STATUS_FILE = default_state_dir() / "status.json"

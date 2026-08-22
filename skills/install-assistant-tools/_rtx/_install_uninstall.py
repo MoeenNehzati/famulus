@@ -25,21 +25,36 @@ skills tree, worker dirs (may contain data), installed Python dependencies.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import ntpath
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import Mapping
+
+REPO_SRC = Path(__file__).resolve().parents[3] / "src"
+if str(REPO_SRC) not in sys.path:
+    sys.path.insert(0, str(REPO_SRC))
+
+from officina.install.context import (
+    InstallationContext,
+    resolve_installation_context,
+    validate_development_boundaries,
+)
+from officina.recurring.native import inspect_registration_namespace
+from officina.recurring.runtime import native_registration_root
 
 if not __package__:
     sys.path.insert(0, str(Path(__file__).parent))
 
 if __package__:
-    from ._state_record import Manifest, manifest_path
+    from ._state_record import InstallManifestError, Manifest
 else:
-    from _state_record import Manifest, manifest_path  # noqa: E402
+    from _state_record import InstallManifestError, Manifest  # noqa: E402
 if __package__:
     from ._shell_block import BLOCK_BEGIN, BLOCK_END
 else:
@@ -91,50 +106,83 @@ class Report:
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def strip_marker_block(
-    path: Path, begin: str, end: str, label: str, report: Report, dry_run: bool
-) -> None:
+    path: Path,
+    begin: str,
+    end: str,
+    label: str,
+    report: Report,
+    dry_run: bool,
+    expected_identity: str | None = None,
+    separator_identity: str | None = None,
+    separator_length: int | None = None,
+) -> bool:
     """Remove the begin/end-delimited managed block from a text file."""
     if not path.exists():
         report.add("skipped", f"{label}: {path}", "file does not exist")
-        return
+        return True
     try:
-        original = path.read_text(encoding="utf-8")
+        original = path.read_bytes()
     except OSError as exc:
         report.add("FAILED", f"{label}: {path}", f"could not read: {exc}")
-        return
-    if begin not in original:
+        return False
+    begin_bytes = begin.encode("utf-8")
+    end_bytes = end.encode("utf-8")
+    lines = original.splitlines(keepends=True)
+    spans: list[tuple[int, int, str]] = []
+    active_start: int | None = None
+    for index, line in enumerate(lines):
+        marker = line.rstrip(b"\r\n")
+        if active_start is None and marker == begin_bytes:
+            active_start = index
+        elif active_start is not None and marker == end_bytes:
+            raw = b"".join(lines[active_start : index + 1])
+            spans.append((active_start, index, hashlib.sha256(raw).hexdigest()))
+            active_start = None
+    if not spans:
+        if active_start is not None:
+            report.add("FAILED", f"{label}: {path}", "managed block is incomplete; preserved")
+            return False
         report.add("skipped", f"{label}: {path}", "no managed block found")
-        return
+        return True
+    if isinstance(expected_identity, str):
+        matches = [span for span in spans if span[2] == expected_identity]
+        if len(matches) != 1:
+            detail = "managed block was modified; preserved" if not matches else "multiple identity-matching blocks are ambiguous; preserved"
+            report.add("skipped", f"{label}: {path}", detail)
+            return not matches
+        start_index, end_index, _identity = matches[0]
+    else:
+        start_index, end_index, _identity = spans[0]
     if dry_run:
         print(f"Would strip managed block from {path}")
         report.add("removed", f"{label}: {path}", "(dry-run)")
-        return
+        return True
 
-    lines = original.splitlines(keepends=True)
-    filtered: list[str] = []
-    inside = False
-    for line in lines:
-        stripped = line.rstrip("\n")
-        if stripped == begin:
-            inside = True
-            # the installer writes a blank separator line before the block;
-            # drop it too so stripping restores the file exactly
-            if filtered and not filtered[-1].strip():
-                filtered.pop()
-            continue
-        if stripped == end:
-            inside = False
-            continue
-        if not inside:
-            filtered.append(line)
+    remove_start = sum(len(line) for line in lines[:start_index])
+    remove_end = sum(len(line) for line in lines[: end_index + 1])
+    if (
+        start_index > 0
+        and isinstance(separator_identity, str)
+        and isinstance(separator_length, int)
+        and not isinstance(separator_length, bool)
+    ):
+        separator = lines[start_index - 1]
+        if (
+            len(separator) == separator_length
+            and hashlib.sha256(separator).hexdigest() == separator_identity
+        ):
+            remove_start -= len(separator)
+    filtered = original[:remove_start] + original[remove_end:]
     try:
         fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".tmp.")
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.writelines(filtered)
+        with os.fdopen(fd, "wb") as f:
+            f.write(filtered)
         os.replace(tmp, path)
         report.add("removed", f"{label}: {path}", "managed block stripped")
+        return True
     except OSError as exc:
         report.add("FAILED", f"{label}: {path}", f"could not write: {exc}")
+        return False
 
 
 def remove_file(path: Path, label: str, report: Report, dry_run: bool) -> None:
@@ -167,9 +215,56 @@ def remove_tree(path: Path, label: str, report: Report, dry_run: bool) -> None:
         report.add("FAILED", f"{label}: {path}", f"could not remove: {exc}")
 
 
+def remove_manifest_file(entry: dict, report: Report, dry_run: bool) -> bool:
+    """Remove an owned file unless its recorded content identity changed."""
+    path = Path(entry["path"])
+    expected = entry.get("sha256")
+    if isinstance(expected, str):
+        if not path.exists():
+            report.add("skipped", f"generated file: {path}", "does not exist")
+            return True
+        try:
+            actual = hashlib.sha256(path.read_bytes()).hexdigest()
+        except OSError as exc:
+            report.add("FAILED", f"generated file: {path}", f"could not read: {exc}")
+            return False
+        if actual != expected:
+            report.add(
+                "skipped",
+                f"generated file: {path}",
+                "modified since install; preserved",
+            )
+            return True
+    before = report.failed
+    remove_file(path, "generated file", report, dry_run)
+    return report.failed == before
+
+
+def remove_manifest_tree(entry: dict, report: Report, dry_run: bool) -> bool:
+    path = Path(entry["path"])
+    if not path.exists():
+        report.add("skipped", f"generated tree: {path}", "does not exist")
+        return True
+    expected = entry.get("tree_sha256")
+    try:
+        actual = Manifest.tree_identity(path)
+    except OSError as exc:
+        report.add("FAILED", f"generated tree: {path}", f"could not inspect: {exc}")
+        return False
+    if not isinstance(expected, str) or actual != expected:
+        report.add("skipped", f"generated tree: {path}", "modified since install; preserved")
+        return True
+    before = report.failed
+    remove_tree(path, "generated tree", report, dry_run)
+    return report.failed == before
+
+
 # ── Steps ─────────────────────────────────────────────────────────────────────
 
-def uninstall_git_hooks(repo_root: Path, report: Report, dry_run: bool) -> None:
+def remove_manifest_git_hooks(entry: dict, report: Report, dry_run: bool) -> bool:
+    repo_root = Path(entry["path"])
+    installed_value = entry.get("installed_value", ".githooks")
+    prior_value = entry.get("prior_value")
     try:
         result = subprocess.run(
             ["git", "-C", str(repo_root), "config", "--get", "core.hooksPath"],
@@ -177,22 +272,31 @@ def uninstall_git_hooks(repo_root: Path, report: Report, dry_run: bool) -> None:
         )
     except OSError as exc:
         report.add("FAILED", "git core.hooksPath", f"git unavailable: {exc}")
-        return
-    if result.returncode != 0 or result.stdout.strip() != ".githooks":
-        report.add("skipped", "git core.hooksPath", "not set to .githooks")
-        return
+        return False
+    if result.returncode != 0 or result.stdout.strip() != installed_value:
+        report.add("skipped", "git core.hooksPath", "modified since install; preserved")
+        return True
     if dry_run:
-        print(f"Would unset core.hooksPath in {repo_root}")
+        verb = "restore" if isinstance(prior_value, str) else "unset"
+        print(f"Would {verb} core.hooksPath in {repo_root}")
         report.add("removed", "git core.hooksPath", "(dry-run)")
-        return
-    unset = subprocess.run(
-        ["git", "-C", str(repo_root), "config", "--unset", "core.hooksPath"],
+        return True
+    arguments = ["git", "-C", str(repo_root), "config"]
+    if isinstance(prior_value, str):
+        arguments.extend(("core.hooksPath", prior_value))
+    else:
+        arguments.extend(("--unset", "core.hooksPath"))
+    changed = subprocess.run(
+        arguments,
         capture_output=True, text=True, encoding="utf-8", errors="strict",
     )
-    if unset.returncode == 0:
-        report.add("removed", "git core.hooksPath")
+    if changed.returncode == 0:
+        detail = f"restored {prior_value}" if isinstance(prior_value, str) else "unset"
+        report.add("removed", "git core.hooksPath", detail)
+        return True
     else:
-        report.add("FAILED", "git core.hooksPath", unset.stderr.strip())
+        report.add("FAILED", "git core.hooksPath", changed.stderr.strip())
+        return False
 
 
 def uninstall_pip_package(report: Report, dry_run: bool) -> None:
@@ -321,13 +425,69 @@ def remove_manifest_json_hooks(entry: dict, report: Report, dry_run: bool) -> bo
         return False
 
 
+def _normalized_windows_component(value: str) -> str:
+    return ntpath.normcase(ntpath.normpath(value))
+
+
+def _ordered_subsequence(required: list[str], available: list[str]) -> bool:
+    position = 0
+    for value in available:
+        if position < len(required) and value == required[position]:
+            position += 1
+    return position == len(required)
+
+
+def _path_after_owned_registry_removal(
+    entry: dict, *, current_path: str, current_type: int
+) -> str | None:
+    path_value = entry.get("path_value")
+    prior_path = entry.get("prior_path")
+    prior_identity = entry.get("prior_path_sha256")
+    installed_identity = entry.get("installed_path_sha256")
+    recorded_type = entry.get("value_type")
+    if (
+        not isinstance(path_value, str)
+        or path_value != entry.get("path")
+        or not isinstance(prior_path, str)
+        or not isinstance(prior_identity, str)
+        or not isinstance(installed_identity, str)
+        or not isinstance(recorded_type, int)
+        or isinstance(recorded_type, bool)
+        or current_type != recorded_type
+    ):
+        return None
+    if hashlib.sha256(prior_path.encode("utf-8")).hexdigest() != prior_identity:
+        return None
+    prior_parts = [part for part in prior_path.split(";") if part]
+    installed_path = ";".join([path_value, *prior_parts])
+    if hashlib.sha256(installed_path.encode("utf-8")).hexdigest() != installed_identity:
+        return None
+
+    normalized_owned = _normalized_windows_component(path_value)
+    raw_parts = current_path.split(";")
+    normalized_prior = [_normalized_windows_component(part) for part in prior_parts]
+    for index, part in enumerate(raw_parts):
+        if not part or _normalized_windows_component(part) != normalized_owned:
+            continue
+        kept = raw_parts[:index] + raw_parts[index + 1 :]
+        normalized_kept = [
+            _normalized_windows_component(value) for value in kept if value
+        ]
+        if _ordered_subsequence(normalized_prior, normalized_kept):
+            return ";".join(kept)
+    return None
+
+
 def remove_registry_env(entry: dict, report: Report, dry_run: bool) -> bool:
     if sys.platform != "win32":
         report.add("skipped", "windows registry env", "not on Windows")
         return True
-    if dry_run:
-        print("Would remove registry PATH entry and env vars")
-        report.add("removed", "windows registry env", "(dry-run)")
+    if entry.get("path_inserted") is not True:
+        report.add(
+            "skipped",
+            "windows registry env",
+            "no recorded installer-owned PATH insertion; preserved",
+        )
         return True
     try:
         import winreg
@@ -336,19 +496,79 @@ def remove_registry_env(entry: dict, report: Report, dry_run: bool) -> bool:
             winreg.HKEY_CURRENT_USER, "Environment", 0,
             winreg.KEY_READ | winreg.KEY_WRITE,
         ) as key:
-            bin_str = entry.get("path", "")
             try:
                 current_path, path_type = winreg.QueryValueEx(key, "PATH")
-                parts = [p for p in current_path.split(";") if p and p != bin_str]
-                winreg.SetValueEx(key, "PATH", 0, path_type, ";".join(parts))
+                transaction_state = entry.get("transaction_state", "committed")
+                if transaction_state == "pending":
+                    prior_path = entry.get("prior_path")
+                    prior_identity = entry.get("prior_path_sha256")
+                    installed_identity = entry.get("installed_path_sha256")
+                    current_identity = hashlib.sha256(
+                        current_path.encode("utf-8")
+                    ).hexdigest()
+                    identities_valid = (
+                        isinstance(prior_path, str)
+                        and isinstance(prior_identity, str)
+                        and isinstance(installed_identity, str)
+                        and hashlib.sha256(prior_path.encode("utf-8")).hexdigest()
+                        == prior_identity
+                        and entry.get("value_type") == path_type
+                    )
+                    if identities_valid and current_identity == prior_identity:
+                        report.add(
+                            "skipped",
+                            "windows registry PATH",
+                            "pending insertion was not applied; registry already matches prior value",
+                        )
+                        return True
+                    if not (identities_valid and current_identity == installed_identity):
+                        report.add(
+                            "left",
+                            "windows registry PATH pending intent",
+                            "current PATH is neither the exact prior nor intended value; preserved for explicit retry",
+                        )
+                        return False
+                restored_path = _path_after_owned_registry_removal(
+                    entry, current_path=current_path, current_type=path_type
+                )
+                if restored_path is None:
+                    report.add(
+                        "skipped",
+                        "windows registry PATH",
+                        "recorded/current PATH identity does not prove a safe owned removal; preserved",
+                    )
+                elif dry_run:
+                    print("Would remove installer-owned registry PATH component")
+                    report.add("removed", "windows registry PATH", "(dry-run)")
+                else:
+                    winreg.SetValueEx(key, "PATH", 0, path_type, restored_path)
+                    report.add("removed", "windows registry PATH")
             except FileNotFoundError:
                 pass
             for name in entry.get("names", []):
+                if str(name).casefold() == "path":
+                    continue
                 try:
-                    winreg.DeleteValue(key, name)
+                    current_value, _current_type = winreg.QueryValueEx(key, name)
                 except FileNotFoundError:
-                    pass
-        report.add("removed", "windows registry env", f"PATH entry + {entry.get('names')}")
+                    continue
+                expected_values = entry.get("values", {})
+                if isinstance(expected_values, dict) and name in expected_values:
+                    if current_value != expected_values[name]:
+                        report.add(
+                            "skipped",
+                            f"windows registry env {name}",
+                            "modified since install; preserved",
+                        )
+                        continue
+                else:
+                    report.add(
+                        "skipped",
+                        f"windows registry env {name}",
+                        "no recorded value identity; preserved",
+                    )
+                    continue
+                winreg.DeleteValue(key, name)
         return True
     except OSError as exc:
         report.add("FAILED", "windows registry env", str(exc))
@@ -363,19 +583,34 @@ def replay_manifest(
     purge: bool,
     no_pip: bool,
     no_git_hooks: bool,
+    context: InstallationContext | None = None,
 ) -> None:
     """Undo every manifest entry; settled entries are dropped from the manifest."""
     for entry in list(manifest.entries):
         kind = entry.get("kind")
         path = entry.get("path", "")
         settled = True
-        if kind == "symlink":
+        artifact_path = Path(path)
+        if context is not None and (
+            artifact_path == context.paths.recurring_config_root
+            or context.paths.recurring_config_root in artifact_path.parents
+            or artifact_path == context.paths.recurring_state_root
+            or context.paths.recurring_state_root in artifact_path.parents
+        ):
+            report.add("left", f"recurring-owned state: {path}", "preserved by installer ownership boundary")
+            settled = False
+        elif entry.get("purge_only") and not purge:
+            report.add("left", f"purge-only artifact: {path}", "re-run with --purge to remove unchanged installer state")
+            settled = False
+        elif kind == "symlink":
             settled = remove_manifest_symlink(entry, report, dry_run)
         elif kind == "marker_block":
-            before = report.failed
-            strip_marker_block(
+            settled = strip_marker_block(
                 Path(path), entry.get("begin", BLOCK_BEGIN), entry.get("end", BLOCK_END),
                 "managed block", report, dry_run,
+                entry.get("block_sha256"),
+                entry.get("separator_sha256"),
+                entry.get("separator_length"),
             )
             # If stripping leaves the file blank, it existed only for our
             # block — remove the empty config file husk we created.
@@ -383,38 +618,32 @@ def replay_manifest(
             if (
                 not dry_run
                 and stripped_file.is_file()
-                and not stripped_file.read_text(encoding="utf-8").strip()
+                and not stripped_file.read_bytes().strip()
             ):
                 remove_file(stripped_file, "managed block file (emptied)", report, dry_run)
-            settled = report.failed == before
         elif kind == "json_hook_commands":
             settled = remove_manifest_json_hooks(entry, report, dry_run)
         elif kind == "git_hooks_path":
             if no_git_hooks:
                 report.add("skipped", "git core.hooksPath", "--no-git-hooks")
+                settled = False
             else:
-                before = report.failed
-                uninstall_git_hooks(Path(path), report, dry_run)
-                settled = report.failed == before
-        elif kind == "file":
-            before = report.failed
-            remove_file(Path(path), "generated file", report, dry_run)
-            settled = report.failed == before
+                settled = remove_manifest_git_hooks(entry, report, dry_run)
+        elif kind in {"file", "launcher", "generated_config"}:
+            settled = remove_manifest_file(entry, report, dry_run)
+        elif kind == "tree":
+            settled = remove_manifest_tree(entry, report, dry_run)
         elif kind == "config_dir":
-            if purge:
-                before = report.failed
-                remove_tree(Path(path), "config/credentials", report, dry_run)
-                settled = report.failed == before
-            else:
-                if Path(path).exists():
-                    report.add(
-                        "left", f"config/credentials: {path}",
-                        "user data; re-run with --purge to remove",
-                    )
-                settled = False  # keep in manifest for a future --purge run
+            if Path(path).exists():
+                report.add(
+                    "left", f"config/credentials: {path}",
+                    "mutable user data and credentials are never recursively deleted",
+                )
+            settled = False
         elif kind == "pip_editable":
             if no_pip:
                 report.add("skipped", f"pip package {path}", "--no-pip")
+                settled = False
             else:
                 before = report.failed
                 uninstall_pip_package(report, dry_run)
@@ -425,6 +654,7 @@ def replay_manifest(
             report.add("skipped", f"unknown manifest entry kind: {kind}", str(path))
         if settled and not dry_run:
             manifest.remove(entry)
+            manifest.save()
 
     if dry_run:
         return
@@ -438,12 +668,122 @@ def replay_manifest(
         manifest.delete()
 
 
+def _manifest_matches_context(manifest: Manifest, context: InstallationContext) -> bool:
+    expected = {"mode": context.mode, "installation_id": context.installation_id}
+    if context.development_root is not None:
+        expected["development_root"] = str(context.development_root.resolve(strict=False))
+    return manifest.installation == expected
+
+
+def _recurring_preflight(
+    context: InstallationContext, report: Report, *, platform: str
+) -> bool:
+    status = inspect_registration_namespace(
+        installation_id=context.installation_id,
+        state_root=context.paths.recurring_state_root,
+        native_registration_root=native_registration_root(context, platform),
+        platform=platform,
+    )
+    if not status.certain:
+        report.add(
+            "FAILED",
+            f"recurring namespace certainty for {context.installation_id}",
+            (status.detail or "native scheduler inventory unavailable")
+            + "; no installer artifacts were changed",
+        )
+        return False
+    if status.registrations_present:
+        report.add(
+            "FAILED",
+            f"recurring registrations for {context.installation_id}",
+            "run recurring-tasks remove-context for this installation ID before uninstall or purge",
+        )
+        return False
+    return True
+
+
+def _development_entry_is_contained(entry: dict, context: InstallationContext) -> bool:
+    if context.development_root is None:
+        return True
+    if entry.get("kind") == "git_hooks_path":
+        return Path(entry.get("path", "")).resolve(strict=False) == context.development_root
+    local_root = (context.development_root / ".famulus").resolve(strict=False)
+    path = Path(entry.get("path", "")).resolve(strict=False)
+    return path == local_root or local_root in path.parents
+
+
+def uninstall_context(
+    *,
+    context: InstallationContext,
+    platform: str,
+    home: Path,
+    environ: Mapping[str, str],
+    purge: bool,
+    dry_run: bool,
+    no_pip: bool,
+    no_git_hooks: bool,
+) -> Report:
+    """Replay only the manifest bound to the explicitly selected context."""
+    report = Report()
+    if context.mode == "development":
+        try:
+            validate_development_boundaries(
+                context,
+                operation="uninstall",
+                platform=platform,
+                home=home,
+                environ=environ,
+            )
+        except (OSError, ValueError) as exc:
+            report.add("FAILED", "development containment preflight", str(exc))
+            return report
+    try:
+        manifest = Manifest(context.paths.install_state_root / "install-manifest.json")
+    except InstallManifestError as exc:
+        report.add("FAILED", "install manifest preflight", str(exc))
+        return report
+    if not manifest.entries:
+        report.add("FAILED", f"manifest: {manifest.path}", "no install manifest found; run apply for this exact context first")
+        return report
+    if not _manifest_matches_context(manifest, context):
+        report.add("FAILED", f"manifest: {manifest.path}", "manifest belongs to a different or legacy unbound installation context")
+        return report
+    if not _recurring_preflight(context, report, platform=platform):
+        return report
+    if context.mode == "development" and any(
+        not _development_entry_is_contained(entry, context) for entry in manifest.entries
+    ):
+        report.add("FAILED", f"manifest: {manifest.path}", "manifest contains an artifact outside the selected checkout .famulus boundary")
+        return report
+    if context.mode == "development" and context.development_root is not None:
+        install_id_path = (context.development_root / ".famulus" / "install-id").resolve(
+            strict=False
+        )
+        manifest.entries = [
+            entry
+            for entry in manifest.entries
+            if Path(entry.get("path", "")).resolve(strict=False) != install_id_path
+        ]
+    replay_manifest(
+        manifest,
+        report,
+        dry_run=dry_run,
+        purge=purge,
+        no_pip=no_pip,
+        no_git_hooks=no_git_hooks,
+        context=context,
+    )
+    return report
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
+    parser.add_argument("--mode", choices=("standard", "development"), required=True)
+    parser.add_argument("--checkout", metavar="ABSOLUTE_PATH")
     parser.add_argument("--home", metavar="DIR")
     parser.add_argument("--claude-home", metavar="DIR")
     parser.add_argument("--codex-home", metavar="DIR")
@@ -452,62 +792,74 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--system-shell-rc", metavar="FILE", default="/etc/bash.bashrc")
     parser.add_argument("--no-system-shell-rc", action="store_true")
     parser.add_argument("--repo-root", metavar="DIR")
-    parser.add_argument("--manifest", metavar="FILE",
-        help="Install manifest to replay (default: <home>/.local/state/assistant-tools/install-manifest.json)")
     parser.add_argument("--no-pip", action="store_true",
         help="Do not uninstall the script_dispatcher pip package")
     parser.add_argument("--no-git-hooks", action="store_true",
         help="Do not unset git core.hooksPath")
     parser.add_argument("--purge", action="store_true",
-        help="Also remove OAuth credentials and service configs")
+        help="Also remove unchanged installer-owned immutable/configuration artifacts")
     parser.add_argument("--dry-run", action="store_true")
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.mode == "standard" and args.checkout is not None:
+        parser.error("--checkout is valid only with --mode development")
+    if args.mode == "development" and args.checkout is None:
+        parser.error("--mode development requires --checkout")
+    return args
 
 
 def main() -> None:
     args = parse_args()
-    home = Path(args.home) if args.home else Path.home()
+    home = Path(args.home).expanduser().resolve() if args.home else Path.home().resolve()
+    selected_environ: dict[str, str] = {}
+    if sys.platform == "win32":
+        selected_environ = {
+            "APPDATA": str(home / "AppData" / "Roaming"),
+            "LOCALAPPDATA": str(home / "AppData" / "Local"),
+        }
     repo_root = Path(args.repo_root) if args.repo_root else REPO_ROOT_DEFAULT
-    claude_home = Path(args.claude_home or os.environ.get("CLAUDE_HOME") or home / ".claude")
-    codex_home = Path(args.codex_home or os.environ.get("CODEX_HOME") or home / ".codex")
-    bin_dir = Path(args.bin_dir) if args.bin_dir else default_bin_dir(home=home)
-
-    if args.shell_rc:
-        shell_rc = Path(args.shell_rc)
-    elif sys.platform != "win32":
-        shell_rc = home / (".zshrc" if "zsh" in os.environ.get("SHELL", "") else ".bashrc")
+    if args.mode == "development":
+        checkout = Path(args.checkout)
+        if not checkout.is_absolute():
+            raise SystemExit("--checkout must be an absolute path")
+        identifier_path = checkout / ".famulus" / "install-id"
+        try:
+            installation_id = identifier_path.read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            raise SystemExit(f"development context is absent: {identifier_path}: {exc}") from exc
+        context = resolve_installation_context(
+            mode="development",
+            source_root=checkout,
+            development_root=checkout,
+            platform=sys.platform,
+            home=home,
+            environ=selected_environ,
+            installation_id=installation_id,
+        )
     else:
-        shell_rc = None
-
-    report = Report()
-    dry_run = args.dry_run
-
-    manifest = Manifest(Path(args.manifest) if args.manifest else manifest_path(home))
-    if manifest.entries:
-        print(f"Replaying install manifest: {manifest.path}")
-        replay_manifest(
-            manifest, report,
-            dry_run=dry_run, purge=args.purge,
-            no_pip=args.no_pip, no_git_hooks=args.no_git_hooks,
+        context = resolve_installation_context(
+            mode="standard",
+            source_root=repo_root.resolve(),
+            development_root=None,
+            platform=sys.platform,
+            home=home,
+            environ=selected_environ,
         )
-        report.add(
-            "left", f"worker dirs: {repo_root / 'workers'}",
-            "may contain session data; remove manually if unwanted",
-        )
-        report.print()
-        sys.exit(1 if report.failed else 0)
-
-    # No heuristic fallback: guessing at installed artifacts by pattern is
-    # how live generated files got deleted in the past. The installer is
-    # idempotent and always writes a manifest, so the fix is one re-run —
-    # this also covers a manifest that was deleted by hand.
-    print(
-        f"error: no install manifest found at {manifest.path}.\n"
-        "Uninstall is manifest-based. Re-run install-assistant-tools once to\n"
-        "regenerate the manifest (the install is idempotent), then uninstall.",
-        file=sys.stderr,
+    report = uninstall_context(
+        context=context,
+        platform=sys.platform,
+        home=home,
+        environ=selected_environ,
+        purge=args.purge,
+        dry_run=args.dry_run,
+        no_pip=args.no_pip,
+        no_git_hooks=args.no_git_hooks,
     )
-    sys.exit(1)
+    report.add(
+        "left", f"worker dirs: {context.paths.worker_root}",
+        "mutable session data is never recursively deleted by installer removal",
+    )
+    report.print()
+    sys.exit(1 if report.failed else 0)
 
 
 if __name__ == "__main__":

@@ -10,14 +10,16 @@ Famulus ships three interactive agent launchers:
 - `collab`
 - `coauthor`
 
-Those launchers work with both Claude Code and Codex. Phase 1 also installs an
-internal fourth launcher, `background_run`, because the `invoke-skill` command
-used by recurring jobs depends on it. It is not intended as an ordinary
-interactive entry point.
+Those launchers work with both Claude Code and Codex. The shared command floor
+also installs the non-interactive `background_run` capability used by
+`invoke-skill`; it is not an ordinary interactive entry point.
 On Windows, the installed commands are `.bat` wrappers that delegate to the
 Python launcher bundle copied into the managed bin directory.
 
-By default, they use the backend selected at install time through `ASSISTANT_DEFAULT`, but you can override that per run:
+The context's `launchers.json` is the durable owner of the default backend.
+`ASSISTANT_DEFAULT` is accepted only as an override for the current process;
+do not persist it in shell or scheduler configuration. You can also override
+the backend per run:
 
 - `assistant --claude`
 - `assistant --codex`
@@ -26,10 +28,15 @@ By default, they use the backend selected at install time through `ASSISTANT_DEF
 - `coauthor --claude`
 - `coauthor --codex`
 
-Each launcher starts in its default worker directory. Development-mode workers
-live below `<repo>/workers/<agent>`; plugin-mode workers live below the
-platform Famulus state directory. Use `-l` or `--local` to stay in the current
+Each launcher starts in its context-owned worker directory. Standard workers
+live below the platform Famulus state root; development workers live below the
+checkout's `.famulus/` tree. Use `-l` or `--local` to stay in the current
 directory instead.
+
+An installed command or development adapter locates its context through its
+self-locating resolver and that context's `runtime/current.json`. Launcher
+operation does not depend on the caller's current directory or the original
+clone location.
 
 Examples:
 
@@ -90,15 +97,16 @@ The wrapper also has `shell` and `raw` templates:
 
 ## Installation
 
-These launchers are installed through the Phase 1 installer described in [docs/officina/installation.md](officina/installation.md).
+These launchers are installed during Stage 3 of the five-stage apply workflow
+described in [docs/officina/installation.md](officina/installation.md).
 
 That installer:
 
 - writes the launcher commands into your bin directory
 - copies Windows launcher bundles or symlinks Unix launcher bundles as
   appropriate for the host
-- installs the Claude/Codex profile files they rely on
-- creates the selected interactive worker directories plus the required
+- installs the host profile files they rely on
+- creates context-owned interactive worker directories plus the required
   `background_run` worker directory
 - installs `tw` / `tmux-workspace` when the platform supports tmux
 

@@ -24,24 +24,17 @@ def test_sync_is_allowed_when_the_record_names_this_checkout(tmp_path):
     )
 
 
-def test_sync_is_refused_when_the_record_names_a_different_checkout(tmp_path):
+def test_same_installation_is_not_owned_by_checkout_path(tmp_path):
     unit_dir = tmp_path / "units"
     unit_dir.mkdir()
     owner = Path.home() / "canonical" / "_rtx"
     worktree = Path.home() / "worktrees" / "flaky-test-triage" / "_rtx"
     install_owner.write_owner(unit_dir=unit_dir, owner=owner)
 
-    try:
-        install_owner.require_ownership(
-            unit_dir=unit_dir, skill_dir=worktree, registrations_present=True
-        )
-    except install_owner.NotTheOwnerError as exc:
-        # Both paths must appear: the operator has to see which copy owns the
-        # installation and which one they are actually running from.
-        assert str(owner) in str(exc)
-        assert str(worktree) in str(exc)
-    else:
-        raise AssertionError("a non-owning checkout must not be allowed to sync")
+    install_owner.require_ownership(
+        unit_dir=unit_dir, skill_dir=worktree, registrations_present=True
+    )
+    assert install_owner.read_owner(unit_dir) == owner
 
 
 def test_a_fresh_install_adopts_when_there_is_no_record_and_nothing_installed(tmp_path):

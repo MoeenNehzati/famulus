@@ -35,6 +35,7 @@ from officina.blueprints.graph import (
     InterfaceExport,
     RepositoryBlueprintGraph,
     load_repository_blueprint_graph,
+    setup_order,
 )
 from officina.common.atomic_files import atomic_replace_bytes
 from officina.certification.view import CertificationView
@@ -235,6 +236,31 @@ def generated_contract_block(
     else:
         lines.append("Uses Interfaces: none")
     lines.append("")
+
+    setup_exports = [
+        export_id
+        for export_id in exports
+        if export_id in getattr(repository_graph, "setup_requirements", {})
+    ]
+    if setup_exports:
+        setup_export = setup_exports[0]
+        prerequisites = repository_graph.setup_requirements[setup_export]
+        if prerequisites:
+            lines.append("Setup Requires Setup Of:")
+            lines.extend(
+                f"- `{interface_id}@{required_version}`"
+                for interface_id, required_version in prerequisites
+            )
+        else:
+            lines.append("Setup Requires Setup Of: none")
+        lines.append("Setup Order:")
+        lines.extend(
+            f"{index}. `{interface_id}`"
+            for index, interface_id in enumerate(
+                setup_order(repository_graph, setup_export), start=1
+            )
+        )
+        lines.append("")
 
     if exports:
         lines.append("Public Interfaces:")

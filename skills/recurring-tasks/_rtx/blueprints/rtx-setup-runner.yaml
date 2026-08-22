@@ -3,9 +3,9 @@ content:
 dependencies:
 - blueprint:
     base: module-root
-    path: blueprints/rtx-ensure-agent-env.yaml
-  reason: Imports Python source from _rtx/_ensure_agent_env.py.
-  source: recurring-tasks._rtx.source.rtx-ensure-agent-env
+    path: blueprints/rtx-schedule-context.yaml
+  reason: Loads the validated installation schedule context used for setup status and healthcheck rendering.
+  source: recurring-tasks._rtx.source.rtx-schedule-context
   version: 1
 - blueprint:
     base: module-root
@@ -32,8 +32,9 @@ dependencies:
   reason: Imports Python source from _rtx/_unit_writer.py.
   source: recurring-tasks._rtx.source.rtx-unit-writer
   version: 1
-description: Performs host setup by ensuring agent environment, syncing scheduler
-  entries, installing an independent healthcheck sentinel, and reporting status.
+description: Performs host setup by ensuring agent environment, syncing installation-ID-owned
+  scheduler entries, installing Linux's independent namespaced healthcheck sentinel or
+  reporting on-demand-only capability, and reporting status.
 gateway:
   language: Python
   path: _setup_runner.py
@@ -42,16 +43,11 @@ interfaces:
   recurring-tasks._rtx.source.rtx-setup-runner.interface.scripts-setup:
     content:
     - _setup_runner\.py
-    uses_interfaces: []
+    uses_interfaces:
+    - interface: recurring.interface.control
+      version: 1
     contract:
       arguments:
-        jobs-file:
-          default: jobs.yaml
-          description: Optional jobs YAML path passed through to synchronization
-          required: false
-          sensitivity: user-private
-          type:
-            kind: string
         migrate-cron:
           default: false
           description: Remove obsolete ai-recurring cron lines before installing the
@@ -60,16 +56,10 @@ interfaces:
           sensitivity: public
           type:
             kind: flag
-        unit-dir:
-          default: ''
-          description: Optional scheduler-entry directory passed through to synchronization
-          required: false
-          sensitivity: user-private
-          type:
-            kind: string
       caller_warnings:
-      - external-side-effect: Configures the agent environment native scheduler entries
-          and a recurring healthcheck cron line.
+      - external-side-effect: Configures the agent environment and installation-ID-owned
+          native scheduler entries; Linux also receives a namespaced recurring healthcheck
+          cron line.
       direct_io:
         network: []
         reads:
@@ -180,7 +170,7 @@ interfaces:
               content.
           idempotency:
             idempotent: Repeating with unchanged inputs converges to one healthcheck
-              entry and matching scheduler state.
+              entry per installation ID on Linux and matching scheduler state on every platform.
           on_uncertain_completion:
             verify_then_decide: Inspect environment scheduler and crontab state before
               retrying.
@@ -237,7 +227,10 @@ interfaces:
       entry: Interface
       kind: process
       patterns:
-      - allow_extra_positionals: true
+      - allowed_flags:
+        - --migrate-cron
+        max_positionals: 0
+        min_positionals: 0
         name: owner
     usage: '[--migrate-cron]'
     version: 1
@@ -312,6 +305,8 @@ runtime_dependencies:
   reason: Provides the per-user scheduler configured during setup.
   version: any
 schema_version: 6
-uses_interfaces: []
+uses_interfaces:
+- interface: recurring.interface.control
+  version: 1
 version: 1
 maturity: experimental

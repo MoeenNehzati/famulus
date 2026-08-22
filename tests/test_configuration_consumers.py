@@ -36,7 +36,7 @@ def _load_module(name: str, path: Path):
         "src/officina/docstring/config.yaml",
         "references/blueprint/config.yaml",
         "references/certification/node-hash-policy.yaml",
-        "skills/recurring-tasks/_rtx/jobs.yaml",
+        "src/officina/recurring/default_jobs.yaml",
     ],
 )
 def test_repository_configuration_documents_use_central_schema(

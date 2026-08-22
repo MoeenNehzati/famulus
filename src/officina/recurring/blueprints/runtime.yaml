@@ -1,0 +1,41 @@
+schema_version: 6
+id: recurring.source.runtime
+version: 1
+maturity: experimental
+node_type: behavioral_source
+description: Validates the active recurring descriptor and renders native scheduler artifacts without replaceable skill source.
+gateway: {language: Python, path: runtime.py}
+content: [runtime\.py, native\.py, records\.py]
+dependencies: []
+uses_interfaces:
+- {interface: install.interface.context, version: 1}
+- {interface: launchers.interface.agent, version: 1}
+interfaces:
+  recurring.source.runtime.interface.python-api:
+    version: 1
+    description: Validate immutable recurring runtime authority and render or read its state.
+    content: [runtime\.py, native\.py, records\.py]
+    uses_interfaces:
+    - {interface: install.interface.context, version: 1}
+    - {interface: launchers.interface.agent, version: 1}
+    contract:
+      arguments:
+        operation: {description: Runtime validation rendering or record operation., required: true, sensitivity: public, type: {kind: string}}
+        runtime-root: {description: Resolver-injected active runtime root., required: true, sensitivity: user-private, direct_io_ref: authority, type: {kind: dir, syntax: literal, relative_to: caller-cwd, must_exist: true, access: read}}
+        descriptor: {description: Canonical schedule descriptor., required: true, sensitivity: user-private, direct_io_ref: authority, type: {kind: file, syntax: literal, relative_to: caller-cwd, must_exist: true, access: read, opaque_content: true}}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings: []
+      outputs:
+      - {id: result, audience: machine, description: Validated schedule or native artifact result., direct_io_ref: result, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty on success., type: {kind: string, sensitivity: user-private}}
+      outcomes:
+      - {id: completed, class: success, outputs: [result], effects: [], caller_action: Consume the validated result.}
+      execution: {state_effect: read-only, lifecycle: finite, consistency: {live: Active pointer descriptor launcher and native state are revalidated.}, verification: [{method: output-schema, output_ref: result}]}
+      helpers: []
+      direct_io:
+        network: []
+        reads: [{id: authority, medium: local-filesystem, access: read, content: Active pointer descriptor launcher jobs registrations and records., formats: [json, yaml, files], sensitivity: user-private, path: <selected-context>/**, path_match: glob}]
+        writes: [{id: result, medium: local-system, access: write, content: Validated result., formats: [text], sensitivity: user-private}]
+platform_support: {linux: true, macos: true, windows: true}
+runtime_dependencies:
+- {kind: python-package, name: PyYAML, version: any, platforms: {linux: true, macos: true, windows: true}, reason: Parses canonical recurring jobs configuration.}

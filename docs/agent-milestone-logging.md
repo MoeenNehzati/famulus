@@ -20,10 +20,10 @@ it composes the log path, the timestamp, and the JSON record itself.
 merges the milestone logs with the harness transcripts into one chronological
 timeline.
 
-Both are linked into the user's bin directory by `install-assistant-tools`, and
-those links are recorded in the install manifest, so uninstall removes them.
-The instruction names `milestone` as a command, so the link must exist wherever
-the instruction is delivered.
+Both are exposed through the selected installation context's command directory
+by `install-assistant-tools`, and those entries are recorded in the context's
+install manifest. The instruction names `milestone` as a command, so the
+context must be applied wherever the instruction is delivered.
 
 `CLAUDE.md`/`AGENTS.md` is delivered by the harness to every subagent on both
 supported hosts, so no cooperation from the spawning parent is needed. Two
@@ -65,10 +65,12 @@ milestone --run nightly-01 --path    # print the run journal path and exit
 
 ## Log Format
 
-One JSON object per line, appended to
-`$ASSISTANT_LOGS/<YYYY-MM-DD>/<session>.<agent>.jsonl`. `ASSISTANT_LOGS` is set
-by the installer (`skills/install-assistant-tools/_rtx/_config_bridge.py`) and
-defaults to `~/.assistant-logs`.
+One JSON object per line is appended below the active context's log root. The
+standalone writer falls back to
+`~/.assistant-logs/<YYYY-MM-DD>/<session>.<agent>.jsonl` when no context is
+available. `ASSISTANT_LOGS` is a process-local compatibility override only;
+the installer does not persist it, and shell or scheduler configuration should
+not either.
 
 The fields are `ts`, `role`, `cwd`, `doing`, and `prev`; a record written with
 `--run` carries further optional keys, described under
@@ -131,10 +133,11 @@ A milestone log is addressed by session, and an overnight job outlives the
 session that started it: the first assistant session ends, a later one resumes
 the work, and each writes under its own session and thread id. `--run` adds the
 second address. The record is written unchanged to the session log **and**
-mirrored into one journal per run:
+mirrored into one journal per run, below the same log root the session logs
+resolve to (see [Log Format](#log-format)):
 
 ```
-$ASSISTANT_LOGS/runs/<run-id>.jsonl
+<log root>/runs/<run-id>.jsonl
 ```
 
 That path sits beside the day directories rather than inside one, because a
@@ -259,9 +262,9 @@ sessions — `runs/` is excluded from the session glob.
   compensates by matching every thread id seen in the milestone logs, but a
   subagent that logged nothing cannot be found this way.
 - There is no rotation or pruning. The log directory grows without bound.
-- A checkout whose install has not run yet has the instruction from `CLAUDE.md`
-  but no `milestone` on PATH, and the calls fail quietly — a non-zero exit inside
-  one shell call, with nothing logged to say why.
+- A checkout whose development context has not been applied may have the
+  instruction but no `milestone` on its isolated command path. Apply that
+  context before treating logging as available.
 - A run journal is written only when a caller passes `--run`. Nothing infers
   one, so a run whose milestones were logged without it cannot be reassembled
   afterwards except by reading `doing` and `prev` by eye.

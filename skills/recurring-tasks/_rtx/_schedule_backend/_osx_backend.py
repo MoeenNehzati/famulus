@@ -31,7 +31,8 @@ import re
 import subprocess
 from pathlib import Path
 
-from ._base_backend import ScheduleContext, ScheduleJob
+from ._base_backend import ScheduleContext, ScheduleJob, registration_token
+from officina.recurring.native import launchd_label as managed_launchd_label
 
 PREFIX = "ai-"
 LABEL_PREFIX = "com.famulus.ai."
@@ -41,12 +42,24 @@ def default_launch_agents_dir() -> Path:
     return Path.home() / "Library" / "LaunchAgents"
 
 
-def launchd_label(job_name: str) -> str:
-    return f"{LABEL_PREFIX}{job_name}"
+def launchd_label(job_name: str, installation_id: str = "standard") -> str:
+    return managed_launchd_label(job_name, installation_id)
 
 
-def plist_name(job_name: str) -> str:
-    return f"{PREFIX}{job_name}.plist"
+def plist_name(job_name: str, installation_id: str = "standard") -> str:
+    return f"{PREFIX}{registration_token(installation_id)}{job_name}.plist"
+
+
+def _job_from_plist_name(name: str, installation_id: str) -> str | None:
+    prefix = f"{PREFIX}{registration_token(installation_id)}"
+    if not name.startswith(prefix) or not name.endswith(".plist"):
+        return None
+    job_name = name[len(prefix) : -len(".plist")]
+    if installation_id == "standard" and re.match(
+        r"dev-[0-9a-f]{32}-", job_name
+    ):
+        return None
+    return job_name
 
 
 def _expand_cron_field(value: str, *, low: int, high: int) -> list[int]:
@@ -108,22 +121,26 @@ def plist_content(
     executor: Path,
     runtime_resolver: Path,
     schedule: str,
+    installation_id: str = "standard",
+    log_root: Path | None = None,
 ) -> bytes:
     """Generate a launchd plist for one recurring job."""
     payload = {
-        "Label": launchd_label(job_name),
+        "Label": launchd_label(job_name, installation_id),
         "ProgramArguments": [
             str(runtime_resolver),
-            str(executor),
-            "--jobs-file",
-            str(jobs_file),
+            "-m",
+            "officina.recurring.executor",
+            "--descriptor",
+            str(jobs_file.parent / "schedule-descriptor.json"),
             "--job",
             job_name,
+            "--log-root",
+            str(log_root or jobs_file.parent / "logs"),
         ],
         "StandardErrorPath": str(log_file),
         "StandardOutPath": str(log_file),
         "StartCalendarInterval": cron_to_launchd_intervals(schedule),
-        "WorkingDirectory": str(executor.parent.parent),
     }
     if description:
         payload["ProcessType"] = "Background"
@@ -137,7 +154,7 @@ class OSXScheduleBackend:
         getuid = getattr(os, "getuid", lambda: 0)
         return f"gui/{getuid()}"
 
-    def _bootout_by_label_if_loaded(self, name: str) -> None:
+    def _bootout_by_label_if_loaded(self, name: str, installation_id: str = "standard") -> None:
         """Unload a label if launchd currently has it loaded, regardless of
         which plist path it was loaded from.
 
@@ -150,7 +167,7 @@ class OSXScheduleBackend:
         service-target (label) form works regardless of which path was
         originally used to load it.
         """
-        service_target = f"{self._target()}/{launchd_label(name)}"
+        service_target = f"{self._target()}/{launchd_label(name, installation_id)}"
         probe = subprocess.run(
             ["launchctl", "print", service_target],
             capture_output=True,
@@ -173,7 +190,7 @@ class OSXScheduleBackend:
             enabled_names.add(job.name)
             log_file = context.log_dir / job.name / "run.log"
             log_file.parent.mkdir(parents=True, exist_ok=True)
-            plist_path = unit_dir / plist_name(job.name)
+            plist_path = unit_dir / plist_name(job.name, context.installation_id)
             plist_path.write_bytes(
                 plist_content(
                     job_name=job.name,
@@ -183,31 +200,36 @@ class OSXScheduleBackend:
                     executor=executor,
                     runtime_resolver=context.runtime_resolver,
                     schedule=job.schedule,
+                    installation_id=context.installation_id,
+                    log_root=context.log_dir,
                 )
             )
-            print(f"Synced '{job.name}' (launchd label={launchd_label(job.name)})")
+            print(f"Synced '{job.name}' (launchd label={launchd_label(job.name, context.installation_id)})")
 
-        for plist_path in sorted(unit_dir.glob(f"{PREFIX}*.plist")):
-            name = plist_path.stem[len(PREFIX):]
+        selected_prefix = f"{PREFIX}{registration_token(context.installation_id)}"
+        for plist_path in sorted(unit_dir.glob(f"{selected_prefix}*.plist")):
+            name = _job_from_plist_name(plist_path.name, context.installation_id)
+            if name is None:
+                continue
             if name not in enabled_names:
                 if context.live:
-                    self._bootout_by_label_if_loaded(name)
+                    self._bootout_by_label_if_loaded(name, context.installation_id)
                 plist_path.unlink(missing_ok=True)
                 print(f"Removed disabled job: '{name}'")
 
         if context.live:
             for name in sorted(enabled_names):
-                plist_path = unit_dir / plist_name(name)
-                self._bootout_by_label_if_loaded(name)
+                plist_path = unit_dir / plist_name(name, context.installation_id)
+                self._bootout_by_label_if_loaded(name, context.installation_id)
                 subprocess.run(
                     ["launchctl", "bootstrap", self._target(), str(plist_path)],
                     check=True,
                 )
-                print(f"Loaded {launchd_label(name)}")
+                print(f"Loaded {launchd_label(name, context.installation_id)}")
 
     def test(self, job_name: str, context: ScheduleContext) -> bool:
         result = subprocess.run(
-            ["launchctl", "kickstart", "-k", f"{self._target()}/{launchd_label(job_name)}"],
+            ["launchctl", "kickstart", "-k", f"{self._target()}/{launchd_label(job_name, context.installation_id)}"],
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -221,10 +243,13 @@ class OSXScheduleBackend:
     def status(self, context: ScheduleContext) -> str:
         unit_dir = context.unit_dir or default_launch_agents_dir()
         chunks: list[str] = []
-        for plist_path in sorted(unit_dir.glob(f"{PREFIX}*.plist")):
-            name = plist_path.stem[len(PREFIX):]
+        selected_prefix = f"{PREFIX}{registration_token(context.installation_id)}"
+        for plist_path in sorted(unit_dir.glob(f"{selected_prefix}*.plist")):
+            name = _job_from_plist_name(plist_path.name, context.installation_id)
+            if name is None:
+                continue
             result = subprocess.run(
-                ["launchctl", "print", f"{self._target()}/{launchd_label(name)}"],
+                ["launchctl", "print", f"{self._target()}/{launchd_label(name, context.installation_id)}"],
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -232,6 +257,14 @@ class OSXScheduleBackend:
             )
             chunks.append(result.stdout or result.stderr)
         return "\n".join(chunk.rstrip() for chunk in chunks if chunk)
+
+    def registrations_present(self, context: ScheduleContext) -> bool:
+        unit_dir = context.unit_dir or default_launch_agents_dir()
+        selected_prefix = f"{PREFIX}{registration_token(context.installation_id)}"
+        return any(
+            _job_from_plist_name(path.name, context.installation_id) is not None
+            for path in unit_dir.glob(f"{selected_prefix}*.plist")
+        )
 
     def check_manager(self) -> str | None:
         result = subprocess.run(
@@ -245,16 +278,14 @@ class OSXScheduleBackend:
             return None
         return f"launchd user manager: {result.stderr.strip() or 'unresponsive'}"
 
-    def get_agent_command_template(self) -> str | None:
-        return os.environ.get("AI_AGENT_COMMAND_TEMPLATE")
-
     def job_search_dirs(self) -> list[Path] | None:
         """launchd jobs inherit the ambient PATH; nothing is pinned here."""
         return None
 
-    def check_job_active(self, job_name: str) -> bool:
+    def check_job_active(self, job_name: str, context: ScheduleContext | None = None) -> bool:
+        installation_id = context.installation_id if context is not None else "standard"
         result = subprocess.run(
-            ["launchctl", "print", f"{self._target()}/{launchd_label(job_name)}"],
+            ["launchctl", "print", f"{self._target()}/{launchd_label(job_name, installation_id)}"],
             capture_output=True,
             text=True,
             encoding="utf-8",

@@ -4,7 +4,6 @@ Healthcheck for recurring tasks. Verifies jobs are healthy.
 Run periodically via cron (not systemd, so it works even if systemd breaks).
 """
 import os
-import shutil
 import re
 import sys
 from datetime import datetime, timedelta, timezone
@@ -36,6 +35,8 @@ if __package__:
         ScheduleJob,
         platform_schedule_backend,
     )
+    from ._schedule_context import production_schedule_context
+    from ._managed_control import run as run_managed_control
 else:
     from _jobs_config import load_jobs  # noqa: E402
     from _run_record import read_latest_run_record  # noqa: E402
@@ -48,8 +49,10 @@ else:
         ScheduleJob,
         platform_schedule_backend,
     )
+    from _schedule_context import production_schedule_context  # noqa: E402
+    from _managed_control import run as run_managed_control  # noqa: E402
 
-JOBS_FILE = SKILL_DIR / "jobs.yaml"
+JOBS_FILE = SKILL_DIR / "default_jobs.yaml"
 LOG_DIR = SKILL_DIR / "logs"
 HEALTHCHECK_LOG = SKILL_ROOT / "logs" / "healthcheck" / "run.log"
 # A run may legitimately be in flight when the check fires. Beyond the
@@ -68,14 +71,16 @@ _SUMMARY_MAX_REASONS = 3
 _SUMMARY_REASON_LIMIT = 160
 
 
-def write_failure_summary(failures: list[str]) -> None:
+def write_failure_summary(
+    failures: list[str], summary_path: Path = HEALTHCHECK_SUMMARY
+) -> None:
     """Record why this check failed, for the sentinel to show.
 
     Carries a timestamp because the sentinel also fires when the checker
     could not start at all, in which case what it reads is the previous
     run's file; the time is what makes that visible rather than misleading.
     """
-    HEALTHCHECK_SUMMARY.parent.mkdir(parents=True, exist_ok=True)
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
     when = datetime.now(timezone.utc).isoformat(timespec="seconds")
     shown = failures[:_SUMMARY_MAX_REASONS]
     lines = [f"{len(failures)} problem(s) found at {when}:"]
@@ -86,12 +91,12 @@ def write_failure_summary(failures: list[str]) -> None:
     remaining = len(failures) - len(shown)
     if remaining > 0:
         lines.append(f"- (+{remaining} more; see the health-check log)")
-    HEALTHCHECK_SUMMARY.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def clear_failure_summary() -> None:
+def clear_failure_summary(summary_path: Path = HEALTHCHECK_SUMMARY) -> None:
     """Drop the stale reason once every check passes."""
-    HEALTHCHECK_SUMMARY.unlink(missing_ok=True)
+    summary_path.unlink(missing_ok=True)
 
 
 def log(msg: str) -> None:
@@ -125,54 +130,11 @@ def check_systemd_manager() -> str | None:
     return None
 
 
-def check_environment() -> str | None:
-    """Return an agent-command environment failure reason when invalid.
-
-    A healthy timer cannot run useful AI work when its configured agent
-    launcher is absent or unresolved. Resolving against this process's own PATH
-    would answer a different question: cron's PATH lacks the launcher
-    directory, and an operator's interactive PATH may contain one the scheduler
-    never sees.
-    """
-    try:
-        backend = platform_schedule_backend()
-        template = backend.get_agent_command_template()
-    except ScheduleBackendUnsupported as e:
-        reason = str(e)
-        log(f"FAIL: {reason}")
-        return reason
-
-    if not template:
-        reason = "AI_AGENT_COMMAND_TEMPLATE: not set"
-        log(f"FAIL: {reason}")
-        return reason
-
-    # Extract command name (first token)
-    cmd = template.split()[0] if template else ""
-    # Ask the backend which directories its jobs actually resolve from, so the
-    # question matches what the scheduler will do. A backend returning None
-    # does not pin a job PATH, so its jobs inherit the ambient one.
-    try:
-        search_dirs = backend.job_search_dirs()
-    except Exception as exc:  # an unresolvable install layout is a real failure
-        reason = f"AI_AGENT_COMMAND_TEMPLATE: cannot resolve scheduler search path: {exc}"
-        log(f"FAIL: {reason}")
-        return reason
-    search_path = (
-        os.pathsep.join(str(part) for part in search_dirs)
-        if search_dirs is not None
-        else os.environ.get("PATH", "")
-    )
-    if not shutil.which(cmd, path=search_path):
-        reason = f"AI_AGENT_COMMAND_TEMPLATE: command not found: {cmd}"
-        log(f"FAIL: {reason}")
-        return reason
-
-    log(f"OK: AI_AGENT_COMMAND_TEMPLATE: {template}")
-    return None
-
-
-def check_job(job: dict) -> str | None:
+def check_job(
+    job: dict,
+    context: ScheduleContext | None = None,
+    log_dir: Path | None = None,
+) -> str | None:
     """Return the first registration or execution failure for one job.
 
     Fresh logs alone can mask stale units or failed runs, so health requires
@@ -180,11 +142,8 @@ def check_job(job: dict) -> str | None:
     """
     name = job["name"]
     backend = platform_schedule_backend()
-    context = ScheduleContext(
-        skill_dir=SKILL_DIR,
-        jobs_file=JOBS_FILE,
-        log_dir=LOG_DIR,
-    )
+    context = context or production_schedule_context()
+    selected_log_dir = log_dir or context.log_dir
     try:
         reason = check_job_configuration(
             backend_name=backend.name,
@@ -210,7 +169,7 @@ def check_job(job: dict) -> str | None:
     # A run that started and never finished leaves an in-flight marker. The
     # run log's mtime was already refreshed by "--- RUN START ---", so
     # freshness alone would report a killed job as healthy indefinitely.
-    marker = LOG_DIR / name / "running.json"
+    marker = selected_log_dir / name / "running.json"
     if marker.exists():
         marker_age = datetime.now(timezone.utc) - datetime.fromtimestamp(
             marker.stat().st_mtime, tz=timezone.utc
@@ -226,8 +185,8 @@ def check_job(job: dict) -> str | None:
         log(f"  OK: {name} (run in progress)")
         return None
 
-    latest_path = LOG_DIR / name / "latest.json"
-    latest = read_latest_run_record(log_dir=LOG_DIR, job_name=name)
+    latest_path = selected_log_dir / name / "latest.json"
+    latest = read_latest_run_record(log_dir=selected_log_dir, job_name=name)
     if latest is None:
         reason = (
             f"{name}: run record unreadable"
@@ -263,7 +222,7 @@ def check_job(job: dict) -> str | None:
         return reason
 
     try:
-        is_active = backend.check_job_active(name)
+        is_active = backend.check_job_active(name, context)
     except ScheduleBackendUnsupported as e:
         reason = str(e)
         log(f"  FAIL: {reason}")
@@ -330,11 +289,21 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: unexpected arguments: {' '.join(argv)}", file=sys.stderr)
         return 2
 
+    return run_managed_control("healthcheck")
+
+    try:  # pragma: no cover - retained internal compatibility below
+        context = production_schedule_context()
+    except Exception as e:
+        log(f"FAIL: Failed to load schedule context: {e}")
+        return 1
+
+    global HEALTHCHECK_LOG
+    HEALTHCHECK_LOG = context.log_dir / "healthcheck" / "run.log"
     log("=== healthcheck start ===")
 
     # Load jobs
     try:
-        jobs = load_jobs(JOBS_FILE)
+        jobs = load_jobs(context.jobs_file)
     except Exception as e:
         log(f"FAIL: Failed to load jobs.yaml: {e}")
         return 1
@@ -345,16 +314,12 @@ def main(argv: list[str] | None = None) -> int:
     reason = check_systemd_manager()
     if reason:
         failures.append(reason)
-    reason = check_environment()
-    if reason:
-        failures.append(reason)
-
     # Per-job checks
     log("Per-job checks:")
     for job in jobs:
         if not job.get("enabled", False):
             continue
-        reason = check_job(job)
+        reason = check_job(job, context=context, log_dir=context.log_dir)
         if reason:
             failures.append(reason)
 
@@ -363,10 +328,12 @@ def main(argv: list[str] | None = None) -> int:
     # Report
     if problems == 0:
         log("OK: All checks passed")
-        clear_failure_summary()
+        clear_failure_summary(context.log_dir / "healthcheck" / "last-failure.txt")
     else:
         log(f"FAIL: {problems} problem(s) found")
-        write_failure_summary(failures)
+        write_failure_summary(
+            failures, context.log_dir / "healthcheck" / "last-failure.txt"
+        )
 
     log("=== healthcheck done ===\n")
     return 1 if problems > 0 else 0

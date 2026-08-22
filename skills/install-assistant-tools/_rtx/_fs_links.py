@@ -6,6 +6,7 @@ make_copy). One copy avoids the two drifting apart.
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -33,7 +34,9 @@ def default_bin_dir(*, home: Path) -> Path:
     Delegates to FamulusPaths.user_bin instead of the old
     ~/Documents/_rtx/bin default, which was wrong on every platform.
     """
-    return resolve_famulus_paths(platform=sys.platform, home=home).user_bin
+    return resolve_famulus_paths(
+        platform=sys.platform, home=home, environ=os.environ
+    ).user_bin
 
 
 def make_link(src: Path, dst: Path, dry_run: bool, manifest: Manifest | None = None) -> None:

@@ -22,11 +22,14 @@ Run individual scripts directly for targeted repairs:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import platform
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Mapping
 
 REPO_SRC = Path(__file__).resolve().parents[3] / "src"
 if not __package__ and str(REPO_SRC) not in sys.path:
@@ -35,7 +38,16 @@ if not __package__:
     sys.path.insert(0, str(Path(__file__).parent))
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
-from officina.common.famulus_paths import resolve_famulus_paths
+from officina.install.context import (
+    InstallationContext,
+    load_or_create_development_installation_id,
+    resolve_installation_context,
+)
+from officina.install.doctor import (
+    DiagnosticReport,
+    diagnose_installation,
+    render_diagnostic_text,
+)
 from officina.install.install_info import load_install_info
 import officina.install.managed_runtime as managed_runtime
 import officina.install.runtime_pointer as runtime_pointer
@@ -53,16 +65,35 @@ if __package__:
     from . import _install_scaffold as scaffold
 else:
     import _install_scaffold as scaffold
-if __package__:
-    from . import _google_onboarding as google_onboarding
-else:
-    import _google_onboarding as google_onboarding
-
 ALL_AGENTS = launchers.ALL_AGENTS
+
+
+@dataclass(frozen=True)
+class ApplyChoices:
+    agents: tuple[str, ...]
+    default_backend: str
+    optional_module_ids: tuple[str, ...] = ()
+    home: Path | None = None
+    shell_rc: Path | None = None
 
 
 def log(msg: str = "") -> None:
     print(msg, flush=True)
+
+
+def _all_imported_officina_modules_are_current() -> bool:
+    source_root = REPO_SRC.resolve()
+    for name, module in tuple(sys.modules.items()):
+        if name != "officina" and not name.startswith("officina."):
+            continue
+        module_file = getattr(module, "__file__", None)
+        if module_file is None:
+            continue
+        try:
+            Path(module_file).resolve().relative_to(source_root)
+        except ValueError:
+            return False
+    return True
 
 
 def _prompt_yes_no(question: str, default: bool = False) -> bool:
@@ -141,7 +172,7 @@ def _ensure_managed_uv(*, info, paths, platform_name: str) -> int:
 
 
 def _build_managed_runtime_candidate(
-    *, repo_root: Path, home: Path, optional_module_ids: tuple[str, ...]
+    *, context: InstallationContext, optional_module_ids: tuple[str, ...]
 ) -> int:
     """Build and activate a managed-runtime candidate release before scaffold
     runs, so the dispatcher/invoke-skill launchers scaffold.run installs have
@@ -166,8 +197,9 @@ def _build_managed_runtime_candidate(
         log("Skipping managed-runtime candidate build: unsupported platform.")
         return 0
 
+    repo_root = context.source_root
     info = load_install_info(repo_root)
-    paths = resolve_famulus_paths(platform=sys.platform, home=home)
+    paths = context.paths
     manifest_path = repo_root / scaffold.RUNTIME_DEPENDENCIES_MANIFEST
 
     uv_status = _ensure_managed_uv(info=info, paths=paths, platform_name=platform_name)
@@ -187,6 +219,7 @@ def _build_managed_runtime_candidate(
             python_version=info.managed_python,
             repo_root=repo_root,
             optional_module_ids=optional_module_ids,
+            installation_context=context,
         )
     except (managed_runtime.ManagedRuntimeError, runtime_pointer.RuntimePointerError) as exc:
         log(f"Managed-runtime candidate build failed: {exc}")
@@ -236,58 +269,128 @@ def _prompt_optional_modules(*, manifest_path: Path, platform_name: str) -> list
     return sorted(set(requested))
 
 
-def _run_google_onboarding_step(
-    google_services: list[str] | None,
-    *,
-    gmail_nickname: str | None,
-    bin_dir: Path | None,
-    home: Path,
-    dry_run: bool,
-) -> None:
-    """Self-contained Google onboarding step, run once core install (managed-
-    runtime candidate build + scaffold) has succeeded. Never raises and
-    never fails the overall install: a partial, deferred, skipped, or
-    failed Google-onboarding outcome is only logged here. Connecting Google
-    services is optional at install time -- the always-available fallback
-    is the conversational Phase 2 flow described in this module's
-    docstring, which can run at any later point via connect-google.
-    """
-    effective_bin_dir = bin_dir or scaffold.default_bin_dir(home=home)
-    dispatcher_path = google_onboarding.dispatcher_launcher_path(effective_bin_dir)
-    try:
-        result = google_onboarding.run_google_onboarding(
-            google_services,
-            dispatcher_path=dispatcher_path,
-            home=home,
-            gmail_nickname=gmail_nickname,
-            dry_run=dry_run,
-            stdin_isatty=False,
-        )
-    except Exception as exc:  # noqa: BLE001 - must never abort the install
-        log(f"Google onboarding: failed unexpectedly ({exc}); continuing installation.")
-        return
+def _manifest_path(context: InstallationContext) -> Path:
+    return context.paths.install_state_root / "install-manifest.json"
 
-    if result.status == "completed":
-        log(f"Google onboarding: connected {', '.join(result.granted_services)}.")
-    elif result.status == "partial":
-        parts = []
-        if result.bound_services:
-            parts.append(f"bound={list(result.bound_services)}")
-        if result.denied_services:
-            parts.append(f"denied={list(result.denied_services)}")
-        if result.deferred_services:
-            parts.append(f"deferred={list(result.deferred_services)} (no email account nickname yet)")
-        if result.failed_services:
-            failed_desc = [f"{service} ({message})" for service, message in result.failed_services]
-            parts.append(f"failed={failed_desc}")
-        log(f"Google onboarding: partially connected ({', '.join(parts)}).")
-    elif result.status == "failed":
-        log("Google onboarding: failed; you can retry later via connect-google.")
-    # "skipped" (no OAuth client configured yet, or a dry-run) and
-    # "needs_selection" (no services requested) are expected, non-error
-    # outcomes at install time and are intentionally not logged as
-    # warnings -- Google connection remains available afterward via
-    # connect-google's conversational flow.
+
+def _record_managed_runtime_state(
+    *, context: InstallationContext, manifest: scaffold.Manifest
+) -> None:
+    """Record exact immutable runtime artifacts published by candidate build."""
+    if not context.paths.current_pointer.is_file():
+        return
+    manifest.record(
+        "file",
+        path=str(context.paths.current_pointer),
+        purge_only=True,
+    )
+    pointer_payload = json.loads(context.paths.current_pointer.read_text(encoding="utf-8"))
+    runtime_source = pointer_payload.get("runtime_source")
+    if isinstance(runtime_source, str) and Path(runtime_source).is_dir():
+        manifest.record("tree", path=runtime_source, purge_only=True)
+    resolver_root = context.paths.runtime_root / "bootstrap" / "resolvers"
+    if resolver_root.is_dir():
+        manifest.record("tree", path=str(resolver_root), purge_only=True)
+
+
+def apply(
+    *,
+    context: InstallationContext,
+    choices: ApplyChoices,
+    environ: Mapping[str, str],
+) -> int:
+    """Apply fresh install, reinstall, update, or repair to one exact context."""
+    try:
+        manifest = scaffold.Manifest(_manifest_path(context))
+    except scaffold.InstallManifestError as exc:
+        log(f"Install manifest is invalid; preserving it unchanged: {exc}")
+        return 1
+    manifest.bind_context(
+        mode=context.mode,
+        installation_id=context.installation_id,
+        development_root=context.development_root,
+    )
+    candidate_status = _build_managed_runtime_candidate(
+        context=context,
+        optional_module_ids=choices.optional_module_ids,
+    )
+    if candidate_status:
+        return candidate_status
+    _record_managed_runtime_state(context=context, manifest=manifest)
+
+    scaffold_status = scaffold.run(
+        context=context,
+        environ=environ,
+        home=choices.home,
+        shell_rc=choices.shell_rc,
+        manifest=manifest,
+    )
+    if scaffold_status:
+        return scaffold_status
+
+    if context.mode == "development":
+        dev_link.run(context=context, environ=environ, manifest=manifest)
+
+    helper_status = launchers.run(
+        context=context,
+        agents=list(choices.agents),
+        home=choices.home,
+        default_llm=choices.default_backend,
+        environ=environ,
+        manifest=manifest,
+        install_invoke_skill=True,
+    )
+    if helper_status is False:
+        return 1
+
+    log("Stage 4/5: Verify and report")
+    diagnostic_environ = dict(environ)
+    prior_path = diagnostic_environ.get("PATH", "")
+    diagnostic_environ["PATH"] = os.pathsep.join(
+        part for part in (str(context.paths.user_bin), prior_path) if part
+    )
+    report = diagnose_installation(
+        context=context,
+        environ=diagnostic_environ,
+        platform=sys.platform,
+    )
+    log(render_diagnostic_text(report).rstrip())
+    return 0 if report.status == "healthy" else 1
+
+
+def _preview_context_lines(
+    *, mode: str, source_root: Path, home: Path, environ: Mapping[str, str]
+) -> tuple[str, ...]:
+    if mode == "standard":
+        preview = resolve_installation_context(
+            mode="standard",
+            source_root=source_root,
+            development_root=None,
+            platform=sys.platform,
+            home=home,
+            environ=environ,
+        )
+        return (
+            f"Mode: {preview.mode}",
+            f"Source: {preview.source_root}",
+            f"Data: {preview.paths.data_root}",
+            f"Config: {preview.paths.config_root}",
+            f"State: {preview.paths.state_root}",
+            f"Runtime: {preview.paths.runtime_root}",
+            f"Commands: {preview.paths.user_bin} (persisted on PATH)",
+            f"Codex home: {preview.codex_home}",
+            f"Claude home: {preview.claude_home}",
+        )
+    local = source_root / ".famulus"
+    return (
+        "Mode: development",
+        f"Source: {source_root}",
+        f"Data/config/state/runtime: beneath {local}",
+        f"Commands: beneath {local} (child-process PATH only)",
+        f"Codex home: {local / 'homes' / 'codex'}",
+        f"Claude home: {local / 'homes' / 'claude'}",
+        "Isolation warning: separate homes are not an OS security sandbox.",
+    )
 
 
 def run(
@@ -303,14 +406,17 @@ def run(
     repo_path: Path | None = None,
     agents: list[str] | None = None,
     default_llm: str | None = None,
-    google_services: list[str] | None = None,
-    gmail_nickname: str | None = None,
     optional_modules: list[str] | None = None,
+    yes: bool = False,
+    environ: Mapping[str, str] | None = None,
 ) -> int:
     home = home or Path.home()
+    selected_environ = dict(os.environ if environ is None else environ)
     if non_interactive and optional_modules:
         log("Optional module selection requires an interactive confirmation.")
         return 2
+
+    log("Stage 1/5: Choose mode")
 
     if dev_mode is None:
         if non_interactive:
@@ -334,6 +440,10 @@ def run(
         # pre-redesign behavior. <repo>/skills/install-assistant-tools/_rtx/_phase_entry.py
         repo_root = Path(__file__).resolve().parents[3]
 
+    repo_root = repo_root.resolve()
+    if not repo_root.is_dir():
+        log(f"Selected source does not exist: {repo_root}")
+        return 2
     platform_name = scaffold._platform_name()
     if optional_modules is None:
         optional_modules = [] if non_interactive or platform_name is None else _prompt_optional_modules(
@@ -341,61 +451,85 @@ def run(
             platform_name=platform_name,
         )
     optional_module_ids = tuple(sorted(set(optional_modules)))
-
-    if dry_run:
-        log("(dry-run) Would build and activate a managed-runtime candidate release.")
-    else:
-        candidate_status = _build_managed_runtime_candidate(
-            repo_root=repo_root, home=home, optional_module_ids=optional_module_ids
-        )
-        if candidate_status:
-            log()
-            log("Installation stopped because the managed-runtime candidate build failed.")
-            return candidate_status
-
-    scaffold_status = scaffold.run(repo_root=repo_root, home=home, bin_dir=bin_dir, shell_rc=shell_rc, dry_run=dry_run)
-    if scaffold_status:
-        log()
-        log("Installation stopped because scaffold failed.")
-        return scaffold_status
-
-    log()
-
-    _run_google_onboarding_step(
-        google_services, gmail_nickname=gmail_nickname,
-        bin_dir=bin_dir, home=home, dry_run=dry_run,
-    )
-
-    if dev_mode:
-        dev_link.run(
-            repo_root=repo_root, home=home,
-            claude_home=claude_home, codex_home=codex_home,
-            shell_rc=shell_rc, dry_run=dry_run,
-        )
-        log()
-
     if agents is None:
         agents = [] if non_interactive else _prompt_agents()
-
     if default_llm is None:
         default_llm = "claude" if non_interactive else _prompt_default_llm()
 
-    launchers.run(
-        repo_root=repo_root, agents=agents, home=home,
-        bin_dir=bin_dir, codex_home=codex_home, claude_home=claude_home,
-        shell_rc=shell_rc, default_llm=default_llm, dry_run=dry_run,
-        mode="development" if dev_mode else "plugin",
-        install_invoke_skill=True,
-    )
+    mode_name = "development" if dev_mode else "standard"
+    log("Stage 2/5: Confirm choices")
+    for line in _preview_context_lines(
+        mode=mode_name, source_root=repo_root, home=home, environ=selected_environ
+    ):
+        log(f"  {line}")
+    log(f"  Backend: {default_llm}")
+    log(f"  Helpers: {', '.join(agents) if agents else '(baseline only)'}")
+    if dry_run:
+        log("Dry-run complete; no installation state was changed.")
+        return 0
+    if not yes:
+        if non_interactive:
+            log("Non-interactive installation requires --yes.")
+            return 2
+        if not _prompt_yes_no("Apply these choices?", default=False):
+            log("Installation cancelled before changes.")
+            return 2
 
-    log()
-    log("Installation complete.")
-    if not dry_run:
-        log(
-            "Next: connect your remotes (cloud-files, g-calendar, email-client) "
-            "and set up recurring triage/planning — ask your assistant to walk "
-            "you through it."
+    if dev_mode:
+        installation_id = load_or_create_development_installation_id(
+            repo_root,
+            platform=sys.platform,
+            home=home,
+            environ=selected_environ,
         )
+        context = resolve_installation_context(
+            mode="development",
+            source_root=repo_root,
+            development_root=repo_root,
+            platform=sys.platform,
+            home=home,
+            environ=selected_environ,
+            installation_id=installation_id,
+        )
+    else:
+        context = resolve_installation_context(
+            mode="standard",
+            source_root=repo_root,
+            development_root=None,
+            platform=sys.platform,
+            home=home,
+            environ=selected_environ,
+        )
+    if bin_dir is not None and Path(bin_dir).resolve(strict=False) != context.paths.user_bin.resolve(strict=False):
+        log("--bin-dir must equal the selected context command directory.")
+        return 2
+    if codex_home is not None and Path(codex_home).resolve(strict=False) != context.codex_home.resolve(strict=False):
+        log("--codex-home must equal the selected context Codex home.")
+        return 2
+    if claude_home is not None and Path(claude_home).resolve(strict=False) != context.claude_home.resolve(strict=False):
+        log("--claude-home must equal the selected context Claude home.")
+        return 2
+
+    log("Stage 3/5: Install")
+    status = apply(
+        context=context,
+        choices=ApplyChoices(
+            agents=tuple(agents),
+            default_backend=default_llm,
+            optional_module_ids=optional_module_ids,
+            home=home,
+            shell_rc=shell_rc,
+        ),
+        environ=selected_environ,
+    )
+    if status:
+        log("Installation failed; use the recovery guidance above.")
+        return status
+    log("Stage 5/5: Optional next steps")
+    log("  connect-google connects Famulus to Google services when you choose to invoke it.")
+    log("  recurring-tasks creates and manages recurring AI jobs when you choose to invoke it.")
+    if context.mode == "development":
+        log("  Recurring jobs are pinned to this checkout context; isolation is not an OS security sandbox.")
     return 0
 
 
@@ -403,23 +537,14 @@ class Interface(PythonArgvMachineInterface):
     prog = "phase_entry.py"
 
     def run(self, argv: list[str]) -> int:
-        loaded_runtime = Path(getattr(managed_runtime, "__file__", "")).resolve()
-        current_runtime = (
-            REPO_SRC / "officina" / "install" / "managed_runtime.py"
-        ).resolve()
-        if loaded_runtime != current_runtime:
+        if not _all_imported_officina_modules_are_current():
             # A managed-runtime update must be built by the source being
             # installed, never by whatever Officina API happens to be active.
             # A fresh interpreter has no cached ``officina`` package, so
             # prepending REPO_SRC selects this checkout atomically for the
             # complete installer process while retaining the caller's TTY.
             child_env = os.environ.copy()
-            inherited_pythonpath = child_env.get("PYTHONPATH")
-            child_env["PYTHONPATH"] = (
-                str(REPO_SRC)
-                if not inherited_pythonpath
-                else f"{REPO_SRC}{os.pathsep}{inherited_pythonpath}"
-            )
+            child_env["PYTHONPATH"] = str(REPO_SRC)
             result = subprocess.run(
                 [sys.executable, str(Path(__file__).resolve()), *argv],
                 env=child_env,
@@ -439,6 +564,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--non-interactive", action="store_true",
         help="Never prompt; requires --dev-mode/--no-dev-mode and, if dev mode, --repo-path")
+    parser.add_argument("--yes", action="store_true", help="Confirm the displayed choices")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--dev-mode", dest="dev_mode", action="store_true", default=None)
     mode.add_argument("--no-dev-mode", dest="dev_mode", action="store_false")
@@ -450,15 +576,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--agents", metavar="LIST",
         help="Comma-separated subset of: " + ",".join(ALL_AGENTS))
     parser.add_argument("--default-llm", choices=["claude", "codex"])
-    # Not yet wired to any real caller (no installer wizard exists today --
-    # this script always runs Google onboarding with google_services=None,
-    # which reports "needs_selection" and never blocks the install). These
-    # flags exist ahead of time so a future interactive wizard can pass
-    # explicit choices without another CLI change.
-    parser.add_argument("--google-services", metavar="LIST",
-        help="Comma-separated Google services to onboard: drive,calendar,gmail")
-    parser.add_argument("--gmail-nickname", metavar="NICK",
-        help="Email-client account nickname to bind a granted gmail credential to")
     return parser.parse_args(argv)
 
 
@@ -467,9 +584,6 @@ def main(argv: list[str] | None = None) -> int:
     agents = None
     if args.agents is not None:
         agents = [a.strip() for a in args.agents.split(",") if a.strip()]
-    google_services = None
-    if args.google_services is not None:
-        google_services = [s.strip() for s in args.google_services.split(",") if s.strip()]
     return run(
         home=Path(args.home) if args.home else None,
         bin_dir=Path(args.bin_dir) if args.bin_dir else None,
@@ -482,12 +596,11 @@ def main(argv: list[str] | None = None) -> int:
         repo_path=Path(args.repo_path) if args.repo_path else None,
         agents=agents,
         default_llm=args.default_llm,
-        google_services=google_services,
-        gmail_nickname=args.gmail_nickname,
         optional_modules=(
             [module_id.strip() for module_id in args.optional_modules.split(",") if module_id.strip()]
             if args.optional_modules is not None else None
         ),
+        yes=args.yes,
     )
 
 

@@ -8,6 +8,12 @@ synchronize repository state.
 
 ## Invocation
 
+On first installation, the host registry locates the Famulus package and its
+package-relative installer. After apply, both standard commands and
+development adapters use a self-locating fixed resolver, then the selected
+context's `runtime/current.json`, then the active managed runtime. Neither
+chain discovers a checkout from the current directory.
+
 Host callers use the installed command:
 
 ```bash
@@ -28,7 +34,9 @@ as its identity.
 ## Repository configuration
 
 The installed launcher supplies one exact absolute `officina.toml` path from
-the active managed-runtime pointer. Users cannot override that value. The
+the active managed-runtime pointer. Development adapters select their own
+checkout-local context, while standard launchers select platform Famulus
+roots. Users cannot override that value. The
 configuration file's directory is the repository root and its ordered
 `modules.roots` entries are the only blueprint lookup roots:
 

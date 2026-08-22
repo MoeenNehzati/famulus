@@ -31,10 +31,21 @@ def test_enable_from_a_non_owning_checkout_leaves_jobs_yaml_untouched(
     jobs_file.write_text(_JOBS, encoding="utf-8")
     unit_dir = tmp_path / "units"
     unit_dir.mkdir()
-    (unit_dir / "ai-demo.service").write_text("[Service]\n", encoding="utf-8")
-    install_owner.write_owner(unit_dir=unit_dir, owner=Path.home() / "canonical" / "_rtx")
+    installation_id = "dev-0123456789abcdef0123456789abcdef"
+    (unit_dir / f"ai-{installation_id}-demo.service").write_text(
+        "[Service]\n", encoding="utf-8"
+    )
     monkeypatch.setattr(unit_writer, "DEFAULT_UNIT_DIR", unit_dir)
     monkeypatch.setattr(unit_writer, "SKILL_DIR", Path.home() / "worktree" / "_rtx")
+    context = unit_writer.ScheduleContext(
+        skill_dir=unit_writer.SKILL_DIR,
+        jobs_file=jobs_file,
+        log_dir=tmp_path / "logs",
+        unit_dir=unit_dir,
+        live=False,
+        installation_id=installation_id,
+    )
+    monkeypatch.setattr(job_control, "schedule_context", lambda _: context)
 
     with pytest.raises(install_owner.NotTheOwnerError):
         job_control.enable_job("demo", jobs_file=jobs_file)

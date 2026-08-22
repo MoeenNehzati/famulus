@@ -488,7 +488,9 @@ def test_authorize_services_state_mismatch_stores_no_credential(
 
     from officina.common.famulus_paths import resolve_famulus_paths
 
-    registry_path = resolve_famulus_paths(platform=PLATFORM, home=tmp_path).config_root / "connect-google" / "credentials.json"
+    registry_path = resolve_famulus_paths(
+        platform=PLATFORM, home=tmp_path, environ={}
+    ).config_root / "connect-google" / "credentials.json"
     assert not registry_path.exists()
     descriptor_dir = registry_path.parent / "credentials"
     assert not descriptor_dir.exists() or not tuple(descriptor_dir.iterdir())
@@ -517,7 +519,9 @@ def test_authorize_services_account_hint_mismatch_stores_no_credential(
 
     from officina.common.famulus_paths import resolve_famulus_paths
 
-    registry_path = resolve_famulus_paths(platform=PLATFORM, home=tmp_path).config_root / "connect-google" / "credentials.json"
+    registry_path = resolve_famulus_paths(
+        platform=PLATFORM, home=tmp_path, environ={}
+    ).config_root / "connect-google" / "credentials.json"
     assert not registry_path.exists()
     descriptor_dir = registry_path.parent / "credentials"
     assert not descriptor_dir.exists() or not tuple(descriptor_dir.iterdir())

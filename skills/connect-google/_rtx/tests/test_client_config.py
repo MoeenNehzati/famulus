@@ -40,7 +40,13 @@ def write_json(path: Path, payload: object) -> None:
 def canonical(home: Path) -> Path:
     from officina.common.famulus_paths import resolve_famulus_paths
 
-    return resolve_famulus_paths(platform=sys.platform, home=home).config_root / "connect-google" / "client.json"
+    return (
+        resolve_famulus_paths(
+            platform=sys.platform, home=home, environ=os.environ
+        ).config_root
+        / "connect-google"
+        / "client.json"
+    )
 
 
 class FakeSecretBackend:
@@ -354,10 +360,21 @@ def test_plaintext_canonical_with_token_field_is_invalid_not_migration(
 
 @pytest.mark.parametrize("platform", ["linux", "darwin", "win32"])
 def test_authorization_preflight_resolves_canonical_path_on_each_platform(
-    tmp_path: Path, secret_backend: FakeSecretBackend, platform: str
+    tmp_path: Path,
+    secret_backend: FakeSecretBackend,
+    platform: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from officina.credentials.google import canonical_client_path
 
+    if platform == "win32":
+        monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
+        monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
+    else:
+        monkeypatch.delenv("LOCALAPPDATA", raising=False)
+        monkeypatch.delenv("APPDATA", raising=False)
+        for name in ("XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_STATE_HOME"):
+            monkeypatch.delenv(name, raising=False)
     path = canonical_client_path(home=tmp_path, platform=platform)
     path.parent.mkdir(parents=True)
     payload = desktop_client()

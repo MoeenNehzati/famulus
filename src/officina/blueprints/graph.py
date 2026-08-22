@@ -370,6 +370,9 @@ class RepositoryBlueprintGraph:
     interface_uses: Mapping[str, tuple[tuple[str, int], ...]] = field(
         default_factory=dict
     )
+    setup_requirements: Mapping[str, tuple[tuple[str, int], ...]] = field(
+        default_factory=dict
+    )
 
 
 @dataclass(frozen=True)
@@ -4716,6 +4719,127 @@ def _v5_interfaces_and_exports(
     )
 
 
+def _setup_requirements(
+    exports: Mapping[str, InterfaceExport],
+) -> dict[str, tuple[tuple[str, int], ...]]:
+    """Validate and return explicit public setup-interface prerequisites."""
+
+    requirements: dict[str, tuple[tuple[str, int], ...]] = {}
+    for export_id, export in sorted(exports.items()):
+        declaration = export.export_declaration or {}
+        raw = declaration.get("setup_requires_setup_of")
+        is_setup = export_id.endswith(".interface.setup")
+        if is_setup and raw is None:
+            raise BlueprintGraphError(
+                f"{export_id}: setup interface must declare setup_requires_setup_of"
+            )
+        if not is_setup and raw is not None:
+            raise BlueprintGraphError(
+                f"{export_id}: only setup interfaces may declare "
+                "setup_requires_setup_of"
+            )
+        if not is_setup:
+            continue
+        if not isinstance(raw, list):
+            raise BlueprintGraphError(
+                f"{export_id}: setup_requires_setup_of must be a list"
+            )
+        parsed: list[tuple[str, int]] = []
+        for index, entry in enumerate(raw):
+            if not isinstance(entry, Mapping):
+                raise BlueprintGraphError(
+                    f"{export_id}: setup_requires_setup_of[{index}] must be a mapping"
+                )
+            target = entry.get("interface")
+            version = entry.get("version")
+            if (
+                not isinstance(target, str)
+                or type(version) is not int
+                or version < 1
+            ):
+                raise BlueprintGraphError(
+                    f"{export_id}: invalid setup prerequisite at index {index}"
+                )
+            parsed.append((target, version))
+        if len(parsed) != len(set(parsed)):
+            raise BlueprintGraphError(
+                f"{export_id}: setup_requires_setup_of contains a duplicate"
+            )
+        requirements[export_id] = tuple(parsed)
+
+    for export_id, entries in requirements.items():
+        for target_id, version in entries:
+            target = exports.get(target_id)
+            if target_id not in requirements or target is None:
+                raise BlueprintGraphError(
+                    f"{export_id}: setup prerequisite {target_id!r} is not a "
+                    "public setup interface"
+                )
+            if target.version != version:
+                raise BlueprintGraphError(
+                    f"{export_id}: setup prerequisite {target_id!r} pins version "
+                    f"{version}, but target version is {target.version}"
+                )
+
+    graph = RepositoryBlueprintGraph(
+        nodes={},
+        node_edges=(),
+        exports={},
+        export_edges=(),
+        helper_edges=(),
+        certification_edges=(),
+        setup_requirements=requirements,
+    )
+    for export_id in requirements:
+        setup_order(graph, export_id)
+    return requirements
+
+
+def setup_order(
+    graph: RepositoryBlueprintGraph,
+    root_setup_interface: str,
+) -> tuple[str, ...]:
+    """Return explicit setup prerequisites before their dependent interface."""
+
+    requirements = graph.setup_requirements
+    if root_setup_interface not in requirements:
+        raise BlueprintGraphError(
+            f"{root_setup_interface!r} is not a public setup interface"
+        )
+    state: dict[str, int] = {}
+    order: list[str] = []
+    stack: list[tuple[str, bool]] = [(root_setup_interface, False)]
+    while stack:
+        interface_id, exiting = stack.pop()
+        status = state.get(interface_id, 0)
+        if exiting:
+            if status != 2:
+                state[interface_id] = 2
+                order.append(interface_id)
+            continue
+        if status == 2:
+            continue
+        if status == 1:
+            raise BlueprintGraphError(
+                f"setup dependency cycle reaches {interface_id}"
+            )
+        state[interface_id] = 1
+        stack.append((interface_id, True))
+        dependencies = requirements.get(interface_id)
+        if dependencies is None:
+            raise BlueprintGraphError(
+                f"setup prerequisite {interface_id!r} is not declared"
+            )
+        for dependency_id, _version in reversed(sorted(dependencies)):
+            if state.get(dependency_id) == 1:
+                raise BlueprintGraphError(
+                    f"setup dependency cycle reaches {dependency_id}"
+                )
+            if state.get(dependency_id) != 2:
+                stack.append((dependency_id, False))
+    return tuple(order)
+
+
 def _v5_namespace_routes(
     modules: Mapping[str, BlueprintNode],
     exports: Mapping[str, InterfaceExport],
@@ -5418,6 +5542,7 @@ def _load_v5_repository_blueprint_graph(
         module_local_segments,
         allow_facades=schema_version == 5,
     )
+    setup_requirements = _setup_requirements(exports) if schema_version == 6 else {}
     namespace_routes, routed_interfaces = _v5_namespace_routes(
         modules,
         exports,
@@ -5730,6 +5855,7 @@ def _load_v5_repository_blueprint_graph(
         routed_interfaces=routed_interfaces,
         interface_content_paths=interface_content_paths,
         interface_uses=interface_uses,
+        setup_requirements=setup_requirements,
     )
 
 

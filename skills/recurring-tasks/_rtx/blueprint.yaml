@@ -1,5 +1,18 @@
 authority:
-  owns_filesystem: []
+  owns_filesystem:
+  - allowed_readers:
+    - recurring-tasks._rtx.interface.scripts-disable
+    - recurring-tasks._rtx.interface.scripts-enable
+    - recurring-tasks._rtx.interface.scripts-healthcheck
+    - recurring-tasks._rtx.interface.scripts-remove-context
+    - recurring-tasks._rtx.interface.scripts-setup
+    - recurring-tasks._rtx.interface.scripts-status
+    - recurring-tasks._rtx.interface.scripts-sync
+    - recurring-tasks._rtx.interface.scripts-test
+    - recurring-tasks._rtx.interface.scripts-view-logs
+    match: exact
+    path: $famulus-recurring-config-root/schedule-descriptor.json
+    reason: recurring-tasks is the sole writer of the sealed installation schedule descriptor.
   suggested_permissions:
     bash:
     - command:
@@ -31,13 +44,6 @@ authority:
       - Interface
       reason: Run pre-flight and per-job health checks.
     - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _ensure_agent_env.py
-      - Interface
-      reason: Ensure recurring-tasks' systemd AI_AGENT_COMMAND_TEMPLATE is in place.
-    - command:
       - systemctl
       reason: Manage systemd user units.
     - command:
@@ -45,16 +51,17 @@ authority:
       reason: Read systemd journal for job diagnostics.
 children: {}
 content:
-- jobs\.yaml
-- _ensure_agent_env\.py
+- default_jobs\.yaml
 - _healthcheck_probe\.py
 - _install_owner\.py
 - __init__\.py
 - _assistant_desktop_notify\.py
 - _job_control\.py
+- _managed_control\.py
 - _job_executor\.py
 - _jobs_config\.py
 - _run_record\.py
+- _schedule_context\.py
 - _schedule_backend/__init__\.py
 - _schedule_backend/_base_backend\.py
 - _schedule_backend/_linux_backend\.py
@@ -78,18 +85,18 @@ exports:
       allowed_callers:
       - recurring-tasks
     source_interface: recurring-tasks._rtx.source.rtx-job-control.interface.scripts-enable
-  recurring-tasks._rtx.interface.scripts-ensure-agent-env:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - recurring-tasks
-    source_interface: recurring-tasks._rtx.source.rtx-ensure-agent-env.interface.scripts-ensure-agent-env
   recurring-tasks._rtx.interface.scripts-healthcheck:
     access:
       allow_all_modules: false
       allowed_callers:
       - recurring-tasks
     source_interface: recurring-tasks._rtx.source.rtx-healthcheck-probe.interface.scripts-healthcheck
+  recurring-tasks._rtx.interface.scripts-remove-context:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - recurring-tasks
+    source_interface: recurring-tasks._rtx.source.rtx-job-control.interface.scripts-remove-context
   recurring-tasks._rtx.interface.scripts-setup:
     access:
       allow_all_modules: false
@@ -132,10 +139,6 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/jobs-config.yaml
-  recurring-tasks._rtx.source.rtx-ensure-agent-env:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-ensure-agent-env.yaml
   recurring-tasks._rtx.source.rtx-healthcheck-probe:
     blueprint:
       base: module-root
@@ -160,6 +163,10 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/rtx-run-record.yaml
+  recurring-tasks._rtx.source.rtx-schedule-context:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-schedule-context.yaml
   recurring-tasks._rtx.source.rtx-schedule-backend-init:
     blueprint:
       base: module-root

@@ -18,11 +18,22 @@ discovery:
   - user-request
   persistent_modifier: false
 exports:
+  install-assistant-tools.interface.diagnose:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: install-assistant-tools.source.gateway.interface.diagnose
   install-assistant-tools.interface.default:
     access:
       allow_all_modules: true
       allowed_callers: []
     source_interface: install-assistant-tools.source.gateway.interface.default
+  install-assistant-tools.interface.setup:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: install-assistant-tools.source.gateway.interface.default
+    setup_requires_setup_of: []
 gateway:
   language: Markdown
   path: SKILL.md
@@ -39,6 +50,7 @@ namespace_exports:
         install-assistant-tools._rtx.interface.scripts-install: 2
         install-assistant-tools._rtx.interface.scripts-launchers: 3
         install-assistant-tools._rtx.interface.scripts-scaffold: 2
+        install-assistant-tools._rtx.interface.scripts-doctor: 1
     interface_access:
       install-assistant-tools._rtx.interface.scripts-dev-link:
         allow_all_modules: false
@@ -50,6 +62,9 @@ namespace_exports:
         allow_all_modules: false
         allowed_callers: []
       install-assistant-tools._rtx.interface.scripts-scaffold:
+        allow_all_modules: false
+        allowed_callers: []
+      install-assistant-tools._rtx.interface.scripts-doctor:
         allow_all_modules: false
         allowed_callers: []
 node_type: module

@@ -221,6 +221,57 @@ def test_generically_named_file_may_not_mention_operating_system(tmp_path: Path)
     assert "Windows" in errors[0]
 
 
+@pytest.mark.parametrize(
+    "relative_path",
+    (
+        Path("src/officina/install/context.py"),
+        Path("src/officina/install/development_activation.py"),
+        Path("src/officina/install/runtime_pointer.py"),
+        Path("src/officina/install/resolvers/launch.py"),
+        Path("src/officina/launchers/agent.py"),
+        Path("src/officina/recurring/runtime.py"),
+        Path("src/officina/recurring/healthcheck.py"),
+        Path("src/officina/recurring/executor.py"),
+        Path("src/officina/recurring/native.py"),
+        Path("src/officina/recurring/state.py"),
+        Path("src/officina/recurring/default_jobs.yaml"),
+        Path("src/officina/configuration/schema.json"),
+    ),
+)
+def test_binding_cross_host_orchestration_files_are_exactly_allowed(
+    tmp_path: Path, relative_path: Path
+) -> None:
+    source = tmp_path / relative_path
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("# Coordinates Claude, Codex, Windows, macOS, and Linux.\n")
+
+    assert validate(tmp_path) == []
+
+
+def test_nearby_generic_orchestration_file_remains_rejected(tmp_path: Path) -> None:
+    source = tmp_path / "src" / "officina" / "install" / "context_helper.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("# Coordinates Claude, Codex, Windows, macOS, and Linux.\n")
+
+    errors = validate(tmp_path)
+    assert errors == [
+        "src/officina/install/context_helper.py:1: "
+        "# Coordinates Claude, Codex, Windows, macOS, and Linux."
+    ]
+
+
+def test_nearby_recurring_file_remains_rejected(tmp_path: Path) -> None:
+    source = tmp_path / "src" / "officina" / "recurring" / "helper.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("# Coordinates Claude, Codex, Windows, macOS, and Linux.\n")
+
+    errors = validate(tmp_path)
+    assert errors == [
+        "src/officina/recurring/helper.py:1: "
+        "# Coordinates Claude, Codex, Windows, macOS, and Linux."
+    ]
+
+
 def test_blueprint_graph_shared_module_is_platform_neutral(tmp_path: Path) -> None:
     source = (
         Path(__file__).resolve().parents[1]

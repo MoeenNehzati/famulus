@@ -1,5 +1,6 @@
 content:
 - launcher_entry\.py
+- resolvers/__init__\.py
 - resolvers/launch\.py
 dependencies:
 - blueprint:
@@ -11,7 +12,8 @@ dependencies:
 description: Owns the stable, path-fixed launch resolver deployed at <runtime_root>/bootstrap/resolvers/v1/launch.py
   (resolvers/launch.py's own source -- a dependency-free, stdlib-only script that
   imports nothing beyond the Python standard library, since it runs under the user's
-  ambient Python before any interpreter handoff). It reads current.json at launch
+  ambient Python before any interpreter handoff). The fixed file atomically selects
+  a complete immutable resolver generation, which reads current.json at launch
   time, using a minimal read-only reimplementation of officina.install.runtime_pointer's
   containment check, and execs into the active managed-runtime release's interpreter,
   so generated launcher shims (dispatcher, invoke-skill, ...) never need to embed
@@ -28,6 +30,7 @@ interfaces:
   install.source.launcher-entry.interface.cli:
     content:
     - launcher_entry\.py
+    - resolvers/__init__\.py
     - resolvers/launch\.py
     uses_interfaces: []
     contract:
@@ -104,6 +107,14 @@ interfaces:
       helpers: []
       direct_io:
         reads:
+        - id: active-generation-file
+          medium: local-filesystem
+          access: read
+          content: Atomic selector naming one complete immutable resolver generation.
+          formats:
+          - json
+          sensitivity: public
+          path: <runtime_root>/bootstrap/resolvers/v1/active.json
         - id: pointer-file
           medium: local-filesystem
           access: read
@@ -115,12 +126,12 @@ interfaces:
         - id: trusted-roots-file
           medium: local-filesystem
           access: read
-          content: flat JSON list of absolute trusted-interpreter-store paths, written
-            by release-activation deployment alongside the resolver
+          content: Flat JSON list of absolute trusted-interpreter-store paths inside
+            the atomically selected immutable resolver generation.
           formats:
           - json
           sensitivity: public
-          path: <runtime_root>/bootstrap/resolvers/v1/trusted-roots.json
+          path: <runtime_root>/bootstrap/resolvers/generations/<generation>/trusted-roots.json
         writes:
         - id: return-value
           medium: local-system

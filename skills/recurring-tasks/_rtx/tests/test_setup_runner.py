@@ -4,6 +4,8 @@ import sys
 from pathlib import Path
 from unittest import mock
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -25,13 +27,44 @@ def test_render_healthcheck_cron_uses_runtime_resolver_and_direct_failure_popup(
 
     assert line.startswith("0 */4 * * * ")
     assert str(resolver) in line
-    assert str(healthcheck) in line
-    assert "RECURRING_TASKS_HEALTHCHECK_CRON=1" in line
+    assert "-m officina.recurring.healthcheck" in line
+    assert str(healthcheck) not in line
+    assert "--descriptor" in line
+    assert "--log-root" in line
+    assert "--cron" in line
     assert "XDG_RUNTIME_DIR=/run/user/1000" in line
     assert "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus" in line
     assert "/usr/bin/notify-send" in line
     assert "--urgency=critical" in line
     assert setup_runner.CRON_MARKER in line
+
+
+def test_render_healthcheck_cron_quotes_exact_bounded_environment(tmp_path):
+    environment = {
+        "HOME": str(tmp_path / "home with spaces"),
+        "PATH": str(tmp_path / "bin 雪"),
+        "CODEX_HOME": str(tmp_path / 'codex "quoted" % !'),
+    }
+    line = setup_runner.render_healthcheck_cron(
+        runtime_resolver=tmp_path / "runtime" / "launch.py",
+        log_file=tmp_path / "logs" / "healthcheck" / "run.log",
+        uid=1000,
+        environment=environment,
+    )
+
+    assert all(f"{name}=" in line for name in environment)
+    assert "SECRET_CANARY" not in line
+    assert "home with spaces" in line and "雪" in line and "%" in line and "!" in line
+
+
+def test_render_healthcheck_cron_rejects_crlf_environment(tmp_path):
+    with pytest.raises(ValueError, match="CR or LF"):
+        setup_runner.render_healthcheck_cron(
+            runtime_resolver=tmp_path / "runtime" / "launch.py",
+            log_file=tmp_path / "logs" / "healthcheck" / "run.log",
+            uid=1000,
+            environment={"PATH": "bad\nvalue"},
+        )
 
 
 def test_install_healthcheck_cron_adds_managed_entry_and_creates_log_dir(tmp_path):
@@ -51,7 +84,8 @@ def test_install_healthcheck_cron_adds_managed_entry_and_creates_log_dir(tmp_pat
 
     assert len(written) == 1
     assert str(resolver) in written[0]
-    assert str(healthcheck) in written[0]
+    assert "-m officina.recurring.healthcheck" in written[0]
+    assert str(healthcheck) not in written[0]
     assert setup_runner.CRON_MARKER in written[0]
     assert (skill_root / "logs" / "healthcheck").is_dir()
 
@@ -127,20 +161,33 @@ def test_run_setup_uses_python_runtimes_and_scheduler_backend(tmp_path, monkeypa
     backend.status.return_value = "timers\n"
     monkeypatch.setattr(setup_runner.sys, "platform", "linux")
     monkeypatch.setattr(setup_runner.os, "getuid", lambda: 1000, raising=False)
+    context = mock.Mock(
+        runtime_resolver=tmp_path / "runtime" / "launch.py",
+        config_root=tmp_path / "config",
+        installation_id="standard",
+        log_dir=tmp_path / "state" / "logs",
+    )
+    monkeypatch.setattr(setup_runner, "production_schedule_context", lambda: context)
 
-    with mock.patch.object(setup_runner._ensure_agent_env, "run") as ensure_env, \
-         mock.patch.object(setup_runner._unit_writer, "main") as unit_writer_main, \
+    with mock.patch.object(setup_runner._unit_writer, "main") as unit_writer_main, \
          mock.patch.object(setup_runner, "install_healthcheck_cron") as install_cron, \
          mock.patch.object(setup_runner, "platform_schedule_backend", return_value=backend):
-        setup_runner.run_setup(argv=["--migrate-cron", "--unit-dir", str(tmp_path / "units")], home=tmp_path)
+        setup_runner.run_setup(argv=["--migrate-cron"], home=tmp_path)
 
-    ensure_env.assert_called_once()
-    # The agent env is written under --home; repo_root/bin_dir were never used.
-    assert ensure_env.call_args.kwargs["home"] == tmp_path
-    unit_writer_main.assert_called_once_with(["--unit-dir", str(tmp_path / "units")])
+    unit_writer_main.assert_called_once_with([])
     install_cron.assert_called_once()
     assert install_cron.call_args.kwargs["migrate_cron"] is True
     backend.status.assert_called_once()
+
+
+def test_run_setup_rejects_unit_dir_before_mutating_scheduler(tmp_path):
+    with mock.patch.object(setup_runner._unit_writer, "main") as unit_writer_main, \
+         mock.patch.object(setup_runner, "install_healthcheck_cron") as install_cron:
+        with pytest.raises(SystemExit):
+            setup_runner.run_setup(argv=["--unit-dir", str(tmp_path / "units")], home=tmp_path)
+
+    unit_writer_main.assert_not_called()
+    install_cron.assert_not_called()
 
 
 def _crontab_result(returncode: int, stdout: str = "", stderr: str = ""):

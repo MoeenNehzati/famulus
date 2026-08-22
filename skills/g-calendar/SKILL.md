@@ -16,8 +16,15 @@ Uses Interfaces:
 - `g-calendar.source.gateway -> connect-google.interface.default@1`
 - `g-calendar.source.gateway -> g-calendar._rtx.interface.scripts-gcal@1`
 
+Setup Requires Setup Of:
+- `connect-google.interface.setup@1`
+Setup Order:
+1. `connect-google.interface.setup`
+2. `g-calendar.interface.setup`
+
 Public Interfaces:
 - `g-calendar.interface.default`
+- `g-calendar.interface.setup`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
@@ -26,6 +33,7 @@ Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
 - `g-calendar.interface.default` — Primary LLM-facing skill instructions.
+- `g-calendar.interface.setup` — Primary LLM-facing skill instructions.
 <!-- END BLUEPRINT INTERFACES -->
 # Google Calendar
 

@@ -3,6 +3,12 @@ content:
 dependencies:
 - blueprint:
     base: module-root
+    path: blueprints/rtx-schedule-context.yaml
+  reason: Loads the validated installation schedule context before checking registration state.
+  source: recurring-tasks._rtx.source.rtx-schedule-context
+  version: 1
+- blueprint:
+    base: module-root
     path: blueprints/rtx-jobs-config.yaml
   reason: Imports the shared validated jobs configuration loader.
   source: recurring-tasks._rtx.source.rtx-jobs-config
@@ -35,7 +41,9 @@ interfaces:
   recurring-tasks._rtx.source.rtx-healthcheck-probe.interface.scripts-healthcheck:
     content:
     - _healthcheck_probe\.py
-    uses_interfaces: []
+    uses_interfaces:
+    - interface: recurring.interface.control
+      version: 1
     contract:
       arguments: {}
       caller_warnings:
@@ -290,6 +298,8 @@ runtime_dependencies:
   reason: Provides the per-user scheduler state checked by health probes.
   version: any
 schema_version: 6
-uses_interfaces: []
+uses_interfaces:
+- interface: recurring.interface.control
+  version: 1
 version: 1
 maturity: experimental

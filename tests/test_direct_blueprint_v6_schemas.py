@@ -211,6 +211,21 @@ def test_v6_export_is_source_owned_and_closed() -> None:
     assert _errors(document)
 
 
+def test_v6_source_export_accepts_setup_requirements() -> None:
+    document = _child()
+    document["exports"] = {
+        "demo-skill._rtx.interface.setup": {
+            "source_interface": "demo-skill._rtx.source.runtime.interface.execute",
+            "access": {"allow_all_modules": True, "allowed_callers": []},
+            "setup_requires_setup_of": [
+                {"interface": "dependency.interface.setup", "version": 1}
+            ],
+        }
+    }
+
+    assert _errors(document) == []
+
+
 def test_v6_relative_caller_references_remain_supported() -> None:
     for caller in ("._rtx", "..sibling", "...leaf"):
         document = _child()

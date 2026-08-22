@@ -433,7 +433,7 @@ class SetupSymlinksTests(unittest.TestCase):
         # loudly rather than silently deriving a path from this script's own
         # location.
         with tempfile.TemporaryDirectory() as tmp:
-            with self.assertRaises(TypeError):
+            with self.assertRaises(ValueError):
                 dev_link.run(home=Path(tmp))  # missing required repo_root
 
     def test_run_installs_git_hooks_when_repo_is_git_checkout(self) -> None:
@@ -486,10 +486,10 @@ class SetupSymlinksTests(unittest.TestCase):
 
             self.assertIn("not a git checkout; skipping git hooks setup", output)
 
-    def test_run_sets_ai_in_rc_file(self) -> None:
+    def test_run_does_not_persist_ai_or_logs_in_rc_file(self) -> None:
         if sys.platform == "win32":
-            # famulus-skip: category=platform-contract; reason=Windows stores AI in the user registry; alternate=test_run_sets_ai_in_windows_registry
-            self.skipTest("Windows stores AI in the user registry")
+            # famulus-skip: category=platform-contract; reason=Windows has no POSIX rc-file path to inspect; alternate=test_run_does_not_persist_ai_or_logs_in_windows_registry
+            self.skipTest("POSIX rc-file assertion")
         with tempfile.TemporaryDirectory() as tmp:
             repo_root = self.make_repo_root(Path(tmp))
             home = Path(tmp) / "home"
@@ -509,10 +509,11 @@ class SetupSymlinksTests(unittest.TestCase):
             )
 
             content = rc_file.read_text()
-            self.assertIn(f'export AI="{repo_root}"', content)
+            self.assertNotIn("AI=", content)
+            self.assertNotIn("ASSISTANT_LOGS=", content)
             self.assertNotIn("ASSISTANT_DEFAULT", content)  # dev_link does not own this var
 
-    def test_run_sets_ai_in_windows_registry(self) -> None:
+    def test_run_does_not_persist_ai_or_logs_in_windows_registry(self) -> None:
         registry_calls = []
 
         class FakeKey:
@@ -554,13 +555,7 @@ class SetupSymlinksTests(unittest.TestCase):
                     dry_run=False,
                 )
 
-            self.assertEqual(
-                registry_calls,
-                [
-                    ("AI", fake_winreg.REG_SZ, str(repo_root)),
-                    ("ASSISTANT_LOGS", fake_winreg.REG_SZ, str(home / ".assistant-logs")),
-                ],
-            )
+            self.assertEqual(registry_calls, [])
             self.assertEqual(rc_file.read_text(), "")
 
 
