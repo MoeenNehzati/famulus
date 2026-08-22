@@ -1,7 +1,9 @@
 # Rutter examples
 
-These examples illustrate the design without defining it. Core semantics are
-in `01-core-design.md`; hook and CaseMaker APIs are in `03-hook-library.md`.
+These examples illustrate the design without defining it. Core and runtime
+semantics are in `01-core-design.md` and `02-runtime-reference.md`; hook and
+CaseMaker APIs are in `03-hook-library.md`. Acceptance requirements are in
+`05-verification-and-implementation.md`.
 
 ## Repeated inventory diagnosis
 
@@ -94,7 +96,8 @@ Inventory.report publishes iteration N
 -> frozen edge enters Inventory.record
 -> repeat-safe Action writes ledger
 -> Action routes to next report or complete
--> `next(..., continue_=True)` returns that final Prompt or Done node only
+-> on this successful path, `next(..., continue_=True)` returns that final
+   Prompt or Done node only
 ```
 
 Gold is not exposed before the ordinary report is accepted. The intermediate

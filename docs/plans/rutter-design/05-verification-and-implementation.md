@@ -1,7 +1,10 @@
-# Rutter verification and implementation notes
+# Rutter verification and acceptance catalogue
 
-This document collects evidence requirements, compatibility work, and the
-implementation sequence. It is intentionally separate from the design.
+This document is the normative acceptance catalogue and compatibility record.
+Core and hook semantics are defined by `01-core-design.md`,
+`02-runtime-reference.md`, and `03-hook-library.md`. `04-examples.md` is
+illustrative. The executable task order and review boundaries are owned solely
+by `06-core-reimplementation-plan.md`.
 
 ## Required evidence before implementation approval
 
@@ -52,8 +55,8 @@ implementation sequence. It is intentionally separate from the design.
 - non-repeat-safe planned, completed, and uncertain crash windows are covered;
 - non-repeat-safe crash tests distinguish before invocation, after the durable
   uncertain marker, after effect execution, and after completed persistence;
-- completed recovery moves into exactly one ActionRecord; and
-- later callback failure preserves completed Action work;
+- completed recovery moves into exactly one ActionRecord;
+- later callback failure preserves completed Action work; and
 - reopen rejects a wrong or non-leaf owner run, stale entrance ID, mismatched
   state or mode, an owner with an active child, and an already-consumed action
   ID for planned, completed, and uncertain recovery records.
@@ -68,8 +71,8 @@ implementation sequence. It is intentionally separate from the design.
   Prompt, Action, and Call self-loops recover unambiguously;
 - stale answers are rejected across frame depth by that global revision;
 - RunResult mapping and callable routing are covered;
-- child faults retain the complete recursive parent/child path; and
-- returned child records survive later routing or hook-selection failure.
+- child faults retain the complete recursive parent/child path;
+- returned child records survive later routing or hook-selection failure; and
 - atomic reopen is covered after every push, accepted answer, effect result,
   child return, and parent resumption boundary.
 
@@ -128,7 +131,8 @@ implementation sequence. It is intentionally separate from the design.
   attempted target only as fault metadata;
 - reopen resolves active definitions without requiring executable definitions
   for historical completed runs;
-- ordinary non-diagnostic Compass usage remains unchanged; and
+- ordinary non-diagnostic Compass workflow behavior is preserved after
+  migration to the four-method Rutter interface;
 - several frozen appendix inventory iterations, including semantically equal
   and unequal reports, with `mistake`, `reason`, and `minimal_fix` requested only
   after inequality and semantic label differences treated as equal;
@@ -170,40 +174,35 @@ Required migrations:
 Storage changes require an explicit storage-version migration or rejection;
 they must not be silently reinterpreted.
 
-## Core implementation sequence
+## Implementation ownership
 
-1. Freeze public JSON schemas and definition-binding errors with failing tests.
-2. Implement exact Message/Response separation and open-Turn Messages.
-3. Implement RunResult normalization and DoneRecord authority.
-4. Implement recursive active runs, unique entrance IDs, completed-run archive,
-   and anchored/full history projections with entrance as the only control
-   coordinate.
-5. Implement explicit child attachment and atomic return settlement.
-6. Implement effect recovery for all Action modes.
-7. Implement edge staging, accepted-work preservation, and cardinality faults.
-8. Implement transition-hook child push and frozen-edge resumption.
-9. Integrate the four-method Rutter interface and thin Compass operating guide.
+`06-core-reimplementation-plan.md` is the only implementation sequence. Its
+task ownership must cover this catalogue as follows:
 
-## Hook-library implementation sequence
+- Tasks 2-5 establish the value model, storage, definition binding, and the
+  Prompt/Done lifecycle through the base four-method interface;
+- Task 6 adds recursive Calls and atomic return settlement;
+- Task 7 adds Actions and effect recovery;
+- Task 8 adds transition hooks, CaseMaker selection, and attached-call history;
+- Task 9 builds the diagnostic children and CaseMaker constructors;
+- Tasks 10-11 migrate Compass and the inventory integration; and
+- Task 12 removes obsolete paths and runs the final acceptance gates.
 
-1. Add `attached_calls(case_maker_id=None, edge_id=None)` and collision tests.
-2. Freeze QuestionCase, DiagnosisCase, and DiagnosisDetail projections.
-3. Implement `DiagnoseAnswer` as its documented ordinary state graph.
-4. Implement `AskAndDiagnose` with its visible Call.
-5. Implement `diagnose_answer_on` and `ask_and_diagnose_on`.
-6. Implement `case_sequence_after` with restart and history-overrun tests.
-7. Re-express inventory diagnosis using `case_sequence_after`.
-8. Run interactive frozen-appendix trials before adding another helper.
+This mapping assigns evidence to tasks; it does not introduce a second task
+order or review boundary.
 
 ## Planning gate
 
 Implementation should begin only after:
 
-1. the five-document design is accepted;
-2. `[complete]` a subagent semantic-preservation audit confirms this refactor
-   did not change the prior design;
-3. remaining public names and JSON schemas are frozen in tests; and
-4. an implementation plan maps changes onto the live Rutter code and existing
+1. the normative design in documents 01-03 is accepted;
+2. the illustrative examples in document 04 have been reviewed for consistency
+   with that design;
+3. this acceptance catalogue is accepted;
+4. a current cross-document consistency review covers the normative design,
+   examples, acceptance catalogue, and implementation plan; and
+5. `06-core-reimplementation-plan.md` is approved as the sole implementation
+   sequence and maps changes onto the live Rutter code and existing
    dirty-worktree ownership.
 
 ## Audit archive

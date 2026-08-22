@@ -20,9 +20,11 @@ primitives.
 **Tech Stack:** Python standard library, frozen dataclasses, finite JSON,
 repository atomic-file helpers, `pytest`, Officina blueprint validators.
 
-**Spec:** `01-core-design.md`, `02-runtime-reference.md`,
-`03-hook-library.md`, and `05-verification-and-implementation.md` in this
-directory.
+**Spec:** `01-core-design.md`, `02-runtime-reference.md`, and
+`03-hook-library.md` define the normative design;
+`05-verification-and-implementation.md` is the normative acceptance catalogue.
+`04-examples.md` is illustrative and must remain consistent with them. This
+document alone owns implementation order and review boundaries.
 
 ## Global Constraints
 
@@ -499,7 +501,10 @@ public types merely to make an intermediate stage importable.
   Add stale-revision, unknown-outcome, malformed-envelope, nonfinite-evidence,
   and contextual-validation cases. An invalid `next(response)` must preserve
   current entrance, open Turn, revision, and file bytes. A valid response fills
-  the same Turn and survives later routing failure.
+  the same Turn and survives later routing failure. Add a target-Prompt
+  rendering failure case: the accepted source Turn and source entrance remain
+  durable, no target entrance is allocated, and the fault records the attempted
+  target only as metadata.
 
 - [ ] **Step 3: Implement a small operation reducer**
 
@@ -518,19 +523,24 @@ public types merely to make an intermediate stage importable.
   replacement. Done creates one DoneRecord; terminal root `next()` is
   idempotent.
 
-- [ ] **Step 4: Implement continuation and dry-run boundaries**
+- [ ] **Step 4: Implement Prompt/Done continuation and dry-run boundaries**
 
-  `continue_=False` returns the first actually entered node. `continue_=True`
-  loops through automatic operations using a bounded in-memory operation
-  budget and returns the final LLM/terminal/fault/uncertain node. `dry_run`
-  validates and routes from supplied/durable authority, returns a preview
-  NodeView with `entry_id=None`, and never enters or persists.
+  For the Prompt/Done lifecycle available at this boundary,
+  `continue_=False` returns the first actually entered node and
+  `continue_=True` loops through automatic Done settlement using a bounded
+  in-memory operation budget until it reaches a Prompt, terminal, or fault.
+  Prompt `dry_run` validates and routes from a supplied Response; Done
+  `dry_run` may run its pure result projection against the already durable
+  DoneRecord. Both return a preview NodeView with `entry_id=None` and never
+  enter or persist. Task 6 extends these rules to Calls and child settlement;
+  Task 7 extends them to Actions and uncertain recovery without changing the
+  public method signatures.
 
-  Add the complete node/condition method matrix: Prompt accepts Response;
-  Action accepts ActionResult; Call and Done reject validation with
-  `NotApplicable`; terminal `next()` is idempotent; fault and uncertain reject
-  validation/advancement with `RunBlocked`; `get_instruction()` returns `None`
-  for Call, Done, terminal, fault, and uncertain conditions.
+  Add the Task 5 portion of the node/condition method matrix: Prompt accepts
+  Response; Done rejects validation with `NotApplicable`; terminal `next()` is
+  idempotent; and faults reject validation/advancement with `RunBlocked`.
+  `get_instruction()` returns `None` for Done, terminal, and fault conditions.
+  Task 6 owns the Call rows; Task 7 owns the Action and uncertain rows.
 
 - [ ] **Step 5: Run lifecycle tests with restart after every write boundary**
 
@@ -563,7 +573,10 @@ public types merely to make an intermediate stage importable.
   Test a parent Call whose child starts at Prompt. After push,
   `get_current_node()` and `get_instruction()` resolve the child leaf while the
   stored parent remains at the Call entrance. `continue_=False` returns that
-  child start.
+  child start. Complete the Call rows of the method matrix: at an entered Call,
+  `get_instruction()` returns `None`, `validate()` raises `NotApplicable`, and
+  argument-free `next()` attaches a missing child or settles and routes from
+  its durable completed result.
 
 - [ ] **Step 2: Specify nested return boundaries**
 
@@ -612,7 +625,11 @@ public types merely to make an intermediate stage importable.
   Assert stable action ID per entrance, exact ActionResult envelope, pure
   supplied-result validation, repeat-safe retries with the same idempotency
   key, exact completed-result matching before consumption, Action self-loops,
-  and Actions owned by nested children across reopen.
+  and Actions owned by nested children across reopen. Complete the Action and
+  uncertain rows of the method matrix: `get_instruction()` returns a stable
+  `PythonInstruction` for an Action, `validate()` validates an ActionResult,
+  omitted `next()` runs automatic Python work, and uncertain recovery returns
+  no instruction and raises `RunBlocked` from validation or advancement.
 
 - [ ] **Step 2: Write the four non-repeat-safe crash-window tests**
 
