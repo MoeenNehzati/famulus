@@ -177,6 +177,12 @@ not restate or replace that catalogue.
 - Produces: a clean implementation checkout with no copied prototype source
   changes and a locally available tracked normative design directory.
 
+**Consult for this task:**
+- This document: “Global Constraints,” “Replacement decision,” and “File
+  responsibility map.”
+- Do not load documents 01-05 yet; this task establishes the clean source and
+  plan authority before implementation context is needed.
+
 - [ ] **Step 1: Verify the source authority and dirty-reference boundary**
 
   Run in the existing prototype worktree:
@@ -244,6 +250,13 @@ public types merely to make an intermediate stage importable.
 - Produces: `Prompt`, `Action`, `Call`, `Done`, `AnswerSpec`, `Message`,
   `Response`, `ActionResult`, `RunResult`, immutable contexts and history
   records, `Reckoning`, `NodeView`, and stable errors.
+
+**Consult for this task:**
+- `01-core-design.md`: “Mental model,” “Definition lifecycle,” “Author-facing
+  primitives,” “Messages and responses,” and “Contexts and purity.”
+- `02-runtime-reference.md`: “JSON boundary,” “Local history,” “HistoryView,”
+  and “Reckoning.”
+- `05-verification-and-implementation.md`: “Definition and model contracts.”
 
 - [ ] **Step 1: Write failing exact-value tests**
 
@@ -348,6 +361,14 @@ public types merely to make an intermediate stage importable.
   `_decode_reckoning(bytes, semantic_validator=...) -> Reckoning`, and the
   existing `_ReckoningStore` transaction API over storage version 3.
 
+**Consult for this task:**
+- `02-runtime-reference.md`: “JSON boundary,” “Reckoning,” “Call invariants,”
+  “Effects and recovery,” “Faults,” “Storage and concurrency,” and
+  “Compatibility boundary.”
+- `05-verification-and-implementation.md`: “Definition and model contracts,”
+  “Actions and effects,” “Calls and nesting,” and the storage/archive items in
+  “Integration.”
+
 - [ ] **Step 1: Port the safety tests before replacing codecs**
 
   Retain cases equivalent to:
@@ -429,6 +450,14 @@ public types merely to make an intermediate stage importable.
   `RutterRegistry.open(reckoning_path)` return that same operating protocol.
   The concrete bound-voyage class may remain private and need not be exported.
 
+**Consult for this task:**
+- `01-core-design.md`: “Definition lifecycle,” “Author-facing primitives,” and
+  “Transitions, calls, and hooks.”
+- `02-runtime-reference.md`: “Definition discovery and reopen.”
+- `03-hook-library.md`: “Hook model,” “CaseMaker,” and “Constructor validation
+  and versioning.”
+- `05-verification-and-implementation.md`: “Definition and model contracts.”
+
 - [ ] **Step 1: Write binding failures first**
 
   Cover invalid IDs/versions/start state, non-Boolean multiple-case policy,
@@ -488,6 +517,14 @@ public types merely to make an intermediate stage importable.
        dry_run: bool = False) -> NodeView
   get_current_node() -> NodeView
   ```
+
+**Consult for this task:**
+- `01-core-design.md`: “Prompt,” “Done,” “Messages and responses,” “Contexts
+  and purity,” and “Public operating interface.”
+- `02-runtime-reference.md`: “Local history,” “HistoryView,” “Edges,”
+  “Accepted-work invariant,” and “Faults.”
+- `05-verification-and-implementation.md`: “Prompt contracts,” “Public
+  operating interface,” and the Prompt/continuation items in “Integration.”
 
 - [ ] **Step 1: Specify Prompt entrance and read-only operations**
 
@@ -568,6 +605,15 @@ public types merely to make an intermediate stage importable.
   return that archives/detaches/appends CallRecord while the parent stays at
   its Call entrance.
 
+**Consult for this task:**
+- `01-core-design.md`: “Call,” “Transitions, calls, and hooks,” and “Public
+  operating interface.”
+- `02-runtime-reference.md`: “Local history,” “HistoryView,” “Call invariants,”
+  “Push and return,” “Definition discovery and reopen,” “Accepted-work
+  invariant,” and “Faults.”
+- `05-verification-and-implementation.md`: “Calls and nesting” and the
+  child/archive items in “Integration.”
+
 - [ ] **Step 1: Specify child push and leaf visibility**
 
   Test a parent Call whose child starts at Prompt. After push,
@@ -619,6 +665,13 @@ public types merely to make an intermediate stage importable.
   `ActionContext`, `ActionResult`, and `EffectRecovery`.
 - Produces: `PythonInstruction(action_id, mode, run, answer_format)` and one
   effect slot owned by the deepest active run.
+
+**Consult for this task:**
+- `01-core-design.md`: “Action” and “Public operating interface.”
+- `02-runtime-reference.md`: “Effects and recovery,” “Accepted-work invariant,”
+  “Faults,” and “Storage and concurrency.”
+- `05-verification-and-implementation.md`: “Actions and effects” and the
+  effect/accepted-work items in “Integration.”
 
 - [ ] **Step 1: Write pure, repeat-safe, and non-repeat-safe tests**
 
@@ -683,6 +736,16 @@ public types merely to make an intermediate stage importable.
 - Produces: `EdgeMatch`, `after`, `before`, `on_edge`, attached Call provenance,
   and `HistoryView.attached_calls(case_maker_id=None, edge_id=None)`.
 
+**Consult for this task:**
+- `01-core-design.md`: “Contexts and purity” and “Transitions, calls, and
+  hooks.”
+- `02-runtime-reference.md`: “Local history,” “HistoryView,” “Edges,” “Push and
+  return,” and “Accepted-work invariant.”
+- `03-hook-library.md`: “Hook model,” “CaseMaker,” “History support for hooks,”
+  and “Constructor validation and versioning.”
+- `05-verification-and-implementation.md`: “Hooks and CaseMakers” and the
+  hook/control-coordinate items in “Integration.”
+
 - [ ] **Step 1: Test matchers and pure CaseMaker selection**
 
   Cover after-state, before-target, exact edge, post-Call, and post-Done
@@ -734,6 +797,18 @@ public types merely to make an intermediate stage importable.
 - Produces: `QuestionCase`, `DiagnosisCase`, `DiagnosisDetail`,
   `DiagnoseAnswer`, `AskAndDiagnose`, `diagnose_answer_on`,
   `ask_and_diagnose_on`, and `case_sequence_after`.
+
+**Consult for this task:**
+- `01-core-design.md`: “Author-facing primitives” and “Contexts and purity.”
+- `03-hook-library.md`: “Library boundary,” “Diagnostic values,” both “Standard
+  child” sections, “Why there are two diagnostic children,” all three
+  “CaseMaker constructor” sections, “History support for hooks,” “Constructor
+  validation and versioning,” and “Library non-goals.”
+- `04-examples.md`: “Fresh diagnostic questions from a list,” “A
+  non-diagnostic sequence,” and “Result-directed approval.”
+- `05-verification-and-implementation.md`: “Standard diagnostic children,”
+  “CaseMaker constructors,” and the corresponding composition items in
+  “Integration.”
 
 - [ ] **Step 1: Freeze diagnostic JSON contracts**
 
@@ -803,6 +878,16 @@ public types merely to make an intermediate stage importable.
   only LLM Messages, validation results, the current NodeView, and
   terminal/blocking conditions.
 
+**Consult for this task:**
+- `01-core-design.md`: “Messages and responses” and “Public operating
+  interface.”
+- `02-runtime-reference.md`: “Compatibility boundary.”
+- `05-verification-and-implementation.md`: “Public operating interface,”
+  “Compatibility work,” and the Compass items in “Integration.”
+- Inspect the current `docs/officina/compass-rutter.md` and
+  `skills/using-compass/SKILL.md` only as migration inputs; they do not override
+  the normative documents.
+
 - [ ] **Step 1: Write Compass contract tests**
 
   Assert Compass requests `get_instruction` only after
@@ -858,6 +943,19 @@ public types merely to make an intermediate stage importable.
   ledger publication -> next iteration, with semantic equality independent of
   exact node labels. The CLI source blueprint consumes
   `rutter.interface.bound-operations@3`.
+
+**Consult for this task:**
+- `03-hook-library.md`: “CaseMaker constructor 3: `case_sequence_after`,”
+  “History support for hooks,” “External ledgers,” and “Constructor validation
+  and versioning.”
+- `04-examples.md`: “Repeated inventory diagnosis” and “Sequence recovery
+  trace.”
+- `05-verification-and-implementation.md`: “CaseMaker constructors” and the
+  frozen-inventory, ledger, Compass, and persisted-reopen items in
+  “Integration.”
+- Inspect the frozen prototype inputs and the existing inquisitive-inventory
+  adapter only as evidence; do not treat prototype lifecycle structure as a
+  specification.
 
 - [ ] **Step 1: Write frozen integration cases**
 
@@ -929,6 +1027,15 @@ public types merely to make an intermediate stage importable.
 - Consumes: the tested version-3 runtime and migrated integrations.
 - Produces: one maintainable core with no compatibility reducer or
   diagnostic-specific lifecycle.
+
+**Consult for this task:**
+- Read `01-core-design.md`, `02-runtime-reference.md`,
+  `03-hook-library.md`, and `05-verification-and-implementation.md` completely
+  for the final acceptance audit.
+- Use `04-examples.md` only to confirm that the final integrations still
+  illustrate the normative behavior.
+- Re-read this document’s “Global Constraints,” “Normative requirement
+  traceability,” “Suggested review/commit boundaries,” and “Migration policy.”
 
 - [ ] **Step 1: Search for obsolete concepts**
 
