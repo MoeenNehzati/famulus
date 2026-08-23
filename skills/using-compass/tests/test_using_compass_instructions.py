@@ -1,4 +1,4 @@
-"""Contract tests for the source-free bound-Rutter operating guide."""
+"""Contract tests for the thin four-operation Compass guide."""
 
 from pathlib import Path
 
@@ -20,128 +20,130 @@ def _normalized_body() -> str:
     return " ".join(_authored_body().split())
 
 
-def test_loop_settles_callable_work_before_requesting_instruction() -> None:
-    """Calling get_instruction first would expose callable work to the LLM."""
+def test_loop_settles_automatic_work_before_requesting_message() -> None:
+    """Reading first would expose engine-owned Python or child work to Compass."""
 
     text = _normalized_body()
-    settle = "`advance(continue_=True)`"
+    settle = "`next(continue_=True)`"
     instruction = "`get_instruction()`"
 
     assert "one invoker-provided bound Rutter instance" in text
     assert text.index(settle) < text.index(instruction)
-    assert "input_required" in text
-    assert "Do not call `get_instruction()` before this settling attempt" in text
-    assert "consume its returned successor" in text
+    assert "settle automatic work" in text
+    assert "deepest active node" in text
+    assert "Do not call `get_instruction()` before this settling call" in text
 
 
-def test_loop_requires_exact_revision_outcome_evidence_envelope() -> None:
-    """Bare outcomes would discard the bound revision and evidence object contract."""
+def test_message_has_exact_instruction_and_data_parts() -> None:
+    """A flat or three-part instruction would violate the public Message boundary."""
 
     text = _authored_body()
     normalized = " ".join(text.split())
 
-    assert '"revision": <displayed integer>' in text
-    assert '"outcome": "<declared outcome or unexpected>"' in text
-    assert '"evidence": {<finite JSON object>}' in text
-    assert "exactly these three fields" in normalized
-    assert "displayed revision" in normalized
+    assert "exactly two top-level parts" in normalized
+    assert '"instructions"' in text
+    assert '"data"' in text
+    for field in (
+        "`instructions.text`",
+        "`instructions.answer`",
+        "`data.state`",
+        "`data.payload`",
+    ):
+        assert field in text
+    assert "engine-owned" in normalized
 
 
-def test_loop_validates_before_normal_continuation() -> None:
-    """Using one-edge movement would bypass normal callable continuation."""
-
-    text = _normalized_body()
-    validate = "`validate(result)`"
-    advance = "`advance(result, continue_=True)`"
-
-    assert text.index(validate) < text.index(advance)
-    assert "If validation is invalid, do not advance" in text
-    assert "Never use `continue_=False` in the Compass loop" in text
-    continuation = text.index("Call `advance(result, continue_=True)`")
-    classify = text.index("classify the returned successor", continuation)
-    next_instruction = text.index("call `get_instruction()`", classify)
-    assert continuation < classify < next_instruction
-    assert "repeat the settle step" not in text
-
-
-def test_dry_run_is_never_effect_authorization() -> None:
-    """A preview cannot authorize or execute callable work or external effects."""
-
-    text = _normalized_body()
-
-    assert "`dry_run=True` only previews one supplied result edge" in text
-    assert "does not invoke instructions or authorize effects" in text
-    assert "Never use dry run as permission to perform work" in text
-
-
-def test_successful_advance_classifies_each_stopped_authority_before_another_call() -> None:
-    """A successful continuation into stopped authority cannot be advanced again."""
-
-    text = _normalized_body()
-    classify = text.index("After every successful `advance(...)`")
-    complete = text.index('`fix.lifecycle == "complete"`', classify)
-    faulted = text.index('`fix.lifecycle == "faulted"`', classify)
-    uncertain = text.index('`fix.effect.disposition == "uncertain"`', classify)
-    active = text.index('`fix.lifecycle == "active"`', classify)
-    next_call = text.index("Only the active branch permits another public call", classify)
-
-    assert classify < complete < faulted < uncertain < active < next_call
-    assert "call neither `advance()` nor `get_instruction()` again" in text
-    assert "report the returned successor and terminal status, then stop" in text
-    assert "report the public fault diagnostics, then stop" in text
-    assert "stop for manual reconciliation" in text
-
-
-def test_stopped_authority_exception_is_classified_once_without_retry() -> None:
-    """A stopped-state exception must not trigger the same prohibited call again."""
-
-    text = _normalized_body()
-    exception = text.index("If `advance(...)` raises `RutterStateError`")
-    inspect = text.index("inspect the public `fix` once", exception)
-    stopped = text.index("apply the same complete, faulted, or uncertain branch", inspect)
-    gap = text.index("report a public-interface gap and stop", stopped)
-    prohibited = text.index("Do not retry `advance()` or call `get_instruction()`", gap)
-
-    assert exception < inspect < stopped < gap < prohibited
-
-
-def test_structured_callable_and_effect_statuses_classify_advance_results() -> None:
-    """Every authorized structured continuation consumes its returned successor."""
-
-    text = _normalized_body()
-    for status in ("callable", "effectful_callable", "pending_effect"):
-        branch = text.index(f"For `{status}`")
-        advance = text.index("`advance(continue_=True)`", branch)
-        classify = text.index("classify its returned successor", advance)
-        assert branch < advance < classify
-
-    for status in ("uncertain_effect", "terminal", "fault"):
-        assert f"For `{status}`" in text
-    assert "authorized_operation" in text
-    assert "No public recovery transition is authorized" in text
-    assert "Do not infer a transition" in text
-
-
-def test_mismatch_uses_exact_unexpected_evidence_without_source_search() -> None:
-    """Undeclared observations become explicit diagnostics rather than invented routes."""
+def test_llm_response_is_validated_then_passed_to_next() -> None:
+    """Accepting an LLM response anywhere else would split advancing authority."""
 
     text = _authored_body()
-    for field in (
-        "observed",
-        "conflict",
-        "why_no_outcome_fits",
-        "uncertainty",
-    ):
-        assert f'"{field}"' in text
-    normalized = _normalized_body()
-    assert "all four values must be non-empty strings" in normalized
-    assert "Do not inspect Rutter source" in normalized
-    assert "registry, codec, lock, or storage internals" in normalized
-    assert "report a public-interface gap and stop" in normalized
+    normalized = " ".join(text.split())
+    validate = "`validate(response)`"
+    advance = "`next(response, continue_=True)`"
+
+    assert '"revision"' in text
+    assert '"outcome"' in text
+    assert '"evidence"' in text
+    assert normalized.index(validate) < normalized.index(advance)
+    assert "read-only" in normalized
+    assert "leaves the current node unchanged" in normalized
+    assert "repair only from the returned public issues" in normalized
 
 
-def test_blueprint_binds_one_instance_through_the_public_rutter_export() -> None:
-    """The generated interface must be sufficient without registry or path knowledge."""
+def test_continuation_classifies_each_public_stopping_condition() -> None:
+    """A stopped node must never be mistaken for authority to continue."""
+
+    text = _normalized_body()
+    ready = text.index("`ready`")
+    terminal = text.index("`terminal`", ready)
+    fault = text.index("`fault`", terminal)
+    uncertain = text.index("`uncertain`", fault)
+
+    assert ready < terminal < fault < uncertain
+    assert "report the terminal result and stop" in text
+    assert "report the public fault and stop" in text
+    assert "stop for manual reconciliation" in text
+    assert "Only `ready` permits `get_instruction()`" in text
+
+
+def test_intermediate_continuation_is_read_from_durable_history() -> None:
+    """The final NodeView cannot stand in for automatically traversed nodes."""
+
+    text = _normalized_body()
+
+    assert "returns only the final entered `NodeView`" in text
+    assert "durable history records every intermediate traversal" in text
+    assert "Do not reconstruct that path from conversation history" in text
+
+
+def test_compass_leaves_engine_owned_work_to_rutter() -> None:
+    """Compass must not regain Python execution or nesting authority in prose."""
+
+    text = _authored_body()
+    normalized = " ".join(text.split())
+
+    assert "Rutter owns automatic Python work, hooks, diagnostics, nesting" in normalized
+    assert "never execute an internal instruction" in normalized
+    assert "never manipulate child traversal" in normalized
+    forbidden = (
+        "advance(",
+        "fix.lifecycle",
+        "fix.effect",
+        "PythonInstruction",
+        "child stack",
+        "Charter",
+        "Fix",
+    )
+    assert not [token for token in forbidden if token in text]
+
+
+def test_current_node_is_observed_only_through_public_operation() -> None:
+    """Resume diagnostics must use the active leaf view, not internal state."""
+
+    text = _normalized_body()
+
+    assert "`get_current_node()`" in text
+    assert "immutable active-leaf view" in text
+    assert "initial response-free settling call" in text
+    assert "No later validation failure grants instruction authority" in text
+    assert "public-interface gap" in text
+    assert "registry" not in text.lower()
+    assert "storage" not in text.lower()
+
+
+def test_dry_run_is_preview_only_and_outside_normal_loop() -> None:
+    """A parent-edge preview cannot authorize work or replace continuation."""
+
+    text = _normalized_body()
+
+    assert "`next(response, dry_run=True)`" in text
+    assert "immediate parent-edge preview" in text
+    assert "never performs work or authorizes work" in text
+    assert "Do not use it in the normal Compass loop" in text
+
+
+def test_blueprint_consumes_v3_bound_operations_through_complete_contract() -> None:
+    """Generated guidance needs the complete v3 binding without private authority."""
 
     root = yaml.safe_load(BLUEPRINT_PATH.read_text(encoding="utf-8"))
     gateway = yaml.safe_load(GATEWAY_BLUEPRINT_PATH.read_text(encoding="utf-8"))
@@ -153,14 +155,16 @@ def test_blueprint_binds_one_instance_through_the_public_rutter_export() -> None
     assert root["schema_version"] == gateway["schema_version"] == 6
     assert root["version"] == gateway["version"] == interface["version"] == 5
     assert gateway["uses_interfaces"] == [
-        {"interface": "rutter.interface.bound-operations", "version": 1}
+        {"interface": "rutter.interface.bound-operations", "version": 3}
+    ]
+    assert interface["uses_interfaces"] == [
+        {"interface": "rutter.interface.bound-operations", "version": 3}
     ]
     assert set(contract["arguments"]) == {"request", "binding"}
     binding = contract["arguments"]["binding"]
     assert binding["required"] is True
-    assert "one authorized bound BaseRutter instance" in binding["description"]
-    for forbidden in ("RutterRegistry", "rutter_name", "fix_path", "codec", "lock"):
-        assert forbidden not in binding["description"]
+    assert "one authorized bound Rutter instance" in binding["description"]
+    assert "four public operations" in binding["description"]
     assert root["exports"] == {
         "using-compass.interface.default": {
             "source_interface": "using-compass.source.gateway.interface.default",
@@ -169,52 +173,43 @@ def test_blueprint_binds_one_instance_through_the_public_rutter_export() -> None
     }
     assert interface["usage"] == (
         "request=<Use compass on rutter-name>; "
-        "binding=<one authorized bound BaseRutter instance>"
+        "binding=<one authorized bound Rutter instance>"
     )
-    assert contract["execution"]["state_effect"] == "mutating"
+    outcomes = {outcome["id"]: outcome for outcome in contract["outcomes"]}
+    assert set(outcomes) == {
+        "ready",
+        "terminal",
+        "faulted",
+        "uncertain",
+        "validation-failed",
+        "interface-gap",
+    }
+    assert outcomes["validation-failed"]["effects"] == []
+    assert outcomes["interface-gap"]["effects"] == []
     effects = contract["execution"]["effects"]
     assert [effect["id"] for effect in effects] == ["bound-rutter-operation"]
-    assert effects[0]["direct_io_ref"] == "bound-rutter"
     assert effects[0]["may_occur_in_outcomes"] == [
-        "advanced",
+        "ready",
         "terminal",
         "faulted",
         "uncertain",
     ]
-    outcomes = {outcome["id"]: outcome for outcome in contract["outcomes"]}
-    assert outcomes["interface-gap"]["effects"] == []
     direct_io = contract["direct_io"]
     entries = [entry for group in ("reads", "writes") for entry in direct_io[group]]
     assert not [entry for entry in entries if entry["medium"] == "local-filesystem"]
     assert not [entry for entry in entries if "path" in entry]
     bound = [entry for entry in entries if entry["id"] == "bound-rutter"]
     assert len(bound) == 1
-    assert bound[0]["medium"] == "local-system"
     assert bound[0]["system"] == "rutter.interface.bound-operations"
-    assert "encapsulated" in bound[0]["content"]
+    assert "get_instruction, validate, next, and get_current_node" in bound[0][
+        "content"
+    ]
 
 
-def test_authored_body_uses_supplied_binding_without_consuming_its_own_export() -> None:
+def test_authored_body_uses_binding_without_consuming_its_own_export() -> None:
     """A skill's public self-interface is not authority it can consume."""
 
     text = _authored_body()
 
     assert "using-compass.interface.default" not in text
     assert "invoker-provided bound Rutter instance" in text
-
-
-def test_authored_body_contains_no_legacy_runtime_vocabulary() -> None:
-    """The replacement guide cannot retain the former Fix operating surface."""
-
-    text = _authored_body()
-    forbidden = (
-        "registry.start",
-        "registry.open",
-        "give_instructions",
-        "validate_result",
-        "update(result)",
-        "rutter.fix",
-        "Fix transaction",
-        "Fix file",
-    )
-    assert not [token for token in forbidden if token in text]

@@ -208,9 +208,9 @@ interfaces:
       version: 1
     - interface: rutter.source.storage.interface.write
       version: 1
-    version: 1
-    description: Observes, validates, and advances one invoker-supplied bound Rutter
-      without construction authority.
+    version: 3
+    description: Exposes the four public bound-Rutter operations used by thin Compass
+      guidance and the inquisitive-inventory CLI without construction authority.
     contract:
       arguments:
         operation:
@@ -221,11 +221,14 @@ interfaces:
             kind: enum
             values:
             - value: get-instruction
-              description: Return one current string instruction or structured status.
+              description: Return the active leaf's exact stored Message or no instruction.
             - value: validate
-              description: Purely validate one already-produced finite input.
-            - value: advance
-              description: Reduce one input and optionally continue callable states.
+              description: Purely validate one proposed Response.
+            - value: next
+              description: Advance from the active leaf and optionally settle automatic
+                work.
+            - value: get-current-node
+              description: Return the immutable active-leaf NodeView.
         binding:
           description: One invoker-provided bound BaseRutter instance.
           required: true
@@ -234,9 +237,9 @@ interfaces:
             kind: string
             description: Bound direct Rutter Python value.
             sensitivity: user-private
-        input:
+        response:
           description: Exact revision, outcome, and evidence envelope for validate
-            or advance.
+            or next.
           required: false
           sensitivity: user-private
           type:
@@ -244,14 +247,15 @@ interfaces:
             description: Finite JSON-compatible Python mapping.
             sensitivity: user-private
         continue:
-          description: Whether advance settles authorized callable states.
+          description: Whether next settles automatic Python and nested work.
           required: false
           default: true
           sensitivity: public
           type:
             kind: boolean
         dry-run:
-          description: Whether advance previews one supplied edge without mutation.
+          description: Whether next previews only the immediate parent-edge destination
+            without mutation.
           required: false
           default: false
           sensitivity: public
@@ -261,13 +265,13 @@ interfaces:
       interaction:
         mode: unattended
       caller_warnings:
-      - external-side-effect: Advance may invoke a durably planned callable effect
-          that cannot be rolled back.
+      - external-side-effect: Next with continuation may run automatic external
+          work that cannot be rolled back.
       outputs:
       - id: result
         audience: machine
-        description: Current instruction or status, ValidationReport, or successor
-          state ID.
+        description: Stored Message with exactly two top-level parts (instructions
+          and data), ValidationReport, immutable NodeView, or no instruction.
         direct_io_ref: return-value
         cardinality:
           minimum: 1
@@ -280,7 +284,8 @@ interfaces:
         empty: Never empty on success.
         type:
           kind: string
-          description: Operation-specific public bound-Rutter result.
+          description: Operation-specific Message, ValidationReport, NodeView, or
+            null public result.
           sensitivity: user-private
       outcomes:
       - id: observed
@@ -288,28 +293,35 @@ interfaces:
         outputs:
         - result
         effects: []
-        caller_action: Classify the public instruction or status without inferring
-          a transition.
+        caller_action: Use a Message only at a ready node; otherwise classify the
+          immutable active-leaf view without inferring a transition.
       - id: validated
         class: success
         outputs:
         - result
         effects: []
-        caller_action: Advance only when the returned report is valid.
+        caller_action: Call next only when the returned report is valid.
       - id: previewed
         class: success
         outputs:
         - result
         effects: []
-        caller_action: Inspect the dry-run successor without treating it as persisted
-          authority.
-      - id: advanced
+        caller_action: Inspect the immediate parent-edge preview without treating
+          it as entered or as work authorization.
+      - id: ready
         class: success
         outputs:
         - result
         effects:
         - reckoning-update
-        caller_action: Classify the successor and public Fix before another operation.
+        caller_action: Read the active leaf's exact stored Message.
+      - id: terminal
+        class: success
+        outputs:
+        - result
+        effects:
+        - reckoning-update
+        caller_action: Report the terminal result and stop.
       - id: faulted
         class: error
         outputs:
@@ -317,18 +329,26 @@ interfaces:
         effects:
         - reckoning-update
         caller_action: Stop and report public diagnostics.
+      - id: uncertain
+        class: error
+        outputs:
+        - result
+        effects:
+        - reckoning-update
+        caller_action: Stop for manual reconciliation.
       - id: invalid-input
         class: refusal
-        outputs: []
+        outputs:
+        - result
         effects: []
-        caller_action: Correct only from the validation report and current public
-          authority.
+        caller_action: Correct only from the ValidationReport; the active node and
+          history remain unchanged.
       execution:
         state_effect: mutating
         lifecycle: finite
         consistency:
-          live: Every Fix-dependent operation locks and reloads the complete authoritative
-            Reckoning.
+          live: Every operation resolves the deepest active node; next revalidates
+            accepted work under the bound Rutter's authority.
         effects:
         - id: reckoning-update
           direct_io_ref: reckoning-store
@@ -337,8 +357,10 @@ interfaces:
             kind: direct-io
             direct_io_ref: reckoning-store
           may_occur_in_outcomes:
-          - advanced
+          - ready
+          - terminal
           - faulted
+          - uncertain
           confirmation_evidence:
             kind: direct-io
             direct_io_ref: reckoning-store
@@ -347,16 +369,16 @@ interfaces:
               work.
         mutation_safety:
           atomicity:
-            per_effect_only: Pure chains publish one replacement; effectful calls
-              retain planned and completed phases.
+            per_effect_only: Accepted traversal publishes complete durable updates;
+              external work may require separate durable recovery evidence.
           concurrent_invocations:
             safe: The storage owner serializes cooperating operations per Reckoning.
           idempotency:
-            non_idempotent: Accepted evidence advances revision and callable effects
-              may change external state.
+            non_idempotent: Accepted responses advance revision and automatic work
+              may change an external system.
           on_uncertain_completion:
-            verify_then_decide: Inspect the public Fix and follow only displayed recovery
-              authority.
+            verify_then_decide: Read the public current-node condition and stop for
+              manual reconciliation.
           partial_effects_on_failure:
             possible: External work may complete before post-effect validation or
               persistence.

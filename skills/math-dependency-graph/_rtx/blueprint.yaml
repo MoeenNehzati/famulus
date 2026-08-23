@@ -6,6 +6,13 @@ authority:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
+      - _inquisitive_inventory_cli.py
+      - Interface
+      reason: Operate one durable inventory diagnostic experiment through bounded JSON.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
       - _inventory_unit_iterator.py
       - Interface
       reason: Set up or atomically advance durable inventory source units.
@@ -88,6 +95,8 @@ content:
 - _graph_builder\.py
 - _graph_server\.py
 - _inventory_unit_iterator\.py
+- _inquisitive_inventory_cli\.py
+- _inquisitive_inventory_rutter\.py
 - _proof_normalizer\.py
 - _run_diagnostics\.py
 - __init__\.py
@@ -97,6 +106,12 @@ content:
 - tests/.*
 description: Code module for the math-dependency-graph skill.
 exports:
+  math-dependency-graph._rtx.interface.inquisitive-inventory-experiment:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - math-dependency-graph
+    source_interface: math-dependency-graph._rtx.source.rtx-inquisitive-inventory-cli.interface.experiment
   math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator:
     access:
       allow_all_modules: false
@@ -177,6 +192,14 @@ namespace_exports: {}
 node_type: module
 schema_version: 6
 sources:
+  math-dependency-graph._rtx.source.rtx-inquisitive-inventory-cli:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-inquisitive-inventory-cli.yaml
+  math-dependency-graph._rtx.source.rtx-inquisitive-inventory-rutter:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-inquisitive-inventory-rutter.yaml
   math-dependency-graph._rtx.source.rtx-inventory-unit-iterator:
     blueprint:
       base: module-root
@@ -225,5 +248,5 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/rtx-tex-macro-reader.yaml
-version: 53
+version: 54
 maturity: stable

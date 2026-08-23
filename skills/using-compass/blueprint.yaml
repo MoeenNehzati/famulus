@@ -2,8 +2,8 @@ schema_version: 6
 node_type: module
 id: using-compass
 version: 5
-description: Operates one authorized bound Rutter through its public reduction API
-  and current instruction.
+description: Operates one authorized bound Rutter through its four public operations
+  and current two-part Message.
 gateway:
   path: SKILL.md
   language: Markdown

@@ -2,8 +2,8 @@ schema_version: 6
 node_type: behavioral_source
 id: using-compass.source.gateway
 version: 5
-description: Defines source-free rules for operating one authorized bound Rutter through
-  its public reduction API.
+description: Defines thin LLM-facing rules for operating one authorized bound Rutter
+  through its four public operations and two-part Message.
 gateway:
   path: SKILL.md
   language: Markdown
@@ -12,18 +12,18 @@ content:
 dependencies: []
 uses_interfaces:
 - interface: rutter.interface.bound-operations
-  version: 1
+  version: 3
 interfaces:
   using-compass.source.gateway.interface.default:
     content:
     - SKILL\.md
     uses_interfaces:
     - interface: rutter.interface.bound-operations
-      version: 1
+      version: 3
     version: 5
-    description: Operate one authorized bound Rutter by classifying every public continuation
-      result before requesting one current string instruction.
-    usage: request=<Use compass on rutter-name>; binding=<one authorized bound BaseRutter
+    description: Settle one authorized bound Rutter to its deepest active leaf, follow
+      one two-part Message, and submit its Response through the sole advancing operation.
+    usage: request=<Use compass on rutter-name>; binding=<one authorized bound Rutter
       instance>
     contract:
       arguments:
@@ -36,27 +36,27 @@ interfaces:
             sensitivity: user-private
         binding:
           description: Invoker-provided runtime value containing one authorized bound
-            BaseRutter instance.
+            Rutter instance with four public operations.
           required: true
           sensitivity: user-private
           type:
             kind: string
-            description: Bound Python Rutter value supplied by the authorized invoker.
+            description: Bound Rutter value supplied by the authorized invoker.
             sensitivity: user-private
       preconditions: []
       interaction:
         mode: unattended
       caller_warnings:
-      - external-side-effect: Normal continuation may execute declared callable effects
-          through the bound Rutter; external work cannot be rolled back by the caller.
+      - external-side-effect: Normal continuation may execute automatic external work
+          through the bound Rutter; that work cannot be rolled back by Compass.
       outputs:
       - id: response
         audience: both
         cardinality:
           minimum: 1
           maximum: 1
-        description: Current Rutter instruction evidence, terminal result, fault,
-          uncertainty, or public-interface gap.
+        description: Current Message evidence, ready NodeView, terminal result, fault,
+          uncertainty, validation failure, or public-interface gap.
         direct_io_ref: response
         empty: Never empty.
         ordering: stable
@@ -68,14 +68,14 @@ interfaces:
           kind: string
           sensitivity: derived-private
       outcomes:
-      - id: advanced
+      - id: ready
         class: success
         outputs:
         - response
         effects:
         - bound-rutter-operation
-        caller_action: Classify the returned successor and public authority before
-          making another call on the same bound Rutter instance.
+        caller_action: Read the exact two-part Message and submit its validated Response
+          through next.
       - id: terminal
         class: success
         outputs:
@@ -98,6 +98,13 @@ interfaces:
         - bound-rutter-operation
         caller_action: Stop for manual reconciliation without inventing a recovery
           transition.
+      - id: validation-failed
+        class: refusal
+        outputs:
+        - response
+        effects: []
+        caller_action: Repair only from the returned public issues; the current
+          active leaf remains unchanged.
       - id: interface-gap
         class: refusal
         outputs:
@@ -109,9 +116,8 @@ interfaces:
         state_effect: mutating
         lifecycle: finite
         consistency:
-          live: Every operation and authority check uses the public values exposed
-            by the same bound Rutter instance; any persistence is encapsulated by
-            that interface.
+          live: Every operation resolves the deepest active leaf through the same
+            bound Rutter; durable traversal remains encapsulated by that interface.
         effects:
         - id: bound-rutter-operation
           direct_io_ref: bound-rutter
@@ -120,7 +126,7 @@ interfaces:
             kind: argument
             argument_ref: binding
           may_occur_in_outcomes:
-          - advanced
+          - ready
           - terminal
           - faulted
           - uncertain
@@ -132,17 +138,17 @@ interfaces:
               effects encapsulated by the bound Rutter interface.
         mutation_safety:
           atomicity:
-            atomic: Pure continuation stages successor coordinates and commits one
-              complete Reckoning replacement while holding the bound transaction.
+            per_effect_only: Accepted traversal is durable, while external automatic
+              work may require separate completion evidence.
           concurrent_invocations:
             safe: Cooperating bound Rutter callers serialize operations through the
               same Reckoning transaction.
           idempotency:
-            non_idempotent: An accepted result or callable continuation can advance
-              the Reckoning revision and state.
+            non_idempotent: An accepted Response or automatic continuation can advance
+              the durable revision and active node.
           on_uncertain_completion:
-            verify_then_decide: Inspect the bound Rutter's public Fix and instruction
-              status, then follow only the displayed authorized operation.
+            verify_then_decide: Read the public current-node condition and stop for
+              manual reconciliation.
           partial_effects_on_failure:
             possible: A late durability failure may leave a whole successor visible;
               an interrupted external effect may leave planned or uncertain recovery
@@ -168,8 +174,8 @@ interfaces:
           medium: prompt
           system: agent-runtime
           access: write
-          content: Current instruction evidence, terminal status, fault, uncertainty,
-            or interface-gap report.
+          content: Current Message evidence, validation issues, ready node, terminal
+            result, fault, uncertainty, or interface-gap report.
           formats:
           - markdown
           sensitivity: derived-private
@@ -177,8 +183,9 @@ interfaces:
           medium: local-system
           access: execute
           system: rutter.interface.bound-operations
-          content: Public operations on the authorized bound Rutter; state persistence
-            and storage are encapsulated by the consumed interface.
+          content: The authorized bound Rutter's get_instruction, validate, next,
+            and get_current_node operations; durable traversal is encapsulated by
+            the consumed interface.
           formats:
           - python-object
           sensitivity: user-private

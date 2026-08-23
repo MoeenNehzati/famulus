@@ -1776,16 +1776,25 @@ def test_v6_rutter_operation_effects_are_outcome_specific() -> None:
 
     bound = engine["interfaces"][
         "rutter.source.engine.interface.bound-operations"
-    ]["contract"]
-    bound_outcomes = {entry["id"]: entry for entry in bound["outcomes"]}
+    ]
+    assert bound["version"] == 3
+    assert "inquisitive-inventory CLI" in bound["description"]
+    bound_contract = bound["contract"]
+    bound_outcomes = {
+        entry["id"]: entry for entry in bound_contract["outcomes"]
+    }
     assert bound_outcomes["previewed"]["effects"] == []
-    assert bound_outcomes["advanced"]["effects"] == ["reckoning-update"]
+    for outcome in ("ready", "terminal", "faulted", "uncertain"):
+        assert bound_outcomes[outcome]["effects"] == ["reckoning-update"]
     bound_effects = {
-        entry["id"]: entry for entry in bound["execution"]["effects"]
+        entry["id"]: entry
+        for entry in bound_contract["execution"]["effects"]
     }
     assert bound_effects["reckoning-update"]["may_occur_in_outcomes"] == [
-        "advanced",
+        "ready",
+        "terminal",
         "faulted",
+        "uncertain",
     ]
 
     write = storage["interfaces"][
@@ -1935,22 +1944,48 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
 
     bound = engine_interfaces[
         "rutter.source.engine.interface.bound-operations"
-    ]["contract"]
-    bound_operations = {
-        entry["value"] for entry in bound["arguments"]["operation"]["type"]["values"]
+    ]
+    assert bound["version"] == 3
+    assert "inquisitive-inventory CLI" in bound["description"]
+    bound_contract = bound["contract"]
+    assert set(bound_contract["arguments"]) == {
+        "operation",
+        "binding",
+        "response",
+        "continue",
+        "dry-run",
     }
-    bound_outcomes = {entry["id"]: entry for entry in bound["outcomes"]}
-    assert bound_operations == {"get-instruction", "validate", "advance"}
+    bound_operations = {
+        entry["value"]
+        for entry in bound_contract["arguments"]["operation"]["type"]["values"]
+    }
+    bound_outcomes = {
+        entry["id"]: entry for entry in bound_contract["outcomes"]
+    }
+    assert bound_operations == {
+        "get-instruction",
+        "validate",
+        "next",
+        "get-current-node",
+    }
+    assert "exactly two top-level parts" in bound_contract["outputs"][0][
+        "description"
+    ]
     assert bound_outcomes["observed"]["effects"] == []
     assert bound_outcomes["validated"]["effects"] == []
     assert bound_outcomes["previewed"]["effects"] == []
-    assert bound_outcomes["advanced"]["effects"] == ["reckoning-update"]
+    assert bound_outcomes["invalid-input"]["effects"] == []
+    for outcome in ("ready", "terminal", "faulted", "uncertain"):
+        assert bound_outcomes[outcome]["effects"] == ["reckoning-update"]
     bound_effects = {
-        entry["id"]: entry for entry in bound["execution"]["effects"]
+        entry["id"]: entry
+        for entry in bound_contract["execution"]["effects"]
     }
     assert bound_effects["reckoning-update"]["may_occur_in_outcomes"] == [
-        "advanced",
+        "ready",
+        "terminal",
         "faulted",
+        "uncertain",
     ]
 
     storage_interfaces = sources["storage"]["interfaces"]

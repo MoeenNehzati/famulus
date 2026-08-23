@@ -1,0 +1,233 @@
+schema_version: 6
+node_type: behavioral_source
+id: math-dependency-graph._rtx.source.rtx-inquisitive-inventory-rutter
+version: 1
+description: Composes frozen inventory reports with an attached diagnostic Rutter
+  and one repeat-safe, action-ID-keyed ledger effect.
+gateway:
+  language: Python>=3.11
+  path: _inquisitive_inventory_rutter.py
+content:
+- _inquisitive_inventory_rutter\.py
+dependencies:
+- source: common.source.atomic-files
+  version: 1
+  blueprint:
+    base: repository-root
+    path: src/officina/common/blueprints/atomic-files.yaml
+  reason: Confines immutable action-ID-keyed ledger rows and strict ledger reads.
+- source: rutter.source.hooks
+  version: 1
+  blueprint:
+    base: repository-root
+    path: src/officina/rutter/blueprints/hooks.yaml
+  reason: Constructs the immutable case_sequence_after hook definition.
+- source: rutter.source.model
+  version: 1
+  blueprint:
+    base: repository-root
+    path: src/officina/rutter/blueprints/model.yaml
+  reason: Constructs public Rutter states, validators, records, and results.
+- source: rutter.source.runtime
+  version: 1
+  blueprint:
+    base: repository-root
+    path: src/officina/rutter/blueprints/runtime.yaml
+  reason: Creates and reopens one exact registry-bound durable voyage.
+uses_interfaces:
+- interface: common.interface.atomic-files
+  version: 1
+- interface: rutter.interface.binding
+  version: 1
+- interface: rutter.interface.hooks
+  version: 1
+- interface: rutter.interface.model
+  version: 1
+interfaces:
+  math-dependency-graph._rtx.source.rtx-inquisitive-inventory-rutter.interface.experiment-lifecycle:
+    version: 1
+    description: Seal finite source and gold cases into a new experiment, reopen
+      its current public Rutter authority, or validate its exact ledger rows.
+    usage: <setup|open|ledger> <source-cases?> <gold-cases?> <experiment-dir>
+    content:
+    - _inquisitive_inventory_rutter\.py
+    uses_interfaces:
+    - interface: common.interface.atomic-files
+      version: 1
+    - interface: rutter.interface.binding
+      version: 1
+    - interface: rutter.interface.hooks
+      version: 1
+    - interface: rutter.interface.model
+      version: 1
+    contract:
+      arguments:
+        operation:
+          description: Exact lifecycle operation.
+          required: true
+          sensitivity: public
+          type:
+            kind: enum
+            values:
+            - value: setup
+              description: Create a new experiment from separately supplied frozen cases.
+            - value: open
+              description: Reopen an existing experiment.
+            - value: ledger
+              description: Read and validate sorted action-ID-keyed ledger rows.
+        source-cases:
+          description: Controller-frozen before and after inventory snapshots used only by setup.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+            description: Finite JSON-compatible Python array.
+            sensitivity: user-private
+        gold-cases:
+          description: Separately adjudicated semantic answers used only by setup.
+          required: false
+          sensitivity: secret
+          type:
+            kind: string
+            description: Finite JSON-compatible Python array.
+            sensitivity: secret
+        experiment-dir:
+          description: Exact experiment directory created by setup or read by open.
+          direct_io_ref: experiment-state
+          required: true
+          sensitivity: user-private
+          type:
+            kind: dir
+            access: read-write
+            must_exist: false
+            relative_to: caller-cwd
+            syntax: literal
+      preconditions: []
+      interaction:
+        mode: unattended
+      caller_warnings:
+      - external-side-effect: Setup creates a durable Reckoning and ledger directory;
+          open only reads current authority.
+      outputs:
+      - id: result
+        audience: machine
+        description: Exact bound public Rutter voyage or validated ledger-row array.
+        direct_io_ref: return-value
+        cardinality:
+          minimum: 1
+          maximum: 1
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        empty: Never empty on success.
+        type:
+          kind: string
+          description: Bound Python Rutter value or finite ledger-row array.
+          sensitivity: user-private
+      outcomes:
+      - id: created
+        class: success
+        outputs:
+        - result
+        effects:
+        - experiment-create
+        caller_action: Operate only the returned public voyage.
+      - id: opened
+        class: success
+        outputs:
+        - result
+        effects: []
+        caller_action: Resume from the returned current authority.
+      - id: ledger
+        class: success
+        outputs:
+        - result
+        effects: []
+        caller_action: Consume the validated sorted ledger rows.
+      - id: rejected
+        class: refusal
+        outputs: []
+        effects: []
+        caller_action: Correct the frozen case arrays or exact path before retrying.
+      - id: failed
+        class: error
+        outputs: []
+        effects:
+        - experiment-create
+        caller_action: Inspect the selected directory before choosing a fresh setup path.
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency:
+          live: Setup seals exact inputs once; open reads the current durable Reckoning.
+        effects:
+        - id: experiment-create
+          direct_io_ref: experiment-state
+          action: create
+          value_source:
+            kind: argument
+            argument_ref: experiment-dir
+          may_occur_in_outcomes:
+          - created
+          - failed
+          confirmation_evidence:
+            kind: direct-io
+            direct_io_ref: experiment-state
+          reversibility:
+            irreversible: The lifecycle helper never removes an experiment directory.
+        mutation_safety:
+          atomicity:
+            per_effect_only: Reckoning and ledger files use their own confined atomic boundaries.
+          concurrent_invocations:
+            unsafe: Concurrent setup calls for one absent directory are not coordinated.
+          idempotency:
+            non_idempotent: Setup rejects an existing directory; open is read-only.
+          on_uncertain_completion:
+            verify_then_decide: Attempt strict open before selecting a fresh setup path.
+          partial_effects_on_failure:
+            possible: A directory can exist if binding fails after directory creation.
+          rollback_on_failure:
+            unavailable: No cleanup or rollback is authorized.
+        verification:
+        - method: direct-io-state
+          direct_io_ref: experiment-state
+      helpers: []
+      direct_io:
+        network: []
+        reads:
+        - id: experiment-state
+          medium: local-filesystem
+          access: read-write
+          system: filesystem
+          content: Durable Reckoning, lock, and action-ID-keyed ledger rows.
+          formats:
+          - json
+          path: <experiment-dir>/**
+          path_match: glob
+          sensitivity: secret
+        writes:
+        - id: experiment-state
+          medium: local-filesystem
+          access: read-write
+          system: filesystem
+          content: Durable Reckoning, lock, and action-ID-keyed ledger rows.
+          formats:
+          - json
+          path: <experiment-dir>/**
+          path_match: glob
+          sensitivity: secret
+        - id: return-value
+          medium: local-system
+          access: write
+          content: Bound public Rutter voyage or validated ledger-row array.
+          formats:
+          - python-object
+          sensitivity: user-private
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+maturity: experimental

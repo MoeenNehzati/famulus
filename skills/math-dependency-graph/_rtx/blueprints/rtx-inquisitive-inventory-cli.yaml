@@ -1,0 +1,391 @@
+schema_version: 6
+node_type: behavioral_source
+id: math-dependency-graph._rtx.source.rtx-inquisitive-inventory-cli
+version: 1
+description: Exposes setup, show, next, and ledger operations as one finite JSON
+  process without exposing bound Rutter internals.
+gateway:
+  language: Python>=3.11
+  path: _inquisitive_inventory_cli.py
+content:
+- _inquisitive_inventory_cli\.py
+dependencies:
+- source: math-dependency-graph._rtx.source.rtx-inquisitive-inventory-rutter
+  version: 1
+  blueprint:
+    base: module-root
+    path: blueprints/rtx-inquisitive-inventory-rutter.yaml
+  reason: Creates, opens, and reads the exact inventory experiment and ledger.
+- source: rutter.source.engine
+  version: 1
+  blueprint:
+    base: repository-root
+    path: src/officina/rutter/blueprints/engine.yaml
+  reason: Uses only the public bound validation, next, observation, and instruction operations.
+- source: rutter.source.model
+  version: 1
+  blueprint:
+    base: repository-root
+    path: src/officina/rutter/blueprints/model.yaml
+  reason: Projects public Message, PythonInstruction, NodeView, and ValidationReport values.
+uses_interfaces:
+- interface: math-dependency-graph._rtx.source.rtx-inquisitive-inventory-rutter.interface.experiment-lifecycle
+  version: 1
+- interface: rutter.interface.bound-operations
+  version: 3
+- interface: rutter.interface.model
+  version: 1
+interfaces:
+  math-dependency-graph._rtx.source.rtx-inquisitive-inventory-cli.interface.experiment:
+    version: 1
+    description: Operate one exact durable inventory experiment and emit one finite JSON result.
+    usage: <setup|show|next|ledger> --experiment-dir <path> [--source-cases-file
+      <path> --gold-cases-file <path>] [--response-file <path>]
+    content:
+    - _inquisitive_inventory_cli\.py
+    uses_interfaces:
+    - interface: math-dependency-graph._rtx.source.rtx-inquisitive-inventory-rutter.interface.experiment-lifecycle
+      version: 1
+    - interface: rutter.interface.bound-operations
+      version: 3
+    - interface: rutter.interface.model
+      version: 1
+    process_binding:
+      kind: process
+      entry: Interface
+      patterns:
+      - name: setup
+        min_positionals: 1
+        max_positionals: 1
+        allow_stdin: false
+        positional_patterns:
+          '0': ^setup$
+        allowed_flags:
+        - --source-cases-file
+        - --gold-cases-file
+        - --experiment-dir
+        required_flags:
+        - --source-cases-file
+        - --gold-cases-file
+        - --experiment-dir
+        flag_patterns:
+          --source-cases-file: ^.+$
+          --gold-cases-file: ^.+$
+          --experiment-dir: ^.+$
+      - name: show
+        min_positionals: 1
+        max_positionals: 1
+        allow_stdin: false
+        positional_patterns:
+          '0': ^show$
+        allowed_flags:
+        - --experiment-dir
+        required_flags:
+        - --experiment-dir
+        flag_patterns:
+          --experiment-dir: ^.+$
+      - name: next
+        min_positionals: 1
+        max_positionals: 1
+        allow_stdin: false
+        positional_patterns:
+          '0': ^next$
+        allowed_flags:
+        - --experiment-dir
+        - --response-file
+        required_flags:
+        - --experiment-dir
+        flag_patterns:
+          --experiment-dir: ^.+$
+          --response-file: ^.+$
+      - name: ledger
+        min_positionals: 1
+        max_positionals: 1
+        allow_stdin: false
+        positional_patterns:
+          '0': ^ledger$
+        allowed_flags:
+        - --experiment-dir
+        required_flags:
+        - --experiment-dir
+        flag_patterns:
+          --experiment-dir: ^.+$
+    contract:
+      arguments:
+        operation:
+          description: Exact process mode.
+          required: true
+          sensitivity: public
+          type:
+            kind: enum
+            values:
+            - value: setup
+              description: Create one experiment from separately frozen inputs.
+            - value: show
+              description: Reopen and show the current public node and instruction.
+            - value: next
+              description: Validate an optional response and continue the public voyage.
+            - value: ledger
+              description: Read sorted action-ID-keyed ledger rows.
+        source-cases-file:
+          description: Controller-frozen source cases used only by setup.
+          direct_io_ref: source-read
+          required: false
+          sensitivity: user-private
+          type:
+            kind: file
+            access: read
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+            content_type:
+              kind: string
+              sensitivity: user-private
+        gold-cases-file:
+          description: Separately adjudicated gold cases used only by setup.
+          direct_io_ref: gold-read
+          required: false
+          sensitivity: secret
+          type:
+            kind: file
+            access: read
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+            content_type:
+              kind: string
+              sensitivity: secret
+        experiment-dir:
+          description: Exact durable experiment directory used by every mode.
+          direct_io_ref: experiment-state
+          required: true
+          sensitivity: user-private
+          type:
+            kind: dir
+            access: read-write
+            must_exist: false
+            relative_to: caller-cwd
+            syntax: literal
+        response-file:
+          description: Optional finite JSON response for next; omit only for automatic continuation or effect recovery.
+          direct_io_ref: response-read
+          required: false
+          sensitivity: user-private
+          type:
+            kind: file
+            access: read
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+            content_type:
+              kind: string
+              sensitivity: user-private
+      preconditions: []
+      interaction:
+        mode: unattended
+      caller_warnings:
+      - external-side-effect: Setup creates experiment state; next can publish transitions
+          and a repeat-safe ledger row.
+      outputs:
+      - id: result
+        audience: machine
+        description: One finite JSON public node/instruction or sorted ledger projection.
+        direct_io_ref: stdout
+        cardinality:
+          minimum: 1
+          maximum: 1
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        empty: Never empty.
+        type:
+          kind: string
+          format:
+            named: json
+          sensitivity: user-private
+      - id: error
+        audience: machine
+        description: One finite structured JSON error with validation issues when available.
+        direct_io_ref: stderr
+        cardinality:
+          minimum: 0
+          maximum: 1
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        empty: Empty on success.
+        type:
+          kind: string
+          format:
+            named: json
+          sensitivity: derived-private
+      outcomes:
+      - id: setup
+        class: success
+        outputs:
+        - result
+        effects:
+        - experiment-create
+        caller_action: Follow only the returned public instruction.
+      - id: shown
+        class: success
+        outputs:
+        - result
+        effects: []
+        caller_action: Follow only the current public node and instruction.
+      - id: advanced
+        class: success
+        outputs:
+        - result
+        effects:
+        - experiment-update
+        caller_action: Continue from the returned public node and instruction.
+      - id: ledger
+        class: success
+        outputs:
+        - result
+        effects: []
+        caller_action: Consume the sorted exact ledger rows.
+      - id: rejected
+        class: refusal
+        outputs:
+        - result
+        - error
+        effects: []
+        caller_action: Correct the structured input or response before retrying.
+      - id: failed
+        class: error
+        outputs:
+        - result
+        - error
+        effects:
+        - experiment-update
+        caller_action: Reopen durable state before choosing an authorized recovery.
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency:
+          live: Every non-setup mode reopens the exact current Reckoning before operating.
+        effects:
+        - id: experiment-create
+          direct_io_ref: experiment-state
+          action: create
+          value_source:
+            kind: argument
+            argument_ref: experiment-dir
+          may_occur_in_outcomes:
+          - setup
+          confirmation_evidence:
+            kind: direct-io
+            direct_io_ref: experiment-state
+          reversibility:
+            irreversible: The adapter never deletes experiment state.
+        - id: experiment-update
+          direct_io_ref: experiment-state
+          action: update
+          value_source:
+            kind: argument
+            argument_ref: experiment-dir
+          may_occur_in_outcomes:
+          - advanced
+          - failed
+          confirmation_evidence:
+            kind: output
+            output_ref: result
+          reversibility:
+            irreversible: Accepted transitions and ledger rows are retained.
+        mutation_safety:
+          atomicity:
+            per_effect_only: Core Reckoning and ledger publications each use their own atomic boundary.
+          concurrent_invocations:
+            serialized: The Rutter store serializes voyage transitions; setup path creation remains exclusive.
+          idempotency:
+            non_idempotent: Setup rejects existing state; action recovery reuses its stable action ID.
+          on_uncertain_completion:
+            verify_then_decide: Show current authority and ledger before retrying next.
+          partial_effects_on_failure:
+            possible: A ledger effect can complete before its Action result is accepted.
+          rollback_on_failure:
+            unavailable: Persisted Rutter authority is not rolled back.
+        verification:
+        - method: output-schema
+          output_ref: result
+      helpers: []
+      direct_io:
+        network: []
+        reads:
+        - id: source-read
+          medium: local-filesystem
+          access: read
+          system: filesystem
+          content: Frozen source-case JSON.
+          formats:
+          - json
+          path: <source-cases-file>
+          path_match: exact
+          sensitivity: user-private
+        - id: gold-read
+          medium: local-filesystem
+          access: read
+          system: filesystem
+          content: Adjudicated gold-case JSON.
+          formats:
+          - json
+          path: <gold-cases-file>
+          path_match: exact
+          sensitivity: secret
+        - id: response-read
+          medium: local-filesystem
+          access: read
+          system: filesystem
+          content: Optional public Rutter response JSON.
+          formats:
+          - json
+          path: <response-file>
+          path_match: exact
+          sensitivity: user-private
+        - id: experiment-state
+          medium: local-filesystem
+          access: read-write
+          system: filesystem
+          content: Durable Reckoning, lock, and action-ID-keyed ledger rows.
+          formats:
+          - json
+          path: <experiment-dir>/**
+          path_match: glob
+          sensitivity: secret
+        writes:
+        - id: experiment-state
+          medium: local-filesystem
+          access: read-write
+          system: filesystem
+          content: Durable Reckoning, lock, and action-ID-keyed ledger rows.
+          formats:
+          - json
+          path: <experiment-dir>/**
+          path_match: glob
+          sensitivity: secret
+        - id: stdout
+          medium: stdout
+          access: write
+          content: One finite JSON result.
+          formats:
+          - json
+          sensitivity: user-private
+        - id: stderr
+          medium: stderr
+          access: write
+          content: One finite JSON error.
+          formats:
+          - json
+          sensitivity: derived-private
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+maturity: experimental
