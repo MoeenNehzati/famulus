@@ -305,10 +305,18 @@ jobs:
           mkdir -p "$HOME/.assistant-logs"
           cp ".repo-checks/assistant-access-linux.json" "$HOME/.assistant-logs/assistant-access-linux.json"
 
+      - name: Enable Codex user namespaces on hosted Ubuntu
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
       - name: Run Linux Codex host-enforcement
         if: matrix.os == 'ubuntu-latest'
         env: *assistant-access-env
         run: codex sandbox -c 'sandbox_mode="workspace-write"' -c sandbox_workspace_write.network_access=true -- python3 skills/install-assistant-tools/_rtx/tests/assistant_access_probe.py host-enforcement --state "${{ runner.temp }}/famulus-assistant-access/probe-state.json" --evidence "$HOME/.assistant-logs/assistant-access-linux.json"
+
+      - name: Restore hosted Ubuntu user namespace restriction
+        if: always() && matrix.os == 'ubuntu-latest'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=1
 
       - name: Collect Linux assistant evidence outside the sandbox
         if: always() && matrix.os == 'ubuntu-latest'

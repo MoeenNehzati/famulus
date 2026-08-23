@@ -1178,6 +1178,11 @@ def test_unified_access_qualification_scopes_pins_control_and_credentials() -> N
     assert "Stage Linux assistant evidence in configured writable root" in workflow
     assert "Collect Linux assistant evidence outside the sandbox" in workflow
     assert '"$HOME/.assistant-logs/assistant-access-linux.json"' in workflow
+    assert "Enable Codex user namespaces on hosted Ubuntu" in workflow
+    assert "Restore hosted Ubuntu user namespace restriction" in workflow
+    assert workflow.count(
+        "kernel.apparmor_restrict_unprivileged_userns="
+    ) == 2
     assert "FAMULUS_CLAUDE_ACCESS_SMOKE_API_KEY" in workflow
     assert "ANTHROPIC_API_KEY: ${{ secrets.FAMULUS_CLAUDE_ACCESS_SMOKE_API_KEY }}" in workflow
     assert "<<:" not in workflow
