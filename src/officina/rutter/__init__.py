@@ -1,6 +1,16 @@
 """Public immutable Rutter authoring and value model."""
 
 from officina.rutter.hooks import CaseMaker, EdgeMatch, after, before, on_edge
+from officina.rutter.diagnostic import (
+    AskAndDiagnose,
+    DiagnoseAnswer,
+    DiagnosisCase,
+    DiagnosisDetail,
+    QuestionCase,
+    ask_and_diagnose_on,
+    case_sequence_after,
+    diagnose_answer_on,
+)
 from officina.rutter.model import (
     Action,
     ActionContext,
@@ -59,6 +69,7 @@ __all__ = (
     "ActiveRun",
     "AnswerContext",
     "AnswerSpec",
+    "AskAndDiagnose",
     "Call",
     "CallRecord",
     "CallRecordView",
@@ -68,6 +79,9 @@ __all__ = (
     "CompletedRunView",
     "Done",
     "DoneRecord",
+    "DiagnoseAnswer",
+    "DiagnosisCase",
+    "DiagnosisDetail",
     "EdgeMatch",
     "EdgeContext",
     "EnteredNode",
@@ -81,6 +95,7 @@ __all__ = (
     "Prompt",
     "PreviewUnavailable",
     "PythonInstruction",
+    "QuestionCase",
     "Reckoning",
     "Response",
     "RunResult",
@@ -98,7 +113,10 @@ __all__ = (
     "ValidationReport",
     "accept",
     "after",
+    "ask_and_diagnose_on",
     "before",
+    "case_sequence_after",
     "empty_data",
+    "diagnose_answer_on",
     "on_edge",
 )
