@@ -75,9 +75,17 @@ if not __package__:
     sys.path.insert(0, str(Path(__file__).parent))
 
 if __package__:
-    from ._state_record import InstallManifestError, Manifest
+    from ._state_record import (
+        InstallManifestError,
+        Manifest,
+        strip_managed_hook_objects,
+    )
 else:
-    from _state_record import InstallManifestError, Manifest  # noqa: E402
+    from _state_record import (  # noqa: E402
+        InstallManifestError,
+        Manifest,
+        strip_managed_hook_objects,
+    )
 if __package__:
     from ._assistant_access_config import (
         ACCESS_BEGIN,
@@ -420,23 +428,33 @@ def remove_manifest_json_hooks(entry: dict, report: Report, dry_run: bool) -> bo
         report.add("skipped", f"claude hooks: {settings_file}", "no hooks section")
         return True
     changed = False
+    found: set[str] = set()
     for event_name in list(hooks.keys()):
         entries = hooks.get(event_name)
         if not isinstance(entries, list):
             continue
-        kept = [
-            e for e in entries
-            if not any(
-                isinstance(h, dict) and h.get("command", "") in commands
-                for h in e.get("hooks", [])
-            )
-        ]
-        if len(kept) != len(entries):
-            changed = True
-            if kept:
-                hooks[event_name] = kept
-            else:
-                hooks.pop(event_name)
+        kept: list[object] = []
+        event_changed = False
+        for group in entries:
+            surviving, group_changed = strip_managed_hook_objects(group, commands, found)
+            event_changed = event_changed or group_changed
+            if surviving is not None:
+                kept.append(surviving)
+        if not event_changed:
+            continue
+        changed = True
+        if kept:
+            hooks[event_name] = kept
+        else:
+            hooks.pop(event_name)
+    missing = sorted(commands - found)
+    if missing:
+        report.add(
+            "left",
+            f"claude hooks: {settings_file}",
+            f"{len(missing)} recorded managed hook command(s) no longer present; "
+            "a modified copy may remain",
+        )
     if not hooks:
         settings.pop("hooks", None)
     if not settings or settings == {"hooks": {}}:

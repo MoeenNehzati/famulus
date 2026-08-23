@@ -55,6 +55,41 @@ def manifest_path(home: Path) -> Path:
     return home / ".local" / "state" / "assistant-tools" / "install-manifest.json"
 
 
+def strip_managed_hook_objects(
+    group: object, commands: set[str], found: set[str]
+) -> tuple[object | None, bool]:
+    """Remove the installer's hook objects from one Claude entry group.
+
+    Returns the group to keep (None to drop it entirely) and whether it
+    changed, recording every matched command in `found`.
+
+    A Claude `hooks[event]` element is shared structure, not an
+    installer-owned unit: the installer writes one hook object per binding,
+    but a user may add their own alongside it. Only hook objects whose
+    command was recorded at install are removed, and the group survives
+    unless nothing of the user's is left in it. Both install (replacing its
+    own entries on a re-run) and uninstall go through here, so neither can
+    delete user-authored hooks as collateral.
+    """
+    if not isinstance(group, dict):
+        return group, False
+    hook_objects = group.get("hooks")
+    if not isinstance(hook_objects, list):
+        return group, False
+    kept = []
+    for hook in hook_objects:
+        if isinstance(hook, dict) and hook.get("command", "") in commands:
+            found.add(hook["command"])
+            continue
+        kept.append(hook)
+    if len(kept) == len(hook_objects):
+        return group, False
+    if kept or set(group) - {"hooks", "matcher"}:
+        group["hooks"] = kept
+        return group, True
+    return None, True
+
+
 class Manifest:
     """Load/record/save install side effects. Dedupes on (kind, path)."""
 
