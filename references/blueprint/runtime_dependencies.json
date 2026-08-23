@@ -4770,6 +4770,9 @@
         "applies": false
       },
       "interfaces": {
+        "math-dependency-graph._rtx.interface.inquisitive-inventory-experiment": {
+          "dependencies": []
+        },
         "math-dependency-graph._rtx.interface.scripts-advance-extraction-phases": {
           "dependencies": [
             {

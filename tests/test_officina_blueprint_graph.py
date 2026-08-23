@@ -1842,7 +1842,7 @@ def test_v6_rutter_bound_operations_names_response_required_boundary() -> None:
 
 
 def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
-    """The four cohesive implementation files own exact imports and interfaces."""
+    """The cohesive implementation files own exact imports and interfaces."""
 
     repo_root = Path(__file__).resolve().parents[1]
     graph = load_repository_blueprint_graph(
@@ -1855,7 +1855,7 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
         name: yaml.safe_load(
             (rutter_root / "blueprints" / f"{name}.yaml").read_text(encoding="utf-8")
         )
-        for name in ("model", "hooks", "engine", "storage", "runtime")
+        for name in ("model", "hooks", "diagnostic", "engine", "storage", "runtime")
     }
     common = yaml.safe_load(
         (rutter_root.parent / "common" / "blueprint.yaml").read_text(encoding="utf-8")
@@ -1863,6 +1863,7 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
 
     assert module["content"] == [
         r"__init__\.py",
+        r"diagnostic\.py",
         r"engine\.py",
         r"hooks\.py",
         r"model\.py",
@@ -1872,6 +1873,7 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
     assert set(module["sources"]) == {
         "rutter.source.model",
         "rutter.source.hooks",
+        "rutter.source.diagnostic",
         "rutter.source.engine",
         "rutter.source.storage",
         "rutter.source.runtime",
@@ -1880,6 +1882,7 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
         "rutter",
         "rutter.source.model",
         "rutter.source.hooks",
+        "rutter.source.diagnostic",
         "rutter.source.engine",
         "rutter.source.storage",
         "rutter.source.runtime",
@@ -1887,17 +1890,24 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
     assert set(module["exports"]) == {
         "rutter.interface.binding",
         "rutter.interface.bound-operations",
+        "rutter.interface.diagnostic",
         "rutter.interface.hooks",
         "rutter.interface.model",
     }
-    assert module["exports"]["rutter.interface.bound-operations"]["access"] == {
-        "allow_all_modules": False,
-        "allowed_callers": ["using-compass"],
+    expected_callers = {
+        "rutter.interface.binding": {"math-dependency-graph._rtx"},
+        "rutter.interface.bound-operations": {
+            "math-dependency-graph._rtx",
+            "using-compass",
+        },
+        "rutter.interface.diagnostic": {"math-dependency-graph._rtx"},
+        "rutter.interface.hooks": set(),
+        "rutter.interface.model": {"math-dependency-graph._rtx"},
     }
-    assert module["exports"]["rutter.interface.binding"]["access"] == {
-        "allow_all_modules": False,
-        "allowed_callers": [],
-    }
+    for interface_id, callers in expected_callers.items():
+        access = module["exports"][interface_id]["access"]
+        assert access["allow_all_modules"] is False
+        assert set(access["allowed_callers"]) == callers
     for name, source in sources.items():
         assert source["gateway"] == {"path": f"{name}.py", "language": "Python"}
         assert source["content"] == [rf"{name}\.py"]
@@ -1908,6 +1918,9 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
     }
     assert set(sources["hooks"]["interfaces"]) == {
         "rutter.source.hooks.interface.python-api"
+    }
+    assert set(sources["diagnostic"]["interfaces"]) == {
+        "rutter.source.diagnostic.interface.python-api"
     }
     assert set(sources["engine"]["interfaces"]) == {
         "rutter.source.engine.interface.binding",
@@ -1930,6 +1943,28 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
     assert sources["hooks"]["uses_interfaces"] == [
         {"interface": "rutter.source.model.interface.python-api", "version": 1},
     ]
+    assert [entry["source"] for entry in sources["diagnostic"]["dependencies"]] == [
+        "rutter.source.hooks",
+        "rutter.source.model",
+    ]
+    assert sources["diagnostic"]["uses_interfaces"] == [
+        {"interface": "rutter.source.hooks.interface.python-api", "version": 1},
+        {"interface": "rutter.source.model.interface.python-api", "version": 1},
+    ]
+    diagnostic_contract = sources["diagnostic"]["interfaces"][
+        "rutter.source.diagnostic.interface.python-api"
+    ]["contract"]
+    assert {
+        entry["value"]
+        for entry in diagnostic_contract["arguments"]["operation"]["type"]["values"]
+    } == {
+        "question-case",
+        "diagnosis-case",
+        "diagnosis-detail",
+        "diagnose-answer",
+        "ask-and-diagnose",
+        "case-maker",
+    }
     assert [entry["source"] for entry in sources["storage"]["dependencies"]] == [
         "rutter.source.model",
         "common.source.atomic-files",
@@ -1958,6 +1993,35 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
         {"interface": "rutter.source.model.interface.python-api", "version": 1},
         {"interface": "rutter.source.storage.interface.read", "version": 1},
     ]
+
+    inventory = yaml.safe_load(
+        (
+            repo_root
+            / "skills/math-dependency-graph/_rtx/blueprints/rtx-inquisitive-inventory-rutter.yaml"
+        ).read_text(encoding="utf-8")
+    )
+    assert [entry["source"] for entry in inventory["dependencies"]] == [
+        "common.source.atomic-files",
+        "rutter.source.diagnostic",
+        "rutter.source.model",
+        "rutter.source.runtime",
+    ]
+    assert inventory["uses_interfaces"] == [
+        {"interface": "common.interface.atomic-files", "version": 1},
+        {"interface": "rutter.interface.binding", "version": 1},
+        {"interface": "rutter.interface.diagnostic", "version": 1},
+        {"interface": "rutter.interface.model", "version": 1},
+    ]
+    assert inventory["interfaces"][
+        "math-dependency-graph._rtx.source.rtx-inquisitive-inventory-rutter.interface.experiment-lifecycle"
+    ]["uses_interfaces"] == inventory["uses_interfaces"]
+
+    final_contract_text = "\n".join(
+        (rutter_root / "blueprints" / f"{name}.yaml").read_text(encoding="utf-8")
+        for name in ("model", "storage", "engine", "runtime")
+    )
+    assert "Fix" not in final_contract_text
+    assert "BaseRutter" not in final_contract_text
 
     engine_interfaces = sources["engine"]["interfaces"]
     binding = engine_interfaces["rutter.source.engine.interface.binding"]["contract"]

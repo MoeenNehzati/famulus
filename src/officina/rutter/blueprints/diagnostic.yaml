@@ -1,0 +1,128 @@
+schema_version: 6
+node_type: behavioral_source
+id: rutter.source.diagnostic
+version: 1
+description: Defines exact diagnostic values, ordinary diagnostic child Rutters, and reusable CaseMaker constructors.
+gateway:
+  path: diagnostic.py
+  language: Python
+content:
+- diagnostic\.py
+dependencies:
+- source: rutter.source.hooks
+  version: 1
+  blueprint:
+    base: module-root
+    path: blueprints/hooks.yaml
+  reason: Imports immutable CaseMaker and EdgeMatch definitions.
+- source: rutter.source.model
+  version: 1
+  blueprint:
+    base: module-root
+    path: blueprints/model.yaml
+  reason: Imports ordinary Rutter states, callback contexts, history, validation, and result values.
+uses_interfaces:
+- interface: rutter.source.hooks.interface.python-api
+  version: 1
+- interface: rutter.source.model.interface.python-api
+  version: 1
+interfaces:
+  rutter.source.diagnostic.interface.python-api:
+    content:
+    - diagnostic\.py
+    uses_interfaces:
+    - interface: rutter.source.hooks.interface.python-api
+      version: 1
+    - interface: rutter.source.model.interface.python-api
+      version: 1
+    version: 1
+    description: Constructs exact diagnostic cases, ordinary diagnostic child Rutters, and reusable CaseMakers.
+    contract:
+      arguments:
+        operation:
+          description: Diagnostic value, child definition, or CaseMaker construction to perform.
+          required: true
+          sensitivity: public
+          type:
+            kind: enum
+            values:
+            - value: question-case
+              description: Construct one exact fresh-question contract.
+            - value: diagnosis-case
+              description: Construct one exact supplied-answer diagnosis contract.
+            - value: diagnosis-detail
+              description: Construct one exact mistake, reason, and minimal-fix detail.
+            - value: diagnose-answer
+              description: Use the ordinary supplied-answer diagnostic child Rutter.
+            - value: ask-and-diagnose
+              description: Use the ordinary fresh-question diagnostic child Rutter.
+            - value: case-maker
+              description: Construct one reusable diagnostic or finite-sequence CaseMaker.
+        value:
+          description: Operation-specific immutable Python arguments.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+            description: Exact diagnostic value or constructor arguments.
+            sensitivity: user-private
+      preconditions: []
+      interaction:
+        mode: unattended
+      caller_warnings: []
+      outputs:
+      - id: result
+        audience: machine
+        description: One validated immutable diagnostic value, ordinary Rutter definition, or CaseMaker.
+        direct_io_ref: return-value
+        cardinality:
+          minimum: 1
+          maximum: 1
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        empty: Never empty on success.
+        type:
+          kind: string
+          description: Immutable Python diagnostic or hook-definition value.
+          sensitivity: user-private
+      outcomes:
+      - id: completed
+        class: success
+        outputs:
+        - result
+        effects: []
+        caller_action: Use the ordinary value or definition without adding diagnostic control state to the core runtime.
+      - id: invalid-definition
+        class: error
+        outputs: []
+        effects: []
+        caller_action: Correct malformed case data, evaluator, matcher, child, or callback arguments.
+      execution:
+        state_effect: read-only
+        lifecycle: finite
+        consistency:
+          snapshot: Inputs are copied into immutable values and ordinary versioned definitions.
+        verification:
+        - method: output-schema
+          output_ref: result
+      helpers: []
+      direct_io:
+        reads: []
+        writes:
+        - id: return-value
+          medium: local-system
+          access: write
+          content: Immutable Python diagnostic or hook-definition value
+          formats:
+          - python-object
+          sensitivity: user-private
+        network: []
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+maturity: stable

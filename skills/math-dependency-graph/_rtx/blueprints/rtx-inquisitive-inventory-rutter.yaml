@@ -16,18 +16,18 @@ dependencies:
     base: repository-root
     path: src/officina/common/blueprints/atomic-files.yaml
   reason: Confines immutable action-ID-keyed ledger rows and strict ledger reads.
-- source: rutter.source.hooks
+- source: rutter.source.diagnostic
   version: 1
   blueprint:
     base: repository-root
-    path: src/officina/rutter/blueprints/hooks.yaml
-  reason: Constructs the immutable case_sequence_after hook definition.
+    path: src/officina/rutter/blueprints/diagnostic.yaml
+  reason: Constructs diagnostic cases, the DiagnoseAnswer child, and its sequence CaseMaker.
 - source: rutter.source.model
   version: 1
   blueprint:
     base: repository-root
     path: src/officina/rutter/blueprints/model.yaml
-  reason: Constructs public Rutter states, validators, records, and results.
+  reason: Constructs public Rutter states, callback contexts, validators, records, and results.
 - source: rutter.source.runtime
   version: 1
   blueprint:
@@ -39,7 +39,7 @@ uses_interfaces:
   version: 1
 - interface: rutter.interface.binding
   version: 1
-- interface: rutter.interface.hooks
+- interface: rutter.interface.diagnostic
   version: 1
 - interface: rutter.interface.model
   version: 1
@@ -56,7 +56,7 @@ interfaces:
       version: 1
     - interface: rutter.interface.binding
       version: 1
-    - interface: rutter.interface.hooks
+    - interface: rutter.interface.diagnostic
       version: 1
     - interface: rutter.interface.model
       version: 1

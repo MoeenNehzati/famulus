@@ -191,7 +191,8 @@ not restate or replace that catalogue.
   git symbolic-ref HEAD
   git log -1 --format='%H %s' HEAD
   git status --short
-  git -C /home/moeen/Documents/AI ls-files docs/plans/rutter-design
+  MAIN=$(git worktree list --porcelain | awk 'NR==1{print $2}')
+  git -C "$MAIN" ls-files docs/plans/rutter-design
   ```
 
   Expected: branch `feat/rutter-diagnostic-cases`, HEAD `d170ccfa...`, a dirty
@@ -210,7 +211,8 @@ not restate or replace that catalogue.
 
   ```bash
   git restore --source=master -- docs/plans/rutter-design
-  diff -ru /home/moeen/Documents/AI/docs/plans/rutter-design /home/moeen/Documents/AI/.worktrees/rutter-node-entry-core/docs/plans/rutter-design
+  MAIN=$(git worktree list --porcelain | awk 'NR==1{print $2}')
+  diff -ru "$MAIN/docs/plans/rutter-design" "$(git rev-parse --show-toplevel)/docs/plans/rutter-design"
   ```
 
   Expected: no output. Do not copy changed Python, skill, blueprint, test, or

@@ -770,6 +770,7 @@ def test_v6_inventory_registers_exact_rutter_module_and_source_files() -> None:
     by_id = {document.node_id: document for document in result.documents}
 
     module = by_id["rutter"]
+    diagnostic = by_id["rutter.source.diagnostic"]
     hooks = by_id["rutter.source.hooks"]
     model = by_id["rutter.source.model"]
     engine = by_id["rutter.source.engine"]
@@ -779,6 +780,7 @@ def test_v6_inventory_registers_exact_rutter_module_and_source_files() -> None:
     assert module.relative_path.as_posix() == "src/officina/rutter/blueprint.yaml"
     assert module.declaration["content"] == [
         r"__init__\.py",
+        r"diagnostic\.py",
         r"engine\.py",
         r"hooks\.py",
         r"model\.py",
@@ -787,6 +789,7 @@ def test_v6_inventory_registers_exact_rutter_module_and_source_files() -> None:
     ]
     assert set(module.declaration["sources"]) == {
         "rutter.source.engine",
+        "rutter.source.diagnostic",
         "rutter.source.hooks",
         "rutter.source.model",
         "rutter.source.runtime",
@@ -802,6 +805,11 @@ def test_v6_inventory_registers_exact_rutter_module_and_source_files() -> None:
         "language": "Python",
     }
     assert hooks.declaration["content"] == [r"hooks\.py"]
+    assert diagnostic.declaration["gateway"] == {
+        "path": "diagnostic.py",
+        "language": "Python",
+    }
+    assert diagnostic.declaration["content"] == [r"diagnostic\.py"]
     assert engine.declaration["gateway"] == {
         "path": "engine.py",
         "language": "Python",

@@ -1526,7 +1526,7 @@ def _next(
                 ]
                 return _node_view(reckoning, entered_leaf, entered_state)
         elif not isinstance(state, Done):
-            raise NotApplicable("this lifecycle node is implemented by a later task")
+            raise NotApplicable("the current node does not accept a response")
         elif not _is_missing(response):
             raise NotApplicable("Done does not accept a response")
 

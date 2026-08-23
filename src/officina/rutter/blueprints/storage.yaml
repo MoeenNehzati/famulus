@@ -15,7 +15,8 @@ dependencies:
   blueprint:
     base: module-root
     path: blueprints/model.yaml
-  reason: Imports Charter, Fix, Reckoning, diagnostics, and exact model errors.
+  reason: Imports the recursive Reckoning, entered-node and history authorities,
+    effect recovery values, and exact model errors.
 - source: common.source.atomic-files
   version: 1
   blueprint:

@@ -49,7 +49,7 @@ gateway:
 id: math-dependency-graph
 namespace_exports:
   _rtx:
-    version: 53
+    version: 54
     access:
       allow_all_modules: true
       allowed_callers: []

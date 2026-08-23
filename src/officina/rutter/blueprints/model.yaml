@@ -16,8 +16,8 @@ interfaces:
     - model\.py
     uses_interfaces: []
     version: 1
-    description: Constructs Charter, Fix, Reckoning, state, effect-policy, and validation
-      values.
+    description: Constructs Charters, state definitions, history records and views,
+      recursive Reckonings, public instructions, results, and validation values.
     contract:
       arguments:
         operation:
@@ -29,13 +29,14 @@ interfaces:
             values:
             - value: charter
               description: Construct and freeze one undertaking Charter.
-            - value: fix
-              description: Construct one machine coordinate and recovery record.
-            - value: reckoning
-              description: Pair one Charter with one Fix under the current storage
-                version.
             - value: state
-              description: Construct a nonterminal or terminal authored state.
+              description: Construct one Prompt, Action, Call, or Done definition.
+            - value: history
+              description: Construct one accepted-work record or immutable history view.
+            - value: reckoning
+              description: Construct one recursive version-3 authority rooted at an entered node.
+            - value: instruction
+              description: Construct one public instruction, response, result, or node view.
             - value: validation
               description: Construct a pure validation report and its issues.
         value:

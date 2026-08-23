@@ -15,8 +15,7 @@ dependencies:
   blueprint:
     base: module-root
     path: blueprints/engine.yaml
-  reason: Imports the direct BaseRutter type and its create and open construction
-    routes.
+  reason: Imports the bound Rutter protocol and its create and open construction routes.
 - source: rutter.source.model
   version: 1
   blueprint:
@@ -112,7 +111,7 @@ interfaces:
         empty: Never empty on success.
         type:
           kind: string
-          description: Bound direct BaseRutter instance.
+          description: Bound Rutter instance exposing the four public operations.
           sensitivity: user-private
       outcomes:
       - id: created

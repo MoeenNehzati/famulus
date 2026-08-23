@@ -9,6 +9,7 @@ gateway:
   language: Python
 content:
 - __init__\.py
+- diagnostic\.py
 - engine\.py
 - hooks\.py
 - model\.py
@@ -17,6 +18,10 @@ content:
 authority:
   owns_filesystem: []
 sources:
+  rutter.source.diagnostic:
+    blueprint:
+      base: module-root
+      path: blueprints/diagnostic.yaml
   rutter.source.engine:
     blueprint:
       base: module-root
@@ -44,13 +49,21 @@ exports:
     source_interface: rutter.source.runtime.interface.binding
     access:
       allow_all_modules: false
-      allowed_callers: []
+      allowed_callers:
+      - math-dependency-graph._rtx
   rutter.interface.bound-operations:
     source_interface: rutter.source.engine.interface.bound-operations
     access:
       allow_all_modules: false
       allowed_callers:
+      - math-dependency-graph._rtx
       - using-compass
+  rutter.interface.diagnostic:
+    source_interface: rutter.source.diagnostic.interface.python-api
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - math-dependency-graph._rtx
   rutter.interface.hooks:
     source_interface: rutter.source.hooks.interface.python-api
     access:
@@ -60,5 +73,6 @@ exports:
     source_interface: rutter.source.model.interface.python-api
     access:
       allow_all_modules: false
-      allowed_callers: []
+      allowed_callers:
+      - math-dependency-graph._rtx
 maturity: experimental

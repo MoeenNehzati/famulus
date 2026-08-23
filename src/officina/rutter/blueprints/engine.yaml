@@ -57,11 +57,11 @@ interfaces:
             kind: enum
             values:
             - value: create
-              description: Validate, persist, and bind one initial Charter plus Fix.
+              description: Validate, persist, and bind one initial Charter at its start-node entrance.
             - value: open
               description: Strictly load and bind one existing Reckoning.
         rutter-definition:
-          description: One exact direct BaseRutter subclass.
+          description: One exact stateless Rutter definition class.
           required: true
           sensitivity: user-private
           type:
@@ -111,7 +111,7 @@ interfaces:
         empty: Never empty on success.
         type:
           kind: string
-          description: Bound BaseRutter Python value.
+          description: Bound Rutter Python value.
           sensitivity: user-private
       outcomes:
       - id: created
@@ -230,7 +230,7 @@ interfaces:
             - value: get-current-node
               description: Return the immutable active-leaf NodeView.
         binding:
-          description: One invoker-provided bound BaseRutter instance.
+          description: One invoker-provided bound Rutter instance.
           required: true
           sensitivity: user-private
           type:
