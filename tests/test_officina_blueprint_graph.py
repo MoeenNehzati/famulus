@@ -2009,7 +2009,7 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
     assert inventory["uses_interfaces"] == [
         {"interface": "common.interface.atomic-files", "version": 1},
         {"interface": "rutter.interface.binding", "version": 1},
-        {"interface": "rutter.interface.diagnostic", "version": 1},
+        {"interface": "rutter.interface.diagnostic", "version": 2},
         {"interface": "rutter.interface.model", "version": 1},
     ]
     assert inventory["interfaces"][

@@ -274,12 +274,24 @@ def test_diagnosis_case_has_exact_nullable_boolean_contract(
         "question": question.to_json(),
         "actual_answer": "2",
         "precomputed_verdict": verdict,
+        "ask_for_fix": False,
     }
 
     assert case.to_json() == expected
     assert rutter.DiagnosisCase.from_json(expected) == case
     with pytest.raises(rutter.RutterDefinitionError):
         rutter.DiagnosisCase(question, "2", 1)
+    with pytest.raises(rutter.RutterDefinitionError):
+        rutter.DiagnosisCase(question, "2", verdict, ask_for_fix=1)
+
+
+def test_diagnosis_case_round_trips_exact_ask_for_fix_flag() -> None:
+    """Dropping or coercing the correction request would change prompt behavior."""
+
+    case = rutter.DiagnosisCase(_question(), "3", False, ask_for_fix=True)
+
+    assert case.to_json()["ask_for_fix"] is True
+    assert rutter.DiagnosisCase.from_json(case.to_json()) == case
 
 
 def test_diagnosis_detail_requires_three_nonempty_exact_fields() -> None:
@@ -353,7 +365,8 @@ def test_diagnose_answer_false_verdict_requests_exact_three_field_detail(
         "text": (
             "Explain the difference using separate mistake, reason, and "
             "minimal_fix fields. The minimal_fix must satisfy the governing "
-            "instructions."
+            "instructions. If ask_for_fix is true, return the complete "
+            "corrected answer in minimal_fix, preserving the requested format."
         ),
         "answer": {
             "diagnosed": {
@@ -369,6 +382,7 @@ def test_diagnose_answer_false_verdict_requests_exact_three_field_detail(
         "expected_answer": "2",
         "format_hint": {"answer": "integer"},
         "metadata": {"topic": "arithmetic"},
+        "ask_for_fix": False,
     }
     revision = message.data["state"]["revision"]
     terminal = voyage.next(
@@ -402,6 +416,24 @@ def test_diagnose_answer_false_verdict_requests_exact_three_field_detail(
     )
 
 
+def test_diagnose_answer_ask_for_fix_requires_corrected_answer_in_minimal_fix(
+    tmp_path: Path,
+) -> None:
+    """Returning only advice when correction was requested would not fix the answer."""
+
+    case = rutter.DiagnosisCase(_question(), "3", False, ask_for_fix=True)
+    voyage = rutter.RutterRegistry(
+        {"diagnose": rutter.DiagnoseAnswer}, tmp_path
+    ).create("diagnose", Path("fix-request.reckoning.json"), case.to_json())
+
+    explain = voyage.next(continue_=True)
+    message = voyage.get_instruction()
+
+    assert explain.state_id == "explain"
+    assert "complete corrected answer" in message.instructions["text"]
+    assert message.data["payload"]["ask_for_fix"] is True
+
+
 def test_diagnose_answer_without_evaluator_asks_exact_comparison_then_finishes_yes(
     tmp_path: Path,
 ) -> None:
@@ -429,6 +461,7 @@ def test_diagnose_answer_without_evaluator_asks_exact_comparison_then_finishes_y
         "expected_answer": "2",
         "format_hint": {"answer": "integer"},
         "metadata": {"topic": "arithmetic"},
+        "ask_for_fix": False,
     }
     terminal = voyage.next(
         {
@@ -840,6 +873,7 @@ def test_diagnose_answer_on_seals_extracted_answer_and_exact_evaluator_verdict()
         question=_question(),
         actual_answer=actual_answer,
         evaluator=evaluator,
+        ask_for_fix=True,
     )
     context = _edge_context()
 
@@ -847,7 +881,7 @@ def test_diagnose_answer_on_seals_extracted_answer_and_exact_evaluator_verdict()
     assert maker.on == rutter.after("answer")
     assert maker.child is rutter.DiagnoseAnswer
     assert maker.charter(context) == rutter.DiagnosisCase(
-        _question(), "2", True
+        _question(), "2", True, ask_for_fix=True
     ).to_json()
     assert seen == [context]
 

@@ -1,7 +1,7 @@
 schema_version: 6
 node_type: behavioral_source
 id: math-dependency-graph._rtx.source.rtx-inquisitive-inventory-cli
-version: 1
+version: 2
 description: Exposes setup, show, next, and ledger operations as one finite JSON
   process without exposing bound Rutter internals.
 gateway:
@@ -11,7 +11,7 @@ content:
 - _inquisitive_inventory_cli\.py
 dependencies:
 - source: math-dependency-graph._rtx.source.rtx-inquisitive-inventory-rutter
-  version: 1
+  version: 2
   blueprint:
     base: module-root
     path: blueprints/rtx-inquisitive-inventory-rutter.yaml
@@ -30,14 +30,14 @@ dependencies:
   reason: Projects public Message, PythonInstruction, NodeView, and ValidationReport values.
 uses_interfaces:
 - interface: math-dependency-graph._rtx.source.rtx-inquisitive-inventory-rutter.interface.experiment-lifecycle
-  version: 1
+  version: 2
 - interface: rutter.interface.bound-operations
   version: 3
 - interface: rutter.interface.model
   version: 1
 interfaces:
   math-dependency-graph._rtx.source.rtx-inquisitive-inventory-cli.interface.experiment:
-    version: 1
+    version: 2
     description: Operate one exact durable inventory experiment and emit one finite JSON result.
     usage: <setup|show|next|ledger> --experiment-dir <path> [--source-cases-file
       <path> --gold-cases-file <path>] [--response-file <path>]
@@ -45,7 +45,7 @@ interfaces:
     - _inquisitive_inventory_cli\.py
     uses_interfaces:
     - interface: math-dependency-graph._rtx.source.rtx-inquisitive-inventory-rutter.interface.experiment-lifecycle
-      version: 1
+      version: 2
     - interface: rutter.interface.bound-operations
       version: 3
     - interface: rutter.interface.model

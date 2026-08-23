@@ -582,6 +582,7 @@ def test_different_report_reveals_gold_only_in_attached_diagnosis(
 
     assert explain.rutter_id == rutter.DiagnoseAnswer.rutter_id
     assert explain.state_id == "explain"
+    assert "complete corrected answer" in diagnosis_message.instructions["text"]
     assert "gold-compactness" in json.dumps(
         _materialized_json(diagnosis_message.to_json()), sort_keys=True
     )

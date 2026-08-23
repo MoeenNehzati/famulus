@@ -49,7 +49,7 @@ gateway:
 id: math-dependency-graph
 namespace_exports:
   _rtx:
-    version: 54
+    version: 55
     access:
       allow_all_modules: true
       allowed_callers: []
@@ -123,7 +123,7 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/instructions-proof-reconciliation.yaml
-version: 81
+version: 82
 maturity: stable
 installation_tier: core
 personal_preference:

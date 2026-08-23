@@ -1,7 +1,7 @@
 schema_version: 6
 node_type: behavioral_source
 id: rutter.source.diagnostic
-version: 1
+version: 2
 description: Defines exact diagnostic values, ordinary diagnostic child Rutters, and reusable CaseMaker constructors.
 gateway:
   path: diagnostic.py
@@ -35,7 +35,7 @@ interfaces:
       version: 1
     - interface: rutter.source.model.interface.python-api
       version: 1
-    version: 1
+    version: 2
     description: Constructs exact diagnostic cases, ordinary diagnostic child Rutters, and reusable CaseMakers.
     contract:
       arguments:

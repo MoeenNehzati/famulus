@@ -248,5 +248,5 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/rtx-tex-macro-reader.yaml
-version: 54
+version: 55
 maturity: stable

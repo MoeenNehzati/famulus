@@ -1,7 +1,7 @@
 schema_version: 6
 node_type: behavioral_source
 id: math-dependency-graph._rtx.source.rtx-inquisitive-inventory-rutter
-version: 1
+version: 2
 description: Composes frozen inventory reports with an attached diagnostic Rutter
   and one repeat-safe, action-ID-keyed ledger effect.
 gateway:
@@ -17,7 +17,7 @@ dependencies:
     path: src/officina/common/blueprints/atomic-files.yaml
   reason: Confines immutable action-ID-keyed ledger rows and strict ledger reads.
 - source: rutter.source.diagnostic
-  version: 1
+  version: 2
   blueprint:
     base: repository-root
     path: src/officina/rutter/blueprints/diagnostic.yaml
@@ -40,12 +40,12 @@ uses_interfaces:
 - interface: rutter.interface.binding
   version: 1
 - interface: rutter.interface.diagnostic
-  version: 1
+  version: 2
 - interface: rutter.interface.model
   version: 1
 interfaces:
   math-dependency-graph._rtx.source.rtx-inquisitive-inventory-rutter.interface.experiment-lifecycle:
-    version: 1
+    version: 2
     description: Seal finite source and gold cases into a new experiment, reopen
       its current public Rutter authority, or validate its exact ledger rows.
     usage: <setup|open|ledger> <source-cases?> <gold-cases?> <experiment-dir>
@@ -57,7 +57,7 @@ interfaces:
     - interface: rutter.interface.binding
       version: 1
     - interface: rutter.interface.diagnostic
-      version: 1
+      version: 2
     - interface: rutter.interface.model
       version: 1
     contract:

@@ -166,6 +166,7 @@ class DiagnosisCase:
     question: QuestionCase
     actual_answer: str
     precomputed_verdict: bool | None = None
+    ask_for_fix: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.question, QuestionCase):
@@ -178,6 +179,8 @@ class DiagnosisCase:
             raise RutterDefinitionError(
                 "precomputed_verdict must be an exact Boolean or null"
             )
+        if type(self.ask_for_fix) is not bool:
+            raise RutterDefinitionError("ask_for_fix must be an exact Boolean")
 
     def to_json(self) -> JsonObject:
         return _freeze_object(
@@ -185,13 +188,19 @@ class DiagnosisCase:
                 "question": self.question.to_json(),
                 "actual_answer": self.actual_answer,
                 "precomputed_verdict": self.precomputed_verdict,
+                "ask_for_fix": self.ask_for_fix,
             },
             "DiagnosisCase",
         )
 
     @classmethod
     def from_json(cls, value: object) -> DiagnosisCase:
-        expected = {"question", "actual_answer", "precomputed_verdict"}
+        expected = {
+            "question",
+            "actual_answer",
+            "precomputed_verdict",
+            "ask_for_fix",
+        }
         if not isinstance(value, Mapping) or set(value) != expected:
             raise RutterStateError("DiagnosisCase has invalid fields")
         try:
@@ -199,6 +208,7 @@ class DiagnosisCase:
                 QuestionCase.from_json(value["question"]),
                 value["actual_answer"],
                 value["precomputed_verdict"],
+                value["ask_for_fix"],
             )
         except (RutterDefinitionError, TypeError, ValueError) as exc:
             raise RutterStateError(str(exc)) from exc
@@ -238,7 +248,7 @@ class DiagnosisDetail:
 
 class DiagnoseAnswer(Rutter):
     rutter_id = "diagnose-answer"
-    definition_version = 1
+    definition_version = 2
     start_state = "route"
 
     @staticmethod
@@ -260,6 +270,7 @@ class DiagnoseAnswer(Rutter):
                 "expected_answer": case.question.expected_answer,
                 "format_hint": case.question.format_hint,
                 "metadata": case.question.metadata,
+                "ask_for_fix": case.ask_for_fix,
             },
             "diagnostic payload",
         )
@@ -354,7 +365,9 @@ class DiagnoseAnswer(Rutter):
                 (
                     "Explain the difference using separate mistake, reason, and "
                     "minimal_fix fields. The minimal_fix must satisfy the governing "
-                    "instructions."
+                    "instructions. If ask_for_fix is true, return the complete "
+                    "corrected answer in minimal_fix, preserving the requested "
+                    "format."
                 ),
                 answer=AnswerSpec(
                     {
@@ -377,7 +390,7 @@ class DiagnoseAnswer(Rutter):
 
 class AskAndDiagnose(Rutter):
     rutter_id = "ask-and-diagnose"
-    definition_version = 1
+    definition_version = 2
     start_state = "ask"
     evaluator: Callable[[str, str, StateContext], bool] | None = None
 
@@ -475,7 +488,10 @@ def diagnose_answer_on(
     question: QuestionCase | Callable[[EdgeContext], QuestionCase],
     actual_answer: Callable[[EdgeContext], str],
     evaluator: Callable[[str, str, EdgeContext], bool] | None = None,
+    ask_for_fix: bool = False,
 ) -> CaseMaker:
+    if type(ask_for_fix) is not bool:
+        raise RutterDefinitionError("ask_for_fix must be an exact Boolean")
     if isinstance(question, QuestionCase):
         fixed_question = QuestionCase.from_json(question.to_json())
 
@@ -508,7 +524,12 @@ def diagnose_answer_on(
                 raise RutterDefinitionError(
                     "diagnostic evaluator must return an exact Boolean"
                 )
-        return DiagnosisCase(resolved, actual, verdict).to_json()
+        return DiagnosisCase(
+            resolved,
+            actual,
+            verdict,
+            ask_for_fix=ask_for_fix,
+        ).to_json()
 
     return CaseMaker(id, on=on, child=DiagnoseAnswer, charter=build)
 

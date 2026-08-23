@@ -647,6 +647,7 @@ def _diagnosis_charter(item: JsonObject, context: EdgeContext) -> JsonObject:
         question,
         _canonical_text(actual),
         semantic_inventory_equal(actual, expected),
+        ask_for_fix=True,
     ).to_json()
 
 
@@ -699,7 +700,7 @@ def _complete_result(context: StateContext) -> RunResult:
 
 class InquisitiveInventoryRutter(Rutter):
     rutter_id = _RUTTER_ID
-    definition_version = 1
+    definition_version = 2
     start_state = _REPORT_STATE
 
     def define_states(self) -> Mapping[str, object]:

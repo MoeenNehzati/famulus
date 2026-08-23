@@ -125,7 +125,7 @@ def test_setup_and_show_project_only_public_bound_operations(
     assert shown == setup_payload
     assert shown["node"] == {
         "rutter_id": "math-graph-inquisitive-inventory",
-        "definition_version": 1,
+        "definition_version": 2,
         "state_id": "report",
         "node_entry_id": shown["node"]["node_entry_id"],
         "depth": 0,
@@ -278,7 +278,7 @@ def test_module_registers_only_the_two_owned_sources_and_cli_export() -> None:
 
     assert module["schema_version"] == 6
     assert module["maturity"] == "stable"
-    assert module["version"] == 54
+    assert module["version"] == 55
     assert "_inquisitive_inventory_rutter\\.py" in module["content"]
     assert "_inquisitive_inventory_cli\\.py" in module["content"]
     assert {
