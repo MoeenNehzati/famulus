@@ -12,6 +12,9 @@ import officina.rutter as rutter_public
 import officina.rutter.engine as engine
 import officina.rutter.runtime as runtime
 from officina.rutter.model import (
+    Action,
+    ActionContext,
+    ActionResult,
     ActiveRun,
     AnswerSpec,
     CallRecord,
@@ -21,6 +24,7 @@ from officina.rutter.model import (
     DoneRecord,
     EnteredNode,
     Prompt,
+    PythonInstruction,
     Reckoning,
     Rutter,
     RutterStateError,
@@ -28,6 +32,110 @@ from officina.rutter.model import (
 )
 from officina.rutter.runtime import RutterRegistry
 from test_support.rutter_fixtures import ExampleRutter
+
+
+def test_pure_action_instruction_is_stable_read_only_and_zero_argument(
+    tmp_path: Path,
+) -> None:
+    """Skipping Action instructions or invoking their callback during a read must fail."""
+
+    seen: list[ActionContext] = []
+
+    def run(context: ActionContext) -> ActionResult:
+        seen.append(context)
+        return ActionResult("calculated", {"count": len(context.state.history.actions())})
+
+    class PureActionRutter(Rutter):
+        rutter_id = "pure-action"
+        definition_version = 1
+        start_state = "calculate"
+
+        def define_states(self) -> Mapping[str, object]:
+            return {
+                "calculate": Action(run, mode="pure", then="done"),
+                "done": Done(RunResult("complete", {})),
+            }
+
+    path = Path("pure-action.reckoning.json")
+    registry = RutterRegistry({"pure": PureActionRutter}, tmp_path)
+    voyage = registry.create("pure", path, {})
+    before = (tmp_path / path).read_bytes()
+
+    first = voyage.get_instruction()
+    second = voyage.get_instruction()
+    reopened = registry.open(path).get_instruction()
+
+    assert isinstance(first, PythonInstruction)
+    assert isinstance(second, PythonInstruction)
+    assert isinstance(reopened, PythonInstruction)
+    assert first.action_id == second.action_id == reopened.action_id
+    assert first.mode == "pure"
+    assert tuple(inspect.signature(first.run).parameters) == ()
+    assert first.answer_format == {
+        "outcome": "declared outcome",
+        "value": {"type": "finite JSON"},
+    }
+    assert seen == []
+    assert first.run() == ActionResult("calculated", {"count": 0})
+    assert len(seen) == 1
+    assert seen[0].action_id == first.action_id
+    assert seen[0].state.state_id == "calculate"
+    assert seen[0].state.node_entry_id == voyage.get_current_node().node_entry_id
+    assert (tmp_path / path).read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    ("result", "valid", "code"),
+    (
+        (ActionResult("calculated", {"count": 1}), True, None),
+        ({"outcome": "calculated", "value": {"count": 1}}, True, None),
+        ({"outcome": "calculated"}, False, "invalid-envelope"),
+        (
+            {"outcome": "calculated", "value": {}, "extra": None},
+            False,
+            "invalid-envelope",
+        ),
+        (
+            {"outcome": "calculated", "value": float("nan")},
+            False,
+            "nonfinite-value",
+        ),
+    ),
+)
+def test_action_validation_requires_the_exact_action_result_envelope(
+    tmp_path: Path,
+    result: object,
+    valid: bool,
+    code: str | None,
+) -> None:
+    """Treating an Action as inapplicable or accepting a loose envelope must fail."""
+
+    class PureActionRutter(Rutter):
+        rutter_id = "validate-action"
+        definition_version = 1
+        start_state = "calculate"
+
+        def define_states(self) -> Mapping[str, object]:
+            return {
+                "calculate": Action(
+                    lambda context: ActionResult("calculated", {}),
+                    mode="pure",
+                    then="done",
+                ),
+                "done": Done(RunResult("complete", {})),
+            }
+
+    path = Path("validate-action.reckoning.json")
+    voyage = RutterRegistry({"pure": PureActionRutter}, tmp_path).create(
+        "pure", path, {}
+    )
+    before = (tmp_path / path).read_bytes()
+
+    report = voyage.validate(result)
+
+    assert report.valid is valid
+    assert tuple(issue.code for issue in report.issues) == (() if code is None else (code,))
+    assert (tmp_path / path).read_bytes() == before
 
 
 def test_public_cutover_exports_registry_and_only_the_four_voyage_operations(

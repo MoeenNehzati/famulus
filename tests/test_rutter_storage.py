@@ -389,6 +389,70 @@ def test_decode_preserves_valid_effect_and_opaque_fault_json() -> None:
     assert decoded.fault == fault
 
 
+@pytest.mark.parametrize("disposition", ("planned", "completed", "uncertain"))
+@pytest.mark.parametrize(
+    "corruption",
+    ("owner", "entrance", "state", "mode", "active-child", "consumed"),
+)
+def test_decode_rejects_complete_effect_recovery_corruption_matrix(
+    disposition: str,
+    corruption: str,
+) -> None:
+    """Accepting any corrupt recovery coordinate or reused authority must fail."""
+
+    mapping = _valid_mapping()
+    mapping["completed_runs"] = {}
+    root = mapping["root"]
+    assert isinstance(root, dict)
+    root["history"] = []
+    effect = {
+        "action_id": "action-1",
+        "owner_run_id": "root-run",
+        "node_entry_id": "entry-root",
+        "state_id": "review",
+        "mode": "repeat-safe",
+        "disposition": disposition,
+        "result": (
+            {"outcome": "stored", "value": {}}
+            if disposition == "completed"
+            else None
+        ),
+    }
+    mapping["active_effect"] = effect
+
+    if corruption == "owner":
+        effect["owner_run_id"] = "other-run"
+    elif corruption == "entrance":
+        effect["node_entry_id"] = "other-entry"
+    elif corruption == "state":
+        effect["state_id"] = "other-state"
+    elif corruption == "mode":
+        effect["mode"] = "pure"
+    elif corruption == "active-child":
+        root["active_child"] = {
+            "call_id": "call-active",
+            "kind": "explicit_call",
+            "site": "delegate",
+            "attached_to_edge_id": None,
+            "run": {
+                "run_id": "active-child",
+                "rutter_id": "child",
+                "definition_version": 1,
+                "charter": {},
+                "entered_node": {"entry_id": "entry-child", "state_id": "act"},
+                "history": [],
+                "active_child": None,
+            },
+        }
+    else:
+        consumed = _action()
+        consumed["action_id"] = effect["action_id"]
+        root["history"] = [consumed]
+
+    with pytest.raises(RutterStateError):
+        _decode_reckoning(_bytes(mapping))
+
+
 def test_decode_rejects_dangling_completed_run_map_identity() -> None:
     mapping = _valid_mapping()
     completed = mapping["completed_runs"]

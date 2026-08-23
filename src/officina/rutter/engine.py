@@ -7,6 +7,10 @@ from typing import Mapping, Protocol
 from uuid import uuid4
 
 from officina.rutter.model import (
+    Action,
+    ActionContext,
+    ActionRecord,
+    ActionResult,
     ActiveChild,
     ActiveRun,
     AnswerContext,
@@ -24,6 +28,7 @@ from officina.rutter.model import (
     NotApplicable,
     Prompt,
     PreviewUnavailable,
+    PythonInstruction,
     Reckoning,
     Response,
     RunBlocked,
@@ -41,6 +46,10 @@ from officina.rutter.storage import _MAX_ACTIVE_DEPTH
 
 
 _OPERATION_LIMIT = 100
+_ACTION_RESULT_FORMAT = {
+    "outcome": "declared outcome",
+    "value": {"type": "finite JSON"},
+}
 
 
 class _BoundDefinitionLike(Protocol):
@@ -241,7 +250,14 @@ def _push_call(
             child_run,
         ),
     )
-    return _replace_run(reckoning, run_id, parent)
+    pushed = _replace_run(reckoning, run_id, parent)
+    if isinstance(child_state, Action) and child_state.mode != "pure":
+        child_leaf = _active_leaf(pushed)
+        pushed = replace(
+            pushed,
+            active_effect=_planned_effect(child_leaf.run, child_state),
+        )
+    return pushed
 
 
 def _parent_of_run(root: ActiveRun, run_id: str) -> tuple[ActiveRun, ActiveChild]:
@@ -310,6 +326,29 @@ def _accept_prompt(
     )
 
 
+def _accept_action(
+    reckoning: Reckoning,
+    action: Action,
+    action_id: str,
+    result: ActionResult,
+) -> Reckoning:
+    leaf = _active_leaf(reckoning)
+    record = ActionRecord(
+        _new_id("record"),
+        action_id,
+        leaf.run.entered_node.entry_id,
+        leaf.run.entered_node.state_id,
+        action.mode,
+        result,
+    )
+    accepted_run = replace(leaf.run, history=leaf.run.history + (record,))
+    return replace(
+        _replace_run(reckoning, leaf.run.run_id, accepted_run),
+        global_revision=reckoning.global_revision + 1,
+        active_effect=None,
+    )
+
+
 def _source_record(run: ActiveRun, entered_node: EnteredNode) -> HistoryEntry | None:
     for record in reversed(run.history):
         if record.node_entry_id == entered_node.entry_id:
@@ -331,6 +370,9 @@ def _select_edge(
         if response is None:
             raise _EngineFault("routing")
         outcome = response.outcome
+    elif isinstance(state, Action) and isinstance(record, ActionRecord):
+        response = None
+        outcome = record.result.outcome
     elif (
         isinstance(state, Call)
         and isinstance(record, CallRecord)
@@ -358,6 +400,12 @@ def _select_edge(
                 assert isinstance(record, Turn) and response is not None
                 target = routing(  # type: ignore[operator]
                     AnswerContext(state_context, record.message, response)
+                )
+            elif isinstance(state, Action):
+                assert isinstance(record, ActionRecord)
+                target = routing(  # type: ignore[operator]
+                    ActionContext(state_context, record.action_id),
+                    record.result,
                 )
             else:
                 target = routing(state_context, call_result)  # type: ignore[operator]
@@ -409,6 +457,12 @@ def _enter_node(
             history=entered_leaf.run.history + (turn,),
         )
         entered = _replace_run(entered, run_id, entered_run)
+    elif isinstance(target_state, Action) and target_state.mode != "pure":
+        entered_leaf = _active_leaf(entered)
+        entered = replace(
+            entered,
+            active_effect=_planned_effect(entered_leaf.run, target_state),
+        )
     return entered
 
 
@@ -525,6 +579,32 @@ def _validate_prompt(
     return report
 
 
+def _validate_action_result(value: object) -> ValidationReport:
+    if isinstance(value, ActionResult):
+        return ValidationReport(True, ())
+    if not isinstance(value, Mapping) or set(value) != {"outcome", "value"}:
+        return _invalid(
+            "invalid-envelope",
+            (),
+            "action result must contain exactly outcome and value",
+        )
+    try:
+        ActionResult.from_json(value)
+    except RutterStateError as exc:
+        if "finite JSON" in str(exc):
+            return _invalid(
+                "nonfinite-value",
+                ("value",),
+                "action result value must be finite JSON",
+            )
+        return _invalid(
+            "invalid-envelope",
+            (),
+            "action result must contain a stable outcome and finite JSON value",
+        )
+    return ValidationReport(True, ())
+
+
 def _state_context(
     run: ActiveRun,
     reckoning: Reckoning,
@@ -550,6 +630,152 @@ def _state_context(
         run.entered_node.entry_id,
         HistoryView(entries, reckoning.completed_runs),
     )
+
+
+def _action_id(run: ActiveRun) -> str:
+    return f"action-{run.entered_node.entry_id}"
+
+
+def _planned_effect(run: ActiveRun, action: Action) -> dict[str, object]:
+    return {
+        "action_id": _action_id(run),
+        "owner_run_id": run.run_id,
+        "node_entry_id": run.entered_node.entry_id,
+        "state_id": run.entered_node.state_id,
+        "mode": action.mode,
+        "disposition": "planned",
+        "result": None,
+    }
+
+
+def _action_effect(
+    reckoning: Reckoning,
+    leaf: ActiveLeaf,
+    action: Action,
+) -> Mapping[str, object]:
+    effect = reckoning.active_effect
+    if effect is None:
+        raise RutterStateError("effectful Action has no recovery authority")
+    if (
+        effect["owner_run_id"] != leaf.run.run_id
+        or effect["node_entry_id"] != leaf.run.entered_node.entry_id
+        or effect["state_id"] != leaf.run.entered_node.state_id
+        or effect["mode"] != action.mode
+    ):
+        raise RutterStateError("active effect recovery does not match the Action")
+    return effect
+
+
+def _validate_action_authority(
+    reckoning: Reckoning,
+    leaf: ActiveLeaf,
+    state: State,
+) -> None:
+    if reckoning.active_effect is not None:
+        if not isinstance(state, Action) or state.mode == "pure":
+            raise RutterStateError(
+                "active effect recovery does not match the Action"
+            )
+        _action_effect(reckoning, leaf, state)
+        return
+    if isinstance(state, Action) and state.mode != "pure":
+        record = _source_record(leaf.run, leaf.run.entered_node)
+        if not isinstance(record, ActionRecord):
+            raise RutterStateError("effectful Action has no recovery authority")
+
+
+def _pure_action_instruction(
+    reckoning: Reckoning,
+    run: ActiveRun,
+    action: Action,
+) -> PythonInstruction:
+    action_id = _action_id(run)
+    context = ActionContext(_state_context(run, reckoning), action_id)
+
+    def execute() -> ActionResult:
+        return action.run(context)
+
+    return PythonInstruction(
+        action_id,
+        action.mode,
+        execute,
+        _ACTION_RESULT_FORMAT,
+    )
+
+
+def _effectful_action_instruction(
+    voyage: _BoundVoyageLike,
+    action_id: str,
+    mode: str,
+) -> PythonInstruction:
+    def execute() -> ActionResult:
+        with voyage._store.transaction() as reckoning:
+            voyage._reckoning = reckoning
+            leaf = _active_leaf(reckoning)
+            definition = _leaf_definition(voyage, leaf)
+            state = definition.states[leaf.run.entered_node.state_id]
+            if not isinstance(state, Action) or state.mode == "pure":
+                raise RutterStateError("Action instruction is stale")
+            if _condition(reckoning, state) in {"fault", "uncertain"}:
+                raise RunBlocked("the voyage is blocked")
+            effect = _action_effect(reckoning, leaf, state)
+            if effect["action_id"] != action_id:
+                raise RutterStateError("Action instruction is stale")
+            try:
+                _, result = _run_effectful_action(
+                    voyage,
+                    reckoning,
+                    leaf,
+                    state,
+                    effect,
+                )
+            except _EngineFault as fault:
+                current = voyage._reckoning
+                _fault_and_publish(voyage, current, current, fault)
+                raise RunBlocked("Action execution failed") from None
+            return result
+
+    return PythonInstruction(
+        action_id,
+        mode,
+        execute,
+        _ACTION_RESULT_FORMAT,
+    )
+
+
+def _run_effectful_action(
+    voyage: _BoundVoyageLike,
+    reckoning: Reckoning,
+    leaf: ActiveLeaf,
+    action: Action,
+    effect: Mapping[str, object],
+) -> tuple[Reckoning, ActionResult]:
+    if effect["disposition"] == "completed":
+        return reckoning, ActionResult.from_json(effect["result"])
+    if effect["disposition"] != "planned":
+        raise RunBlocked("the voyage is blocked")
+    action_id = str(effect["action_id"])
+    if action.mode == "non-repeat-safe":
+        uncertain_effect = dict(effect)
+        uncertain_effect["disposition"] = "uncertain"
+        uncertain = replace(reckoning, active_effect=uncertain_effect)
+        _publish(voyage, reckoning, uncertain)
+        reckoning = uncertain
+        effect = uncertain_effect
+    try:
+        result = action.run(
+            ActionContext(_state_context(leaf.run, reckoning), action_id)
+        )
+    except Exception:
+        raise _EngineFault("action-execution") from None
+    if not isinstance(result, ActionResult):
+        raise _EngineFault("action-result")
+    completed_effect = dict(effect)
+    completed_effect["disposition"] = "completed"
+    completed_effect["result"] = result.to_json()
+    completed = replace(reckoning, active_effect=completed_effect)
+    _publish(voyage, reckoning, completed)
+    return completed, result
 
 
 def _render_prompt(
@@ -612,6 +838,8 @@ def _create_reckoning(
             None,
         )
         reckoning = Reckoning(3, 0, run, {}, None, None)
+    elif isinstance(state, Action) and state.mode != "pure":
+        reckoning = replace(reckoning, active_effect=_planned_effect(run, state))
     return reckoning
 
 
@@ -620,9 +848,21 @@ def _get_instruction(voyage: _BoundVoyageLike) -> object | None:
         voyage._reckoning = reckoning
         leaf = _active_leaf(reckoning)
         state = _leaf_definition(voyage, leaf).states[leaf.run.entered_node.state_id]
-        if _condition(reckoning, state) != "ready" or not isinstance(state, Prompt):
+        _validate_action_authority(reckoning, leaf, state)
+        if _condition(reckoning, state) != "ready":
             return None
-        return _prompt_turn(reckoning, leaf.run).message
+        if isinstance(state, Prompt):
+            return _prompt_turn(reckoning, leaf.run).message
+        if isinstance(state, Action) and state.mode == "pure":
+            return _pure_action_instruction(reckoning, leaf.run, state)
+        if isinstance(state, Action):
+            effect = _action_effect(reckoning, leaf, state)
+            return _effectful_action_instruction(
+                voyage,
+                str(effect["action_id"]),
+                state.mode,
+            )
+        return None
 
 
 def _validate(voyage: _BoundVoyageLike, response: object) -> ValidationReport:
@@ -630,9 +870,12 @@ def _validate(voyage: _BoundVoyageLike, response: object) -> ValidationReport:
         voyage._reckoning = reckoning
         leaf = _active_leaf(reckoning)
         state = _leaf_definition(voyage, leaf).states[leaf.run.entered_node.state_id]
+        _validate_action_authority(reckoning, leaf, state)
         condition = _condition(reckoning, state)
         if condition in {"fault", "uncertain"}:
             raise RunBlocked("the voyage is blocked")
+        if isinstance(state, Action):
+            return _validate_action_result(response)
         if not isinstance(state, Prompt):
             raise NotApplicable("the current node does not accept a response")
         try:
@@ -728,6 +971,180 @@ def _call_edge(
     )
 
 
+def _preview_action(
+    reckoning: Reckoning,
+    leaf: ActiveLeaf,
+    definition: _BoundDefinitionLike,
+    action: Action,
+    response: object,
+) -> NodeView:
+    if action.mode == "pure":
+        if _is_missing(response):
+            raise PreviewUnavailable("Action result is not supplied")
+        action_id = _action_id(leaf.run)
+    else:
+        effect = _action_effect(reckoning, leaf, action)
+        if effect["disposition"] != "completed":
+            raise PreviewUnavailable("Action result is not yet available")
+        action_id = str(effect["action_id"])
+        authority = ActionResult.from_json(effect["result"])
+        if _is_missing(response):
+            response = authority
+    report = _validate_action_result(response)
+    if not report.valid:
+        raise RutterValidationError("Action result was rejected")
+    result = (
+        response
+        if isinstance(response, ActionResult)
+        else ActionResult.from_json(response)
+    )
+    if action.mode != "pure" and result != authority:
+        raise RutterValidationError(
+            "Action result does not match completed recovery"
+        )
+    record = ActionRecord(
+        f"preview-{action_id}",
+        action_id,
+        leaf.run.entered_node.entry_id,
+        leaf.run.entered_node.state_id,
+        action.mode,
+        result,
+    )
+    preview_run = replace(leaf.run, history=leaf.run.history + (record,))
+    history = HistoryView(preview_run.history, reckoning.completed_runs)
+    try:
+        edge = _select_edge(
+            BoundRun(preview_run, definition),
+            history.strict_prefix(record),
+            record,
+        )
+    except _EngineFault as fault:
+        raise RutterValidationError("Action routing failed") from fault
+    assert edge.target is not None
+    return NodeView(
+        leaf.run.rutter_id,
+        leaf.run.definition_version,
+        edge.target,
+        None,
+        leaf.depth,
+        "preview",
+    )
+
+
+def _advance_action(
+    voyage: _BoundVoyageLike,
+    reckoning: Reckoning,
+    leaf: ActiveLeaf,
+    definition: _BoundDefinitionLike,
+    action: Action,
+    response: object,
+    *,
+    dry_run: bool,
+) -> tuple[Reckoning, NodeView | None]:
+    if dry_run:
+        return reckoning, _preview_action(
+            reckoning,
+            leaf,
+            definition,
+            action,
+            response,
+        )
+    omitted = _is_missing(response)
+    if action.mode == "pure":
+        action_id = _action_id(leaf.run)
+        if omitted:
+            try:
+                response = _pure_action_instruction(
+                    reckoning,
+                    leaf.run,
+                    action,
+                ).run()
+            except Exception:
+                fault = _EngineFault("action-execution")
+                view = _fault_and_publish(
+                    voyage,
+                    reckoning,
+                    reckoning,
+                    fault,
+                )
+                return voyage._reckoning, view
+            if not isinstance(response, ActionResult):
+                fault = _EngineFault("action-result")
+                view = _fault_and_publish(
+                    voyage,
+                    reckoning,
+                    reckoning,
+                    fault,
+                )
+                return voyage._reckoning, view
+    else:
+        effect = _action_effect(reckoning, leaf, action)
+        action_id = str(effect["action_id"])
+        if omitted:
+            try:
+                reckoning, response = _run_effectful_action(
+                    voyage,
+                    reckoning,
+                    leaf,
+                    action,
+                    effect,
+                )
+            except _EngineFault as fault:
+                current = voyage._reckoning
+                view = _fault_and_publish(
+                    voyage,
+                    current,
+                    current,
+                    fault,
+                )
+                return voyage._reckoning, view
+            effect = _action_effect(reckoning, leaf, action)
+        if effect["disposition"] != "completed":
+            raise RutterValidationError("completed Action recovery is required")
+    report = _validate_action_result(response)
+    if not report.valid:
+        raise RutterValidationError("Action result was rejected")
+    normalized = (
+        response
+        if isinstance(response, ActionResult)
+        else ActionResult.from_json(response)
+    )
+    if action.mode != "pure":
+        authority = ActionResult.from_json(effect["result"])
+        if normalized != authority:
+            raise RutterValidationError(
+                "Action result does not match completed recovery"
+            )
+        normalized = authority
+    accepted = _accept_action(reckoning, action, action_id, normalized)
+    accepted_leaf = _active_leaf(accepted)
+    record = _source_record(accepted_leaf.run, accepted_leaf.run.entered_node)
+    assert isinstance(record, ActionRecord)
+    history = HistoryView(accepted_leaf.run.history, accepted.completed_runs)
+    try:
+        edge = _select_edge(
+            BoundRun(accepted_leaf.run, definition),
+            history.strict_prefix(record),
+            record,
+        )
+    except _EngineFault as fault:
+        view = _fault_and_publish(voyage, reckoning, accepted, fault)
+        return voyage._reckoning, view
+    assert edge.target is not None
+    try:
+        entered = _enter_node(
+            accepted,
+            accepted_leaf.run.run_id,
+            edge.target,
+            definition=definition,
+        )
+    except _EngineFault as fault:
+        view = _fault_and_publish(voyage, reckoning, accepted, fault)
+        return voyage._reckoning, view
+    _publish(voyage, reckoning, entered)
+    return entered, None
+
+
 def _next(
     voyage: _BoundVoyageLike,
     response: object = _MISSING,
@@ -740,6 +1157,7 @@ def _next(
         leaf = _active_leaf(reckoning)
         definition = _leaf_definition(voyage, leaf)
         state = definition.states[leaf.run.entered_node.state_id]
+        _validate_action_authority(reckoning, leaf, state)
         condition = _condition(reckoning, state)
         if condition in {"fault", "uncertain"}:
             raise RunBlocked("the voyage is blocked")
@@ -810,6 +1228,25 @@ def _next(
         elif isinstance(state, Call):
             if not _is_missing(response):
                 raise NotApplicable("Call does not accept a response")
+        elif isinstance(state, Action):
+            reckoning, stopped = _advance_action(
+                voyage,
+                reckoning,
+                leaf,
+                definition,
+                state,
+                response,
+                dry_run=dry_run,
+            )
+            if stopped is not None:
+                return stopped
+            if not continue_:
+                entered_leaf = _active_leaf(reckoning)
+                entered_definition = _leaf_definition(voyage, entered_leaf)
+                entered_state = entered_definition.states[
+                    entered_leaf.run.entered_node.state_id
+                ]
+                return _node_view(reckoning, entered_leaf, entered_state)
         elif not isinstance(state, Done):
             raise NotApplicable("this lifecycle node is implemented by a later task")
         elif not _is_missing(response):
@@ -819,8 +1256,29 @@ def _next(
             leaf = _active_leaf(reckoning)
             definition = _leaf_definition(voyage, leaf)
             state = definition.states[leaf.run.entered_node.state_id]
+            _validate_action_authority(reckoning, leaf, state)
             if isinstance(state, Prompt):
                 return _node_view(reckoning, leaf, state)
+            if isinstance(state, Action):
+                reckoning, stopped = _advance_action(
+                    voyage,
+                    reckoning,
+                    leaf,
+                    definition,
+                    state,
+                    _MISSING,
+                    dry_run=False,
+                )
+                if stopped is not None:
+                    return stopped
+                if not continue_:
+                    advanced_leaf = _active_leaf(reckoning)
+                    advanced_definition = _leaf_definition(voyage, advanced_leaf)
+                    advanced_state = advanced_definition.states[
+                        advanced_leaf.run.entered_node.state_id
+                    ]
+                    return _node_view(reckoning, advanced_leaf, advanced_state)
+                continue
             if isinstance(state, Call):
                 if dry_run:
                     try:
@@ -888,4 +1346,5 @@ def _get_current_node(voyage: _BoundVoyageLike) -> NodeView:
         voyage._reckoning = reckoning
         leaf = _active_leaf(reckoning)
         state = _leaf_definition(voyage, leaf).states[leaf.run.entered_node.state_id]
+        _validate_action_authority(reckoning, leaf, state)
         return _node_view(reckoning, leaf, state)

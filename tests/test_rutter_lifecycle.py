@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import json
 from pathlib import Path
-from typing import Mapping
+from typing import Callable, Mapping
 
 import pytest
 
 import officina.rutter.engine as engine
 from officina.rutter.model import (
+    Action,
+    ActionContext,
+    ActionRecord,
+    ActionResult,
     ActiveChild,
     AnswerContext,
     AnswerSpec,
@@ -24,6 +29,7 @@ from officina.rutter.model import (
     NotApplicable,
     PreviewUnavailable,
     Prompt,
+    PythonInstruction,
     Reckoning,
     Rutter,
     RunBlocked,
@@ -37,6 +43,971 @@ from officina.rutter.model import (
 )
 from officina.rutter.runtime import RutterRegistry
 from test_support.rutter_fixtures import DirectChildRutter, ExampleRutter
+
+
+def test_supplied_pure_action_result_is_recorded_before_callable_routing(
+    tmp_path: Path,
+) -> None:
+    """Losing accepted Action work or invoking the author callback must fail."""
+
+    executions: list[ActionContext] = []
+    routes: list[tuple[ActionContext, ActionResult]] = []
+
+    def execute(context: ActionContext) -> ActionResult:
+        executions.append(context)
+        return ActionResult("calculated", {"source": "callback"})
+
+    def route(context: ActionContext, result: ActionResult) -> str:
+        routes.append((context, result))
+        return "done"
+
+    class PureActionRutter(Rutter):
+        rutter_id = "pure-result"
+        definition_version = 1
+        start_state = "calculate"
+
+        def define_states(self) -> Mapping[str, object]:
+            return {
+                "calculate": Action(execute, mode="pure", then=route),
+                "done": Done(RunResult("complete", {})),
+            }
+
+    path = Path("pure-result.reckoning.json")
+    registry = RutterRegistry({"pure": PureActionRutter}, tmp_path)
+    voyage = registry.create("pure", path, {})
+    instruction = voyage.get_instruction()
+    assert isinstance(instruction, PythonInstruction)
+    source_entry = voyage.get_current_node().node_entry_id
+    supplied = ActionResult("calculated", {"source": "supplied"})
+
+    entered = voyage.next(supplied, continue_=False)
+    persisted = registry.open(path)._store.read()
+
+    assert entered.state_id == "done"
+    assert entered.condition == "ready"
+    assert executions == []
+    assert len(routes) == 1
+    route_context, route_result = routes[0]
+    assert route_context.action_id == instruction.action_id
+    assert route_context.state.history.entries() == ()
+    assert route_result == supplied
+    assert persisted.global_revision == 1
+    assert persisted.active_effect is None
+    assert len(persisted.root.history) == 1
+    record = persisted.root.history[0]
+    assert isinstance(record, ActionRecord)
+    assert record.action_id == instruction.action_id
+    assert record.node_entry_id == source_entry
+    assert record.state_id == "calculate"
+    assert record.mode == "pure"
+    assert record.result == supplied
+
+
+def test_omitted_pure_action_result_runs_once_and_continues_to_terminal(
+    tmp_path: Path,
+) -> None:
+    """Requiring a supplied result or rerunning pure work after acceptance must fail."""
+
+    executions: list[ActionContext] = []
+
+    def execute(context: ActionContext) -> ActionResult:
+        executions.append(context)
+        return ActionResult("calculated", {"entrance": context.state.node_entry_id})
+
+    class PureActionRutter(Rutter):
+        rutter_id = "automatic-pure"
+        definition_version = 1
+        start_state = "calculate"
+
+        def define_states(self) -> Mapping[str, object]:
+            return {
+                "calculate": Action(execute, mode="pure", then="done"),
+                "done": Done(RunResult("complete", {})),
+            }
+
+    path = Path("automatic-pure.reckoning.json")
+    registry = RutterRegistry({"pure": PureActionRutter}, tmp_path)
+    voyage = registry.create("pure", path, {})
+
+    terminal = voyage.next()
+    reopened = registry.open(path)
+
+    assert terminal.condition == "terminal"
+    assert len(executions) == 1
+    assert reopened.next() == terminal
+    assert len(executions) == 1
+    actions = reopened._store.read().root.history
+    assert len(actions) == 2
+    assert isinstance(actions[0], ActionRecord)
+    assert actions[0].result == ActionResult(
+        "calculated", {"entrance": executions[0].state.node_entry_id}
+    )
+    assert isinstance(actions[1], DoneRecord)
+
+
+def test_repeat_safe_instruction_persists_completed_recovery_before_return(
+    tmp_path: Path,
+) -> None:
+    """Issuing without planned authority or returning before completion must fail."""
+
+    executions: list[ActionContext] = []
+
+    def execute(context: ActionContext) -> ActionResult:
+        executions.append(context)
+        return ActionResult("stored", {"action_id": context.action_id})
+
+    class RepeatSafeRutter(Rutter):
+        rutter_id = "repeat-safe"
+        definition_version = 1
+        start_state = "store"
+
+        def define_states(self) -> Mapping[str, object]:
+            return {
+                "store": Action(execute, mode="repeat-safe", then="done"),
+                "done": Done(RunResult("complete", {})),
+            }
+
+    path = Path("repeat-safe.reckoning.json")
+    registry = RutterRegistry({"repeat": RepeatSafeRutter}, tmp_path)
+    voyage = registry.create("repeat", path, {})
+    planned = voyage._store.read()
+    before = (tmp_path / path).read_bytes()
+
+    first = voyage.get_instruction()
+    reopened_instruction = registry.open(path).get_instruction()
+
+    assert isinstance(first, PythonInstruction)
+    assert isinstance(reopened_instruction, PythonInstruction)
+    assert first.action_id == reopened_instruction.action_id
+    assert first.mode == "repeat-safe"
+    assert planned.active_effect == {
+        "action_id": first.action_id,
+        "owner_run_id": planned.root.run_id,
+        "node_entry_id": planned.root.entered_node.entry_id,
+        "state_id": "store",
+        "mode": "repeat-safe",
+        "disposition": "planned",
+        "result": None,
+    }
+    assert executions == []
+    assert (tmp_path / path).read_bytes() == before
+
+    result = first.run()
+    completed = registry.open(path)._store.read()
+
+    assert result == ActionResult("stored", {"action_id": first.action_id})
+    assert len(executions) == 1
+    assert completed.root.history == ()
+    assert completed.active_effect == {
+        **planned.active_effect,
+        "disposition": "completed",
+        "result": result.to_json(),
+    }
+    assert reopened_instruction.run() == result
+    assert len(executions) == 1
+
+
+def test_effectful_next_consumes_only_the_exact_completed_authority(
+    tmp_path: Path,
+) -> None:
+    """Accepting planned or mismatched effect work must fail without mutation."""
+
+    executions: list[str] = []
+
+    def execute(context: ActionContext) -> ActionResult:
+        executions.append(context.action_id)
+        return ActionResult("stored", {"sequence": 1})
+
+    class RepeatSafeRutter(Rutter):
+        rutter_id = "exact-authority"
+        definition_version = 1
+        start_state = "store"
+
+        def define_states(self) -> Mapping[str, object]:
+            return {
+                "store": Action(execute, mode="repeat-safe", then="done"),
+                "done": Done(RunResult("complete", {})),
+            }
+
+    path = Path("exact-authority.reckoning.json")
+    registry = RutterRegistry({"repeat": RepeatSafeRutter}, tmp_path)
+    voyage = registry.create("repeat", path, {})
+    instruction = voyage.get_instruction()
+    assert isinstance(instruction, PythonInstruction)
+    planned_bytes = (tmp_path / path).read_bytes()
+
+    with pytest.raises(RutterValidationError):
+        voyage.next(ActionResult("stored", {"sequence": 1}), continue_=False)
+    assert executions == []
+    assert (tmp_path / path).read_bytes() == planned_bytes
+
+    completed_result = instruction.run()
+    completed_bytes = (tmp_path / path).read_bytes()
+    with pytest.raises(RutterValidationError):
+        voyage.next(ActionResult("stored", {"sequence": 2}), continue_=False)
+    assert executions == [instruction.action_id]
+    assert (tmp_path / path).read_bytes() == completed_bytes
+
+    entered = voyage.next(completed_result, continue_=False)
+    persisted = registry.open(path)._store.read()
+
+    assert entered.state_id == "done"
+    assert persisted.active_effect is None
+    assert len(persisted.root.history) == 1
+    record = persisted.root.history[0]
+    assert isinstance(record, ActionRecord)
+    assert record.action_id == instruction.action_id
+    assert record.mode == "repeat-safe"
+    assert record.result == completed_result
+
+
+def test_omitted_repeat_safe_action_runs_and_consumes_the_same_wrapper(
+    tmp_path: Path,
+) -> None:
+    """Bypassing durable completion during automatic continuation must fail."""
+
+    executions: list[str] = []
+
+    def execute(context: ActionContext) -> ActionResult:
+        executions.append(context.action_id)
+        return ActionResult("stored", {"action_id": context.action_id})
+
+    class RepeatSafeRutter(Rutter):
+        rutter_id = "automatic-repeat"
+        definition_version = 1
+        start_state = "store"
+
+        def define_states(self) -> Mapping[str, object]:
+            return {
+                "store": Action(execute, mode="repeat-safe", then="done"),
+                "done": Done(RunResult("complete", {})),
+            }
+
+    path = Path("automatic-repeat.reckoning.json")
+    registry = RutterRegistry({"repeat": RepeatSafeRutter}, tmp_path)
+    voyage = registry.create("repeat", path, {})
+    instruction = voyage.get_instruction()
+    assert isinstance(instruction, PythonInstruction)
+
+    terminal = voyage.next()
+    persisted = registry.open(path)._store.read()
+
+    assert terminal.condition == "terminal"
+    assert executions == [instruction.action_id]
+    assert persisted.active_effect is None
+    assert len(persisted.root.history) == 2
+    action_record = persisted.root.history[0]
+    assert isinstance(action_record, ActionRecord)
+    assert action_record.action_id == instruction.action_id
+    assert action_record.result == ActionResult(
+        "stored", {"action_id": instruction.action_id}
+    )
+    assert isinstance(persisted.root.history[1], DoneRecord)
+
+
+def test_non_repeat_safe_wrapper_persists_uncertain_before_author_code(
+    tmp_path: Path,
+) -> None:
+    """Calling non-repeat-safe author code while recovery is planned must fail."""
+
+    path = Path("non-repeat-safe.reckoning.json")
+    authority_path = tmp_path / path
+    observed: list[str] = []
+
+    def execute(context: ActionContext) -> ActionResult:
+        del context
+        mapping = json.loads(authority_path.read_text(encoding="utf-8"))
+        observed.append(mapping["active_effect"]["disposition"])
+        return ActionResult("sent", {"receipt": "one"})
+
+    class NonRepeatSafeRutter(Rutter):
+        rutter_id = "non-repeat-safe"
+        definition_version = 1
+        start_state = "send"
+
+        def define_states(self) -> Mapping[str, object]:
+            return {
+                "send": Action(execute, mode="non-repeat-safe", then="done"),
+                "done": Done(RunResult("complete", {})),
+            }
+
+    registry = RutterRegistry({"send": NonRepeatSafeRutter}, tmp_path)
+    voyage = registry.create("send", path, {})
+    instruction = voyage.get_instruction()
+    assert isinstance(instruction, PythonInstruction)
+    assert instruction.mode == "non-repeat-safe"
+    assert voyage._store.read().active_effect["disposition"] == "planned"
+
+    result = instruction.run()
+    completed = registry.open(path)._store.read()
+
+    assert observed == ["uncertain"]
+    assert result == ActionResult("sent", {"receipt": "one"})
+    assert completed.active_effect["disposition"] == "completed"
+    assert completed.active_effect["result"] == result.to_json()
+
+
+def test_non_repeat_safe_crash_windows_preserve_authoritative_boundaries(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Retrying uncertain work or losing completed work across a crash must fail."""
+
+    class SimulatedCrash(BaseException):
+        pass
+
+    def create(
+        name: str,
+        execute: Callable[[ActionContext], ActionResult],
+    ) -> tuple[RutterRegistry, object, Path]:
+        class CrashRutter(Rutter):
+            rutter_id = name
+            definition_version = 1
+            start_state = "send"
+
+            def define_states(self) -> Mapping[str, object]:
+                return {
+                    "send": Action(
+                        execute,
+                        mode="non-repeat-safe",
+                        then="done",
+                    ),
+                    "done": Done(RunResult("complete", {})),
+                }
+
+        path = Path(f"{name}.reckoning.json")
+        registry = RutterRegistry({name: CrashRutter}, tmp_path)
+        return registry, registry.create(name, path, {}), path
+
+    before_calls: list[str] = []
+
+    def before_callback(context: ActionContext) -> ActionResult:
+        before_calls.append(context.action_id)
+        return ActionResult("sent", {})
+
+    before_registry, _, before_path = create("crash-before", before_callback)
+    before_reopen = before_registry.open(before_path)
+    before_effect = before_reopen._store.read().active_effect
+    assert before_effect is not None
+    assert before_effect["disposition"] == "planned"
+    assert before_calls == []
+
+    marker_calls: list[str] = []
+
+    def marker_callback(context: ActionContext) -> ActionResult:
+        marker_calls.append(context.action_id)
+        return ActionResult("sent", {})
+
+    marker_registry, marker_voyage, marker_path = create(
+        "crash-after-marker", marker_callback
+    )
+    marker_instruction = marker_voyage.get_instruction()
+    assert isinstance(marker_instruction, PythonInstruction)
+    original_publish = engine._publish
+
+    def crash_after_marker(
+        voyage: object,
+        previous: Reckoning,
+        replacement: Reckoning,
+    ) -> Reckoning:
+        published = original_publish(voyage, previous, replacement)
+        effect = replacement.active_effect
+        if effect is not None and effect["disposition"] == "uncertain":
+            raise SimulatedCrash
+        return published
+
+    monkeypatch.setattr(engine, "_publish", crash_after_marker)
+    with pytest.raises(SimulatedCrash):
+        marker_instruction.run()
+    monkeypatch.setattr(engine, "_publish", original_publish)
+    marker_reopen = marker_registry.open(marker_path)
+    marker_effect = marker_reopen._store.read().active_effect
+    assert marker_effect is not None
+    assert marker_effect["disposition"] == "uncertain"
+    assert marker_calls == []
+
+    effect_calls: list[str] = []
+
+    def crash_after_effect(context: ActionContext) -> ActionResult:
+        effect_calls.append(context.action_id)
+        raise SimulatedCrash
+
+    effect_registry, effect_voyage, effect_path = create(
+        "crash-after-effect", crash_after_effect
+    )
+    effect_instruction = effect_voyage.get_instruction()
+    assert isinstance(effect_instruction, PythonInstruction)
+    with pytest.raises(SimulatedCrash):
+        effect_instruction.run()
+    effect_reopen = effect_registry.open(effect_path)
+    effect_recovery = effect_reopen._store.read().active_effect
+    assert effect_recovery is not None
+    assert effect_recovery["disposition"] == "uncertain"
+    assert effect_calls == [effect_instruction.action_id]
+    assert effect_reopen.get_instruction() is None
+    assert effect_reopen.get_current_node().condition == "uncertain"
+    with pytest.raises(RunBlocked):
+        effect_reopen.validate(ActionResult("sent", {}))
+    with pytest.raises(RunBlocked):
+        effect_reopen.next()
+
+    completed_calls: list[str] = []
+
+    def completed_callback(context: ActionContext) -> ActionResult:
+        completed_calls.append(context.action_id)
+        return ActionResult("sent", {"receipt": "durable"})
+
+    completed_registry, completed_voyage, completed_path = create(
+        "crash-after-completed", completed_callback
+    )
+    completed_instruction = completed_voyage.get_instruction()
+    assert isinstance(completed_instruction, PythonInstruction)
+
+    def crash_after_completed(
+        voyage: object,
+        previous: Reckoning,
+        replacement: Reckoning,
+    ) -> Reckoning:
+        published = original_publish(voyage, previous, replacement)
+        effect = replacement.active_effect
+        if effect is not None and effect["disposition"] == "completed":
+            raise SimulatedCrash
+        return published
+
+    monkeypatch.setattr(engine, "_publish", crash_after_completed)
+    with pytest.raises(SimulatedCrash):
+        completed_instruction.run()
+    monkeypatch.setattr(engine, "_publish", original_publish)
+    completed_reopen = completed_registry.open(completed_path)
+    completed_effect = completed_reopen._store.read().active_effect
+    assert completed_effect is not None
+    assert completed_effect["disposition"] == "completed"
+    recovered_instruction = completed_reopen.get_instruction()
+    assert isinstance(recovered_instruction, PythonInstruction)
+    recovered = recovered_instruction.run()
+    assert recovered == ActionResult("sent", {"receipt": "durable"})
+    assert completed_calls == [completed_instruction.action_id]
+    completed_reopen.next(recovered, continue_=False)
+    consumed = completed_registry.open(completed_path)._store.read()
+    assert consumed.active_effect is None
+    assert len(consumed.root.history) == 1
+    assert isinstance(consumed.root.history[0], ActionRecord)
+
+
+@pytest.mark.parametrize("disposition", ("planned", "completed", "uncertain"))
+@pytest.mark.parametrize("corruption", ("state", "mode"))
+def test_reopen_rejects_recovery_that_differs_from_the_bound_action(
+    tmp_path: Path,
+    disposition: str,
+    corruption: str,
+) -> None:
+    """Trusting structurally valid recovery over the bound state must fail."""
+
+    class NonRepeatSafeRutter(Rutter):
+        rutter_id = "corrupt-mode"
+        definition_version = 1
+        start_state = "send"
+
+        def define_states(self) -> Mapping[str, object]:
+            return {
+                "send": Action(
+                    lambda context: ActionResult("sent", {}),
+                    mode="non-repeat-safe",
+                    then="done",
+                ),
+                "done": Done(RunResult("complete", {})),
+            }
+
+    path = Path(f"corrupt-{corruption}-{disposition}.reckoning.json")
+    authority_path = tmp_path / path
+    registry = RutterRegistry({"send": NonRepeatSafeRutter}, tmp_path)
+    voyage = registry.create("send", path, {})
+    if disposition == "completed":
+        instruction = voyage.get_instruction()
+        assert isinstance(instruction, PythonInstruction)
+        instruction.run()
+    mapping = json.loads(authority_path.read_text(encoding="utf-8"))
+    effect = mapping["active_effect"]
+    if corruption == "mode":
+        effect["mode"] = "repeat-safe"
+    else:
+        mapping["root"]["entered_node"]["state_id"] = "done"
+        effect["state_id"] = "done"
+    effect["disposition"] = disposition
+    effect["result"] = (
+        {"outcome": "sent", "value": {}} if disposition == "completed" else None
+    )
+    authority_path.write_text(
+        json.dumps(mapping, separators=(",", ":")),
+        encoding="utf-8",
+    )
+
+    reopened = registry.open(path)
+    with pytest.raises(RutterStateError, match="does not match the Action"):
+        reopened.get_current_node()
+
+
+def test_every_effectful_target_and_self_loop_entrance_allocates_fresh_recovery(
+    tmp_path: Path,
+) -> None:
+    """Entering or re-entering an effectful Action without fresh authority must fail."""
+
+    def execute(context: ActionContext) -> ActionResult:
+        return ActionResult("again", {"action_id": context.action_id})
+
+    class EffectLoopRutter(Rutter):
+        rutter_id = "effect-loop"
+        definition_version = 1
+        start_state = "start"
+
+        def define_states(self) -> Mapping[str, object]:
+            return {
+                "start": Prompt(
+                    "Start.",
+                    answer=AnswerSpec({"go": {}}),
+                    then="store",
+                ),
+                "store": Action(
+                    execute,
+                    mode="repeat-safe",
+                    then={"again": "store", "done": "done"},
+                ),
+                "done": Done(RunResult("complete", {})),
+            }
+
+    path = Path("effect-loop.reckoning.json")
+    registry = RutterRegistry({"loop": EffectLoopRutter}, tmp_path)
+    voyage = registry.create("loop", path, {})
+
+    first_entry = voyage.next(
+        {"revision": 0, "outcome": "go", "evidence": {}},
+        continue_=False,
+    )
+    first_recovery = registry.open(path)._store.read().active_effect
+    first_instruction = registry.open(path).get_instruction()
+
+    assert first_entry.state_id == "store"
+    assert first_recovery is not None
+    assert isinstance(first_instruction, PythonInstruction)
+    assert first_recovery["node_entry_id"] == first_entry.node_entry_id
+    assert first_recovery["action_id"] == first_instruction.action_id
+    assert first_recovery["disposition"] == "planned"
+
+    result = first_instruction.run()
+    second_entry = voyage.next(result, continue_=False)
+    second_recovery = registry.open(path)._store.read().active_effect
+    second_instruction = registry.open(path).get_instruction()
+
+    assert second_entry.state_id == "store"
+    assert second_entry.node_entry_id != first_entry.node_entry_id
+    assert second_recovery is not None
+    assert isinstance(second_instruction, PythonInstruction)
+    assert second_recovery["node_entry_id"] == second_entry.node_entry_id
+    assert second_recovery["action_id"] == second_instruction.action_id
+    assert second_recovery["disposition"] == "planned"
+    assert second_instruction.action_id != first_instruction.action_id
+    records = registry.open(path)._store.read().root.history
+    assert len(records) == 2
+    assert isinstance(records[0], Turn)
+    assert isinstance(records[1], ActionRecord)
+    assert records[1].action_id == first_instruction.action_id
+
+
+def test_nested_action_recovery_is_owned_by_the_deepest_leaf_across_reopen(
+    tmp_path: Path,
+) -> None:
+    """Giving a parent or missing child the sole effect slot must fail."""
+
+    executions: list[ActionContext] = []
+
+    def execute(context: ActionContext) -> ActionResult:
+        executions.append(context)
+        return ActionResult("worked", {"depth": 1})
+
+    class ActionChild(Rutter):
+        rutter_id = "action-child"
+        definition_version = 1
+        start_state = "work"
+
+        def define_states(self) -> Mapping[str, object]:
+            return {
+                "work": Action(execute, mode="repeat-safe", then="done"),
+                "done": Done(RunResult("child-complete", {})),
+            }
+
+    class ActionParent(Rutter):
+        rutter_id = "action-parent"
+        definition_version = 1
+        start_state = "delegate"
+
+        def define_states(self) -> Mapping[str, object]:
+            return {
+                "delegate": Call(
+                    ActionChild,
+                    charter=lambda context: {},
+                    then="done",
+                ),
+                "done": Done(RunResult("parent-complete", {})),
+            }
+
+    path = Path("nested-action.reckoning.json")
+    registry = RutterRegistry({"parent": ActionParent}, tmp_path)
+    voyage = registry.create("parent", path, {})
+
+    child_view = voyage.next(continue_=False)
+    reopened = registry.open(path)
+    persisted = reopened._store.read()
+    instruction = reopened.get_instruction()
+
+    assert child_view.state_id == "work"
+    assert child_view.depth == 1
+    assert isinstance(instruction, PythonInstruction)
+    assert persisted.root.active_child is not None
+    child_run = persisted.root.active_child.run
+    assert persisted.active_effect is not None
+    assert persisted.active_effect["owner_run_id"] == child_run.run_id
+    assert persisted.active_effect["node_entry_id"] == child_run.entered_node.entry_id
+    assert persisted.active_effect["action_id"] == instruction.action_id
+
+    result = instruction.run()
+    terminal = reopened.next(result)
+    settled = registry.open(path)._store.read()
+
+    assert terminal.condition == "terminal"
+    assert len(executions) == 1
+    assert executions[0].action_id == instruction.action_id
+    assert settled.active_effect is None
+    assert settled.root.active_child is None
+    assert len(settled.completed_runs) == 1
+    completed_child = next(iter(settled.completed_runs.values()))
+    assert isinstance(completed_child.history[0], ActionRecord)
+    assert completed_child.history[0].action_id == instruction.action_id
+
+
+@pytest.mark.parametrize(
+    ("mode", "disposition"),
+    (("repeat-safe", "planned"), ("non-repeat-safe", "uncertain")),
+)
+def test_effectful_instruction_callback_failure_persists_only_stable_fault_data(
+    tmp_path: Path,
+    mode: str,
+    disposition: str,
+) -> None:
+    """Leaking callback text or leaving the voyage apparently ready must fail."""
+
+    def execute(context: ActionContext) -> ActionResult:
+        del context
+        raise RuntimeError("private credential detail")
+
+    class FailingActionRutter(Rutter):
+        rutter_id = f"failing-{mode}"
+        definition_version = 1
+        start_state = "work"
+
+        def define_states(self) -> Mapping[str, object]:
+            return {
+                "work": Action(execute, mode=mode, then="done"),
+                "done": Done(RunResult("complete", {})),
+            }
+
+    path = Path(f"failing-{mode}.reckoning.json")
+    registry = RutterRegistry({"failure": FailingActionRutter}, tmp_path)
+    voyage = registry.create("failure", path, {})
+    instruction = voyage.get_instruction()
+    assert isinstance(instruction, PythonInstruction)
+
+    with pytest.raises(RunBlocked, match="Action execution failed") as caught:
+        instruction.run()
+
+    assert "private credential detail" not in str(caught.value)
+    reopened = registry.open(path)
+    persisted = reopened._store.read()
+    assert persisted.fault == {
+        "category": "action-execution",
+        "run_id": persisted.root.run_id,
+        "state_id": "work",
+        "node_entry_id": persisted.root.entered_node.entry_id,
+    }
+    assert "private credential detail" not in json.dumps(dict(persisted.fault))
+    assert persisted.active_effect is not None
+    assert persisted.active_effect["disposition"] == disposition
+    assert reopened.get_current_node().condition == "fault"
+    assert reopened.get_instruction() is None
+    with pytest.raises(RunBlocked):
+        reopened.next()
+
+
+def test_action_dry_run_uses_only_supplied_or_completed_authority_without_writes(
+    tmp_path: Path,
+) -> None:
+    """Previewing by invoking, accepting, or consuming Action work must fail."""
+
+    pure_calls: list[str] = []
+
+    class PurePreviewRutter(Rutter):
+        rutter_id = "pure-preview"
+        definition_version = 1
+        start_state = "calculate"
+
+        def define_states(self) -> Mapping[str, object]:
+            return {
+                "calculate": Action(
+                    lambda context: (
+                        pure_calls.append(context.action_id)
+                        or ActionResult("ready", {})
+                    ),
+                    mode="pure",
+                    then="done",
+                ),
+                "done": Done(RunResult("complete", {})),
+            }
+
+    pure_path = Path("pure-preview.reckoning.json")
+    pure = RutterRegistry({"pure": PurePreviewRutter}, tmp_path).create(
+        "pure", pure_path, {}
+    )
+    pure_before = (tmp_path / pure_path).read_bytes()
+
+    pure_preview = pure.next(
+        ActionResult("ready", {}),
+        dry_run=True,
+    )
+
+    assert pure_preview.state_id == "done"
+    assert pure_preview.node_entry_id is None
+    assert pure_preview.condition == "preview"
+    assert pure_calls == []
+    assert (tmp_path / pure_path).read_bytes() == pure_before
+    with pytest.raises(PreviewUnavailable):
+        pure.next(dry_run=True)
+    assert (tmp_path / pure_path).read_bytes() == pure_before
+
+    effect_calls: list[str] = []
+
+    class EffectPreviewRutter(Rutter):
+        rutter_id = "effect-preview"
+        definition_version = 1
+        start_state = "store"
+
+        def define_states(self) -> Mapping[str, object]:
+            return {
+                "store": Action(
+                    lambda context: (
+                        effect_calls.append(context.action_id)
+                        or ActionResult("stored", {})
+                    ),
+                    mode="repeat-safe",
+                    then="done",
+                ),
+                "done": Done(RunResult("complete", {})),
+            }
+
+    effect_path = Path("effect-preview.reckoning.json")
+    effect = RutterRegistry({"effect": EffectPreviewRutter}, tmp_path).create(
+        "effect", effect_path, {}
+    )
+    planned_before = (tmp_path / effect_path).read_bytes()
+    with pytest.raises(PreviewUnavailable):
+        effect.next(ActionResult("stored", {}), dry_run=True)
+    assert effect_calls == []
+    assert (tmp_path / effect_path).read_bytes() == planned_before
+
+    instruction = effect.get_instruction()
+    assert isinstance(instruction, PythonInstruction)
+    completed_result = instruction.run()
+    completed_before = (tmp_path / effect_path).read_bytes()
+
+    completed_preview = effect.next(dry_run=True)
+
+    assert completed_preview.state_id == "done"
+    assert completed_preview.node_entry_id is None
+    assert completed_preview.condition == "preview"
+    assert effect_calls == [instruction.action_id]
+    assert (tmp_path / effect_path).read_bytes() == completed_before
+    assert effect._store.read().active_effect["disposition"] == "completed"
+    assert effect._store.read().root.history == ()
+    assert completed_result == ActionResult("stored", {})
+
+
+@pytest.mark.parametrize("mode", ("pure", "repeat-safe", "non-repeat-safe"))
+def test_continue_true_executes_action_entered_from_prompt(
+    tmp_path: Path,
+    mode: str,
+) -> None:
+    """Stopping at an automatically executable PythonInstruction must fail."""
+
+    executions: list[ActionContext] = []
+
+    def execute(context: ActionContext) -> ActionResult:
+        executions.append(context)
+        return ActionResult("worked", {"mode": mode})
+
+    class PromptActionRutter(Rutter):
+        rutter_id = f"prompt-action-{mode}"
+        definition_version = 1
+        start_state = "start"
+
+        def define_states(self) -> Mapping[str, object]:
+            return {
+                "start": Prompt(
+                    "Start.",
+                    answer=AnswerSpec({"go": {}}),
+                    then="work",
+                ),
+                "work": Action(execute, mode=mode, then="done"),
+                "done": Done(RunResult("complete", {})),
+            }
+
+    path = Path(f"prompt-action-{mode}.reckoning.json")
+    registry = RutterRegistry({"flow": PromptActionRutter}, tmp_path)
+    voyage = registry.create("flow", path, {})
+
+    terminal = voyage.next(
+        {"revision": 0, "outcome": "go", "evidence": {}},
+    )
+    persisted = registry.open(path)._store.read()
+
+    assert terminal.state_id == "done"
+    assert terminal.condition == "terminal"
+    assert len(executions) == 1
+    assert persisted.active_effect is None
+    assert len(persisted.root.history) == 3
+    assert isinstance(persisted.root.history[0], Turn)
+    action_record = persisted.root.history[1]
+    assert isinstance(action_record, ActionRecord)
+    assert action_record.mode == mode
+    assert action_record.action_id == executions[0].action_id
+    assert isinstance(persisted.root.history[2], DoneRecord)
+
+
+@pytest.mark.parametrize(
+    ("failure", "category"),
+    (("routing", "routing"), ("target", "target-materialization")),
+)
+def test_accepted_action_record_survives_later_callback_fault_without_replay(
+    tmp_path: Path,
+    failure: str,
+    category: str,
+) -> None:
+    """Rolling back or requesting already accepted Action work must fail."""
+
+    executions: list[str] = []
+
+    def execute(context: ActionContext) -> ActionResult:
+        executions.append(context.action_id)
+        return ActionResult("stored", {"receipt": "one"})
+
+    def route(context: ActionContext, result: ActionResult) -> str:
+        del context, result
+        if failure == "routing":
+            raise RuntimeError("private routing detail")
+        return "broken"
+
+    def materialize(context: StateContext) -> Mapping[str, object]:
+        del context
+        raise RuntimeError("private target detail")
+
+    class AcceptedActionRutter(Rutter):
+        rutter_id = f"accepted-action-{failure}"
+        definition_version = 1
+        start_state = "store"
+
+        def define_states(self) -> Mapping[str, object]:
+            return {
+                "store": Action(execute, mode="repeat-safe", then=route),
+                "broken": Prompt(
+                    "Broken.",
+                    answer=AnswerSpec({"ok": {}}),
+                    data=materialize,
+                    then="done",
+                ),
+                "done": Done(RunResult("complete", {})),
+            }
+
+    path = Path(f"accepted-action-{failure}.reckoning.json")
+    registry = RutterRegistry({"accepted": AcceptedActionRutter}, tmp_path)
+    voyage = registry.create("accepted", path, {})
+    instruction = voyage.get_instruction()
+    assert isinstance(instruction, PythonInstruction)
+    result = instruction.run()
+
+    faulted = voyage.next(result)
+    reopened = registry.open(path)
+    persisted = reopened._store.read()
+
+    assert faulted.state_id == "store"
+    assert faulted.condition == "fault"
+    assert executions == [instruction.action_id]
+    assert persisted.active_effect is None
+    assert len(persisted.root.history) == 1
+    record = persisted.root.history[0]
+    assert isinstance(record, ActionRecord)
+    assert record.action_id == instruction.action_id
+    assert record.result == result
+    assert persisted.fault["category"] == category
+    assert persisted.fault["state_id"] == "store"
+    assert persisted.fault["node_entry_id"] == record.node_entry_id
+    if failure == "target":
+        assert persisted.fault["target_state_id"] == "broken"
+    assert "private" not in json.dumps(dict(persisted.fault))
+    assert reopened.get_instruction() is None
+    with pytest.raises(RunBlocked):
+        reopened.next(result)
+    assert executions == [instruction.action_id]
+
+
+def test_repeat_safe_reopen_retries_planned_work_with_the_same_action_id(
+    tmp_path: Path,
+) -> None:
+    """Allocating a new id or blocking a repeat-safe planned retry must fail."""
+
+    class SimulatedCrash(BaseException):
+        pass
+
+    attempts: list[str] = []
+
+    def execute(context: ActionContext) -> ActionResult:
+        attempts.append(context.action_id)
+        if len(attempts) == 1:
+            raise SimulatedCrash
+        return ActionResult("stored", {"attempt": len(attempts)})
+
+    class RetryRutter(Rutter):
+        rutter_id = "repeat-retry"
+        definition_version = 1
+        start_state = "store"
+
+        def define_states(self) -> Mapping[str, object]:
+            return {
+                "store": Action(execute, mode="repeat-safe", then="done"),
+                "done": Done(RunResult("complete", {})),
+            }
+
+    path = Path("repeat-retry.reckoning.json")
+    registry = RutterRegistry({"retry": RetryRutter}, tmp_path)
+    voyage = registry.create("retry", path, {})
+    first = voyage.get_instruction()
+    assert isinstance(first, PythonInstruction)
+
+    with pytest.raises(SimulatedCrash):
+        first.run()
+
+    reopened = registry.open(path)
+    planned = reopened._store.read().active_effect
+    second = reopened.get_instruction()
+    assert planned is not None
+    assert planned["disposition"] == "planned"
+    assert isinstance(second, PythonInstruction)
+    assert second.action_id == first.action_id
+
+    result = second.run()
+
+    assert result == ActionResult("stored", {"attempt": 2})
+    assert attempts == [first.action_id, first.action_id]
+    completed = registry.open(path)._store.read().active_effect
+    assert completed is not None
+    assert completed["disposition"] == "completed"
+    assert completed["action_id"] == first.action_id
 
 
 def test_create_atomically_enters_prompt_with_its_exact_open_turn(
