@@ -4850,6 +4850,21 @@
         }
       }
     },
+    "milestone-logging": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
+      "interfaces": {
+        "milestone-logging._rtx.interface.record": {
+          "dependencies": []
+        },
+        "milestone-logging._rtx.interface.timeline": {
+          "dependencies": []
+        }
+      }
+    },
     "notation-review": {
       "maturity": "stable",
       "installation_tier": "core",

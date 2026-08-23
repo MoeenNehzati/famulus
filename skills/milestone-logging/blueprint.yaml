@@ -1,0 +1,67 @@
+authority:
+  owns_filesystem: []
+children:
+  _rtx: {}
+content:
+- SKILL\.md
+description: Owns durable agent-progress logging instructions and the compatible writer and timeline interfaces.
+discovery:
+  mechanism: skill
+  catalog:
+    domain: assistant-operations
+    topics:
+    - task-automation
+    - assistant-assurance
+    visibility: listed
+  activated_by:
+  - user-request
+  - skill-workflow
+  persistent_modifier: false
+exports:
+  milestone-logging.interface.default:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: milestone-logging.source.gateway.interface.default
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: milestone-logging
+namespace_exports:
+  _rtx:
+    version: 1
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - install-assistant-tools
+      - install-assistant-tools._rtx
+      - milestone-logging
+    surface:
+      only:
+        milestone-logging._rtx.interface.record: 1
+        milestone-logging._rtx.interface.timeline: 1
+    interface_access:
+      milestone-logging._rtx.interface.record:
+        allow_all_modules: false
+        allowed_callers:
+        - install-assistant-tools
+        - install-assistant-tools._rtx
+        - milestone-logging
+      milestone-logging._rtx.interface.timeline:
+        allow_all_modules: false
+        allowed_callers:
+        - install-assistant-tools
+        - install-assistant-tools._rtx
+        - milestone-logging
+node_type: module
+schema_version: 6
+sources:
+  milestone-logging.source.gateway:
+    blueprint:
+      base: module-root
+      path: blueprints/gateway.yaml
+version: 1
+maturity: stable
+installation_tier: core
+personal_preference:
+  applies: false

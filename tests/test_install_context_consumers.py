@@ -27,10 +27,12 @@ from officina.wakeup.providers.codex import CodexAdapter
 
 
 ROOT = Path(__file__).resolve().parents[1]
+MILESTONE_WRITER = ROOT / "skills" / "milestone-logging" / "_rtx" / "_milestone_writer.py"
+AGENT_TIMELINE = ROOT / "skills" / "milestone-logging" / "_rtx" / "_agent_timeline.py"
 
 _CONSUMER_ROOTS = (
-    "scripts/milestone.py",
-    "scripts/agent-timeline.py",
+    "skills/milestone-logging/_rtx/_milestone_writer.py",
+    "skills/milestone-logging/_rtx/_agent_timeline.py",
     "skills/connect-google/_rtx",
     "skills/cloud-files/_rtx",
     "skills/g-calendar/_rtx",
@@ -49,8 +51,8 @@ _PATH_TERM = (
     "LLM_WAKEUP_HOME", "resolve_famulus_paths(",
 )
 _INVENTORY = {
-    ("scripts/milestone.py", "<module>"): "process override",
-    ("scripts/agent-timeline.py", "<module>"): "development-isolated",
+    ("skills/milestone-logging/_rtx/_milestone_writer.py", "<module>"): "process override",
+    ("skills/milestone-logging/_rtx/_agent_timeline.py", "<module>"): "development-isolated",
     ("skills/recurring-tasks/_rtx/_assistant_desktop_notify.py", "_default_log_path"): "development-isolated",
     ("skills/recurring-tasks/_rtx/_assistant_desktop_notify.py", "_ensure_linux_gui_env"): "process override",
     ("skills/recurring-tasks/_rtx/_assistant_desktop_notify.py", "_notify_linux"): "process override",
@@ -239,7 +241,7 @@ def test_milestone_follows_selected_home_and_process_override(tmp_path: Path) ->
     env, checkout, _ = _development_env(tmp_path)
     env.update({"CODEX_SESSION_ID": "consumer-test", "CODEX_THREAD_ID": "thread"})
     result = subprocess.run(
-        [sys.executable, str(ROOT / "scripts/milestone.py"), "--path"],
+        [sys.executable, str(MILESTONE_WRITER), "--path"],
         env=env,
         cwd=checkout,
         capture_output=True,
@@ -253,7 +255,7 @@ def test_milestone_follows_selected_home_and_process_override(tmp_path: Path) ->
     override = tmp_path / "process-only-logs"
     env["ASSISTANT_LOGS"] = str(override)
     result = subprocess.run(
-        [sys.executable, str(ROOT / "scripts/milestone.py"), "--path"],
+        [sys.executable, str(MILESTONE_WRITER), "--path"],
         env=env,
         cwd=checkout,
         capture_output=True,
@@ -269,7 +271,7 @@ def test_milestone_follows_selected_home_and_process_override(tmp_path: Path) ->
     standard_env, standard_home = _standard_env(tmp_path / "standard")
     standard_env.update({"CODEX_SESSION_ID": "consumer-test", "CODEX_THREAD_ID": "thread"})
     result = subprocess.run(
-        [sys.executable, str(ROOT / "scripts/milestone.py"), "--path"],
+        [sys.executable, str(MILESTONE_WRITER), "--path"],
         env=standard_env,
         capture_output=True,
         text=True,
@@ -290,7 +292,7 @@ def test_agent_timeline_reads_only_the_selected_log_root(tmp_path: Path) -> None
     host_logs.mkdir(parents=True)
     (host_logs / "host.session.jsonl").write_text("{}\n", encoding="utf-8")
     result = subprocess.run(
-        [sys.executable, str(ROOT / "scripts/agent-timeline.py"), "--list"],
+        [sys.executable, str(AGENT_TIMELINE), "--list"],
         env=env,
         cwd=checkout,
         capture_output=True,
@@ -307,7 +309,7 @@ def test_agent_timeline_reads_only_the_selected_log_root(tmp_path: Path) -> None
     standard_day.mkdir(parents=True)
     (standard_day / "standard.session.jsonl").write_text("{}\n", encoding="utf-8")
     result = subprocess.run(
-        [sys.executable, str(ROOT / "scripts/agent-timeline.py"), "--list"],
+        [sys.executable, str(AGENT_TIMELINE), "--list"],
         env=standard_env,
         capture_output=True,
         text=True,

@@ -57,7 +57,7 @@ def _writer():
     Both helpers are symlinked onto PATH, so `__file__` is the link and only
     the resolved path finds its sibling.
     """
-    source = Path(__file__).resolve().parent / "milestone.py"
+    source = Path(__file__).resolve().parent / "_milestone_writer.py"
     spec = importlib.util.spec_from_file_location("milestone_writer", source)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -349,7 +349,7 @@ def render(events: list[dict], slow: float) -> None:
         print("worked in: " + ", ".join(roots))
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     configure_output(sys.stdout)
     configure_output(sys.stderr)
     ap = argparse.ArgumentParser(description=__doc__)
@@ -358,7 +358,7 @@ def main() -> int:
     ap.add_argument("--slow", type=float, default=10.0, help="flag gaps at least this long")
     ap.add_argument("--run", metavar="ID", help="read one run's journal instead of a session")
     ap.add_argument("--json", action="store_true", help="with --run, dump the reconstruction")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     if not LOGS.is_dir():
         print(f"no milestone logs under {LOGS}", file=sys.stderr)

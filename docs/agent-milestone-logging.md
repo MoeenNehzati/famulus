@@ -8,22 +8,29 @@ for where the time went and which of it was wasted.
 
 ## The Three Pieces
 
-**The instruction.** The `## Milestone logging` section of `CLAUDE.md` at the
-repository root (the same file is reachable as `AGENTS.md` and as
-`~/.claude/CLAUDE.md` through symlinks). It tells an agent to call the writer
-before each distinct piece of work and once at the end.
+**The root bootstrap.** The `## Milestone logging` section of root `CLAUDE.md`
+(also reached through the tracked `AGENTS.md` symlink and the installed root
+instruction link) requires `milestone-logging` in every main-agent and
+subagent session before substantive work begins. It is deliberately compact:
+the skill owns the protocol details.
 
-**The writer**, `scripts/milestone.py`, on PATH as `milestone`. Agents call it;
-it composes the log path, the timestamp, and the JSON record itself.
+**The skill-owned protocol and runtime.** `milestone-logging` exposes
+`milestone-logging.interface.default`, which uses the
+`milestone-logging._rtx.interface.record@1` and
+`milestone-logging._rtx.interface.timeline@1` runtime interfaces. The record
+route composes the log path, timestamp, and JSON record; the timeline route
+merges milestone logs with harness transcripts. Agents follow the skill through
+its private `record` and `timeline` runtime routes; the public instruction
+interface owns when and how those routes are used. The stable `milestone` and
+`agent-timeline` commands are retained for compatibility and human diagnostics.
 
-**The reader**, `scripts/agent-timeline.py`, on PATH as `agent-timeline`. It
-merges the milestone logs with the harness transcripts into one chronological
-timeline.
-
-Both are exposed through the selected installation context's command directory
-by `install-assistant-tools`, and those entries are recorded in the context's
-install manifest. The instruction names `milestone` as a command, so the
-context must be applied wherever the instruction is delivered.
+**The installer-owned projection.** `install-assistant-tools` projects those
+stable commands into the selected installation context's command directory and
+records the links in that context's install manifest. Its small launcher assets
+dispatch through explicitly authorized skill runtime interfaces, so the
+installer does not reach into another skill's private files. The installer owns
+this compatibility layer; the skill owns the logging behavior. Apply the
+context wherever the root instruction is delivered.
 
 `CLAUDE.md`/`AGENTS.md` is delivered by the harness to every subagent on both
 supported hosts, so no cooperation from the spawning parent is needed. Two
@@ -254,6 +261,8 @@ sessions — `runs/` is excluded from the session glob.
 
 ## Limitations
 
+- Installer projection and its extension-less compatibility launchers are
+  POSIX-only. Windows support is not provided by this workflow.
 - Sessions with no available session id are all named `unknown`. The reader
   keeps them apart by filename, so each renders alone, but they carry no id to
   tie them back to a harness transcript.

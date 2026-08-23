@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import io
 import os
+import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -82,10 +84,23 @@ class SetupSymlinksTests(unittest.TestCase):
         (repo_root / "profiles").mkdir()
         (repo_root / ".githooks").mkdir()
         (repo_root / "llmhooks").mkdir()
-        (repo_root / "scripts").mkdir()
-        for helper in ("milestone.py", "agent-timeline.py"):
-            (repo_root / "scripts" / helper).write_text(
-                "#!/usr/bin/env python3\n", encoding="utf-8"
+        runtime_dir = repo_root / "skills" / "milestone-logging" / "_rtx"
+        runtime_dir.mkdir(parents=True)
+        source_runtime_dir = ROOT_DIR / "skills" / "milestone-logging" / "_rtx"
+        for helper in ("_milestone_writer.py", "_agent_timeline.py"):
+            shutil.copy2(
+                source_runtime_dir / helper,
+                runtime_dir / helper,
+            )
+        compatibility_dir = (
+            repo_root / "skills" / "install-assistant-tools" / "_rtx" / "assets" / "bin"
+        )
+        compatibility_dir.mkdir(parents=True)
+        source_compatibility_dir = SCRIPT_DIR / "assets" / "bin"
+        for helper in ("milestone", "agent-timeline"):
+            shutil.copy2(
+                source_compatibility_dir / helper,
+                compatibility_dir / helper,
             )
         (repo_root / "llmhooks" / "registry.py").write_text(
             "def hooks_for_host(host):\n    return []\n", encoding="utf-8"
@@ -102,7 +117,7 @@ class SetupSymlinksTests(unittest.TestCase):
     # famulus-skip: category=platform-contract; reason=Windows cannot execute extension-less links, so dev_link skips these helpers there; alternate=none needed until .bat wrappers exist
     @unittest.skipIf(sys.platform == "win32", "milestone helpers are POSIX-only by design")
     def test_installs_milestone_helpers_into_bin_dir(self) -> None:
-        """CLAUDE.md names `milestone` as a command, so it must reach PATH."""
+        """Installer co-delivers compatibility commands with root instructions."""
         with tempfile.TemporaryDirectory() as tmp:
             repo_root = self.make_repo_root(Path(tmp))
             home = Path(tmp) / "home"
@@ -118,9 +133,17 @@ class SetupSymlinksTests(unittest.TestCase):
             )
 
             bin_dir = default_bin_dir(home=home)
+            compatibility_dir = (
+                repo_root
+                / "skills"
+                / "install-assistant-tools"
+                / "_rtx"
+                / "assets"
+                / "bin"
+            )
             expected = {
-                bin_dir / "milestone": repo_root / "scripts" / "milestone.py",
-                bin_dir / "agent-timeline": repo_root / "scripts" / "agent-timeline.py",
+                bin_dir / "milestone": compatibility_dir / "milestone",
+                bin_dir / "agent-timeline": compatibility_dir / "agent-timeline",
             }
             for link, target in expected.items():
                 self.assertTrue(link.is_symlink(), f"missing link: {link}")
@@ -134,6 +157,100 @@ class SetupSymlinksTests(unittest.TestCase):
             }
             for link in expected:
                 self.assertIn(str(link), recorded)
+
+    # famulus-skip: category=platform-contract; reason=Windows cannot execute extension-less links, so dev_link skips these helpers there; alternate=none needed until .bat wrappers exist
+    @unittest.skipIf(sys.platform == "win32", "milestone helpers are POSIX-only by design")
+    def test_installed_milestone_helpers_execute_without_activation_imports(self) -> None:
+        """Installed links run without activation-provided Python import state."""
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = self.make_repo_root(Path(tmp))
+            home = Path(tmp) / "home"
+            self.capture_run(
+                repo_root=repo_root,
+                home=home,
+                claude_home=home / "claude",
+                codex_home=home / "codex",
+                dry_run=False,
+            )
+
+            bin_dir = default_bin_dir(home=home)
+            dispatcher = bin_dir / "dispatcher"
+            dispatcher.write_text(
+                "#!/bin/sh\n"
+                f"PYTHONPATH={shlex.quote(str(ROOT_DIR / 'src'))} "
+                f"exec {shlex.quote(sys.executable)} -P -m officina.dispatcher.cli "
+                f"--repository-config {shlex.quote(str(ROOT_DIR / 'officina.toml'))} "
+                '"$@"\n',
+                encoding="utf-8",
+            )
+            dispatcher.chmod(0o755)
+            environment = os.environ.copy()
+            for variable in (
+                "PYTHONPATH",
+                "PYTHONHOME",
+                "VIRTUAL_ENV",
+                "CONDA_PREFIX",
+                "CONDA_DEFAULT_ENV",
+            ):
+                environment.pop(variable, None)
+            environment["PATH"] = os.pathsep.join(
+                (str(bin_dir), environment.get("PATH", ""))
+            )
+            environment.update(
+                {
+                    "ASSISTANT_LOGS": str(Path(tmp) / "logs"),
+                    "CODEX_SESSION_ID": "installed-launcher-session",
+                    "CODEX_THREAD_ID": "installed-launcher-agent",
+                }
+            )
+
+            try:
+                milestone = subprocess.run(
+                    [str(bin_dir / "milestone"), "--path"],
+                    env=environment,
+                    cwd=repo_root,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="strict",
+                )
+            except PermissionError as exc:
+                self.fail(f"installed milestone launcher is not executable: {exc}")
+            self.assertEqual(milestone.returncode, 0, milestone.stderr)
+            milestone_path = Path(milestone.stdout.strip())
+            self.assertTrue(
+                milestone_path.is_relative_to(Path(environment["ASSISTANT_LOGS"])),
+                milestone.stdout,
+            )
+
+            record = subprocess.run(
+                [
+                    str(bin_dir / "milestone"),
+                    "--role",
+                    "sanitized launcher test",
+                    "record through installed launcher",
+                    "",
+                ],
+                env=environment,
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="strict",
+            )
+            self.assertEqual(record.returncode, 0, record.stderr)
+
+            timeline = subprocess.run(
+                [str(bin_dir / "agent-timeline"), "--list"],
+                env=environment,
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="strict",
+            )
+            self.assertEqual(timeline.returncode, 0, timeline.stderr)
+            self.assertIn("installed-launcher-session", timeline.stdout)
 
     def test_creates_expected_links_in_empty_directories(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

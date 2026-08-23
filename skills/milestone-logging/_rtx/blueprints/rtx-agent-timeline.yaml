@@ -1,0 +1,151 @@
+content:
+- _timeline_interface\.py
+- _agent_timeline\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-milestone-writer.yaml
+  reason: Reuses the writer-owned durable run-id validation rule when reading run journals.
+  source: milestone-logging._rtx.source.rtx-milestone-writer
+  version: 1
+description: Reads milestone session logs and durable run journals into human or JSON timeline diagnostics.
+gateway:
+  language: Python
+  path: _timeline_interface.py
+id: milestone-logging._rtx.source.rtx-agent-timeline
+interfaces:
+  milestone-logging._rtx.source.rtx-agent-timeline.interface.timeline:
+    content:
+    - _timeline_interface\.py
+    - _agent_timeline\.py
+    uses_interfaces: []
+    contract:
+      arguments:
+        session:
+          description: Session identifier to render; omission selects the most recent session.
+          required: false
+          sensitivity: user-private
+          type: {kind: string, sensitivity: user-private}
+        list:
+          default: false
+          description: List known milestone sessions.
+          required: false
+          sensitivity: public
+          type: {kind: flag}
+        slow:
+          default: 10.0
+          description: Flag timeline gaps at least this many seconds long.
+          required: false
+          sensitivity: public
+          type: {kind: number}
+        run:
+          description: Durable run identifier to reconstruct instead of a session.
+          required: false
+          sensitivity: user-private
+          type: {kind: string, sensitivity: user-private}
+        json:
+          default: false
+          description: Emit the selected durable-run reconstruction as JSON.
+          required: false
+          sensitivity: public
+          type: {kind: flag}
+      caller_warnings: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: milestone logs and durable run journals
+          formats: [jsonl]
+          id: read-1
+          medium: local-filesystem
+          path: <selected-milestone-log-root>/**
+          path_match: glob
+          reason: Uses ASSISTANT_LOGS when it is set and non-empty; otherwise
+            uses $HOME/.assistant-logs.
+          sensitivity: user-private
+          system: filesystem
+        - access: read
+          content: Claude project and subagent transcripts
+          formats: [jsonl, json]
+          id: read-2
+          medium: home-filesystem
+          path: $HOME/.claude/projects/**
+          path_match: glob
+          reason: Joins milestone intent with Claude tool-call timestamps when
+            a matching session transcript exists.
+          sensitivity: user-private
+          system: filesystem
+        - access: read
+          content: Codex session rollout transcripts
+          formats: [jsonl]
+          id: read-3
+          medium: local-filesystem
+          path: <selected-codex-home>/sessions/**
+          path_match: glob
+          reason: Uses CODEX_HOME when it is defined; otherwise uses $HOME/.codex,
+            then joins matching rollouts with milestone intent.
+          sensitivity: user-private
+          system: filesystem
+        writes:
+        - access: write
+          content: timeline diagnostic
+          formats: [text, json]
+          id: write-1
+          medium: stdout
+          sensitivity: derived-private
+          system: agent-runtime
+      execution:
+        consistency:
+          snapshot: The report is derived from logs observed while the command runs.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: timeline
+      helpers: []
+      interaction: {mode: unattended}
+      outcomes:
+      - caller_action: Use the listed session or rendered timeline diagnostic.
+        class: success
+        effects: []
+        id: rendered
+        outputs: [timeline]
+      - caller_action: Report the exact unavailable or invalid-log diagnostic.
+        class: error
+        effects: []
+        id: failed
+        outputs: [timeline]
+      outputs:
+      - audience: both
+        cardinality: {minimum: 0, maximum: 1}
+        description: Timeline, session list, or durable-run reconstruction.
+        direct_io_ref: write-1
+        empty: Empty only when a successful session listing finds no records.
+        id: timeline
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        type: {kind: string, sensitivity: derived-private}
+      preconditions: []
+    description: Preserve the agent-timeline command's argv contract while reading diagnostics.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - name: timeline
+        min_positionals: 0
+        max_positionals: 1
+        allow_stdin: false
+        allowed_flags: [--help, -h, -l, --list, --slow, --run, --json]
+        flag_patterns:
+          --slow: '(?s).*'
+          --run: '(?s).*'
+    usage: '[SESSION] [-l|--list] [--slow SECONDS] [--run ID] [--json]'
+    version: 1
+node_type: behavioral_source
+platform_support: {linux: true, macos: true, windows: true}
+runtime_dependencies: []
+schema_version: 6
+uses_interfaces: []
+version: 1
+maturity: stable

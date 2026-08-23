@@ -78,6 +78,10 @@ _BINDING_CROSS_HOST_ORCHESTRATION_PATHS = {
     Path("src/officina/recurring/default_jobs.yaml"),
     Path("src/officina/configuration/schema.json"),
 }
+_MILESTONE_COMPATIBILITY_RUNTIME_PATHS = {
+    Path("skills/milestone-logging/_rtx/_milestone_writer.py"),
+    Path("skills/milestone-logging/_rtx/_agent_timeline.py"),
+}
 _HOST_PATTERN = re.compile(r"(?i:(\.claude|claude|\.codex|codex))")
 _PLATFORM_METADATA_LINE_RE = re.compile(
     r"^\s*(?:#\s*)?[\"']?(?:linux|macos|windows)[\"']?\s*:\s*(?:true|false|\{)"
@@ -373,7 +377,10 @@ def _validate(
     repo_root = repo_root.resolve()
     errors: list[str] = []
     for path, rel in _iter_files(repo_root, excluded_blueprints=excluded_blueprints):
-        if rel in _BINDING_CROSS_HOST_ORCHESTRATION_PATHS:
+        if (
+            rel in _BINDING_CROSS_HOST_ORCHESTRATION_PATHS
+            or rel in _MILESTONE_COMPATIBILITY_RUNTIME_PATHS
+        ):
             continue
         pattern = _forbidden_pattern_for(path)
         if pattern is None:

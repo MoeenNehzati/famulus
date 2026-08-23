@@ -17,11 +17,14 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
+import yaml
 
 
-SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
-MILESTONE = SCRIPTS / "milestone.py"
-TIMELINE = SCRIPTS / "agent-timeline.py"
+ROOT = Path(__file__).resolve().parents[4]
+RUNTIME = Path(__file__).resolve().parents[1]
+MILESTONE = RUNTIME / "_milestone_writer.py"
+TIMELINE = RUNTIME / "_agent_timeline.py"
+BLUEPRINTS = RUNTIME / "blueprints"
 
 
 def call(script: Path, *args: str, logs: Path, session: str = "sess-a", thread: str | None = None,
@@ -41,7 +44,39 @@ def call(script: Path, *args: str, logs: Path, session: str = "sess-a", thread: 
     return subprocess.run(
         [sys.executable, str(script), *args],
         env=env, capture_output=True, text=True, encoding=output_encoding,
-        cwd=str(cwd or SCRIPTS.parent),
+        cwd=str(cwd or ROOT),
+    )
+
+
+def dispatch(
+    interface: str,
+    *args: str,
+    logs: Path,
+) -> subprocess.CompletedProcess[str]:
+    """Invoke one public runtime interface against this exact worktree."""
+    env = dict(os.environ)
+    env.update(
+        ASSISTANT_LOGS=str(logs),
+        CLAUDE_CODE_SESSION_ID="dispatch-test",
+        PYTHONPATH=str(ROOT / "src"),
+    )
+    return subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "officina.dispatcher.cli",
+            "--repository-config",
+            str(ROOT / "officina.toml"),
+            "--caller-skill",
+            "milestone-logging",
+            interface,
+            *args,
+        ],
+        env=env,
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
     )
 
 
@@ -52,6 +87,217 @@ def records(path: Path) -> list[dict]:
 def session_files(logs: Path) -> list[Path]:
     """Day-partitioned session logs, excluding the run journals beside them."""
     return sorted(p for p in logs.glob("*/*.jsonl") if p.parent.name != "runs")
+
+
+def _direct_io(blueprint: str, interface: str) -> dict:
+    document = yaml.safe_load((BLUEPRINTS / blueprint).read_text(encoding="utf-8"))
+    return document["interfaces"][interface]["contract"]["direct_io"]
+
+
+def test_writer_contract_declares_the_selected_log_root() -> None:
+    direct_io = _direct_io(
+        "rtx-milestone-writer.yaml",
+        "milestone-logging._rtx.source.rtx-milestone-writer.interface.record",
+    )
+
+    assert direct_io["writes"][0]["path"] == "<selected-milestone-log-root>/**"
+    assert direct_io["writes"][0]["medium"] == "local-filesystem"
+    assert "ASSISTANT_LOGS" in direct_io["writes"][0]["reason"]
+    assert "$HOME/.assistant-logs" in direct_io["writes"][0]["reason"]
+
+
+def test_timeline_contract_declares_every_transcript_root() -> None:
+    direct_io = _direct_io(
+        "rtx-agent-timeline.yaml",
+        "milestone-logging._rtx.source.rtx-agent-timeline.interface.timeline",
+    )
+
+    reads = {entry["id"]: entry for entry in direct_io["reads"]}
+    assert reads["read-1"]["path"] == "<selected-milestone-log-root>/**"
+    assert reads["read-1"]["medium"] == "local-filesystem"
+    assert "ASSISTANT_LOGS" in reads["read-1"]["reason"]
+    assert "$HOME/.assistant-logs" in reads["read-1"]["reason"]
+    assert reads["read-2"]["path"] == "$HOME/.claude/projects/**"
+    assert reads["read-3"]["path"] == "<selected-codex-home>/sessions/**"
+    assert reads["read-3"]["medium"] == "local-filesystem"
+    assert "CODEX_HOME" in reads["read-3"]["reason"]
+    assert "$HOME/.codex" in reads["read-3"]["reason"]
+
+
+def test_record_interface_resolves_the_selected_log_root(tmp_path: Path) -> None:
+    logs = tmp_path / "logs"
+
+    shown = dispatch(
+        "milestone-logging._rtx.interface.record",
+        "--path",
+        logs=logs,
+    )
+
+    assert shown.returncode == 0, shown.stderr
+    assert Path(shown.stdout.strip()).is_relative_to(logs)
+
+
+def test_record_interface_accepts_role_and_positional_messages(tmp_path: Path) -> None:
+    logs = tmp_path / "logs"
+
+    recorded = dispatch(
+        "milestone-logging._rtx.interface.record",
+        "--role",
+        "reviewer",
+        "start",
+        "previous",
+        logs=logs,
+    )
+
+    assert recorded.returncode == 0, recorded.stderr
+    rec = records(session_files(logs)[0])[0]
+    assert (rec["role"], rec["doing"], rec["prev"]) == (
+        "reviewer",
+        "start",
+        "previous",
+    )
+
+
+def test_record_dispatcher_accepts_an_explicit_empty_role(tmp_path: Path) -> None:
+    logs = tmp_path / "logs"
+
+    direct = call(MILESTONE, "--role", "", "start", "previous", logs=logs)
+    dispatched = dispatch(
+        "milestone-logging._rtx.interface.record",
+        "--role",
+        "",
+        "start",
+        "previous",
+        logs=logs,
+    )
+
+    assert direct.returncode == 0, direct.stderr
+    assert dispatched.returncode == 0, dispatched.stderr
+
+
+def test_record_dispatcher_accepts_signed_step_syntax(tmp_path: Path) -> None:
+    logs = tmp_path / "logs"
+
+    direct = call(
+        MILESTONE,
+        "--run",
+        "nightly-01",
+        "--step",
+        "+1",
+        "start",
+        logs=logs,
+    )
+    dispatched = dispatch(
+        "milestone-logging._rtx.interface.record",
+        "--run",
+        "nightly-01",
+        "--step",
+        "+1",
+        "start",
+        logs=logs,
+    )
+
+    assert direct.returncode == 0, direct.stderr
+    assert dispatched.returncode == 0, dispatched.stderr
+
+
+def test_timeline_interface_lists_a_session(tmp_path: Path) -> None:
+    logs = tmp_path / "logs"
+    day = logs / "2026-08-22"
+    day.mkdir(parents=True)
+    (day / "visible.session.jsonl").write_text(
+        json.dumps(
+            {
+                "ts": "2026-08-22T09:00:00+00:00",
+                "role": "reviewer",
+                "cwd": "/workspace",
+                "doing": "start",
+                "prev": "previous",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    shown = dispatch(
+        "milestone-logging._rtx.interface.timeline",
+        "--list",
+        logs=logs,
+    )
+
+    assert shown.returncode == 0, shown.stderr
+    assert "visible" in shown.stdout
+
+
+def test_timeline_interface_accepts_session_and_slow_value(tmp_path: Path) -> None:
+    logs = tmp_path / "logs"
+    day = logs / "2026-08-22"
+    day.mkdir(parents=True)
+    (day / "visible.session.jsonl").write_text(
+        json.dumps(
+            {
+                "ts": "2026-08-22T09:00:00+00:00",
+                "role": "reviewer",
+                "cwd": "/workspace",
+                "doing": "start",
+                "prev": "previous",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    shown = dispatch(
+        "milestone-logging._rtx.interface.timeline",
+        "visible",
+        "--slow",
+        "2",
+        logs=logs,
+    )
+
+    assert shown.returncode == 0, shown.stderr
+    assert "session visible" in shown.stdout
+
+
+def test_runtime_interfaces_render_help(tmp_path: Path) -> None:
+    logs = tmp_path / "logs"
+
+    record_help = dispatch(
+        "milestone-logging._rtx.interface.record",
+        "--help",
+        logs=logs,
+    )
+    timeline_help = dispatch(
+        "milestone-logging._rtx.interface.timeline",
+        "--help",
+        logs=logs,
+    )
+
+    assert record_help.returncode == 0, record_help.stderr
+    assert "--role ROLE" in record_help.stdout
+    assert timeline_help.returncode == 0, timeline_help.stderr
+    assert "--slow SLOW" in timeline_help.stdout
+
+
+def test_runtime_interfaces_render_short_help(tmp_path: Path) -> None:
+    logs = tmp_path / "logs"
+
+    direct_record = call(MILESTONE, "-h", logs=logs)
+    direct_timeline = call(TIMELINE, "-h", logs=logs)
+    dispatched_record = dispatch(
+        "milestone-logging._rtx.interface.record",
+        "-h",
+        logs=logs,
+    )
+    dispatched_timeline = dispatch(
+        "milestone-logging._rtx.interface.timeline",
+        "-h",
+        logs=logs,
+    )
+
+    assert direct_record.returncode == 0, direct_record.stderr
+    assert direct_timeline.returncode == 0, direct_timeline.stderr
+    assert (dispatched_record.returncode, dispatched_timeline.returncode) == (0, 0)
 
 
 # ── backward compatibility ───────────────────────────────────────────────────

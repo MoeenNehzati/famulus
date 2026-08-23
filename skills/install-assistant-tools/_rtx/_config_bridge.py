@@ -640,8 +640,8 @@ def run(
     if do_codex:
         install_codex_hooks(codex_home, repo_root, dry_run, manifest)
 
-    # The milestone instruction in CLAUDE.md names `milestone` as a command, so
-    # the helpers must be on PATH wherever that instruction is delivered.
+    # Root instructions require milestone-logging, and the installer
+    # co-delivers these stable compatibility commands on PATH.
     try:
         from ._fs_links import default_bin_dir
     except ImportError:  # pragma: no cover - direct-script fallback
@@ -654,11 +654,21 @@ def run(
         milestone_bin = context.paths.user_bin if context is not None else default_bin_dir(home=home)
         if not dry_run:
             milestone_bin.mkdir(parents=True, exist_ok=True)
-        for script, command in (
-            ("milestone.py", "milestone"),
-            ("agent-timeline.py", "agent-timeline"),
-        ):
-            make_link(repo_root / "scripts" / script, milestone_bin / command, dry_run, manifest)
+        compatibility_dir = (
+            repo_root
+            / "skills"
+            / "install-assistant-tools"
+            / "_rtx"
+            / "assets"
+            / "bin"
+        )
+        for command in ("milestone", "agent-timeline"):
+            make_link(
+                compatibility_dir / command,
+                milestone_bin / command,
+                dry_run,
+                manifest,
+            )
 
     # ── Summary ──────────────────────────────────────────────────────────────
 

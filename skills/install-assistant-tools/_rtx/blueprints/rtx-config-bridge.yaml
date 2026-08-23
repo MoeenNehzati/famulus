@@ -1,5 +1,7 @@
 content:
 - _config_bridge\.py
+- assets/bin/milestone
+- assets/bin/agent\-timeline
 dependencies:
 - blueprint:
     base: module-root
@@ -16,10 +18,16 @@ interfaces:
   install-assistant-tools._rtx.source.rtx-config-bridge.interface.scripts-dev-link:
     content:
     - _config_bridge\.py
+    - assets/bin/milestone
+    - assets/bin/agent\-timeline
     uses_interfaces:
     - interface: common.interface.codex-toml
       version: 1
     - interface: common.interface.toml-io
+      version: 1
+    - interface: milestone-logging._rtx.interface.record
+      version: 1
+    - interface: milestone-logging._rtx.interface.timeline
       version: 1
     contract:
       arguments:
@@ -205,6 +213,10 @@ uses_interfaces:
 - interface: common.interface.codex-toml
   version: 1
 - interface: common.interface.toml-io
+  version: 1
+- interface: milestone-logging._rtx.interface.record
+  version: 1
+- interface: milestone-logging._rtx.interface.timeline
   version: 1
 version: 1
 maturity: stable

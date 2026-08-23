@@ -50,6 +50,8 @@ content:
 - assets/bin/tw\-join
 - assets/bin/tw\-monitor
 - assets/bin/tw\-help
+- assets/bin/milestone
+- assets/bin/agent\-timeline
 - _config_bridge\.py
 - __init__\.py
 - _fs_links\.py

@@ -83,7 +83,7 @@ def run_journal(run: str) -> Path:
 LINE_BUDGET = 3800
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("doing", nargs="?", default="", help="what you are starting now")
     ap.add_argument("prev", nargs="?", default="", help="how the previous piece ended")
@@ -98,7 +98,7 @@ def main() -> int:
     ap.add_argument("--attempt", type=int, help="attempt or repair round for that task")
     ap.add_argument("--evidence", action="append", default=[], metavar="PATH",
                     help="path to supporting evidence; repeatable")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     typed = {
         "event": args.event[:60],

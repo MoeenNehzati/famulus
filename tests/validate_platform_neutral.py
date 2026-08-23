@@ -272,6 +272,35 @@ def test_nearby_recurring_file_remains_rejected(tmp_path: Path) -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    "relative_path",
+    (
+        Path("skills/milestone-logging/_rtx/_milestone_writer.py"),
+        Path("skills/milestone-logging/_rtx/_agent_timeline.py"),
+    ),
+)
+def test_milestone_compatibility_runtime_paths_are_exactly_allowed(
+    tmp_path: Path, relative_path: Path
+) -> None:
+    source = tmp_path / relative_path
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("# Coordinates Claude, Codex, Windows, macOS, and Linux.\n")
+
+    assert validate(tmp_path) == []
+
+
+def test_nearby_milestone_runtime_file_remains_rejected(tmp_path: Path) -> None:
+    source = tmp_path / "skills" / "milestone-logging" / "_rtx" / "_helper.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("# Coordinates Claude, Codex, Windows, macOS, and Linux.\n")
+
+    errors = validate(tmp_path)
+    assert errors == [
+        "skills/milestone-logging/_rtx/_helper.py:1: "
+        "# Coordinates Claude, Codex, Windows, macOS, and Linux."
+    ]
+
+
 def test_blueprint_graph_shared_module_is_platform_neutral(tmp_path: Path) -> None:
     source = (
         Path(__file__).resolve().parents[1]
