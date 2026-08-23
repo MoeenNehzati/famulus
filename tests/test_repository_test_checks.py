@@ -1172,7 +1172,7 @@ def test_unified_access_qualification_scopes_pins_control_and_credentials() -> N
     assert "Path.home()" in workflow
     assert "--control-root \"${{ steps.assistant-access-control.outputs.control_root }}\"" in workflow
     assert (
-        "codex sandbox --enable use_legacy_landlock "
+        "codex sandbox -c 'sandbox_mode=\"workspace-write\"' "
         "-c sandbox_workspace_write.network_access=true --"
     ) in workflow
     assert "Stage Linux assistant evidence in configured writable root" in workflow
