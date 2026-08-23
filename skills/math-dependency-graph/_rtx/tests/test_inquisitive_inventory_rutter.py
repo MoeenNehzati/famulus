@@ -91,6 +91,54 @@ def _recovered_edge(
     }
 
 
+def _duplicate_semantic_node_graph(
+    *,
+    aliases: tuple[str, ...],
+    edges: tuple[tuple[str, str, str], ...],
+) -> dict:
+    node_record = {
+        "description": "An indistinguishable claim.",
+        "locations": [
+            {"file": "paper.md", "start_line": 1, "end_line": 1}
+        ],
+        "properties": {"provenance": "explicit", "type_hint": "setup"},
+    }
+    return {
+        "delta_nodes": {
+            "added": [
+                {"alias": alias, "after": copy.deepcopy(node_record)}
+                for alias in aliases
+            ],
+            "changed": [],
+            "deleted": [],
+        },
+        "delta_edges": {
+            "added": [
+                {
+                    "alias": edge_alias,
+                    "after": {
+                        "from": source_alias,
+                        "to": target_alias,
+                        "description": "One claim supports another.",
+                        "locations": [
+                            {
+                                "file": "paper.md",
+                                "start_line": 2,
+                                "end_line": 2,
+                            }
+                        ],
+                        "properties": {"type": "supports"},
+                    },
+                }
+                for edge_alias, source_alias, target_alias in edges
+            ],
+            "changed": [],
+            "deleted": [],
+        },
+        "endpoint_context": {},
+    }
+
+
 def _empty_graph() -> dict:
     return {
         "delta_nodes": {"added": [], "changed": [], "deleted": []},
@@ -416,6 +464,44 @@ def test_recovered_edge_equality_uses_endpoint_semantics_not_local_labels() -> N
             edge_alias="gold-dependency",
             source_alias="gold-compactness",
             target_alias="gold-existence",
+        ),
+    )
+
+
+def test_semantic_inventory_equality_distinguishes_loop_from_cross_edge() -> None:
+    """Replacing duplicate-valued endpoints independently would erase incidence."""
+
+    assert not inventory.semantic_inventory_equal(
+        _duplicate_semantic_node_graph(
+            aliases=("actual-a", "actual-b"),
+            edges=(("actual-edge", "actual-a", "actual-a"),),
+        ),
+        _duplicate_semantic_node_graph(
+            aliases=("gold-x", "gold-y"),
+            edges=(("gold-edge", "gold-x", "gold-y"),),
+        ),
+    )
+
+
+def test_semantic_inventory_equality_maps_renamed_duplicate_nodes_one_to_one() -> None:
+    """Requiring unique node semantics would reject an isomorphic renamed graph."""
+
+    assert inventory.semantic_inventory_equal(
+        _duplicate_semantic_node_graph(
+            aliases=("actual-a", "actual-b", "actual-c"),
+            edges=(
+                ("actual-edge-1", "actual-a", "actual-b"),
+                ("actual-edge-2", "actual-b", "actual-c"),
+                ("actual-edge-3", "actual-c", "actual-a"),
+            ),
+        ),
+        _duplicate_semantic_node_graph(
+            aliases=("gold-x", "gold-y", "gold-z"),
+            edges=(
+                ("gold-edge-1", "gold-x", "gold-z"),
+                ("gold-edge-2", "gold-z", "gold-y"),
+                ("gold-edge-3", "gold-y", "gold-x"),
+            ),
         ),
     )
 

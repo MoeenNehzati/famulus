@@ -93,65 +93,130 @@ def _json_object(value: object, label: str) -> dict[str, object]:
     return materialized
 
 
-def _inventory_profile(value: Mapping[str, object]) -> dict[str, object]:
-    node_aliases: dict[str, dict[str, object]] = {}
+def _inventory_alias_signatures(
+    value: Mapping[str, object],
+) -> dict[str, str] | None:
+    alias_profiles: dict[str, dict[str, object]] = {}
     node_sections = value.get("delta_nodes")
     endpoint_context = value.get("endpoint_context")
     if not isinstance(node_sections, Mapping) or not isinstance(
         endpoint_context, Mapping
     ):
-        return {"invalid": _without_entry_aliases(value)}
+        return None
 
-    for entries in node_sections.values():
+    def profile(alias: str) -> dict[str, object]:
+        return alias_profiles.setdefault(
+            alias,
+            {"delta_nodes": [], "endpoint_context": None, "edge_roles": []},
+        )
+
+    for change, entries in node_sections.items():
         if not isinstance(entries, (list, tuple)):
-            return {"invalid": _without_entry_aliases(value)}
+            return None
         for entry in entries:
             if not isinstance(entry, Mapping) or not isinstance(
                 entry.get("alias"), str
             ):
-                return {"invalid": _without_entry_aliases(value)}
+                return None
             alias = entry["alias"]
             assert isinstance(alias, str)
-            node_aliases.setdefault(alias, {}).update(
+            delta_nodes = profile(alias)["delta_nodes"]
+            assert isinstance(delta_nodes, list)
+            delta_nodes.append(
                 {
-                    side: _without_entry_aliases(entry[side])
-                    for side in ("before", "after")
-                    if side in entry
+                    "change": str(change),
+                    "entry": _without_entry_aliases(entry),
                 }
             )
     for alias, sides in endpoint_context.items():
         if not isinstance(alias, str) or not isinstance(sides, Mapping):
-            return {"invalid": _without_entry_aliases(value)}
-        node_aliases.setdefault(alias, {}).update(
-            {
-                side: _without_entry_aliases(record)
-                for side, record in sides.items()
-                if side in {"before", "after"}
-            }
-        )
+            return None
+        profile(alias)["endpoint_context"] = _without_entry_aliases(sides)
 
-    def endpoint(alias: object, side: str) -> object:
-        if not isinstance(alias, str) or side not in node_aliases.get(alias, {}):
-            return {"missing_endpoint": alias, "side": side}
-        return node_aliases[alias][side]
+    edge_sections = value.get("delta_edges")
+    if not isinstance(edge_sections, Mapping):
+        return None
+    for change, entries in edge_sections.items():
+        if not isinstance(entries, (list, tuple)):
+            return None
+        for entry in entries:
+            if not isinstance(entry, Mapping):
+                return None
+            entry_payload = {
+                key: _without_entry_aliases(item)
+                for key, item in entry.items()
+                if key not in {"alias", "before", "after"}
+            }
+            for side in ("before", "after"):
+                record = entry.get(side)
+                if not isinstance(record, Mapping):
+                    continue
+                record_payload = {
+                    key: _without_entry_aliases(item)
+                    for key, item in record.items()
+                    if key not in {"from", "to"}
+                }
+                for role in ("from", "to"):
+                    alias = record.get(role)
+                    if not isinstance(alias, str):
+                        continue
+                    edge_roles = profile(alias)["edge_roles"]
+                    assert isinstance(edge_roles, list)
+                    edge_roles.append(
+                        {
+                            "change": str(change),
+                            "side": side,
+                            "role": role,
+                            "entry": entry_payload,
+                            "record": record_payload,
+                        }
+                    )
+
+    signatures: dict[str, str] = {}
+    for alias, alias_profile in alias_profiles.items():
+        for key in ("delta_nodes", "edge_roles"):
+            values = alias_profile[key]
+            assert isinstance(values, list)
+            alias_profile[key] = sorted(values, key=_canonical_text)
+        signatures[alias] = _canonical_text(alias_profile)
+    return signatures
+
+
+def _inventory_profile(
+    value: Mapping[str, object], alias_mapping: Mapping[str, str]
+) -> dict[str, object]:
+    node_sections = value["delta_nodes"]
+    endpoint_context = value["endpoint_context"]
+    edge_sections = value["delta_edges"]
+    assert isinstance(node_sections, Mapping)
+    assert isinstance(endpoint_context, Mapping)
+    assert isinstance(edge_sections, Mapping)
 
     normalized_nodes: dict[str, list[object]] = {}
     for change, entries in node_sections.items():
         assert isinstance(entries, (list, tuple))
-        normalized = [_without_entry_aliases(entry) for entry in entries]
-        normalized_nodes[str(change)] = sorted(normalized, key=_canonical_text)
-
-    edge_sections = value.get("delta_edges")
-    if not isinstance(edge_sections, Mapping):
-        return {"invalid": _without_entry_aliases(value)}
-    normalized_edges: dict[str, list[object]] = {}
-    for change, entries in edge_sections.items():
-        if not isinstance(entries, (list, tuple)):
-            return {"invalid": _without_entry_aliases(value)}
         normalized_entries: list[object] = []
         for entry in entries:
-            if not isinstance(entry, Mapping):
-                return {"invalid": _without_entry_aliases(value)}
+            assert isinstance(entry, Mapping)
+            alias = entry["alias"]
+            assert isinstance(alias, str)
+            normalized_entry = {
+                key: _without_entry_aliases(item)
+                for key, item in entry.items()
+                if key != "alias"
+            }
+            normalized_entry["alias"] = alias_mapping[alias]
+            normalized_entries.append(normalized_entry)
+        normalized_nodes[str(change)] = sorted(
+            normalized_entries, key=_canonical_text
+        )
+
+    normalized_edges: dict[str, list[object]] = {}
+    for change, entries in edge_sections.items():
+        assert isinstance(entries, (list, tuple))
+        normalized_entries: list[object] = []
+        for entry in entries:
+            assert isinstance(entry, Mapping)
             normalized_entry = {
                 key: _without_entry_aliases(item)
                 for key, item in entry.items()
@@ -162,25 +227,30 @@ def _inventory_profile(value: Mapping[str, object]) -> dict[str, object]:
                 if not isinstance(record, Mapping):
                     continue
                 projected = dict(record)
-                projected["from"] = endpoint(record.get("from"), side)
-                projected["to"] = endpoint(record.get("to"), side)
+                for role in ("from", "to"):
+                    alias = record.get(role)
+                    projected[role] = (
+                        {"node_alias": alias_mapping[alias]}
+                        if isinstance(alias, str)
+                        else {"missing_endpoint": alias, "side": side}
+                    )
                 normalized_entry[side] = projected
             normalized_entries.append(normalized_entry)
         normalized_edges[str(change)] = sorted(
             normalized_entries, key=_canonical_text
         )
 
-    normalized_context = sorted(
-        (
+    normalized_context = []
+    for alias, sides in endpoint_context.items():
+        assert isinstance(alias, str)
+        assert isinstance(sides, Mapping)
+        normalized_context.append(
             {
-                side: _without_entry_aliases(record)
-                for side, record in sides.items()
+                "alias": alias_mapping[alias],
+                "value": _without_entry_aliases(sides),
             }
-            for sides in endpoint_context.values()
-            if isinstance(sides, Mapping)
-        ),
-        key=_canonical_text,
-    )
+        )
+    normalized_context.sort(key=_canonical_text)
     return {
         "delta_nodes": normalized_nodes,
         "delta_edges": normalized_edges,
@@ -191,7 +261,48 @@ def _inventory_profile(value: Mapping[str, object]) -> dict[str, object]:
 def semantic_inventory_equal(
     actual: Mapping[str, object], expected: Mapping[str, object]
 ) -> bool:
-    return _inventory_profile(actual) == _inventory_profile(expected)
+    actual_signatures = _inventory_alias_signatures(actual)
+    expected_signatures = _inventory_alias_signatures(expected)
+    if actual_signatures is None or expected_signatures is None:
+        return _without_entry_aliases(actual) == _without_entry_aliases(expected)
+    if sorted(actual_signatures.values()) != sorted(expected_signatures.values()):
+        return False
+
+    candidates = {
+        actual_alias: tuple(
+            expected_alias
+            for expected_alias, expected_signature in expected_signatures.items()
+            if expected_signature == actual_signature
+        )
+        for actual_alias, actual_signature in actual_signatures.items()
+    }
+    ordered_actual = sorted(
+        actual_signatures,
+        key=lambda alias: (len(candidates[alias]), alias),
+    )
+    expected_profile = _inventory_profile(
+        expected,
+        {alias: alias for alias in expected_signatures},
+    )
+    mapping: dict[str, str] = {}
+    used_expected: set[str] = set()
+
+    def profiles_match(index: int) -> bool:
+        if index == len(ordered_actual):
+            return _inventory_profile(actual, mapping) == expected_profile
+        actual_alias = ordered_actual[index]
+        for expected_alias in candidates[actual_alias]:
+            if expected_alias in used_expected:
+                continue
+            mapping[actual_alias] = expected_alias
+            used_expected.add(expected_alias)
+            if profiles_match(index + 1):
+                return True
+            used_expected.remove(expected_alias)
+            del mapping[actual_alias]
+        return False
+
+    return profiles_match(0)
 
 
 def inventory_verdict(

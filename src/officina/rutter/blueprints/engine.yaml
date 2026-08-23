@@ -336,6 +336,14 @@ interfaces:
         effects:
         - reckoning-update
         caller_action: Stop for manual reconciliation.
+      - id: response-required
+        class: refusal
+        outputs:
+        - result
+        effects: []
+        caller_action: 'On RutterValidationError: Prompt response is required, inspect
+          the current NodeView, call get_instruction, and perform the LLM instruction;
+          this boundary does not return a ValidationReport.'
       - id: invalid-input
         class: refusal
         outputs:

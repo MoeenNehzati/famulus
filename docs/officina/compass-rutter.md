@@ -90,9 +90,12 @@ Compass uses one already-bound Rutter:
 5. Call `next(response, continue_=True)` after validation succeeds and repeat
    from the returned node.
 
-If the initial response-free `next` reports that an LLM Response is required,
-`get_current_node()` identifies the unchanged ready leaf. Compass may then read
-its Message. No other validation failure grants advancing authority.
+If the initial response-free `next` raises `RutterValidationError` with
+`Prompt response is required`, this is the `response-required` boundary, not
+invalid input, and no `ValidationReport` is returned. `get_current_node()`
+identifies the unchanged ready leaf; Compass then calls `get_instruction()` and
+performs the LLM instruction. No other validation failure grants advancing
+authority.
 
 Compass never retrieves an instruction before the settling call, runs an
 automatic instruction itself, manipulates a child traversal, or inspects

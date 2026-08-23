@@ -131,6 +131,32 @@ def test_current_node_is_observed_only_through_public_operation() -> None:
     assert "storage" not in text.lower()
 
 
+def test_response_required_boundary_is_not_invalid_input() -> None:
+    """A response-free Prompt boundary raises instead of returning validation issues."""
+
+    text = _normalized_body()
+
+    assert "`response-required`" in text
+    assert "`RutterValidationError`" in text
+    assert "`Prompt response is required`" in text
+    assert "does not return a `ValidationReport`" in text
+    assert "not `invalid-input`" in text
+    boundary = text.split("`response-required` boundary", maxsplit=1)[1]
+    assert boundary.index("`get_current_node()`") < boundary.index(
+        "`get_instruction()`"
+    )
+    assert "perform the LLM instruction" in boundary
+
+
+def test_only_unrecognized_conditions_are_interface_gaps() -> None:
+    """Recognized stopping boundaries must not contradict the fallback wording."""
+
+    text = _normalized_body()
+
+    assert "Any unrecognized condition is a public-interface gap" in text
+    assert "Any other condition is a public-interface gap" not in text
+
+
 def test_dry_run_is_preview_only_and_outside_normal_loop() -> None:
     """A parent-edge preview cannot authorize work or replace continuation."""
 
@@ -181,9 +207,18 @@ def test_blueprint_consumes_v3_bound_operations_through_complete_contract() -> N
         "terminal",
         "faulted",
         "uncertain",
+        "response-required",
         "validation-failed",
         "interface-gap",
     }
+    response_required = outcomes["response-required"]
+    assert response_required["class"] == "refusal"
+    assert response_required["effects"] == []
+    assert "Prompt response is required" in response_required["caller_action"]
+    assert "current NodeView" in response_required["caller_action"]
+    assert "get_instruction" in response_required["caller_action"]
+    assert "perform the LLM instruction" in response_required["caller_action"]
+    assert "does not return a ValidationReport" in response_required["caller_action"]
     assert outcomes["validation-failed"]["effects"] == []
     assert outcomes["interface-gap"]["effects"] == []
     effects = contract["execution"]["effects"]

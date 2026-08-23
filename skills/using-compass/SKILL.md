@@ -42,17 +42,19 @@ The binding exposes only `get_instruction`, `validate`, `next`, and
    durable traversal; never execute an internal instruction and never
    manipulate child traversal.
 2. Classify the returned node. If the initial response-free settling call
-   reports that an LLM Response is required, call `get_current_node()` to
-   obtain the unchanged immutable active-leaf view. No later validation failure
-   grants instruction authority; repair it through step 5 or report a
-   public-interface gap.
+   raises `RutterValidationError` with `Prompt response is required`, this is
+   the `response-required` boundary, not `invalid-input`, and does not return a
+   `ValidationReport`. Call `get_current_node()` to obtain the unchanged
+   immutable active-leaf view, then call `get_instruction()` and perform the
+   LLM instruction. No later validation failure grants instruction authority;
+   repair it through step 5 or report a public-interface gap.
    - For `ready`, proceed to step 3.
    - For `terminal`, report the terminal result and stop.
    - For `fault`, report the public fault and stop.
    - For `uncertain`, stop for manual reconciliation and report the public
      condition.
 
-   Only `ready` permits `get_instruction()`. Any other condition is a
+   Only `ready` permits `get_instruction()`. Any unrecognized condition is a
    public-interface gap and stops the loop. With continuation enabled, `next`
    returns only the final entered `NodeView`; durable history records every
    intermediate traversal. Do not reconstruct that path from conversation

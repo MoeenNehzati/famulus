@@ -1814,6 +1814,33 @@ def test_v6_rutter_operation_effects_are_outcome_specific() -> None:
     ]
 
 
+def test_v6_rutter_bound_operations_names_response_required_boundary() -> None:
+    """A missing Prompt response is a normal boundary, not invalid submitted input."""
+
+    repo_root = Path(__file__).resolve().parents[1]
+    engine = yaml.safe_load(
+        (repo_root / "src/officina/rutter/blueprints/engine.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    contract = engine["interfaces"][
+        "rutter.source.engine.interface.bound-operations"
+    ]["contract"]
+    outcomes = {entry["id"]: entry for entry in contract["outcomes"]}
+
+    response_required = outcomes["response-required"]
+    assert response_required["class"] == "refusal"
+    assert response_required["effects"] == []
+    assert "RutterValidationError: Prompt response is required" in response_required[
+        "caller_action"
+    ]
+    assert "current NodeView" in response_required["caller_action"]
+    assert "get_instruction" in response_required["caller_action"]
+    assert "perform the LLM instruction" in response_required["caller_action"]
+    assert "does not return a ValidationReport" in response_required["caller_action"]
+    assert "ValidationReport" in outcomes["invalid-input"]["caller_action"]
+
+
 def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
     """The four cohesive implementation files own exact imports and interfaces."""
 
@@ -1974,7 +2001,18 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
     assert bound_outcomes["observed"]["effects"] == []
     assert bound_outcomes["validated"]["effects"] == []
     assert bound_outcomes["previewed"]["effects"] == []
+    response_required = bound_outcomes["response-required"]
+    assert response_required["class"] == "refusal"
+    assert response_required["effects"] == []
+    assert "RutterValidationError: Prompt response is required" in response_required[
+        "caller_action"
+    ]
+    assert "current NodeView" in response_required["caller_action"]
+    assert "get_instruction" in response_required["caller_action"]
+    assert "perform the LLM instruction" in response_required["caller_action"]
+    assert "does not return a ValidationReport" in response_required["caller_action"]
     assert bound_outcomes["invalid-input"]["effects"] == []
+    assert "ValidationReport" in bound_outcomes["invalid-input"]["caller_action"]
     for outcome in ("ready", "terminal", "faulted", "uncertain"):
         assert bound_outcomes[outcome]["effects"] == ["reckoning-update"]
     bound_effects = {
