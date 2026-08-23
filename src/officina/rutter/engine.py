@@ -1103,6 +1103,9 @@ def _get_instruction(voyage: _BoundVoyageLike) -> object | None:
         _validate_action_authority(reckoning, leaf, state)
         if _condition(reckoning, state) != "ready":
             return None
+        source = _source_record(leaf.run, leaf.run.entered_node)
+        if _is_recorded_source(state, source):
+            return None
         if isinstance(state, Prompt):
             return _prompt_turn(reckoning, leaf.run).message
         if isinstance(state, Action) and state.mode == "pure":
@@ -1126,6 +1129,9 @@ def _validate(voyage: _BoundVoyageLike, response: object) -> ValidationReport:
         condition = _condition(reckoning, state)
         if condition in {"fault", "uncertain"}:
             raise RunBlocked("the voyage is blocked")
+        source = _source_record(leaf.run, leaf.run.entered_node)
+        if _is_recorded_source(state, source):
+            raise NotApplicable("an accepted node does not accept another response")
         if isinstance(state, Action):
             return _validate_action_result(response)
         if not isinstance(state, Prompt):

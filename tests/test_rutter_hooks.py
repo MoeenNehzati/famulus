@@ -479,6 +479,96 @@ def test_prompt_attachment_reopens_after_attach_settle_and_return_boundaries(
         "prompt-check",
     )
 
+    before = (tmp_path / path).read_bytes()
+    assert returned.get_current_node().state_id == "review"
+    assert returned.get_instruction() is None
+    with pytest.raises(rutter_public.NotApplicable):
+        returned.validate(
+            {"revision": 0, "outcome": "approved", "evidence": {}}
+        )
+    assert (tmp_path / path).read_bytes() == before
+
     target = returned.next(continue_=False)
     assert target.state_id == "publish"
     assert target.condition == "ready"
+
+
+def test_pure_action_attachment_return_does_not_offer_or_replay_action(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A returned hook must expose only continuation from an accepted Action."""
+
+    executions: list[str] = []
+
+    def approve(context: rutter_public.ActionContext) -> rutter_public.ActionResult:
+        executions.append(context.action_id)
+        return rutter_public.ActionResult("approved", {})
+
+    class ActionHookParent(rutter_public.Rutter):
+        rutter_id = "action-hook-parent"
+        definition_version = 1
+        start_state = "review"
+
+        def define_states(self) -> dict[str, object]:
+            return {
+                "review": rutter_public.Action(
+                    approve,
+                    mode="pure",
+                    then="publish",
+                ),
+                "publish": rutter_public.Done(
+                    rutter_public.RunResult("finished", {})
+                ),
+            }
+
+        def define_case_makers(self) -> tuple[object, ...]:
+            return (
+                rutter_public.CaseMaker(
+                    "action-check",
+                    on=rutter_public.after("review"),
+                    child=HookChild,
+                    charter=lambda context: {"source": context.edge["source"]},
+                ),
+            )
+
+    path = Path("action-reopen.reckoning.json")
+    registry = rutter_public.RutterRegistry({"parent": ActionHookParent}, tmp_path)
+    voyage = registry.create("parent", path, {})
+
+    attached_child = voyage.next(continue_=False)
+    assert attached_child.rutter_id == HookChild.rutter_id
+    assert len(executions) == 1
+    accepted_action_id = executions[0]
+    reopened = registry.open(path)
+    settled_child = reopened.next(continue_=False)
+    assert settled_child.condition == "terminal"
+    reopened = registry.open(path)
+
+    class SimulatedCrash(Exception):
+        pass
+
+    original_replace = reopened._store.replace
+
+    def crash_after_persist(previous: object, replacement: object) -> None:
+        original_replace(previous, replacement)
+        raise SimulatedCrash
+
+    with monkeypatch.context() as patcher:
+        patcher.setattr(reopened._store, "replace", crash_after_persist)
+        with pytest.raises(SimulatedCrash):
+            reopened.next(continue_=False)
+
+    returned = registry.open(path)
+    before = (tmp_path / path).read_bytes()
+    assert returned.get_current_node().state_id == "review"
+    assert returned.get_instruction() is None
+    with pytest.raises(rutter_public.NotApplicable):
+        returned.validate(rutter_public.ActionResult("approved", {}))
+    assert executions == [accepted_action_id]
+    assert (tmp_path / path).read_bytes() == before
+
+    target = returned.next(continue_=False)
+    assert target.state_id == "publish"
+    assert target.condition == "ready"
+    assert executions == [accepted_action_id]
