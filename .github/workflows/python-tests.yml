@@ -298,10 +298,22 @@ jobs:
         env: *assistant-access-env
         run: python3 skills/install-assistant-tools/_rtx/tests/assistant_access_probe.py client-install-health --client codex --state "${{ runner.temp }}/famulus-assistant-access/probe-state.json" --evidence ".repo-checks/assistant-access-${{ matrix.evidence_os }}.json"
 
+      - name: Stage Linux assistant evidence in configured writable root
+        if: matrix.os == 'ubuntu-latest'
+        env: *assistant-access-env
+        run: |
+          mkdir -p "$HOME/.assistant-logs"
+          cp ".repo-checks/assistant-access-linux.json" "$HOME/.assistant-logs/assistant-access-linux.json"
+
       - name: Run Linux Codex host-enforcement
         if: matrix.os == 'ubuntu-latest'
         env: *assistant-access-env
-        run: codex sandbox --enable use_legacy_landlock -c sandbox_workspace_write.network_access=true -- python3 skills/install-assistant-tools/_rtx/tests/assistant_access_probe.py host-enforcement --state "${{ runner.temp }}/famulus-assistant-access/probe-state.json" --evidence ".repo-checks/assistant-access-${{ matrix.evidence_os }}.json"
+        run: codex sandbox --enable use_legacy_landlock -c sandbox_workspace_write.network_access=true -- python3 skills/install-assistant-tools/_rtx/tests/assistant_access_probe.py host-enforcement --state "${{ runner.temp }}/famulus-assistant-access/probe-state.json" --evidence "$HOME/.assistant-logs/assistant-access-linux.json"
+
+      - name: Collect Linux assistant evidence outside the sandbox
+        if: always() && matrix.os == 'ubuntu-latest'
+        env: *assistant-access-env
+        run: cp "$HOME/.assistant-logs/assistant-access-linux.json" ".repo-checks/assistant-access-linux.json"
 
       - name: Run authenticated Claude access smoke when opted in
         if: env.FAMULUS_RUN_CLAUDE_ACCESS_SMOKE == '1'
