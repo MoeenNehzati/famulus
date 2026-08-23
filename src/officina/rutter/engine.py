@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Mapping, Protocol
+from typing import Callable, Mapping, Protocol, cast
 from uuid import uuid4
 
 from officina.rutter.model import (
@@ -20,6 +20,7 @@ from officina.rutter.model import (
     CompletedRun,
     Done,
     DoneRecord,
+    EdgeContext,
     EnteredNode,
     HistoryEntry,
     HistoryView,
@@ -56,7 +57,20 @@ class _BoundDefinitionLike(Protocol):
     rutter_id: str
     definition_version: int
     start_state: str
+    allow_multiple_cases_at_once: bool
     states: Mapping[str, State]
+    case_makers: tuple[object, ...]
+
+
+class _EdgeMatchLike(Protocol):
+    def matches(self, edge: object) -> bool: ...
+
+
+class _CaseMakerLike(Protocol):
+    id: str
+    on: _EdgeMatchLike
+    child: type
+    charter: Callable[[EdgeContext], Mapping[str, object] | None]
 
 
 class _StoreLike(Protocol):
@@ -92,10 +106,17 @@ class Edge:
 
 
 class _EngineFault(Exception):
-    def __init__(self, category: str, *, target: str | None = None) -> None:
+    def __init__(
+        self,
+        category: str,
+        *,
+        target: str | None = None,
+        case_maker_ids: tuple[str, ...] = (),
+    ) -> None:
         super().__init__(category)
         self.category = category
         self.target = target
+        self.case_maker_ids = case_maker_ids
 
 
 def _new_id(prefix: str) -> str:
@@ -207,6 +228,20 @@ def _call_child_definition(
         raise RutterStateError("Call child definition is unavailable") from exc
 
 
+def _case_child_definition(
+    voyage: _BoundVoyageLike,
+    maker: _CaseMakerLike,
+) -> _BoundDefinitionLike:
+    identity = (
+        getattr(maker.child, "rutter_id", None),
+        getattr(maker.child, "definition_version", None),
+    )
+    try:
+        return voyage._definitions[identity]
+    except KeyError as exc:
+        raise RutterStateError("CaseMaker child definition is unavailable") from exc
+
+
 def _push_call(
     reckoning: Reckoning,
     run_id: str,
@@ -260,6 +295,55 @@ def _push_call(
     return pushed
 
 
+def _push_case(
+    reckoning: Reckoning,
+    run_id: str,
+    maker: _CaseMakerLike,
+    child_definition: _BoundDefinitionLike,
+    child_charter: Charter,
+    edge: Edge,
+) -> Reckoning:
+    leaf = _active_leaf(reckoning)
+    if leaf.run.run_id != run_id:
+        raise RutterStateError("only the active leaf may push an attached child")
+    if leaf.depth + 2 > _MAX_ACTIVE_DEPTH:
+        raise RutterStateError("maximum active-child depth reached")
+    child_run = ActiveRun(
+        _new_id("run"),
+        child_definition.rutter_id,
+        child_definition.definition_version,
+        child_charter,
+        EnteredNode(_new_id("entry"), child_definition.start_state),
+        (),
+        None,
+    )
+    child_state = child_definition.states[child_definition.start_state]
+    if isinstance(child_state, Prompt):
+        try:
+            turn = _render_prompt(reckoning, child_run, child_state)
+        except Exception as exc:
+            raise _EngineFault("child-materialization") from exc
+        child_run = replace(child_run, history=(turn,))
+    parent = replace(
+        leaf.run,
+        active_child=ActiveChild(
+            _new_id("call"),
+            "attached_case",
+            maker.id,
+            edge.edge_id,
+            child_run,
+        ),
+    )
+    pushed = _replace_run(reckoning, run_id, parent)
+    if isinstance(child_state, Action) and child_state.mode != "pure":
+        child_leaf = _active_leaf(pushed)
+        pushed = replace(
+            pushed,
+            active_effect=_planned_effect(child_leaf.run, child_state),
+        )
+    return pushed
+
+
 def _parent_of_run(root: ActiveRun, run_id: str) -> tuple[ActiveRun, ActiveChild]:
     parent = root
     while parent.active_child is not None:
@@ -275,8 +359,6 @@ def _return_call(reckoning: Reckoning, run_id: str) -> Reckoning:
     if leaf.run.run_id != run_id or leaf.run.active_child is not None:
         raise RutterStateError("only the completed active leaf may return")
     parent, child = _parent_of_run(reckoning.root, run_id)
-    if child.kind != "explicit_call":
-        raise RutterStateError("attached child return is implemented by a later task")
     completed = CompletedRun(
         leaf.run.run_id,
         leaf.run.rutter_id,
@@ -351,9 +433,31 @@ def _accept_action(
 
 def _source_record(run: ActiveRun, entered_node: EnteredNode) -> HistoryEntry | None:
     for record in reversed(run.history):
-        if record.node_entry_id == entered_node.entry_id:
+        if (
+            record.node_entry_id == entered_node.entry_id
+            and not (
+                isinstance(record, CallRecord)
+                and record.site_kind == "attached_case"
+            )
+        ):
             return record
     return None
+
+
+def _is_recorded_source(state: State, record: HistoryEntry | None) -> bool:
+    return (
+        isinstance(state, Prompt)
+        and isinstance(record, Turn)
+        and record.response is not None
+    ) or (
+        isinstance(state, Action) and isinstance(record, ActionRecord)
+    ) or (
+        isinstance(state, Call)
+        and isinstance(record, CallRecord)
+        and record.site_kind == "explicit_call"
+    ) or (
+        isinstance(state, Done) and isinstance(record, DoneRecord)
+    )
 
 
 def _select_edge(
@@ -380,6 +484,14 @@ def _select_edge(
     ):
         response = None
         outcome = call_result.outcome
+    elif isinstance(state, Done) and isinstance(record, DoneRecord):
+        return Edge(
+            record.record_id,
+            bound_run.run.entered_node.entry_id,
+            state_id,
+            record.result.outcome,
+            None,
+        )
     else:
         raise _EngineFault("routing")
     routing = state.then
@@ -422,6 +534,143 @@ def _select_edge(
         state_id,
         outcome,
         target,
+    )
+
+
+def _edge_context(
+    run: ActiveRun,
+    strict_prefix: HistoryView,
+    edge: Edge,
+    record: HistoryEntry,
+) -> EdgeContext:
+    return EdgeContext(
+        StateContext(
+            run.charter,
+            run.entered_node.state_id,
+            run.entered_node.entry_id,
+            strict_prefix,
+        ),
+        {
+            "edge_id": edge.edge_id,
+            "source_entry_id": edge.source_entry_id,
+            "source": edge.source,
+            "outcome": edge.outcome,
+            "target": edge.target,
+        },
+        record,
+    )
+
+
+def _selected_cases(
+    definition: _BoundDefinitionLike,
+    context: EdgeContext,
+    edge: Edge,
+) -> tuple[tuple[_CaseMakerLike, Charter], ...]:
+    selected: list[tuple[_CaseMakerLike, Charter]] = []
+    for authored in definition.case_makers:
+        maker = cast(_CaseMakerLike, authored)
+        try:
+            matches = maker.on.matches(edge)
+        except Exception as exc:
+            raise _EngineFault(
+                "case-matcher", case_maker_ids=(maker.id,)
+            ) from exc
+        if not matches:
+            continue
+        try:
+            charter = maker.charter(context)
+            if charter is not None:
+                selected.append((maker, Charter(charter)))
+        except Exception as exc:
+            raise _EngineFault(
+                "case-charter", case_maker_ids=(maker.id,)
+            ) from exc
+    return tuple(selected)
+
+
+def _continue_edge(
+    voyage: _BoundVoyageLike,
+    reckoning: Reckoning,
+    leaf: ActiveLeaf,
+    definition: _BoundDefinitionLike,
+    edge: Edge,
+    strict_prefix: HistoryView,
+    record: HistoryEntry,
+) -> Reckoning:
+    context = _edge_context(leaf.run, strict_prefix, edge, record)
+    selected = _selected_cases(definition, context, edge)
+    if len(selected) > 1 and not definition.allow_multiple_cases_at_once:
+        raise _EngineFault(
+            "case-cardinality",
+            case_maker_ids=tuple(maker.id for maker, _ in selected),
+        )
+    completed = {
+        (entry.site_id, entry.attached_to_edge_id)
+        for entry in leaf.run.history
+        if isinstance(entry, CallRecord) and entry.site_kind == "attached_case"
+    }
+    for maker, charter in selected:
+        if (maker.id, edge.edge_id) in completed:
+            continue
+        return _push_case(
+            reckoning,
+            leaf.run.run_id,
+            maker,
+            _case_child_definition(voyage, maker),
+            charter,
+            edge,
+        )
+    if edge.target is None:
+        return reckoning
+    return _enter_node(
+        reckoning,
+        leaf.run.run_id,
+        edge.target,
+        definition=definition,
+    )
+
+
+def _recorded_edge(
+    reckoning: Reckoning,
+    leaf: ActiveLeaf,
+    definition: _BoundDefinitionLike,
+    record: HistoryEntry,
+) -> tuple[Edge, HistoryView]:
+    call_result: RunResult | None = None
+    if isinstance(record, CallRecord):
+        try:
+            call_result = reckoning.completed_runs[record.completed_run_id].result
+        except KeyError as exc:
+            raise RutterStateError("CallRecord completed run is unavailable") from exc
+    history = HistoryView(leaf.run.history, reckoning.completed_runs)
+    strict_prefix = history.strict_prefix(record)
+    return (
+        _select_edge(
+            BoundRun(leaf.run, definition),
+            strict_prefix,
+            record,
+            call_result=call_result,
+        ),
+        strict_prefix,
+    )
+
+
+def _continue_recorded_edge(
+    voyage: _BoundVoyageLike,
+    reckoning: Reckoning,
+    leaf: ActiveLeaf,
+    definition: _BoundDefinitionLike,
+    record: HistoryEntry,
+) -> Reckoning:
+    edge, strict_prefix = _recorded_edge(reckoning, leaf, definition, record)
+    return _continue_edge(
+        voyage,
+        reckoning,
+        leaf,
+        definition,
+        edge,
+        strict_prefix,
+        record,
     )
 
 
@@ -501,6 +750,7 @@ def _fault_reckoning(
     category: str,
     *,
     target: str | None = None,
+    case_maker_ids: tuple[str, ...] = (),
 ) -> Reckoning:
     fault: dict[str, object] = {
         "category": category,
@@ -510,6 +760,8 @@ def _fault_reckoning(
     }
     if target is not None:
         fault["target_state_id"] = target
+    if case_maker_ids:
+        fault["case_maker_ids"] = case_maker_ids
     return replace(reckoning, fault=fault)
 
 
@@ -918,6 +1170,7 @@ def _fault_and_publish(
         leaf,
         fault.category,
         target=fault.target,
+        case_maker_ids=fault.case_maker_ids,
     )
     _publish(voyage, previous, faulted)
     state = _leaf_definition(voyage, leaf).states[leaf.run.entered_node.state_id]
@@ -931,14 +1184,14 @@ def _advance_call(
     definition: _BoundDefinitionLike,
     state: Call,
 ) -> Reckoning:
-    edge = _call_edge(reckoning, leaf, definition, state)
-    if edge is not None:
-        assert edge.target is not None
-        return _enter_node(
+    record = _source_record(leaf.run, leaf.run.entered_node)
+    if isinstance(record, CallRecord):
+        return _continue_recorded_edge(
+            voyage,
             reckoning,
-            leaf.run.run_id,
-            edge.target,
-            definition=definition,
+            leaf,
+            definition,
+            record,
         )
     child_definition = _call_child_definition(voyage, state)
     return _push_call(
@@ -958,17 +1211,8 @@ def _call_edge(
     record = _source_record(leaf.run, leaf.run.entered_node)
     if not isinstance(record, CallRecord):
         return None
-    try:
-        result = reckoning.completed_runs[record.completed_run_id].result
-    except KeyError as exc:
-        raise RutterStateError("CallRecord completed run is unavailable") from exc
-    history = HistoryView(leaf.run.history, reckoning.completed_runs)
-    return _select_edge(
-        BoundRun(leaf.run, definition),
-        history.strict_prefix(record),
-        record,
-        call_result=result,
-    )
+    edge, _ = _recorded_edge(reckoning, leaf, definition, record)
+    return edge
 
 
 def _preview_action(
@@ -1132,11 +1376,14 @@ def _advance_action(
         return voyage._reckoning, view
     assert edge.target is not None
     try:
-        entered = _enter_node(
+        entered = _continue_edge(
+            voyage,
             accepted,
-            accepted_leaf.run.run_id,
-            edge.target,
-            definition=definition,
+            accepted_leaf,
+            definition,
+            edge,
+            history.strict_prefix(record),
+            record,
         )
     except _EngineFault as fault:
         view = _fault_and_publish(voyage, reckoning, accepted, fault)
@@ -1164,10 +1411,31 @@ def _next(
         if condition == "terminal":
             if not _is_missing(response):
                 raise NotApplicable("a terminal voyage does not accept a response")
-            if leaf.depth == 0 or dry_run:
+            if dry_run:
                 return _node_view(reckoning, leaf, state)
 
-        if isinstance(state, Prompt):
+        source = _source_record(leaf.run, leaf.run.entered_node)
+        recorded = _is_recorded_source(state, source)
+        if recorded:
+            if not _is_missing(response):
+                raise NotApplicable("an accepted node does not accept another response")
+            if dry_run:
+                assert source is not None
+                try:
+                    edge, _ = _recorded_edge(reckoning, leaf, definition, source)
+                except _EngineFault as fault:
+                    raise RutterValidationError("routing failed") from fault
+                if edge.target is None:
+                    return _node_view(reckoning, leaf, state)
+                return NodeView(
+                    leaf.run.rutter_id,
+                    leaf.run.definition_version,
+                    edge.target,
+                    None,
+                    leaf.depth,
+                    "preview",
+                )
+        elif isinstance(state, Prompt):
             if _is_missing(response):
                 raise RutterValidationError("Prompt response is required")
             try:
@@ -1209,11 +1477,14 @@ def _next(
                 )
 
             try:
-                entered = _enter_node(
+                entered = _continue_edge(
+                    voyage,
                     accepted,
-                    accepted_leaf.run.run_id,
-                    edge.target,
-                    definition=definition,
+                    accepted_leaf,
+                    definition,
+                    edge,
+                    history.strict_prefix(record),
+                    record,
                 )
             except _EngineFault as fault:
                 return _fault_and_publish(voyage, reckoning, accepted, fault)
@@ -1221,7 +1492,8 @@ def _next(
             reckoning = entered
             if not continue_:
                 entered_leaf = _active_leaf(reckoning)
-                entered_state = definition.states[
+                entered_definition = _leaf_definition(voyage, entered_leaf)
+                entered_state = entered_definition.states[
                     entered_leaf.run.entered_node.state_id
                 ]
                 return _node_view(reckoning, entered_leaf, entered_state)
@@ -1257,6 +1529,37 @@ def _next(
             definition = _leaf_definition(voyage, leaf)
             state = definition.states[leaf.run.entered_node.state_id]
             _validate_action_authority(reckoning, leaf, state)
+            source = _source_record(leaf.run, leaf.run.entered_node)
+            if _is_recorded_source(state, source):
+                assert source is not None
+                try:
+                    advanced = _continue_recorded_edge(
+                        voyage,
+                        reckoning,
+                        leaf,
+                        definition,
+                        source,
+                    )
+                except _EngineFault as fault:
+                    return _fault_and_publish(voyage, reckoning, reckoning, fault)
+                if advanced is not reckoning:
+                    _publish(voyage, reckoning, advanced)
+                    reckoning = advanced
+                    if not continue_:
+                        advanced_leaf = _active_leaf(reckoning)
+                        advanced_state = _leaf_definition(
+                            voyage, advanced_leaf
+                        ).states[advanced_leaf.run.entered_node.state_id]
+                        return _node_view(reckoning, advanced_leaf, advanced_state)
+                    continue
+                if not isinstance(state, Done):
+                    raise RutterStateError("recorded edge did not advance")
+                if leaf.depth == 0:
+                    return _node_view(reckoning, leaf, state)
+                returned = _return_call(reckoning, leaf.run.run_id)
+                _publish(voyage, reckoning, returned)
+                reckoning = returned
+                continue
             if isinstance(state, Prompt):
                 return _node_view(reckoning, leaf, state)
             if isinstance(state, Action):
@@ -1317,13 +1620,6 @@ def _next(
                 continue
             if not isinstance(state, Done):
                 return _node_view(reckoning, leaf, state)
-            if isinstance(_source_record(leaf.run, leaf.run.entered_node), DoneRecord):
-                if leaf.depth == 0:
-                    return _node_view(reckoning, leaf, state)
-                returned = _return_call(reckoning, leaf.run.run_id)
-                _publish(voyage, reckoning, returned)
-                reckoning = returned
-                continue
             try:
                 result = _project_done(reckoning, leaf.run, state)
             except _EngineFault as fault:
@@ -1336,8 +1632,27 @@ def _next(
             _publish(voyage, reckoning, settled)
             reckoning = settled
             settled_leaf = _active_leaf(reckoning)
-            if not continue_ or settled_leaf.depth == 0:
+            if not continue_:
                 return _node_view(reckoning, settled_leaf, state)
+            if settled_leaf.depth == 0:
+                source = _source_record(
+                    settled_leaf.run, settled_leaf.run.entered_node
+                )
+                assert isinstance(source, DoneRecord)
+                try:
+                    advanced = _continue_recorded_edge(
+                        voyage,
+                        reckoning,
+                        settled_leaf,
+                        definition,
+                        source,
+                    )
+                except _EngineFault as fault:
+                    return _fault_and_publish(voyage, reckoning, reckoning, fault)
+                if advanced is reckoning:
+                    return _node_view(reckoning, settled_leaf, state)
+                _publish(voyage, reckoning, advanced)
+                reckoning = advanced
         raise RutterStateError("automatic continuation limit exhausted")
 
 

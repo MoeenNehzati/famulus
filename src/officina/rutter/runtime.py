@@ -436,10 +436,6 @@ class _BoundVoyage:
                 "active Prompt requires exactly one matching current Turn"
             )
         turn = turns[0]
-        if is_leaf and turn.revision != global_revision:
-            raise RutterStateError(
-                "active Prompt Turn revision differs from Reckoning revision"
-            )
         if (
             turn.message.instructions["text"] != prompt.text
             or turn.message.instructions["answer"] != prompt.answer.outcomes
@@ -449,6 +445,10 @@ class _BoundVoyage:
             )
         child = run.active_child
         if turn.response is None:
+            if is_leaf and turn.revision != global_revision:
+                raise RutterStateError(
+                    "active Prompt Turn revision differs from Reckoning revision"
+                )
             if child is not None:
                 raise RutterStateError(
                     "active Prompt with an open Turn cannot own an active child"
@@ -458,15 +458,18 @@ class _BoundVoyage:
             raise RutterStateError(
                 "active Prompt Turn has an undeclared accepted outcome"
             )
-        if child is None and fault is not None and (
-            fault.get("run_id") == run.run_id
-            and fault.get("state_id") == entered.state_id
-            and fault.get("node_entry_id") == entered.entry_id
-        ):
-            return
+        if child is None:
+            if fault is None or (
+                fault.get("run_id") == run.run_id
+                and fault.get("state_id") == entered.state_id
+                and fault.get("node_entry_id") == entered.entry_id
+            ):
+                return
+            raise RutterStateError(
+                "accepted active Prompt Turn has mismatched fault authority"
+            )
         if (
-            child is None
-            or child.kind != "attached_case"
+            child.kind != "attached_case"
             or child.attached_to_edge_id != turn.record_id
         ):
             raise RutterStateError(

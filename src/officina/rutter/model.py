@@ -1109,6 +1109,20 @@ class HistoryView:
             and (site is None or entry.site_id == site)
         )
 
+    def attached_calls(
+        self,
+        case_maker_id: str | None = None,
+        edge_id: str | None = None,
+    ) -> tuple[CallRecordView, ...]:
+        return tuple(
+            self._call_view(entry)
+            for entry in self._entries
+            if isinstance(entry, CallRecord)
+            and entry.site_kind == "attached_case"
+            and (case_maker_id is None or entry.site_id == case_maker_id)
+            and (edge_id is None or entry.attached_to_edge_id == edge_id)
+        )
+
     def done(self) -> DoneRecord | None:
         return next(
             (entry for entry in self._entries if isinstance(entry, DoneRecord)),

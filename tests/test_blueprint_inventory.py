@@ -770,6 +770,7 @@ def test_v6_inventory_registers_exact_rutter_module_and_source_files() -> None:
     by_id = {document.node_id: document for document in result.documents}
 
     module = by_id["rutter"]
+    hooks = by_id["rutter.source.hooks"]
     model = by_id["rutter.source.model"]
     engine = by_id["rutter.source.engine"]
     storage = by_id["rutter.source.storage"]
@@ -779,12 +780,14 @@ def test_v6_inventory_registers_exact_rutter_module_and_source_files() -> None:
     assert module.declaration["content"] == [
         r"__init__\.py",
         r"engine\.py",
+        r"hooks\.py",
         r"model\.py",
         r"runtime\.py",
         r"storage\.py",
     ]
     assert set(module.declaration["sources"]) == {
         "rutter.source.engine",
+        "rutter.source.hooks",
         "rutter.source.model",
         "rutter.source.runtime",
         "rutter.source.storage",
@@ -794,6 +797,11 @@ def test_v6_inventory_registers_exact_rutter_module_and_source_files() -> None:
         "language": "Python",
     }
     assert model.declaration["content"] == [r"model\.py"]
+    assert hooks.declaration["gateway"] == {
+        "path": "hooks.py",
+        "language": "Python",
+    }
+    assert hooks.declaration["content"] == [r"hooks\.py"]
     assert engine.declaration["gateway"] == {
         "path": "engine.py",
         "language": "Python",

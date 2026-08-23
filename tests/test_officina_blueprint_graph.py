@@ -1819,7 +1819,7 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
         name: yaml.safe_load(
             (rutter_root / "blueprints" / f"{name}.yaml").read_text(encoding="utf-8")
         )
-        for name in ("model", "engine", "storage", "runtime")
+        for name in ("model", "hooks", "engine", "storage", "runtime")
     }
     common = yaml.safe_load(
         (rutter_root.parent / "common" / "blueprint.yaml").read_text(encoding="utf-8")
@@ -1828,12 +1828,14 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
     assert module["content"] == [
         r"__init__\.py",
         r"engine\.py",
+        r"hooks\.py",
         r"model\.py",
         r"runtime\.py",
         r"storage\.py",
     ]
     assert set(module["sources"]) == {
         "rutter.source.model",
+        "rutter.source.hooks",
         "rutter.source.engine",
         "rutter.source.storage",
         "rutter.source.runtime",
@@ -1841,6 +1843,7 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
     assert {
         "rutter",
         "rutter.source.model",
+        "rutter.source.hooks",
         "rutter.source.engine",
         "rutter.source.storage",
         "rutter.source.runtime",
@@ -1848,6 +1851,7 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
     assert set(module["exports"]) == {
         "rutter.interface.binding",
         "rutter.interface.bound-operations",
+        "rutter.interface.hooks",
         "rutter.interface.model",
     }
     assert module["exports"]["rutter.interface.bound-operations"]["access"] == {
@@ -1866,6 +1870,9 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
     assert set(sources["model"]["interfaces"]) == {
         "rutter.source.model.interface.python-api"
     }
+    assert set(sources["hooks"]["interfaces"]) == {
+        "rutter.source.hooks.interface.python-api"
+    }
     assert set(sources["engine"]["interfaces"]) == {
         "rutter.source.engine.interface.binding",
         "rutter.source.engine.interface.bound-operations",
@@ -1881,6 +1888,12 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
 
     assert sources["model"]["dependencies"] == []
     assert sources["model"]["uses_interfaces"] == []
+    assert [entry["source"] for entry in sources["hooks"]["dependencies"]] == [
+        "rutter.source.model",
+    ]
+    assert sources["hooks"]["uses_interfaces"] == [
+        {"interface": "rutter.source.model.interface.python-api", "version": 1},
+    ]
     assert [entry["source"] for entry in sources["storage"]["dependencies"]] == [
         "rutter.source.model",
         "common.source.atomic-files",

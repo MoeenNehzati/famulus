@@ -1,5 +1,6 @@
 """Public immutable Rutter authoring and value model."""
 
+from officina.rutter.hooks import CaseMaker, EdgeMatch, after, before, on_edge
 from officina.rutter.model import (
     Action,
     ActionContext,
@@ -61,11 +62,13 @@ __all__ = (
     "Call",
     "CallRecord",
     "CallRecordView",
+    "CaseMaker",
     "Charter",
     "CompletedRun",
     "CompletedRunView",
     "Done",
     "DoneRecord",
+    "EdgeMatch",
     "EdgeContext",
     "EnteredNode",
     "HistoryEntry",
@@ -94,5 +97,8 @@ __all__ = (
     "ValidationIssue",
     "ValidationReport",
     "accept",
+    "after",
+    "before",
     "empty_data",
+    "on_edge",
 )

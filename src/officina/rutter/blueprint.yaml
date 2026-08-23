@@ -10,6 +10,7 @@ gateway:
 content:
 - __init__\.py
 - engine\.py
+- hooks\.py
 - model\.py
 - runtime\.py
 - storage\.py
@@ -20,6 +21,10 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/engine.yaml
+  rutter.source.hooks:
+    blueprint:
+      base: module-root
+      path: blueprints/hooks.yaml
   rutter.source.model:
     blueprint:
       base: module-root
@@ -46,6 +51,11 @@ exports:
       allow_all_modules: false
       allowed_callers:
       - using-compass
+  rutter.interface.hooks:
+    source_interface: rutter.source.hooks.interface.python-api
+    access:
+      allow_all_modules: false
+      allowed_callers: []
   rutter.interface.model:
     source_interface: rutter.source.model.interface.python-api
     access:
