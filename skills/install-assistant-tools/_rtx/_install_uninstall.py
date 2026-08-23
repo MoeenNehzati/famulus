@@ -6,20 +6,40 @@ install manifest.
 Manifest-based only: every install records its side effects in a manifest
 under the home's state dir, and uninstall undoes exactly those entries.
 If the manifest is missing (pre-manifest install, or deleted by hand),
-uninstall refuses and asks for one idempotent re-run of the installer to
-regenerate it — guessing at artifacts by pattern is how live generated
+uninstall refuses — guessing at artifacts by pattern is how live generated
 files were deleted in the past.
+
+Re-running the installer does NOT fully regenerate a lost manifest, so a
+manifest-less installation cannot be reversed by this tool alone. Ownership
+of the assistant access roots lives only in the manifest, and an install
+step that correctly skips an already-correct artifact also skips recording
+it. Concretely, after a re-run against an already-installed system:
+  - Codex refuses outright ("managed TOML marker has no matching
+    ownership"), so no access entry is journaled at all;
+  - Claude's permissions.additionalDirectories re-records with an empty
+    `introduced`, which means "own nothing", not "own what is there";
+  - launchers.json, Windows-copied launcher helpers, and the per-agent
+    profile configs are skipped as already present, so they too lose their
+    ownership record.
+A later uninstall then exits 0 and reports success while silently leaving
+every one of those behind, with no report line naming them. Revoke the
+access roots by hand before trusting such an uninstall.
 
 Best-effort within the replay: attempts every reversal, never aborts on
 failure, and prints a final report of what was removed, skipped, left
 behind, or FAILED (with the reason). Exits non-zero if anything failed.
 
-Left alone unless --purge: OAuth credentials and service configs under
-~/.config/cloud-files and ~/.config/g-calendar (their manifest entries are
-kept for a future --purge run).
+Never removed, with or without --purge: OAuth credentials and service
+configs under ~/.config/cloud-files and ~/.config/g-calendar. Their
+manifest entries are never settled either, so the manifest itself always
+survives and every run reports it as holding unresolved entries.
 
-Never reversed (reported): local skills previously migrated into the repo's
-skills tree, worker dirs (may contain data), installed Python dependencies.
+Never reversed, and NOT named in the report: local skills previously
+migrated into the repo's skills tree, the repo-local Git exclude lines
+written alongside them, worker dirs (may contain data), installed Python
+dependencies, created directories, and a development checkout's
+.famulus/install-id (deliberately kept so a reinstall keeps its
+scheduler-visible identity).
 """
 
 from __future__ import annotations
@@ -1218,7 +1238,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-git-hooks", action="store_true",
         help="Do not unset git core.hooksPath")
     parser.add_argument("--purge", action="store_true",
-        help="Also remove unchanged installer-owned immutable/configuration artifacts")
+        help="Also remove unchanged installer-owned immutable artifacts (managed "
+             "runtime, launcher profiles). Credential and service config dirs are "
+             "never removed, with or without this flag.")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     if args.mode == "standard" and args.checkout is not None:

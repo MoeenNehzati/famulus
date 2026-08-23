@@ -2,11 +2,21 @@
 """Install manifest: a home-scoped record of every install side effect.
 
 install.py / setup_symlinks.py / setup_tools.py record what they change here;
-uninstall.py replays the manifest in reverse. This makes uninstall exact even
-when the installing tree is gone (e.g. an old plugin-cache version dir).
+uninstall.py replays the manifest in FORWARD (install) order. This makes
+uninstall exact even when the installing tree is gone (e.g. an old
+plugin-cache version dir).
+
+Forward order is load-bearing, not incidental: a `tree` entry is reversed
+only when its recorded tree_sha256 still matches, so a `tree` must be
+replayed before anything nested inside it. Removing a nested entry first
+would change the tree's identity and strand it as "modified since install;
+preserved". Today the recorded trees hold no other recorded entry, so
+nothing depends on it — but do not "fix" the replay to run in reverse.
 
 Schema (JSON):
-    {"version": 1, "entries": [{"kind": ..., "path": ..., ...}, ...]}
+    {"version": 2, "entries": [...], "installation": {...}}
+Version 1 (no `installation` binding) is still accepted for legacy
+manifests, but uninstall refuses to replay an unbound manifest.
 
 Entry kinds:
     symlink            {path, target}
@@ -16,8 +26,8 @@ Entry kinds:
     json_hook_commands {path, commands: [str]}
     git_hooks_path     {path: repo_root}
     file               {path}
-    config_dir         {path, purge_only: true}
-    pip_editable       {path: package name}
+    config_dir         {path, purge_only: true}   (legacy manifests only)
+    pip_editable       {path: package name}       (legacy manifests only)
     registry_env       {path: bin_dir, names: [env var names]}
 """
 
