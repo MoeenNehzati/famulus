@@ -17,6 +17,7 @@ skills/<name>/
     gateway.yaml
     <implementation>.yaml
   _rtx/
+    tests/
   tests/
 ```
 
@@ -25,8 +26,12 @@ skills/<name>/
   access, authority, and discovery.
 - `blueprints/*.yaml` define behavioral sources, their intrinsic interfaces,
   dependencies, process bindings, and direct I/O.
-- private implementation and tests provide the behavior described by those
-  blueprints.
+- `_rtx/` holds the private implementation, and `_rtx/tests/` the tests of it.
+- `tests/` holds the module's own gateway contract: the instruction wording it
+  promises, routing between its interfaces, and the shape of its declared
+  exports. Runtime tests do not belong here, and gateway tests do not belong
+  beside the runtime, because the two cover different authored surfaces. See
+  [Repository testing](../../testing.md#adding-tests).
 
 The module blueprint and behavioral-source blueprints are authored authority.
 Generated documentation blocks and indexes are derived views. Certificate logs

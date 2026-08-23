@@ -161,10 +161,20 @@ from a dependency.
 - `common/` — small cross-cutting primitives such as atomic file operations,
   repository paths, TOML handling, dates, and Python-source caching
 - `install/` — installing an Officina project onto a machine: managed runtime,
-  launcher entries, resolvers, runtime pointer, uv bootstrap, and the
-  ownership-aware install manifest that makes uninstall exact
+  launcher entries, resolvers, runtime pointer, uv bootstrap, the assistant
+  access roots granted to a launched agent, and the ownership-aware install
+  manifest that makes uninstall exact
+- `launchers/` — managed runtime policy for agent launch commands and durable
+  backend selection
+- `recurring/` — recurring-task control, execution, healthcheck, and native
+  scheduler rendering
 - `validators/` — validators shipped by the framework itself
 - `wakeup/` — host-session lifecycle across supported hosts
+
+`launchers/` and `recurring/` carry a Famulus roster as data — the agent names
+one launches, the jobs the other ships enabled by default — but neither is
+Famulus. What they are *for* is the same machinery `install/` and `wakeup/`
+provide: policy that a host applies to whatever roster it is given.
 
 ### Machine-readable contracts — [`references/`](../../references/)
 
@@ -181,6 +191,8 @@ from a dependency.
   guidelines
 - [`certification/`](../../references/certification/) — node-hash policy and
   the certification-basis roots
+- [`runtime/`](../../references/runtime/) — the core requirement set and the
+  hash-locked resolution of it that every managed runtime is built from
 
 `references/document-standards/` is **not** part of Officina. It holds the
 research-document profile consumed by Famulus's writing skills. It is written

@@ -2,10 +2,13 @@
 
 This document describes the implemented Famulus trust boundary originally
 audited at commit `777b8c03a103` on 2026-08-13 and delta-reviewed through
-commit `e74b8ad7` on 2026-08-17. The delta review covered the credential-module
-relocation, process-local Drive access-token caching and error reporting, the
-dedicated `background_run` agent and unattended launch path, and the
-current-source managed-runtime bootstrap. It is an implementation inventory,
+commit `a7d2fb28` on 2026-08-22. The first delta review, through `e74b8ad7`,
+covered the credential-module relocation, process-local Drive access-token
+caching and error reporting, the dedicated `background_run` agent and
+unattended launch path, and the current-source managed-runtime bootstrap. The
+second covered `51c06606`, which unified the installation contexts, and
+`a68a6389`, which grants a managed assistant the state roots described under
+[Roots granted to a managed assistant](#roots-granted-to-a-managed-assistant). It is an implementation inventory,
 not a security certification. The limitations near the end are release work,
 not features that are already mitigated.
 
@@ -102,6 +105,32 @@ account. Backend ownership is durable in each context's `launchers.json`.
 `ASSISTANT_DEFAULT` and `ASSISTANT_LOGS` are process-local overrides only.
 `AI` and `FAMULUS_REPO_ROOT` are not installation selectors and must not be
 persisted.
+
+### Roots granted to a managed assistant
+
+Both hosts confine an agent to directories the user has approved, and a Famulus
+skill that cannot write its own state root fails at the point of use rather
+than at install time. So applying a context writes the state roots the skills
+actually need into the host's own access configuration: Claude's
+`permissions.additionalDirectories`, and the equivalent Codex access roots,
+each inside a marked block the installer owns and records in the manifest.
+
+Seven roots are granted, and they are state directories rather than working
+directories: the assistant log root, the recurring-job config and state roots,
+the email-triage state root, the `list-manager` lock and cache directories, and
+the `llm-wakeup` state root. `resolve_assistant_access_roots` derives them from
+the selected context, never from process overrides, so `ASSISTANT_LOGS` and its
+siblings cannot widen the grant.
+
+What the grant refuses is the more useful half. A resolved root that overlaps
+the credential root, the managed runtime, either assistant home, or the install
+state root raises `AssistantAccessBoundaryError` and the apply stops. The
+assistant is therefore granted the state it writes and denied the state that
+would let it rewrite its own installation or read the Google credentials.
+
+This narrows nothing that the host granted independently. It is an addition to
+the agent's writable set, not a sandbox around it, and a `development` context
+grants the same roots under the checkout's `.famulus/` tree instead.
 
 `~` below means the account running the host agent. `<PLUGIN>` means the
 installed Famulus plugin directory or checkout. Plugin directories are

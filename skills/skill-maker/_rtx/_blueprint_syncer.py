@@ -863,7 +863,7 @@ def run_sync(*, check_only: bool, schema_version: int = 6) -> int:
             print(f"  {error}", file=sys.stderr)
         if check_only:
             print(
-                "Run `python3 skills/skill-maker/_rtx/_blueprint_syncer.py` to refresh generated artifacts.",
+                "Rerun this interface without `--check` to refresh generated artifacts.",
                 file=sys.stderr,
             )
         return 1

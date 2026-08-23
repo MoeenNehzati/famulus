@@ -39,6 +39,7 @@ send it only after you review and approve the complete message.
 | Enable, disable, test, inspect, or repair a recurring assistant job | `recurring-tasks` |
 | Run the work once right now | Invoke the underlying skill directly |
 | Resume one assistant session after a reset or timeout | `llm-wakeup` |
+| Follow what an unattended run actually did, during or after it | `milestone-logging` |
 
 ## Enable and verify
 
@@ -54,3 +55,10 @@ plan.
 
 Use `recurring-tasks` to inspect a failed job, change its schedule, or disable
 it when you no longer want it to run.
+
+A failed job leaves a transcript of tool calls but no account of what the
+assistant was trying to do, which is rarely enough to tell a broken job from a
+job that ran and found nothing. `milestone-logging` is the other half: a job
+that records its milestones under a run id can be read back with
+`agent-timeline --run <id>` even though the session that started it has ended.
+See [Agent milestone logging](../agent-milestone-logging.md).

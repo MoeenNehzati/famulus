@@ -26,11 +26,17 @@ Start with these architecture and contract references:
 
 The module and contained-source blueprints are the canonical machine-readable
 graph. Generated `SKILL.md` blocks and repository indexes are refreshed through
-[skills/skill-maker/_rtx/_blueprint_syncer.py](../../skills/skill-maker/_rtx/_blueprint_syncer.py):
+`skill-maker`'s exported sync interface. Check whether they are current:
 
 ```bash
-python3 skills/skill-maker/_rtx/_blueprint_syncer.py
+dispatcher --caller-skill skill-certifier \
+  skill-maker._rtx.interface.sync-blueprints --check
 ```
+
+Run it without `--check` only when intentionally refreshing the generated
+artifacts. Do not reach past the interface to the file behind it: the syncer is
+private `_rtx` content, and a bare `python3` runs outside the managed runtime,
+so importing `officina` fails before the syncer does anything.
 
 Cross-skill script calls should go through the dispatcher boundary, not direct script reach-through:
 

@@ -9,7 +9,7 @@ from docs_tooling.render import render_doc_with_updated_blocks
 
 _README_REQUIRED = (
     "blueprint.yaml",
-    "python3 skills/skill-maker/_rtx/_blueprint_syncer.py",
+    "skill-maker._rtx.interface.sync-blueprints --check",
     "dispatcher --caller-skill <caller> <callee>.interface.<name> [args...]",
     "repo_checks.py",
     ".githooks/pre-commit",

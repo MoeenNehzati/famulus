@@ -129,10 +129,15 @@ Python interpreter running `officina.dispatcher.cli`.
 
 Fresh-process measurements include interpreter and launcher startup. They are
 not measurements of authorization alone. The repository performance gates
-require warm in-process resolution below 50 ms median and fresh CLI resolution
-below 100 ms median and 150 ms p95 on the reference host. These are regression
-budgets rather than portable timing guarantees; ordinary operating-system file
-cache and host-load variation is expected.
+require warm in-process resolution below 50 ms median, and fresh CLI resolution
+below a median that `_fresh_cli_budget_ms` sets per OS family: 125 ms on Linux,
+150 ms on macOS, 175 ms on Windows. The three differ because hosted process
+creation does, and treating that difference as a dispatcher regression would
+only teach the gate to be ignored. Every gate is a median; no percentile is
+enforced, since a single contended sample is what a percentile would catch and
+host contention is not what these tests measure. They are regression budgets
+rather than portable timing guarantees; ordinary operating-system file cache
+and host-load variation is expected.
 
 ## What dispatcher never does
 

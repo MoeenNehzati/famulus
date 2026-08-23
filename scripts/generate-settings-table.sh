@@ -69,6 +69,7 @@ done
 descriptions["assistant"]="Secretary: fetch info, write, implement easy logic"
 descriptions["collab"]="Serious coding, focused on documentation/learning"
 descriptions["coauthor"]="Math/research mode, deep thinking and rigor"
+descriptions["background_run"]="Unattended scheduled work; no one is present to answer a prompt"
 
 # Generate markdown table
 {
@@ -81,7 +82,7 @@ descriptions["coauthor"]="Math/research mode, deep thinking and rigor"
   echo "| Profile | Purpose | Codex Model | Codex Effort | Claude Model | Claude Effort | Claude Thinking |"
   echo "|---------|---------|-------------|--------------|--------------|---------------|-----------------|"
 
-  for profile_name in assistant collab coauthor; do
+  for profile_name in assistant collab coauthor background_run; do
     codex_model="${codex_models[$profile_name]:-—}"
     codex_effort="${codex_efforts[$profile_name]:-—}"
     claude_model="${claude_models[$profile_name]:-—}"

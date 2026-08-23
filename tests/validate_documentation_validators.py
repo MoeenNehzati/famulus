@@ -188,7 +188,7 @@ def _seed_docs(repo_root: Path) -> None:
             [
                 "# Contributor Guide",
                 "blueprint.yaml",
-                "python3 skills/skill-maker/_rtx/_blueprint_syncer.py",
+                "skill-maker._rtx.interface.sync-blueprints --check",
                 "dispatcher --caller-skill <caller> <callee>.interface.<name> [args...]",
                 "python3 repo_checks.py --suite validators",
                 ".githooks/pre-commit",

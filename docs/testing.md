@@ -177,9 +177,14 @@ explicit platform contract and preserve alternate coverage.
 
 ## Adding tests
 
-Place repository tests under `tests/` or `hooks/tests/`, wakeup tests under
-`src/officina/wakeup/tests/`, and skill runtime tests under
-`skills/<skill>/_rtx/tests/`. Update `pytest.ini` only when a discovery boundary
+Place repository tests under `tests/` or `hooks/tests/`, and wakeup tests under
+`src/officina/wakeup/tests/`. A skill has two test locations, and which one a
+test belongs in follows from what it asserts about. Runtime behavior — the
+Python a machine interface executes — goes under `skills/<skill>/_rtx/tests/`,
+beside the code it covers. The module's own gateway contract goes under
+`skills/<skill>/tests/`: instruction wording the skill promises, routing
+between its interfaces, and the shape of its declared exports. Both are
+collected, because `pytest.ini` lists bare `skills` in `testpaths`. Update `pytest.ini` only when a discovery boundary
 changes. Update `src/officina/repository/checks/runner.py` only when suite policy
 changes, and update this guide whenever either contract changes.
 

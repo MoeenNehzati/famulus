@@ -2,8 +2,11 @@
 
 This is the release-readiness record for executable bootstraps, managed
 runtime dependencies, and vendored executable assets. The dependency and
-installer inventory was reviewed against commit `e74b8ad7` on 2026-08-17; the
-vendored-asset provenance was audited at commit `3bc38179` on 2026-08-15. It
+installer inventory was reviewed against commit `e74b8ad7` on 2026-08-17 and
+delta-reviewed through commit `a7d2fb28` on 2026-08-22; the vendored-asset
+provenance was audited at commit `3bc38179` on 2026-08-15. The delta review
+covered `75d08d30`, which moved optional-dependency selection into the
+blueprints, and `51c06606`, which unified the installation contexts. It
 records what the current installer does; it is not a lock file or a
 software-composition analysis of a future release.
 
@@ -40,7 +43,6 @@ direct packages. Repeated declarations are collapsed here.
 | Package | Current constraint | Declared upstream license | Release note |
 | --- | --- | --- | --- |
 | `PyYAML` | `6.0.2` in the managed core | MIT | Exact core version is fixed |
-| `setuptools` | `80.9.0` in the managed core | MIT | Exact build/runtime version is fixed |
 | `bibtexparser` | Any version | BSD or LGPL-3.0 choice | Use the BSD option for the Famulus distribution |
 | `cryptography` | `>=44.0.1` | Apache-2.0 or BSD-3-Clause | Lower bound only |
 | `dateparser` | Any version | BSD-3-Clause | Open-ended |
@@ -55,6 +57,22 @@ direct packages. Repeated declarations are collapsed here.
 These direct license choices are compatible with distributing Famulus under
 MIT when their own notices and terms are preserved. The reviewed release lock
 fixes the direct and transitive versions selected for the supported core.
+
+## Declared non-package dependencies
+
+The same manifest declares what Famulus expects to find on the host rather than
+install. Nothing here is fetched, versioned, or hash-locked, which is exactly
+why it belongs in a bootstrap audit: these are the declarations that reach
+outside the managed runtime.
+
+| Class | Declared | Release note |
+| --- | --- | --- |
+| Binary | `crontab`, `git`, `journalctl`, `launchctl`, `schtasks`, `systemctl` | Invoked as found on `PATH`. All but `git` are scheduler or log-reading tools used on the platform that provides them. |
+| System service | `launchd`, `systemd-user`, `task-scheduler` | The native scheduler backends `recurring-tasks` renders units for; one per supported OS family. |
+
+A missing binary or service is a platform capability gap, not an installation
+failure. Core installation creates no recurring jobs, so nothing in this table
+is exercised until a job is deliberately enabled.
 
 The blueprints remain the authoritative direct-dependency declarations. The
 existing blueprint sync generates `references/blueprint/runtime_dependencies.json`.

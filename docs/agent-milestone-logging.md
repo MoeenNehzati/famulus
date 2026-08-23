@@ -55,17 +55,24 @@ agent as free text rather than read from the environment.
 ## Calling It
 
 ```bash
-milestone "<what you are starting now>" "<how the previous piece ended>"
-milestone --role "trace config loading" "locate the loader"
-milestone --done "<how the last piece ended>"
+milestone --role "<a few words naming your overall task>" \
+          "<what you are starting now>" "<how the previous piece ended>"
+milestone --role "trace config loading" "locate the loader" ""
+milestone --role "trace config loading" --done "<how the last piece ended>"
 milestone --path          # print the log path and exit
 ```
+
+Every record carries `--role`. It is the only thing separating two agents that
+share a log file, so a record written without it is a record the reader cannot
+attribute. `--path` records nothing and takes none.
 
 A job that outlives the session that started it adds `--run`:
 
 ```bash
-milestone --run nightly-01 --event run-start --step 1 "sweep the corpus" ""
-milestone --run nightly-01 --event task --task extract --state failed --attempt 1 \
+milestone --role "corpus sweep" --run nightly-01 --event run-start --step 1 \
+          "sweep the corpus" ""
+milestone --role "corpus sweep" --run nightly-01 --event task --task extract \
+          --state failed --attempt 1 \
           "audit the failure" "schema audit rejected 3 records"
 milestone --run nightly-01 --path    # print the run journal path and exit
 ```
@@ -172,13 +179,17 @@ Anything a resuming agent must act on goes in a typed field instead:
 | `--task ID` | `task` | which task this concerns |
 | `--state NAME` | `state` | the state that task is now in, e.g. `started`, `failed`, `skipped` |
 | `--attempt N` | `attempt` | attempt or repair round for that task |
-| `--evidence PATH` | `evidence` | supporting evidence; repeatable, becomes a list |
+| `--evidence PATH` | `evidence` | supporting evidence; repeatable, becomes a list, at most twenty |
 
 `--evidence` is the only repeatable field, so it is the only one that can push
 a record past the roughly 4KB single write the interleave guarantee is stated
-in terms of. When it would, the latest paths are dropped until the record fits
-and `evidence_dropped` records how many went — the record never shrinks
-silently. Every other field is capped individually, as before.
+in terms of. Two limits apply, and only the second one reports. The first
+twenty paths are kept and the rest are discarded before the record is built.
+Then, if the record is still too long, the latest of those twenty are dropped
+until it fits and `evidence_dropped` records how many went. So a run that
+passes twenty-five paths loses five without saying so: read
+`evidence_dropped` as what the size budget removed, not as everything the
+caller supplied and lost. Every other field is capped individually, as before.
 
 The vocabulary of `event` and `state` is deliberately *not* fixed here. This
 layer records and returns what the caller supplied; whichever pipeline owns the
@@ -192,17 +203,23 @@ outside a journal could never be recovered.
 ### One Run, Start To Finish
 
 ```bash
-milestone --run nightly-01 --event run-start --step 1 "sweep the corpus" ""
-milestone --run nightly-01 --event task --task extract --state started --attempt 1 \
+milestone --role "corpus sweep" --run nightly-01 --event run-start --step 1 \
+          "sweep the corpus" ""
+milestone --role "corpus sweep" --run nightly-01 --event task --task extract \
+          --state started --attempt 1 \
           "extract entities" "step 1 opened 412 sources"
 # ... the assistant session ends here; a later one picks the run back up ...
-milestone --run nightly-01 --event task --task extract --state failed --attempt 1 \
+milestone --role "corpus sweep" --run nightly-01 --event task --task extract \
+          --state failed --attempt 1 \
           "audit the failure" "schema audit rejected 3 records"
-milestone --run nightly-01 --event task --task extract --state succeeded --attempt 2 \
-          --evidence out/extract.json "render the graph" "second attempt passed the audit"
-milestone --run nightly-01 --event task --task preview --state skipped \
+milestone --role "corpus sweep" --run nightly-01 --event task --task extract \
+          --state succeeded --attempt 2 --evidence out/extract.json \
+          "render the graph" "second attempt passed the audit"
+milestone --role "corpus sweep" --run nightly-01 --event task --task preview \
+          --state skipped \
           "close out" "preview needs a browser this host lacks"
-milestone --run nightly-01 --event run-end --step 9 --done "graph written to out/graph.json"
+milestone --role "corpus sweep" --run nightly-01 --event run-end --step 9 \
+          --done "graph written to out/graph.json"
 ```
 
 ```

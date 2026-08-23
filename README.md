@@ -35,7 +35,7 @@ installation context. Both parts are described below.
 In short: register the package, then run the workstation installer through the
 assistant workflow below.
 
-### Step 1: install the plugin
+### Install the plugin
 
 Famulus ships as the `famulus` plugin inside the `nullkit` marketplace, which
 lives in this repository. That is why you add the marketplace by repository
@@ -113,9 +113,11 @@ codex plugin marketplace upgrade nullkit --json
 
 After an update, restart the host and ask your assistant to apply the same
 installation context again, so the managed runtime and local commands match the
-refreshed package. Before removing a context, use `recurring-tasks` to disable
-its jobs and run `scripts-remove-context`, then run the manifest-based
-uninstaller while the source is still available.
+refreshed package. Before removing a context, ask your assistant to disable that
+context's recurring jobs and remove their scheduler registration, then run the
+manifest-based uninstaller while the source is still available. Removal reaches
+the operating system's scheduler, so it has to happen before the runtime that
+knows how to reach it is gone.
 Exact removal commands and the separate credential-revocation steps are in the
 [installation lifecycle](docs/officina/installation.md#uninstall-versus-purge).
 
