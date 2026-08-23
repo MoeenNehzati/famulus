@@ -1171,7 +1171,10 @@ def test_unified_access_qualification_scopes_pins_control_and_credentials() -> N
     assert "id: assistant-access-control" in workflow
     assert "Path.home()" in workflow
     assert "--control-root \"${{ steps.assistant-access-control.outputs.control_root }}\"" in workflow
-    assert "codex sandbox -c sandbox_workspace_write.network_access=true --" in workflow
+    assert (
+        "codex sandbox --enable use_legacy_landlock "
+        "-c sandbox_workspace_write.network_access=true --"
+    ) in workflow
     assert "FAMULUS_CLAUDE_ACCESS_SMOKE_API_KEY" in workflow
     assert "ANTHROPIC_API_KEY: ${{ secrets.FAMULUS_CLAUDE_ACCESS_SMOKE_API_KEY }}" in workflow
     assert "<<:" not in workflow
