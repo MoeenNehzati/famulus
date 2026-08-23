@@ -33,6 +33,7 @@ class InstallationContext:
     source_root: Path
     development_root: Path | None
     paths: FamulusPaths
+    selected_home: Path
     codex_home: Path
     claude_home: Path
     installation_id: str
@@ -41,6 +42,7 @@ class InstallationContext:
 def installation_context_home_fields(context: InstallationContext) -> dict[str, str]:
     """Return the backend-home fields stored in an immutable context record."""
     return {
+        "selected_home": str(context.selected_home.resolve(strict=False)),
         "codex_home": str(context.codex_home.resolve(strict=False)),
         "claude_home": str(context.claude_home.resolve(strict=False)),
     }
@@ -53,6 +55,10 @@ _DEVELOPMENT_REMOVED_SELECTORS = (
     "PYTHONPATH",
     "PYTHONHOME",
     "VIRTUAL_ENV",
+    "ASSISTANT_LOGS",
+    "EMAIL_TRIAGE_STATE_DIR",
+    "LIST_MANAGER_CLOUD_LOCK_DIR",
+    "LLM_WAKEUP_HOME",
 )
 
 
@@ -159,6 +165,7 @@ def resolve_installation_context(
             source_root=source,
             development_root=None,
             paths=paths,
+            selected_home=home.resolve(strict=False),
             codex_home=_assistant_home(environ, "CODEX_HOME", home / ".codex"),
             claude_home=_assistant_home(environ, "CLAUDE_CONFIG_DIR", home / ".claude"),
             installation_id="standard",
@@ -186,6 +193,7 @@ def resolve_installation_context(
         source_root=source,
         development_root=checkout,
         paths=paths,
+        selected_home=isolated_home.resolve(strict=False),
         codex_home=local_root / "homes" / "codex",
         claude_home=local_root / "homes" / "claude",
         installation_id=installation_id,
@@ -319,6 +327,7 @@ def load_context_from_pointer(
             source_root=source,
             development_root=checkout,
             paths=paths,
+            selected_home=isolated_home.resolve(strict=False),
             codex_home=_assistant_home(
                 environ, "CODEX_HOME", supplied_home / ".codex"
             ),
@@ -338,6 +347,13 @@ def load_context_from_pointer(
     if context.claude_home.resolve(strict=False) != record.claude_home:
         raise InvalidInstallationContextError(
             "installation_context claude_home does not match resolved context"
+        )
+    if (
+        record.selected_home is not None
+        and context.selected_home.resolve(strict=False) != record.selected_home
+    ):
+        raise InvalidInstallationContextError(
+            "installation_context selected_home does not match resolved context"
         )
     return context
 
@@ -392,6 +408,7 @@ def validate_development_boundaries(
         context.paths.user_bin,
         context.codex_home,
         context.claude_home,
+        context.selected_home,
     )
     for path in writable:
         resolved = path.resolve(strict=False)

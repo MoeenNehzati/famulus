@@ -11,6 +11,12 @@ content:
 - schemas/types/triage_action\.json
 dependencies:
 - blueprint:
+    base: repository-root
+    path: src/officina/common/blueprints/famulus-paths.yaml
+  reason: Resolves the managed list-manager cache and cooperative cloud-lock roots.
+  source: common.source.famulus-paths
+  version: 1
+- blueprint:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
@@ -37,6 +43,8 @@ interfaces:
     - schemas/types/task_entry\.json
     - schemas/types/triage_action\.json
     uses_interfaces:
+    - interface: common.interface.famulus-paths
+      version: 1
     - interface: cloud-files._rtx.interface.lists-read
       version: 1
     - interface: cloud-files._rtx.interface.lists-write
@@ -78,9 +86,20 @@ interfaces:
       - external-side-effect: Replaces the remote list after validating and adding
           entries to the downloaded snapshot.
       - rate-limited: Cloud read and write helpers consume Google Drive API quota.
+      - external-side-effect: Uses a private managed cache snapshot and a persistent
+          same-machine cooperative lock sidecar; normal completion removes the cache,
+          while an abrupt crash can leave private cache residue.
       direct_io:
         network: []
         reads:
+        - access: read
+          content: Private downloaded cloud-list snapshot used during this invocation.
+          formats: [yaml]
+          id: cache-snapshot-read
+          medium: local-filesystem
+          path: <famulus-state-root>/list-manager/cache/**
+          path_match: glob
+          sensitivity: user-private
         - access: read
           content: patch
           formats:
@@ -99,6 +118,30 @@ interfaces:
           medium: stdin
           sensitivity: user-private
         writes:
+        - access: write
+          content: Private downloaded and locally mutated cloud-list snapshot.
+          formats: [yaml]
+          id: cache-snapshot-write
+          medium: local-filesystem
+          path: <famulus-state-root>/list-manager/cache/**
+          path_match: glob
+          sensitivity: user-private
+        - access: delete
+          content: Per-invocation private cache directory and snapshot cleanup.
+          formats: [files]
+          id: cache-snapshot-cleanup
+          medium: local-filesystem
+          path: <famulus-state-root>/list-manager/cache/**
+          path_match: glob
+          sensitivity: user-private
+        - access: read-write
+          content: Persistent same-machine cooperative cloud-list lock sidecar.
+          formats: [lock]
+          id: cloud-lock
+          medium: local-filesystem
+          path: <famulus-state-root>/list-manager/locks/*.yaml.lock
+          path_match: glob
+          sensitivity: user-private
         - access: write
           content: response
           formats:
@@ -150,7 +193,8 @@ interfaces:
               before retrying.
           partial_effects_on_failure:
             possible: Remote upload completion can be uncertain after a transport
-              failure.
+              failure; an abrupt crash can also leave private managed-cache residue,
+              while the lock sidecar persists by design.
           rollback_on_failure:
             unavailable: The previous remote value is not retained for automatic rollback.
         state_effect: mutating
@@ -248,6 +292,8 @@ interfaces:
     - schemas/types/task_entry\.json
     - schemas/types/triage_action\.json
     uses_interfaces:
+    - interface: common.interface.famulus-paths
+      version: 1
     - interface: cloud-files._rtx.interface.lists-read
       version: 1
     - interface: cloud-files._rtx.interface.lists-write
@@ -288,9 +334,20 @@ interfaces:
       - external-side-effect: Deletes each selected entry and its nested subtree from
           the remote list.
       - rate-limited: Cloud read and write helpers consume Google Drive API quota.
+      - external-side-effect: Uses a private managed cache snapshot and a persistent
+          same-machine cooperative lock sidecar; normal completion removes the cache,
+          while an abrupt crash can leave private cache residue.
       direct_io:
         network: []
         reads:
+        - access: read
+          content: Private downloaded cloud-list snapshot used during this invocation.
+          formats: [yaml]
+          id: cache-snapshot-read
+          medium: local-filesystem
+          path: <famulus-state-root>/list-manager/cache/**
+          path_match: glob
+          sensitivity: user-private
         - access: read
           content: token
           formats:
@@ -299,6 +356,30 @@ interfaces:
           medium: prompt
           sensitivity: user-private
         writes:
+        - access: write
+          content: Private downloaded and locally mutated cloud-list snapshot.
+          formats: [yaml]
+          id: cache-snapshot-write
+          medium: local-filesystem
+          path: <famulus-state-root>/list-manager/cache/**
+          path_match: glob
+          sensitivity: user-private
+        - access: delete
+          content: Per-invocation private cache directory and snapshot cleanup.
+          formats: [files]
+          id: cache-snapshot-cleanup
+          medium: local-filesystem
+          path: <famulus-state-root>/list-manager/cache/**
+          path_match: glob
+          sensitivity: user-private
+        - access: read-write
+          content: Persistent same-machine cooperative cloud-list lock sidecar.
+          formats: [lock]
+          id: cloud-lock
+          medium: local-filesystem
+          path: <famulus-state-root>/list-manager/locks/*.yaml.lock
+          path_match: glob
+          sensitivity: user-private
         - access: write
           content: response
           formats:
@@ -350,7 +431,8 @@ interfaces:
               ID is absent before retrying.
           partial_effects_on_failure:
             possible: Remote upload completion can be uncertain after a transport
-              failure.
+              failure; an abrupt crash can also leave private managed-cache residue,
+              while the lock sidecar persists by design.
           rollback_on_failure:
             unavailable: Deleted entries are not retained for automatic restoration.
         state_effect: mutating
@@ -447,6 +529,8 @@ interfaces:
     - schemas/types/task_entry\.json
     - schemas/types/triage_action\.json
     uses_interfaces:
+    - interface: common.interface.famulus-paths
+      version: 1
     - interface: cloud-files._rtx.interface.lists-read
       version: 1
     - interface: cloud-files._rtx.interface.lists-write
@@ -484,9 +568,20 @@ interfaces:
       - external-side-effect: Uploads a new empty list document under the selected
           cloud name.
       - rate-limited: The cloud write helper consumes Google Drive API quota.
+      - external-side-effect: Uses a private managed cache snapshot and a persistent
+          same-machine cooperative lock sidecar; normal completion removes the cache,
+          while an abrupt crash can leave private cache residue.
       direct_io:
         network: []
         reads:
+        - access: read
+          content: Private new cloud-list snapshot prepared during this invocation.
+          formats: [yaml]
+          id: cache-snapshot-read
+          medium: local-filesystem
+          path: <famulus-state-root>/list-manager/cache/**
+          path_match: glob
+          sensitivity: user-private
         - access: read
           content: metadata
           formats:
@@ -495,6 +590,30 @@ interfaces:
           medium: prompt
           sensitivity: user-private
         writes:
+        - access: write
+          content: Private new cloud-list snapshot prepared for upload.
+          formats: [yaml]
+          id: cache-snapshot-write
+          medium: local-filesystem
+          path: <famulus-state-root>/list-manager/cache/**
+          path_match: glob
+          sensitivity: user-private
+        - access: delete
+          content: Per-invocation private cache directory and snapshot cleanup.
+          formats: [files]
+          id: cache-snapshot-cleanup
+          medium: local-filesystem
+          path: <famulus-state-root>/list-manager/cache/**
+          path_match: glob
+          sensitivity: user-private
+        - access: read-write
+          content: Persistent same-machine cooperative cloud-list lock sidecar.
+          formats: [lock]
+          id: cloud-lock
+          medium: local-filesystem
+          path: <famulus-state-root>/list-manager/locks/*.yaml.lock
+          path_match: glob
+          sensitivity: user-private
         - access: write
           content: response
           formats:
@@ -543,7 +662,9 @@ interfaces:
             verify_then_decide: Read the named cloud list before retrying an interrupted
               upload.
           partial_effects_on_failure:
-            possible: Remote completion can be uncertain after a transport failure.
+            possible: Remote completion can be uncertain after a transport failure;
+              an abrupt crash can also leave private managed-cache residue, while the
+              lock sidecar persists by design.
           rollback_on_failure:
             unavailable: No automatic remote deletion is attempted after an uncertain
               upload.
@@ -644,6 +765,8 @@ interfaces:
     - schemas/types/task_entry\.json
     - schemas/types/triage_action\.json
     uses_interfaces:
+    - interface: common.interface.famulus-paths
+      version: 1
     - interface: cloud-files._rtx.interface.lists-read
       version: 1
     - interface: cloud-files._rtx.interface.lists-write
@@ -676,10 +799,37 @@ interfaces:
       caller_warnings:
       - may-wait: Downloads and parses the named cloud list before filtering.
       - rate-limited: The cloud read helper consumes Google Drive API quota.
+      - external-side-effect: Stores the downloaded private snapshot under the managed
+          list-manager cache and removes it on normal completion; an abrupt crash can
+          leave private cache residue.
       direct_io:
         network: []
-        reads: []
+        reads:
+        - access: read
+          content: Private downloaded cloud-list snapshot used during this invocation.
+          formats: [yaml]
+          id: cache-snapshot-read
+          medium: local-filesystem
+          path: <famulus-state-root>/list-manager/cache/**
+          path_match: glob
+          sensitivity: user-private
         writes:
+        - access: write
+          content: Private downloaded cloud-list snapshot.
+          formats: [yaml]
+          id: cache-snapshot-write
+          medium: local-filesystem
+          path: <famulus-state-root>/list-manager/cache/**
+          path_match: glob
+          sensitivity: user-private
+        - access: delete
+          content: Per-invocation private cache directory and snapshot cleanup.
+          formats: [files]
+          id: cache-snapshot-cleanup
+          medium: local-filesystem
+          path: <famulus-state-root>/list-manager/cache/**
+          path_match: glob
+          sensitivity: user-private
         - access: write
           content: list
           formats:
@@ -697,8 +847,35 @@ interfaces:
       execution:
         consistency:
           live: Downloads one current remote snapshot and filters only that snapshot.
+        effects:
+        - action: update
+          confirmation_evidence:
+            direct_io_ref: cache-snapshot-write
+            kind: direct-io
+          direct_io_ref: cache-snapshot-write
+          id: cache-snapshot-lifecycle
+          may_occur_in_outcomes: [success, error]
+          reversibility:
+            compensatable: Remove a residual per-invocation cache directory after confirming no process uses it.
+          value_source:
+            direct_io_ref: cache-snapshot-write
+            kind: direct-io
         lifecycle: finite
-        state_effect: read-only
+        mutation_safety:
+          atomicity:
+            per_effect_only: Cache snapshot creation, use, and cleanup are separate local operations.
+          concurrent_invocations:
+            safe: Each invocation uses a distinct cache directory; cloud-read does not mutate remote state.
+          idempotency:
+            idempotent: Repeating the same read does not intentionally retain local cache state.
+          on_uncertain_completion:
+            verify_then_decide: Remove only an identified residual invocation cache after confirming no live process uses it.
+          partial_effects_on_failure:
+            possible: An abrupt crash can leave a private downloaded snapshot or cache directory as residue.
+          rollback_on_failure:
+            unavailable: Normal exception unwinding removes the cache in a finally block,
+              but abrupt process termination has no automatic residual-cache cleanup.
+        state_effect: mutating
         verification:
         - method: output-schema
           output_ref: list
@@ -708,14 +885,14 @@ interfaces:
       outcomes:
       - caller_action: Preserve the returned tree shape; do not flatten filtered results.
         class: success
-        effects: []
+        effects: [cache-snapshot-lifecycle]
         id: success
         outputs:
         - list
       - caller_action: Correct the list name, filter, sort field, schema, or cloud
           error.
         class: error
-        effects: []
+        effects: [cache-snapshot-lifecycle]
         id: error
         outputs:
         - diagnostic
@@ -795,6 +972,8 @@ interfaces:
     - schemas/types/task_entry\.json
     - schemas/types/triage_action\.json
     uses_interfaces:
+    - interface: common.interface.famulus-paths
+      version: 1
     - interface: cloud-files._rtx.interface.lists-read
       version: 1
     - interface: cloud-files._rtx.interface.lists-write
@@ -829,9 +1008,20 @@ interfaces:
       - external-side-effect: Replaces the remote list with the validated patched
           snapshot.
       - rate-limited: Cloud read and write helpers consume Google Drive API quota.
+      - external-side-effect: Uses a private managed cache snapshot and a persistent
+          same-machine cooperative lock sidecar; normal completion removes the cache,
+          while an abrupt crash can leave private cache residue.
       direct_io:
         network: []
         reads:
+        - access: read
+          content: Private downloaded cloud-list snapshot used during this invocation.
+          formats: [yaml]
+          id: cache-snapshot-read
+          medium: local-filesystem
+          path: <famulus-state-root>/list-manager/cache/**
+          path_match: glob
+          sensitivity: user-private
         - access: read
           content: patch
           formats:
@@ -850,6 +1040,30 @@ interfaces:
           medium: stdin
           sensitivity: user-private
         writes:
+        - access: write
+          content: Private downloaded and locally mutated cloud-list snapshot.
+          formats: [yaml]
+          id: cache-snapshot-write
+          medium: local-filesystem
+          path: <famulus-state-root>/list-manager/cache/**
+          path_match: glob
+          sensitivity: user-private
+        - access: delete
+          content: Per-invocation private cache directory and snapshot cleanup.
+          formats: [files]
+          id: cache-snapshot-cleanup
+          medium: local-filesystem
+          path: <famulus-state-root>/list-manager/cache/**
+          path_match: glob
+          sensitivity: user-private
+        - access: read-write
+          content: Persistent same-machine cooperative cloud-list lock sidecar.
+          formats: [lock]
+          id: cloud-lock
+          medium: local-filesystem
+          path: <famulus-state-root>/list-manager/locks/*.yaml.lock
+          path_match: glob
+          sensitivity: user-private
         - access: write
           content: response
           formats:
@@ -901,7 +1115,8 @@ interfaces:
               upload.
           partial_effects_on_failure:
             possible: Remote upload completion can be uncertain after a transport
-              failure.
+              failure; an abrupt crash can also leave private managed-cache residue,
+              while the lock sidecar persists by design.
           rollback_on_failure:
             unavailable: The previous remote list is not retained for automatic rollback.
         state_effect: mutating
@@ -2201,6 +2416,8 @@ runtime_dependencies:
   version: '>=4'
 schema_version: 6
 uses_interfaces:
+- interface: common.interface.famulus-paths
+  version: 1
 - interface: cloud-files._rtx.interface.lists-read
   version: 1
 - interface: cloud-files._rtx.interface.lists-write

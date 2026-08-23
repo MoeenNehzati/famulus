@@ -1,0 +1,112 @@
+content:
+- assistant_access\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/context.yaml
+  reason: Resolves access roots only from one validated InstallationContext.
+  source: install.source.context
+  version: 1
+description: Resolves the exact canonical Famulus state roots that Codex and Claude
+  may write, while rejecting credential, runtime, assistant-home, install-state,
+  and development-boundary overlaps.
+gateway:
+  language: Python
+  path: assistant_access.py
+id: install.source.assistant-access
+interfaces:
+  install.source.assistant-access.interface.python-api:
+    content:
+    - assistant_access\.py
+    uses_interfaces:
+    - interface: install.interface.context
+      version: 1
+    contract:
+      arguments:
+        context:
+          description: One already resolved standard or isolated development installation context.
+          required: true
+          sensitivity: user-private
+          type:
+            description: Schema v6 has no Python-object argument type; kind string
+              is a schema placeholder for InstallationContext and does not assert a runtime str.
+            kind: string
+            sensitivity: user-private
+      caller_warnings:
+      - external-side-effect: The recurring-task configuration root is included deliberately;
+          write access there grants authority to change scheduled commands.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: Canonical path metadata for selected Famulus and assistant roots.
+          formats: [paths]
+          id: path-metadata
+          medium: local-filesystem
+          path: <selected-installation-context>
+          sensitivity: user-private
+        writes:
+        - access: write
+          content: Immutable ordered tuple of canonical writable roots.
+          formats: [paths]
+          id: roots
+          medium: local-system
+          sensitivity: user-private
+      execution:
+        consistency:
+          live: Paths are canonicalized and checked once for this invocation.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: roots
+      helpers: []
+      interaction: {mode: unattended}
+      outcomes:
+      - caller_action: Reconcile exactly the returned roots into supported assistant configuration.
+        class: success
+        effects: []
+        id: resolved
+        outputs: [roots]
+      - caller_action: Correct the selected home, protected-root overlap, or development containment violation.
+        class: refusal
+        effects: []
+        id: unsafe-boundary
+        outputs: []
+      outputs:
+      - audience: machine
+        cardinality: {minimum: 7, maximum: 7}
+        description: Runtime tuple[Path, ...] containing seven canonical roots for logs,
+          recurring config and state, email-triage state, list-manager locks and cache,
+          and llm-wakeup state.
+        direct_io_ref: roots
+        empty: Never empty on success.
+        id: roots
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        type:
+          description: Schema v6 has no tuple or Python Path-object output type;
+            kind string is a schema placeholder and does not assert a runtime str.
+          kind: string
+          sensitivity: user-private
+      preconditions:
+      - id: validated-context
+        description: Context roots and selected_home must be absolute and already boundary-validated.
+        check:
+          kind: argument
+          argument_ref: context
+          predicate: present
+        unmet_outcome: unsafe-boundary
+        caller_action: Resolve the context through install.interface.context first.
+    description: Return the exact narrow assistant writable-root allowlist or reject an unsafe boundary.
+    version: 1
+node_type: behavioral_source
+platform_support: {linux: true, macos: true, windows: true}
+runtime_dependencies: []
+schema_version: 6
+uses_interfaces:
+- interface: install.interface.context
+  version: 1
+version: 1
+maturity: stable

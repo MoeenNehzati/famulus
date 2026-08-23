@@ -116,6 +116,47 @@ def test_manifest_binds_one_explicit_installation_context(tmp_path: Path):
         manifest.bind_context(mode="standard", installation_id="standard")
 
 
+def test_standard_manifest_binds_canonical_assistant_homes_and_rejects_home_change(
+    tmp_path: Path,
+) -> None:
+    manifest = Manifest(tmp_path / "manifest.json")
+    codex_home = tmp_path / "home" / ".codex"
+    claude_home = tmp_path / "home" / ".claude"
+
+    manifest.bind_context(
+        mode="standard",
+        installation_id="standard",
+        codex_home=codex_home,
+        claude_home=claude_home,
+    )
+
+    assert manifest.installation == {
+        "mode": "standard",
+        "installation_id": "standard",
+        "codex_home": str(codex_home.resolve(strict=False)),
+        "claude_home": str(claude_home.resolve(strict=False)),
+    }
+    with pytest.raises(ValueError, match="different installation context"):
+        manifest.bind_context(
+            mode="standard",
+            installation_id="standard",
+            codex_home=tmp_path / "other-codex",
+            claude_home=claude_home,
+        )
+
+
+def test_standard_manifest_rejects_relative_assistant_home_binding(tmp_path: Path) -> None:
+    manifest = Manifest(tmp_path / "manifest.json")
+
+    with pytest.raises(ValueError, match="absolute"):
+        manifest.bind_context(
+            mode="standard",
+            installation_id="standard",
+            codex_home=Path("relative-codex"),
+            claude_home=tmp_path / ".claude",
+        )
+
+
 def test_manifest_rebases_same_development_installation_after_checkout_move(
     tmp_path: Path,
 ) -> None:

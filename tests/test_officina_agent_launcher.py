@@ -82,6 +82,7 @@ def _write_active_standard_launcher(tmp_path: Path) -> tuple[InstallationContext
             home=tmp_path,
             environ=_isolated_standard_environment(tmp_path),
         ),
+        selected_home=tmp_path,
         codex_home=tmp_path / ".codex",
         claude_home=tmp_path / ".claude",
         installation_id="standard",
@@ -107,12 +108,13 @@ def _write_active_standard_launcher(tmp_path: Path) -> tuple[InstallationContext
     record.write_text(
         json.dumps(
             {
-                "schema_version": 1,
+                "schema_version": 2,
                 "release_id": release.name,
                 "mode": "standard",
                 "installation_id": "standard",
                 "source_root": str(source),
                 "development_root": None,
+                "selected_home": str(context.selected_home),
                 "codex_home": str(context.codex_home),
                 "claude_home": str(context.claude_home),
             }
@@ -139,6 +141,20 @@ def _write_active_standard_launcher(tmp_path: Path) -> tuple[InstallationContext
         '{"schema_version": 1, "default_backend": "codex"}\n', encoding="utf-8"
     )
     return context, resources
+
+
+def test_managed_launch_environment_removes_legacy_state_overrides() -> None:
+    cleaned = agent_module._managed_launch_environment(
+        {
+            "ASSISTANT_LOGS": "/hostile/logs",
+            "EMAIL_TRIAGE_STATE_DIR": "/hostile/triage",
+            "LIST_MANAGER_CLOUD_LOCK_DIR": "/hostile/locks",
+            "LLM_WAKEUP_HOME": "/hostile/wakeup",
+            "HOME": "/selected/home",
+        }
+    )
+
+    assert cleaned == {"HOME": "/selected/home"}
 
 
 def test_fresh_launcher_accepts_active_generation_interpreter_trust(
@@ -328,12 +344,13 @@ def _write_active_development_launcher(
     record.write_text(
         json.dumps(
             {
-                "schema_version": 1,
+                "schema_version": 2,
                 "release_id": release.name,
                 "mode": "development",
                 "installation_id": install_id,
                 "source_root": str(checkout),
                 "development_root": str(checkout),
+                "selected_home": str(context.selected_home),
                 "codex_home": str(context.codex_home),
                 "claude_home": str(context.claude_home),
             }

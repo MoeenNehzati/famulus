@@ -5,7 +5,8 @@ children:
 content:
 - (?:SKILL\.md|agents/openai\.yaml)
 description: Installs or refreshes assistant launchers, shared dispatcher tooling,
-  and optional development-checkout configuration links across supported hosts.
+  separately owned Codex and Claude writable-root policy, and optional development-checkout
+  configuration links across supported hosts.
 discovery:
   mechanism: skill
   catalog:

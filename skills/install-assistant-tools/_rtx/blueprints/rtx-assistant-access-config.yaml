@@ -1,0 +1,217 @@
+content:
+- _assistant_access_config\.py
+dependencies:
+- blueprint:
+    base: repository-root
+    path: src/officina/common/blueprints/atomic-files.yaml
+  reason: Directly uses confined reads, expected-preimage publication, and the context-scoped cooperative file lock.
+  source: common.source.atomic-files
+  version: 2
+- blueprint:
+    base: repository-root
+    path: src/officina/common/blueprints/codex-toml.yaml
+  reason: Plans, inspects, and atomically applies the selected Codex writable-root block through the canonical typed facade.
+  source: common.source.codex-toml
+  version: 2
+- blueprint:
+    base: repository-root
+    path: src/officina/common/blueprints/toml-io.yaml
+  reason: Consumes managed-array plan identities and the canonical TOML boundary error type while journaling Codex transitions.
+  source: common.source.toml-io
+  version: 2
+- blueprint:
+    base: repository-root
+    path: src/officina/install/blueprints/assistant-access.yaml
+  reason: Obtains the exact canonical writable-root allowlist for the selected context.
+  source: install.source.assistant-access
+  version: 1
+- blueprint:
+    base: repository-root
+    path: src/officina/install/blueprints/context.yaml
+  reason: Reconciles only targets selected by one explicit InstallationContext.
+  source: install.source.context
+  version: 1
+description: Reconciles a separate marked block inside Codex
+  sandbox_workspace_write.writable_roots and exact owned values inside Claude
+  permissions.additionalDirectories, preserving foreign configuration and journaling
+  compare-before-replace recovery in the install manifest.
+gateway:
+  language: Python
+  path: _assistant_access_config.py
+id: install-assistant-tools._rtx.source.rtx-assistant-access-config
+interfaces:
+  install-assistant-tools._rtx.source.rtx-assistant-access-config.interface.python-api:
+    content:
+    - _assistant_access_config\.py
+    uses_interfaces:
+    - interface: common.interface.atomic-files
+      version: 2
+    - interface: common.interface.codex-toml
+      version: 2
+    - interface: common.interface.toml-io
+      version: 2
+    - interface: install.interface.assistant-access
+      version: 1
+    - interface: install.interface.context
+      version: 1
+    contract:
+      arguments:
+        context:
+          description: One resolved standard or isolated development installation context.
+          required: true
+          sensitivity: user-private
+          type:
+            description: Schema v6 has no Python-object argument type; kind string
+              is a schema placeholder for InstallationContext and does not assert a runtime str.
+            kind: string
+            sensitivity: user-private
+        manifest:
+          description: Durable installation manifest used to prove exact ownership and recover interrupted transactions.
+          required: true
+          sensitivity: user-private
+          type:
+            description: Schema v6 has no Python-object argument type; kind string
+              is a schema placeholder for Manifest and does not assert a runtime str.
+            kind: string
+            sensitivity: user-private
+      caller_warnings:
+      - external-side-effect: This operation edits user-level Codex config.toml and
+          Claude settings.json; it owns only the separately marked or recorded values.
+      - external-side-effect: The granted recurring-task configuration root permits
+          assistants to change scheduled commands.
+      - external-side-effect: The context lock serializes cooperating Famulus calls,
+          but a noncooperating already-open writer can race final comparison and publication;
+          use the journal to verify post-state and recover.
+      - external-side-effect: Real apply and uninstall operations may retain the stable
+          empty sidecar <famulus-install-state-root>/assistant-access.lock; dry-run
+          does not invoke this reconciliation and does not create the lock.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: Existing stable assistant-access cooperative lock sidecar.
+          formats: [lock]
+          id: assistant-access-lock
+          medium: local-filesystem
+          path: <famulus-install-state-root>/assistant-access.lock
+          sensitivity: user-private
+        - access: read
+          content: Existing Codex TOML, Claude JSON, and durable manifest ownership records.
+          formats: [toml, json]
+          id: assistant-config-state
+          medium: local-filesystem
+          path: <codex-home>/config.toml; <claude-home>/settings.json; <famulus-install-state-root>/install-manifest.json
+          sensitivity: user-private
+        writes:
+        - access: read-write
+          content: Stable empty sidecar used to serialize cooperating assistant-access lifecycle operations.
+          formats: [lock]
+          id: assistant-access-lock
+          medium: local-filesystem
+          path: <famulus-install-state-root>/assistant-access.lock
+          sensitivity: user-private
+        - access: read-write
+          content: Codex Famulus marker block, Claude owned additionalDirectories values,
+            and pending then committed ownership journal entries.
+          formats: [toml, json]
+          id: assistant-config-state
+          medium: local-filesystem
+          path: <codex-home>/config.toml; <claude-home>/settings.json; <famulus-install-state-root>/install-manifest.json
+          sensitivity: user-private
+      execution:
+        consistency:
+          live: Both targets are preflighted before either replacement and every replacement
+            compares the bytes observed during preflight, then requires post-state verification
+            because comparison and publication are separate portable steps. POSIX mode bits
+            participate in journal identity; Windows relies on the native writer's verified DACL
+            because st_mode does not represent that ACL.
+        effects:
+        - action: update
+          confirmation_evidence:
+            direct_io_ref: assistant-access-lock
+            kind: direct-io
+          direct_io_ref: assistant-access-lock
+          id: assistant-access-lock-state
+          may_occur_in_outcomes: [reconciled, interrupted]
+          reversibility:
+            compensatable: Remove the empty sidecar only after confirming no lifecycle operation is using it.
+          value_source:
+            direct_io_ref: assistant-access-lock
+            kind: direct-io
+        - action: update
+          confirmation_evidence:
+            direct_io_ref: assistant-config-state
+            kind: direct-io
+          direct_io_ref: assistant-config-state
+          id: assistant-config
+          may_occur_in_outcomes: [reconciled, interrupted]
+          reversibility:
+            compensatable: Manifest-guided uninstall removes only unchanged owned values or reports a conflict.
+          value_source:
+            kind: direct-io
+            direct_io_ref: assistant-config-state
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            per_effect_only: Each file publication is atomic and preceded by a durable pending
+              manifest entry; comparison and publication are not a portable byte compare-and-swap,
+              and the pair is not one filesystem transaction.
+          concurrent_invocations:
+            unsafe: A context-scoped lock serializes cooperating Famulus lifecycle calls,
+              and confined handles reject path and symlink swaps. A noncooperating already-open
+              writer can race final comparison and publication, requiring journal-backed post-state
+              verification and recovery.
+          idempotency:
+            idempotent: Reapplying the same exact roots preserves foreign values and converges owned values.
+          on_uncertain_completion:
+            verify_then_decide: Verify post-state by comparing current bytes with pending pre and post hashes, then resume or refuse.
+          partial_effects_on_failure:
+            possible: A first target can commit before the second target fails; the manifest preserves recovery evidence.
+          rollback_on_failure:
+            available: Manifest-guided uninstall replays committed ownership when current content still matches.
+        state_effect: mutating
+        verification:
+        - method: direct-io-state
+          direct_io_ref: assistant-config-state
+      helpers: []
+      interaction: {mode: unattended}
+      outcomes:
+      - caller_action: Continue installation and diagnose exact policy ownership.
+        class: success
+        effects: [assistant-access-lock-state, assistant-config]
+        id: reconciled
+        outputs: []
+      - caller_action: Preserve the manifest, inspect the named target, and resume only after resolving concurrent or malformed edits.
+        class: partial
+        effects: [assistant-access-lock-state, assistant-config]
+        id: interrupted
+        outputs: []
+      outputs: []
+      preconditions:
+      - id: unambiguous-config
+        description: Existing TOML and JSON must parse without duplicate keys, ambiguous markers, symlinks, or unowned Famulus markers.
+        check:
+          kind: direct-io
+          direct_io_ref: assistant-config-state
+          predicate: readable
+        unmet_outcome: interrupted
+        caller_action: Repair malformed or ambiguous user configuration without discarding foreign values.
+    description: Reconcile and journal exactly the context-derived Codex and Claude access values.
+    version: 1
+node_type: behavioral_source
+platform_support: {linux: true, macos: true, windows: true}
+runtime_dependencies: []
+schema_version: 6
+uses_interfaces:
+- interface: common.interface.atomic-files
+  version: 2
+- interface: common.interface.codex-toml
+  version: 2
+- interface: common.interface.toml-io
+  version: 2
+- interface: install.interface.assistant-access
+  version: 1
+- interface: install.interface.context
+  version: 1
+version: 1
+maturity: stable

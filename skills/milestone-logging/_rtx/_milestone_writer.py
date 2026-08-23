@@ -83,6 +83,40 @@ def run_journal(run: str) -> Path:
 LINE_BUDGET = 3800
 
 
+def _append_line(target: Path, line: bytes) -> None:
+    """Append one complete record without losing concurrent Windows writers."""
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if os.name != "nt":
+        descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        try:
+            if os.write(descriptor, line) != len(line):
+                raise OSError(f"short append to {target}")
+        finally:
+            os.close(descriptor)
+        return
+
+    import msvcrt
+
+    lock_path = target.with_name(target.name + ".lock")
+    with lock_path.open("a+b") as lock:
+        lock.seek(0, os.SEEK_END)
+        if lock.tell() == 0:
+            lock.write(b"\0")
+            lock.flush()
+        lock.seek(0)
+        msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
+        try:
+            with target.open("ab") as handle:
+                if handle.write(line) != len(line):
+                    raise OSError(f"short append to {target}")
+                handle.flush()
+                os.fsync(handle.fileno())
+        finally:
+            lock.seek(0)
+            msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("doing", nargs="?", default="", help="what you are starting now")
@@ -158,10 +192,7 @@ def main(argv: list[str] | None = None) -> int:
         line = json.dumps(record, ensure_ascii=False) + "\n"
     try:
         for target in (path, journal) if journal else (path,):
-            target.parent.mkdir(parents=True, exist_ok=True)
-            # One line, one O_APPEND write: concurrent agents interleave safely.
-            with target.open("a", encoding="utf-8") as handle:
-                handle.write(line)
+            _append_line(target, line.encode("utf-8"))
     except OSError as exc:
         print(f"milestone: {exc}", file=sys.stderr)
         return 1

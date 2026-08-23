@@ -29,7 +29,9 @@ import hashlib
 import json
 import ntpath
 import os
+import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -47,6 +49,7 @@ from officina.install.context import (
 )
 from officina.recurring.native import inspect_registration_namespace
 from officina.recurring.runtime import native_registration_root
+from officina.common import codex_toml, toml_io
 
 if not __package__:
     sys.path.insert(0, str(Path(__file__).parent))
@@ -55,6 +58,24 @@ if __package__:
     from ._state_record import InstallManifestError, Manifest
 else:
     from _state_record import InstallManifestError, Manifest  # noqa: E402
+if __package__:
+    from ._assistant_access_config import (
+        ACCESS_BEGIN,
+        ACCESS_END,
+        AssistantAccessConfigError,
+        _atomic_write_preserving_mode,
+        _load_json_object,
+        _read_optional,
+    )
+else:
+    from _assistant_access_config import (  # noqa: E402
+        ACCESS_BEGIN,
+        ACCESS_END,
+        AssistantAccessConfigError,
+        _atomic_write_preserving_mode,
+        _load_json_object,
+        _read_optional,
+    )
 if __package__:
     from ._shell_block import BLOCK_BEGIN, BLOCK_END
 else:
@@ -398,9 +419,6 @@ def remove_manifest_json_hooks(entry: dict, report: Report, dry_run: bool) -> bo
                 hooks.pop(event_name)
     if not hooks:
         settings.pop("hooks", None)
-    # If nothing but empty structure remains, the file is only a husk of our
-    # managed entries — remove it entirely (whether emptied by this run or
-    # already empty from an install with no registered hooks).
     if not settings or settings == {"hooks": {}}:
         before = report.failed
         remove_file(settings_file, "claude settings (emptied)", report, dry_run)
@@ -423,6 +441,348 @@ def remove_manifest_json_hooks(entry: dict, report: Report, dry_run: bool) -> bo
     except OSError as exc:
         report.add("FAILED", f"claude hooks: {settings_file}", f"could not write: {exc}")
         return False
+
+
+def _content_identity(raw: bytes | None) -> str | None:
+    return None if raw is None else hashlib.sha256(raw).hexdigest()
+
+
+def _identity_mode(mode: int | None) -> int | None:
+    return None if os.name == "nt" else mode
+
+
+def _read_optional_bytes(path: Path) -> bytes | None:
+    return _read_optional(path)
+
+
+def _pending_replay_state(
+    entry: dict, raw: bytes | None, *, path: Path, label: str, report: Report
+) -> str:
+    if entry.get("transaction") != "pending":
+        return "post"
+    identity = _content_identity(raw)
+    current_mode = _identity_mode(_mode(path))
+    pre_mode = entry.get("pre_mode", None if entry.get("pre_sha256") is None else entry.get("file_mode"))
+    post_mode = entry.get("post_mode", entry.get("file_mode"))
+    if identity == entry.get("pre_sha256") and current_mode == pre_mode:
+        report.add("skipped", label, "pending write never applied; pre-state preserved")
+        return "pre"
+    if identity == entry.get("post_sha256") and current_mode == post_mode:
+        return "post"
+    report.add(
+        "FAILED",
+        label,
+        "pending write has neither its recorded pre-state nor intended post-state; preserved",
+    )
+    return "unknown"
+
+
+def _mode(path: Path) -> int | None:
+    try:
+        return stat.S_IMODE(path.stat().st_mode)
+    except FileNotFoundError:
+        return None
+
+
+def _uninstall_replay_state(
+    entry: dict, raw: bytes | None, *, path: Path, label: str, report: Report
+) -> str:
+    if entry.get("uninstall_transaction") != "pending":
+        return "new"
+    identity = _content_identity(raw)
+    current_mode = _identity_mode(_mode(path))
+    if (
+        identity == entry.get("uninstall_post_sha256")
+        and current_mode == entry.get("uninstall_post_mode")
+    ):
+        report.add("removed", label, "completed uninstall intent recovered")
+        return "post"
+    if (
+        identity == entry.get("uninstall_pre_sha256")
+        and current_mode == entry.get("uninstall_pre_mode")
+    ):
+        return "pre"
+    report.add(
+        "FAILED",
+        label,
+        "pending uninstall has neither its recorded pre-state nor intended post-state; preserved",
+    )
+    return "unknown"
+
+
+def _persist_uninstall_intent(
+    manifest: Manifest,
+    entry: dict,
+    *,
+    path: Path,
+    original: bytes,
+    replacement: bytes | None,
+) -> int:
+    pre_mode = _mode(path)
+    assert pre_mode is not None
+    identity_pre_mode = _identity_mode(pre_mode)
+    post_mode = None if replacement is None else identity_pre_mode
+    intended = {
+        "uninstall_transaction": "pending",
+        "uninstall_pre_sha256": _content_identity(original),
+        "uninstall_post_sha256": _content_identity(replacement),
+        "uninstall_pre_mode": identity_pre_mode,
+        "uninstall_post_mode": post_mode,
+    }
+    if entry.get("uninstall_transaction") == "pending":
+        if any(entry.get(key) != value for key, value in intended.items()):
+            raise AssistantAccessConfigError(
+                f"pending uninstall intent changed for assistant configuration: {path}"
+            )
+        return pre_mode
+    entry.update(intended)
+    manifest.save()
+    return pre_mode
+
+
+def remove_codex_access_array_block(
+    manifest: Manifest, entry: dict, report: Report, dry_run: bool,
+    prepared: dict[int, object] | None = None,
+) -> bool:
+    path = Path(entry["path"])
+    label = f"Codex assistant access: {path}"
+    try:
+        state = codex_toml.config_state(path.parent)
+    except (OSError, toml_io.TomlManagedArrayError) as exc:
+        report.add("FAILED", label, f"could not read: {exc}")
+        return False
+    if entry.get("transaction") == "pending":
+        pre_mode = entry.get("pre_mode", None if entry.get("pre_sha256") is None else entry.get("file_mode"))
+        post_mode = entry.get("post_mode", entry.get("file_mode"))
+        if state.sha256 == entry.get("pre_sha256") and _identity_mode(state.mode) == pre_mode:
+            report.add("skipped", label, "pending write never applied; pre-state preserved")
+            return True
+        if state.sha256 != entry.get("post_sha256") or _identity_mode(state.mode) != post_mode:
+            report.add("FAILED", label, "pending write has neither its recorded pre-state nor intended post-state; preserved")
+            return False
+    if entry.get("uninstall_transaction") == "pending":
+        if state.sha256 == entry.get("uninstall_post_sha256") and _identity_mode(state.mode) == entry.get("uninstall_post_mode"):
+            report.add("removed", label, "completed uninstall intent recovered")
+            return True
+        if state.sha256 != entry.get("uninstall_pre_sha256") or _identity_mode(state.mode) != entry.get("uninstall_pre_mode"):
+            report.add("FAILED", label, "pending uninstall has neither its recorded pre-state nor intended post-state; preserved")
+            return False
+    if state.sha256 is None:
+        report.add("skipped", label, "file does not exist")
+        return True
+    plan = prepared.get(id(entry)) if prepared is not None else None
+    if not isinstance(plan, toml_io.ManagedArrayPlan):
+        try:
+            plan = codex_toml.plan_access_removal(path.parent, ownership=entry)
+        except toml_io.TomlManagedArrayError as exc:
+            report.add("FAILED", label, f"managed block location is unproven; preserved: {exc}")
+            return False
+    if prepared is not None:
+        prepared[id(entry)] = plan
+    if dry_run:
+        report.add("removed", label, "managed roots would be removed (dry-run)")
+        return True
+    try:
+        intended = {
+            "uninstall_transaction": "pending",
+            "uninstall_pre_sha256": plan.current_sha256,
+            "uninstall_post_sha256": plan.replacement_sha256,
+            "uninstall_pre_mode": _identity_mode(plan.mode),
+            "uninstall_post_mode": None if plan.replacement_sha256 is None else _identity_mode(plan.mode),
+        }
+        if entry.get("uninstall_transaction") == "pending":
+            if any(entry.get(key) != value for key, value in intended.items()):
+                raise AssistantAccessConfigError(f"pending uninstall intent changed for assistant configuration: {path}")
+        else:
+            entry.update(intended)
+            manifest.save()
+        codex_toml.apply_access_plan(plan)
+        report.add("removed", label, "managed roots removed")
+        return True
+    except (OSError, AssistantAccessConfigError, toml_io.TomlManagedArrayError) as exc:
+        report.add("FAILED", label, f"could not write: {exc}")
+        return False
+
+
+def remove_json_array_values(
+    manifest: Manifest, entry: dict, report: Report, dry_run: bool,
+    prepared: dict[int, object] | None = None,
+) -> bool:
+    path = Path(entry["path"])
+    label = f"Claude assistant access: {path}"
+    frozen = prepared.get(id(entry)) if prepared is not None else None
+    if isinstance(frozen, tuple) and len(frozen) == 4:
+        _frozen_path, original, replacement, mode = frozen
+        if dry_run:
+            report.add("removed", label, "managed values would be removed (dry-run)")
+            return True
+        try:
+            _persist_uninstall_intent(manifest, entry, path=path, original=original, replacement=replacement)
+            _atomic_write_preserving_mode(path, replacement, expected=original, mode=mode)
+            report.add("removed", label, "managed values removed")
+            return True
+        except (OSError, AssistantAccessConfigError) as exc:
+            report.add("FAILED", label, f"could not write: {exc}")
+            return False
+    try:
+        original = _read_optional_bytes(path)
+    except (OSError, AssistantAccessConfigError) as exc:
+        report.add("FAILED", label, f"could not read: {exc}")
+        return False
+    state = _pending_replay_state(entry, original, path=path, label=label, report=report)
+    if state == "pre":
+        return True
+    if state == "unknown":
+        return False
+    uninstall_state = _uninstall_replay_state(
+        entry, original, path=path, label=label, report=report
+    )
+    if uninstall_state == "post":
+        return True
+    if uninstall_state == "unknown":
+        return False
+    if original is None:
+        report.add("skipped", label, "file does not exist")
+        return True
+    try:
+        payload = _load_json_object(original, path=path, label="Claude")
+    except AssistantAccessConfigError as exc:
+        report.add("FAILED", label, f"could not parse: {exc}")
+        return False
+    permissions = payload.get("permissions") if isinstance(payload, dict) else None
+    values = permissions.get("additionalDirectories") if isinstance(permissions, dict) else None
+    introduced = entry.get("introduced", [])
+    if (
+        not isinstance(payload, dict)
+        or not isinstance(values, list)
+        or any(not isinstance(value, str) for value in values)
+        or not isinstance(introduced, list)
+        or any(not isinstance(value, str) for value in introduced)
+    ):
+        report.add("skipped", label, "owned JSON array structure was modified; preserved")
+        return False
+    if any(values.count(value) != 1 for value in introduced):
+        report.add("skipped", label, "managed values were modified; preserved")
+        return False
+    owned = set(introduced)
+    permissions["additionalDirectories"] = [value for value in values if value not in owned]
+    if entry.get("created_key") and not permissions["additionalDirectories"]:
+        permissions.pop("additionalDirectories")
+    if entry.get("created_permissions") and not permissions:
+        payload.pop("permissions")
+    filtered = (json.dumps(payload, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    replacement = None if entry.get("created_file") and not payload else filtered
+    mode = _mode(path)
+    assert mode is not None
+    if prepared is not None:
+        prepared[id(entry)] = (path, original, replacement, mode)
+    if dry_run:
+        report.add("removed", label, "managed values would be removed (dry-run)")
+        return True
+    try:
+        mode = _persist_uninstall_intent(
+            manifest, entry, path=path, original=original, replacement=replacement
+        )
+        _atomic_write_preserving_mode(
+            path, replacement, expected=original, mode=mode
+        )
+        report.add("removed", label, "managed values removed")
+        return True
+    except (OSError, AssistantAccessConfigError) as exc:
+        report.add("FAILED", label, f"could not write: {exc}")
+        return False
+
+
+def _assistant_access_targets(context: InstallationContext) -> tuple[Path, Path]:
+    return (
+        codex_toml.config_path(context.codex_home),
+        context.claude_home / "settings.json",
+    )
+
+
+def _assistant_access_preflight(
+    manifest: Manifest,
+    report: Report,
+    context: InstallationContext | None,
+) -> tuple[bool, dict[int, object]]:
+    prepared: dict[int, object] = {}
+    access_entries = [
+        entry
+        for entry in manifest.entries
+        if entry.get("kind") in {"codex_access_array_block", "json_array_values"}
+    ]
+    if not access_entries:
+        return True, prepared
+    if context is None:
+        report.add(
+            "FAILED",
+            "assistant access preflight",
+            "installation context is required to prove assistant-access ownership",
+        )
+        return False, prepared
+    codex_path, claude_path = _assistant_access_targets(context)
+    expected = {
+        "codex_access_array_block": str(codex_path),
+        "json_array_values": str(claude_path),
+    }
+    for kind, path in expected.items():
+        entries = [entry for entry in access_entries if entry.get("kind") == kind]
+        if len(entries) != 1 or entries[0].get("path") != path:
+            report.add(
+                "FAILED",
+                "assistant access preflight",
+                f"expected exactly one {kind} entry for {path}",
+            )
+            return False, prepared
+    scratch = Report()
+    replayable = True
+    for entry in manifest.entries:
+        kind = entry.get("kind")
+        if kind == "codex_access_array_block":
+            replayable = (
+                remove_codex_access_array_block(manifest, entry, scratch, True, prepared)
+                and replayable
+            )
+        elif kind == "json_array_values":
+            replayable = remove_json_array_values(manifest, entry, scratch, True, prepared) and replayable
+    if replayable:
+        return True, prepared
+    for status, action, detail in scratch.items:
+        if status != "removed":
+            report.add(status, action, detail)
+    report.add(
+        "FAILED",
+        "assistant access preflight",
+        "all assistant-access entries must be fully replayable before either target changes",
+    )
+    return False, prepared
+
+
+def _prepared_access_current(prepared: dict[int, object], report: Report) -> bool:
+    for value in prepared.values():
+        if isinstance(value, toml_io.ManagedArrayPlan):
+            try:
+                state = codex_toml.config_state(value.path.parent)
+            except (OSError, toml_io.TomlManagedArrayError) as exc:
+                report.add("FAILED", "assistant access preflight", str(exc))
+                return False
+            if state.sha256 != value.current_sha256 or _identity_mode(state.mode) != _identity_mode(value.mode):
+                report.add("FAILED", "assistant access preflight", "Codex target changed after frozen preflight")
+                return False
+        elif isinstance(value, tuple) and len(value) == 4:
+            path, expected, _replacement, mode = value
+            try:
+                current = _read_optional_bytes(path)
+            except (OSError, AssistantAccessConfigError) as exc:
+                report.add("FAILED", "assistant access preflight", str(exc))
+                return False
+            if current != expected or (
+                current is not None
+                and _identity_mode(_mode(path)) != _identity_mode(mode)
+            ):
+                report.add("FAILED", "assistant access preflight", "Claude target changed after frozen preflight")
+                return False
+    return True
 
 
 def _normalized_windows_component(value: str) -> str:
@@ -575,7 +935,7 @@ def remove_registry_env(entry: dict, report: Report, dry_run: bool) -> bool:
         return False
 
 
-def replay_manifest(
+def _replay_manifest_unlocked(
     manifest: Manifest,
     report: Report,
     *,
@@ -586,11 +946,38 @@ def replay_manifest(
     context: InstallationContext | None = None,
 ) -> None:
     """Undo every manifest entry; settled entries are dropped from the manifest."""
-    for entry in list(manifest.entries):
+    assistant_access_ready, prepared_access = _assistant_access_preflight(manifest, report, context)
+    if assistant_access_ready and not _prepared_access_current(prepared_access, report):
+        assistant_access_ready = False
+    access_kinds = {"codex_access_array_block", "json_array_values"}
+    entries = list(manifest.entries)
+    access_entries = [entry for entry in entries if entry.get("kind") in access_kinds]
+    if assistant_access_ready:
+        access_results: list[bool] = []
+        for entry in access_entries:
+            if entry.get("kind") == "codex_access_array_block":
+                access_results.append(
+                    remove_codex_access_array_block(
+                        manifest, entry, report, dry_run, prepared_access
+                    )
+                )
+            else:
+                access_results.append(
+                    remove_json_array_values(
+                        manifest, entry, report, dry_run, prepared_access
+                    )
+                )
+        if access_results and all(access_results) and not dry_run:
+            for entry in access_entries:
+                manifest.remove(entry)
+            manifest.save()
+    for entry in entries:
         kind = entry.get("kind")
         path = entry.get("path", "")
         settled = True
         artifact_path = Path(path)
+        if kind in access_kinds:
+            continue
         if context is not None and (
             artifact_path == context.paths.recurring_config_root
             or context.paths.recurring_config_root in artifact_path.parents
@@ -668,10 +1055,40 @@ def replay_manifest(
         manifest.delete()
 
 
+def replay_manifest(
+    manifest: Manifest,
+    report: Report,
+    *,
+    dry_run: bool,
+    purge: bool,
+    no_pip: bool,
+    no_git_hooks: bool,
+    context: InstallationContext | None = None,
+) -> None:
+    if context is None:
+        _replay_manifest_unlocked(manifest, report, dry_run=dry_run, purge=purge, no_pip=no_pip, no_git_hooks=no_git_hooks, context=context)
+        return
+    if dry_run:
+        manifest.reload()
+        _replay_manifest_unlocked(manifest, report, dry_run=True, purge=purge, no_pip=no_pip, no_git_hooks=no_git_hooks, context=context)
+        return
+    lock_root = context.paths.install_state_root
+    lock_root.mkdir(parents=True, exist_ok=True)
+    from officina.common.atomic_files import exclusive_file_lock
+    with exclusive_file_lock(lock_root / "assistant-access.lock", allowed_root=lock_root):
+        manifest.reload()
+        _replay_manifest_unlocked(manifest, report, dry_run=dry_run, purge=purge, no_pip=no_pip, no_git_hooks=no_git_hooks, context=context)
+
+
 def _manifest_matches_context(manifest: Manifest, context: InstallationContext) -> bool:
     expected = {"mode": context.mode, "installation_id": context.installation_id}
     if context.development_root is not None:
         expected["development_root"] = str(context.development_root.resolve(strict=False))
+    elif manifest.installation and (
+        "codex_home" in manifest.installation or "claude_home" in manifest.installation
+    ):
+        expected["codex_home"] = str(context.codex_home.resolve(strict=False))
+        expected["claude_home"] = str(context.claude_home.resolve(strict=False))
     return manifest.installation == expected
 
 
@@ -708,7 +1125,11 @@ def _development_entry_is_contained(entry: dict, context: InstallationContext) -
     if entry.get("kind") == "git_hooks_path":
         return Path(entry.get("path", "")).resolve(strict=False) == context.development_root
     local_root = (context.development_root / ".famulus").resolve(strict=False)
-    path = Path(entry.get("path", "")).resolve(strict=False)
+    raw_path = Path(entry.get("path", ""))
+    if entry.get("kind") == "symlink":
+        path = raw_path.parent.resolve(strict=False) / raw_path.name
+    else:
+        path = raw_path.resolve(strict=False)
     return path == local_root or local_root in path.parents
 
 

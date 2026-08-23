@@ -23,7 +23,8 @@ dependencies:
   version: 1
 description: Pools runtime_dependencies.json schema v2 into a generated universal lock,
   validates exact pins and hashes, and builds a versioned managed-runtime candidate
-  containing that lock and a verified first-party Officina wheel before atomic activation.
+  containing that lock, a schema-2 installation context with selected_home, and a
+  verified first-party Officina wheel before atomic activation.
 gateway:
   language: Python
   path: managed_runtime.py
@@ -156,7 +157,9 @@ interfaces:
           type:
             kind: string
         installation-context:
-          description: Explicit standard or development context serialized into the candidate release and selected atomically with schema-3 current.json.
+          description: Explicit standard or development context, including selected_home,
+            serialized as schema 2 into the candidate release and selected atomically
+            with schema-3 current.json.
           required: false
           sensitivity: user-private
           type:

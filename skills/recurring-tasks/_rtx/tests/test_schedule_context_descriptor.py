@@ -57,6 +57,7 @@ def _authority(
         source_root=source,
         development_root=None,
         paths=paths,
+        selected_home=home,
         codex_home=home / ".codex",
         claude_home=home / ".claude",
         installation_id="standard",

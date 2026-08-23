@@ -9,7 +9,12 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Mapping
 
+from officina.common import codex_toml
 from officina.install.context import InstallationContext
+from officina.install.assistant_access import (
+    AssistantAccessBoundaryError,
+    resolve_assistant_access_roots,
+)
 from officina.install.managed_runtime import (
     ManagedRuntimeError,
     deployed_resolver_trusted_roots,
@@ -32,9 +37,23 @@ class InstallManifestError(ValueError):
 _DEVELOPMENT_ID = re.compile(r"dev-[0-9a-f]{32}\Z")
 
 
+def _load_json_strict(text: str, *, label: str) -> object:
+    def reject_duplicates(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        result: dict[str, object] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError(f"duplicate JSON object key {key!r} in {label}")
+            result[key] = value
+        return result
+
+    return json.loads(text, object_pairs_hook=reject_duplicates)
+
+
 def load_install_manifest(path: Path) -> dict[str, object]:
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = _load_json_strict(
+            path.read_text(encoding="utf-8"), label="install manifest"
+        )
     except (OSError, UnicodeError, ValueError) as exc:
         raise InstallManifestError(f"cannot read install manifest: {exc}") from exc
     if not isinstance(payload, dict):
@@ -64,7 +83,18 @@ def load_install_manifest(path: Path) -> dict[str, object]:
         mode = installation.get("mode")
         installation_id = installation.get("installation_id")
         if mode == "standard":
-            valid = set(installation) == {"mode", "installation_id"} and installation_id == "standard"
+            keys = set(installation)
+            valid = installation_id == "standard" and keys in (
+                {"mode", "installation_id"},
+                {"mode", "installation_id", "codex_home", "claude_home"},
+            )
+            if valid and "codex_home" in installation:
+                valid = all(
+                    isinstance(installation.get(name), str)
+                    and bool(installation.get(name))
+                    and Path(str(installation[name])).is_absolute()
+                    for name in ("codex_home", "claude_home")
+                )
         elif mode == "development":
             root = installation.get("development_root")
             valid = (
@@ -254,6 +284,9 @@ def _check_manifest(context: InstallationContext) -> DiagnosticCheck:
     expected = {"mode": context.mode, "installation_id": context.installation_id}
     if context.development_root is not None:
         expected["development_root"] = str(context.development_root.resolve(strict=False))
+    else:
+        expected["codex_home"] = str(context.codex_home.resolve(strict=False))
+        expected["claude_home"] = str(context.claude_home.resolve(strict=False))
     if payload.get("version") != 2 or payload.get("installation") != expected:
         return DiagnosticCheck(
             "manifest", "error", "Install manifest does not match the selected installation context.", _apply_command(context)
@@ -261,6 +294,101 @@ def _check_manifest(context: InstallationContext) -> DiagnosticCheck:
     entries = payload["entries"]
     assert isinstance(entries, list)
     return DiagnosticCheck("manifest", "ok", f"Manifest entries: {len(entries)}")
+
+
+def _access_error(context: InstallationContext, detail: str) -> DiagnosticCheck:
+    return DiagnosticCheck(
+        "assistant-access",
+        "error",
+        f"Assistant access configuration is incomplete or unproven: {detail}",
+        _apply_command(context),
+    )
+
+
+def _check_assistant_access(context: InstallationContext) -> DiagnosticCheck:
+    manifest_path = context.paths.install_state_root / "install-manifest.json"
+    try:
+        manifest = load_install_manifest(manifest_path)
+        required = [str(path) for path in resolve_assistant_access_roots(context)]
+    except (InstallManifestError, AssistantAccessBoundaryError) as exc:
+        return _access_error(context, str(exc))
+    entries = manifest["entries"]
+    assert isinstance(entries, list)
+    codex_path = codex_toml.config_path(context.codex_home)
+    claude_path = context.claude_home / "settings.json"
+    selected = {
+        "codex_access_array_block": [
+            entry for entry in entries if entry.get("kind") == "codex_access_array_block"
+        ],
+        "json_array_values": [
+            entry for entry in entries if entry.get("kind") == "json_array_values"
+        ],
+    }
+    expected_paths = {
+        "codex_access_array_block": str(codex_path),
+        "json_array_values": str(claude_path),
+    }
+    for kind, candidates in selected.items():
+        if len(candidates) != 1 or candidates[0].get("path") != expected_paths[kind]:
+            return _access_error(
+                context, f"{kind} must own exactly {expected_paths[kind]}"
+            )
+        if (
+            candidates[0].get("transaction") != "committed"
+            or candidates[0].get("uninstall_transaction") is not None
+        ):
+            return _access_error(context, f"{kind} has a pending operation")
+        introduced = candidates[0].get("introduced")
+        if (
+            not isinstance(introduced, list)
+            or any(not isinstance(value, str) for value in introduced)
+            or not set(introduced).issubset(required)
+        ):
+            return _access_error(context, f"{kind} ownership values are malformed")
+    codex_entry = selected["codex_access_array_block"][0]
+    claude_entry = selected["json_array_values"][0]
+    begin = codex_entry.get("begin")
+    end = codex_entry.get("end")
+    identity = codex_entry.get("block_sha256")
+    if not isinstance(begin, str) or not isinstance(end, str) or not isinstance(identity, str):
+        return _access_error(context, "Codex marker ownership is malformed")
+    try:
+        inspection = codex_toml.inspect_access_roots(
+            context.codex_home, begin=begin, end=end
+        )
+    except (OSError, codex_toml.CodexTomlError) as exc:
+        return _access_error(context, f"cannot inspect {codex_path}: {exc}")
+    if any(value not in inspection.roots for value in required):
+        return _access_error(context, f"{codex_path} lacks required writable_roots")
+    if not inspection.marker_within_array or inspection.block_sha256 != identity:
+        return _access_error(context, "Codex owned marker block was modified")
+    if list(inspection.marker_values) != codex_entry["introduced"]:
+        return _access_error(context, "Codex marker values do not match ownership")
+    try:
+        claude_payload = _load_json_strict(
+            claude_path.read_text(encoding="utf-8"), label=str(claude_path)
+        )
+    except (OSError, UnicodeError, ValueError) as exc:
+        return _access_error(context, f"cannot read {claude_path}: {exc}")
+    permissions = claude_payload.get("permissions") if isinstance(claude_payload, dict) else None
+    claude_roots = (
+        permissions.get("additionalDirectories") if isinstance(permissions, dict) else None
+    )
+    if (
+        not isinstance(claude_roots, list)
+        or any(not isinstance(value, str) for value in claude_roots)
+        or any(value not in claude_roots for value in required)
+        or any(claude_roots.count(value) != 1 for value in claude_entry["introduced"])
+    ):
+        return _access_error(
+            context, f"{claude_path} lacks required or uniquely owned additionalDirectories"
+        )
+    return DiagnosticCheck(
+        "assistant-access",
+        "ok",
+        f"Codex access: {codex_path}; Claude access: {claude_path}; "
+        f"warning: {context.paths.recurring_config_root} grants scheduled-command authority.",
+    )
 
 
 def _check_recurring(
@@ -371,6 +499,7 @@ def diagnose_installation(
         _check_launcher_selection(context),
         _check_commands(context, environ=environ, platform=platform),
         _check_manifest(context),
+        _check_assistant_access(context),
         _check_recurring(context, environ=environ, platform=platform),
     )
     status = "healthy" if all(check.status == "ok" for check in checks) else "unhealthy"

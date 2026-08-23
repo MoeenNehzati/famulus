@@ -344,8 +344,8 @@ def _home_snapshot(home: Path) -> dict[str, str]:
     return snap
 
 
-# Paths (relative to home) uninstall DELIBERATELY leaves behind without
-# --purge. Every entry must be justified; anything else left over is a bug.
+# Paths (relative to home) uninstall deliberately leaves behind. Every entry
+# must be justified; anything else left over is a bug.
 _ALLOWED_LEFTOVERS = {
     # OAuth/service configs are user credentials-adjacent; kept unless --purge
     ".config/cloud-files/config.json",
@@ -357,6 +357,11 @@ _ALLOWED_LEFTOVERS = {
     ".local/state/famulus/install/install-manifest.json",
     "Library/Application Support/Famulus/state/install/install-manifest.json",
     "AppData/Local/Famulus/state/install/install-manifest.json",
+    # The empty coordination sidecar has a stable name so waiting and future
+    # Famulus lifecycle calls cannot lock different inodes.
+    ".local/state/famulus/install/assistant-access.lock",
+    "Library/Application Support/Famulus/state/install/assistant-access.lock",
+    "AppData/Local/Famulus/state/install/assistant-access.lock",
 }
 
 

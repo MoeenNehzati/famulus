@@ -11,6 +11,8 @@ Schema (JSON):
 Entry kinds:
     symlink            {path, target}
     marker_block       {path, begin, end}
+    codex_access_array_block {path, introduced, transaction, identities}
+    json_array_values  {path, introduced, transaction, identities}
     json_hook_commands {path, commands: [str]}
     git_hooks_path     {path: repo_root}
     file               {path}
@@ -21,13 +23,18 @@ Entry kinds:
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
 import tempfile
 from pathlib import Path
 
-from officina.install.doctor import InstallManifestError, load_install_manifest
+from officina.common import codex_toml, toml_io
+from officina.install.doctor import (
+    InstallManifestError,
+    load_install_manifest,
+)
 
 MANIFEST_VERSION = 2
 SUPPORTED_MANIFEST_VERSIONS = (1, MANIFEST_VERSION)
@@ -60,12 +67,21 @@ class Manifest:
                     str(key): str(value) for key, value in installation.items()
                 }
 
+    def reload(self) -> None:
+        """Refresh this object from its durable path while retaining identity."""
+        fresh = type(self)(self.path)
+        self.version = fresh.version
+        self.entries = fresh.entries
+        self.installation = fresh.installation
+
     def bind_context(
         self,
         *,
         mode: str,
         installation_id: str,
         development_root: Path | None = None,
+        codex_home: Path | None = None,
+        claude_home: Path | None = None,
     ) -> None:
         """Bind this manifest to one selected installation before recording."""
         installation = {"mode": mode, "installation_id": installation_id}
@@ -73,8 +89,25 @@ class Manifest:
             installation["development_root"] = str(
                 Path(development_root).resolve(strict=False)
             )
+        if (codex_home is None) != (claude_home is None):
+            raise ValueError("standard manifest binding needs both assistant homes")
+        if codex_home is not None and claude_home is not None:
+            if mode != "standard" or development_root is not None:
+                raise ValueError("assistant-home manifest binding is standard-only")
+            if not Path(codex_home).is_absolute() or not Path(claude_home).is_absolute():
+                raise ValueError("standard assistant homes must be absolute paths")
+            installation["codex_home"] = str(
+                Path(codex_home).resolve(strict=False)
+            )
+            installation["claude_home"] = str(
+                Path(claude_home).resolve(strict=False)
+            )
         if self.installation is not None and self.installation != installation:
-            if not self._rebase_moved_development_context(installation):
+            legacy_standard = self.installation == {
+                "mode": "standard",
+                "installation_id": "standard",
+            } and installation.get("mode") == "standard"
+            if not legacy_standard and not self._rebase_moved_development_context(installation):
                 raise ValueError("manifest belongs to a different installation context")
         self.installation = installation
         self.version = MANIFEST_VERSION
@@ -142,6 +175,38 @@ class Manifest:
             self.entries, old_root=old_root, new_root=new_root
         )
         assert isinstance(rebased, list)
+        for prior_entry, rebased_entry in zip(self.entries, rebased, strict=True):
+            if (
+                prior_entry.get("kind") == "codex_access_array_block"
+                and isinstance(rebased_entry, dict)
+            ):
+                path_value = rebased_entry.get("path")
+                identity = prior_entry.get("block_sha256")
+                if not isinstance(path_value, str) or not isinstance(identity, str):
+                    raise ValueError("moved Codex access block ownership is malformed")
+                try:
+                    inspection = codex_toml.inspect_access_roots(
+                        Path(path_value).parent,
+                        begin=str(prior_entry.get("begin", "")),
+                        end=str(prior_entry.get("end", "")),
+                    )
+                except (OSError, toml_io.TomlManagedArrayError) as exc:
+                    raise ValueError(
+                        "moved Codex access block is missing or modified"
+                    ) from exc
+                if (
+                    not inspection.marker_within_array
+                    or inspection.block_sha256 != identity
+                ):
+                    raise ValueError("moved Codex access block is missing or modified")
+            if (
+                prior_entry.get("kind") == "json_array_values"
+                and isinstance(rebased_entry, dict)
+                and isinstance(prior_entry.get("introduced"), list)
+            ):
+                rebased_entry["rebase_from_introduced"] = list(
+                    prior_entry["introduced"]
+                )
         self.entries = rebased
         return True
 
@@ -276,11 +341,20 @@ class Manifest:
                 os.fsync(stream.fileno())
             os.replace(temporary, self.path)
             if os.name == "posix":
-                directory_descriptor = os.open(
-                    self.path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-                )
                 try:
-                    os.fsync(directory_descriptor)
+                    directory_descriptor = os.open(
+                        self.path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+                    )
+                except OSError as exc:
+                    if exc.errno in {errno.EINVAL, errno.ENOTSUP, errno.EBADF}:
+                        return
+                    raise
+                try:
+                    try:
+                        os.fsync(directory_descriptor)
+                    except OSError as exc:
+                        if exc.errno not in {errno.EINVAL, errno.ENOTSUP, errno.EBADF}:
+                            raise
                 finally:
                     os.close(directory_descriptor)
         except Exception:

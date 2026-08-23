@@ -35,7 +35,7 @@ interfaces:
     - assets/bin/tw\-help
     uses_interfaces:
     - interface: common.interface.toml-io
-      version: 1
+      version: 2
     - interface: common.interface.famulus-paths
       version: 1
     - interface: launchers.interface.agent
@@ -242,7 +242,7 @@ runtime_dependencies: []
 schema_version: 6
 uses_interfaces:
 - interface: common.interface.toml-io
-  version: 1
+  version: 2
 - interface: common.interface.famulus-paths
   version: 1
 - interface: launchers.interface.agent

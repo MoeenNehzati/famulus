@@ -4,7 +4,49 @@ content:
 - _install_uninstall\.py
 - _shell_block\.py
 - _state_record\.py
-dependencies: []
+dependencies:
+- blueprint:
+    base: repository-root
+    path: src/officina/common/blueprints/atomic-files.yaml
+  reason: Owned uninstall runtime code directly acquires the context-scoped cooperative file lock.
+  source: common.source.atomic-files
+  version: 2
+- blueprint:
+    base: repository-root
+    path: src/officina/common/blueprints/codex-toml.yaml
+  reason: State-record moved-context validation and uninstall inspect and apply Codex configuration through the typed facade.
+  source: common.source.codex-toml
+  version: 2
+- blueprint:
+    base: repository-root
+    path: src/officina/common/blueprints/toml-io.yaml
+  reason: State-record and uninstall consume managed TOML identities, plans, and boundary errors.
+  source: common.source.toml-io
+  version: 2
+- blueprint:
+    base: repository-root
+    path: src/officina/common/blueprints/famulus-paths.yaml
+  reason: Filesystem-link defaults resolve canonical cross-platform Famulus paths.
+  source: common.source.famulus-paths
+  version: 1
+- blueprint:
+    base: repository-root
+    path: src/officina/install/blueprints/context.yaml
+  reason: Uninstall reconstructs and validates the explicitly selected installation context.
+  source: install.source.context
+  version: 1
+- blueprint:
+    base: repository-root
+    path: src/officina/install/blueprints/doctor.yaml
+  reason: Manifest loading shares the canonical install-manifest schema and error boundary.
+  source: install.source.doctor
+  version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-assistant-access-config.yaml
+  reason: Uninstall reuses the assistant-access JSON ownership helpers and marker constants.
+  source: install-assistant-tools._rtx.source.rtx-assistant-access-config
+  version: 1
 description: Marks the installer runtime directory as a Python package and exposes
   no callable interface.
 gateway:
@@ -15,7 +57,19 @@ interfaces: {}
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
+- interface: common.interface.atomic-files
+  version: 2
+- interface: common.interface.codex-toml
+  version: 2
+- interface: common.interface.toml-io
+  version: 2
 - interface: common.interface.famulus-paths
+  version: 1
+- interface: install.interface.context
+  version: 1
+- interface: install.interface.doctor
+  version: 1
+- interface: install-assistant-tools._rtx.source.rtx-assistant-access-config.interface.python-api
   version: 1
 version: 1
 maturity: stable

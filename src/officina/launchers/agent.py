@@ -32,6 +32,14 @@ _AGENT_OVERRIDE = {
     "background_run": "BACKGROUND_RUN_DEFAULT",
 }
 _CODEX_PROFILE_OVERRIDE_AGENTS = frozenset({"background_run"})
+_MANAGED_STATE_OVERRIDES = frozenset(
+    {
+        "ASSISTANT_LOGS",
+        "EMAIL_TRIAGE_STATE_DIR",
+        "LIST_MANAGER_CLOUD_LOCK_DIR",
+        "LLM_WAKEUP_HOME",
+    }
+)
 
 
 class LauncherConfigurationError(ValueError):
@@ -236,6 +244,11 @@ def _launch_command(command: list[str]) -> int:
     return 1
 
 
+def _managed_launch_environment(environ: Mapping[str, str]) -> dict[str, str]:
+    """Drop mutable state selectors before launching a managed assistant."""
+    return {name: value for name, value in environ.items() if name not in _MANAGED_STATE_OVERRIDES}
+
+
 def _agent_args(argv: list[str]) -> tuple[str, bool, Backend | None, list[str]]:
     agent = argv[0]
     remaining = list(argv[1:])
@@ -262,7 +275,9 @@ def main(argv: list[str] | None = None) -> int:
     action.add_argument("--agent", choices=sorted(_AGENTS))
     action.add_argument("--invoke-skill")
     known, remaining = parser.parse_known_args(argv)
-    environ = dict(os.environ)
+    environ = _managed_launch_environment(os.environ)
+    for name in _MANAGED_STATE_OVERRIDES:
+        os.environ.pop(name, None)
     pointer, context = _active_context(
         runtime_root=known.runtime_root, home=Path.home(), environ=environ
     )

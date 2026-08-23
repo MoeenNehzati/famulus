@@ -13,6 +13,7 @@ import hashlib
 import json
 import subprocess
 import sys
+import stat
 import types
 from argparse import Namespace
 from contextlib import redirect_stderr, redirect_stdout
@@ -32,6 +33,7 @@ from install_test_utils import (
     python_test_env,
     run_command,
 )
+from officina.install.assistant_access import resolve_assistant_access_roots
 from officina.install.context import (
     load_or_create_development_installation_id,
     resolve_installation_context,
@@ -45,6 +47,10 @@ if __package__ and __package__.count('.') >= 1:
     from .._state_record import Manifest, manifest_path
 else:
     from _state_record import Manifest, manifest_path  # noqa: E402
+if __package__ and __package__.count('.') >= 1:
+    from .._assistant_access_config import reconcile_assistant_access
+else:
+    from _assistant_access_config import reconcile_assistant_access  # noqa: E402
 if __package__ and __package__.count('.') >= 1:
     from .. import _config_bridge as dev_link
 else:
@@ -141,6 +147,774 @@ def _development_context(tmp_path: Path):
         environ={},
         installation_id=installation_id,
     )
+
+
+def test_access_replay_deletes_only_created_config_files_that_become_empty(
+    tmp_path: Path,
+) -> None:
+    context = _standard_context(tmp_path)
+    local_settings = context.claude_home / "settings.local.json"
+    local_settings.parent.mkdir(parents=True)
+    local_settings.write_bytes(b'{"hooks": {}}\n')
+    manifest = Manifest(context.paths.install_state_root / "install-manifest.json")
+    manifest.bind_context(mode="standard", installation_id="standard")
+    reconcile_assistant_access(context, manifest)
+    report = uninstall.Report()
+
+    uninstall.replay_manifest(
+        manifest,
+        report,
+        dry_run=False,
+        purge=False,
+        no_pip=True,
+        no_git_hooks=True,
+        context=context,
+    )
+
+    assert not (context.codex_home / "config.toml").exists()
+    assert not (context.claude_home / "settings.json").exists()
+    assert local_settings.read_bytes() == b'{"hooks": {}}\n'
+    assert not manifest.path.exists()
+
+
+def test_access_replay_removes_owned_values_while_preserving_unrelated_edits(
+    tmp_path: Path,
+) -> None:
+    context = _standard_context(tmp_path)
+    codex = context.codex_home / "config.toml"
+    claude = context.claude_home / "settings.json"
+    codex.parent.mkdir(parents=True)
+    claude.parent.mkdir(parents=True)
+    codex.write_text(
+        '[sandbox_workspace_write]\nwritable_roots = ["/foreign"]\n',
+        encoding="utf-8",
+    )
+    claude.write_text(
+        '{"theme":"dark","permissions":{"additionalDirectories":["/foreign"]}}\n',
+        encoding="utf-8",
+    )
+    manifest = Manifest(context.paths.install_state_root / "install-manifest.json")
+    manifest.bind_context(mode="standard", installation_id="standard")
+    reconcile_assistant_access(context, manifest)
+    codex.write_text(
+        codex.read_text(encoding="utf-8").replace(
+            "  # >>> famulus-access >>>", '  "/added-later",\n  # >>> famulus-access >>>'
+        )
+        + 'user_note = "keep"\n',
+        encoding="utf-8",
+    )
+    payload = json.loads(claude.read_text(encoding="utf-8"))
+    payload["theme"] = "light"
+    payload["unrelated"] = {"keep": True}
+    claude.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+    report = uninstall.Report()
+
+    uninstall.replay_manifest(
+        manifest,
+        report,
+        dry_run=False,
+        purge=False,
+        no_pip=True,
+        no_git_hooks=True,
+        context=context,
+    )
+
+    assert "/foreign" in codex.read_text(encoding="utf-8")
+    assert "/added-later" in codex.read_text(encoding="utf-8")
+    assert 'user_note = "keep"' in codex.read_text(encoding="utf-8")
+    claude_payload = json.loads(claude.read_text(encoding="utf-8"))
+    assert claude_payload["permissions"]["additionalDirectories"] == ["/foreign"]
+    assert claude_payload["theme"] == "light"
+    assert claude_payload["unrelated"] == {"keep": True}
+
+
+def test_access_replay_preserves_modified_owned_content_and_keeps_manifest_entry(
+    tmp_path: Path,
+) -> None:
+    context = _standard_context(tmp_path)
+    manifest = Manifest(context.paths.install_state_root / "install-manifest.json")
+    manifest.bind_context(mode="standard", installation_id="standard")
+    reconcile_assistant_access(context, manifest)
+    codex = context.codex_home / "config.toml"
+    codex.write_text(
+        codex.read_text(encoding="utf-8").replace(".assistant-logs", ".assistant-logs-edited", 1),
+        encoding="utf-8",
+    )
+    claude = context.claude_home / "settings.json"
+    payload = json.loads(claude.read_text(encoding="utf-8"))
+    payload["permissions"]["additionalDirectories"][0] += "-edited"
+    claude.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+    report = uninstall.Report()
+
+    uninstall.replay_manifest(
+        manifest,
+        report,
+        dry_run=False,
+        purge=False,
+        no_pip=True,
+        no_git_hooks=True,
+        context=context,
+    )
+
+    assert ".assistant-logs-edited" in codex.read_text(encoding="utf-8")
+    assert "-edited" in claude.read_text(encoding="utf-8")
+    remaining = Manifest(manifest.path)
+    assert {
+        entry["kind"]
+        for entry in remaining.entries
+        if entry["kind"] in {"codex_access_array_block", "json_array_values"}
+    } == {"codex_access_array_block", "json_array_values"}
+    assert any(status == "skipped" and "modified" in detail for status, _action, detail in report.items)
+
+
+def test_access_replay_persists_exact_uninstall_intent_before_target_mutation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    context = _standard_context(tmp_path)
+    manifest = Manifest(context.paths.install_state_root / "install-manifest.json")
+    manifest.bind_context(mode="standard", installation_id="standard")
+    reconcile_assistant_access(context, manifest)
+
+    def stop_before_mutation(plan: object) -> None:
+        loaded = Manifest(manifest.path)
+        entry = next(
+            item
+            for item in loaded.entries
+            if item["kind"] == "codex_access_array_block"
+        )
+        assert entry["uninstall_transaction"] == "pending"
+        path = context.codex_home / "config.toml"
+        assert entry["uninstall_pre_sha256"] == hashlib.sha256(path.read_bytes()).hexdigest()
+        assert entry["uninstall_post_sha256"] is None
+        raise RuntimeError("stop before uninstall mutation")
+
+    monkeypatch.setattr(uninstall.codex_toml, "apply_access_plan", stop_before_mutation)
+
+    with pytest.raises(RuntimeError, match="stop before uninstall mutation"):
+        uninstall.replay_manifest(
+            manifest,
+            uninstall.Report(),
+            dry_run=False,
+            purge=False,
+            no_pip=True,
+            no_git_hooks=True,
+            context=context,
+        )
+
+    assert (context.codex_home / "config.toml").exists()
+
+
+def test_access_replay_rejects_external_edit_immediately_before_replace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    context = _standard_context(tmp_path)
+    codex = context.codex_home / "config.toml"
+    codex.parent.mkdir(parents=True)
+    codex.write_text(
+        '[sandbox_workspace_write]\nwritable_roots = ["/foreign"]\n',
+        encoding="utf-8",
+    )
+    manifest = Manifest(context.paths.install_state_root / "install-manifest.json")
+    manifest.bind_context(mode="standard", installation_id="standard")
+    reconcile_assistant_access(context, manifest)
+    external = b'model = "external user edit"\n'
+    real_write = uninstall.codex_toml.apply_access_plan
+
+    def edit_then_write(plan: object) -> None:
+        codex.write_bytes(external)
+        real_write(plan)
+
+    monkeypatch.setattr(uninstall.codex_toml, "apply_access_plan", edit_then_write)
+    report = uninstall.Report()
+
+    uninstall.replay_manifest(
+        manifest,
+        report,
+        dry_run=False,
+        purge=False,
+        no_pip=True,
+        no_git_hooks=True,
+        context=context,
+    )
+
+    assert codex.read_bytes() == external
+    assert report.failed
+    remaining = Manifest(manifest.path)
+    assert any(item["kind"] == "codex_access_array_block" for item in remaining.entries)
+
+
+def test_access_replay_rejects_external_edit_immediately_before_unlink(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    context = _standard_context(tmp_path)
+    manifest = Manifest(context.paths.install_state_root / "install-manifest.json")
+    manifest.bind_context(mode="standard", installation_id="standard")
+    reconcile_assistant_access(context, manifest)
+    codex = context.codex_home / "config.toml"
+    external = b'model = "external user edit"\n'
+    real_write = uninstall.codex_toml.apply_access_plan
+
+    def edit_then_unlink(plan: object) -> None:
+        codex.write_bytes(external)
+        real_write(plan)
+
+    monkeypatch.setattr(uninstall.codex_toml, "apply_access_plan", edit_then_unlink)
+    report = uninstall.Report()
+
+    uninstall.replay_manifest(
+        manifest,
+        report,
+        dry_run=False,
+        purge=False,
+        no_pip=True,
+        no_git_hooks=True,
+        context=context,
+    )
+
+    assert codex.read_bytes() == external
+    assert report.failed
+
+
+def test_access_replay_recovers_rewrite_completed_before_manifest_removal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    context = _standard_context(tmp_path)
+    codex = context.codex_home / "config.toml"
+    codex.parent.mkdir(parents=True)
+    codex.write_text(
+        '[sandbox_workspace_write]\nwritable_roots = ["/foreign"]\n',
+        encoding="utf-8",
+    )
+    manifest = Manifest(context.paths.install_state_root / "install-manifest.json")
+    manifest.bind_context(mode="standard", installation_id="standard")
+    reconcile_assistant_access(context, manifest)
+
+    def crash_before_manifest_removal(entry: dict) -> None:
+        if entry.get("kind") == "codex_access_array_block":
+            raise RuntimeError("crash before manifest removal")
+        Manifest.remove(manifest, entry)
+
+    monkeypatch.setattr(manifest, "remove", crash_before_manifest_removal)
+    with pytest.raises(RuntimeError, match="crash before manifest removal"):
+        uninstall.replay_manifest(
+            manifest,
+            uninstall.Report(),
+            dry_run=False,
+            purge=False,
+            no_pip=True,
+            no_git_hooks=True,
+            context=context,
+        )
+
+    pending = Manifest(manifest.path)
+    entry = next(item for item in pending.entries if item["kind"] == "codex_access_array_block")
+    assert entry["uninstall_transaction"] == "pending"
+    assert hashlib.sha256(codex.read_bytes()).hexdigest() == entry["uninstall_post_sha256"]
+
+    uninstall.replay_manifest(
+        pending,
+        uninstall.Report(),
+        dry_run=False,
+        purge=False,
+        no_pip=True,
+        no_git_hooks=True,
+        context=context,
+    )
+
+    assert "/foreign" in codex.read_text(encoding="utf-8")
+    assert uninstall.ACCESS_BEGIN not in codex.read_text(encoding="utf-8")
+    if pending.path.exists():
+        assert all(
+            item["kind"] != "codex_access_array_block"
+            for item in Manifest(pending.path).entries
+        )
+
+
+def test_access_replay_preserves_state_outside_pending_uninstall_pre_or_post_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    context = _standard_context(tmp_path)
+    codex = context.codex_home / "config.toml"
+    codex.parent.mkdir(parents=True)
+    codex.write_text(
+        '[sandbox_workspace_write]\nwritable_roots = ["/foreign"]\n',
+        encoding="utf-8",
+    )
+    manifest = Manifest(context.paths.install_state_root / "install-manifest.json")
+    manifest.bind_context(mode="standard", installation_id="standard")
+    reconcile_assistant_access(context, manifest)
+
+    monkeypatch.setattr(
+        manifest,
+        "remove",
+        lambda _entry: (_ for _ in ()).throw(RuntimeError("crash before removal")),
+    )
+    with pytest.raises(RuntimeError, match="crash before removal"):
+        uninstall.replay_manifest(
+            manifest,
+            uninstall.Report(),
+            dry_run=False,
+            purge=False,
+            no_pip=True,
+            no_git_hooks=True,
+            context=context,
+        )
+
+    external = b'model = "third state"\n'
+    codex.write_bytes(external)
+    pending = Manifest(manifest.path)
+    report = uninstall.Report()
+    uninstall.replay_manifest(
+        pending,
+        report,
+        dry_run=False,
+        purge=False,
+        no_pip=True,
+        no_git_hooks=True,
+        context=context,
+    )
+
+    assert report.failed
+    assert codex.read_bytes() == external
+    assert any(
+        item["kind"] == "codex_access_array_block"
+        for item in Manifest(pending.path).entries
+    )
+
+
+@pytest.mark.parametrize(
+    "settings_template",
+    [
+        '{{"permissions": {{}}, "permissions": {{"additionalDirectories": {roots}}}}}',
+        '{{"permissions": {{"additionalDirectories": [], "additionalDirectories": {roots}}}}}',
+        '{{"unrelated": {{"nested": 1, "nested": 2}}, "permissions": {{"additionalDirectories": {roots}}}}}',
+    ],
+)
+def test_access_replay_rejects_duplicate_json_object_keys_recursively(
+    tmp_path: Path, settings_template: str
+) -> None:
+    context = _standard_context(tmp_path)
+    manifest = Manifest(context.paths.install_state_root / "install-manifest.json")
+    manifest.bind_context(mode="standard", installation_id="standard")
+    reconcile_assistant_access(context, manifest)
+    settings = context.claude_home / "settings.json"
+    roots = json.dumps(
+        next(item for item in manifest.entries if item["kind"] == "json_array_values")[
+            "introduced"
+        ]
+    )
+    duplicate = settings_template.format(roots=roots).encode("utf-8")
+    settings.write_bytes(duplicate)
+    report = uninstall.Report()
+
+    uninstall.replay_manifest(
+        manifest,
+        report,
+        dry_run=False,
+        purge=False,
+        no_pip=True,
+        no_git_hooks=True,
+        context=context,
+    )
+
+    assert settings.read_bytes() == duplicate
+    assert report.failed
+    assert uninstall.ACCESS_BEGIN in (
+        context.codex_home / "config.toml"
+    ).read_text(encoding="utf-8")
+    assert any(
+        item["kind"] == "json_array_values" for item in Manifest(manifest.path).entries
+    )
+
+
+@pytest.mark.parametrize(
+    "replacement",
+    [
+        '{"permissions": []}\n',
+        '{"permissions": {"additionalDirectories": "wrong"}}\n',
+        '{"permissions": {"additionalDirectories": ["/ok", 3]}}\n',
+    ],
+)
+def test_access_replay_preflights_complete_claude_structure_before_either_target_changes(
+    tmp_path: Path, replacement: str
+) -> None:
+    context = _standard_context(tmp_path)
+    manifest = Manifest(context.paths.install_state_root / "install-manifest.json")
+    manifest.bind_context(mode="standard", installation_id="standard")
+    reconcile_assistant_access(context, manifest)
+    codex = context.codex_home / "config.toml"
+    claude = context.claude_home / "settings.json"
+    claude.write_text(replacement, encoding="utf-8")
+    codex_before = codex.read_bytes()
+    claude_before = claude.read_bytes()
+    report = uninstall.Report()
+
+    uninstall.replay_manifest(
+        manifest,
+        report,
+        dry_run=False,
+        purge=False,
+        no_pip=True,
+        no_git_hooks=True,
+        context=context,
+    )
+
+    assert report.failed
+    assert codex.read_bytes() == codex_before
+    assert claude.read_bytes() == claude_before
+    remaining = Manifest(manifest.path)
+    assert {
+        item["kind"]
+        for item in remaining.entries
+        if item["kind"] in {"codex_access_array_block", "json_array_values"}
+    } == {"codex_access_array_block", "json_array_values"}
+
+
+def test_access_replay_rejects_claude_edit_after_frozen_preflight_without_codex_partial(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    context = _standard_context(tmp_path)
+    manifest = Manifest(context.paths.install_state_root / "install-manifest.json")
+    manifest.bind_context(mode="standard", installation_id="standard")
+    reconcile_assistant_access(context, manifest)
+    codex = context.codex_home / "config.toml"
+    claude = context.claude_home / "settings.json"
+    codex_before = codex.read_bytes()
+    manifest_before = manifest.path.read_bytes()
+    real_preflight = uninstall._assistant_access_preflight
+
+    def edit_after_preflight(*args: object, **kwargs: object):
+        result = real_preflight(*args, **kwargs)
+        claude.write_bytes(b"{malformed")
+        return result
+
+    monkeypatch.setattr(uninstall, "_assistant_access_preflight", edit_after_preflight)
+    report = uninstall.Report()
+
+    uninstall.replay_manifest(
+        manifest,
+        report,
+        dry_run=False,
+        purge=False,
+        no_pip=True,
+        no_git_hooks=True,
+        context=context,
+    )
+
+    assert report.failed
+    assert codex.read_bytes() == codex_before
+    assert claude.read_bytes() == b"{malformed"
+    assert manifest.path.read_bytes() == manifest_before
+
+
+def test_access_replay_keeps_pair_ownership_until_both_targets_settle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    context = _standard_context(tmp_path)
+    manifest = Manifest(context.paths.install_state_root / "install-manifest.json")
+    manifest.bind_context(mode="standard", installation_id="standard")
+    reconcile_assistant_access(context, manifest)
+    real_apply = uninstall.codex_toml.apply_access_plan
+
+    def fail_codex(_plan: object) -> None:
+        raise uninstall.toml_io.TomlManagedArrayError("injected Codex failure")
+
+    monkeypatch.setattr(uninstall.codex_toml, "apply_access_plan", fail_codex)
+    first_report = uninstall.Report()
+    uninstall.replay_manifest(
+        manifest,
+        first_report,
+        dry_run=False,
+        purge=False,
+        no_pip=True,
+        no_git_hooks=True,
+        context=context,
+    )
+
+    assert first_report.failed
+    remaining = Manifest(manifest.path)
+    assert {
+        entry["kind"]
+        for entry in remaining.entries
+        if entry["kind"] in {"codex_access_array_block", "json_array_values"}
+    } == {"codex_access_array_block", "json_array_values"}
+
+    monkeypatch.setattr(uninstall.codex_toml, "apply_access_plan", real_apply)
+    retry_report = uninstall.Report()
+    uninstall.replay_manifest(
+        remaining,
+        retry_report,
+        dry_run=False,
+        purge=False,
+        no_pip=True,
+        no_git_hooks=True,
+        context=context,
+    )
+
+    assert not retry_report.failed
+    assert not manifest.path.exists()
+
+
+def test_access_replay_refreshes_stale_empty_manifest_inside_context_lock(
+    tmp_path: Path,
+) -> None:
+    context = _standard_context(tmp_path)
+    installed = Manifest(context.paths.install_state_root / "install-manifest.json")
+    installed.bind_context(mode="standard", installation_id="standard")
+    stale = Manifest(installed.path)
+    reconcile_assistant_access(context, installed)
+    codex = context.codex_home / "config.toml"
+    claude = context.claude_home / "settings.json"
+    report = uninstall.Report()
+
+    uninstall.replay_manifest(
+        stale,
+        report,
+        dry_run=False,
+        purge=False,
+        no_pip=True,
+        no_git_hooks=True,
+        context=context,
+    )
+
+    assert not report.failed
+    assert not codex.exists()
+    assert not claude.exists()
+    assert not stale.path.exists()
+
+
+@pytest.mark.parametrize("context_factory", [_standard_context, _development_context])
+@pytest.mark.parametrize(
+    "manifest_edit",
+    ["duplicate-codex", "duplicate-claude", "wrong-codex", "wrong-claude"],
+)
+def test_access_replay_requires_one_exact_context_owned_entry_per_target_before_mutation(
+    tmp_path: Path, context_factory, manifest_edit: str
+) -> None:
+    context = context_factory(tmp_path)
+    manifest = Manifest(context.paths.install_state_root / "install-manifest.json")
+    manifest.bind_context(
+        mode=context.mode,
+        installation_id=context.installation_id,
+        development_root=context.development_root,
+    )
+    reconcile_assistant_access(context, manifest)
+    kind = (
+        "codex_access_array_block"
+        if manifest_edit.endswith("codex")
+        else "json_array_values"
+    )
+    entry = next(item for item in manifest.entries if item["kind"] == kind)
+    if manifest_edit.startswith("duplicate"):
+        manifest.entries.append(dict(entry))
+    else:
+        entry["path"] = str(tmp_path / f"unexpected-{kind}")
+    manifest.save()
+    codex = context.codex_home / "config.toml"
+    claude = context.claude_home / "settings.json"
+    codex_before = codex.read_bytes()
+    claude_before = claude.read_bytes()
+    manifest_before = manifest.path.read_bytes()
+    report = uninstall.Report()
+
+    uninstall.replay_manifest(
+        manifest,
+        report,
+        dry_run=False,
+        purge=False,
+        no_pip=True,
+        no_git_hooks=True,
+        context=context,
+    )
+
+    assert report.failed
+    assert codex.read_bytes() == codex_before
+    assert claude.read_bytes() == claude_before
+    assert manifest.path.read_bytes() == manifest_before
+
+
+@pytest.mark.parametrize("context_factory", [_standard_context, _development_context])
+@pytest.mark.parametrize("target_name", ["codex", "claude"])
+def test_access_replay_rejects_symlinked_config_before_either_target_changes(
+    tmp_path: Path, context_factory, target_name: str
+) -> None:
+    context = context_factory(tmp_path)
+    manifest = Manifest(context.paths.install_state_root / "install-manifest.json")
+    manifest.bind_context(
+        mode=context.mode,
+        installation_id=context.installation_id,
+        development_root=context.development_root,
+    )
+    reconcile_assistant_access(context, manifest)
+    codex = context.codex_home / "config.toml"
+    claude = context.claude_home / "settings.json"
+    target = codex if target_name == "codex" else claude
+    external = tmp_path / f"external-uninstall-{context.mode}-{target_name}"
+    external.write_bytes(target.read_bytes())
+    target.unlink()
+    try:
+        target.symlink_to(external)
+    except OSError as exc:
+        # famulus-skip: category=capability-unavailable; reason=this host denied creation of the target-file symlink; alternate=symlink-capable hosts run this case while regular-file pair preflight tests cover no-mutation ordering
+        pytest.skip(f"symlinks unavailable: {exc}")
+    other = claude if target == codex else codex
+    other_before = other.read_bytes()
+    external_before = external.read_bytes()
+    manifest_before = manifest.path.read_bytes()
+    report = uninstall.Report()
+
+    uninstall.replay_manifest(
+        manifest,
+        report,
+        dry_run=False,
+        purge=False,
+        no_pip=True,
+        no_git_hooks=True,
+        context=context,
+    )
+
+    assert report.failed
+    assert target.is_symlink()
+    assert external.read_bytes() == external_before
+    assert other.read_bytes() == other_before
+    assert manifest.path.read_bytes() == manifest_before
+
+
+def test_access_replay_recovery_rejects_symlinked_pending_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    context = _standard_context(tmp_path)
+    codex = context.codex_home / "config.toml"
+    codex.parent.mkdir(parents=True)
+    codex.write_bytes(
+        b'[sandbox_workspace_write]\nwritable_roots = ["/foreign"]\n'
+    )
+    manifest = Manifest(context.paths.install_state_root / "install-manifest.json")
+    manifest.bind_context(mode="standard", installation_id="standard")
+    reconcile_assistant_access(context, manifest)
+    claude = context.claude_home / "settings.json"
+
+    def crash_after_codex_rewrite(entry: dict) -> None:
+        if entry.get("kind") == "codex_access_array_block":
+            raise RuntimeError("stop after Codex rewrite")
+        Manifest.remove(manifest, entry)
+
+    monkeypatch.setattr(manifest, "remove", crash_after_codex_rewrite)
+    with pytest.raises(RuntimeError, match="stop after Codex rewrite"):
+        uninstall.replay_manifest(
+            manifest,
+            uninstall.Report(),
+            dry_run=False,
+            purge=False,
+            no_pip=True,
+            no_git_hooks=True,
+            context=context,
+        )
+
+    external = tmp_path / "external-pending-codex"
+    external.write_bytes(codex.read_bytes())
+    codex.unlink()
+    try:
+        codex.symlink_to(external)
+    except OSError as exc:
+        # famulus-skip: category=capability-unavailable; reason=this host denied creation of the pending-target symlink; alternate=symlink-capable hosts run this case while pending-identity tests cover durable non-symlink recovery
+        pytest.skip(f"symlinks unavailable: {exc}")
+    pending = Manifest(manifest.path)
+    manifest_before = pending.path.read_bytes()
+    assert not claude.exists()
+    external_before = external.read_bytes()
+    report = uninstall.Report()
+
+    uninstall.replay_manifest(
+        pending,
+        report,
+        dry_run=False,
+        purge=False,
+        no_pip=True,
+        no_git_hooks=True,
+        context=context,
+    )
+
+    assert report.failed
+    assert codex.is_symlink()
+    assert external.read_bytes() == external_before
+    assert not claude.exists()
+    assert pending.path.read_bytes() == manifest_before
+
+
+@pytest.mark.parametrize("copied_location", ["outside-array", "multiline-string"])
+def test_access_replay_rejects_exact_codex_block_outside_selected_writable_roots(
+    tmp_path: Path, copied_location: str
+) -> None:
+    context = _standard_context(tmp_path)
+    manifest = Manifest(context.paths.install_state_root / "install-manifest.json")
+    manifest.bind_context(mode="standard", installation_id="standard")
+    reconcile_assistant_access(context, manifest)
+    codex = context.codex_home / "config.toml"
+    claude = context.claude_home / "settings.json"
+    lines = codex.read_text(encoding="utf-8").splitlines(keepends=True)
+    begin = next(index for index, line in enumerate(lines) if line.strip() == uninstall.ACCESS_BEGIN)
+    end = next(index for index, line in enumerate(lines) if line.strip() == uninstall.ACCESS_END)
+    recorded_block = "".join(lines[begin : end + 1])
+    roots = [str(path) for path in resolve_assistant_access_roots(context)]
+    selected = (
+        "[sandbox_workspace_write]\nwritable_roots = [\n"
+        + "".join(f"  {json.dumps(root)},\n" for root in roots)
+        + "]\n"
+    )
+    if copied_location == "outside-array":
+        edited = "unrelated = [\n" + recorded_block + "]\n" + selected
+    else:
+        edited = 'description = """\n' + recorded_block + '"""\n' + selected
+    codex.write_text(edited, encoding="utf-8")
+    codex_before = codex.read_bytes()
+    claude_before = claude.read_bytes()
+    report = uninstall.Report()
+
+    uninstall.replay_manifest(
+        manifest,
+        report,
+        dry_run=False,
+        purge=False,
+        no_pip=True,
+        no_git_hooks=True,
+        context=context,
+    )
+
+    assert report.failed
+    assert codex.read_bytes() == codex_before
+    assert claude.read_bytes() == claude_before
+    remaining = Manifest(manifest.path)
+    assert {
+        item["kind"]
+        for item in remaining.entries
+        if item["kind"] in {"codex_access_array_block", "json_array_values"}
+    } == {"codex_access_array_block", "json_array_values"}
+
+
+# famulus-skip: category=platform-contract; reason=Windows st_mode does not represent the secured DACL; alternate=native DACL behavior is covered by atomic-files Windows tests
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX mode preservation contract")
+def test_access_replay_preserves_full_file_mode_on_rewrite(tmp_path: Path) -> None:
+    context = _standard_context(tmp_path)
+    claude = context.claude_home / "settings.json"
+    claude.parent.mkdir(parents=True)
+    claude.write_text('{"theme": "dark"}\n', encoding="utf-8")
+    manifest = Manifest(context.paths.install_state_root / "install-manifest.json")
+    manifest.bind_context(mode="standard", installation_id="standard")
+    reconcile_assistant_access(context, manifest)
+    claude.chmod(0o1640)
+
+    uninstall.replay_manifest(
+        manifest,
+        uninstall.Report(),
+        dry_run=False,
+        purge=False,
+        no_pip=True,
+        no_git_hooks=True,
+        context=context,
+    )
+
+    assert stat.S_IMODE(claude.stat().st_mode) == 0o1640
 
 
 def test_context_uninstall_refuses_active_recurring_registration_before_mutation(tmp_path):
@@ -356,6 +1130,62 @@ def test_development_uninstall_rechecks_symlink_boundaries_before_mutation(tmp_p
 
     assert report.failed
     assert owned.exists()
+
+
+def test_development_containment_does_not_follow_owned_leaf_symlink(tmp_path):
+    context = _development_context(tmp_path)
+    checkout = context.development_root
+    assert checkout is not None
+    target = checkout / "skills" / "demo"
+    target.mkdir(parents=True)
+    link = checkout / ".famulus" / "homes" / "codex" / "skills" / "demo"
+    link.parent.mkdir(parents=True)
+    link.symlink_to(target, target_is_directory=True)
+
+    assert uninstall._development_entry_is_contained(
+        {"kind": "symlink", "path": str(link), "target": str(target)},
+        context,
+    )
+
+
+def test_uninstall_removes_access_before_other_block_in_same_codex_config(tmp_path):
+    context = _development_context(tmp_path)
+    codex = context.codex_home / "config.toml"
+    codex.parent.mkdir(parents=True)
+    codex.write_text(
+        "# >>> skill-system-hooks >>>\n"
+        "hook = \"owned\"\n"
+        "# <<< skill-system-hooks <<<\n",
+        encoding="utf-8",
+    )
+    manifest = Manifest(context.paths.install_state_root / "install-manifest.json")
+    manifest.bind_context(
+        mode="development",
+        installation_id=context.installation_id,
+        development_root=context.development_root,
+    )
+    manifest.record(
+        "marker_block",
+        path=str(codex),
+        begin="# >>> skill-system-hooks >>>",
+        end="# <<< skill-system-hooks <<<",
+    )
+    reconcile_assistant_access(context, manifest)
+
+    report = uninstall.Report()
+    uninstall.replay_manifest(
+        manifest,
+        report,
+        dry_run=False,
+        purge=True,
+        no_pip=True,
+        no_git_hooks=True,
+        context=context,
+    )
+
+    assert not report.failed
+    assert not codex.exists()
+    assert not manifest.path.exists()
 
 
 def test_development_purge_preserves_install_id_recurring_state_and_tracked_adapters(tmp_path):

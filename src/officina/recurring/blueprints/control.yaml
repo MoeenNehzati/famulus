@@ -8,13 +8,13 @@ gateway: {language: Python, path: control.py}
 content: [control\.py]
 dependencies:
 - {source: recurring.source.runtime, version: 1, blueprint: {base: module-root, path: blueprints/runtime.yaml}, reason: Uses sealed descriptor validation native rendering and run records.}
-uses_interfaces: [{interface: common.interface.atomic-files, version: 1}]
+uses_interfaces: [{interface: common.interface.atomic-files, version: 2}]
 interfaces:
   recurring.source.control.interface.cli:
     version: 1
     description: Run one managed recurring control operation.
     content: [control\.py]
-    uses_interfaces: [{interface: common.interface.atomic-files, version: 1}]
+    uses_interfaces: [{interface: common.interface.atomic-files, version: 2}]
     contract:
       arguments:
         runtime-root: {description: Active runtime root injected by the fixed resolver., required: true, sensitivity: user-private, direct_io_ref: authority, type: {kind: dir, syntax: literal, relative_to: caller-cwd, must_exist: true, access: read}}

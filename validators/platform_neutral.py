@@ -64,8 +64,10 @@ _PLATFORM_METADATA_TOOLING_PATHS = {
     Path("src/officina/install/runtime_lock.py"),
 }
 _BINDING_CROSS_HOST_ORCHESTRATION_PATHS = {
+    Path("src/officina/install/assistant_access.py"),
     Path("src/officina/install/context.py"),
     Path("src/officina/install/development_activation.py"),
+    Path("src/officina/install/doctor.py"),
     Path("src/officina/install/runtime_pointer.py"),
     Path("src/officina/install/resolvers/launch.py"),
     Path("src/officina/launchers/agent.py"),

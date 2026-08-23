@@ -12,7 +12,7 @@ content:
 dependencies: []
 uses_interfaces:
 - interface: common.interface.atomic-files
-  version: 1
+  version: 2
 - interface: common.interface.famulus-paths
   version: 1
 - interface: install.interface.context
@@ -26,7 +26,7 @@ interfaces:
     - agent\.py
     uses_interfaces:
     - interface: common.interface.atomic-files
-      version: 1
+      version: 2
     - interface: common.interface.famulus-paths
       version: 1
     - interface: install.interface.context

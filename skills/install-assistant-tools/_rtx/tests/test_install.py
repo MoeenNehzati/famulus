@@ -96,6 +96,7 @@ def test_apply_uses_one_resolved_context_for_every_stage_and_verification(
         source_root=source,
         development_root=None,
         paths=paths,
+        selected_home=tmp_path,
         codex_home=tmp_path / ".codex",
         claude_home=tmp_path / ".claude",
         installation_id="standard",
@@ -136,11 +137,67 @@ def test_apply_uses_one_resolved_context_for_every_stage_and_verification(
         assert kwargs["context"] is context
 
 
+@pytest.mark.parametrize("mode", ["standard", "development"])
+def test_apply_mandatorily_reconciles_access_after_other_config_and_before_verification(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+) -> None:
+    source = tmp_path / "checkout"
+    source.mkdir()
+    selected_home = tmp_path if mode == "standard" else source / ".famulus" / "home"
+    context = install.InstallationContext(
+        mode=mode,
+        source_root=source,
+        development_root=source if mode == "development" else None,
+        paths=resolve_famulus_paths(platform="linux", home=selected_home, environ={}),
+        selected_home=selected_home,
+        codex_home=(tmp_path / ".codex")
+        if mode == "standard"
+        else source / ".famulus" / "homes" / "codex",
+        claude_home=(tmp_path / ".claude")
+        if mode == "standard"
+        else source / ".famulus" / "homes" / "claude",
+        installation_id="standard" if mode == "standard" else "dev-" + "a" * 32,
+    )
+    calls: list[str] = []
+    monkeypatch.setattr(install, "_build_managed_runtime_candidate", lambda **kw: calls.append("candidate") or 0)
+    monkeypatch.setattr(install, "_record_managed_runtime_state", lambda **kw: None)
+    monkeypatch.setattr(install.scaffold, "run", lambda **kw: calls.append("scaffold") or 0)
+    monkeypatch.setattr(install.dev_link, "run", lambda **kw: calls.append("dev-link"))
+    monkeypatch.setattr(install.launchers, "run", lambda **kw: calls.append("launchers") or True)
+    monkeypatch.setattr(
+        install,
+        "reconcile_assistant_access",
+        lambda selected, manifest: calls.append("access")
+        if selected is context
+        else pytest.fail("wrong context"),
+    )
+    monkeypatch.setattr(
+        install,
+        "diagnose_installation",
+        lambda **kw: calls.append("verify") or install.DiagnosticReport.healthy_for(context),
+    )
+
+    assert install.apply(
+        context=context,
+        choices=install.ApplyChoices(agents=(), default_backend="claude"),
+        environ={},
+    ) == 0
+
+    expected = ["candidate", "scaffold"]
+    if mode == "development":
+        expected.append("dev-link")
+    expected.extend(["launchers", "access", "verify"])
+    assert calls == expected
+
+
 def test_apply_records_bootstrap_resolver_tree_identity(tmp_path: Path) -> None:
     source = Path(install.__file__).resolve().parents[3]
     paths = resolve_famulus_paths(platform=sys.platform, home=tmp_path, environ={})
     context = install.InstallationContext(
         mode="standard", source_root=source, development_root=None, paths=paths,
+        selected_home=tmp_path,
         codex_home=tmp_path / ".codex", claude_home=tmp_path / ".claude",
         installation_id="standard",
     )
@@ -175,6 +232,7 @@ def test_apply_stops_before_later_effects_when_scaffold_is_required_failure(
         source_root=source,
         development_root=None,
         paths=resolve_famulus_paths(platform=sys.platform, home=tmp_path, environ={}),
+        selected_home=tmp_path,
         codex_home=tmp_path / ".codex",
         claude_home=tmp_path / ".claude",
         installation_id="standard",
@@ -211,6 +269,7 @@ def test_apply_preserves_invalid_existing_manifest_bytes(
     context = install.InstallationContext(
         mode="standard", source_root=source, development_root=None,
         paths=resolve_famulus_paths(platform=sys.platform, home=tmp_path, environ={}),
+        selected_home=tmp_path,
         codex_home=tmp_path / ".codex", claude_home=tmp_path / ".claude",
         installation_id="standard",
     )
@@ -305,6 +364,7 @@ def test_reapply_succeeds_when_doctor_reports_valid_recurring_registrations(
         source_root=source,
         development_root=None,
         paths=resolve_famulus_paths(platform=sys.platform, home=tmp_path, environ={}),
+        selected_home=tmp_path,
         codex_home=tmp_path / ".codex",
         claude_home=tmp_path / ".claude",
         installation_id="standard",
@@ -592,6 +652,49 @@ def test_plugin_mode_uses_auto_derived_repo_root(tmp_path, monkeypatch):
     assert preview_kwargs["source_root"] == expected_repo_root
 
 
+def test_context_preview_enumerates_assistant_access_roots_and_recurring_authority_warning(tmp_path):
+    source_root = Path(install.__file__).resolve().parents[3]
+
+    lines = install._preview_context_lines(
+        mode="standard", source_root=source_root, home=tmp_path, environ={}
+    )
+
+    rendered = "\n".join(lines)
+    for root_name in (
+        "assistant_logs_root",
+        "recurring_config_root",
+        "recurring_state_root",
+        "email_triage_state_root",
+        "list_manager_lock_root",
+        "list_manager_cache_root",
+        "llm_wakeup_root",
+    ):
+        assert root_name in rendered
+    assert "writable scheduled-command authority" in rendered
+    assert "secrets embedded in job strings" in rendered
+    assert "indirect credential references" in rendered
+
+
+def test_install_skill_documents_assistant_access_roots_and_recurring_authority_warning():
+    skill_text = (Path(install.__file__).resolve().parents[1] / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+
+    for root_name in (
+        "assistant_logs_root",
+        "recurring_config_root",
+        "recurring_state_root",
+        "email_triage_state_root",
+        "list_manager_lock_root",
+        "list_manager_cache_root",
+        "llm_wakeup_root",
+    ):
+        assert root_name in skill_text
+    assert "writable scheduled-command authority" in skill_text
+    assert "secrets embedded in job strings" in skill_text
+    assert "indirect credential references" in skill_text
+
+
 # ── Managed-runtime candidate wiring (Task 7) ────────────────────────────────
 
 
@@ -608,7 +711,7 @@ def test_non_interactive_install_uses_checked_in_core_lock(tmp_path, monkeypatch
 
     status = install.run(
         home=tmp_path, dry_run=False, non_interactive=True,
-        dev_mode=False, agents=[], default_llm="claude", yes=True,
+        dev_mode=False, agents=[], default_llm="claude", yes=True, environ={},
     )
 
     assert calls[0]["optional_module_ids"] == ()
@@ -660,6 +763,7 @@ def test_interactive_install_prompts_for_optional_modules(
         agents=[],
         default_llm="claude",
         yes=True,
+        environ={},
     )
 
     assert status == 0
@@ -707,7 +811,7 @@ def test_phase_entry_builds_candidate_before_scaffold(tmp_path, monkeypatch):
 
     status = install.run(
         home=tmp_path, dry_run=False, non_interactive=True,
-        dev_mode=False, agents=[], default_llm="claude", yes=True,
+        dev_mode=False, agents=[], default_llm="claude", yes=True, environ={},
     )
 
     names = [name for name, _ in calls]

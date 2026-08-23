@@ -99,11 +99,12 @@ def _context_payload(
     environ: Mapping[str, str],
 ) -> dict[str, object]:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "mode": context.mode,
         "source_root": str(context.source_root),
         "development_root": str(context.development_root) if context.development_root else None,
         "installation_id": context.installation_id,
+        "selected_home": str(context.selected_home),
         "codex_home": str(context.codex_home),
         "claude_home": str(context.claude_home),
         "paths": {name: str(value) for name, value in vars(context.paths).items()},
@@ -121,7 +122,8 @@ def _context_payload(
 
 
 def _context_from_payload(payload: Mapping[str, object]) -> tuple[InstallationContext, tuple[str, ...]]:
-    if payload.get("schema_version") != 1 or payload.get("mode") != "development":
+    schema_version = payload.get("schema_version")
+    if schema_version not in (1, 2) or payload.get("mode") != "development":
         raise ActivationError("unsupported development activation descriptor")
     raw_paths = payload.get("paths")
     raw_commands = payload.get("managed_commands")
@@ -133,12 +135,24 @@ def _context_from_payload(payload: Mapping[str, object]) -> tuple[InstallationCo
     ):
         raise ActivationError("malformed development activation descriptor")
     try:
+        raw_development_root = payload["development_root"]
+        if not isinstance(raw_development_root, str):
+            raise TypeError("invalid development root")
+        development_root = Path(raw_development_root)
+        if schema_version == 1:
+            selected_home = development_root / ".famulus" / "home"
+        else:
+            raw_selected_home = payload["selected_home"]
+            if not isinstance(raw_selected_home, str):
+                raise TypeError("invalid selected home")
+            selected_home = Path(raw_selected_home)
         paths = FamulusPaths(**{name: Path(value) for name, value in raw_paths.items()})
         context = InstallationContext(
             mode="development",
             source_root=Path(str(payload["source_root"])),
-            development_root=Path(str(payload["development_root"])),
+            development_root=development_root,
             paths=paths,
+            selected_home=selected_home,
             codex_home=Path(str(payload["codex_home"])),
             claude_home=Path(str(payload["claude_home"])),
             installation_id=str(payload["installation_id"]),

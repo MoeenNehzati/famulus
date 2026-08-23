@@ -6,7 +6,7 @@ dependencies:
     path: src/officina/common/blueprints/atomic-files.yaml
   reason: Imports confined atomic public-key operations from atomic_files.py.
   source: common.source.atomic-files
-  version: 1
+  version: 2
 - blueprint:
     base: repository-root
     path: src/officina/credentials/blueprints/secret-store.yaml

@@ -11,6 +11,7 @@ content:
 - __init__\.py
 - install_info\.py
 - context\.py
+- assistant_access\.py
 - development_activation\.py
 - doctor\.py
 - runtime_pointer\.py
@@ -24,7 +25,8 @@ description: Parses pinned bootstrap/runtime versions, manages the atomic curren
   pointer, builds verified managed releases containing the first-party Officina wheel
   plus a generated hash-checked dependency lock, provides the stable path-fixed launcher resolver,
   bootstraps a machine-local managed uv binary, and resolves and activates explicit
-  standard or clone-local installation contexts.
+  standard or clone-local installation contexts, and resolves the narrow persistent
+  state roots granted to managed assistants.
 exports:
   install.interface.context:
     access:
@@ -36,6 +38,12 @@ exports:
       - recurring-tasks._rtx
       - recurring
     source_interface: install.source.context.interface.python-api
+  install.interface.assistant-access:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - install-assistant-tools._rtx
+    source_interface: install.source.assistant-access.interface.python-api
   install.interface.development-activation:
     access:
       allow_all_modules: false
@@ -105,6 +113,10 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/context.yaml
+  install.source.assistant-access:
+    blueprint:
+      base: module-root
+      path: blueprints/assistant-access.yaml
   install.source.development-activation:
     blueprint:
       base: module-root

@@ -1931,7 +1931,7 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
     ]
     assert sources["storage"]["uses_interfaces"] == [
         {"interface": "rutter.source.model.interface.python-api", "version": 1},
-        {"interface": "common.interface.atomic-files", "version": 1},
+        {"interface": "common.interface.atomic-files", "version": 2},
     ]
     assert [entry["source"] for entry in sources["engine"]["dependencies"]] == [
         "rutter.source.model",

@@ -22,9 +22,9 @@ interfaces:
     - assets/bin/agent\-timeline
     uses_interfaces:
     - interface: common.interface.codex-toml
-      version: 1
+      version: 2
     - interface: common.interface.toml-io
-      version: 1
+      version: 2
     - interface: milestone-logging._rtx.interface.record
       version: 1
     - interface: milestone-logging._rtx.interface.timeline
@@ -211,9 +211,9 @@ runtime_dependencies:
 schema_version: 6
 uses_interfaces:
 - interface: common.interface.codex-toml
-  version: 1
+  version: 2
 - interface: common.interface.toml-io
-  version: 1
+  version: 2
 - interface: milestone-logging._rtx.interface.record
   version: 1
 - interface: milestone-logging._rtx.interface.timeline

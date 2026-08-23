@@ -40,9 +40,12 @@ if not __package__:
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 from officina.install.context import (
     InstallationContext,
+    build_development_environment,
     load_or_create_development_installation_id,
     resolve_installation_context,
 )
+from officina.common.famulus_paths import resolve_famulus_paths
+from officina.install.assistant_access import resolve_assistant_access_roots
 from officina.install.doctor import (
     DiagnosticReport,
     diagnose_installation,
@@ -65,6 +68,16 @@ if __package__:
     from . import _install_scaffold as scaffold
 else:
     import _install_scaffold as scaffold
+if __package__:
+    from ._assistant_access_config import (
+        AssistantAccessConfigError,
+        reconcile_assistant_access,
+    )
+else:
+    from _assistant_access_config import (  # noqa: E402
+        AssistantAccessConfigError,
+        reconcile_assistant_access,
+    )
 ALL_AGENTS = launchers.ALL_AGENTS
 
 
@@ -309,6 +322,8 @@ def apply(
         mode=context.mode,
         installation_id=context.installation_id,
         development_root=context.development_root,
+        codex_home=context.codex_home if context.mode == "standard" else None,
+        claude_home=context.claude_home if context.mode == "standard" else None,
     )
     candidate_status = _build_managed_runtime_candidate(
         context=context,
@@ -341,6 +356,12 @@ def apply(
         install_invoke_skill=True,
     )
     if helper_status is False:
+        return 1
+
+    try:
+        reconcile_assistant_access(context, manifest)
+    except AssistantAccessConfigError as exc:
+        log(f"Assistant access configuration failed without replacing concurrent edits: {exc}")
         return 1
 
     log("Stage 4/5: Verify and report")
@@ -380,8 +401,26 @@ def _preview_context_lines(
             f"Commands: {preview.paths.user_bin} (persisted on PATH)",
             f"Codex home: {preview.codex_home}",
             f"Claude home: {preview.claude_home}",
+            *_assistant_access_preview_lines(preview),
         )
     local = source_root / ".famulus"
+    selected_home = local / "home"
+    preview = InstallationContext(
+        mode="development",
+        source_root=source_root,
+        development_root=source_root,
+        paths=resolve_famulus_paths(
+            platform=sys.platform,
+            home=selected_home,
+            environ=build_development_environment(
+                source_root, environ=environ, platform=sys.platform
+            ),
+        ),
+        selected_home=selected_home,
+        codex_home=local / "homes" / "codex",
+        claude_home=local / "homes" / "claude",
+        installation_id="preview",
+    )
     return (
         "Mode: development",
         f"Source: {source_root}",
@@ -389,7 +428,27 @@ def _preview_context_lines(
         f"Commands: beneath {local} (child-process PATH only)",
         f"Codex home: {local / 'homes' / 'codex'}",
         f"Claude home: {local / 'homes' / 'claude'}",
+        *_assistant_access_preview_lines(preview),
         "Isolation warning: separate homes are not an OS security sandbox.",
+    )
+
+
+def _assistant_access_preview_lines(context: InstallationContext) -> tuple[str, ...]:
+    names = (
+        "assistant_logs_root",
+        "recurring_config_root",
+        "recurring_state_root",
+        "email_triage_state_root",
+        "list_manager_lock_root",
+        "list_manager_cache_root",
+        "llm_wakeup_root",
+    )
+    roots = resolve_assistant_access_roots(context)
+    return (
+        "Assistant access roots (managed writable):",
+        *(f"  {name}: {root}" for name, root in zip(names, roots, strict=True)),
+        "Security warning: recurring_config_root is writable scheduled-command authority; "
+        "secrets embedded in job strings may be exposed. Use indirect credential references.",
     )
 
 

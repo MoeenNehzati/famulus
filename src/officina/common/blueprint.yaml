@@ -17,6 +17,8 @@ exports:
       allow_all_modules: false
       allowed_callers:
       - install
+      - install-assistant-tools
+      - install-assistant-tools._rtx
       - recurring-tasks
       - recurring-tasks._rtx
       - recurring
@@ -32,6 +34,7 @@ exports:
     access:
       allow_all_modules: false
       allowed_callers:
+      - install
       - install-assistant-tools
       - install-assistant-tools._rtx
     source_interface: common.source.codex-toml.interface.python-api
@@ -51,6 +54,8 @@ exports:
       - install-assistant-tools
       - install-assistant-tools._rtx
       - install
+      - list-manager
+      - list-manager._rtx
       - recurring-tasks
       - recurring-tasks._rtx
       - credentials
@@ -104,5 +109,5 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/toml-io.yaml
-version: 5
+version: 6
 maturity: stable

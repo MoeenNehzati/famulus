@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import shutil
 import shlex
@@ -10,8 +11,10 @@ from pathlib import Path
 import pytest
 import officina.install.doctor as doctor_module
 
+from officina.common import codex_toml
 from officina.common.famulus_paths import resolve_famulus_paths
 from officina.install.context import InstallationContext
+from officina.install.assistant_access import resolve_assistant_access_roots
 from officina.install.doctor import (
     DiagnosticReport,
     diagnose_installation,
@@ -28,6 +31,7 @@ def _standard_context(tmp_path: Path) -> InstallationContext:
         source_root=source,
         development_root=None,
         paths=resolve_famulus_paths(platform=sys.platform, home=tmp_path, environ={}),
+        selected_home=tmp_path,
         codex_home=tmp_path / ".codex",
         claude_home=tmp_path / ".claude",
         installation_id="standard",
@@ -50,12 +54,13 @@ def _write_healthy_installation(context: InstallationContext) -> None:
     record.write_text(
         json.dumps(
             {
-                "schema_version": 1,
+                "schema_version": 2,
                 "release_id": release.name,
                 "mode": "standard",
                 "installation_id": "standard",
                 "source_root": str(context.source_root),
                 "development_root": None,
+                "selected_home": str(context.selected_home),
                 "codex_home": str(context.codex_home),
                 "claude_home": str(context.claude_home),
             }
@@ -92,11 +97,59 @@ def _write_healthy_installation(context: InstallationContext) -> None:
         )
         path.chmod(0o755)
     context.paths.install_state_root.mkdir(parents=True, exist_ok=True)
+    roots = [str(path) for path in resolve_assistant_access_roots(context)]
+    context.codex_home.mkdir(parents=True, exist_ok=True)
+    codex_lines = [
+        "[sandbox_workspace_write]",
+        "writable_roots = [",
+        "  # >>> famulus-access >>>",
+        *(f"  {json.dumps(root)}," for root in roots),
+        "  # <<< famulus-access <<<",
+        "]",
+    ]
+    codex_raw = ("\n".join(codex_lines) + "\n").encode("utf-8")
+    (context.codex_home / "config.toml").write_bytes(codex_raw)
+    block_raw = (
+        "\n".join(codex_lines[2:-1]) + "\n"
+    ).encode("utf-8")
+    context.claude_home.mkdir(parents=True, exist_ok=True)
+    claude_raw = (
+        json.dumps(
+            {"permissions": {"additionalDirectories": roots}},
+            indent=2,
+        )
+        + "\n"
+    ).encode("utf-8")
+    (context.claude_home / "settings.json").write_bytes(claude_raw)
     (context.paths.install_state_root / "install-manifest.json").write_text(
         json.dumps({
             "version": 2,
-            "entries": [],
-            "installation": {"mode": "standard", "installation_id": "standard"},
+            "entries": [
+                {
+                    "kind": "codex_access_array_block",
+                    "path": str(context.codex_home / "config.toml"),
+                    "transaction": "committed",
+                    "introduced": roots,
+                    "begin": "# >>> famulus-access >>>",
+                    "end": "# <<< famulus-access <<<",
+                    "block_sha256": hashlib.sha256(block_raw).hexdigest(),
+                    "post_sha256": hashlib.sha256(codex_raw).hexdigest(),
+                },
+                {
+                    "kind": "json_array_values",
+                    "path": str(context.claude_home / "settings.json"),
+                    "transaction": "committed",
+                    "introduced": roots,
+                    "json_path": ["permissions", "additionalDirectories"],
+                    "post_sha256": hashlib.sha256(claude_raw).hexdigest(),
+                },
+            ],
+            "installation": {
+                "mode": "standard",
+                "installation_id": "standard",
+                "codex_home": str(context.codex_home),
+                "claude_home": str(context.claude_home),
+            },
         }) + "\n",
         encoding="utf-8",
     )
@@ -160,6 +213,158 @@ def test_doctor_reports_healthy_installation_in_human_and_schema_json(tmp_path: 
     assert "healthy" in render_diagnostic_text(report).lower()
     payload = json.loads(render_diagnostic_json(report))
     assert payload["schema_version"] == 1
+
+
+def test_doctor_reports_exact_owned_access_targets_and_privileged_recurring_warning(
+    tmp_path: Path,
+) -> None:
+    context = _standard_context(tmp_path)
+    _write_healthy_installation(context)
+    local = context.claude_home / "settings.local.json"
+    local.write_text("{malformed but outside access ownership", encoding="utf-8")
+    before = {
+        path: path.read_bytes()
+        for path in (
+            context.codex_home / "config.toml",
+            context.claude_home / "settings.json",
+            context.paths.install_state_root / "install-manifest.json",
+            local,
+        )
+    }
+
+    check = next(item for item in _diagnose(context).checks if item.id == "assistant-access")
+
+    assert check.status == "ok"
+    assert str(context.codex_home / "config.toml") in check.summary
+    assert str(context.claude_home / "settings.json") in check.summary
+    assert str(context.paths.recurring_config_root) in check.summary
+    assert "scheduled-command authority" in check.summary
+    assert {path: path.read_bytes() for path in before} == before
+
+
+def test_codex_facade_exposes_its_stable_configuration_error(tmp_path: Path) -> None:
+    config = tmp_path / "config.toml"
+    config.write_text("[", encoding="utf-8")
+
+    with pytest.raises(codex_toml.CodexTomlError):
+        codex_toml.inspect_access_roots(
+            tmp_path,
+            begin="# >>> famulus-access >>>",
+            end="# <<< famulus-access <<<",
+        )
+
+
+def test_doctor_handles_codex_facade_error_without_importing_toml_neighbor(
+    tmp_path: Path,
+) -> None:
+    context = _standard_context(tmp_path)
+    _write_healthy_installation(context)
+    (context.codex_home / "config.toml").write_text("[", encoding="utf-8")
+
+    check = next(
+        item for item in _diagnose(context).checks if item.id == "assistant-access"
+    )
+
+    assert check.status == "error"
+    assert "toml_io" not in vars(doctor_module)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["missing-root", "wrong-target", "pending", "pending-uninstall", "modified-owned"],
+)
+def test_doctor_rejects_incomplete_or_unproven_access_ownership(
+    tmp_path: Path, mutation: str
+) -> None:
+    context = _standard_context(tmp_path)
+    _write_healthy_installation(context)
+    manifest_path = context.paths.install_state_root / "install-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if mutation == "missing-root":
+        settings = context.claude_home / "settings.json"
+        payload = json.loads(settings.read_text(encoding="utf-8"))
+        payload["permissions"]["additionalDirectories"].pop()
+        settings.write_text(json.dumps(payload), encoding="utf-8")
+    elif mutation == "wrong-target":
+        manifest["entries"][0]["path"] = str(context.codex_home / "other.toml")
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    elif mutation == "pending":
+        manifest["entries"][1]["transaction"] = "pending"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    elif mutation == "pending-uninstall":
+        manifest["entries"][0]["uninstall_transaction"] = "pending"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    else:
+        config = context.codex_home / "config.toml"
+        config.write_text(
+            config.read_text(encoding="utf-8").replace(".assistant-logs", ".assistant-logs-edited", 1),
+            encoding="utf-8",
+        )
+
+    check = next(item for item in _diagnose(context).checks if item.id == "assistant-access")
+
+    assert check.status == "error"
+    assert check.recovery.endswith("--no-dev-mode --non-interactive --yes")
+
+
+@pytest.mark.parametrize(
+    "settings_template",
+    [
+        '{{"permissions": {{}}, "permissions": {{"additionalDirectories": {roots}}}}}',
+        '{{"permissions": {{"additionalDirectories": [], "additionalDirectories": {roots}}}}}',
+        '{{"unrelated": {{"nested": 1, "nested": 2}}, "permissions": {{"additionalDirectories": {roots}}}}}',
+    ],
+)
+def test_doctor_rejects_duplicate_claude_object_keys_recursively(
+    tmp_path: Path, settings_template: str
+) -> None:
+    context = _standard_context(tmp_path)
+    _write_healthy_installation(context)
+    roots = json.dumps([str(path) for path in resolve_assistant_access_roots(context)])
+    settings = context.claude_home / "settings.json"
+    settings.write_text(settings_template.format(roots=roots), encoding="utf-8")
+
+    check = next(item for item in _diagnose(context).checks if item.id == "assistant-access")
+
+    assert check.status == "error"
+    assert "duplicate" in check.summary
+
+
+def test_doctor_rejects_owned_codex_marker_block_outside_selected_array(
+    tmp_path: Path,
+) -> None:
+    context = _standard_context(tmp_path)
+    _write_healthy_installation(context)
+    roots = [str(path) for path in resolve_assistant_access_roots(context)]
+    marker_lines = [
+        "  # >>> famulus-access >>>",
+        *(f"  {json.dumps(root)}," for root in roots),
+        "  # <<< famulus-access <<<",
+    ]
+    config_lines = [
+        "unrelated = [",
+        *marker_lines,
+        "]",
+        "[sandbox_workspace_write]",
+        "writable_roots = [",
+        *(f"  {json.dumps(root)}," for root in roots),
+        "]",
+    ]
+    config = context.codex_home / "config.toml"
+    config.write_text("\n".join(config_lines) + "\n", encoding="utf-8")
+    manifest_path = context.paths.install_state_root / "install-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    codex_entry = next(
+        item for item in manifest["entries"] if item["kind"] == "codex_access_array_block"
+    )
+    marker_raw = ("\n".join(marker_lines) + "\n").encode("utf-8")
+    codex_entry["block_sha256"] = hashlib.sha256(marker_raw).hexdigest()
+    manifest_path.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
+
+    check = next(item for item in _diagnose(context).checks if item.id == "assistant-access")
+
+    assert check.status == "error"
+    assert "marker" in check.summary.lower()
 
 
 def test_doctor_rejects_schema2_manifest_bound_to_another_context(tmp_path: Path) -> None:
@@ -390,6 +595,7 @@ def test_recovery_commands_use_registered_routes_and_real_installer_flags(
         paths=resolve_famulus_paths(
             platform="linux", home=development_root / ".famulus" / "home", environ={}
         ),
+        selected_home=development_root / ".famulus" / "home",
         codex_home=development_root / ".famulus" / "homes" / "codex",
         claude_home=development_root / ".famulus" / "homes" / "claude",
         installation_id="dev-" + "a" * 32,

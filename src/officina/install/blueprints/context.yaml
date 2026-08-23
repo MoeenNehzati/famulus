@@ -11,12 +11,13 @@ dependencies:
 - blueprint:
     base: module-root
     path: blueprints/runtime-pointer.yaml
-  reason: Loads the schema-3 pointer and its immutable installation-context record.
+  reason: Loads the schema-3 pointer and its immutable schema-1 or schema-2 installation-context record.
   source: install.source.runtime-pointer
   version: 1
 description: Resolves immutable standard or clone-local installation facts, reads the
-  active schema-3 installation without mutation, validates real-path development boundaries,
-  and creates or reuses the checkout installation ID.
+  active schema-3 installation without mutation, preserves the selected normal or
+  isolated assistant home, validates real-path development boundaries, and creates
+  or reuses the checkout installation ID.
 gateway:
   language: Python
   path: context.py
@@ -132,7 +133,7 @@ interfaces:
       outputs:
       - id: result
         audience: machine
-        description: InstallationContext, validated development root, or immutable installation ID.
+        description: InstallationContext including selected_home, validated development root, or immutable installation ID.
         direct_io_ref: return-value
         cardinality:
           minimum: 1
@@ -216,7 +217,7 @@ interfaces:
         - id: active-pointer-file
           medium: local-filesystem
           access: read
-          content: Active schema-3 pointer and selected immutable context record.
+          content: Active schema-3 pointer and selected immutable schema-1 or schema-2 context record.
           formats:
           - json
           sensitivity: user-private
