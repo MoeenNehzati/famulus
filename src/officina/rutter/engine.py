@@ -97,7 +97,12 @@ def _active_leaf(reckoning: Reckoning) -> ActiveLeaf:
     run = reckoning.root
     depth = 0
     while run.active_child is not None:
-        run = run.active_child.run
+        child = run.active_child
+        if child.kind == "explicit_call" and child.site != run.entered_node.state_id:
+            raise RutterStateError(
+                "active explicit Call child does not match the parent entered state"
+            )
+        run = child.run
         depth += 1
     return ActiveLeaf(run, depth)
 

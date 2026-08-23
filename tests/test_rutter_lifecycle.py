@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Mapping
 
@@ -615,6 +616,64 @@ def test_call_push_keeps_parent_entered_and_exposes_the_child_leaf(
     assert charter_contexts[0].state_id == "delegate"
     assert charter_contexts[0].node_entry_id == parent_entry
     assert charter_contexts[0].history.entries() == ()
+
+
+def test_active_leaf_rejects_child_from_another_call_entrance_before_mutation(
+    tmp_path: Path,
+) -> None:
+    """Following a child from the wrong Call entrance can settle it durably."""
+
+    class CallingRutter(Rutter):
+        rutter_id = "mismatched-call-site"
+        definition_version = 1
+        start_state = "first"
+
+        def define_states(self) -> Mapping[str, object]:
+            return {
+                "first": Call(
+                    DirectChildRutter,
+                    charter=lambda context: {"from": context.state_id},
+                    then="done",
+                ),
+                "second": Call(
+                    DirectChildRutter,
+                    charter=lambda context: {"from": context.state_id},
+                    then="done",
+                ),
+                "done": Done(RunResult("complete", {})),
+            }
+
+    root = tmp_path / "reckonings"
+    path = Path("mismatched-call-site.reckoning.json")
+    registry = RutterRegistry({"root": CallingRutter}, root)
+    voyage = registry.create("root", path, {})
+    voyage.next(continue_=False)
+
+    with voyage._store.transaction() as current:
+        corrupted = replace(
+            current,
+            root=replace(
+                current.root,
+                entered_node=replace(current.root.entered_node, state_id="second"),
+            ),
+        )
+        voyage._store.replace(current, corrupted)
+
+    reopened = registry.open(path)
+    before = (root / path).read_bytes()
+
+    with pytest.raises(
+        RutterStateError,
+        match="active explicit Call child does not match the parent entered state",
+    ):
+        reopened.next(continue_=False)
+
+    persisted = reopened._store.read()
+    assert persisted == corrupted
+    assert persisted.global_revision == 0
+    assert persisted.root.active_child is not None
+    assert persisted.root.active_child.run.history == ()
+    assert (root / path).read_bytes() == before
 
 
 def test_call_push_atomically_materializes_a_prompt_child_across_reopen(
