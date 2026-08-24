@@ -3,13 +3,15 @@ content:
 - _relocation_addresses\.py
 - _relocation_closure\.py
 - _relocation_engine\.py
+- _relocation_semantics\.py
 - schemas/relocation\.schema\.json
 - tests/test_relocation_addresses\.py
 - tests/test_relocation_closure\.py
 - tests/test_relocation_engine\.py
+- tests/test_relocation_semantics\.py
 dependencies: []
-description: Owns manifest-driven relocation preflight and atomic application through
-  the relocate-nodes skill runtime.
+description: Owns schema-v3 relocation projection, semantic-decision preflight, and
+  gated atomic application through the relocate-nodes skill runtime.
 gateway:
   language: Python>=3.11
   path: _relocate_nodes.py
@@ -21,10 +23,12 @@ interfaces:
     - _relocation_addresses\.py
     - _relocation_closure\.py
     - _relocation_engine\.py
+    - _relocation_semantics\.py
     - schemas/relocation\.schema\.json
     - tests/test_relocation_addresses\.py
     - tests/test_relocation_closure\.py
     - tests/test_relocation_engine\.py
+    - tests/test_relocation_semantics\.py
     uses_interfaces:
     - interface: blueprints.interface.graph
       version: 1
@@ -46,7 +50,8 @@ interfaces:
             relative_to: caller-cwd
             syntax: literal
         manifest:
-          description: Exact relocation manifest to validate and apply.
+          description: Exact schema-v3 relocation manifest and semantic decisions to
+            validate and apply.
           direct_io_ref: manifest
           required: true
           sensitivity: user-private
@@ -220,6 +225,13 @@ interfaces:
         - error
         caller_action: Correct the manifest, repository path, or unresolved reference
           before retrying.
+      - id: rejected-apply
+        class: error
+        effects: []
+        outputs:
+        - error
+        caller_action: Review every unaccounted semantic occurrence, add complete
+          rewrite or preserve decisions, and rerun preflight before applying.
       outputs:
       - id: report
         audience: both
@@ -275,7 +287,7 @@ interfaces:
           --manifest: ^.+$
           --report: ^.+$
     usage: --manifest MANIFEST [--root ROOT] [--report REPORT] [--apply]
-    version: 1
+    version: 2
 node_type: behavioral_source
 platform_support:
   linux: true

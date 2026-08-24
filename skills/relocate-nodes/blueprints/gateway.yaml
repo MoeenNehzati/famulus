@@ -13,7 +13,7 @@ interfaces:
     - SKILL\.md
     uses_interfaces:
     - interface: relocate-nodes._rtx.interface.relocate
-      version: 1
+      version: 2
     contract:
       arguments:
         request:
@@ -97,6 +97,6 @@ node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
 - interface: relocate-nodes._rtx.interface.relocate
-  version: 1
+  version: 2
 version: 1
 maturity: stable

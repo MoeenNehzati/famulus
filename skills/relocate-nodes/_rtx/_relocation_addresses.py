@@ -434,8 +434,8 @@ def derive_relocations(
             roots=configuration.module_roots,
             repository=repository,
         )
-        source_exists = repository.joinpath(*source_path.parts).exists()
-        target_exists = repository.joinpath(*target_path.parts).exists()
+        source_exists = repository.joinpath(*source_path.parts, "blueprint.yaml").is_file()
+        target_exists = repository.joinpath(*target_path.parts, "blueprint.yaml").is_file()
         if source_exists and target_exists:
             raise AddressResolutionError(
                 f"physical target collision: both source and target exist for "

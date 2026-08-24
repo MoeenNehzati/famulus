@@ -28,6 +28,145 @@ def _manifest(path: Path, value: dict[str, object]):
     return load_manifest(path)
 
 
+def test_manifest_v3_loads_unified_relocations(tmp_path: Path) -> None:
+    """Schema v3 exposes one relocation collection instead of legacy moves."""
+
+    manifest = _manifest(
+        tmp_path / "move.yaml",
+        {
+            "schema_version": 3,
+            "relocations": [
+                {"from": "skills/a/b/c", "to": "skills/a/d/e"}
+            ],
+        },
+    )
+
+    assert [(item.source, item.target) for item in manifest.relocations] == [
+        ("skills/a/b/c", "skills/a/d/e")
+    ]
+
+
+@pytest.mark.parametrize("legacy_key", ["moves", "renames"])
+def test_manifest_v3_rejects_legacy_relocation_keys(
+    tmp_path: Path, legacy_key: str
+) -> None:
+    """The breaking v3 contract reports legacy top-level keys as unknown."""
+
+    with pytest.raises(RelocationError, match=rf"unknown manifest key: {legacy_key}"):
+        _manifest(
+            tmp_path / "move.yaml",
+            {"schema_version": 3, legacy_key: [] if legacy_key == "moves" else {}},
+        )
+
+
+def test_manifest_v2_reports_explicit_migration_text(tmp_path: Path) -> None:
+    """A stale manifest receives a direct v2-to-v3 migration instruction."""
+
+    with pytest.raises(RelocationError, match="migrate moves/renames"):
+        _manifest(tmp_path / "move.yaml", {"schema_version": 2})
+
+
+def test_semantic_decisions_rewrite_and_preserve_identical_matches(
+    tmp_path: Path,
+) -> None:
+    """Complete selectors distinguish identical text and survive target postflight."""
+
+    repository = tmp_path / "repository"
+    _write(
+        repository / "officina.toml",
+        'schema_version = 1\n\n[modules]\nroots = ["skills"]\n',
+    )
+
+    def module(relative: str, node_id: str, children: dict[str, object]) -> None:
+        _write(
+            repository / relative / "blueprint.yaml",
+            yaml.safe_dump(
+                {
+                    "schema_version": 6,
+                    "id": node_id,
+                    "node_type": "module",
+                    "children": children,
+                },
+                sort_keys=False,
+            ),
+        )
+
+    module("skills/a", "a", {"b": {}, "d": {}})
+    module("skills/a/b", "a.b", {"c": {}})
+    module("skills/a/d", "a.d", {})
+    module("skills/a/b/c", "a.b.c", {})
+    _write(repository / "notes.md", "rewrite b.c here\npreserve b.c there\n")
+    manifest_path = tmp_path / "move.yaml"
+    base = {
+        "schema_version": 3,
+        "relocations": [{"from": "skills/a/b/c", "to": "skills/a/d/e"}],
+    }
+    first = plan_relocation(repository, _manifest(manifest_path, base))
+    occurrences = [
+        item
+        for item in first.semantic_occurrences
+        if getattr(item, "path") == "notes.md" and getattr(item, "match") == "b.c"
+    ]
+    assert len(occurrences) == 2
+
+    decisions: list[dict[str, object]] = []
+    for occurrence, disposition, text, replacement in (
+        (occurrences[0], "rewrite", "rewrite b.c here", "rewrite d.e here"),
+        (occurrences[1], "preserve", "preserve b.c there", None),
+    ):
+        decision = {
+            "occurrence_id": occurrence.occurrence_id,
+            "mapping_kind": occurrence.mapping_kind,
+            "mapping_id": occurrence.mapping_id,
+            "path": occurrence.path,
+            "original_digest": occurrence.projected_digest,
+            "byte_start": occurrence.byte_start,
+            "byte_end": occurrence.byte_end,
+            "ordinal": occurrence.ordinal,
+            "match": occurrence.match,
+            "count": 1,
+            "disposition": disposition,
+            "text": text,
+            "reason": f"Reviewed {disposition} decision.",
+        }
+        if replacement is not None:
+            decision["replacement"] = replacement
+        decisions.append(decision)
+    for occurrence in first.semantic_occurrences:
+        if occurrence in occurrences:
+            continue
+        decisions.append(
+            {
+                "occurrence_id": occurrence.occurrence_id,
+                "mapping_kind": occurrence.mapping_kind,
+                "mapping_id": occurrence.mapping_id,
+                "path": occurrence.path,
+                "original_digest": occurrence.projected_digest,
+                "byte_start": occurrence.byte_start,
+                "byte_end": occurrence.byte_end,
+                "ordinal": occurrence.ordinal,
+                "match": occurrence.match,
+                "count": 1,
+                "disposition": "preserve",
+                "text": occurrence.context,
+                "reason": "The surviving ancestor is still an active node.",
+            }
+        )
+    decided_manifest = _manifest(
+        manifest_path,
+        {**base, "semantic_decisions": decisions},
+    )
+
+    decided = plan_relocation(repository, decided_manifest)
+
+    assert decided.read_text("notes.md") == "rewrite d.e here\npreserve b.c there\n"
+    assert decided.unaccounted_semantic_occurrences == []
+    apply_change_set(decided)
+    postflight = plan_relocation(repository, decided_manifest)
+    assert postflight.report()["writes"] == []
+    assert postflight.unaccounted_semantic_occurrences == []
+
+
 def test_preflight_uses_typed_renames_without_writing(tmp_path: Path) -> None:
     """A plan derives address variants while leaving the repository untouched."""
 
@@ -38,13 +177,16 @@ def test_preflight_uses_typed_renames_without_writing(tmp_path: Path) -> None:
     manifest = _manifest(
         tmp_path / "move.yaml",
         {
-            "schema_version": 2,
-            "moves": [{"from": "src/pkg/old_name.py", "to": "src/pkg/new/name.py"}],
-            "renames": {
-                "python_modules": [{"from": "pkg.old_name", "to": "pkg.new.name"}],
-                "source_ids": [{"from": "old.source.item", "to": "new.source.item"}],
-                "interface_ids": [{"from": "old.interface.item", "to": "new.interface.item"}],
-            },
+            "schema_version": 3,
+            "relocations": [
+                {
+                    "from": "src/pkg/old_name.py",
+                    "to": "src/pkg/new/name.py",
+                    "python_modules": [
+                        {"from": "pkg.old_name", "to": "pkg.new.name"}
+                    ],
+                }
+            ],
         },
     )
     before = {path: path.read_bytes() for path in (source, caller)}
@@ -64,15 +206,215 @@ def test_preflight_uses_typed_renames_without_writing(tmp_path: Path) -> None:
     )
 
 
-def test_manifest_v2_requires_explicit_package_boundary_dispositions(
+def test_python_projection_rewrites_only_absolute_import_ast_spans(
     tmp_path: Path,
 ) -> None:
-    """A v2 manifest parses each declared package-policy record by disposition."""
+    """Comments, strings, relative imports, and near names remain byte-identical."""
+
+    _write(tmp_path / "old.py", "VALUE = 1\n")
+    caller = (
+        "import old_pkg.api\n"
+        "import old_pkg.api.child as child\n"
+        "from old_pkg.api import VALUE\n"
+        "from .old_pkg.api import RELATIVE\n"
+        "# import old_pkg.api\n"
+        "TEXT = 'old_pkg.api'\n"
+        "import old_pkgish.api\n"
+    )
+    _write(tmp_path / "caller.py", caller)
+    manifest = _manifest(
+        tmp_path / "move.yaml",
+        {
+            "schema_version": 3,
+            "relocations": [
+                {
+                    "from": "old.py",
+                    "to": "new.py",
+                    "python_modules": [
+                        {"from": "old_pkg.api", "to": "new_pkg.api"}
+                    ],
+                }
+            ],
+        },
+    )
+
+    changes = plan_relocation(tmp_path, manifest)
+
+    assert changes.read_text("caller.py") == (
+        "import new_pkg.api\n"
+        "import new_pkg.api.child as child\n"
+        "from new_pkg.api import VALUE\n"
+        "from .old_pkg.api import RELATIVE\n"
+        "# import old_pkg.api\n"
+        "TEXT = 'old_pkg.api'\n"
+        "import old_pkgish.api\n"
+    )
+
+
+def test_schema_v3_preserves_graph_owned_file_relocation(
+    tmp_path: Path,
+) -> None:
+    """A non-node endpoint remains relocatable only with one graph-proven owner."""
+
+    _write(
+        tmp_path / "officina.toml",
+        'schema_version = 1\n\n[modules]\nroots = ["skills"]\n',
+    )
+    _write(
+        tmp_path / "skills/a/blueprint.yaml",
+        yaml.safe_dump(
+            {
+                "schema_version": 6,
+                "id": "a",
+                "node_type": "module",
+                "children": {},
+                "content": [r"old\.py", r"new\.py"],
+            },
+            sort_keys=False,
+        ),
+    )
+    _write(tmp_path / "skills/a/old.py", "VALUE = 1\n")
+    manifest = _manifest(
+        tmp_path / "move.yaml",
+        {
+            "schema_version": 3,
+            "relocations": [
+                {"from": "skills/a/old.py", "to": "skills/a/new.py"}
+            ],
+        },
+    )
+
+    assert plan_relocation(tmp_path, manifest).exists("skills/a/new.py")
+
+    blueprint = yaml.safe_load(
+        (tmp_path / "skills/a/blueprint.yaml").read_text(encoding="utf-8")
+    )
+    blueprint["content"] = []
+    _write(
+        tmp_path / "skills/a/blueprint.yaml",
+        yaml.safe_dump(blueprint, sort_keys=False),
+    )
+    with pytest.raises(RelocationError, match="exactly one blueprint owner"):
+        plan_relocation(tmp_path, manifest)
+
+
+def test_nested_node_projection_rewrites_only_structural_identities(
+    tmp_path: Path,
+) -> None:
+    """A subtree move closes graph identities while prose-like bytes stay authored."""
+
+    _write(
+        tmp_path / "officina.toml",
+        'schema_version = 1\n\n[modules]\nroots = ["skills"]\n',
+    )
+
+    def module(relative: str, node_id: str, children: dict[str, object], **extra: object) -> None:
+        _write(
+            tmp_path / relative / "blueprint.yaml",
+            yaml.safe_dump(
+                {
+                    "schema_version": 6,
+                    "id": node_id,
+                    "node_type": "module",
+                    "children": children,
+                    **extra,
+                },
+                sort_keys=False,
+            ),
+        )
+
+    module("skills/a", "a", {"b": {}, "d": {}})
+    module("skills/a/b", "a.b", {"c": {}})
+    module("skills/a/d", "a.d", {})
+    module(
+        "skills/a/b/c",
+        "a.b.c",
+        {"_rtx": {}},
+        sources={
+            "a.b.c.source.worker": {
+                "blueprint": {"base": "module-root", "path": "blueprints/worker.yaml"}
+            }
+        },
+        exports={
+            "a.b.c.interface.worker": {
+                "source_interface": "a.b.c.source.worker.interface.run",
+                "access": {
+                    "allow_all_modules": False,
+                    "allowed_callers": ["a.b.c._rtx"],
+                },
+            }
+        },
+    )
+    module("skills/a/b/c/_rtx", "a.b.c._rtx", {})
+    _write(
+        tmp_path / "skills/a/b/c/blueprints/worker.yaml",
+        yaml.safe_dump(
+            {
+                "schema_version": 6,
+                "id": "a.b.c.source.worker",
+                "node_type": "behavioral_source",
+                "interfaces": {
+                    "a.b.c.source.worker.interface.run": {
+                        "uses_interfaces": [
+                            {"interface": "a.b.c.interface.worker", "version": 1}
+                        ]
+                    }
+                },
+                "dependencies": ["a.b.c._rtx"],
+            },
+            sort_keys=False,
+        ),
+    )
+    _write(
+        tmp_path / "consumer.yaml",
+        "uses_interfaces:\n- interface: a.b.c.interface.worker\n  version: 1\n",
+    )
+    untouched = {
+        "notes.md": "Mention a.b.c and skills/a/b/c in prose.\n",
+        "proof.tex": "\\texttt{a.b.c}\n",
+        "literal.py": "VALUE = 'a.b.c'  # a.b.c\n",
+        ".config/g-calendar": "a.b.c\n",
+    }
+    for relative, text in untouched.items():
+        _write(tmp_path / relative, text)
+    manifest = _manifest(
+        tmp_path / "move.yaml",
+        {
+            "schema_version": 3,
+            "relocations": [
+                {"from": "skills/a/b/c", "to": "skills/a/d/e"}
+            ],
+        },
+    )
+
+    changes = plan_relocation(tmp_path, manifest)
+
+    assert yaml.safe_load(changes.read_text("skills/a/b/blueprint.yaml"))["children"] == {}
+    assert yaml.safe_load(changes.read_text("skills/a/d/blueprint.yaml"))["children"] == {"e": {}}
+    moved = yaml.safe_load(changes.read_text("skills/a/d/e/blueprint.yaml"))
+    assert moved["id"] == "a.d.e"
+    assert moved["children"] == {"_rtx": {}}
+    assert "a.d.e.source.worker" in moved["sources"]
+    assert "a.d.e.interface.worker" in moved["exports"]
+    nested = yaml.safe_load(changes.read_text("skills/a/d/e/_rtx/blueprint.yaml"))
+    assert nested["id"] == "a.d.e._rtx"
+    assert "a.d.e.interface.worker" in changes.read_text("consumer.yaml")
+    for relative, text in untouched.items():
+        assert changes.read_text(relative) == text
+
+    apply_change_set(changes)
+    assert plan_relocation(tmp_path, manifest).report()["moves"] == []
+
+
+def test_manifest_v3_requires_explicit_package_boundary_dispositions(
+    tmp_path: Path,
+) -> None:
+    """A v3 manifest parses each declared package-policy record by disposition."""
 
     manifest = _manifest(
         tmp_path / "move.yaml",
         {
-            "schema_version": 2,
+            "schema_version": 3,
             "package_boundaries": [
                 {
                     "path": "src/officina/tools",
@@ -96,14 +438,15 @@ def test_manifest_v2_requires_explicit_package_boundary_dispositions(
     "value",
     [
         {"schema_version": 1},
+        {"schema_version": 2},
         {
-            "schema_version": 2,
+            "schema_version": 3,
             "package_boundaries": [
                 {"path": "src/officina/tools", "disposition": "registered-module"}
             ],
         },
         {
-            "schema_version": 2,
+            "schema_version": 3,
             "package_boundaries": [
                 {
                     "path": "src/officina/tools",
@@ -113,7 +456,7 @@ def test_manifest_v2_requires_explicit_package_boundary_dispositions(
             ],
         },
         {
-            "schema_version": 2,
+            "schema_version": 3,
             "package_boundaries": [
                 {
                     "path": "src/officina/tools",
@@ -141,7 +484,7 @@ def test_manifest_rejects_duplicate_package_boundary_paths(tmp_path: Path) -> No
         _manifest(
             tmp_path / "move.yaml",
             {
-                "schema_version": 2,
+                "schema_version": 3,
                 "package_boundaries": [
                     {
                         "path": "src/officina/tools",
@@ -165,8 +508,8 @@ def test_boundary_policy_requires_a_declaration_for_a_new_package(
     manifest = _manifest(
         tmp_path / "move.yaml",
         {
-            "schema_version": 2,
-            "moves": [{"from": "src/old", "to": "src/new"}],
+            "schema_version": 3,
+            "relocations": [{"from": "src/old", "to": "src/new"}],
         },
     )
 
@@ -181,8 +524,8 @@ def test_boundary_policy_validates_declared_projection_state(tmp_path: Path) -> 
     manifest = _manifest(
         tmp_path / "move.yaml",
         {
-            "schema_version": 2,
-            "moves": [{"from": "src/old", "to": "src/new"}],
+            "schema_version": 3,
+            "relocations": [{"from": "src/old", "to": "src/new"}],
             "blueprint_documents": [
                 {
                     "path": "src/new/blueprint.yaml",
@@ -212,8 +555,8 @@ def test_boundary_policy_rejects_a_blueprint_for_an_unregistered_package(
     manifest = _manifest(
         tmp_path / "move.yaml",
         {
-            "schema_version": 2,
-            "moves": [{"from": "src/old", "to": "src/new"}],
+            "schema_version": 3,
+            "relocations": [{"from": "src/old", "to": "src/new"}],
             "blueprint_documents": [
                 {
                     "path": "src/new/blueprint.yaml",
@@ -234,13 +577,13 @@ def test_manifest_rejects_unknown_or_escaping_declarations(tmp_path: Path) -> No
     """Manifest validation closes typo and repository-escape routes."""
 
     with pytest.raises(RelocationError, match="unknown manifest key"):
-        _manifest(tmp_path / "unknown.yaml", {"schema_version": 2, "mvoes": []})
+        _manifest(tmp_path / "unknown.yaml", {"schema_version": 3, "mvoes": []})
     with pytest.raises(RelocationError, match="repository-relative"):
         _manifest(
             tmp_path / "escape.yaml",
             {
-                "schema_version": 2,
-                "moves": [{"from": "../outside.py", "to": "src/pkg/new.py"}],
+                "schema_version": 3,
+                "relocations": [{"from": "../outside.py", "to": "src/pkg/new.py"}],
             },
         )
 
@@ -308,24 +651,14 @@ def test_ownership_transfer_moves_blueprint_records_without_changing_contracts(
     manifest = _manifest(
         tmp_path / "move.yaml",
         {
-            "schema_version": 2,
-            "moves": [
+            "schema_version": 3,
+            "relocations": [
                 {"from": "src/pkg/old/worker.py", "to": "src/pkg/new/worker.py"},
                 {
                     "from": "src/pkg/old/blueprints/worker.yaml",
                     "to": "src/pkg/new/blueprints/worker.yaml",
                 },
             ],
-            "renames": {
-                "source_ids": [{"from": "old.source.worker", "to": "new.source.worker"}],
-                "interface_ids": [
-                    {"from": "old.interface.worker", "to": "new.interface.worker"},
-                    {
-                        "from": "old.source.worker.interface.python-api",
-                        "to": "new.source.worker.interface.python-api",
-                    },
-                ],
-            },
             "ownership_transfers": [
                 {
                     "from_blueprint": "src/pkg/old/blueprint.yaml",
@@ -375,7 +708,7 @@ def test_catalog_generation_and_application_are_idempotent(tmp_path: Path) -> No
     manifest = _manifest(
         tmp_path / "move.yaml",
         {
-            "schema_version": 2,
+            "schema_version": 3,
             "package_catalogs": [
                 {
                     "path": "src/pkg/domain",
@@ -410,19 +743,22 @@ def test_application_preserves_modes_of_moved_and_rewritten_files(
     moved = tmp_path / "old.py"
     rewritten = tmp_path / "runner.py"
     _write(moved, "VALUE = 1\n")
-    _write(rewritten, "MODULE = 'old.module'\n")
+    _write(rewritten, "import old.module\n")
     moved.chmod(0o755)
     rewritten.chmod(0o755)
     manifest = _manifest(
         tmp_path / "move.yaml",
         {
-            "schema_version": 2,
-            "moves": [{"from": "old.py", "to": "new.py"}],
-            "renames": {
-                "python_modules": [
-                    {"from": "old.module", "to": "new.module"}
-                ]
-            },
+            "schema_version": 3,
+            "relocations": [
+                {
+                    "from": "old.py",
+                    "to": "new.py",
+                    "python_modules": [
+                        {"from": "old.module", "to": "new.module"}
+                    ],
+                }
+            ],
         },
     )
 
@@ -454,8 +790,8 @@ Includes
     manifest = _manifest(
         tmp_path / "move.yaml",
         {
-            "schema_version": 2,
-            "moves": [{"from": "src/pkg/old", "to": "src/pkg/new"}],
+            "schema_version": 3,
+            "relocations": [{"from": "src/pkg/old", "to": "src/pkg/new"}],
             "package_boundaries": [
                 {"path": "src/pkg/new", "disposition": "unregistered-package"}
             ],
@@ -487,7 +823,7 @@ def test_exact_rewrite_precondition_fails_before_any_write(tmp_path: Path) -> No
     manifest = _manifest(
         tmp_path / "move.yaml",
         {
-            "schema_version": 2,
+            "schema_version": 3,
             "exact_rewrites": [
                 {
                     "path": "src/pkg/module.py",
@@ -512,7 +848,7 @@ def test_exact_rewrite_is_idempotent_when_replacement_contains_original(
     manifest = _manifest(
         tmp_path / "move.yaml",
         {
-            "schema_version": 2,
+            "schema_version": 3,
             "exact_rewrites": [
                 {
                     "path": "plan.md",
@@ -537,7 +873,7 @@ def test_exact_rewrite_rejects_old_and_new_text_side_by_side(tmp_path: Path) -> 
     manifest = _manifest(
         tmp_path / "move.yaml",
         {
-            "schema_version": 2,
+            "schema_version": 3,
             "exact_rewrites": [
                 {"path": "module.py", "from": "OLD", "to": "NEW"}
             ],
@@ -557,7 +893,7 @@ def test_exact_rewrite_applies_when_replacement_is_a_prefix_of_old(
     manifest = _manifest(
         tmp_path / "move.yaml",
         {
-            "schema_version": 2,
+            "schema_version": 3,
             "exact_rewrites": [
                 {
                     "path": "module.py",
@@ -585,7 +921,7 @@ def test_plan_snapshots_repository_file_inventory_once(
     manifest = _manifest(
         tmp_path / "move.yaml",
         {
-            "schema_version": 2,
+            "schema_version": 3,
             "package_boundaries": [
                 {"path": "src/pkg/one", "disposition": "unregistered-package"},
                 {"path": "src/pkg/two", "disposition": "unregistered-package"},
@@ -631,7 +967,7 @@ def test_plan_excludes_nested_worktree_metadata(tmp_path: Path) -> None:
     manifest = _manifest(
         tmp_path / "move.yaml",
         {
-            "schema_version": 2,
+            "schema_version": 3,
             "forbid_facade_imports": ["pkg.domain"],
             "inventory_exclusions": [".claude"],
         },
@@ -656,7 +992,7 @@ def test_plan_combines_default_and_manifest_inventory_exclusions(
     manifest = _manifest(
         tmp_path / "move.yaml",
         {
-            "schema_version": 2,
+            "schema_version": 3,
             "inventory_exclusions": [".scratch"],
         },
     )

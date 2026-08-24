@@ -76,6 +76,10 @@ class Interface(PythonMachineInterface):
                     )
             manifest = load_manifest(args.manifest.resolve())
             changes = plan_relocation(root, manifest, synchronize=self._synchronize)
+            if args.apply and changes.unaccounted_semantic_occurrences:
+                raise RelocationError(
+                    "apply rejected: unaccounted semantic occurrences remain"
+                )
             report = render_report(changes)
             if args.report is not None:
                 args.report.write_text(report, encoding="utf-8")

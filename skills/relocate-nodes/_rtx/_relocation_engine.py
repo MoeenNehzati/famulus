@@ -48,8 +48,7 @@ _TEXT_SUFFIXES = {
 _TOP_LEVEL_KEYS = {
     "schema_version",
     "package_boundaries",
-    "moves",
-    "renames",
+    "relocations",
     "blueprint_documents",
     "ownership_transfers",
     "caller_additions",
@@ -60,8 +59,9 @@ _TOP_LEVEL_KEYS = {
     "active_address_exclusions",
     "inventory_exclusions",
     "standard_digest_roots",
+    "semantic_decisions",
 }
-_SCHEMA_VERSION = 2
+_SCHEMA_VERSION = 3
 _DEFAULT_INVENTORY_EXCLUSIONS = (".git", ".claude", ".codex", ".superpowers")
 
 
@@ -90,6 +90,31 @@ class Move:
 
     source: str
     target: str
+    python_modules: tuple[Rename, ...] = ()
+
+
+@dataclass(frozen=True)
+class DerivedIdentityMap:
+    """Store every mechanically proved identity induced by one relocation."""
+
+    source_path: str
+    target_path: str
+    source_node_id: str | None = None
+    target_node_id: str | None = None
+    source_root: str | None = None
+    target_root: str | None = None
+    module_ids: tuple[Rename, ...] = ()
+    source_ids: tuple[Rename, ...] = ()
+    interface_ids: tuple[Rename, ...] = ()
+    python_modules: tuple[Rename, ...] = ()
+
+    @property
+    def mapping_id(self) -> str:
+        """Return the stable relocation identity used by semantic selectors."""
+
+        if self.source_node_id is not None and self.target_node_id is not None:
+            return f"{self.source_node_id}->{self.target_node_id}"
+        return f"{self.source_path}->{self.target_path}"
 
 
 @dataclass(frozen=True)
@@ -100,6 +125,46 @@ class ExactRewrite:
     old: str
     new: str
     count: int = 1
+
+
+@dataclass(frozen=True)
+class SemanticDecision:
+    """Carry one reviewed semantic occurrence selector and disposition."""
+
+    occurrence_id: str
+    mapping_kind: str
+    mapping_id: str
+    path: str
+    original_digest: str
+    byte_start: int
+    byte_end: int
+    ordinal: int
+    match: str
+    count: int
+    disposition: Literal["rewrite", "preserve"]
+    text: str
+    reason: str
+    replacement: str | None = None
+
+    def to_report(self) -> dict[str, object]:
+        result = {
+            "occurrence_id": self.occurrence_id,
+            "mapping_kind": self.mapping_kind,
+            "mapping_id": self.mapping_id,
+            "path": self.path,
+            "original_digest": self.original_digest,
+            "byte_start": self.byte_start,
+            "byte_end": self.byte_end,
+            "ordinal": self.ordinal,
+            "match": self.match,
+            "count": self.count,
+            "disposition": self.disposition,
+            "text": self.text,
+            "reason": self.reason,
+        }
+        if self.replacement is not None:
+            result["replacement"] = self.replacement
+        return result
 
 
 @dataclass(frozen=True)
@@ -149,12 +214,12 @@ class OwnershipTransfer:
 class RelocationManifest:
     """Store validated, repository-independent relocation declarations."""
 
-    moves: tuple[Move, ...] = ()
-    renames: Mapping[str, tuple[Rename, ...]] = field(default_factory=dict)
+    relocations: tuple[Move, ...] = ()
     blueprint_documents: tuple[tuple[str, Mapping[str, Any]], ...] = ()
     ownership_transfers: tuple[OwnershipTransfer, ...] = ()
     caller_additions: tuple[tuple[str, str, str], ...] = ()
     exact_rewrites: tuple[ExactRewrite, ...] = ()
+    semantic_decisions: tuple[SemanticDecision, ...] = ()
     package_catalogs: tuple[PackageCatalog, ...] = ()
     package_boundaries: tuple[PackageBoundary, ...] = ()
     forbid_facade_imports: tuple[str, ...] = ()
@@ -209,6 +274,11 @@ def load_manifest(path: Path) -> RelocationManifest:
     unknown = sorted(set(value) - _TOP_LEVEL_KEYS)
     if unknown:
         raise RelocationError("unknown manifest key: " + ", ".join(unknown))
+    if value.get("schema_version") == 2:
+        raise RelocationError(
+            "schema_version 2 is no longer supported; migrate moves/renames to "
+            "schema_version 3 relocations"
+        )
     if value.get("schema_version") != _SCHEMA_VERSION:
         raise RelocationError(f"schema_version must be {_SCHEMA_VERSION}")
 
@@ -221,32 +291,40 @@ def load_manifest(path: Path) -> RelocationManifest:
 
     moves: list[Move] = []
     endpoints: set[str] = set()
-    for index, item in enumerate(_sequence(value.get("moves"), field_name="moves")):
-        if not isinstance(item, dict) or set(item) != {"from", "to"}:
-            raise RelocationError(f"moves[{index}] must contain exactly 'from' and 'to'")
-        source = _repository_path(item["from"], field_name=f"moves[{index}].from")
-        target = _repository_path(item["to"], field_name=f"moves[{index}].to")
+    for index, item in enumerate(
+        _sequence(value.get("relocations"), field_name="relocations")
+    ):
+        if not isinstance(item, dict) or set(item) - {"from", "to", "python_modules"} or not {"from", "to"}.issubset(item):
+            raise RelocationError(
+                f"relocations[{index}] must contain from, to, and optional python_modules"
+            )
+        source = _repository_path(item["from"], field_name=f"relocations[{index}].from")
+        target = _repository_path(item["to"], field_name=f"relocations[{index}].to")
         if source == target or source in endpoints or target in endpoints:
             raise RelocationError(f"duplicate or ambiguous move endpoint: {source} -> {target}")
         endpoints.update((source, target))
-        moves.append(Move(source, target))
-
-    rename_groups: dict[str, tuple[Rename, ...]] = {}
-    raw_renames = value.get("renames", {})
-    if not isinstance(raw_renames, dict):
-        raise RelocationError("renames must be a mapping")
-    allowed_rename_groups = {"paths", "python_modules", "source_ids", "interface_ids"}
-    unknown_groups = sorted(set(raw_renames) - allowed_rename_groups)
-    if unknown_groups:
-        raise RelocationError("unknown rename group: " + ", ".join(unknown_groups))
-    for group, records in raw_renames.items():
-        parsed = tuple(
-            _rename(item, field_name=f"renames.{group}[{index}]")
-            for index, item in enumerate(_sequence(records, field_name=f"renames.{group}"))
+        python_modules = tuple(
+            _rename(
+                mapping,
+                field_name=f"relocations[{index}].python_modules[{mapping_index}]",
+            )
+            for mapping_index, mapping in enumerate(
+                _sequence(
+                    item.get("python_modules"),
+                    field_name=f"relocations[{index}].python_modules",
+                )
+            )
         )
-        if len({item.old for item in parsed}) != len(parsed):
-            raise RelocationError(f"duplicate source identity in renames.{group}")
-        rename_groups[group] = parsed
+        dotted = re.compile(r"^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*$")
+        if any(not dotted.fullmatch(mapping.old) or not dotted.fullmatch(mapping.new) for mapping in python_modules):
+            raise RelocationError(
+                f"relocations[{index}].python_modules must contain complete dotted import prefixes"
+            )
+        if len({mapping.old for mapping in python_modules}) != len(python_modules):
+            raise RelocationError(
+                f"duplicate source identity in relocations[{index}].python_modules"
+            )
+        moves.append(Move(source, target, python_modules))
 
     blueprint_documents: list[tuple[str, Mapping[str, Any]]] = []
     for index, item in enumerate(_sequence(value.get("blueprint_documents"), field_name="blueprint_documents")):
@@ -305,6 +383,80 @@ def load_manifest(path: Path) -> RelocationManifest:
         if exact_rewrites[-1].old == exact_rewrites[-1].new:
             raise RelocationError(
                 f"exact_rewrites[{index}] must change its value"
+            )
+
+    semantic_decisions: list[SemanticDecision] = []
+    decision_ids: set[str] = set()
+    selector_keys = {
+        "occurrence_id",
+        "mapping_kind",
+        "mapping_id",
+        "path",
+        "original_digest",
+        "byte_start",
+        "byte_end",
+        "ordinal",
+        "match",
+        "count",
+        "disposition",
+        "text",
+        "reason",
+    }
+    for index, item in enumerate(
+        _sequence(value.get("semantic_decisions"), field_name="semantic_decisions")
+    ):
+        if not isinstance(item, dict):
+            raise RelocationError(f"semantic_decisions[{index}] must be a mapping")
+        disposition = item.get("disposition")
+        expected_keys = selector_keys | ({"replacement"} if disposition == "rewrite" else set())
+        if set(item) != expected_keys or disposition not in {"rewrite", "preserve"}:
+            raise RelocationError(f"semantic_decisions[{index}] has invalid keys")
+        string_keys = {
+            "occurrence_id",
+            "mapping_kind",
+            "mapping_id",
+            "original_digest",
+            "match",
+            "text",
+            "reason",
+        }
+        if disposition == "rewrite":
+            if not isinstance(item.get("replacement"), str):
+                raise RelocationError(
+                    f"semantic_decisions[{index}].replacement must be a string"
+                )
+        if not all(isinstance(item.get(key), str) and item[key] for key in string_keys):
+            raise RelocationError(f"semantic_decisions[{index}] strings must be non-empty")
+        integer_keys = {"byte_start", "byte_end", "ordinal", "count"}
+        if not all(isinstance(item.get(key), int) and item[key] >= 0 for key in integer_keys):
+            raise RelocationError(f"semantic_decisions[{index}] selectors must be integers")
+        if item["byte_end"] <= item["byte_start"] or item["ordinal"] < 1 or item["count"] < 1:
+            raise RelocationError(f"semantic_decisions[{index}] span, ordinal, and count must be positive")
+        occurrence_id = str(item["occurrence_id"])
+        if occurrence_id in decision_ids:
+            raise RelocationError(f"duplicate semantic decision occurrence ID: {occurrence_id}")
+        decision_ids.add(occurrence_id)
+        semantic_decisions.append(
+            SemanticDecision(
+                occurrence_id=occurrence_id,
+                mapping_kind=str(item["mapping_kind"]),
+                mapping_id=str(item["mapping_id"]),
+                path=_repository_path(item["path"], field_name=f"semantic_decisions[{index}].path"),
+                original_digest=str(item["original_digest"]),
+                byte_start=int(item["byte_start"]),
+                byte_end=int(item["byte_end"]),
+                ordinal=int(item["ordinal"]),
+                match=str(item["match"]),
+                count=int(item["count"]),
+                disposition=disposition,
+                text=str(item["text"]),
+                reason=str(item["reason"]),
+                replacement=str(item["replacement"]) if disposition == "rewrite" else None,
+            )
+        )
+        if disposition == "rewrite" and item["replacement"] == item["text"]:
+            raise RelocationError(
+                f"semantic_decisions[{index}] rewrite must change its enclosing text"
             )
 
     catalogs: list[PackageCatalog] = []
@@ -377,12 +529,12 @@ def load_manifest(path: Path) -> RelocationManifest:
         )
 
     return RelocationManifest(
-        moves=tuple(moves),
-        renames=rename_groups,
+        relocations=tuple(moves),
         blueprint_documents=tuple(blueprint_documents),
         ownership_transfers=tuple(transfers),
         caller_additions=tuple(caller_additions),
         exact_rewrites=tuple(exact_rewrites),
+        semantic_decisions=tuple(semantic_decisions),
         package_catalogs=tuple(catalogs),
         package_boundaries=tuple(boundaries),
         forbid_facade_imports=string_tuple("forbid_facade_imports"),
@@ -393,12 +545,173 @@ def load_manifest(path: Path) -> RelocationManifest:
     )
 
 
+def _replace_id_prefix(value: str, old: str, new: str) -> str | None:
+    """Replace one complete leading dotted identity prefix."""
+
+    if value == old:
+        return new
+    if value.startswith(old + "."):
+        return new + value[len(old) :]
+    return None
+
+
+def _blueprint_id_inventory(path: Path) -> tuple[set[str], set[str], set[str]]:
+    """Read module, source, and interface IDs below one registered subtree."""
+
+    modules: set[str] = set()
+    sources: set[str] = set()
+    interfaces: set[str] = set()
+    candidates = [path / "blueprint.yaml"] if path.is_file() else sorted(path.rglob("*.yaml"))
+    for candidate in candidates:
+        if not candidate.is_file():
+            continue
+        try:
+            value = yaml.safe_load(candidate.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, yaml.YAMLError):
+            continue
+        if not isinstance(value, Mapping) or value.get("schema_version") != 6:
+            continue
+        node_id = value.get("id")
+        if isinstance(node_id, str):
+            (modules if value.get("node_type") == "module" else sources).add(node_id)
+        for key in ("exports", "interfaces"):
+            records = value.get(key)
+            if isinstance(records, Mapping):
+                interfaces.update(item for item in records if isinstance(item, str))
+    return modules, sources, interfaces
+
+
+def _mapped_inventory(
+    values: Iterable[str], *, old_prefix: str, new_prefix: str, target_state: bool
+) -> tuple[Rename, ...]:
+    """Convert IDs observed on either physical side into old-to-new mappings."""
+
+    mapped: set[tuple[str, str]] = set()
+    for value in values:
+        if target_state:
+            old = _replace_id_prefix(value, new_prefix, old_prefix)
+            if old is not None and old != value:
+                mapped.add((old, value))
+        else:
+            new = _replace_id_prefix(value, old_prefix, new_prefix)
+            if new is not None and new != value:
+                mapped.add((value, new))
+    return tuple(Rename(old, new) for old, new in sorted(mapped))
+
+
+def _owned_file_blueprints(root: Path, relative: str) -> tuple[str, ...]:
+    """Return module blueprints whose content contract owns one exact file."""
+
+    owners: list[str] = []
+    for blueprint_path in sorted(root.rglob("blueprint.yaml")):
+        if any(part in _CACHE_PARTS for part in blueprint_path.relative_to(root).parts):
+            continue
+        try:
+            document = yaml.safe_load(blueprint_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, yaml.YAMLError):
+            continue
+        if not isinstance(document, Mapping) or document.get("node_type") != "module":
+            continue
+        try:
+            owned_relative = PurePosixPath(relative).relative_to(
+                PurePosixPath(blueprint_path.parent.relative_to(root).as_posix())
+            ).as_posix()
+        except ValueError:
+            continue
+        content = document.get("content")
+        if not isinstance(content, list):
+            continue
+        if any(
+            isinstance(pattern, str) and re.fullmatch(pattern, owned_relative)
+            for pattern in content
+        ):
+            owners.append(blueprint_path.relative_to(root).as_posix())
+    return tuple(owners)
+
+
+def _derive_identity_maps(root: Path, manifest: RelocationManifest) -> tuple[DerivedIdentityMap, ...]:
+    """Resolve node relocations and retain owned-file physical mappings."""
+
+    from ._relocation_addresses import AddressResolutionError, derive_relocations
+
+    results: list[DerivedIdentityMap] = []
+    for relocation in manifest.relocations:
+        source = root / relocation.source
+        target = root / relocation.target
+        source_node = source.is_dir() and (source / "blueprint.yaml").is_file()
+        target_node = target.is_dir() and (target / "blueprint.yaml").is_file()
+        if not source_node and not target_node:
+            configuration_present = (root / "officina.toml").is_file()
+            existing_relative = (
+                relocation.source if source.is_file() else relocation.target
+            )
+            existing_path = root / existing_relative
+            if configuration_present:
+                if not existing_path.is_file():
+                    raise RelocationError(
+                        "relocation endpoint is neither a registered node nor an owned file: "
+                        f"{relocation.source} -> {relocation.target}"
+                    )
+                owners = _owned_file_blueprints(root, existing_relative)
+                if len(owners) != 1:
+                    raise RelocationError(
+                        "owned-file relocation requires exactly one blueprint owner: "
+                        f"{existing_relative}"
+                    )
+            results.append(
+                DerivedIdentityMap(
+                    relocation.source,
+                    relocation.target,
+                    python_modules=relocation.python_modules,
+                )
+            )
+            continue
+        try:
+            derived = derive_relocations(root, (relocation,))[0]
+        except AddressResolutionError as exc:
+            raise RelocationError(str(exc)) from exc
+        existing = target if target_node else source
+        modules, sources, interfaces = _blueprint_id_inventory(existing)
+        old_id = derived.source.node_id
+        new_id = derived.target.node_id
+        results.append(
+            DerivedIdentityMap(
+                source_path=relocation.source,
+                target_path=relocation.target,
+                source_node_id=old_id,
+                target_node_id=new_id,
+                source_root=derived.source.configured_root,
+                target_root=derived.target.configured_root,
+                module_ids=_mapped_inventory(
+                    modules,
+                    old_prefix=old_id,
+                    new_prefix=new_id,
+                    target_state=target_node,
+                ),
+                source_ids=_mapped_inventory(
+                    sources,
+                    old_prefix=old_id,
+                    new_prefix=new_id,
+                    target_state=target_node,
+                ),
+                interface_ids=_mapped_inventory(
+                    interfaces,
+                    old_prefix=old_id,
+                    new_prefix=new_id,
+                    target_state=target_node,
+                ),
+                python_modules=relocation.python_modules,
+            )
+        )
+    return tuple(results)
+
+
 @dataclass
 class ChangeSet:
     """Hold one validated projected repository change set."""
 
     root: Path
-    inventory_exclusions: tuple[str, ...] = ()
+    inventory_exclusions: tuple[str, ...] = _DEFAULT_INVENTORY_EXCLUSIONS
     moves: list[Move] = field(default_factory=list)
     writes: dict[str, bytes] = field(default_factory=dict)
     write_modes: dict[str, int] = field(default_factory=dict)
@@ -409,6 +722,12 @@ class ChangeSet:
     digest_changes: set[str] = field(default_factory=set)
     generated_artifact_changes: set[str] = field(default_factory=set)
     validation_results: set[str] = field(default_factory=set)
+    derived_relocations: tuple[DerivedIdentityMap, ...] = ()
+    semantic_occurrences: list[object] = field(default_factory=list)
+    skipped_text_files: list[object] = field(default_factory=list)
+    semantic_decisions: list[object] = field(default_factory=list)
+    unaccounted_semantic_occurrences: list[object] = field(default_factory=list)
+    generated_spans: dict[str, tuple[tuple[int, int, str], ...]] = field(default_factory=dict)
     base_files: set[str] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -509,6 +828,31 @@ class ChangeSet:
             "digest_changes": sorted(self.digest_changes),
             "generated_artifact_changes": sorted(self.generated_artifact_changes),
             "validation_results": sorted(self.validation_results),
+            "derived_relocations": [
+                {
+                    "from": item.source_path,
+                    "to": item.target_path,
+                    "source_node_id": item.source_node_id,
+                    "target_node_id": item.target_node_id,
+                }
+                for item in self.derived_relocations
+            ],
+            "semantic_occurrences": [
+                item.to_report() if hasattr(item, "to_report") else item
+                for item in self.semantic_occurrences
+            ],
+            "skipped_text_files": [
+                item.to_report() if hasattr(item, "to_report") else item
+                for item in self.skipped_text_files
+            ],
+            "semantic_decisions": [
+                item.to_report() if hasattr(item, "to_report") else item
+                for item in self.semantic_decisions
+            ],
+            "unaccounted_semantic_occurrences": [
+                item.to_report() if hasattr(item, "to_report") else item
+                for item in self.unaccounted_semantic_occurrences
+            ],
             "unresolved_references": [],
         }
 
@@ -527,7 +871,7 @@ def _eligible_files(root: Path, relative: str) -> list[Path]:
 
 
 def _project_moves(changes: ChangeSet, manifest: RelocationManifest) -> None:
-    for move in manifest.moves:
+    for move in manifest.relocations:
         source_path = changes.root / move.source
         target_path = changes.root / move.target
         source_files = _eligible_files(changes.root, move.source)
@@ -580,7 +924,7 @@ def _project_blueprints(changes: ChangeSet, manifest: RelocationManifest) -> Non
             changes.write_text(relative, _dump_yaml(document))
             changes.blueprint_changes.add(relative)
 
-    move_lookup = {move.source: move.target for move in manifest.moves}
+    move_lookup = {move.source: move.target for move in manifest.relocations}
     for transfer in manifest.ownership_transfers:
         old = _yaml_mapping(changes, transfer.from_blueprint)
         new = _yaml_mapping(changes, transfer.to_blueprint)
@@ -642,6 +986,206 @@ def _project_blueprints(changes: ChangeSet, manifest: RelocationManifest) -> Non
             changes.blueprint_changes.add(blueprint_path)
 
 
+def _identity_renames(
+    maps: Iterable[DerivedIdentityMap], manifest: RelocationManifest
+) -> tuple[Rename, ...]:
+    """Return the non-conflicting logical identity projection in longest-first order."""
+
+    values: list[Rename] = []
+    for item in maps:
+        values.extend(item.module_ids)
+        values.extend(item.source_ids)
+        values.extend(item.interface_ids)
+    for transfer in manifest.ownership_transfers:
+        values.append(transfer.source)
+        if transfer.export is not None:
+            values.append(transfer.export)
+    unique: dict[str, Rename] = {}
+    for rename in values:
+        prior = unique.get(rename.old)
+        if prior is not None and prior.new != rename.new:
+            raise RelocationError(f"conflicting derived identity mapping: {rename.old}")
+        unique[rename.old] = rename
+    return tuple(sorted(unique.values(), key=lambda item: len(item.old), reverse=True))
+
+
+_IDENTITY_SCALAR_KEYS = {
+    "id",
+    "interface",
+    "source_interface",
+    "caller_module_id",
+    "target_module_id",
+    "module_id",
+    "standard_id",
+}
+_IDENTITY_LIST_KEYS = {
+    "allowed_callers",
+    "dependencies",
+    "setup_requires_setup_of",
+}
+_IDENTITY_MAPPING_KEYS = {
+    "exports",
+    "interfaces",
+    "namespace_exports",
+    "sources",
+    "only",
+}
+_PATH_SCALAR_KEYS = {"path", "blueprint", "from_blueprint", "to_blueprint"}
+
+
+def _rewrite_exact_identity(value: str, renames: tuple[Rename, ...]) -> str:
+    for rename in renames:
+        replaced = _replace_id_prefix(value, rename.old, rename.new)
+        if replaced is not None:
+            return replaced
+    return value
+
+
+def _rewrite_complete_path(value: str, path_renames: tuple[Rename, ...]) -> str:
+    for rename in path_renames:
+        if value == rename.old:
+            return rename.new
+        if value.startswith(rename.old.rstrip("/") + "/"):
+            return rename.new.rstrip("/") + value[len(rename.old.rstrip("/")) :]
+    return value
+
+
+def _rewrite_blueprint_value(
+    value: Any,
+    *,
+    field_name: str | None,
+    identity_renames: tuple[Rename, ...],
+    path_renames: tuple[Rename, ...],
+) -> Any:
+    """Rewrite only schema-known blueprint identity and path positions."""
+
+    if isinstance(value, str):
+        if field_name in _IDENTITY_SCALAR_KEYS or field_name in _IDENTITY_LIST_KEYS:
+            return _rewrite_exact_identity(value, identity_renames)
+        if field_name in _PATH_SCALAR_KEYS:
+            return _rewrite_complete_path(value, path_renames)
+        return value
+    if isinstance(value, list):
+        return [
+            _rewrite_blueprint_value(
+                item,
+                field_name=field_name,
+                identity_renames=identity_renames,
+                path_renames=path_renames,
+            )
+            for item in value
+        ]
+    if not isinstance(value, Mapping):
+        return value
+    result: dict[str, Any] = {}
+    for key, item in value.items():
+        rewritten_key = (
+            _rewrite_exact_identity(key, identity_renames)
+            if field_name in _IDENTITY_MAPPING_KEYS and isinstance(key, str)
+            else key
+        )
+        result[rewritten_key] = _rewrite_blueprint_value(
+            item,
+            field_name=str(key),
+            identity_renames=identity_renames,
+            path_renames=path_renames,
+        )
+    return result
+
+
+def _project_parent_registrations(
+    changes: ChangeSet, maps: Iterable[DerivedIdentityMap]
+) -> None:
+    """Move each registered node's direct parent-child edge."""
+
+    for item in maps:
+        if item.source_node_id is None or item.target_node_id is None:
+            continue
+        source_parts = item.source_node_id.split(".")
+        target_parts = item.target_node_id.split(".")
+        if len(source_parts) == 1 and len(target_parts) == 1:
+            continue
+        if item.source_root is None or item.target_root is None:
+            raise RelocationError("derived node relocation is missing configured roots")
+        old_parent = (
+            PurePosixPath(item.source_root, *source_parts[:-1], "blueprint.yaml").as_posix()
+            if len(source_parts) > 1
+            else None
+        )
+        new_parent = (
+            PurePosixPath(item.target_root, *target_parts[:-1], "blueprint.yaml").as_posix()
+            if len(target_parts) > 1
+            else None
+        )
+        if new_parent is not None and not changes.exists(new_parent):
+            raise RelocationError(f"missing projected destination parent blueprint: {new_parent}")
+        old_document = _yaml_mapping(changes, old_parent) if old_parent is not None else None
+        new_document = (
+            old_document if new_parent == old_parent else _yaml_mapping(changes, new_parent)
+        ) if new_parent is not None else None
+        record: Any = {}
+        if old_document is not None:
+            children = old_document.get("children")
+            if not isinstance(children, dict) or source_parts[-1] not in children:
+                target_children = (
+                    new_document.get("children") if isinstance(new_document, Mapping) else None
+                )
+                if isinstance(target_children, Mapping) and target_parts[-1] in target_children:
+                    continue
+                raise RelocationError(
+                    f"missing projected source parent registration: {old_parent}:{source_parts[-1]}"
+                )
+            record = children.pop(source_parts[-1])
+        if new_document is not None:
+            children = new_document.setdefault("children", {})
+            if not isinstance(children, dict):
+                raise RelocationError(f"invalid children mapping: {new_parent}")
+            if target_parts[-1] in children and not (
+                old_parent == new_parent and source_parts[-1] == target_parts[-1]
+            ):
+                raise RelocationError(
+                    f"projected destination parent collision: {new_parent}:{target_parts[-1]}"
+                )
+            children[target_parts[-1]] = record
+        if old_parent is not None and old_document is not None:
+            changes.write_text(old_parent, _dump_yaml(old_document))
+            changes.blueprint_changes.add(old_parent)
+        if new_parent is not None and new_document is not None:
+            changes.write_text(new_parent, _dump_yaml(new_document))
+            changes.blueprint_changes.add(new_parent)
+
+
+def _project_derived_blueprints(
+    changes: ChangeSet,
+    manifest: RelocationManifest,
+    maps: tuple[DerivedIdentityMap, ...],
+) -> None:
+    """Project typed graph identities without touching prose-like YAML values."""
+
+    identity_renames = _identity_renames(maps, manifest)
+    path_renames = tuple(
+        Rename(item.source_path, item.target_path)
+        for item in sorted(maps, key=lambda value: len(value.source_path), reverse=True)
+    )
+    for relative in sorted(changes.projected_files()):
+        if not relative.endswith((".yaml", ".yml")):
+            continue
+        try:
+            document = _yaml_mapping(changes, relative)
+        except (RelocationError, UnicodeDecodeError, yaml.YAMLError):
+            continue
+        rewritten = _rewrite_blueprint_value(
+            document,
+            field_name=None,
+            identity_renames=identity_renames,
+            path_renames=path_renames,
+        )
+        if rewritten != document:
+            changes.write_text(relative, _dump_yaml(rewritten))
+            changes.blueprint_changes.add(relative)
+    _project_parent_registrations(changes, maps)
+
+
 def _text_file(relative: str, exclusions: Iterable[str]) -> bool:
     path = PurePosixPath(relative)
     if any(part in _CACHE_PARTS for part in path.parts):
@@ -652,9 +1196,9 @@ def _text_file(relative: str, exclusions: Iterable[str]) -> bool:
 
 
 def _all_renames(manifest: RelocationManifest) -> list[Rename]:
-    values = [Rename(move.source, move.target) for move in manifest.moves]
-    for group in ("paths", "python_modules", "interface_ids", "source_ids"):
-        values.extend(manifest.renames.get(group, ()))
+    values = [Rename(move.source, move.target) for move in manifest.relocations]
+    for relocation in manifest.relocations:
+        values.extend(relocation.python_modules)
     unique: dict[str, Rename] = {}
     for rename in values:
         if rename.old in unique and unique[rename.old].new != rename.new:
@@ -663,8 +1207,122 @@ def _all_renames(manifest: RelocationManifest) -> list[Rename]:
     return sorted(unique.values(), key=lambda item: len(item.old), reverse=True)
 
 
-def _project_text_rewrites(changes: ChangeSet, manifest: RelocationManifest) -> None:
-    renames = _all_renames(manifest)
+def _python_import_replacements(text: str, renames: tuple[Rename, ...]) -> list[tuple[int, int, bytes]]:
+    """Return byte patches for absolute parsed Python import names only."""
+
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return []
+    raw = text.encode("utf-8")
+    line_starts = [0]
+    for match in re.finditer(b"\n", raw):
+        line_starts.append(match.end())
+
+    def absolute(line: int, column: int) -> int:
+        return line_starts[line - 1] + column
+
+    replacements: list[tuple[int, int, bytes]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                start = absolute(alias.lineno, alias.col_offset)
+                old = alias.name.encode("utf-8")
+                for rename in renames:
+                    replacement = _replace_id_prefix(alias.name, rename.old, rename.new)
+                    if replacement is not None and replacement != alias.name:
+                        replacements.append((start, start + len(old), replacement.encode("utf-8")))
+                        break
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            start = absolute(node.lineno, node.col_offset)
+            end = absolute(node.end_lineno or node.lineno, node.end_col_offset or node.col_offset)
+            segment = raw[start:end]
+            marker = re.match(rb"from[ \t]+", segment)
+            if marker is None:
+                continue
+            module_start = start + marker.end()
+            for rename in renames:
+                replacement = _replace_id_prefix(node.module, rename.old, rename.new)
+                if replacement is not None and replacement != node.module:
+                    replacements.append(
+                        (
+                            module_start,
+                            module_start + len(node.module.encode("utf-8")),
+                            replacement.encode("utf-8"),
+                        )
+                    )
+                    break
+    return replacements
+
+
+def _apply_byte_replacements(payload: bytes, replacements: Iterable[tuple[int, int, bytes]]) -> bytes:
+    """Apply non-overlapping byte patches from right to left."""
+
+    result = payload
+    last_start = len(payload) + 1
+    for start, end, replacement in sorted(replacements, reverse=True):
+        if end > last_start or start < 0 or end < start:
+            raise RelocationError("overlapping structural rewrite spans")
+        result = result[:start] + replacement + result[end:]
+        last_start = start
+    return result
+
+
+def _dispatcher_replacements(
+    text: str,
+    *,
+    identities: tuple[Rename, ...],
+    paths: tuple[Rename, ...],
+) -> str:
+    """Rewrite only recognized dispatcher address arguments."""
+
+    result_lines: list[str] = []
+    for line in text.splitlines(keepends=True):
+        if "dispatcher" not in line:
+            result_lines.append(line)
+            continue
+        updated = line
+        for rename in identities:
+            token = re.compile(
+                rf"(?<![A-Za-z0-9_.-]){re.escape(rename.old)}(?![A-Za-z0-9_.-])"
+            )
+            if ".interface." in rename.old:
+                updated = token.sub(rename.new, updated)
+            updated = re.sub(
+                rf"(?P<prefix>--caller-skill(?:=|[ \t]+)){re.escape(rename.old)}(?![A-Za-z0-9_.-])",
+                rf"\g<prefix>{rename.new}",
+                updated,
+            )
+        for rename in paths:
+            for flag in ("--manifest", "--report", "--repository-config", "--root"):
+                updated = re.sub(
+                    rf"(?P<prefix>{re.escape(flag)}(?:=|[ \t]+)){re.escape(rename.old)}(?=$|[ \t\r\n])",
+                    rf"\g<prefix>{rename.new}",
+                    updated,
+                )
+        result_lines.append(updated)
+    return "".join(result_lines)
+
+
+def _project_structural_code(
+    changes: ChangeSet,
+    manifest: RelocationManifest,
+    maps: tuple[DerivedIdentityMap, ...],
+) -> None:
+    """Project parsed imports and recognized dispatcher addresses only."""
+
+    python_renames = tuple(
+        sorted(
+            (rename for item in maps for rename in item.python_modules),
+            key=lambda item: len(item.old),
+            reverse=True,
+        )
+    )
+    identity_renames = _identity_renames(maps, manifest)
+    path_renames = tuple(
+        Rename(item.source_path, item.target_path)
+        for item in sorted(maps, key=lambda value: len(value.source_path), reverse=True)
+    )
     for relative in sorted(changes.projected_files()):
         if not _text_file(relative, manifest.text_exclusions):
             continue
@@ -672,10 +1330,18 @@ def _project_text_rewrites(changes: ChangeSet, manifest: RelocationManifest) -> 
             text = changes.read_text(relative)
         except UnicodeDecodeError:
             continue
-        updated = text
-        for rename in renames:
-            updated = updated.replace(rename.old, rename.new)
-        if updated != text:
+        payload = text.encode("utf-8")
+        if relative.endswith(".py") and python_renames:
+            payload = _apply_byte_replacements(
+                payload,
+                _python_import_replacements(text, python_renames),
+            )
+        updated = _dispatcher_replacements(
+            payload.decode("utf-8"),
+            identities=identity_renames,
+            paths=path_renames,
+        )
+        if updated.encode("utf-8") != text.encode("utf-8"):
             changes.write_text(relative, updated)
 
     for rewrite in manifest.exact_rewrites:
@@ -909,8 +1575,6 @@ def _project_standard_digests(changes: ChangeSet, manifest: RelocationManifest) 
 
 def _validate_projected_tree(changes: ChangeSet, manifest: RelocationManifest) -> None:
     excluded = set(manifest.active_address_exclusions)
-    retired = [rename.old for rename in _all_renames(manifest)]
-    stale: list[str] = []
     syntax: list[str] = []
     facades: list[str] = []
     for relative in sorted(changes.projected_files()):
@@ -920,10 +1584,6 @@ def _validate_projected_tree(changes: ChangeSet, manifest: RelocationManifest) -
             text = changes.read_text(relative)
         except UnicodeDecodeError:
             continue
-        for old in retired:
-            if old in text:
-                stale.append(f"{relative}: {old}")
-                break
         if not relative.endswith(".py"):
             continue
         try:
@@ -949,9 +1609,164 @@ def _validate_projected_tree(changes: ChangeSet, manifest: RelocationManifest) -
             or not isinstance(tree.body[0].value.value, str)
         ):
             init_errors.append(f"{relative}: initializer is not README-only")
-    failures = stale + syntax + facades + init_errors
+    failures = syntax + facades + init_errors
     if failures:
         raise RelocationError("projected-tree validation failed:\n" + "\n".join(failures[:100]))
+
+
+def _decision_matches_occurrence(decision: SemanticDecision, occurrence: object) -> bool:
+    """Return whether every concurrency-sensitive selector field is exact."""
+
+    return all(
+        getattr(occurrence, field) == expected
+        for field, expected in (
+            ("occurrence_id", decision.occurrence_id),
+            ("mapping_kind", decision.mapping_kind),
+            ("mapping_id", decision.mapping_id),
+            ("path", decision.path),
+            ("projected_digest", decision.original_digest),
+            ("byte_start", decision.byte_start),
+            ("byte_end", decision.byte_end),
+            ("ordinal", decision.ordinal),
+            ("match", decision.match),
+        )
+    )
+
+
+def _enclosing_text_spans(payload: bytes, text: str) -> list[tuple[int, int]]:
+    needle = text.encode("utf-8")
+    spans: list[tuple[int, int]] = []
+    start = 0
+    while True:
+        found = payload.find(needle, start)
+        if found < 0:
+            return spans
+        spans.append((found, found + len(needle)))
+        start = found + len(needle)
+
+
+def _target_side_decision_matches(
+    changes: ChangeSet,
+    decision: SemanticDecision,
+    occurrences: Iterable[object],
+) -> bool:
+    """Rematch one decision after apply without trusting obsolete byte spans."""
+
+    try:
+        payload = changes.read_bytes(decision.path)
+    except RelocationError:
+        return False
+    matching = [
+        item
+        for item in occurrences
+        if getattr(item, "path") == decision.path
+        and getattr(item, "mapping_kind") == decision.mapping_kind
+        and getattr(item, "mapping_id") == decision.mapping_id
+        and getattr(item, "match") == decision.match
+    ]
+    if decision.disposition == "rewrite":
+        assert decision.replacement is not None
+        return (
+            payload.count(decision.text.encode("utf-8")) == 0
+            and payload.count(decision.replacement.encode("utf-8")) == decision.count
+        )
+    return (
+        len(matching) >= 1
+        and payload.count(decision.text.encode("utf-8")) == decision.count
+    )
+
+
+def _project_semantic_decisions(
+    changes: ChangeSet,
+    manifest: RelocationManifest,
+    occurrences: tuple[object, ...],
+) -> tuple[SemanticDecision, ...]:
+    """Validate complete selectors and project reviewed rewrites together."""
+
+    by_id = {getattr(item, "occurrence_id"): item for item in occurrences}
+    accepted: list[SemanticDecision] = []
+    source_spans: list[tuple[str, int, int]] = []
+    rewrite_spans: dict[str, list[tuple[int, int, bytes]]] = {}
+    for decision in manifest.semantic_decisions:
+        occurrence = by_id.get(decision.occurrence_id)
+        if occurrence is None:
+            if _target_side_decision_matches(changes, decision, occurrences):
+                accepted.append(decision)
+                continue
+            raise RelocationError(
+                f"unknown semantic occurrence ID: {decision.occurrence_id}"
+            )
+        if not _decision_matches_occurrence(decision, occurrence):
+            raise RelocationError(
+                f"semantic decision selector mismatch: {decision.occurrence_id}"
+            )
+        if getattr(occurrence, "generated"):
+            source = getattr(occurrence, "authored_source")
+            suffix = f"; edit canonical authored source {source}" if source else ""
+            raise RelocationError(
+                f"semantic decision targets generated content: {decision.path}{suffix}"
+            )
+        for path, start, end in source_spans:
+            if path == decision.path and decision.byte_start < end and decision.byte_end > start:
+                raise RelocationError(
+                    f"overlapping semantic decision selectors: {decision.path}"
+                )
+        source_spans.append((decision.path, decision.byte_start, decision.byte_end))
+        payload = changes.read_bytes(decision.path)
+        spans = _enclosing_text_spans(payload, decision.text)
+        if len(spans) != decision.count:
+            raise RelocationError(
+                f"semantic decision replacement-count mismatch for {decision.path}: "
+                f"expected {decision.count}, found {len(spans)}"
+            )
+        if not any(
+            start <= decision.byte_start and decision.byte_end <= end
+            for start, end in spans
+        ):
+            raise RelocationError(
+                f"semantic decision text does not enclose selector: {decision.occurrence_id}"
+            )
+        if decision.disposition == "rewrite":
+            assert decision.replacement is not None
+            replacement = decision.replacement.encode("utf-8")
+            rewrite_spans.setdefault(decision.path, []).extend(
+                (start, end, replacement) for start, end in spans
+            )
+        accepted.append(decision)
+    for path, replacements in rewrite_spans.items():
+        unique = {(start, end): replacement for start, end, replacement in replacements}
+        if len(unique) != len(replacements):
+            raise RelocationError(f"duplicate semantic rewrite span: {path}")
+        changes.write_bytes(
+            path,
+            _apply_byte_replacements(
+                changes.read_bytes(path),
+                ((start, end, replacement) for (start, end), replacement in unique.items()),
+            ),
+        )
+    return tuple(accepted)
+
+
+def _is_accounted_final_occurrence(
+    changes: ChangeSet,
+    occurrence: object,
+    decisions: Iterable[SemanticDecision],
+) -> bool:
+    """Recognize preserved occurrences after other rewrites shift their spans."""
+
+    for decision in decisions:
+        if decision.disposition != "preserve":
+            continue
+        if (
+            getattr(occurrence, "path") == decision.path
+            and getattr(occurrence, "mapping_kind") == decision.mapping_kind
+            and getattr(occurrence, "mapping_id") == decision.mapping_id
+            and getattr(occurrence, "match") == decision.match
+            and changes.read_bytes(decision.path).count(decision.text.encode("utf-8"))
+            == decision.count
+        ):
+            return True
+    return False
 
 
 def plan_relocation(
@@ -965,6 +1780,7 @@ def plan_relocation(
     root = root.resolve()
     if not root.is_dir():
         raise RelocationError(f"repository root does not exist: {root}")
+    identity_maps = _derive_identity_maps(root, manifest)
     changes = ChangeSet(
         root=root,
         inventory_exclusions=tuple(
@@ -972,10 +1788,12 @@ def plan_relocation(
                 (*_DEFAULT_INVENTORY_EXCLUSIONS, *manifest.inventory_exclusions)
             )
         ),
+        derived_relocations=identity_maps,
     )
     _project_moves(changes, manifest)
     _project_blueprints(changes, manifest)
-    _project_text_rewrites(changes, manifest)
+    _project_derived_blueprints(changes, manifest, identity_maps)
+    _project_structural_code(changes, manifest, identity_maps)
     _project_catalogs(changes, manifest)
     _validate_package_boundary_declarations(changes, manifest)
     _project_standard_digests(changes, manifest)
@@ -993,6 +1811,60 @@ def plan_relocation(
     changes.generated_artifact_changes.update(closure.generated_artifact_changes)
     changes.validation_results.update(closure.validation_results)
     _validate_projected_tree(changes, manifest)
+    from ._relocation_semantics import SemanticScan
+
+    semantic = SemanticScan(changes).run()
+    changes.semantic_occurrences.extend(semantic.occurrences)
+    changes.skipped_text_files.extend(semantic.skipped_text_files)
+    accepted = _project_semantic_decisions(
+        changes,
+        manifest,
+        semantic.occurrences,
+    )
+    changes.semantic_decisions.extend(accepted)
+    if manifest.semantic_decisions:
+        try:
+            closure = close_projected_relocation(
+                changes,
+                manifest,
+                synchronize=synchronize,
+            )
+        except MechanicalClosureError as exc:
+            raise RelocationError(str(exc)) from exc
+        changes.certification_basis_changes.update(closure.certification_basis_changes)
+        changes.generated_artifact_changes.update(closure.generated_artifact_changes)
+        changes.validation_results.update(closure.validation_results)
+        _validate_projected_tree(changes, manifest)
+    final_semantic = SemanticScan(changes).run()
+    accepted_ids = {decision.occurrence_id for decision in accepted}
+    changes.unaccounted_semantic_occurrences.extend(
+        occurrence
+        for occurrence in semantic.occurrences
+        if occurrence.occurrence_id not in accepted_ids
+        and not _is_accounted_final_occurrence(changes, occurrence, accepted)
+    )
+    raw_keys = {
+        (
+            occurrence.path,
+            occurrence.mapping_kind,
+            occurrence.mapping_id,
+            occurrence.byte_start,
+            occurrence.byte_end,
+        )
+        for occurrence in semantic.occurrences
+    }
+    for occurrence in final_semantic.occurrences:
+        key = (
+            occurrence.path,
+            occurrence.mapping_kind,
+            occurrence.mapping_id,
+            occurrence.byte_start,
+            occurrence.byte_end,
+        )
+        if key in raw_keys:
+            continue
+        if not _is_accounted_final_occurrence(changes, occurrence, accepted):
+            changes.unaccounted_semantic_occurrences.append(occurrence)
     return changes
 
 

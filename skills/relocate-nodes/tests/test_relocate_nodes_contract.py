@@ -39,7 +39,7 @@ def test_relocate_nodes_has_one_private_runtime_route() -> None:
 
     assert parent["children"] == {"_rtx": {}}
     assert parent["namespace_exports"]["_rtx"]["surface"]["only"] == {
-        "relocate-nodes._rtx.interface.relocate": 1
+        "relocate-nodes._rtx.interface.relocate": 2
     }
     assert set(child["exports"]) == {"relocate-nodes._rtx.interface.relocate"}
     assert child["gateway"] == {"language": "Python>=3.11", "path": "__init__.py"}
@@ -62,6 +62,9 @@ def test_runtime_declares_authorized_graph_synchronizer_and_repository_dependenc
         {"interface": "configuration.interface.repository", "version": 1},
         {"interface": "skill-maker._rtx.interface.sync-blueprints", "version": 1},
     ]
+    assert source["interfaces"][
+        "relocate-nodes._rtx.source.rtx-relocate-nodes.interface.relocate"
+    ]["version"] == 2
 
 
 def test_adapter_declares_exact_synchronizer_dispatch() -> None:
@@ -105,11 +108,11 @@ def test_runtime_engine_validates_manifest_with_its_adjacent_schema(
         RTX_ROOT / "_relocation_engine.py",
     )
     manifest = tmp_path / "relocation.yaml"
-    manifest.write_text("schema_version: 2\n", encoding="utf-8")
+    manifest.write_text("schema_version: 3\n", encoding="utf-8")
 
     loaded = engine.load_manifest(manifest)
 
-    assert loaded.moves == ()
+    assert loaded.relocations == ()
 
 
 def test_adapter_rejects_report_path_inside_selected_repository(
@@ -120,7 +123,7 @@ def test_adapter_rejects_report_path_inside_selected_repository(
     root = tmp_path / "repository"
     root.mkdir()
     manifest = tmp_path / "relocation.yaml"
-    manifest.write_text("schema_version: 2\n", encoding="utf-8")
+    manifest.write_text("schema_version: 3\n", encoding="utf-8")
     report = root / "report.json"
     args = adapter.Interface().build_parser().parse_args(
         ["--root", str(root), "--manifest", str(manifest), "--report", str(report)]
@@ -129,3 +132,48 @@ def test_adapter_rejects_report_path_inside_selected_repository(
     assert adapter.Interface().run(args) == 2
     assert not report.exists()
     assert "report path must be outside selected repository" in capsys.readouterr().err
+
+
+def test_adapter_gates_apply_but_not_preflight_on_unaccounted_occurrences(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """An unresolved semantic address permits reporting but prevents every write."""
+
+    adapter = _load_adapter()
+    root = tmp_path / "repository"
+    root.mkdir()
+    (root / "old.txt").write_text("retire old.txt\n", encoding="utf-8")
+    manifest = tmp_path / "relocation.yaml"
+    manifest.write_text(
+        "schema_version: 3\nrelocations:\n- from: old.txt\n  to: new.txt\n",
+        encoding="utf-8",
+    )
+    report = tmp_path / "report.json"
+    interface = adapter.Interface()
+    preflight = interface.build_parser().parse_args(
+        ["--root", str(root), "--manifest", str(manifest), "--report", str(report)]
+    )
+
+    assert interface.run(preflight) == 0
+    assert report.is_file()
+    assert (root / "old.txt").is_file()
+    report.unlink()
+    capsys.readouterr()
+
+    apply = interface.build_parser().parse_args(
+        [
+            "--root",
+            str(root),
+            "--manifest",
+            str(manifest),
+            "--report",
+            str(report),
+            "--apply",
+        ]
+    )
+    assert interface.run(apply) == 2
+    assert not report.exists()
+    assert (root / "old.txt").is_file()
+    assert not (root / "new.txt").exists()
+    assert "unaccounted semantic occurrences" in capsys.readouterr().err

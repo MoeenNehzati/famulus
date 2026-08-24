@@ -17,10 +17,12 @@ content:
 - _relocation_addresses\.py
 - _relocation_closure\.py
 - _relocation_engine\.py
+- _relocation_semantics\.py
 - schemas/relocation\.schema\.json
 - tests/test_relocation_addresses\.py
 - tests/test_relocation_closure\.py
 - tests/test_relocation_engine\.py
+- tests/test_relocation_semantics\.py
 description: Private Python runtime for manifest-driven registered-node relocation.
 exports:
   relocate-nodes._rtx.interface.relocate:
